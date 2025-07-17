@@ -2,9 +2,9 @@
 
 This microservice provides web3-based JWT tokens.
 
-It can serve just as an authentication service (checking the user is the owner of a wallet), or as an authentication + authorization service (checking against the corresponding smart contract whether the owner of the wallet has certain permissions). In this case, the permissions are related to whether valid bookings on remote laboratories exist or not.
+It can work just as an authentication service (checking the user actually is the owner of a certain wallet address), or as an authentication + authorization service (checking against the corresponding smart contract whether the owner of the wallet has certain permissions). In the latter case, the permissions are related to whether valid bookings on remote laboratories exist or not.
 
-This microservice is built with Spring Boot and prepared to be deployed in a matter of seconds as a Maven (.war) package running on Apache Tomcat 9 with Java 17.
+This microservice is built with Java Spring Boot and prepared to be deployed in a matter of seconds as a Maven (.war) package running on Apache Tomcat (at least v. 9) with Java (at least v. 17).
 
 It provides the following endpoints when the war package is deployed into Tomcat as auth.war:
 
