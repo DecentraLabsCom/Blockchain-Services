@@ -1,4 +1,10 @@
-# auth-service
+---
+description: >-
+  Authentication and authorization service connecting your lab access control
+  system to the blockchain
+---
+
+# Auth Service
 
 This microservice provides web3-based JWT tokens.
 
@@ -8,10 +14,12 @@ This microservice is built with Java Spring Boot and prepared to be deployed in 
 
 It provides the following endpoints when the war package is deployed into Tomcat as auth.war:
 
-    - /auth/.well-known/openid-configuration: To expose endpoints for OpenID Connect.
-    - /auth/jwks: Offers the public key in JWKS format (OpenID Connect).
-    - /auth/message: Generates a message for the client to sign with their wallet.
-    - /auth/auth: Provides authentication by checking the signature of the message above.
-    - /auth/auth2: Provides authentication + authorization by additionaly consulting the corresponding smart contract.
+```
+- /auth/.well-known/openid-configuration: To expose endpoints for OpenID Connect.
+- /auth/jwks: Offers the public key in JWKS format (OpenID Connect).
+- /auth/message: Generates a message for the client to sign with their wallet.
+- /auth/auth: Provides authentication by checking the signature of the message above.
+- /auth/auth2: Provides authentication + authorization by additionaly consulting the corresponding smart contract.
+```
 
 There is a running example of this microservice in sarlab.dia.uned.es/auth2, but users can use this code as an inspiration to implement their own auth service or just deploy it themselves as it is for their own purposes.
