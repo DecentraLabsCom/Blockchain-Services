@@ -6,7 +6,9 @@ description: >-
 
 # Auth Service
 
-This microservice provides web3-based JWT tokens.
+<figure><img src=".gitbook/assets/image.png" alt=""><figcaption></figcaption></figure>
+
+This microservice provides web3-based JWT tokens and offers a bridge between institutional access control systems (like the **Proxy server** in the figure above) with the blockchain-based smart contracts.
 
 It can work just as an authentication service (checking the user actually is the owner of a certain wallet address), or as an authentication + authorization service (checking against the corresponding smart contract whether the owner of the wallet has certain permissions). In the latter case, the permissions are related to whether valid bookings on remote laboratories exist or not.
 
