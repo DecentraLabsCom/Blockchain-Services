@@ -59,6 +59,4 @@ sequenceDiagram
     D->>U: Redirect user to provider access uri with jwt parameter
     U->>PG: Request guacamole path carrying jwt
     Note over PG: Gateway starts its own verification flow
-
 ```
-
