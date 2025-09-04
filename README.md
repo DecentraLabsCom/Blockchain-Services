@@ -25,3 +25,40 @@ It provides the following endpoints when the war package is deployed into Tomcat
 ```
 
 There is a running example of this microservice in sarlab.dia.uned.es/auth2, but users can use this code as an inspiration to implement their own auth service or just deploy it themselves as it is for their own purposes.
+
+The following image shows the sequence diagram that illustrates the process for authenticating and authorizing a user in the lab provider infrastructure through DecentraLabs. In this image, the **Proxy server** in the figure above is labelled as **Provider Gateway**.
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant U as User Browser
+    participant D as Marketplace
+    participant W as Wallet
+    participant AS as Auth Service
+    participant SC as Smart Contracts
+    participant PG as Provider Gateway
+
+    U->>D: Open lab page and connect wallet
+    D->>W: Request wallet connection
+    W-->>D: Return wallet address
+
+    D->>AS: Ask for signable challenge for address
+    AS-->>D: Send challenge with address and time data
+
+    D->>W: Prompt user to sign challenge
+    W-->>D: Return signature
+
+    D->>AS: Submit address and signature
+    AS->>AS: Verify signature against address
+    AS->>SC: Query active reservation for address
+    SC-->>AS: Return reservation data lab id access uri access key start end
+
+    AS->>AS: Create JWT with iss iat jti aud sub nbf exp labId
+    AS-->>D: Return JWT to dApp
+
+    D->>U: Redirect user to provider access uri with jwt parameter
+    U->>PG: Request guacamole path carrying jwt
+    Note over PG: Gateway starts its own verification flow
+
+```
+
