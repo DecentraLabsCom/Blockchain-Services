@@ -6,9 +6,9 @@ description: >-
 
 # Auth Service
 
-<figure><img src=".gitbook/assets/image.png" alt=""><figcaption></figcaption></figure>
+<figure><img src=".gitbook/assets/image (1).png" alt=""><figcaption></figcaption></figure>
 
-This microservice provides web3-based JWT tokens and offers a bridge between institutional access control systems (like the **Proxy server** in the figure above) with the blockchain-based smart contracts.
+This microservice provides web3-based JWT tokens and offers a bridge between institutional access control systems (like the **Lab Gateway** in the figure above) with the blockchain-based smart contracts.
 
 It can work just as an authentication service (checking the user actually is the owner of a certain wallet address), or as an authentication + authorization service (checking against the corresponding smart contract whether the owner of the wallet has certain permissions). In the latter case, the permissions are related to whether valid bookings on remote laboratories exist or not.
 
@@ -26,7 +26,7 @@ It provides the following endpoints when the war package is deployed into Tomcat
 
 There is a running example of this microservice in sarlab.dia.uned.es/auth2, but users can use this code as an inspiration to implement their own auth service or just deploy it themselves as it is for their own purposes.
 
-The following image shows the sequence diagram that illustrates the process for authenticating and authorizing a user in the lab provider infrastructure through DecentraLabs. In this image, the **Proxy server** in the figure above is labelled as **Provider Gateway**.
+The following image shows the sequence diagram that illustrates the process for authenticating and authorizing a user in the lab provider infrastructure through DecentraLabs.
 
 ```mermaid
 sequenceDiagram
@@ -36,7 +36,7 @@ sequenceDiagram
     participant W as Wallet
     participant AS as Auth Service
     participant SC as Smart Contracts
-    participant PG as Provider Gateway
+    participant PG as Lab Gateway
 
     U->>D: Open lab page and connect wallet
     D->>W: Request wallet connection
