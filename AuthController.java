@@ -7,6 +7,7 @@ package decentralabs.auth;
  * contract.abi: The ABI (Application Binary Interface) of your contract.
  */
 
+import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.JwtBuilder;
 
@@ -14,30 +15,27 @@ import java.security.PrivateKey;
 import java.security.interfaces.RSAPublicKey;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
+import java.security.PublicKey;
+import java.security.KeyFactory;
+import java.security.spec.X509EncodedKeySpec;
 
 import java.util.Arrays;
 import java.util.Base64;
 import java.util.HashMap;
-import java.util.List;
 import java.util.Map;
 import java.util.Collections;
 import java.util.UUID;
 
 import java.nio.charset.StandardCharsets;
 import java.math.BigInteger;
-import javax.servlet.http.HttpServletResponse;
 import lombok.Getter;
 
 import org.springframework.web.bind.annotation.*;
 import org.springframework.http.ResponseEntity;
-import org.springframework.security.saml2.provider.service.metadata.Saml2MetadataResolver;
-import org.springframework.security.saml2.provider.service.registration.RelyingPartyRegistrationRepository;
-import org.springframework.security.saml2.provider.service.authentication.Saml2AuthenticatedPrincipal;
-import org.springframework.security.saml2.provider.service.authentication.Saml2Authentication;
-import org.springframework.security.core.Authentication;
-import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.web.client.RestTemplate;
+import org.springframework.web.client.RestClientException;
 
 import org.web3j.crypto.Sign;
 import org.web3j.protocol.Web3j;
@@ -45,8 +43,6 @@ import org.web3j.protocol.http.HttpService;
 import org.web3j.tuples.generated.Tuple4;
 import org.web3j.tuples.generated.Tuple6;
 import org.web3j.tuples.generated.Tuple7;
-import org.web3j.tx.ReadonlyTransactionManager;
-import org.web3j.tx.gas.StaticGasProvider;
 
 
 @RestController
@@ -57,29 +53,41 @@ public class AuthController {
     private String contractAddress;
     @Value("${rpc.url}")
     private String rpcUrl;
-    @Value("${issuer}")
-    private String issuer;
-    @Value("${serviceprovider.registration-id}")
-    private String registrationId;
+    @Value("${base.domain}")
+    private String baseDomain;
+    @Value("${server.servlet.context-path}")
+    private String contextPath;
+    @Value("${endpoint.auth2}")
+    private String auth2Endpoint;
+    @Value("${endpoint.jwks}")
+    private String jwksEndpoint;
+    @Value("${endpoint.guacamole}")
+    private String guacamoleEndpoint;
+    @Value("${marketplace.public-key-url}")
+    private String marketplacePublicKeyUrl;
 
     @Autowired
     private final KeyService keyService;
 
     private Map<String, Long> walletTimestamps;
-    private final Web3j web3;
-
-    private final Saml2MetadataResolver metadataResolver;
-    private final RelyingPartyRegistrationRepository relyingPartyRegistrationRepository;
+    
+    // Cache for marketplace public key
+    private PublicKey cachedMarketplacePublicKey;
+    private long lastKeyFetchTime = 0;
+    private static final long KEY_CACHE_DURATION = 86400000; // 24 hours in milliseconds
 
     @Autowired
-    public AuthController(KeyService keyService,
-                        Saml2MetadataResolver metadataResolver,
-                        RelyingPartyRegistrationRepository relyingPartyRegistrationRepository) {
+    public AuthController(KeyService keyService) {
         this.walletTimestamps = new HashMap<>();
-        this.web3 = Web3j.build(new HttpService(rpcUrl));
+        Web3j.build(new HttpService(rpcUrl));
         this.keyService = keyService;
-        this.metadataResolver = metadataResolver;
-        this.relyingPartyRegistrationRepository = relyingPartyRegistrationRepository;
+    }
+    
+    /**
+     * Helper method to construct the issuer URL from base domain and context path
+     */
+    private String getIssuerUrl() {
+        return baseDomain + contextPath;
     }
     
 
@@ -94,10 +102,11 @@ public class AuthController {
     // /auth/.well-known/openid-configuration
     @GetMapping("/.well-known/openid-configuration")
     public ResponseEntity<Map<String, String>> openidConfig() {
+        String issuerUrl = getIssuerUrl();
         Map<String, String> config = new HashMap<>();
-        config.put("issuer", issuer);
-        config.put("authorization_endpoint", issuer + "/auth2");
-        config.put("jwks_uri", issuer + "/jwks");
+        config.put("issuer", issuerUrl);
+        config.put("authorization_endpoint", issuerUrl + auth2Endpoint);
+        config.put("jwks_uri", issuerUrl + jwksEndpoint);
         return ResponseEntity.ok(config);
     }
 
@@ -169,32 +178,24 @@ public class AuthController {
         return handleWalletAuthentication(request, false);
     }
 
-    ///// SAML2 AUTHENTICATION ENDPOINTS /////
 
-    // Endpoint to provide SAML2 metadata
-    @GetMapping("/saml2-metadata")
-    public void saml2Metadata(HttpServletResponse response) throws Exception {
-        String metadata = metadataResolver.resolve(
-            relyingPartyRegistrationRepository.findByRegistrationId(registrationId)
-            );
-        response.setContentType("application/xml");
-        response.getWriter().write(metadata);
-    }
-  
-    /* Endpoint to authenticate user through IdP, check bookings on blockchain and return the JWT
-       It provides authentication and authorization */
-    // /auth/saml2-auth2
-    @PostMapping("/saml2-auth2")
-    public String saml2Auth2(@RequestBody Request request) {
-        return handleSamlAuthentication(request, true);
+
+    ///// MARKETPLACE JWT AUTHENTICATION ENDPOINTS /////
+
+    /* Endpoint to authenticate user from marketplace with signed JWT, check bookings and return JWT
+       It provides authentication and authorization for marketplace users */
+    // /auth/marketplace-auth2
+    @PostMapping("/marketplace-auth2")
+    public String marketplaceAuth2(@RequestBody MarketplaceRequest request) {
+        return handleMarketplaceJwtAuthentication(request, true);
     }
 
-    /* Endpoint to authenticate user through the IdP and return the JWT
-       It only provides authentication */
-    // /auth/saml2-auth
-    @PostMapping("/saml2-auth")
-    public String saml2Auth(@RequestBody Request request) {
-        return handleSamlAuthentication(request, false);
+    /* Endpoint to authenticate user from marketplace with signed JWT and return JWT
+       It only provides authentication for marketplace users */
+    // /auth/marketplace-auth
+    @PostMapping("/marketplace-auth")
+    public String marketplaceAuth(@RequestBody MarketplaceRequest request) {
+        return handleMarketplaceJwtAuthentication(request, false);
     }
 
 
@@ -287,67 +288,6 @@ public class AuthController {
         return recoveredAddress;
     }
 
-    private String handleSamlAuthentication(Request request, boolean includeBookingInfo) {
-        try {
-            // Validate lab_url if required
-            String labId = request != null ? request.getLabId() : null;
-            if (!includeBookingInfo && labId == null) {
-                return "{\"error\": \"Missing parameters.\"}";
-            }
-
-            // Get authentication from SecurityContext
-            Authentication authentication = 
-                    SecurityContextHolder.getContext().getAuthentication();
-            if (!(authentication instanceof Saml2Authentication)) {
-                return "{\"error\": \"Wrong authentication.\"}";
-            }
-
-            Saml2Authentication samlAuth = (Saml2Authentication) authentication;
-            Saml2AuthenticatedPrincipal principal = 
-                    (Saml2AuthenticatedPrincipal) samlAuth.getPrincipal();
-
-            // Extract SAML2 attributes
-            Map<String, Object> claims = extractSamlAttributes(principal);
-
-            // Gather claims and generate JWT
-            Map<String, Object> bookingInfo = includeBookingInfo ? 
-                getBookingInfoFromSAML2(
-                claims.get("id").toString(), 
-                claims.get("affiliation").toString(),
-                labId)
-                : null;
-            String jwt = generateToken(claims, bookingInfo);
-
-            String labUrl = bookingInfo != null ? (String) bookingInfo.get("aud") : null;
-            
-            // Return token and URL in JSON format
-            return "{\"token\": \"" + jwt + "\"" +
-                    (labUrl != null ? ", \"labURL\": \"" + labUrl + "\"" : "") +
-                    "}";
-
-        } catch (Exception e) {
-            return "{\"error\": \"Internal server error\"}";
-        }
-    }
-
-    private Map<String, Object> extractSamlAttributes(Saml2AuthenticatedPrincipal principal) {
-        Map<String, Object> claims = new HashMap<>();
-        claims.put("username", principal.getName());
-        claims.put("id", 
-            principal.getAttributes().getOrDefault("uid", List.of("")).get(0));
-        claims.put("email", 
-            principal.getAttributes().getOrDefault("email", List.of("")).get(0));
-        claims.put("name", 
-            principal.getAttributes().getOrDefault("displayName", List.of("")));
-        claims.put("affiliation", 
-            principal.getAttributes().getOrDefault("schacHomeOrganization", List.of("")));
-        claims.put("role", 
-            principal.getAttributes().getOrDefault("eduPersonAffiliation", List.of("")));
-        claims.put("scopedRole", 
-            principal.getAttributes().getOrDefault("eduPersonScopedAffiliation", List.of("")));
-        return claims;
-    }
-
     // Method to generate the JWT token using the RSA key
     private String generateToken(Map<String, Object> claims, Map<String, Object> bookingInfo) throws Exception {
         String aud = null;
@@ -373,7 +313,7 @@ public class AuthController {
                 .add("typ", "JWT")
                 .add("kid", kid)
                 .and()
-                .claim("iss", issuer)
+                .claim("iss", getIssuerUrl())
                 .claim("iat", iat)
                 .claim("jti", jti); // Prevent replayability
     
@@ -441,8 +381,8 @@ public class AuthController {
             new BigInteger("1"),                                    // labId
             "https://metadata",                                  // metadata
             new BigInteger("2"),                                    // price
-            "https://sarlab.dia.uned.es/auth2",                  // authURI
-            "https://sarlab.dia.uned.es/guacamole",              // accessURI
+            getIssuerUrl() + auth2Endpoint,                      // authURI
+            baseDomain + guacamoleEndpoint,                      // accessURI
             "JWTtest"                                            // accessKey
         );
 
@@ -465,7 +405,7 @@ public class AuthController {
         );*/
 
         Tuple4<String, String, BigInteger, BigInteger> info = new Tuple4<>(
-            "https://sarlab.dia.uned.es/guacamole",
+            baseDomain + guacamoleEndpoint,
             "JWTtest",
             BigInteger.valueOf(System.currentTimeMillis() / 1000)
                         .subtract(BigInteger.valueOf(300)),
@@ -484,18 +424,217 @@ public class AuthController {
         return bookingInfo;
     }
 
+    private String handleMarketplaceJwtAuthentication(MarketplaceRequest request, boolean includeBookingInfo) {
+        try {
+            // Validate required parameters
+            if (request.getMarketplaceToken() == null || 
+                (includeBookingInfo && request.getLabId() == null)) {
+                return "{\"error\": \"Missing parameters.\"}";
+            }
+
+            // Validate timestamp to prevent replay attacks
+            if (isMarketplaceTimestampExpired(request.getTimestamp())) {
+                return "{\"error\": \"Request timestamp expired.\"}";
+            }
+
+            // Validate and extract claims from marketplace JWT
+            Map<String, Object> claims = validateAndExtractMarketplaceJWT(request.getMarketplaceToken());
+            if (claims == null || claims.isEmpty()) {
+                return "{\"error\": \"Invalid marketplace token or could not extract user information.\"}";
+            }
+
+            // Gather booking info if required
+            Map<String, Object> bookingInfo = includeBookingInfo ? 
+                getBookingInfoFromSAML2(
+                    claims.get("id") != null ? claims.get("id").toString() : "", 
+                    claims.get("affiliation") != null ? claims.get("affiliation").toString() : "",
+                    request.getLabId())
+                : null;
+
+            // Generate JWT
+            String jwt = generateToken(claims, bookingInfo);
+            String labUrl = bookingInfo != null ? (String) bookingInfo.get("aud") : null;
+
+            // Return token and URL in JSON format
+            return "{\"token\": \"" + jwt + "\"" +
+                    (labUrl != null ? ", \"labURL\": \"" + labUrl + "\"" : "") +
+                    "}";
+
+        } catch (Exception e) {
+            e.printStackTrace();
+            return "{\"error\": \"Internal server error processing marketplace request.\"}";
+        }
+    }
+
+    private boolean isMarketplaceTimestampExpired(long timestamp) {
+        long currentTime = System.currentTimeMillis() / 1000;
+        return currentTime - timestamp > 300; // 5 minutes for marketplace requests
+    }
+
+    /**
+     * Validates the JWT token from marketplace and extracts user claims
+     * This provides cryptographic guarantee that the token comes from the trusted marketplace
+     */
+    private Map<String, Object> validateAndExtractMarketplaceJWT(String marketplaceToken) {
+        return validateAndExtractMarketplaceJWT(marketplaceToken, false);
+    }
+    
+    /**
+     * Validates JWT with retry logic for key refresh on signature failures
+     */
+    private Map<String, Object> validateAndExtractMarketplaceJWT(String marketplaceToken, boolean isRetry) {
+        try {
+            // Get marketplace public key
+            PublicKey publicKey = getMarketplacePublicKey(isRetry);
+            if (publicKey == null) {
+                return null;
+            }
+
+            // Validate and parse JWT
+            @SuppressWarnings("deprecation")
+            Claims claims = Jwts.parser()
+                .setSigningKey(publicKey)
+                .build()
+                .parseClaimsJws(marketplaceToken)
+                .getBody();
+
+            // Extract user information from JWT claims
+            Map<String, Object> userClaims = new HashMap<>();
+            
+            // Standard JWT claims
+            userClaims.put("username", claims.getSubject());
+            if (claims.get("email") != null) {
+                userClaims.put("email", claims.get("email"));
+            }
+            
+            // Custom claims from SAML2 attributes
+            if (claims.get("uid") != null) {
+                userClaims.put("id", claims.get("uid"));
+            }
+            if (claims.get("displayName") != null) {
+                userClaims.put("name", claims.get("displayName"));
+            }
+            if (claims.get("schacHomeOrganization") != null) {
+                userClaims.put("affiliation", claims.get("schacHomeOrganization"));
+            }
+            if (claims.get("eduPersonAffiliation") != null) {
+                userClaims.put("role", claims.get("eduPersonAffiliation"));
+            }
+            if (claims.get("eduPersonScopedAffiliation") != null) {
+                userClaims.put("scopedRole", claims.get("eduPersonScopedAffiliation"));
+            }
+
+            return userClaims;
+
+        } catch (io.jsonwebtoken.security.SignatureException e) {
+            // Signature validation failed - try refreshing the key once
+            if (!isRetry) {
+                System.err.println("JWT signature validation failed, attempting key refresh: " + e.getMessage());
+                return validateAndExtractMarketplaceJWT(marketplaceToken, true);
+            }
+            System.err.println("JWT signature validation failed even after key refresh: " + e.getMessage());
+            return null;
+        } catch (Exception e) {
+            System.err.println("JWT validation error: " + e.getMessage());
+            return null; // Invalid token
+        }
+    }
+    
+    /**
+     * Fetches the marketplace public key with optional cache bypass
+     * @param forceRefresh if true, bypasses cache and fetches fresh key
+     */
+    private PublicKey getMarketplacePublicKey(boolean forceRefresh) {
+        try {
+            long currentTime = System.currentTimeMillis();
+            
+            // Return cached key if valid and not forcing refresh
+            if (!forceRefresh && 
+                cachedMarketplacePublicKey != null && 
+                (currentTime - lastKeyFetchTime) < KEY_CACHE_DURATION) {
+                return cachedMarketplacePublicKey;
+            }
+            
+            // Fetch key from URL
+            PublicKey freshKey = fetchPublicKeyFromUrl();
+            if (freshKey != null) {
+                cachedMarketplacePublicKey = freshKey;
+                lastKeyFetchTime = currentTime;
+                return freshKey;
+            }
+            
+            // If fetch failed and we have a cached key, use it as fallback
+            if (cachedMarketplacePublicKey != null) {
+                return cachedMarketplacePublicKey;
+            }
+            
+            return null;
+            
+        } catch (Exception e) {
+            e.printStackTrace();
+            // Return cached key as fallback if available
+            return cachedMarketplacePublicKey;
+        }
+    }
+    
+    /**
+     * Fetches the public key from the marketplace URL
+     */
+    private PublicKey fetchPublicKeyFromUrl() {
+        try {
+            if (marketplacePublicKeyUrl == null || marketplacePublicKeyUrl.isEmpty()) {
+                return null;
+            }
+            
+            RestTemplate restTemplate = new RestTemplate();
+            String publicKeyPem = restTemplate.getForObject(marketplacePublicKeyUrl, String.class);
+            
+            if (publicKeyPem == null || publicKeyPem.isEmpty()) {
+                return null;
+            }
+            
+            // Remove PEM headers and whitespace
+            String cleanedPem = publicKeyPem
+                .replace("-----BEGIN PUBLIC KEY-----", "")
+                .replace("-----END PUBLIC KEY-----", "")
+                .replaceAll("\\s", "");
+
+            // Decode and create public key
+            byte[] keyBytes = Base64.getDecoder().decode(cleanedPem);
+            X509EncodedKeySpec keySpec = new X509EncodedKeySpec(keyBytes);
+            KeyFactory keyFactory = KeyFactory.getInstance("RSA");
+            
+            return keyFactory.generatePublic(keySpec);
+            
+        } catch (RestClientException e) {
+            System.err.println("Failed to fetch public key from URL: " + marketplacePublicKeyUrl + " - " + e.getMessage());
+            return null;
+        } catch (Exception e) {
+            System.err.println("Error processing public key from URL: " + e.getMessage());
+            return null;
+        }
+    }
+
 
 
     /*
      * CLASSES
      */
 
-    // General class to represent the request body when using wallet or SSO authentication
+    // General class to represent the request body from the marketplace when using wallet authentication
     @Getter
     static class Request {
         private String wallet;
         private String signature;
         private String labId;
+    }
+
+    // Class to represent requests from marketplace with signed JWT authentication
+    @Getter
+    static class MarketplaceRequest {
+        private String marketplaceToken;   // JWT signed by marketplace containing user info
+        private String labId;              // Lab ID for booking validation
+        private long timestamp;            // Timestamp to prevent replay attacks
     }
 
 }
