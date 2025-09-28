@@ -26,7 +26,7 @@ It provides the following endpoints when the war package is deployed into Tomcat
 
 There is a running example of this microservice in sarlab.dia.uned.es/auth2, but users can use this code as an inspiration to implement their own auth service or just deploy it themselves as it is for their own purposes.
 
-The following image shows the sequence diagram that illustrates the process for authenticating and authorizing a user in the lab provider infrastructure through DecentraLabs.
+The following image shows the sequence diagram that illustrates the process for authenticating and authorizing a (wallet-logged in) user in the lab provider infrastructure through DecentraLabs.
 
 ```mermaid
 sequenceDiagram
@@ -60,3 +60,5 @@ sequenceDiagram
     U->>PG: Request guacamole path carrying jwt
     Note over PG: Gateway starts its own verification flow
 ```
+
+The process for authenticating and authorizing an SSO-logged in user will be added and described here when this feature is fully implemented.
