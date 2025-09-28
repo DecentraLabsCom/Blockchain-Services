@@ -1,6 +1,53 @@
+---
+description: >-
+  Authentication and authorization service connecting your lab access control
+  system to the blockchain
+---
+
 # Auth Service - JWT Authentication
 
 JWT authentication microservice for DecentraLabs Marketplace.
+
+<figure><img src=".gitbook/assets/image (1).png" alt=""><figcaption></figcaption></figure>
+
+This microservice provides web3-based JWT tokens and offers a bridge between institutional access control systems (like the **Lab Gateway** in the figure above) with the blockchain-based smart contracts.
+
+The following image shows the sequence diagram that illustrates the process for authenticating and authorizing a (wallet-logged in) user in the lab provider infrastructure through DecentraLabs.
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant U as User Browser
+    participant D as Marketplace
+    participant W as Wallet
+    participant AS as Auth Service
+    participant SC as Smart Contracts
+    participant PG as Lab Gateway
+
+    U->>D: Open lab page and connect wallet
+    D->>W: Request wallet connection
+    W-->>D: Return wallet address
+
+    D->>AS: Ask for signable challenge for address
+    AS-->>D: Send challenge with address and time data
+
+    D->>W: Prompt user to sign challenge
+    W-->>D: Return signature
+
+    D->>AS: Submit address and signature
+    AS->>AS: Verify signature against address
+    AS->>SC: Query active reservation for address
+    SC-->>AS: Return reservation data lab id access uri access key start end
+
+    AS->>AS: Create JWT with iss iat jti aud sub nbf exp labId
+    AS-->>D: Return JWT to dApp
+
+    D->>U: Redirect user to provider access uri with jwt parameter
+    U->>PG: Request guacamole path carrying jwt
+    Note over PG: Gateway starts its own verification flow
+```
+
+The process for authenticating and authorizing an SSO-logged in user will be added and described here when this feature is fully implemented.
 
 ## 🚀 Features
 
@@ -117,7 +164,3 @@ See [Docker Deployment Guide](dev/DOCKER_DEPLOYMENT_GUIDE.md) for complete Docke
 3. Commit changes (`git commit -m 'Add AmazingFeature'`)
 4. Push to branch (`git push origin feature/AmazingFeature`)
 5. Open Pull Request
-
-## 📄 License
-
-This project is licensed under the MIT License - see [LICENSE](LICENSE) file for details.
