@@ -615,6 +615,18 @@ public class AuthController {
         }
     }
 
+    /**
+     * Public method to check if marketplace public key is available (for health checks)
+     */
+    public boolean isMarketplacePublicKeyAvailable() {
+        try {
+            PublicKey key = getMarketplacePublicKey(false);
+            return key != null;
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
 
 
     /*

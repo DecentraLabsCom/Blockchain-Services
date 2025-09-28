@@ -35,6 +35,9 @@ public class SecurityConfig {
     
     @Value("${endpoint.marketplace-auth2}")
     private String marketplaceAuth2Endpoint;
+    
+    @Value("${endpoint.health}")
+    private String healthEndpoint;
 
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
@@ -48,7 +51,8 @@ public class SecurityConfig {
                     authEndpoint,
                     auth2Endpoint,
                     marketplaceAuthEndpoint,
-                    marketplaceAuth2Endpoint
+                    marketplaceAuth2Endpoint,
+                    healthEndpoint
                 )
             )
             .authorizeHttpRequests(authorize -> authorize
@@ -60,6 +64,7 @@ public class SecurityConfig {
                 .antMatchers(auth2Endpoint).permitAll()
                 .antMatchers(marketplaceAuthEndpoint).permitAll()
                 .antMatchers(marketplaceAuth2Endpoint).permitAll()
+                .antMatchers(healthEndpoint).permitAll()
                 .anyRequest().denyAll()
             );
 
@@ -79,6 +84,7 @@ public class SecurityConfig {
         source.registerCorsConfiguration(auth2Endpoint, configuration);
         source.registerCorsConfiguration(marketplaceAuthEndpoint, configuration);
         source.registerCorsConfiguration(marketplaceAuth2Endpoint, configuration);
+        source.registerCorsConfiguration(healthEndpoint, configuration);
         return source;
     }
 }
