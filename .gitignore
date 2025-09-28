@@ -45,7 +45,7 @@ ehthumbs.db
 Thumbs.db
 
 # Application specific
-logs/
+dev/
 *.tmp
 *.bak
 
