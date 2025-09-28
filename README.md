@@ -4,11 +4,11 @@ description: >-
   system to the blockchain
 ---
 
-# Auth Service - JWT Authentication
+# Auth Service
 
 JWT authentication microservice for DecentraLabs Marketplace.
 
-<figure><img src=".gitbook/assets/image (1).png" alt=""><figcaption></figcaption></figure>
+<figure><img src=".gitbook/assets/DecentraLabs - Lab Access.png" alt=""><figcaption></figcaption></figure>
 
 This microservice provides web3-based JWT tokens and offers a bridge between institutional access control systems (like the **Lab Gateway** in the figure above) with the blockchain-based smart contracts.
 
@@ -51,11 +51,11 @@ The process for authenticating and authorizing an SSO-logged in user will be add
 
 ## 🚀 Features
 
-- **JWT Authentication**: JWT token validation
-- **Dynamic Key Retrieval**: Automatic public key downloading
-- **Blockchain Integration**: Smart contract integration
-- **Health Monitoring**: Health endpoint for monitoring
-- **Docker Ready**: Multi-stage build containerization
+* **JWT Authentication**: JWT token validation
+* **Dynamic Key Retrieval**: Automatic public key downloading
+* **Blockchain Integration**: Smart contract integration
+* **Health Monitoring**: Health endpoint for monitoring
+* **Docker Ready**: Multi-stage build containerization
 
 ## 🏗️ Architecture
 
@@ -68,25 +68,28 @@ The process for authenticating and authorizing an SSO-logged in user will be add
 
 ## 🔧 Endpoints
 
-- `POST /auth/auth` - Main authentication
-- `POST /auth/auth2` - Alternative authentication  
-- `GET /auth/jwks` - JSON Web Keys
-- `POST /auth/marketplace-auth` - Marketplace authentication
-- `POST /auth/guacamole` - Guacamole integration
-- `GET /auth/health` - Health check
+* `POST /auth/auth` - Main authentication
+* `POST /auth/auth2` - Alternative authentication
+* `GET /auth/jwks` - JSON Web Keys
+* `POST /auth/marketplace-auth` - Marketplace authentication
+* `POST /auth/guacamole` - Guacamole integration
+* `GET /auth/health` - Health check
 
 ## 🛠️ Local Development
 
 ### Prerequisites
-- Java 11+
-- Maven 3.6+
+
+* Java 11+
+* Maven 3.6+
 
 ### Build
+
 ```bash
 mvn clean package -DskipTests
 ```
 
 ### Run
+
 ```bash
 java -jar target/auth-service.war
 ```
@@ -94,11 +97,13 @@ java -jar target/auth-service.war
 ## 🐳 Docker
 
 ### Multi-Stage Build
+
 ```bash
 docker build -t auth-service:latest .
 ```
 
 ### Run
+
 ```bash
 docker run -p 8080:8080 \
   -v $(pwd)/config:/app/config:ro \
@@ -109,28 +114,31 @@ docker run -p 8080:8080 \
 ## ⚙️ Configuration
 
 ### Environment Variables
-- `SPRING_PROFILES_ACTIVE` - Active profile (default, docker, prod)
-- `JAVA_OPTS` - JVM options
-- `CONTRACT_ADDRESS` - Contract address
-- `RPC_URL` - Blockchain node URL
-- `WALLET_ADDRESS` - Wallet address
-- `ALLOWED_ORIGINS` - Allowed CORS origins
+
+* `SPRING_PROFILES_ACTIVE` - Active profile (default, docker, prod)
+* `JAVA_OPTS` - JVM options
+* `CONTRACT_ADDRESS` - Contract address
+* `RPC_URL` - Blockchain node URL
+* `WALLET_ADDRESS` - Wallet address
+* `ALLOWED_ORIGINS` - Allowed CORS origins
 
 ### Configuration Files
-- `config/application.properties` - Main configuration
-- `keys/private_key.pem` - JWT private key
-- `keys/public_key.pem` - JWT public key
+
+* `config/application.properties` - Main configuration
+* `keys/private_key.pem` - JWT private key
+* `keys/public_key.pem` - JWT public key
 
 ## 🔐 Security
 
-- Non-root user execution
-- JWT validation with rotatable keys
-- CORS configured
-- Integrated health checks
+* Non-root user execution
+* JWT validation with rotatable keys
+* CORS configured
+* Integrated health checks
 
 ## 📊 Monitoring
 
 Health endpoint available at `/auth/health`:
+
 ```json
 {
   "status": "UP",
@@ -152,10 +160,10 @@ See [Docker Deployment Guide](dev/DOCKER_DEPLOYMENT_GUIDE.md) for complete Docke
 
 ## 📝 Documentation
 
-- [WAR Deployment Guide](dev/DEPLOYMENT_GUIDE_WAR.md)
-- [Docker Deployment Guide](dev/DOCKER_DEPLOYMENT_GUIDE.md)
-- [Health Endpoint](dev/HEALTH_ENDPOINT.md)
-- [JWT Implementation](dev/JWT_IMPLEMENTATION.md)
+* [WAR Deployment Guide](dev/DEPLOYMENT_GUIDE_WAR.md)
+* [Docker Deployment Guide](dev/DOCKER_DEPLOYMENT_GUIDE.md)
+* [Health Endpoint](dev/HEALTH_ENDPOINT.md)
+* [JWT Implementation](dev/JWT_IMPLEMENTATION.md)
 
 ## 🤝 Contributing
 
