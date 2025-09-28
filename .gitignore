@@ -49,15 +49,6 @@ logs/
 *.tmp
 *.bak
 
-# Temporary scripts (remove after repo setup)
-execute-repo-update.ps1
-execute-repo-update.sh
-copy-to-git-repo.ps1
-copy-to-git-repo.sh
-git-update-commands.ps1
-update-repo.ps1
-MANUAL_GIT_COMMANDS.md
-
 # Environment variables
 .env
 .env.local
