@@ -1,12 +1,11 @@
 ---
 description: >-
-  Authentication and authorization service connecting your lab access control
-  system to the blockchain
+  Authentication and authorization service connecting your lab access control system to the blockchain
 ---
 
 # Auth Service
 
-JWT authentication microservice for DecentraLabs Marketplace.
+JWT authentication microservice for the DecentraLabs ecosystem.
 
 <figure><img src=".gitbook/assets/DecentraLabs - Lab Access.png" alt=""><figcaption></figcaption></figure>
 
@@ -51,10 +50,12 @@ The process for authenticating and authorizing an SSO-logged in user will be add
 
 ## 🚀 Features
 
+* **Wallet Authentication**: Wallet signature verification
 * **JWT Authentication**: JWT token validation
 * **Dynamic Key Retrieval**: Automatic public key downloading
 * **Blockchain Integration**: Smart contract integration
 * **Health Monitoring**: Health endpoint for monitoring
+* **Maven Deployment**: Maven-ready to be deployed in production
 * **Docker Ready**: Multi-stage build containerization
 
 ## 🏗️ Architecture
@@ -68,10 +69,12 @@ The process for authenticating and authorizing an SSO-logged in user will be add
 
 ## 🔧 Endpoints
 
-* `POST /auth/auth` - Main authentication
-* `POST /auth/auth2` - Alternative authentication
+* 
+* `POST /auth/auth` - Authentication
+* `POST /auth/auth2` - Authentication + authorization
 * `GET /auth/jwks` - JSON Web Keys
-* `POST /auth/marketplace-auth` - Marketplace authentication
+* `POST /auth/marketplace-auth` - Marketplace auth
+* `POST /auth/marketplace-auth` - Marketplace auth2
 * `POST /auth/guacamole` - Guacamole integration
 * `GET /auth/health` - Health check
 
@@ -79,7 +82,7 @@ The process for authenticating and authorizing an SSO-logged in user will be add
 
 ### Prerequisites
 
-* Java 11+
+* Java 18+
 * Maven 3.6+
 
 ### Build
@@ -151,6 +154,59 @@ Health endpoint available at `/auth/health`:
       }
     }
   }
+}
+```
+
+## �🔐 Authentication Flow Example
+
+### 1. Wallet Challenge
+```
+POST /auth/message
+{
+  "wallet_address": "0x742d35Cc6E7C0532f3E8bc8F3aF1c567aE7aF2"
+}
+
+Response:
+{
+  "message": "0x742d35Cc6E7C0532f3E8bc8F3aF1c567aE7aF2:1695478400",
+  "timestamp": 1695478400
+}
+```
+
+### 2. Signature Verification
+```
+POST /auth/auth2
+{
+  "wallet_address": "0x742d35Cc6E7C0532f3E8bc8F3aF1c567aE7aF2",
+  "signature": "0x1234567890abcdef...",
+  "message": "0x742d35Cc6E7C0532f3E8bc8F3aF1c567aE7aF2:1695478400"
+}
+
+Response:
+{
+  "jwt": "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9...",
+  "redirect_url": "https://yourdomain.com/guacamole/?jwt=..."
+}
+```
+
+### 3. Lab Access
+The JWT token contains lab access permissions based on blockchain reservations:
+
+```json
+{
+  "iss": "https://yourdomain.com/auth",
+  "aud": "https://yourdomain.com/guacamole",
+  "sub": "0x742d35Cc6E7C0532f3E8bc8F3aF1c567aE7aF2",
+  "labs": [
+    {
+      "provider": "university-chemistry",
+      "lab_id": "reactor-control-01",
+      "reservation_id": "res_894736",
+      "valid_until": 1695482000
+    }
+  ],
+  "exp": 1695482000,
+  "iat": 1695478400
 }
 ```
 
