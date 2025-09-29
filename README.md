@@ -157,7 +157,7 @@ Health endpoint available at `/auth/health`:
 }
 ```
 
-## �🔐 Authentication Flow Example
+## 🔐 Authentication Flow Example
 
 ### 1. Wallet Challenge
 ```
