@@ -1,5 +1,5 @@
 # Build Stage - Compila el código fuente
-FROM maven:3.8.6-openjdk-11 AS builder
+FROM maven:3.8-eclipse-temurin-18 AS builder
 
 WORKDIR /build
 
@@ -12,12 +12,12 @@ COPY src ./src
 RUN mvn clean package -DskipTests -B
 
 # Verify WAR was created
-RUN test -f target/auth-service.war
+RUN test -f target/auth-1.0-SNAPSHOT.war
 
 #########################################
 # Runtime Stage - Imagen final optimizada
 #########################################
-FROM openjdk:11-jre-slim
+FROM eclipse-temurin:18-jre
 
 # Metadata
 LABEL maintainer="DecentraLabs <tech@decentralabs.com>"
@@ -37,7 +37,7 @@ RUN groupadd -r appuser && useradd -r -g appuser appuser
 WORKDIR /app
 
 # Copy WAR from builder stage
-COPY --from=builder /build/target/auth-service.war ./auth-service.war
+COPY --from=builder /build/target/auth-1.0-SNAPSHOT.war ./auth-service.war
 
 # Copy configuration and scripts (will be mounted as volumes)
 # COPY config/application.properties ./config/
