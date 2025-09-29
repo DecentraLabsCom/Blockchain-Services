@@ -74,8 +74,7 @@ The process for authenticating and authorizing an SSO-logged in user will be add
 * `POST /auth/auth2` - Authentication + authorization
 * `GET /auth/jwks` - JSON Web Keys
 * `POST /auth/marketplace-auth` - Marketplace auth
-* `POST /auth/marketplace-auth` - Marketplace auth2
-* `POST /auth/guacamole` - Guacamole integration
+* `POST /auth/marketplace-auth2` - Marketplace auth2
 * `GET /auth/health` - Health check
 
 ## 🛠️ Local Development
