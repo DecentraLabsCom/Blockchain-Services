@@ -69,7 +69,7 @@ The process for authenticating and authorizing an SSO-logged in user will be add
 
 ## 🔧 Endpoints
 
-* 
+* `POST /auth/message` - Wallet challenge
 * `POST /auth/auth` - Authentication
 * `POST /auth/auth2` - Authentication + authorization
 * `GET /auth/jwks` - JSON Web Keys
