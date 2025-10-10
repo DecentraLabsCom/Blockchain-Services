@@ -1,12 +1,5 @@
 package decentralabs.auth;
 
-//import decentralabs.auth.ReservationContract;
-/*
- * web3j generate solidity -b path/to/contract.bin -a path/to/contract.abi -o /path/to/output/folder -p decentralabs.auth
- * contract.bin: The compiled bytecode of your smart contract.
- * contract.abi: The ABI (Application Binary Interface) of your contract.
- */
-
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.JwtBuilder;
@@ -40,9 +33,10 @@ import org.springframework.web.client.RestClientException;
 import org.web3j.crypto.Sign;
 import org.web3j.protocol.Web3j;
 import org.web3j.protocol.http.HttpService;
-import org.web3j.tuples.generated.Tuple4;
-import org.web3j.tuples.generated.Tuple6;
-import org.web3j.tuples.generated.Tuple7;
+import org.web3j.tx.ReadonlyTransactionManager;
+import org.web3j.tx.gas.StaticGasProvider;
+
+import decentralabs.auth.contract.Diamond;
 
 
 @RestController
@@ -218,14 +212,20 @@ public class AuthController {
     private String handleWalletAuthentication(Request request, boolean includeBookingInfo) {
         try {
             // Validate required parameters
-            if (request.getWallet() == null || 
-                request.getSignature() == null || 
-                request.getLabId() == null) {
-                    return "{\"error\": \"Missing parameters.\"}";
+            if (request.getWallet() == null || request.getSignature() == null) {
+                return "{\"error\": \"Missing wallet or signature.\"}";
+            }
+            
+            // For booking validation, require either reservationKey OR labId
+            if (includeBookingInfo && 
+                (request.getReservationKey() == null || request.getReservationKey().isEmpty()) &&
+                (request.getLabId() == null || request.getLabId().isEmpty())) {
+                return "{\"error\": \"Missing reservationKey or labId for booking validation.\"}";
             }
 
             String wallet = request.getWallet();
             String signature = request.getSignature();
+            String reservationKey = request.getReservationKey();
             String labId = request.getLabId();
 
             // Validate timestamp
@@ -242,7 +242,7 @@ public class AuthController {
 
             // Gather claims and generate JWT
             Map<String, Object> bookingInfo = includeBookingInfo ? 
-                getBookingInfoFromWallet(wallet, labId) 
+                getBookingInfoFromWallet(wallet, reservationKey, labId) 
                 : null;
             Map<String, Object> claims = new HashMap<>();
             claims.put("wallet", wallet);
@@ -254,7 +254,11 @@ public class AuthController {
             return "{\"token\": \"" + jwt + "\"" +
                     (labUrl != null ? ", \"labURL\": \"" + labUrl + "\"" : "") +
                     "}";
+        } catch (SecurityException | IllegalStateException e) {
+            return "{\"error\": \"" + e.getMessage() + "\"}";
         } catch (Exception e) {
+            System.err.println("Authentication error: " + e.getMessage());
+            e.printStackTrace();
             return "{\"error\": \"Internal server error\"}";
         }
     }
@@ -281,7 +285,23 @@ public class AuthController {
     private String recoverAddressFromSignature(String message, String signature) 
     throws Exception {
         byte[] messageBytes = message.getBytes(StandardCharsets.UTF_8);
-        Sign.SignatureData sigData = Sign.signatureDataFromHex(signature);
+        
+        // Web3j 5.x: Manual signature parsing
+        // Signature format: 0x + r(64) + s(64) + v(2) = 132 chars
+        if (signature.startsWith("0x")) {
+            signature = signature.substring(2);
+        }
+        
+        byte[] r = org.web3j.utils.Numeric.hexStringToByteArray(signature.substring(0, 64));
+        byte[] s = org.web3j.utils.Numeric.hexStringToByteArray(signature.substring(64, 128));
+        byte v = (byte) Integer.parseInt(signature.substring(128, 130), 16);
+        
+        // Normalize v (27/28 → 0/1)
+        if (v < 27) {
+            v = (byte) (v + 27);
+        }
+        
+        Sign.SignatureData sigData = new Sign.SignatureData(v, r, s);
         BigInteger publicKey = Sign.signedMessageToKey(messageBytes, sigData);
         String recoveredAddress = "0x" + org.web3j.crypto.Keys.getAddress(publicKey);
     
@@ -349,52 +369,258 @@ public class AuthController {
         }
     }
    
-    public Map<String, Object> getBookingInfoFromWallet(String wallet, String labId) {
-        // TODO: Load the smart contract
-        /* ReservationContract contract = ReservationContract.load(
-                contractAddress, web3, new ReadonlyTransactionManager(web3, wallet),
-                new StaticGasProvider(BigInteger.ZERO, BigInteger.ZERO)
-        );
-
-        // Get all reservations registered onchain
-        Typle7<Bytes, BigInteger, String, BigInteger, BigInteger, BigInteger, BigInteger> reservations = 
-            contract.getAllReservations(wallet).send(); */
-        // TODO: loop through reservations and keep the closest one with the right labId, renter and status 1
-        Tuple7<BigInteger, BigInteger, String, BigInteger, BigInteger, BigInteger, BigInteger> reservation = 
-            new Tuple7<>(
-                new BigInteger("1"),                                // reservationKey
-                new BigInteger("1"),                                // labId
-                "0x1234567890abcdef1234567890abcdef12345678",    // renter
-                new BigInteger("2"),                                // price
-                BigInteger.valueOf(System.currentTimeMillis() / 1000)
-                            .subtract(BigInteger.valueOf(300)),     // start
-                BigInteger.valueOf(System.currentTimeMillis() / 1000)
-                            .add(BigInteger.valueOf(300)),          // end
-                new BigInteger("1")                                 // status
+    /**
+     * Retrieves booking information from blockchain for a wallet
+     * Supports two modes:
+     * 1. Direct access with reservationKey (more efficient - O(1) lookup)
+     * 2. Search by labId if reservationKey not provided (less efficient - O(n) search)
+     * 
+     * @param wallet The user's wallet address
+     * @param reservationKey Optional - the reservation key as hex string (bytes32)
+     * @param labId Optional - the lab ID to search for (required if reservationKey not provided)
+     * @return Map containing booking information for JWT claims
+     */
+    public Map<String, Object> getBookingInfoFromWallet(String wallet, String reservationKey, String labId) {
+        try {           
+            // Determine which method to use based on available parameters
+            if (reservationKey != null && !reservationKey.isEmpty()) {
+                // OPTIMAL PATH: Use reservationKey for direct O(1) access
+                return getBookingInfoByReservationKey(wallet, reservationKey);
+            } else if (labId != null && !labId.isEmpty()) {
+                // FALLBACK PATH: Search by labId (requires iteration)
+                return getBookingInfoByLabId(wallet, labId);
+            } else {
+                throw new IllegalArgumentException(
+                    "Must provide either 'reservationKey' (recommended) or 'labId'"
+                );
+            }
+        } catch (SecurityException | IllegalStateException | IllegalArgumentException e) {
+            // Re-throw validation errors as-is
+            throw e;
+        } catch (Exception e) {
+            System.err.println("Error fetching booking info: " + e.getMessage());
+            e.printStackTrace();
+            throw new RuntimeException(
+                "Failed to retrieve booking information from blockchain: " + e.getMessage(),
+                e
             );
-
-        /* Get other info for the JWT claims: lab access URI (aud) and username for accessing
-        the lab (sub)
-        Tuple6<BigInteger, String, BigInteger, String, String, String> lab = 
-            contract.getLab(reservation.component2()).send(); */
-        Tuple6<BigInteger, String, BigInteger, String, String, String> lab = new Tuple6<>(
-            new BigInteger("1"),                                    // labId
-            "https://metadata",                                  // metadata
-            new BigInteger("2"),                                    // price
-            getIssuerUrl() + auth2Endpoint,                      // authURI
-            baseDomain + guacamoleEndpoint,                      // accessURI
-            "JWTtest"                                            // accessKey
+        }
+    }
+    
+    /**
+     * Retrieves booking info using reservationKey directly (OPTIMAL - 2 blockchain calls)
+     * Call flow: getReservation(key) → getLab(tokenId)
+     */
+    private Map<String, Object> getBookingInfoByReservationKey(String wallet, String reservationKeyHex) 
+            throws Exception {
+        
+        // 1. Convert reservationKey from hex to bytes32
+        byte[] reservationKeyBytes = hexStringToByteArray(reservationKeyHex);
+        
+        // 2. Load the Diamond contract
+        Web3j web3 = Web3j.build(new HttpService(rpcUrl));
+        Diamond diamond = Diamond.load(
+            contractAddress,
+            web3,
+            new ReadonlyTransactionManager(web3, wallet),
+            new StaticGasProvider(BigInteger.ZERO, BigInteger.ZERO)
         );
 
-        // Wrap the data received from the contract in a JSON Map
+        // 3. Get reservation data (ONE CALL) - returns Reservation struct
+        Diamond.Reservation reservation = diamond.getReservation(reservationKeyBytes).send();
+        
+        BigInteger labId = reservation.labId;      // NOT tokenId, it's labId!
+        String renter = reservation.renter;
+        BigInteger price = reservation.price;
+        BigInteger start = reservation.start;
+        BigInteger end = reservation.end;
+        BigInteger status = reservation.status;
+
+        // 4. Validate reservation
+        validateReservation(wallet, renter, status, start, end);
+
+        // 5. Get lab information (ONE CALL)
+        Diamond.Lab lab = diamond.getLab(labId).send();
+        Diamond.LabBase base = lab.base;
+        
+        String metadata = base.uri;
+        BigInteger labPrice = base.price;
+        String authURI = base.auth;
+        String accessURI = base.accessURI;
+        String accessKey = base.accessKey;
+
+        // 6. Build and return booking info
+        return buildBookingInfo(
+            labId, reservationKeyHex, price, labPrice, 
+            start, end,
+            accessURI, accessKey, metadata, authURI
+        );
+    }
+
+    /**
+     * Retrieves booking info by labId using direct contract lookup
+     * Call flow: getActiveReservationKeyForUser(tokenId, address) → getReservation(key) → getLab(tokenId)
+     */
+    private Map<String, Object> getBookingInfoByLabId(String wallet, String labIdStr) throws Exception {
+        
+        BigInteger labId = new BigInteger(labIdStr);
+        Web3j web3 = Web3j.build(new HttpService(rpcUrl));
+        
+        // 1. Load Diamond contract
+        Diamond diamond = Diamond.load(
+            contractAddress, web3,
+            new ReadonlyTransactionManager(web3, wallet),
+            new StaticGasProvider(BigInteger.ZERO, BigInteger.ZERO)
+        );
+
+        // 2. Get active reservation key
+        byte[] reservationKeyBytes = diamond.getActiveReservationKeyForUser(labId, wallet).send();
+        
+        // Check if reservation exists (bytes32(0) means no active reservation)
+        if (reservationKeyBytes == null || isEmptyBytes32(reservationKeyBytes)) {
+            throw new IllegalStateException(
+                "No active reservation found for lab " + labIdStr + " and wallet " + wallet
+            );
+        }
+
+        // 3. Get reservation data
+        Diamond.Reservation reservation = diamond.getReservation(reservationKeyBytes).send();
+        
+        String renter = reservation.renter;
+        BigInteger price = reservation.price;
+        BigInteger start = reservation.start;
+        BigInteger end = reservation.end;
+        BigInteger status = reservation.status;
+
+        // 4. Validate reservation
+        validateReservation(wallet, renter, status, start, end);
+
+        // 5. Get lab information (ONE CALL)
+        Diamond.Lab lab = diamond.getLab(labId).send();
+        Diamond.LabBase base = lab.base;
+        
+        String metadata = base.uri;
+        BigInteger labPrice = base.price;
+        String authURI = base.auth;
+        String accessURI = base.accessURI;
+        String accessKey = base.accessKey;
+
+        // 6. Convert reservationKey to hex for response
+        String reservationKeyHex = bytesToHex(reservationKeyBytes);
+
+        // 7. Build and return booking info
+        return buildBookingInfo(
+            labId, reservationKeyHex, price, labPrice,
+            start, end,
+            accessURI, accessKey, metadata, authURI
+        );
+    }
+    
+    /**
+     * Helper method to check if bytes32 is empty (all zeros)
+     */
+    private boolean isEmptyBytes32(byte[] bytes) {
+        if (bytes == null || bytes.length != 32) {
+            return true;
+        }
+        for (byte b : bytes) {
+            if (b != 0) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    /**
+     * Validates reservation ownership, status, and time validity
+     */
+    private void validateReservation(String wallet, String renter, BigInteger status, 
+                                     BigInteger start, BigInteger end) {
+        // Validate ownership
+        if (!renter.equalsIgnoreCase(wallet)) {
+            throw new SecurityException(
+                "Reservation does not belong to this wallet. Expected: " + wallet + ", Found: " + renter
+            );
+        }
+
+        // Validate status (1 = ACTIVE)
+        if (!status.equals(BigInteger.ONE)) {
+            String statusStr = status.equals(BigInteger.ZERO) ? "INACTIVE" : 
+                             status.equals(BigInteger.TWO) ? "CANCELLED" : "UNKNOWN";
+            throw new IllegalStateException("Reservation is not active. Status: " + statusStr);
+        }
+
+        // Validate time range
+        BigInteger currentTime = BigInteger.valueOf(System.currentTimeMillis() / 1000);
+        
+        if (currentTime.compareTo(start) < 0) {
+            throw new IllegalStateException(
+                "Reservation has not started yet. Start: " + start + ", Current: " + currentTime
+            );
+        }
+        
+        if (currentTime.compareTo(end) > 0) {
+            throw new IllegalStateException(
+                "Reservation has expired. End: " + end + ", Current: " + currentTime
+            );
+        }
+    }
+
+    /**
+     * Builds the bookingInfo map for JWT claims
+     */
+    private Map<String, Object> buildBookingInfo(
+            BigInteger labId, String reservationKeyHex,
+            BigInteger price, BigInteger labPrice,
+            BigInteger start, BigInteger end,
+            String accessURI, String accessKey, String metadata, String authURI) {
+        
         Map<String, Object> bookingInfo = new HashMap<>();
-        bookingInfo.put("lab", labId);
-        bookingInfo.put("aud", lab.component5());
-        bookingInfo.put("sub", lab.component6());
-        bookingInfo.put("nbf", reservation.component5());
-        bookingInfo.put("exp", reservation.component6());
+        
+        // JWT Standard Claims
+        bookingInfo.put("aud", accessURI);       // Audience - where token is used
+        bookingInfo.put("sub", accessKey);       // Subject - username for access
+        bookingInfo.put("nbf", start);           // Not Before - reservation start
+        bookingInfo.put("exp", end);             // Expiration - reservation end
+        
+        // Custom Claims
+        bookingInfo.put("lab", labId);                      // Lab ID
+        bookingInfo.put("reservationKey", reservationKeyHex); // For reference
+        bookingInfo.put("price", price);                    // Price paid
+        bookingInfo.put("labPrice", labPrice);              // Lab base price
+        bookingInfo.put("metadata", metadata);              // Lab metadata URI
+        bookingInfo.put("authURI", authURI);                // This auth service
 
         return bookingInfo;
+    }
+
+    /**
+     * Helper method to convert hex string to byte array
+     */
+    private byte[] hexStringToByteArray(String hex) {
+        // Remove "0x" prefix if present
+        if (hex.startsWith("0x") || hex.startsWith("0X")) {
+            hex = hex.substring(2);
+        }
+        
+        int len = hex.length();
+        byte[] data = new byte[len / 2];
+        for (int i = 0; i < len; i += 2) {
+            data[i / 2] = (byte) ((Character.digit(hex.charAt(i), 16) << 4)
+                                 + Character.digit(hex.charAt(i+1), 16));
+        }
+        return data;
+    }
+
+    /**
+     * Helper method to convert byte array to hex string
+     */
+    private String bytesToHex(byte[] bytes) {
+        StringBuilder sb = new StringBuilder("0x");
+        for (byte b : bytes) {
+            sb.append(String.format("%02x", b));
+        }
+        return sb.toString();
     }
 
     public Map<String, Object> getBookingInfoFromSAML2(String userid, String affiliation, String labId) {
@@ -404,22 +630,21 @@ public class AuthController {
                 new StaticGasProvider(BigInteger.ZERO, BigInteger.ZERO)
         );*/
 
-        Tuple4<String, String, BigInteger, BigInteger> info = new Tuple4<>(
-            baseDomain + guacamoleEndpoint,
-            "JWTtest",
-            BigInteger.valueOf(System.currentTimeMillis() / 1000)
-                        .subtract(BigInteger.valueOf(300)),
-            BigInteger.valueOf(System.currentTimeMillis() / 1000)
-                        .add(BigInteger.valueOf(300))
-        );
+        // Generate temporary test credentials
+        String aud = baseDomain + guacamoleEndpoint;
+        String sub = "JWTtest";
+        BigInteger nbf = BigInteger.valueOf(System.currentTimeMillis() / 1000)
+                        .subtract(BigInteger.valueOf(300));
+        BigInteger exp = BigInteger.valueOf(System.currentTimeMillis() / 1000)
+                        .add(BigInteger.valueOf(300));
 
         // Wrap the data received from the contract in a JSON Map
         Map<String, Object> bookingInfo = new HashMap<>();
         bookingInfo.put("lab", labId);
-        bookingInfo.put("aud", info.component1());
-        bookingInfo.put("sub", info.component2());
-        bookingInfo.put("nbf", info.component3());
-        bookingInfo.put("exp", info.component4());
+        bookingInfo.put("aud", aud);
+        bookingInfo.put("sub", sub);
+        bookingInfo.put("nbf", nbf);
+        bookingInfo.put("exp", exp);
 
         return bookingInfo;
     }
@@ -638,7 +863,8 @@ public class AuthController {
     static class Request {
         private String wallet;
         private String signature;
-        private String labId;
+        private String labId;              // Lab ID - required if reservationKey not provided
+        private String reservationKey;     // Optional - more efficient if provided (bytes32 as hex string)
     }
 
     // Class to represent requests from marketplace with signed JWT authentication
