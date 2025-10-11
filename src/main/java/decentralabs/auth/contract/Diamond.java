@@ -128,8 +128,8 @@ public class Diamond extends Contract {
                 Arrays.asList(new TypeReference<org.web3j.abi.datatypes.Bool>() {}));
         return new RemoteFunctionCall<>(function,
                 () -> {
-                    List<Type> results = executeCallSingleValueReturn(function);
-                    return (Boolean) results.get(0).getValue();
+                    Type result = executeCallSingleValueReturn(function);
+                    return (Boolean) result.getValue();
                 });
     }
     
@@ -144,8 +144,8 @@ public class Diamond extends Contract {
                 Arrays.asList(new TypeReference<Bytes32>() {}));
         return new RemoteFunctionCall<>(function,
                 () -> {
-                    List<Type> results = executeCallSingleValueReturn(function);
-                    return (byte[]) results.get(0).getValue();
+                    Type result = executeCallSingleValueReturn(function);
+                    return (byte[]) result.getValue();
                 });
     }
     
@@ -159,8 +159,8 @@ public class Diamond extends Contract {
                 Arrays.asList(new TypeReference<Uint256>() {}));
         return new RemoteFunctionCall<>(function,
                 () -> {
-                    List<Type> results = executeCallSingleValueReturn(function);
-                    return (BigInteger) results.get(0).getValue();
+                    Type result = executeCallSingleValueReturn(function);
+                    return (BigInteger) result.getValue();
                 });
     }
     
@@ -174,8 +174,8 @@ public class Diamond extends Contract {
                 Arrays.asList(new TypeReference<Bytes32>() {}));
         return new RemoteFunctionCall<>(function,
                 () -> {
-                    List<Type> results = executeCallSingleValueReturn(function);
-                    return (byte[]) results.get(0).getValue();
+                    Type result = executeCallSingleValueReturn(function);
+                    return (byte[]) result.getValue();
                 });
     }
     
