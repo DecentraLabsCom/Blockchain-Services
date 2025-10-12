@@ -1,4 +1,4 @@
-package decentralabs.auth;
+package decentralabs.auth.service;
 
 import org.springframework.stereotype.Service;
 import org.springframework.beans.factory.annotation.Value;

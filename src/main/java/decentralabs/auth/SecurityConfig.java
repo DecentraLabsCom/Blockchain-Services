@@ -18,11 +18,11 @@ public class SecurityConfig {
     @Value("${allowed-origins}")
     private String[] allowedOrigins;
     
-    @Value("${endpoint.auth}")
-    private String authEndpoint;
+    @Value("${endpoint.wallet-auth}")
+    private String walletAuthEndpoint;
     
-    @Value("${endpoint.auth2}")
-    private String auth2Endpoint;
+    @Value("${endpoint.wallet-auth2}")
+    private String walletAuth2Endpoint;
     
     @Value("${endpoint.jwks}")
     private String jwksEndpoint;
@@ -30,11 +30,11 @@ public class SecurityConfig {
     @Value("${endpoint.message}")
     private String messageEndpoint;
     
-    @Value("${endpoint.marketplace-auth}")
-    private String marketplaceAuthEndpoint;
+    @Value("${endpoint.saml-auth}")
+    private String samlAuthEndpoint;
     
-    @Value("${endpoint.marketplace-auth2}")
-    private String marketplaceAuth2Endpoint;
+    @Value("${endpoint.saml-auth2}")
+    private String samlAuth2Endpoint;
     
     @Value("${endpoint.health}")
     private String healthEndpoint;
@@ -48,10 +48,10 @@ public class SecurityConfig {
                     "/.well-known/*",
                     jwksEndpoint,
                     messageEndpoint,
-                    authEndpoint,
-                    auth2Endpoint,
-                    marketplaceAuthEndpoint,
-                    marketplaceAuth2Endpoint,
+                    walletAuthEndpoint,
+                    walletAuth2Endpoint,
+                    samlAuthEndpoint,
+                    samlAuth2Endpoint,
                     healthEndpoint
                 )
             )
@@ -60,10 +60,10 @@ public class SecurityConfig {
                 .antMatchers("/.well-known/*").permitAll()
                 .antMatchers(jwksEndpoint).permitAll()
                 .antMatchers(messageEndpoint).permitAll()
-                .antMatchers(authEndpoint).permitAll()
-                .antMatchers(auth2Endpoint).permitAll()
-                .antMatchers(marketplaceAuthEndpoint).permitAll()
-                .antMatchers(marketplaceAuth2Endpoint).permitAll()
+                .antMatchers(walletAuthEndpoint).permitAll()
+                .antMatchers(walletAuth2Endpoint).permitAll()
+                .antMatchers(samlAuthEndpoint).permitAll()
+                .antMatchers(samlAuth2Endpoint).permitAll()
                 .antMatchers(healthEndpoint).permitAll()
                 .anyRequest().denyAll()
             );
@@ -80,10 +80,10 @@ public class SecurityConfig {
 
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
         source.registerCorsConfiguration(messageEndpoint, configuration);
-        source.registerCorsConfiguration(authEndpoint, configuration);
-        source.registerCorsConfiguration(auth2Endpoint, configuration);
-        source.registerCorsConfiguration(marketplaceAuthEndpoint, configuration);
-        source.registerCorsConfiguration(marketplaceAuth2Endpoint, configuration);
+        source.registerCorsConfiguration(walletAuthEndpoint, configuration);
+        source.registerCorsConfiguration(walletAuth2Endpoint, configuration);
+        source.registerCorsConfiguration(samlAuthEndpoint, configuration);
+        source.registerCorsConfiguration(samlAuth2Endpoint, configuration);
         source.registerCorsConfiguration(healthEndpoint, configuration);
         return source;
     }

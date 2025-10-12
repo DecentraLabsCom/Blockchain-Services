@@ -1,5 +1,6 @@
-package decentralabs.auth;
+package decentralabs.auth.controller;
 
+import decentralabs.auth.service.MarketplaceKeyService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
@@ -18,7 +19,7 @@ import java.util.Map;
 public class HealthController {
     
     @Autowired
-    private AuthController authController;
+    private MarketplaceKeyService marketplaceKeyService;
     
     @Value("${marketplace.public-key-url}")
     private String marketplacePublicKeyUrl;
@@ -64,7 +65,7 @@ public class HealthController {
         try {
             // Check if we can access the marketplace public key
             // This will use the cached key if available, or try to fetch it
-            return authController.isMarketplacePublicKeyAvailable();
+            return marketplaceKeyService.isKeyAvailable();
         } catch (Exception e) {
             return false;
         }
@@ -72,10 +73,10 @@ public class HealthController {
     
     private Map<String, String> getEndpointStatus() {
         Map<String, String> endpoints = new HashMap<>();
-        endpoints.put("auth", "available");
-        endpoints.put("auth2", "available");
-        endpoints.put("marketplace-auth", "available");
-        endpoints.put("marketplace-auth2", "available");
+        endpoints.put("wallet-auth", "available");
+        endpoints.put("wallet-auth2", "available");
+        endpoints.put("saml-auth", "available");
+        endpoints.put("saml-auth2", "available");
         endpoints.put("jwks", "available");
         endpoints.put("message", "available");
         return endpoints;
