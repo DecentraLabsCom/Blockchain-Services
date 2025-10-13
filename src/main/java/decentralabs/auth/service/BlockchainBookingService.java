@@ -137,6 +137,7 @@ public class BlockchainBookingService {
         );
 
         // 2. Find active reservation by labId
+        // TODO: Use getActiveReservationKeyForUser when new contract gets deployed
         BigInteger totalReservations = diamond.reservationsOf(wallet).send();
         
         byte[] reservationKeyBytes = null;
@@ -235,7 +236,7 @@ public class BlockchainBookingService {
     }
 
     /**
-     * Builds the bookingInfo map for JWT claims
+     * Builds the bookingInfo map for JWT claims and response
      */
     private Map<String, Object> buildBookingInfo(
             BigInteger labId, String reservationKeyHex,
@@ -246,7 +247,7 @@ public class BlockchainBookingService {
         Map<String, Object> bookingInfo = new HashMap<>();
         
         // JWT Standard Claims
-        bookingInfo.put("aud", accessURI);       // Audience - where token is used
+        bookingInfo.put("aud", accessURI);       // Audience - where token is used (complete URL from contract)
         bookingInfo.put("sub", accessKey);       // Subject - username for access
         bookingInfo.put("nbf", start);           // Not Before - reservation start
         bookingInfo.put("exp", end);             // Expiration - reservation end
@@ -258,6 +259,9 @@ public class BlockchainBookingService {
         bookingInfo.put("labPrice", labPrice);              // Lab base price
         bookingInfo.put("metadata", metadata);              // Lab metadata URI
         bookingInfo.put("authURI", authURI);                // This auth service
+        
+        // labURL for JSON response
+        bookingInfo.put("labURL", accessURI);               // Complete URL to access lab
 
         return bookingInfo;
     }
