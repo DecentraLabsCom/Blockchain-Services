@@ -6,7 +6,7 @@
     <modelVersion>4.0.0</modelVersion>
 
     <groupId>decentralabs</groupId>
-    <artifactId>auth</artifactId>
+    <artifactId>blockchain-services</artifactId>
     <version>1.0-SNAPSHOT</version>
     <packaging>war</packaging>
 
@@ -39,6 +39,13 @@
             <groupId>org.web3j</groupId>
             <artifactId>core</artifactId>
             <version>5.0.0</version>
+        </dependency>
+
+        <!-- Bouncy Castle for cryptographic operations -->
+        <dependency>
+            <groupId>org.bouncycastle</groupId>
+            <artifactId>bcprov-jdk18on</artifactId>
+            <version>1.78.1</version>
         </dependency>
 
         <!-- Spring Boot Starter Security for basic security -->
@@ -91,8 +98,8 @@
                 <groupId>org.springframework.boot</groupId>
                 <artifactId>spring-boot-maven-plugin</artifactId>
                 <configuration>
-                    <mainClass>decentralabs.auth.AuthApplication</mainClass> <!-- Asegúrate de que el nombre de la clase esté correcto -->
-                    <packaging>war</packaging> <!-- Empaquetado como WAR -->
+                    <mainClass>decentralabs.auth.AuthApplication</mainClass> <!-- Make sure the class name is correct -->
+                    <packaging>war</packaging> <!-- Package as WAR -->
                 </configuration>
                 <!--<executions>
                     <execution>

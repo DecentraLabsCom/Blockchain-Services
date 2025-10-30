@@ -1,4 +1,4 @@
-# Build Stage - Compila el código fuente
+# Build Stage - Compiles the source code
 FROM maven:3.8-eclipse-temurin-18 AS builder
 
 WORKDIR /build

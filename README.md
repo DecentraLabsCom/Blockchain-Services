@@ -3,13 +3,13 @@ description: >-
   Authentication and authorization service connecting your lab access control system to the blockchain
 ---
 
-# Auth Service
+# Blockchain Auth Service
 
-JWT authentication microservice for the DecentraLabs ecosystem.
+JWT authentication microservice for the DecentraLabs ecosystem with full Ethereum wallet capabilities.
 
 <figure><img src=".gitbook/assets/DecentraLabs - Lab Access.png" alt=""><figcaption></figcaption></figure>
 
-This microservice provides web3-based JWT tokens and offers a bridge between institutional access control systems (like the **Lab Gateway** in the figure above) with the blockchain-based smart contracts.
+This microservice provides web3-based JWT tokens and offers a bridge between institutional access control systems (like the **Lab Gateway** in the figure above) with the blockchain-based smart contracts. **Now extended with complete Ethereum wallet functionality** for creating, managing, and interacting with blockchain assets.
 
 The following image shows the sequence diagram that illustrates the process for authenticating and authorizing a (wallet-logged in) user in the lab provider infrastructure through DecentraLabs.
 
@@ -50,13 +50,28 @@ The process for authenticating and authorizing an SSO-logged in user will be add
 
 ## 🚀 Features
 
+### Authentication & Authorization
 * **Wallet Authentication**: Wallet signature verification
 * **JWT Authentication**: JWT token validation
+* **SAML Authentication**: SSO integration with marketplace
 * **Dynamic Key Retrieval**: Automatic public key downloading
 * **Blockchain Integration**: Smart contract integration
+
+### 🆕 Ethereum Wallet Management
+* **Wallet Creation**: Generate new Ethereum wallets with encrypted private keys
+* **Wallet Import**: Import from private key or BIP39 mnemonic phrases
+* **Multi-Network Support**: Mainnet, Sepolia, Goerli networks
+* **Balance Queries**: Real-time ETH balance checking
+* **Transaction Signing**: Secure transaction and message signing
+* **Transaction Broadcasting**: Send signed transactions to network
+* **Event Listening**: Monitor smart contract events
+* **Transaction History**: Basic transaction history (extensible)
+
+### Infrastructure
 * **Health Monitoring**: Health endpoint for monitoring
 * **Maven Deployment**: Maven-ready to be deployed in production
 * **Docker Ready**: Multi-stage build containerization
+* **Spring Boot 2.7**: Modern Java framework
 
 ## 🏗️ Architecture
 
@@ -69,13 +84,26 @@ The process for authenticating and authorizing an SSO-logged in user will be add
 
 ## 🔧 Endpoints
 
+### Authentication Endpoints
 * `POST /auth/message` - Wallet challenge
-* `POST /auth/auth` - Authentication
+* `POST /auth/auth` - Authentication only
 * `POST /auth/auth2` - Authentication + authorization
 * `GET /auth/jwks` - JSON Web Keys
 * `POST /auth/marketplace-auth` - Marketplace auth
 * `POST /auth/marketplace-auth2` - Marketplace auth2
 * `GET /auth/health` - Health check
+
+### 🆕 Wallet Endpoints
+* `POST /auth/wallet/create` - Create new Ethereum wallet
+* `POST /auth/wallet/import` - Import wallet from private key/mnemonic
+* `GET /auth/wallet/{address}/balance` - Get ETH balance
+* `POST /auth/wallet/sign-message` - Sign message with wallet
+* `POST /auth/wallet/sign-transaction` - Sign Ethereum transaction
+* `POST /auth/wallet/send-transaction` - Broadcast signed transaction
+* `GET /auth/wallet/{address}/transactions` - Get transaction history
+* `POST /auth/wallet/listen-events` - Setup contract event listener
+* `GET /auth/wallet/networks` - List available networks
+* `POST /auth/wallet/switch-network` - Switch active network
 
 ## 🛠️ Local Development
 
@@ -123,6 +151,26 @@ docker run -p 8080:8080 \
 * `RPC_URL` - Blockchain node URL
 * `WALLET_ADDRESS` - Wallet address
 * `ALLOWED_ORIGINS` - Allowed CORS origins
+
+### 🆕 Wallet Configuration
+
+```properties
+# Ethereum Network RPC URLs
+ethereum.mainnet.rpc.url=https://mainnet.infura.io/v3/YOUR_PROJECT_ID
+ethereum.sepolia.rpc.url=https://sepolia.infura.io/v3/YOUR_PROJECT_ID
+ethereum.goerli.rpc.url=https://goerli.infura.io/v3/YOUR_PROJECT_ID
+
+# Wallet Security Settings
+wallet.encryption.salt=DecentraLabs2025
+wallet.default.network=sepolia
+wallet.max.transactions.per.hour=100
+wallet.max.balance.checks.per.minute=60
+
+# Gas Settings
+ethereum.gas.price.default=20
+ethereum.gas.limit.default=21000
+ethereum.gas.limit.contract=100000
+```
 
 ### Configuration Files
 
@@ -188,6 +236,39 @@ Response:
 }
 ```
 
+## 🆕 Wallet Operations Examples
+
+### 1. Create New Wallet
+```bash
+curl -X POST http://localhost:8080/auth/wallet/create \
+  -H "Content-Type: application/json" \
+  -d '{"password": "mySecurePassword"}'
+```
+
+### 2. Check Balance
+```bash
+curl http://localhost:8080/auth/wallet/0x742d35Cc6634C0532925a3b844Bc454e4438f44e/balance
+```
+
+### 3. Sign Transaction
+```bash
+curl -X POST http://localhost:8080/auth/wallet/sign-transaction \
+  -H "Content-Type: application/json" \
+  -d '{
+    "encryptedPrivateKey": "base64_encoded_key",
+    "password": "mySecurePassword",
+    "to": "0x742d35Cc6634C0532925a3b844Bc454e4438f44e",
+    "value": "0.01"
+  }'
+```
+
+### 4. Switch Network
+```bash
+curl -X POST http://localhost:8080/auth/wallet/switch-network \
+  -H "Content-Type: application/json" \
+  -d '{"networkId": "mainnet"}'
+```
+
 ### 3. Lab Access
 The JWT token contains lab access permissions based on blockchain reservations:
 
@@ -215,10 +296,16 @@ See [Docker Deployment Guide](dev/DOCKER_DEPLOYMENT_GUIDE.md) for complete Docke
 
 ## 📝 Documentation
 
+### Core Documentation
 * [WAR Deployment Guide](dev/DEPLOYMENT_GUIDE_WAR.md)
 * [Docker Deployment Guide](dev/DOCKER_DEPLOYMENT_GUIDE.md)
 * [Health Endpoint](dev/HEALTH_ENDPOINT.md)
 * [JWT Implementation](dev/JWT_IMPLEMENTATION.md)
+
+### 🆕 Wallet Documentation
+* [Wallet APIs Guide](WALLET_README.md) - Complete wallet functionality documentation
+* [Test Script](test-wallet-apis.sh) - Bash script to test all wallet endpoints
+* [Integration Tests](src/test/java/decentralabs/auth/controller/WalletControllerIntegrationTest.java) - JUnit tests
 
 ## 🤝 Contributing
 
