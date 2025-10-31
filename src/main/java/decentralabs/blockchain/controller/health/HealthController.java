@@ -1,4 +1,4 @@
-package decentralabs.blockchain.controller;
+package decentralabs.blockchain.controller.health;
 
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
@@ -83,17 +83,17 @@ public class HealthController {
         endpoints.put("jwks", "available");
         endpoints.put("message", "available");
         
-        // Wallet endpoints
+        // Wallet endpoints - ALL localhost only
         endpoints.put("wallet-create", "available (localhost only)");
         endpoints.put("wallet-import", "available (localhost only)");
-        endpoints.put("wallet-balance", "available");
-        endpoints.put("wallet-sign-message", "available");
-        endpoints.put("wallet-sign-transaction", "available");
-        endpoints.put("wallet-send-transaction", "available");
-        endpoints.put("wallet-transactions", "available");
-        endpoints.put("wallet-listen-events", "available");
-        endpoints.put("wallet-networks", "available");
-        endpoints.put("wallet-switch-network", "available");
+        endpoints.put("wallet-balance", "available (localhost only)");
+        endpoints.put("wallet-sign-message", "available (localhost only)");
+        endpoints.put("wallet-sign-transaction", "available (localhost only)");
+        endpoints.put("wallet-send-transaction", "available (localhost only)");
+        endpoints.put("wallet-transactions", "available (localhost only)");
+        endpoints.put("wallet-listen-events", "available (localhost only)");
+        endpoints.put("wallet-networks", "available (localhost only)");
+        endpoints.put("wallet-switch-network", "available (localhost only)");
         
         // Health endpoint
         endpoints.put("health", "available");

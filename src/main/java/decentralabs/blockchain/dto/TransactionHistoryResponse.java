@@ -5,20 +5,22 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
+import java.util.List;
+
 @Data
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
-public class WalletResponse {
+public class TransactionHistoryResponse {
     private boolean success;
     private String address;
-    private String encryptedPrivateKey;
-    private String privateKey;
-    private String message;
+    private String transactionCount;
+    private List<TransactionInfo> transactions;
+    private String network;
     private String error;
 
-    public static WalletResponse error(String error) {
-        return WalletResponse.builder()
+    public static TransactionHistoryResponse error(String error) {
+        return TransactionHistoryResponse.builder()
             .success(false)
             .error(error)
             .build();

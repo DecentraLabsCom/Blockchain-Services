@@ -9,16 +9,14 @@ import lombok.NoArgsConstructor;
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
-public class WalletResponse {
+public class SendTransactionResponse {
     private boolean success;
-    private String address;
-    private String encryptedPrivateKey;
-    private String privateKey;
-    private String message;
+    private String transactionHash;
+    private String network;
     private String error;
 
-    public static WalletResponse error(String error) {
-        return WalletResponse.builder()
+    public static SendTransactionResponse error(String error) {
+        return SendTransactionResponse.builder()
             .success(false)
             .error(error)
             .build();

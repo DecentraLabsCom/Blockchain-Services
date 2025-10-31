@@ -1,4 +1,4 @@
-package decentralabs.blockchain.controller;
+package decentralabs.blockchain.controller.auth;
 
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
@@ -22,17 +22,19 @@ import java.util.Map;
  * - SamlAuthController (SAML-based authentication)
  */
 @RestController
-@RequestMapping("/auth")
 public class AuthController {
 
     @Value("${base.domain}")
     private String baseDomain;
     
-    @Value("${server.servlet.context-path}")
-    private String contextPath;
+    @Value("${endpoint.auth}")
+    private String authPath;
     
     @Value("${endpoint.wallet-auth2}")
     private String walletAuth2Endpoint;
+    
+    @Value("${endpoint.saml-auth2}")
+    private String samlAuth2Endpoint;
     
     @Value("${endpoint.jwks}")
     private String jwksEndpoint;
@@ -42,13 +44,6 @@ public class AuthController {
     
     @Autowired
     private JwtService jwtService;
-    
-    /**
-     * Helper method to construct the issuer URL from base domain and context path
-     */
-    private String getIssuerUrl() {
-        return baseDomain + "/auth";
-    }
 
     /**
      * OpenID Connect Discovery endpoint
@@ -57,12 +52,19 @@ public class AuthController {
      * @return OpenID Connect configuration
      */
     @GetMapping("/.well-known/openid-configuration")
-    public ResponseEntity<Map<String, String>> openidConfig() {
-        String issuerUrl = getIssuerUrl();
-        Map<String, String> config = new HashMap<>();
-        config.put("issuer", issuerUrl);
-        config.put("authorization_endpoint", issuerUrl + walletAuth2Endpoint);
-        config.put("jwks_uri", issuerUrl + jwksEndpoint);
+    public ResponseEntity<Map<String, Object>> openidConfig() {
+        Map<String, Object> config = new HashMap<>();
+        config.put("issuer", baseDomain + authPath);
+        
+        // Multiple authorization endpoints for different authentication methods
+        Map<String, String> authEndpoints = new HashMap<>();
+        authEndpoints.put("wallet", baseDomain + walletAuth2Endpoint);
+        authEndpoints.put("saml", baseDomain + samlAuth2Endpoint);
+        
+        // Primary authorization endpoint (wallet-based by default)
+        config.put("authorization_endpoint", baseDomain + walletAuth2Endpoint);
+
+        config.put("jwks_uri", baseDomain + jwksEndpoint);
         return ResponseEntity.ok(config);
     }
 
@@ -72,7 +74,7 @@ public class AuthController {
      * 
      * @return JWKS with RSA public key
      */
-    @GetMapping("/jwks")
+    @GetMapping("${endpoint.jwks}")
     public ResponseEntity<Map<String, Object>> getJWKS() {
         try {
             RSAPublicKey publicKey = keyService.getPublicKey();

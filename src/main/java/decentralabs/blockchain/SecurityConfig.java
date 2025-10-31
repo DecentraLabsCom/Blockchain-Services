@@ -71,6 +71,7 @@ public class SecurityConfig {
                 .antMatchers(samlAuthEndpoint).permitAll()
                 .antMatchers(samlAuth2Endpoint).permitAll()
                 .antMatchers(healthEndpoint).permitAll()
+                // ALL wallet endpoints - restricted by CORS to localhost
                 .antMatchers(walletEndpoint + "/**").permitAll()
                 .anyRequest().denyAll()
             );
@@ -80,18 +81,28 @@ public class SecurityConfig {
 
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
-        CorsConfiguration configuration = new CorsConfiguration();
-        configuration.setAllowedOrigins(Arrays.asList(allowedOrigins));
-        configuration.setAllowedMethods(Arrays.asList("GET", "POST"));
-        configuration.addAllowedHeader("*");
+        CorsConfiguration publicConfiguration = new CorsConfiguration();
+        publicConfiguration.setAllowedOrigins(Arrays.asList(allowedOrigins));
+        publicConfiguration.setAllowedMethods(Arrays.asList("GET", "POST"));
+        publicConfiguration.addAllowedHeader("*");
+
+        CorsConfiguration localhostConfiguration = new CorsConfiguration();
+        localhostConfiguration.setAllowedOrigins(Arrays.asList("http://localhost:3000", "http://127.0.0.1:3000"));
+        localhostConfiguration.setAllowedMethods(Arrays.asList("GET", "POST"));
+        localhostConfiguration.addAllowedHeader("*");
 
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
-        source.registerCorsConfiguration(messageEndpoint, configuration);
-        source.registerCorsConfiguration(walletAuthEndpoint, configuration);
-        source.registerCorsConfiguration(walletAuth2Endpoint, configuration);
-        source.registerCorsConfiguration(samlAuthEndpoint, configuration);
-        source.registerCorsConfiguration(samlAuth2Endpoint, configuration);
-        source.registerCorsConfiguration(healthEndpoint, configuration);
+        // Public endpoints
+        source.registerCorsConfiguration(messageEndpoint, publicConfiguration);
+        source.registerCorsConfiguration(walletAuthEndpoint, publicConfiguration);
+        source.registerCorsConfiguration(walletAuth2Endpoint, publicConfiguration);
+        source.registerCorsConfiguration(samlAuthEndpoint, publicConfiguration);
+        source.registerCorsConfiguration(samlAuth2Endpoint, publicConfiguration);
+        source.registerCorsConfiguration(healthEndpoint, publicConfiguration);
+        
+        // ALL wallet endpoints - localhost only
+        source.registerCorsConfiguration(walletEndpoint + "/**", localhostConfiguration);
+        
         return source;
     }
 }

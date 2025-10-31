@@ -98,7 +98,7 @@
                 <groupId>org.springframework.boot</groupId>
                 <artifactId>spring-boot-maven-plugin</artifactId>
                 <configuration>
-                    <mainClass>decentralabs.auth.AuthApplication</mainClass> <!-- Make sure the class name is correct -->
+                    <mainClass>decentralabs.blockchain.BlockchainApplication</mainClass> <!-- Make sure the class name is correct -->
                     <packaging>war</packaging> <!-- Package as WAR -->
                 </configuration>
                 <!--<executions>

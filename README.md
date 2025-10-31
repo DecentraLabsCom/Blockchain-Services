@@ -84,26 +84,31 @@ The process for authenticating and authorizing an SSO-logged in user will be add
 
 ## 🔧 Endpoints
 
+### Health Check Endpoint
+* `GET /health` - Health check
+
+### OIDC Endpoint
+* `GET /.well-known/openid-configuration` - OIDC
+
 ### Authentication Endpoints
+* `GET /auth/jwks` - JSON Web Keys
 * `POST /auth/message` - Wallet challenge
 * `POST /auth/auth` - Authentication only
-* `POST /auth/auth2` - Authentication + authorization
-* `GET /auth/jwks` - JSON Web Keys
-* `POST /auth/marketplace-auth` - Marketplace auth
-* `POST /auth/marketplace-auth2` - Marketplace auth2
-* `GET /auth/health` - Health check
+* `POST /auth/auth2` - Authentication + authorization (auth2)
+* `POST /auth/saml2-auth` - SAML2 auth
+* `POST /auth/saml2-auth2` - SAML2 auth2
 
 ### 🆕 Wallet Endpoints
-* `POST /auth/wallet/create` - Create new Ethereum wallet
-* `POST /auth/wallet/import` - Import wallet from private key/mnemonic
-* `GET /auth/wallet/{address}/balance` - Get ETH balance
-* `POST /auth/wallet/sign-message` - Sign message with wallet
-* `POST /auth/wallet/sign-transaction` - Sign Ethereum transaction
-* `POST /auth/wallet/send-transaction` - Broadcast signed transaction
-* `GET /auth/wallet/{address}/transactions` - Get transaction history
-* `POST /auth/wallet/listen-events` - Setup contract event listener
-* `GET /auth/wallet/networks` - List available networks
-* `POST /auth/wallet/switch-network` - Switch active network
+* `POST /wallet/create` - Create new Ethereum wallet *(localhost only)*
+* `POST /wallet/import` - Import wallet from private key/mnemonic *(localhost only)*
+* `GET /wallet/{address}/balance` - Get ETH balance *(localhost only)*
+* `POST /wallet/sign-message` - Sign message with wallet *(localhost only)*
+* `POST /wallet/sign-transaction` - Sign Ethereum transaction *(localhost only)*
+* `POST /wallet/send-transaction` - Broadcast signed transaction *(localhost only)*
+* `GET /wallet/{address}/transactions` - Get transaction history *(localhost only)*
+* `POST /wallet/listen-events` - Setup contract event listener *(localhost only)*
+* `GET /wallet/networks` - List available networks *(localhost only)*
+* `POST /wallet/switch-network` - Switch active network *(localhost only)*
 
 ## 🛠️ Local Development
 
@@ -187,19 +192,35 @@ ethereum.gas.limit.contract=100000
 
 ## 📊 Monitoring
 
-Health endpoint available at `/auth/health`:
+Health endpoint available at `/health`:
 
 ```json
 {
   "status": "UP",
-  "components": {
-    "marketplace-key": {
-      "status": "UP",
-      "details": {
-        "keyAvailable": true,
-        "lastUpdated": "2025-09-28T10:00:00Z"
-      }
-    }
+  "timestamp": "2025-10-30T12:00:00Z",
+  "service": "auth-service",
+  "version": "1.0.0",
+  "marketplace_key_cached": true,
+  "marketplace_key_url": "https://marketplace-decentralabs.vercel.app/.well-known/public-key.pem",
+  "jwt_validation": "ready",
+  "endpoints": {
+    "wallet-auth": "available",
+    "wallet-auth2": "available", 
+    "saml-auth": "available",
+    "saml-auth2": "available",
+    "jwks": "available",
+    "message": "available",
+    "wallet-create": "available (localhost only)",
+    "wallet-import": "available (localhost only)",
+    "wallet-balance": "available (localhost only)",
+    "wallet-sign-message": "available (localhost only)",
+    "wallet-sign-transaction": "available (localhost only)",
+    "wallet-send-transaction": "available (localhost only)",
+    "wallet-transactions": "available (localhost only)",
+    "wallet-listen-events": "available (localhost only)",
+    "wallet-networks": "available (localhost only)",
+    "wallet-switch-network": "available (localhost only)",
+    "health": "available"
   }
 }
 ```
@@ -238,21 +259,31 @@ Response:
 
 ## 🆕 Wallet Operations Examples
 
-### 1. Create New Wallet
+### 1. Create New Wallet *(localhost only)*
 ```bash
-curl -X POST http://localhost:8080/auth/wallet/create \
+curl -X POST http://localhost:8080/wallet/create \
   -H "Content-Type: application/json" \
   -d '{"password": "mySecurePassword"}'
 ```
 
-### 2. Check Balance
+### 2. Import Wallet *(localhost only)*
 ```bash
-curl http://localhost:8080/auth/wallet/0x742d35Cc6634C0532925a3b844Bc454e4438f44e/balance
+curl -X POST http://localhost:8080/wallet/import \
+  -H "Content-Type: application/json" \
+  -d '{
+    "privateKey": "0x...",
+    "password": "mySecurePassword"
+  }'
 ```
 
-### 3. Sign Transaction
+### 3. Check Balance *(localhost only)*
 ```bash
-curl -X POST http://localhost:8080/auth/wallet/sign-transaction \
+curl http://localhost:8080/wallet/0x742d35Cc6634C0532925a3b844Bc454e4438f44e/balance
+```
+
+### 4. Sign Transaction *(localhost only)*
+```bash
+curl -X POST http://localhost:8080/wallet/sign-transaction \
   -H "Content-Type: application/json" \
   -d '{
     "encryptedPrivateKey": "base64_encoded_key",
@@ -262,9 +293,9 @@ curl -X POST http://localhost:8080/auth/wallet/sign-transaction \
   }'
 ```
 
-### 4. Switch Network
+### 5. Switch Network *(localhost only)*
 ```bash
-curl -X POST http://localhost:8080/auth/wallet/switch-network \
+curl -X POST http://localhost:8080/wallet/switch-network \
   -H "Content-Type: application/json" \
   -d '{"networkId": "mainnet"}'
 ```

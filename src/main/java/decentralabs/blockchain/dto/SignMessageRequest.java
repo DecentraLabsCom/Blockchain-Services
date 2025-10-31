@@ -9,7 +9,8 @@ import lombok.NoArgsConstructor;
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
-public class WalletCreateRequest {
+public class SignMessageRequest {
+    private String encryptedPrivateKey;
     private String password;
-    private boolean returnPrivateKey;
+    private String message;
 }

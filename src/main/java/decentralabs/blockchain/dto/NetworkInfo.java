@@ -9,7 +9,9 @@ import lombok.NoArgsConstructor;
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
-public class WalletCreateRequest {
-    private String password;
-    private boolean returnPrivateKey;
+public class NetworkInfo {
+    private String id;
+    private String name;
+    private String rpcUrl;
+    private int chainId;
 }

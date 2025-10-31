@@ -9,16 +9,16 @@ import lombok.NoArgsConstructor;
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
-public class WalletResponse {
+public class BalanceResponse {
     private boolean success;
     private String address;
-    private String encryptedPrivateKey;
-    private String privateKey;
-    private String message;
+    private String balanceWei;
+    private String balanceEth;
+    private String network;
     private String error;
 
-    public static WalletResponse error(String error) {
-        return WalletResponse.builder()
+    public static BalanceResponse error(String error) {
+        return BalanceResponse.builder()
             .success(false)
             .error(error)
             .build();

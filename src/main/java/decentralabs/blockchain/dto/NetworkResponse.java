@@ -5,20 +5,20 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
+import java.util.List;
+
 @Data
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
-public class WalletResponse {
+public class NetworkResponse {
     private boolean success;
-    private String address;
-    private String encryptedPrivateKey;
-    private String privateKey;
-    private String message;
+    private List<NetworkInfo> networks;
+    private String activeNetwork;
     private String error;
 
-    public static WalletResponse error(String error) {
-        return WalletResponse.builder()
+    public static NetworkResponse error(String error) {
+        return NetworkResponse.builder()
             .success(false)
             .error(error)
             .build();
