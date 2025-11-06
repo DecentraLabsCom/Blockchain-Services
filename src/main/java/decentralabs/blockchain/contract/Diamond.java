@@ -7,12 +7,14 @@ import org.web3j.abi.FunctionEncoder;
 import org.web3j.abi.TypeReference;
 import org.web3j.abi.datatypes.Function;
 import org.web3j.abi.datatypes.Type;
+import org.web3j.abi.datatypes.Address;
+import org.web3j.abi.datatypes.Utf8String;
 import org.web3j.abi.datatypes.generated.Bytes32;
-import org.web3j.abi.datatypes.generated.Uint8;
 import org.web3j.abi.datatypes.generated.Uint32;
+import org.web3j.abi.datatypes.generated.Uint64;
+import org.web3j.abi.datatypes.generated.Uint8;
 import org.web3j.abi.datatypes.generated.Uint96;
 import org.web3j.abi.datatypes.generated.Uint256;
-import org.web3j.abi.datatypes.Address;
 import org.web3j.crypto.Credentials;
 import org.web3j.protocol.Web3j;
 import org.web3j.protocol.core.RemoteFunctionCall;
@@ -41,21 +43,45 @@ public class Diamond extends Contract {
     
     // Reservation struct - Simple POJO
     public static class Reservation {
-        public BigInteger labId;     // uint256 - lab token ID
-        public String renter;        // address
-        public BigInteger price;     // uint96 - reservation price
-        public BigInteger start;     // uint32 - start timestamp
-        public BigInteger end;       // uint32 - end timestamp
-        public BigInteger status;    // uint8 - 0=INACTIVE, 1=ACTIVE, 2=CANCELLED
-        
-        public Reservation(BigInteger labId, String renter, BigInteger price,
-                          BigInteger start, BigInteger end, BigInteger status) {
+        public BigInteger labId;               // uint256 - lab token ID
+        public String renter;                  // address
+        public BigInteger price;               // uint96 - reservation price
+        public String labProvider;             // address
+        public BigInteger status;              // uint8 - reservation status
+        public BigInteger start;               // uint32 - start timestamp
+        public BigInteger end;                 // uint32 - end timestamp
+        public String puc;                     // string - institutional identifier (empty for wallet)
+        public BigInteger requestPeriodStart;  // uint64 - institutional request window start
+        public BigInteger requestPeriodDuration; // uint64 - institutional request window duration
+        public String payerInstitution;        // address - institution paying for reservation
+        public String collectorInstitution;    // address - institution receiving payout
+
+        public Reservation(
+            BigInteger labId,
+            String renter,
+            BigInteger price,
+            String labProvider,
+            BigInteger status,
+            BigInteger start,
+            BigInteger end,
+            String puc,
+            BigInteger requestPeriodStart,
+            BigInteger requestPeriodDuration,
+            String payerInstitution,
+            String collectorInstitution
+        ) {
             this.labId = labId;
             this.renter = renter;
             this.price = price;
+            this.labProvider = labProvider;
+            this.status = status;
             this.start = start;
             this.end = end;
-            this.status = status;
+            this.puc = puc;
+            this.requestPeriodStart = requestPeriodStart;
+            this.requestPeriodDuration = requestPeriodDuration;
+            this.payerInstitution = payerInstitution;
+            this.collectorInstitution = collectorInstitution;
         }
     }
     
@@ -100,9 +126,15 @@ public class Diamond extends Contract {
                     new TypeReference<Uint256>() {},
                     new TypeReference<Address>() {},
                     new TypeReference<Uint96>() {},
+                    new TypeReference<Address>() {},
+                    new TypeReference<Uint8>() {},
                     new TypeReference<Uint32>() {},
                     new TypeReference<Uint32>() {},
-                    new TypeReference<Uint8>() {}
+                    new TypeReference<Utf8String>() {},
+                    new TypeReference<Uint64>() {},
+                    new TypeReference<Uint64>() {},
+                    new TypeReference<Address>() {},
+                    new TypeReference<Address>() {}
                 ));
         return new RemoteFunctionCall<>(function,
                 () -> {
@@ -111,9 +143,15 @@ public class Diamond extends Contract {
                         ((Uint256) results.get(0)).getValue(),
                         ((Address) results.get(1)).getValue(),
                         ((Uint96) results.get(2)).getValue(),
-                        ((Uint32) results.get(3)).getValue(),
-                        ((Uint32) results.get(4)).getValue(),
-                        ((Uint8) results.get(5)).getValue()
+                        ((Address) results.get(3)).getValue(),
+                        ((Uint8) results.get(4)).getValue(),
+                        ((Uint32) results.get(5)).getValue(),
+                        ((Uint32) results.get(6)).getValue(),
+                        ((Utf8String) results.get(7)).getValue(),
+                        ((Uint64) results.get(8)).getValue(),
+                        ((Uint64) results.get(9)).getValue(),
+                        ((Address) results.get(10)).getValue(),
+                        ((Address) results.get(11)).getValue()
                     );
                 });
     }
@@ -149,6 +187,21 @@ public class Diamond extends Contract {
                 });
     }
     
+    /**
+     * Get active reservation key for an institutional user (provider + PUC)
+     */
+    @SuppressWarnings("rawtypes")
+    public RemoteFunctionCall<byte[]> getInstitutionalUserActiveReservationKey(String provider, String puc, BigInteger tokenId) {
+        final Function function = new Function("getInstitutionalUserActiveReservationKey",
+                Arrays.asList(new Address(provider), new Utf8String(puc), new Uint256(tokenId)),
+                Arrays.asList(new TypeReference<Bytes32>() {}));
+        return new RemoteFunctionCall<>(function,
+                () -> {
+                    Type result = executeCallSingleValueReturn(function);
+                    return (byte[]) result.getValue();
+                });
+    }
+
     /**
      * Get number of reservations for a user
      */

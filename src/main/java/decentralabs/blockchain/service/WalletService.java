@@ -9,11 +9,8 @@ import javax.annotation.PostConstruct;
 import org.web3j.crypto.*;
 import org.web3j.protocol.Web3j;
 import org.web3j.protocol.core.DefaultBlockParameterName;
-import org.web3j.protocol.core.methods.request.Transaction;
 import org.web3j.protocol.core.methods.response.*;
 import org.web3j.protocol.http.HttpService;
-import org.web3j.tx.ReadonlyTransactionManager;
-import org.web3j.tx.gas.DefaultGasProvider;
 import org.web3j.utils.Convert;
 import org.web3j.utils.Numeric;
 
@@ -109,18 +106,14 @@ public class WalletService {
                 ECKeyPair keyPair = ECKeyPair.create(Numeric.toBigInt(request.getPrivateKey()));
                 address = Keys.getAddress(keyPair.getPublicKey());
                 encryptedPrivateKey = encryptPrivateKey(request.getPrivateKey(), request.getPassword());
-
             } else if (request.getMnemonic() != null) {
                 // Import from mnemonic (BIP39)
-                Bip39Wallet wallet = WalletUtils.generateBip39WalletFromMnemonic(
-                    request.getPassword(), request.getMnemonic(), null);
                 Credentials credentials = WalletUtils.loadBip39Credentials(
                     request.getPassword(), request.getMnemonic());
                 address = credentials.getAddress();
                 encryptedPrivateKey = encryptPrivateKey(
                     Numeric.toHexStringWithPrefix(credentials.getEcKeyPair().getPrivateKey()),
                     request.getPassword());
-
             } else {
                 return WalletResponse.error("Either privateKey or mnemonic must be provided");
             }

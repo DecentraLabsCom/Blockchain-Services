@@ -10,6 +10,7 @@ import org.web3j.tx.gas.StaticGasProvider;
 import decentralabs.blockchain.contract.Diamond;
 
 import java.math.BigInteger;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -29,6 +30,13 @@ public class BlockchainBookingService {
     @Value("${base.domain}")
     private String baseDomain;
 
+    private static final BigInteger STATUS_PENDING = BigInteger.ZERO;
+    private static final BigInteger STATUS_CONFIRMED = BigInteger.ONE;
+    private static final BigInteger STATUS_IN_USE = BigInteger.valueOf(2);
+    private static final BigInteger STATUS_COMPLETED = BigInteger.valueOf(3);
+    private static final BigInteger STATUS_COLLECTED = BigInteger.valueOf(4);
+    private static final BigInteger STATUS_CANCELLED = BigInteger.valueOf(5);
+
     /**
      * Retrieves booking information from blockchain for a wallet
      * Supports two modes:
@@ -41,6 +49,19 @@ public class BlockchainBookingService {
      * @return Map containing booking information for JWT claims
      */
     public Map<String, Object> getBookingInfo(String wallet, String reservationKey, String labId) {
+        return getBookingInfo(wallet, reservationKey, labId, null);
+    }
+
+    /**
+     * Retrieves booking information from blockchain for a wallet, with optional institutional user filter.
+     *
+     * @param wallet        The wallet address (self-service user or institutional provider)
+     * @param reservationKey Optional reservation key (hex). When provided, lookup is direct.
+     * @param labId         The lab ID (required when reservationKey is absent)
+     * @param puc           Optional schacPersonalUniqueCode to disambiguate institutional users
+     * @return Map containing booking information
+     */
+    public Map<String, Object> getBookingInfo(String wallet, String reservationKey, String labId, String puc) {
         try {           
             // Determine which method to use based on available parameters
             if (reservationKey != null && !reservationKey.isEmpty()) {
@@ -48,7 +69,7 @@ public class BlockchainBookingService {
                 return getBookingInfoByReservationKey(wallet, reservationKey);
             } else if (labId != null && !labId.isEmpty()) {
                 // FALLBACK PATH: Search by labId (requires iteration)
-                return getBookingInfoByLabId(wallet, labId);
+                return getBookingInfoByLabId(wallet, labId, puc);
             } else {
                 throw new IllegalArgumentException(
                     "Must provide either 'reservationKey' (recommended) or 'labId'"
@@ -119,9 +140,9 @@ public class BlockchainBookingService {
 
     /**
      * Retrieves booking info by labId using direct contract lookup
-     * Call flow: iterate reservations → find active by labId → getLab(tokenId)
+     * Call flow: find active reservation for user by labId → getLab(tokenId)
      */
-    private Map<String, Object> getBookingInfoByLabId(String wallet, String labIdStr) throws Exception {
+    private Map<String, Object> getBookingInfoByLabId(String wallet, String labIdStr, String puc) throws Exception {
         
         BigInteger labId = new BigInteger(labIdStr);
         Web3j web3 = Web3j.build(new HttpService(rpcUrl));
@@ -134,25 +155,27 @@ public class BlockchainBookingService {
         );
 
         // 2. Find active reservation by labId
-        // TODO: Use getActiveReservationKeyForUser when new contract gets deployed
         BigInteger totalReservations = diamond.reservationsOf(wallet).send();
         
-        byte[] reservationKeyBytes = null;
+        byte[] reservationKeyBytes = resolveActiveReservationKey(diamond, labId, wallet, puc);
         BigInteger currentTime = BigInteger.valueOf(System.currentTimeMillis() / 1000);
         
-        // Iterate through user's reservations to find active one for this labId
-        for (int i = 0; i < totalReservations.intValue(); i++) {
-            byte[] key = diamond.reservationKeyOfUserByIndex(wallet, BigInteger.valueOf(i)).send();
-            Diamond.Reservation res = diamond.getReservation(key).send();
-            
-            // Check if this reservation matches our labId and is currently active
-            if (res.labId.equals(labId) && 
-                res.status.equals(BigInteger.ONE) &&
-                currentTime.compareTo(res.start) >= 0 &&
-                currentTime.compareTo(res.end) <= 0) {
+        if (!isValidReservationKey(reservationKeyBytes)) {
+            // Iterate through user's reservations to find active one for this labId (fallback)
+            for (int i = 0; i < totalReservations.intValue(); i++) {
+                byte[] key = diamond.reservationKeyOfUserByIndex(wallet, BigInteger.valueOf(i)).send();
+                Diamond.Reservation res = diamond.getReservation(key).send();
                 
-                reservationKeyBytes = key;
-                break;
+                // Check if this reservation matches our labId and is currently active
+                if (res.labId.equals(labId) && 
+                    (STATUS_CONFIRMED.equals(res.status) || STATUS_IN_USE.equals(res.status)) &&
+                    (puc == null || puc.isEmpty() || (res.puc != null && res.puc.equals(puc))) &&
+                    currentTime.compareTo(res.start) >= 0 &&
+                    currentTime.compareTo(res.end) <= 0) {
+                    
+                    reservationKeyBytes = key;
+                    break;
+                }
             }
         }
         
@@ -209,11 +232,9 @@ public class BlockchainBookingService {
             );
         }
 
-        // Validate status (1 = ACTIVE)
-        if (!status.equals(BigInteger.ONE)) {
-            String statusStr = status.equals(BigInteger.ZERO) ? "INACTIVE" : 
-                             status.equals(BigInteger.TWO) ? "CANCELLED" : "UNKNOWN";
-            throw new IllegalStateException("Reservation is not active. Status: " + statusStr);
+        // Validate status (CONFIRMED or IN_USE are considered active)
+        if (!STATUS_CONFIRMED.equals(status) && !STATUS_IN_USE.equals(status)) {
+            throw new IllegalStateException("Reservation is not active. Status: " + describeStatus(status));
         }
 
         // Validate time range
@@ -230,6 +251,21 @@ public class BlockchainBookingService {
                 "Reservation has expired. End: " + end + ", Current: " + currentTime
             );
         }
+    }
+
+    private String describeStatus(BigInteger status) {
+        if (status == null) {
+            return "UNKNOWN";
+        }
+        return switch (status.intValue()) {
+            case 0 -> "PENDING";
+            case 1 -> "CONFIRMED";
+            case 2 -> "IN_USE";
+            case 3 -> "COMPLETED";
+            case 4 -> "COLLECTED";
+            case 5 -> "CANCELLED";
+            default -> "UNKNOWN(" + status + ")";
+        };
     }
 
     /**
@@ -291,6 +327,25 @@ public class BlockchainBookingService {
         return sb.toString();
     }
     
+    private byte[] resolveActiveReservationKey(Diamond diamond, BigInteger labId, String wallet, String puc) {
+        try {
+            byte[] key;
+            if (puc != null && !puc.isBlank()) {
+                key = diamond.getInstitutionalUserActiveReservationKey(wallet, puc, labId).send();
+            } else {
+                key = diamond.getActiveReservationKeyForUser(labId, wallet).send();
+            }
+            return isValidReservationKey(key) ? key : null;
+        } catch (Exception e) {
+            System.err.println("Warning: unable to fetch active reservation key from contract: " + e.getMessage());
+            return null;
+        }
+    }
+
+    private boolean isValidReservationKey(byte[] key) {
+        return key != null && key.length == 32 && !Arrays.equals(key, new byte[32]);
+    }
+    
     /**
      * Retrieves booking information for a SAML-authenticated user
      * Maps SAML user ID to wallet address, then uses standard blockchain lookup
@@ -301,48 +356,5 @@ public class BlockchainBookingService {
      * @param reservationKey Optional - the reservation key as hex string
      * @return Map containing booking information for JWT claims
      */
-    public Map<String, Object> getBookingInfoForSamlUser(String userid, String affiliation, 
-                                                          String labId, String reservationKey) {
-        try {
-            // Map SAML user to wallet address
-            String wallet = getWalletAddressForSAMLUser(userid);
-            
-            if (wallet == null || wallet.isEmpty()) {
-                throw new IllegalStateException(
-                    "No blockchain wallet found for SAML user: " + userid
-                );
-            }
-            
-            // Use the same blockchain lookup logic as wallet authentication
-            return getBookingInfo(wallet, reservationKey, labId);
-            
-        } catch (SecurityException | IllegalStateException | IllegalArgumentException e) {
-            throw e;
-        } catch (Exception e) {
-            System.err.println("Error fetching SAML booking info: " + e.getMessage());
-            e.printStackTrace();
-            throw new RuntimeException(
-                "Failed to retrieve booking information for SAML user: " + e.getMessage(),
-                e
-            );
-        }
-    }
-    
-    /**
-     * Maps a SAML user identifier to a blockchain wallet address
-     * 
-     * TODO: Implement one of these strategies:
-     * 1. CONTRACT MAPPING: Query Diamond contract for getSAMLUserWallet(userid)
-     * 2. DATABASE MAPPING: Query local database linking SAML users to wallets
-     * 3. DERIVED ADDRESS: Use deterministic derivation (if supported by contract)
-     * 4. NFT OWNERSHIP: Query who owns the NFT for this lab booking
-     * 
-     * @param samlUserId The SAML NameID from IdP
-     * @return The blockchain wallet address, or null if not found
-     */
-    private String getWalletAddressForSAMLUser(String samlUserId) {
-        // PLACEHOLDER: For testing, return null (will fail with clear error message)
-        System.err.println("⚠️ WARNING: getWalletAddressForSAMLUser not implemented - SAML bookings will fail");
-        return null;
-    }
 }
+

@@ -81,8 +81,13 @@ public class SamlAuthService {
         // Generate JWT token
         if (includeBookingInfo) {
             // Get booking information from blockchain (SAML users)
-            Map<String, Object> bookingInfo = blockchainService.getBookingInfoForSamlUser(
-                jwtUserId, jwtAffiliation, labId, reservationKey
+            String institutionalProviderWallet = (String) marketplaceJWTClaims.get("institutionalProviderWallet");
+            String puc = (String) marketplaceJWTClaims.get("puc");
+            Map<String, Object> bookingInfo = blockchainService.getBookingInfo(
+                institutionalProviderWallet,
+                reservationKey,
+                labId,
+                puc
             );
             String token = jwtService.generateToken(null, bookingInfo);
             String labURL = (String) bookingInfo.get("labURL");

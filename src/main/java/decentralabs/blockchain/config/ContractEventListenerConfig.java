@@ -1,31 +1,109 @@
 package decentralabs.blockchain.config;
 
+import decentralabs.blockchain.contract.Diamond;
 import decentralabs.blockchain.service.WalletService;
+import java.math.BigInteger;
+import java.time.Instant;
+import java.util.Arrays;
+import java.util.List;
+import java.util.Locale;
+import java.util.Map;
+import java.util.Optional;
+import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Component;
+import org.web3j.abi.EventEncoder;
+import org.web3j.abi.EventValues;
+import org.web3j.abi.TypeReference;
+import org.web3j.abi.datatypes.Address;
+import org.web3j.abi.datatypes.Event;
+import org.web3j.abi.datatypes.generated.Bytes32;
+import org.web3j.abi.datatypes.generated.Uint256;
 import org.web3j.protocol.Web3j;
+import org.web3j.protocol.core.DefaultBlockParameter;
 import org.web3j.protocol.core.DefaultBlockParameterName;
 import org.web3j.protocol.core.methods.request.EthFilter;
-
-import java.util.Arrays;
-import java.util.List;
+import org.web3j.protocol.core.methods.response.Log;
+import org.web3j.tx.Contract;
+import org.web3j.tx.ReadonlyTransactionManager;
+import org.web3j.tx.gas.StaticGasProvider;
+import org.web3j.utils.Numeric;
 
 /**
- * Configuration class for setting up contract event listeners on application startup
+ * Configuration class for setting up contract event listeners on application startup.
  */
 @Component
 @RequiredArgsConstructor
 @Slf4j
 public class ContractEventListenerConfig {
 
+    private static final String RESERVATION_REQUESTED = "ReservationRequested";
+    private static final String RESERVATION_CONFIRMED = "ReservationConfirmed";
+    private static final String RESERVATION_DENIED = "ReservationRequestDenied";
+    private static final String RESERVATION_CANCELED = "ReservationRequestCanceled";
+    private static final String BOOKING_CANCELED = "BookingCanceled";
+
+    private static final Event RESERVATION_REQUESTED_EVENT = new Event(
+        RESERVATION_REQUESTED,
+        Arrays.<TypeReference<?>>asList(
+            new TypeReference<Address>(true) {},
+            new TypeReference<Uint256>(true) {},
+            new TypeReference<Uint256>() {},
+            new TypeReference<Uint256>() {},
+            new TypeReference<Bytes32>() {}
+        )
+    );
+
+    private static final Event RESERVATION_CONFIRMED_EVENT = new Event(
+        RESERVATION_CONFIRMED,
+        Arrays.<TypeReference<?>>asList(
+            new TypeReference<Bytes32>(true) {},
+            new TypeReference<Uint256>(true) {}
+        )
+    );
+
+    private static final Event RESERVATION_DENIED_EVENT = new Event(
+        RESERVATION_DENIED,
+        Arrays.<TypeReference<?>>asList(
+            new TypeReference<Bytes32>(true) {},
+            new TypeReference<Uint256>(true) {}
+        )
+    );
+
+    private static final Event RESERVATION_CANCELED_EVENT = new Event(
+        RESERVATION_CANCELED,
+        Arrays.<TypeReference<?>>asList(
+            new TypeReference<Bytes32>(true) {},
+            new TypeReference<Uint256>(true) {}
+        )
+    );
+
+    private static final Event BOOKING_CANCELED_EVENT = new Event(
+        BOOKING_CANCELED,
+        Arrays.<TypeReference<?>>asList(
+            new TypeReference<Bytes32>(true) {},
+            new TypeReference<Uint256>(true) {}
+        )
+    );
+
+    private static final Map<String, Event> SUPPORTED_EVENTS = Map.of(
+        RESERVATION_REQUESTED, RESERVATION_REQUESTED_EVENT,
+        RESERVATION_CONFIRMED, RESERVATION_CONFIRMED_EVENT,
+        RESERVATION_DENIED, RESERVATION_DENIED_EVENT,
+        RESERVATION_CANCELED, RESERVATION_CANCELED_EVENT,
+        BOOKING_CANCELED, BOOKING_CANCELED_EVENT
+    );
+
     private final WalletService walletService;
 
     @Value("${contract.address}")
     private String diamondContractAddress;
+
+    private volatile Diamond cachedDiamond;
 
     @Value("${contract.events.to.listen:}")
     private String eventsToListen;
@@ -37,7 +115,7 @@ public class ContractEventListenerConfig {
     private String startBlock;
 
     /**
-     * Configure event listeners for Diamond contract on application startup
+     * Configure event listeners for Diamond contract on application startup.
      */
     @EventListener(ApplicationReadyEvent.class)
     public void configureContractEventListeners() {
@@ -46,116 +124,442 @@ public class ContractEventListenerConfig {
             return;
         }
 
-        if (eventsToListen == null || eventsToListen.trim().isEmpty()) {
-            log.info("No contract events configured to listen for");
+        List<String> configuredEvents = parseConfiguredEvents();
+        if (configuredEvents.isEmpty()) {
+            log.warn("No valid contract events configured to listen for");
             return;
         }
 
-        log.info("Configuring contract event listeners on startup...");
+        log.info("Configuring contract event listeners on startup…");
         log.info("Diamond contract address: {}", diamondContractAddress);
-        log.info("Events to listen: {}", eventsToListen);
-
-        // Parse the comma-separated list of events
-        List<String> eventList = Arrays.stream(eventsToListen.split(","))
-            .map(String::trim)
-            .filter(event -> !event.isEmpty())
-            .toList();
-
-        if (eventList.isEmpty()) {
-            log.warn("No valid events found in configuration");
-            return;
-        }
+        log.info("Events to listen: {}", configuredEvents);
 
         try {
-            // Get Web3j instance from WalletService
             Web3j web3j = walletService.getWeb3jInstance();
-
-            // Setup listeners for each event
-            for (String eventName : eventList) {
+            for (String eventName : configuredEvents) {
                 setupEventListener(web3j, diamondContractAddress, eventName);
             }
-
-            log.info("Contract event listener configuration completed for {} events", eventList.size());
-
+            log.info("Contract event listener configuration completed for {} events", configuredEvents.size());
         } catch (Exception e) {
             log.error("Error configuring contract event listeners", e);
         }
     }
 
-    /**
-     * Sets up a listener for a specific contract event
-     */
-    private void setupEventListener(Web3j web3j, String contractAddress, String eventName) {
-        try {
-            log.info("Setting up listener for event '{}' on contract {}", eventName, contractAddress);
-
-            // Create filter for the contract address
-            EthFilter filter = new EthFilter(
-                startBlock.equals("latest") ? DefaultBlockParameterName.LATEST : DefaultBlockParameterName.valueOf(startBlock),
-                DefaultBlockParameterName.LATEST,
-                contractAddress
-            );
-
-            // Subscribe to logs (events) from the contract
-            web3j.ethLogFlowable(filter).subscribe(
-                eventLog -> {
-                    log.info("Received {} event from contract {}: {}", eventName, contractAddress, eventLog);
-                    // TODO: Process the event data and trigger appropriate actions
-                    // For example: update database, send notifications, call webhooks, etc.
-                    handleContractEvent(eventName, eventLog);
-                },
-                error -> log.error("Error listening for {} events: {}", eventName, error.getMessage()),
-                () -> log.info("Event listener for {} completed", eventName)
-            );
-
-            log.info("Successfully configured listener for {} event", eventName);
-
-        } catch (Exception e) {
-            log.error("Failed to setup listener for {} event: {}", eventName, e.getMessage(), e);
+    private List<String> parseConfiguredEvents() {
+        if (eventsToListen == null) {
+            return List.of();
         }
+
+        List<String> parsed = Arrays.stream(eventsToListen.split(","))
+            .map(String::trim)
+            .filter(event -> !event.isEmpty())
+            .distinct()
+            .collect(Collectors.toList());
+
+        if (parsed.isEmpty()) {
+            return List.of();
+        }
+
+        List<String> unsupported = parsed.stream()
+            .filter(event -> !SUPPORTED_EVENTS.containsKey(event))
+            .toList();
+
+        if (!unsupported.isEmpty()) {
+            log.warn("Skipping unsupported contract events: {}", unsupported);
+        }
+
+        return parsed.stream()
+            .filter(SUPPORTED_EVENTS::containsKey)
+            .toList();
     }
 
     /**
-     * Handle incoming contract events
+     * Sets up a listener for a specific contract event.
      */
-    private void handleContractEvent(String eventName, org.web3j.protocol.core.methods.response.Log eventLog) {
-        try {
-            log.info("Processing {} event - Transaction: {}, Block: {}",
-                    eventName, eventLog.getTransactionHash(), eventLog.getBlockHash());
+    private void setupEventListener(Web3j web3j, String contractAddress, String eventName) {
+        Event eventDefinition = SUPPORTED_EVENTS.get(eventName);
+        if (eventDefinition == null) {
+            log.warn("Event '{}' is not supported and will be ignored", eventName);
+            return;
+        }
 
-            // Parse event data based on event type
+        String eventSignature = EventEncoder.encode(eventDefinition);
+        EthFilter filter = new EthFilter(
+            resolveStartBlockParameter(),
+            DefaultBlockParameterName.LATEST,
+            contractAddress
+        );
+
+        log.info("Setting up listener for '{}' with signature {}", eventName, eventSignature);
+
+        web3j.ethLogFlowable(filter).subscribe(
+            eventLog -> handleLogIfMatches(eventName, eventDefinition, eventSignature, eventLog),
+            error -> log.error("Error listening for {} events: {}", eventName, error.getMessage(), error),
+            () -> log.info("Event listener for {} completed", eventName)
+        );
+    }
+
+    private void handleLogIfMatches(String eventName, Event eventDefinition, String eventSignature, Log eventLog) {
+        List<String> topics = eventLog.getTopics();
+        if (topics == null || topics.isEmpty()) {
+            log.debug("Ignoring log without topics for tx {}", eventLog.getTransactionHash());
+            return;
+        }
+
+        if (!eventSignature.equals(topics.get(0))) {
+            return;
+        }
+
+        handleContractEvent(eventName, eventDefinition, eventLog);
+    }
+
+    /**
+     * Handle incoming contract events with decoded payloads.
+     */
+    private void handleContractEvent(String eventName, Event eventDefinition, Log eventLog) {
+        try {
+            EventValues eventValues = Contract.staticExtractEventParameters(eventDefinition, eventLog);
+
+            if (eventValues == null) {
+                log.warn("Could not decode {} event in tx {}", eventName, eventLog.getTransactionHash());
+                return;
+            }
+
             switch (eventName) {
-                case "ReservationCreated":
-                    handleReservationCreated(eventLog);
-                    break;
-                case "ReservationUpdated":
-                    handleReservationUpdated(eventLog);
-                    break;
-                case "ReservationCancelled":
-                    handleReservationCancelled(eventLog);
-                    break;
-                default:
-                    log.warn("Unknown event type: {}", eventName);
+                case RESERVATION_REQUESTED -> handleReservationRequested(eventValues, eventLog);
+                case RESERVATION_CONFIRMED -> handleReservationConfirmed(eventValues, eventLog);
+                case RESERVATION_DENIED -> handleReservationDenied(eventValues, eventLog);
+                case RESERVATION_CANCELED -> handleReservationCanceled(eventValues, eventLog);
+                case BOOKING_CANCELED -> handleBookingCanceled(eventValues, eventLog);
+                default -> log.warn("Unhandled event type: {}", eventName);
             }
 
         } catch (Exception e) {
-            log.error("Error processing {} event: {}", eventName, e.getMessage(), e);
+            log.error("Error processing {} event (tx {}): {}", eventName, eventLog.getTransactionHash(), e.getMessage(), e);
         }
     }
 
-    private void handleReservationCreated(org.web3j.protocol.core.methods.response.Log eventLog) {
-        // TODO: Parse event data and handle reservation creation
-        // This would involve decoding the event parameters from eventLog.getData() and eventLog.getTopics()
-        log.info("Handling ReservationCreated event");
+    private void handleReservationRequested(EventValues eventValues, Log eventLog) {
+        String renter = ((Address) eventValues.getIndexedValues().get(0)).getValue();
+        BigInteger labId = ((Uint256) eventValues.getIndexedValues().get(1)).getValue();
+        BigInteger start = ((Uint256) eventValues.getNonIndexedValues().get(0)).getValue();
+        BigInteger end = ((Uint256) eventValues.getNonIndexedValues().get(1)).getValue();
+        String reservationKey = toHex((Bytes32) eventValues.getNonIndexedValues().get(2));
+
+        ReservationEventPayload payload = buildPayload(
+            reservationKey,
+            labId,
+            Optional.ofNullable(renter),
+            Optional.ofNullable(start),
+            Optional.ofNullable(end),
+            eventLog
+        );
+
+        dispatchReservationLifecycleEvent("requested", payload);
     }
 
-    private void handleReservationUpdated(org.web3j.protocol.core.methods.response.Log eventLog) {
-        // TODO: Parse event data and handle reservation update
-        log.info("Handling ReservationUpdated event");
+    private void handleReservationConfirmed(EventValues eventValues, Log eventLog) {
+        String reservationKey = toHex((Bytes32) eventValues.getIndexedValues().get(0));
+        BigInteger labId = ((Uint256) eventValues.getIndexedValues().get(1)).getValue();
+
+        ReservationEventPayload payload = buildPayload(
+            reservationKey,
+            labId,
+            Optional.empty(),
+            Optional.empty(),
+            Optional.empty(),
+            eventLog
+        );
+
+        dispatchReservationLifecycleEvent("confirmed", payload);
     }
 
-    private void handleReservationCancelled(org.web3j.protocol.core.methods.response.Log eventLog) {
-        // TODO: Parse event data and handle reservation cancellation
-        log.info("Handling ReservationCancelled event");
+    private void handleReservationDenied(EventValues eventValues, Log eventLog) {
+        String reservationKey = toHex((Bytes32) eventValues.getIndexedValues().get(0));
+        BigInteger labId = ((Uint256) eventValues.getIndexedValues().get(1)).getValue();
+
+        ReservationEventPayload payload = buildPayload(
+            reservationKey,
+            labId,
+            Optional.empty(),
+            Optional.empty(),
+            Optional.empty(),
+            eventLog
+        );
+
+        dispatchReservationLifecycleEvent("denied", payload);
     }
+
+    private void handleReservationCanceled(EventValues eventValues, Log eventLog) {
+        String reservationKey = toHex((Bytes32) eventValues.getIndexedValues().get(0));
+        BigInteger labId = ((Uint256) eventValues.getIndexedValues().get(1)).getValue();
+
+        ReservationEventPayload payload = buildPayload(
+            reservationKey,
+            labId,
+            Optional.empty(),
+            Optional.empty(),
+            Optional.empty(),
+            eventLog
+        );
+
+        dispatchReservationLifecycleEvent("canceled", payload);
+    }
+
+    private void handleBookingCanceled(EventValues eventValues, Log eventLog) {
+        String reservationKey = toHex((Bytes32) eventValues.getIndexedValues().get(0));
+        BigInteger labId = ((Uint256) eventValues.getIndexedValues().get(1)).getValue();
+
+        ReservationEventPayload payload = buildPayload(
+            reservationKey,
+            labId,
+            Optional.empty(),
+            Optional.empty(),
+            Optional.empty(),
+            eventLog
+        );
+
+        dispatchReservationLifecycleEvent("booking-canceled", payload);
+    }
+
+    private ReservationEventPayload buildPayload(
+        String reservationKey,
+        BigInteger labIdFromEvent,
+        Optional<String> renterFromEvent,
+        Optional<BigInteger> startFromEvent,
+        Optional<BigInteger> endFromEvent,
+        Log eventLog
+    ) {
+        Optional<ReservationDetails> details = fetchReservationDetails(reservationKey);
+
+        BigInteger labId = details.map(ReservationDetails::labId).orElse(labIdFromEvent);
+
+        Optional<String> renter = details
+            .map(ReservationDetails::renter)
+            .flatMap(this::normalizeNonEmptyString)
+            .or(() -> renterFromEvent.flatMap(this::normalizeNonEmptyString));
+
+        Optional<BigInteger> start = details.map(ReservationDetails::start).or(() -> startFromEvent);
+        Optional<BigInteger> end = details.map(ReservationDetails::end).or(() -> endFromEvent);
+        Optional<BigInteger> status = details.map(ReservationDetails::status);
+
+        Optional<String> puc = details
+            .map(ReservationDetails::puc)
+            .flatMap(this::normalizeNonEmptyString);
+
+        Optional<String> payerInstitution = details
+            .map(ReservationDetails::payerInstitution)
+            .flatMap(this::normalizeAddress);
+
+        Optional<String> collectorInstitution = details
+            .map(ReservationDetails::collectorInstitution)
+            .flatMap(this::normalizeAddress);
+
+        return new ReservationEventPayload(
+            reservationKey,
+            labId,
+            renter,
+            start,
+            end,
+            status,
+            puc,
+            payerInstitution,
+            collectorInstitution,
+            eventLog
+        );
+    }
+
+    private void dispatchReservationLifecycleEvent(String action, ReservationEventPayload payload) {
+        log.info(
+            "Reservation {} | key={} labId={} tx={} block={}",
+            action,
+            payload.reservationKey(),
+            payload.labId(),
+            payload.rawLog().getTransactionHash(),
+            payload.rawLog().getBlockNumber()
+        );
+
+        payload.status().ifPresent(status ->
+            log.debug("On-chain status: {}", describeStatus(status))
+        );
+
+        payload.startEpoch().ifPresent(start ->
+            log.debug(
+                "Reservation window {} → {} (epoch seconds)",
+                formatEpoch(start),
+                payload.endEpoch().map(this::formatEpoch).orElse("n/a")
+            )
+        );
+
+        triggerReservationDecisionWorkflow(action, payload);
+    }
+
+    private void triggerReservationDecisionWorkflow(String action, ReservationEventPayload payload) {
+        log.info(
+            "Dispatching reservation workflow [{}] for key={} labId={} renter={} payerInstitution={} puc={}",
+            action,
+            payload.reservationKey(),
+            payload.labId(),
+            payload.renter().orElse("unknown"),
+            payload.payerInstitution().orElse("n/a"),
+            payload.puc().orElse("n/a")
+        );
+        // TODO: hook into availability evaluation + approval/denial + notification pipeline once defined.
+    }
+
+    private String describeStatus(BigInteger status) {
+        if (status == null) {
+            return "UNKNOWN";
+        }
+        return switch (status.intValue()) {
+            case 0 -> "PENDING";
+            case 1 -> "CONFIRMED";
+            case 2 -> "IN_USE";
+            case 3 -> "COMPLETED";
+            case 4 -> "COLLECTED";
+            case 5 -> "CANCELLED";
+            default -> "UNKNOWN(" + status + ")";
+        };
+    }
+
+    private DefaultBlockParameter resolveStartBlockParameter() {
+        if (startBlock == null || startBlock.isBlank()) {
+            return DefaultBlockParameterName.LATEST;
+        }
+
+        String normalized = startBlock.trim().toLowerCase(Locale.ROOT);
+        return switch (normalized) {
+            case "earliest" -> DefaultBlockParameterName.EARLIEST;
+            case "latest" -> DefaultBlockParameterName.LATEST;
+            case "pending" -> DefaultBlockParameterName.PENDING;
+            default -> {
+                try {
+                    BigInteger blockNumber = normalized.startsWith("0x")
+                        ? new BigInteger(normalized.substring(2), 16)
+                        : new BigInteger(normalized);
+                    yield DefaultBlockParameter.valueOf(blockNumber);
+                } catch (NumberFormatException ex) {
+                    log.warn("Invalid value '{}' for contract.event.start.block. Falling back to latest.", startBlock);
+                    yield DefaultBlockParameterName.LATEST;
+                }
+            }
+        };
+    }
+
+    private String formatEpoch(BigInteger epochSeconds) {
+        try {
+            return Instant.ofEpochSecond(epochSeconds.longValue()).toString();
+        } catch (Exception ex) {
+            return epochSeconds.toString();
+        }
+    }
+
+    private String toHex(Bytes32 value) {
+        return Numeric.toHexString(value.getValue());
+    }
+
+    private Optional<String> normalizeNonEmptyString(String value) {
+        if (value == null) {
+            return Optional.empty();
+        }
+        String trimmed = value.trim();
+        return trimmed.isEmpty() ? Optional.empty() : Optional.of(trimmed);
+    }
+
+    private Optional<String> normalizeAddress(String address) {
+        return normalizeNonEmptyString(address)
+            .map(val -> val.toLowerCase(Locale.ROOT))
+            .filter(val -> !isZeroAddress(val));
+    }
+
+    private boolean isZeroAddress(String address) {
+        if (address == null || address.isBlank()) {
+            return true;
+        }
+        String normalized = address.trim().toLowerCase(Locale.ROOT);
+        return normalized.equals("0x0")
+            || normalized.equals("0x")
+            || normalized.equals("0x0000000000000000000000000000000000000000");
+    }
+
+    private Diamond getDiamondContract() {
+        Diamond local = cachedDiamond;
+        if (local == null) {
+            synchronized (this) {
+                local = cachedDiamond;
+                if (local == null) {
+                    Web3j web3j = walletService.getWeb3jInstance();
+                    local = Diamond.load(
+                        diamondContractAddress,
+                        web3j,
+                        new ReadonlyTransactionManager(web3j, diamondContractAddress),
+                        new StaticGasProvider(BigInteger.ZERO, BigInteger.ZERO)
+                    );
+                    cachedDiamond = local;
+                }
+            }
+        }
+        return local;
+    }
+
+    private Optional<ReservationDetails> fetchReservationDetails(String reservationKey) {
+        try {
+            Diamond contract = getDiamondContract();
+            byte[] keyBytes = Numeric.hexStringToByteArray(reservationKey);
+            if (keyBytes.length != 32) {
+                log.debug("Skipping reservation {} due to unexpected key length {}", reservationKey, keyBytes.length);
+                return Optional.empty();
+            }
+            Diamond.Reservation reservation = contract.getReservation(keyBytes).send();
+            return Optional.of(mapReservation(reservation));
+        } catch (Exception ex) {
+            log.debug("Unable to load reservation {}: {}", reservationKey, ex.getMessage());
+            return Optional.empty();
+        }
+    }
+
+    private ReservationDetails mapReservation(Diamond.Reservation reservation) {
+        return new ReservationDetails(
+            reservation.labId,
+            reservation.renter,
+            reservation.price,
+            reservation.labProvider,
+            reservation.status,
+            reservation.start,
+            reservation.end,
+            reservation.puc,
+            reservation.requestPeriodStart,
+            reservation.requestPeriodDuration,
+            reservation.payerInstitution,
+            reservation.collectorInstitution
+        );
+    }
+
+    private record ReservationDetails(
+        BigInteger labId,
+        String renter,
+        BigInteger price,
+        String labProvider,
+        BigInteger status,
+        BigInteger start,
+        BigInteger end,
+        String puc,
+        BigInteger requestPeriodStart,
+        BigInteger requestPeriodDuration,
+        String payerInstitution,
+        String collectorInstitution
+    ) { }
+
+    private record ReservationEventPayload(
+        String reservationKey,
+        BigInteger labId,
+        Optional<String> renter,
+        Optional<BigInteger> startEpoch,
+        Optional<BigInteger> endEpoch,
+        Optional<BigInteger> status,
+        Optional<String> puc,
+        Optional<String> payerInstitution,
+        Optional<String> collectorInstitution,
+        Log rawLog
+    ) { }
 }
