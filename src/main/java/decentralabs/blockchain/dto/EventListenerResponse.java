@@ -12,6 +12,7 @@ import lombok.NoArgsConstructor;
 public class EventListenerResponse {
     private boolean success;
     private String contractAddress;
+    private String eventName;
     private String network;
     private String message;
     private String error;

@@ -22,8 +22,8 @@ public class JwtService {
     @Value("${base.domain}")
     private String baseDomain;
     
-    @Value("${server.servlet.context-path}")
-    private String contextPath;
+    @Value("${auth.base-path}")
+    private String authPath;
     
     @Autowired
     private KeyService keyService;
@@ -32,7 +32,7 @@ public class JwtService {
      * Helper method to construct the issuer URL from base domain and context path
      */
     private String getIssuerUrl() {
-        return baseDomain + contextPath;
+        return baseDomain + authPath;
     }
 
     /**

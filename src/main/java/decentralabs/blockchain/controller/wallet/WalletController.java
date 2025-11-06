@@ -120,17 +120,17 @@ public class WalletController {
     }
 
     /**
-     * POST /wallet/listen-events
-     * Sets up a listener for smart contract events
+     * GET /wallet/listen-events
+     * Gets the status of configured contract event listeners
      */
-    @PostMapping("/listen-events")
-    public ResponseEntity<EventListenerResponse> listenToContractEvents(@RequestBody EventListenerRequest request) {
+    @GetMapping("/listen-events")
+    public ResponseEntity<EventListenerResponse> getEventListenerStatus() {
         try {
-            EventListenerResponse response = walletService.listenToContractEvents(request);
+            EventListenerResponse response = walletService.getEventListenerStatus();
             return ResponseEntity.ok(response);
         } catch (Exception e) {
             return ResponseEntity.badRequest()
-                .body(EventListenerResponse.error("Error setting up event listener: " + e.getMessage()));
+                .body(EventListenerResponse.error("Error getting event listener status: " + e.getMessage()));
         }
     }
 

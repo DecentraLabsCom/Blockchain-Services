@@ -88,15 +88,15 @@ The process for authenticating and authorizing an SSO-logged in user will be add
 * `GET /health` - Health check
 
 ### OIDC Endpoint
-* `GET /.well-known/openid-configuration` - OIDC
+* `GET /auth/.well-known/openid-configuration` - OIDC discovery metadata
 
 ### Authentication Endpoints
 * `GET /auth/jwks` - JSON Web Keys
-* `POST /auth/message` - Wallet challenge
-* `POST /auth/auth` - Authentication only
-* `POST /auth/auth2` - Authentication + authorization (auth2)
-* `POST /auth/saml2-auth` - SAML2 auth
-* `POST /auth/saml2-auth2` - SAML2 auth2
+* `GET /auth/message` - Wallet challenge message
+* `POST /auth/wallet-auth` - Wallet authentication (doesn't check bookings)
+* `POST /auth/wallet-auth2` - Wallet authentication + authorization (checks bookings)
+* `POST /auth/saml-auth` - SAML2 authentication
+* `POST /auth/saml-auth2` - SAML2 authentication + authorization
 
 ### 🆕 Wallet Endpoints
 * `POST /wallet/create` - Create new Ethereum wallet *(localhost only)*
@@ -229,33 +229,32 @@ Health endpoint available at `/health`:
 
 ### 1. Wallet Challenge
 ```
-POST /auth/message
-{
-  "wallet_address": "0x742d35Cc6E7C0532f3E8bc8F3aF1c567aE7aF2"
-}
+GET /auth/message
 
 Response:
 {
-  "message": "0x742d35Cc6E7C0532f3E8bc8F3aF1c567aE7aF2:1695478400",
-  "timestamp": 1695478400
+  "message": "Login request: 1695478400",
+  "timestamp": "1695478400"
 }
 ```
 
 ### 2. Signature Verification
 ```
-POST /auth/auth2
+POST /auth/wallet-auth2
 {
-  "wallet_address": "0x742d35Cc6E7C0532f3E8bc8F3aF1c567aE7aF2",
+  "wallet": "0x742d35Cc6E7C0532f3E8bc8F3aF1c567aE7aF2",
   "signature": "0x1234567890abcdef...",
-  "message": "0x742d35Cc6E7C0532f3E8bc8F3aF1c567aE7aF2:1695478400"
+  "reservationKey": "0xabc123..."
 }
 
 Response:
 {
-  "jwt": "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9...",
-  "redirect_url": "https://yourdomain.com/guacamole/?jwt=..."
+  "token": "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9...",
+  "labURL": "https://yourdomain.com/guacamole/?jwt=..."
 }
 ```
+
+> The endpoint can also receive `labId` (as a string) instead of `reservationKey`.
 
 ## 🆕 Wallet Operations Examples
 
@@ -306,37 +305,37 @@ The JWT token contains lab access permissions based on blockchain reservations:
 ```json
 {
   "iss": "https://yourdomain.com/auth",
+  "iat": 1695478400,
+  "jti": "b3d7f4a8-6c9e-4b21-9a5d-387bf7e6f7a2",
   "aud": "https://yourdomain.com/guacamole",
-  "sub": "0x742d35Cc6E7C0532f3E8bc8F3aF1c567aE7aF2",
-  "labs": [
-    {
-      "provider": "university-chemistry",
-      "lab_id": "reactor-control-01",
-      "reservation_id": "res_894736",
-      "valid_until": 1695482000
-    }
-  ],
+  "sub": "your-lab-credential",
+  "nbf": 1695480000,
   "exp": 1695482000,
-  "iat": 1695478400
+  "labId": 42
 }
 ```
+
+#### JWT Claims Reference
+**Always present:**
+- `iss` (Issuer): URL of the service issuing the token
+- `iat` (Issued At): Token creation timestamp
+- `jti` (JWT ID): Unique token identifier
+
+**Added for auth2, when there is an on-chain reservation (`wallet-auth2` / `saml-auth2`):**
+- `aud` (Audience): URL where the token will be used (lab access)
+- `sub` (Subject): Credential/subject used for access
+- `nbf` (Not Before): Start of validity (reservation start)
+- `exp` (Expiration): End of validity (reservation end)
+- `labId`: Numeric identifier of the laboratory
+
+**Claims specific to simple authentication (`wallet-auth` / `saml-auth`):**
+- `wallet`: Authenticated wallet address
+- `userid`: SAML user identifier
+- `affiliation`: SAML user affiliation
 
 ## 🚀 Deployment
 
 See [Docker Deployment Guide](dev/DOCKER_DEPLOYMENT_GUIDE.md) for complete Docker Compose deployment instructions.
-
-## 📝 Documentation
-
-### Core Documentation
-* [WAR Deployment Guide](dev/DEPLOYMENT_GUIDE_WAR.md)
-* [Docker Deployment Guide](dev/DOCKER_DEPLOYMENT_GUIDE.md)
-* [Health Endpoint](dev/HEALTH_ENDPOINT.md)
-* [JWT Implementation](dev/JWT_IMPLEMENTATION.md)
-
-### 🆕 Wallet Documentation
-* [Wallet APIs Guide](WALLET_README.md) - Complete wallet functionality documentation
-* [Test Script](test-wallet-apis.sh) - Bash script to test all wallet endpoints
-* [Integration Tests](src/test/java/decentralabs/auth/controller/WalletControllerIntegrationTest.java) - JUnit tests
 
 ## 🤝 Contributing
 

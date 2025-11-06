@@ -27,7 +27,7 @@ public class AuthController {
     @Value("${base.domain}")
     private String baseDomain;
     
-    @Value("${endpoint.auth}")
+    @Value("${auth.base-path}")
     private String authPath;
     
     @Value("${endpoint.wallet-auth2}")
@@ -41,9 +41,6 @@ public class AuthController {
 
     @Autowired
     private KeyService keyService;
-    
-    @Autowired
-    private JwtService jwtService;
 
     /**
      * OpenID Connect Discovery endpoint

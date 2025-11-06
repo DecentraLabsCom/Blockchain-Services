@@ -28,9 +28,6 @@ public class BlockchainBookingService {
     
     @Value("${base.domain}")
     private String baseDomain;
-    
-    @Value("${endpoint.guacamole}")
-    private String guacamoleEndpoint;
 
     /**
      * Retrieves booking information from blockchain for a wallet

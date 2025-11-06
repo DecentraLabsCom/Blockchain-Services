@@ -301,31 +301,20 @@ public class WalletService {
     }
 
     /**
-     * Sets up a listener for contract events
+     * Gets the status of configured contract event listeners
      */
-    public EventListenerResponse listenToContractEvents(EventListenerRequest request) {
+    public EventListenerResponse getEventListenerStatus() {
         try {
-            Web3j web3j = getWeb3jInstance();
-
-            // Here we would implement listeners for specific events
-            // For example, reservation events from the Diamond contract
-
-            log.info("Setting up event listener for contract: {} on network: {}",
-                    request.getContractAddress(), activeNetwork);
-
-            // In a real implementation, we would maintain references to the listeners
-            // to be able to stop them later
-
             return EventListenerResponse.builder()
                 .success(true)
-                .contractAddress(request.getContractAddress())
+                .contractAddress(contractAddress)
                 .network(activeNetwork)
-                .message("Event listener configured successfully")
+                .message("Event listeners are configured automatically on startup from application.properties")
                 .build();
 
         } catch (Exception e) {
-            log.error("Error setting up event listener", e);
-            return EventListenerResponse.error("Failed to setup event listener: " + e.getMessage());
+            log.error("Error getting event listener status", e);
+            return EventListenerResponse.error("Failed to get event listener status: " + e.getMessage());
         }
     }
 
@@ -362,7 +351,7 @@ public class WalletService {
 
     // Helper methods
 
-    private Web3j getWeb3jInstance() {
+    public Web3j getWeb3jInstance() {
         return web3jInstances.computeIfAbsent(activeNetwork, this::createWeb3jInstance);
     }
 
