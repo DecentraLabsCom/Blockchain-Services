@@ -1,5 +1,6 @@
 package decentralabs.blockchain.service;
 
+import decentralabs.blockchain.contract.Diamond;
 import decentralabs.blockchain.dto.InstitutionalReservationRequest;
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.Jws;
@@ -9,8 +10,15 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.web3j.crypto.Credentials;
+import org.web3j.protocol.Web3j;
+import org.web3j.protocol.core.methods.response.TransactionReceipt;
+import org.web3j.tx.gas.StaticGasProvider;
+import org.web3j.utils.Convert;
 
+import java.math.BigDecimal;
+import java.math.BigInteger;
 import java.security.PublicKey;
+import java.time.ZoneOffset;
 import java.util.Map;
 
 /**
@@ -27,6 +35,16 @@ public class InstitutionalReservationService {
     
     private final MarketplaceKeyService marketplaceKeyService;
     private final SamlValidationService samlValidationService;
+    private final Web3j web3j;
+    
+    @Value("${contract.address}")
+    private String contractAddress;
+    
+    @Value("${ethereum.gas.price.default}")
+    private BigDecimal defaultGasPriceGwei;
+    
+    @Value("${ethereum.gas.limit.contract}")
+    private BigInteger contractGasLimit;
     
     @Value("${wallet.address}")
     private String institutionalWalletAddress;
@@ -185,23 +203,42 @@ public class InstitutionalReservationService {
             Credentials credentials) {
         
         try {
-            // TODO: Implement actual smart contract call
-            // This would use Web3j to call the institutionalReservationRequest function
-            
+            Diamond contract = Diamond.load(
+                contractAddress,
+                web3j,
+                credentials,
+                new StaticGasProvider(resolveGasPriceWei(), contractGasLimit)
+            );
+
+            BigInteger startEpoch = BigInteger.valueOf(request.getStartTime().toEpochSecond(ZoneOffset.UTC));
+            BigInteger endEpoch = BigInteger.valueOf(request.getEndTime().toEpochSecond(ZoneOffset.UTC));
+            String puc = request.getUserId(); // Using SAML user identifier as PUC
+
             log.info("Executing blockchain transaction for lab: {} with institutional wallet: {}", 
                     request.getLabId(), credentials.getAddress());
-            
-            // Placeholder - in production, call the smart contract
-            String mockTransactionHash = "0x" + java.util.UUID.randomUUID().toString().replace("-", "");
-            
-            log.info("Blockchain transaction executed: {}", mockTransactionHash);
-            
-            return mockTransactionHash;
+
+            TransactionReceipt receipt = contract.institutionalReservationRequest(
+                institutionalWalletAddress,
+                puc,
+                request.getLabId(),
+                startEpoch,
+                endEpoch
+            ).send();
+
+            log.info("Blockchain transaction executed: {}", receipt.getTransactionHash());
+            return receipt.getTransactionHash();
             
         } catch (Exception e) {
             log.error("Blockchain transaction failed", e);
-            throw new IllegalStateException("Failed to execute blockchain transaction: " + e.getMessage());
+            throw new IllegalStateException("Failed to execute blockchain transaction: " + e.getMessage(), e);
         }
+    }
+    
+    private BigInteger resolveGasPriceWei() {
+        BigDecimal gwei = (defaultGasPriceGwei == null || defaultGasPriceGwei.signum() <= 0)
+            ? BigDecimal.ONE
+            : defaultGasPriceGwei;
+        return Convert.toWei(gwei, Convert.Unit.GWEI).toBigInteger();
     }
     
 }

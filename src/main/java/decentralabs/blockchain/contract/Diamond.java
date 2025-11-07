@@ -18,6 +18,7 @@ import org.web3j.abi.datatypes.generated.Uint256;
 import org.web3j.crypto.Credentials;
 import org.web3j.protocol.Web3j;
 import org.web3j.protocol.core.RemoteFunctionCall;
+import org.web3j.protocol.core.methods.response.TransactionReceipt;
 import org.web3j.tx.Contract;
 import org.web3j.tx.TransactionManager;
 import org.web3j.tx.gas.ContractGasProvider;
@@ -200,6 +201,30 @@ public class Diamond extends Contract {
                     Type result = executeCallSingleValueReturn(function);
                     return (byte[]) result.getValue();
                 });
+    }
+
+    /**
+     * Submit an institutional reservation request.
+     */
+    @SuppressWarnings("rawtypes")
+    public RemoteFunctionCall<TransactionReceipt> institutionalReservationRequest(
+        String institutionalProvider,
+        String puc,
+        BigInteger labId,
+        BigInteger start,
+        BigInteger end
+    ) {
+        final Function function = new Function("institutionalReservationRequest",
+            Arrays.asList(
+                new Address(institutionalProvider),
+                new Utf8String(puc),
+                new Uint256(labId),
+                new Uint32(start),
+                new Uint32(end)
+            ),
+            List.of()
+        );
+        return executeRemoteCallTransaction(function);
     }
 
     /**
