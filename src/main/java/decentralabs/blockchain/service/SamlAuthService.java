@@ -5,18 +5,11 @@ import io.jsonwebtoken.Jws;
 import io.jsonwebtoken.Jwts;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
-import org.w3c.dom.Document;
-import org.w3c.dom.Element;
-import org.w3c.dom.NodeList;
 
 import decentralabs.blockchain.dto.AuthResponse;
 import decentralabs.blockchain.dto.SamlAuthRequest;
 
-import javax.xml.parsers.DocumentBuilder;
-import javax.xml.parsers.DocumentBuilderFactory;
-import java.io.ByteArrayInputStream;
 import java.security.PublicKey;
-import java.util.Base64;
 import java.util.Map;
 
 /**
@@ -33,6 +26,9 @@ public class SamlAuthService {
     
     @Autowired
     private MarketplaceKeyService marketplaceKeyService;
+    
+    @Autowired
+    private SamlValidationService samlValidationService;
     
     /**
      * Handles SAML authentication request with 3-layer validation
@@ -134,77 +130,9 @@ public class SamlAuthService {
      * @throws Exception if validation fails
      */
     private Map<String, String> validateSAMLAssertion(String samlAssertion) throws Exception {
-        try {
-            // Decode Base64
-            byte[] decodedBytes = Base64.getDecoder().decode(samlAssertion);
-            String xmlContent = new String(decodedBytes);
-            
-            // Parse XML
-            DocumentBuilderFactory factory = DocumentBuilderFactory.newInstance();
-            factory.setNamespaceAware(true);
-            DocumentBuilder builder = factory.newDocumentBuilder();
-            Document doc = builder.parse(new ByteArrayInputStream(xmlContent.getBytes()));
-            
-            // Extract attributes
-            String userid = extractSAMLAttribute(doc, "userid");
-            String affiliation = extractSAMLAttribute(doc, "affiliation");
-            
-            if (userid == null || userid.isEmpty()) {
-                throw new SecurityException("SAML assertion missing 'userid' attribute");
-            }
-            if (affiliation == null || affiliation.isEmpty()) {
-                throw new SecurityException("SAML assertion missing 'affiliation' attribute");
-            }
-            
-            return Map.of(
-                "userid", userid,
-                "affiliation", affiliation
-            );
-        } catch (Exception e) {
-            System.err.println("SAML assertion validation failed: " + e.getMessage());
-            throw new SecurityException("Invalid SAML assertion: " + e.getMessage(), e);
-        }
-    }
-    
-    /**
-     * Extracts a SAML attribute value from the XML document
-     */
-    private String extractSAMLAttribute(Document doc, String attributeName) {
-        try {
-            NodeList attributes = doc.getElementsByTagNameNS("*", "Attribute");
-            for (int i = 0; i < attributes.getLength(); i++) {
-                Element attribute = (Element) attributes.item(i);
-                String name = attribute.getAttribute("Name");
-                
-                if (name != null && name.equals(attributeName)) {
-                    NodeList values = attribute.getElementsByTagNameNS("*", "AttributeValue");
-                    if (values.getLength() > 0) {
-                        return values.item(0).getTextContent();
-                    }
-                }
-            }
-            return null;
-        } catch (Exception e) {
-            System.err.println("Error extracting SAML attribute '" + attributeName + "': " + e.getMessage());
-            return null;
-        }
-    }
-    
-    /**
-     * Extracts a value from XML by tag name (simple helper)
-     */
-    @SuppressWarnings("unused")
-    private String extractXMLValue(Document doc, String tagName) {
-        try {
-            NodeList nodeList = doc.getElementsByTagNameNS("*", tagName);
-            if (nodeList.getLength() > 0) {
-                return nodeList.item(0).getTextContent();
-            }
-            return null;
-        } catch (Exception e) {
-            System.err.println("Error extracting XML value '" + tagName + "': " + e.getMessage());
-            return null;
-        }
+        Map<String, String> attributes = samlValidationService.validateSamlAssertionWithSignature(samlAssertion);
+        System.out.println("✅ SAML assertion validated WITH SIGNATURE for user: " + attributes.get("userid"));
+        return attributes;
     }
     
     /**

@@ -1,5 +1,6 @@
 package decentralabs.blockchain.service;
 
+import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.JwtBuilder;
 import io.jsonwebtoken.Jwts;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -10,11 +11,13 @@ import java.math.BigInteger;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.security.PrivateKey;
+import java.security.PublicKey;
+import java.util.Date;
 import java.util.Map;
 import java.util.UUID;
 
 /**
- * Service for JWT token generation
+ * Service for JWT token generation and validation
  */
 @Service
 public class JwtService {
@@ -118,5 +121,80 @@ public class JwtService {
         }
 
         return java.util.Base64.getUrlEncoder().withoutPadding().encodeToString(bytes);
+    }
+    
+    /**
+     * Validates a JWT token
+     * @param token JWT token to validate
+     * @return true if valid, false otherwise
+     */
+    public boolean validateToken(String token) {
+        try {
+            PublicKey publicKey = keyService.getPublicKey();
+            Jwts.parser()
+                .verifyWith(publicKey)
+                .build()
+                .parseSignedClaims(token);
+            return true;
+        } catch (Exception e) {
+            return false;
+        }
+    }
+    
+    /**
+     * Extracts username from JWT token
+     * @param token JWT token
+     * @return username (sub claim)
+     */
+    public String extractUsername(String token) {
+        Map<String, Object> claims = extractAllClaims(token);
+        return (String) claims.get("sub");
+    }
+    
+    /**
+     * Extracts all claims from JWT token
+     * @param token JWT token
+     * @return Claims map
+     */
+    public Map<String, Object> extractAllClaims(String token) {
+        try {
+            PublicKey publicKey = keyService.getPublicKey();
+            Claims claims = Jwts.parser()
+                .verifyWith(publicKey)
+                .build()
+                .parseSignedClaims(token)
+                .getPayload();
+            return claims;
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to extract claims from token", e);
+        }
+    }
+    
+    /**
+     * Extracts expiration date from JWT token
+     * @param token JWT token
+     * @return expiration timestamp
+     */
+    public Date getExpirationDate(String token) {
+        Map<String, Object> claims = extractAllClaims(token);
+        Object exp = claims.get("exp");
+        if (exp instanceof BigInteger) {
+            return new Date(((BigInteger) exp).longValue() * 1000);
+        } else if (exp instanceof Integer) {
+            return new Date(((Integer) exp).longValue() * 1000);
+        } else if (exp instanceof Long) {
+            return new Date(((Long) exp) * 1000);
+        }
+        return null;
+    }
+    
+    /**
+     * Checks if a token is expired
+     * @param token JWT token
+     * @return true if expired, false otherwise
+     */
+    public boolean isTokenExpired(String token) {
+        Date expiration = getExpirationDate(token);
+        return expiration != null && expiration.before(new Date());
     }
 }

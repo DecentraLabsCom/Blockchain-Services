@@ -62,7 +62,7 @@ public class BlockchainBookingService {
             // Determine which method to use based on available parameters
             if (reservationKey != null && !reservationKey.isEmpty()) {
                 // OPTIMAL PATH: Use reservationKey for direct O(1) access
-                return getBookingInfoByReservationKey(wallet, reservationKey);
+                return getBookingInfoByReservationKey(wallet, reservationKey, puc);
             } else if (labId != null && !labId.isEmpty()) {
                 // FALLBACK PATH: Search by labId (requires iteration)
                 return getBookingInfoByLabId(wallet, labId, puc);
@@ -88,7 +88,7 @@ public class BlockchainBookingService {
      * Retrieves booking info using reservationKey directly (OPTIMAL - 2 blockchain calls)
      * Call flow: getReservation(key) → getLab(tokenId)
      */
-    private Map<String, Object> getBookingInfoByReservationKey(String wallet, String reservationKeyHex) 
+    private Map<String, Object> getBookingInfoByReservationKey(String wallet, String reservationKeyHex, String expectedPuc) 
             throws Exception {
         
         // 1. Convert reservationKey from hex to bytes32
@@ -112,6 +112,12 @@ public class BlockchainBookingService {
         BigInteger start = reservation.start;
         BigInteger end = reservation.end;
         BigInteger status = reservation.status;
+        if (expectedPuc != null && !expectedPuc.isBlank()) {
+            String reservationPuc = reservation.puc;
+            if (reservationPuc == null || !reservationPuc.equals(expectedPuc)) {
+                throw new SecurityException("Reservation key does not belong to the provided institutional user");
+            }
+        }
 
         // 4. Validate reservation
         validateReservation(wallet, renter, status, start, end);
