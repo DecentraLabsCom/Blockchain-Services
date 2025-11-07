@@ -30,12 +30,8 @@ public class BlockchainBookingService {
     @Value("${base.domain}")
     private String baseDomain;
 
-    private static final BigInteger STATUS_PENDING = BigInteger.ZERO;
     private static final BigInteger STATUS_CONFIRMED = BigInteger.ONE;
     private static final BigInteger STATUS_IN_USE = BigInteger.valueOf(2);
-    private static final BigInteger STATUS_COMPLETED = BigInteger.valueOf(3);
-    private static final BigInteger STATUS_COLLECTED = BigInteger.valueOf(4);
-    private static final BigInteger STATUS_CANCELLED = BigInteger.valueOf(5);
 
     /**
      * Retrieves booking information from blockchain for a wallet
@@ -345,16 +341,5 @@ public class BlockchainBookingService {
     private boolean isValidReservationKey(byte[] key) {
         return key != null && key.length == 32 && !Arrays.equals(key, new byte[32]);
     }
-    
-    /**
-     * Retrieves booking information for a SAML-authenticated user
-     * Maps SAML user ID to wallet address, then uses standard blockchain lookup
-     * 
-     * @param userid The SAML user identifier (NameID from IdP)
-     * @param affiliation The user's institutional affiliation
-     * @param labId The lab ID to search for
-     * @param reservationKey Optional - the reservation key as hex string
-     * @return Map containing booking information for JWT claims
-     */
-}
+} 
 

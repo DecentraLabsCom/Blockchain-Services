@@ -2,6 +2,8 @@ package decentralabs.blockchain.config;
 
 import decentralabs.blockchain.contract.Diamond;
 import decentralabs.blockchain.service.WalletService;
+import decentralabs.blockchain.service.availability.AvailabilityPolicyService;
+import decentralabs.blockchain.service.availability.LabAvailabilityRule;
 import java.math.BigInteger;
 import java.time.Instant;
 import java.util.Arrays;
@@ -99,6 +101,7 @@ public class ContractEventListenerConfig {
     );
 
     private final WalletService walletService;
+    private final AvailabilityPolicyService availabilityPolicyService;
 
     @Value("${contract.address}")
     private String diamondContractAddress;
@@ -404,7 +407,25 @@ public class ContractEventListenerConfig {
             payload.payerInstitution().orElse("n/a"),
             payload.puc().orElse("n/a")
         );
-        // TODO: hook into availability evaluation + approval/denial + notification pipeline once defined.
+        LabAvailabilityRule rule = availabilityPolicyService.resolveRule(payload.labId());
+        applyAvailabilityRule(action, payload, rule);
+    }
+
+    private void applyAvailabilityRule(String action, ReservationEventPayload payload, LabAvailabilityRule rule) {
+        switch (rule.action()) {
+            case AUTO_APPROVE -> log.info("Auto-approval rule matched for lab {} (note: {})", payload.labId(), rule.note());
+            case AUTO_DENY -> log.info("Auto-denial rule matched for lab {} (note: {})", payload.labId(), rule.note());
+            case MANUAL -> log.info("Manual review required for lab {} (note: {})", payload.labId(), rule.note());
+        }
+
+        if (!rule.notificationChannels().isEmpty()) {
+            log.info(
+                "Notifying channels {} about reservation {} on lab {}",
+                rule.notificationChannels(),
+                payload.reservationKey(),
+                payload.labId()
+            );
+        }
     }
 
     private String describeStatus(BigInteger status) {
