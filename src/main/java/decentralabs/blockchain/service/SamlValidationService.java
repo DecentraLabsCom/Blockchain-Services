@@ -37,12 +37,6 @@ public class SamlValidationService {
     
     private static final Logger logger = LoggerFactory.getLogger(SamlValidationService.class);
     
-    @Value("${saml.idp.metadata.url:}")
-    private String idpMetadataUrl;
-    
-    @Value("${saml.idp.cert.path:}")
-    private String idpCertPath;
-    
     @Value("${saml.idp.trust-mode:whitelist}")
     private String trustMode;
     
@@ -188,18 +182,6 @@ public class SamlValidationService {
             return certificateCache.get(issuer);
         }
         
-        // Try to load from configured path (if specified)
-        if (idpCertPath != null && !idpCertPath.isEmpty()) {
-            try {
-                X509Certificate cert = loadCertificateFromFile(idpCertPath);
-                certificateCache.put(issuer, cert);
-                logger.info("Loaded certificate from configured path for IdP: {}", issuer);
-                return cert;
-            } catch (Exception e) {
-                logger.warn("Could not load certificate from path: {}", idpCertPath, e);
-            }
-        }
-        
         // Try to retrieve from metadata URL
         try {
             X509Certificate cert = retrieveCertificateFromMetadata(metadataUrl);
@@ -250,16 +232,6 @@ public class SamlValidationService {
         // If no signing cert found, use first cert
         String certData = certNodes.item(0).getTextContent().trim();
         return parseCertificate(certData);
-    }
-    
-    /**
-     * Loads certificate from file
-     */
-    private X509Certificate loadCertificateFromFile(String path) throws Exception {
-        try (InputStream is = new java.io.FileInputStream(path)) {
-            CertificateFactory cf = CertificateFactory.getInstance("X.509");
-            return (X509Certificate) cf.generateCertificate(is);
-        }
     }
     
     /**

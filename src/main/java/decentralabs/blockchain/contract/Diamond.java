@@ -206,7 +206,6 @@ public class Diamond extends Contract {
     /**
      * Submit an institutional reservation request.
      */
-    @SuppressWarnings("rawtypes")
     public RemoteFunctionCall<TransactionReceipt> institutionalReservationRequest(
         String institutionalProvider,
         String puc,
