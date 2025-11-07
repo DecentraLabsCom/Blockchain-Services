@@ -9,9 +9,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.web3j.crypto.Credentials;
-import org.web3j.protocol.Web3j;
 
-import java.math.BigInteger;
 import java.security.PublicKey;
 import java.util.Map;
 
@@ -29,7 +27,6 @@ public class InstitutionalReservationService {
     
     private final MarketplaceKeyService marketplaceKeyService;
     private final SamlValidationService samlValidationService;
-    private final Web3j web3j;
     
     @Value("${wallet.address}")
     private String institutionalWalletAddress;

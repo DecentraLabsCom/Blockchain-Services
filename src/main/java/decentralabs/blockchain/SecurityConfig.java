@@ -43,6 +43,9 @@ public class SecurityConfig {
     
     @Value("${endpoint.wallet}")
     private String walletEndpoint;
+    
+    @Value("${endpoint.wallet-institutional}")
+    private String walletInstitutionalEndpoint;
 
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
@@ -58,7 +61,8 @@ public class SecurityConfig {
                     samlAuthEndpoint,
                     samlAuth2Endpoint,
                     healthEndpoint,
-                    walletEndpoint + "/**"
+                    walletEndpoint + "/**",
+                    walletInstitutionalEndpoint
                 )
             )
             .authorizeHttpRequests(authorize -> authorize
@@ -73,6 +77,7 @@ public class SecurityConfig {
                 .antMatchers(healthEndpoint).permitAll()
                 // ALL wallet endpoints - restricted by CORS to localhost
                 .antMatchers(walletEndpoint + "/**").permitAll()
+                .antMatchers(walletInstitutionalEndpoint).permitAll()
                 .anyRequest().denyAll()
             );
 
@@ -100,8 +105,9 @@ public class SecurityConfig {
         source.registerCorsConfiguration(samlAuth2Endpoint, publicConfiguration);
         source.registerCorsConfiguration(healthEndpoint, publicConfiguration);
         
-        // ALL wallet endpoints - localhost only
+        // ALL wallet endpoints - localhost only, except institutional reservation
         source.registerCorsConfiguration(walletEndpoint + "/**", localhostConfiguration);
+        source.registerCorsConfiguration(walletInstitutionalEndpoint, publicConfiguration);
         
         return source;
     }

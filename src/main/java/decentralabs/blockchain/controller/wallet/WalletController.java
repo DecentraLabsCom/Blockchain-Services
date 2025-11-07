@@ -5,6 +5,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import decentralabs.blockchain.dto.*;
+import decentralabs.blockchain.service.InstitutionalReservationService;
 import decentralabs.blockchain.service.WalletService;
 
 @RestController
@@ -13,6 +14,7 @@ import decentralabs.blockchain.service.WalletService;
 public class WalletController {
 
     private final WalletService walletService;
+    private final InstitutionalReservationService institutionalReservationService;
 
     /**
      * POST /wallet/create
@@ -161,6 +163,20 @@ public class WalletController {
         } catch (Exception e) {
             return ResponseEntity.badRequest()
                 .body(NetworkResponse.error("Error switching network: " + e.getMessage()));
+        }
+    }
+
+    /**
+     * POST /wallet/institutional-reservation
+     * Processes an institutional reservation request
+     */
+    @PostMapping("/institutional-reservation")
+    public ResponseEntity<?> createInstitutionalReservation(@RequestBody InstitutionalReservationRequest request) {
+        try {
+            return ResponseEntity.ok(institutionalReservationService.processReservation(request));
+        } catch (Exception e) {
+            return ResponseEntity.badRequest()
+                .body(java.util.Map.of("success", false, "error", e.getMessage()));
         }
     }
 }
