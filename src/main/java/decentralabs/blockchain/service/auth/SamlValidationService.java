@@ -2,6 +2,7 @@ package decentralabs.blockchain.service.auth;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.w3c.dom.Document;
@@ -16,10 +17,12 @@ import javax.xml.parsers.DocumentBuilder;
 import javax.xml.parsers.DocumentBuilderFactory;
 import java.io.ByteArrayInputStream;
 import java.io.InputStream;
+import java.net.URI;
 import java.net.URL;
 import java.security.cert.CertificateFactory;
 import java.security.cert.X509Certificate;
 import java.util.Base64;
+import java.util.Collections;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -37,11 +40,18 @@ public class SamlValidationService {
     
     private static final Logger logger = LoggerFactory.getLogger(SamlValidationService.class);
     
-    @Value("${saml.idp.trust-mode:whitelist}")
+    @Value("${saml.idp.trust-mode:any}")
     private String trustMode;
     
-    @Value("#{${saml.trusted.idp}}")
-    private Map<String, String> trustedIdps;
+    // Optional: only used in whitelist mode
+    private Map<String, String> trustedIdps = Collections.emptyMap();
+    
+    @Autowired(required = false)
+    public void setTrustedIdps(@Value("#{${saml.trusted.idp:{}}}") Map<String, String> trustedIdps) {
+        if (trustedIdps != null) {
+            this.trustedIdps = trustedIdps;
+        }
+    }
     
     // Cache for IdP certificates (issuer -> certificate)
     private final Map<String, X509Certificate> certificateCache = new ConcurrentHashMap<>();
@@ -203,7 +213,8 @@ public class SamlValidationService {
     private X509Certificate retrieveCertificateFromMetadata(String metadataUrl) throws Exception {
         logger.debug("Retrieving certificate from metadata: {}", metadataUrl);
         
-        URL url = new URL(metadataUrl);
+        URI uri = URI.create(metadataUrl);
+        URL url = uri.toURL();
         Document metadataDoc = parseXML(url.openStream());
         
         // Find X509Certificate element in metadata

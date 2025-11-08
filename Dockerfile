@@ -1,5 +1,5 @@
 # Build Stage - Compiles the source code
-FROM maven:3.8-eclipse-temurin-18 AS builder
+FROM maven:3.9-eclipse-temurin-21 AS builder
 
 WORKDIR /build
 
@@ -12,12 +12,12 @@ COPY src ./src
 RUN mvn clean package -DskipTests -B
 
 # Verify WAR was created
-RUN test -f target/auth-1.0-SNAPSHOT.war
+RUN test -f target/blockchain-services-1.0-SNAPSHOT.war
 
 #########################################
 # Runtime Stage - Imagen final optimizada
 #########################################
-FROM eclipse-temurin:18-jre
+FROM eclipse-temurin:21-jre
 
 # Metadata
 LABEL maintainer="DecentraLabs <tech@decentralabs.com>"
@@ -27,7 +27,7 @@ LABEL description="Blockchain Services - Auth + Wallet/Treasury APIs"
 # Install required packages
 RUN apt-get update && apt-get install -y \
     curl \
-    netcat \
+    netcat-openbsd \
     && rm -rf /var/lib/apt/lists/*
 
 # Create app user for security
@@ -37,7 +37,7 @@ RUN groupadd -r appuser && useradd -r -g appuser appuser
 WORKDIR /app
 
 # Copy WAR from builder stage (renamed for clarity)
-COPY --from=builder /build/target/auth-1.0-SNAPSHOT.war ./blockchain-services.war
+COPY --from=builder /build/target/blockchain-services-1.0-SNAPSHOT.war ./blockchain-services.war
 
 # Copy configuration and scripts (will be mounted as volumes)
 # COPY config/application.properties ./config/
