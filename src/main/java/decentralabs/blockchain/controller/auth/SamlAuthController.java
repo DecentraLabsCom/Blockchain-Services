@@ -1,18 +1,21 @@
 package decentralabs.blockchain.controller.auth;
 
+import decentralabs.blockchain.dto.auth.AuthResponse;
+import decentralabs.blockchain.dto.auth.SamlAuthRequest;
+import decentralabs.blockchain.service.auth.SamlAuthService;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
-
-import decentralabs.blockchain.dto.AuthResponse;
-import decentralabs.blockchain.dto.SamlAuthRequest;
-import decentralabs.blockchain.service.SamlAuthService;
 
 /**
  * Controller for SAML-based authentication endpoints
  */
 @RestController
 @RequestMapping("/auth")
+@ConditionalOnProperty(value = "features.providers.enabled", havingValue = "true", matchIfMissing = true)
+@Slf4j
 public class SamlAuthController {
     
     @Autowired
@@ -34,7 +37,7 @@ public class SamlAuthController {
         } catch (SecurityException e) {
             return ResponseEntity.status(401).body(AuthResponse.errorJson(e.getMessage()));
         } catch (Exception e) {
-            System.err.println("SAML authentication error: " + e.getMessage());
+            log.error("SAML authentication error", e);
             return ResponseEntity.status(500).body(AuthResponse.errorJson("Internal server error"));
         }
     }
@@ -55,7 +58,7 @@ public class SamlAuthController {
         } catch (SecurityException e) {
             return ResponseEntity.status(401).body(AuthResponse.errorJson(e.getMessage()));
         } catch (Exception e) {
-            System.err.println("SAML authentication error: " + e.getMessage());
+            log.error("SAML authentication error", e);
             return ResponseEntity.status(500).body(AuthResponse.errorJson("Internal server error"));
         }
     }

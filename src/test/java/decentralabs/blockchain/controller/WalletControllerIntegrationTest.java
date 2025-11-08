@@ -1,25 +1,28 @@
 package decentralabs.blockchain.controller;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-
-import decentralabs.blockchain.dto.WalletCreateRequest;
-import decentralabs.blockchain.dto.WalletResponse;
-
+import decentralabs.blockchain.controller.wallet.WalletController;
+import decentralabs.blockchain.dto.wallet.WalletCreateRequest;
+import decentralabs.blockchain.dto.wallet.WalletResponse;
+import decentralabs.blockchain.service.RateLimitService;
+import decentralabs.blockchain.service.wallet.WalletService;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureWebMvc;
-import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
+import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
+import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
-import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
-import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.when;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-@SpringBootTest
-@AutoConfigureWebMvc
+@WebMvcTest(WalletController.class)
+@AutoConfigureMockMvc(addFilters = false)
 public class WalletControllerIntegrationTest {
 
     @Autowired
@@ -28,11 +31,26 @@ public class WalletControllerIntegrationTest {
     @Autowired
     private ObjectMapper objectMapper;
 
+    @MockBean
+    private WalletService walletService;
+
+    @MockBean
+    private RateLimitService rateLimitService;
+
     @Test
     public void testCreateWallet() throws Exception {
         // Given
         WalletCreateRequest request = new WalletCreateRequest();
         request.setPassword("testPassword123");
+
+        WalletResponse mockedResponse = WalletResponse.builder()
+            .success(true)
+            .address("0x1234567890abcdef1234567890abcdef12345678")
+            .encryptedPrivateKey("encrypted-key")
+            .message("Wallet created successfully")
+            .build();
+
+        when(walletService.createWallet("testPassword123")).thenReturn(mockedResponse);
 
         // When
         MvcResult result = mockMvc.perform(post("/wallet/create")

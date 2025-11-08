@@ -98,18 +98,22 @@ The process for authenticating and authorizing an SSO-logged in user will be add
 * `POST /auth/saml-auth` - SAML2 authentication
 * `POST /auth/saml-auth2` - SAML2 authentication + authorization
 
-### 🆕 Wallet Endpoints
-* `POST /wallet/create` - Create new Ethereum wallet *(localhost only)*
-* `POST /wallet/import` - Import wallet from private key/mnemonic *(localhost only)*
-* `GET /wallet/{address}/balance` - Get ETH balance *(localhost only)*
-* `POST /wallet/sign-message` - Sign message with wallet *(localhost only)*
-* `POST /wallet/sign-transaction` - Sign Ethereum transaction *(localhost only)*
-* `POST /wallet/send-transaction` - Broadcast signed transaction *(localhost only)*
-* `GET /wallet/{address}/transactions` - Get transaction history *(localhost only)*
-* `POST /wallet/listen-events` - Setup contract event listener *(localhost only)*
-* `GET /wallet/networks` - List available networks *(localhost only)*
-* `POST /wallet/switch-network` - Switch active network *(localhost only)*
+### ?? Wallet Endpoints (localhost only)
+* `POST /wallet/create`
+* `POST /wallet/import`
+* `GET /wallet/{address}/balance`
+* `GET /wallet/{address}/transactions`
+* `GET /wallet/listen-events`
+* `GET /wallet/networks`
+* `POST /wallet/switch-network`
 
+### ?? Treasury Endpoints (localhost only)
+* `POST /treasury/reservations` – triple validation + metadata-driven auto-approval/denial
+* `POST /treasury/admin/execute` – institutional admin operations (localhost + wallet ownership)
+
+> Reservations are always auto-approved/denied based on lab metadata (available days/hours and maintenance windows).
+>
+> Todas las rutas anteriores están protegidas por un filtro que sólo acepta peticiones cuyo `remoteAddr` sea `127.0.0.1` / `::1`.
 ## 🛠️ Local Development
 
 ### Prerequisites
@@ -126,7 +130,7 @@ mvn clean package -DskipTests
 ### Run
 
 ```bash
-java -jar target/auth-service.war
+java -jar target/auth-1.0-SNAPSHOT.war
 ```
 
 ## 🐳 Docker
@@ -134,36 +138,75 @@ java -jar target/auth-service.war
 ### Multi-Stage Build
 
 ```bash
-docker build -t auth-service:latest .
+docker build -t blockchain-services:latest .
 ```
 
 ### Run
 
+⚠️ **SECURITY NOTICE**: Never run in production without configuring environment variables. See [SECURITY.md](SECURITY.md) for detailed security configuration.
+
 ```bash
+# Development (with mock values - NOT FOR PRODUCTION)
 docker run -p 8080:8080 \
   -v $(pwd)/config:/app/config:ro \
-  -v $(pwd)/keys:/app/keys:ro \
-  auth-service:latest
+  -v $(pwd)/keys:/app/config/keys:ro \
+  blockchain-services:latest
+
+# Production (with proper secrets)
+docker run -p 8080:8080 \
+  -e WALLET_PRIVATE_KEY=0xYourActualPrivateKey \
+  -e CONTRACT_ADDRESS=0xYourContractAddress \
+  -e RPC_URL=https://your-rpc-endpoint \
+  -e WALLET_ADDRESS=0xYourWalletAddress \
+  -e WALLET_ENCRYPTION_SALT=YourSecureSalt \
+  -v /secure/keys:/app/config/keys:ro \
+  blockchain-services:latest
 ```
+
+## 🔐 Security
+
+**CRITICAL**: This service handles sensitive cryptographic keys and blockchain transactions.
+
+### Required Security Configurations
+
+1. **Private Keys**: Must be provided via environment variables (never hardcoded)
+2. **RSA Keys**: Must be mounted with proper permissions (chmod 400)
+3. **Encryption Salt**: Must be changed from default value
+4. **RPC URLs**: Should be configured with environment variables
+
+**📖 See [SECURITY.md](SECURITY.md) for complete security guide including:**
+- Environment variable configuration
+- Key rotation procedures
+- Permission validation
+- Incident response procedures
 
 ## ⚙️ Configuration
 
-### Environment Variables
+### Critical Environment Variables (Production)
+
+* `WALLET_PRIVATE_KEY` - 🔴 **REQUIRED** Ethereum wallet private key
+* `CONTRACT_ADDRESS` - 🔴 **REQUIRED** Smart contract address
+* `RPC_URL` - 🔴 **REQUIRED** Blockchain RPC endpoint
+* `WALLET_ADDRESS` - 🔴 **REQUIRED** Wallet address
+* `WALLET_ENCRYPTION_SALT` - 🟡 **RECOMMENDED** Salt for wallet encryption
+* `ETHEREUM_MAINNET_RPC_URL` - 🟡 **RECOMMENDED** Mainnet RPC with API key
+* `ETHEREUM_SEPOLIA_RPC_URL` - 🟡 **RECOMMENDED** Sepolia RPC with API key
+
+### Optional Environment Variables
 
 * `SPRING_PROFILES_ACTIVE` - Active profile (default, docker, prod)
 * `JAVA_OPTS` - JVM options
-* `CONTRACT_ADDRESS` - Contract address
-* `RPC_URL` - Blockchain node URL
-* `WALLET_ADDRESS` - Wallet address
 * `ALLOWED_ORIGINS` - Allowed CORS origins
+* `PRIVATE_KEY_PATH` - Path to JWT private key
+* `PUBLIC_KEY_PATH` - Path to JWT public key
 
 ### 🆕 Wallet Configuration
 
 ```properties
-# Ethereum Network RPC URLs
-ethereum.mainnet.rpc.url=https://mainnet.infura.io/v3/YOUR_PROJECT_ID
-ethereum.sepolia.rpc.url=https://sepolia.infura.io/v3/YOUR_PROJECT_ID
-ethereum.goerli.rpc.url=https://goerli.infura.io/v3/YOUR_PROJECT_ID
+# Ethereum Network RPC URLs (use environment variables in production)
+ethereum.mainnet.rpc.url=${ETHEREUM_MAINNET_RPC_URL:https://mainnet.infura.io/v3/YOUR_PROJECT_ID}
+ethereum.sepolia.rpc.url=${ETHEREUM_SEPOLIA_RPC_URL:https://sepolia.infura.io/v3/YOUR_PROJECT_ID}
+ethereum.goerli.rpc.url=${ETHEREUM_GOERLI_RPC_URL:https://goerli.infura.io/v3/YOUR_PROJECT_ID}
 
 # Wallet Security Settings
 wallet.encryption.salt=DecentraLabs2025
@@ -198,7 +241,7 @@ Health endpoint available at `/health`:
 {
   "status": "UP",
   "timestamp": "2025-10-30T12:00:00Z",
-  "service": "auth-service",
+  "service": "blockchain-services",
   "version": "1.0.0",
   "marketplace_key_cached": true,
   "marketplace_key_url": "https://marketplace-decentralabs.vercel.app/.well-known/public-key.pem",
@@ -213,9 +256,6 @@ Health endpoint available at `/health`:
     "wallet-create": "available (localhost only)",
     "wallet-import": "available (localhost only)",
     "wallet-balance": "available (localhost only)",
-    "wallet-sign-message": "available (localhost only)",
-    "wallet-sign-transaction": "available (localhost only)",
-    "wallet-send-transaction": "available (localhost only)",
     "wallet-transactions": "available (localhost only)",
     "wallet-listen-events": "available (localhost only)",
     "wallet-networks": "available (localhost only)",
@@ -280,19 +320,7 @@ curl -X POST http://localhost:8080/wallet/import \
 curl http://localhost:8080/wallet/0x742d35Cc6634C0532925a3b844Bc454e4438f44e/balance
 ```
 
-### 4. Sign Transaction *(localhost only)*
-```bash
-curl -X POST http://localhost:8080/wallet/sign-transaction \
-  -H "Content-Type: application/json" \
-  -d '{
-    "encryptedPrivateKey": "base64_encoded_key",
-    "password": "mySecurePassword",
-    "to": "0x742d35Cc6634C0532925a3b844Bc454e4438f44e",
-    "value": "0.01"
-  }'
-```
-
-### 5. Switch Network *(localhost only)*
+### 4. Switch Network *(localhost only)*
 ```bash
 curl -X POST http://localhost:8080/wallet/switch-network \
   -H "Content-Type: application/json" \
@@ -337,6 +365,16 @@ The JWT token contains lab access permissions based on blockchain reservations:
 
 See [Docker Deployment Guide](dev/DOCKER_DEPLOYMENT_GUIDE.md) for complete Docker Compose deployment instructions.
 
+When running the container, mount configuration and key material under `/app/config` so the service can read them:
+
+```bash
+docker run \
+  -v /path/to/application.properties:/app/config/application.properties:ro \
+  -v /path/to/keys:/app/config/keys:ro \
+  -p 8080:8080 \
+  decentralabs/blockchain-services:latest
+```
+
 ## 🤝 Contributing
 
 1. Fork the project
@@ -344,3 +382,4 @@ See [Docker Deployment Guide](dev/DOCKER_DEPLOYMENT_GUIDE.md) for complete Docke
 3. Commit changes (`git commit -m 'Add AmazingFeature'`)
 4. Push to branch (`git push origin feature/AmazingFeature`)
 5. Open Pull Request
+

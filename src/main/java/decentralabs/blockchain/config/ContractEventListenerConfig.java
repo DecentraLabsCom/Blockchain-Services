@@ -1,20 +1,26 @@
 package decentralabs.blockchain.config;
 
 import decentralabs.blockchain.contract.Diamond;
-import decentralabs.blockchain.service.WalletService;
-import decentralabs.blockchain.service.availability.AvailabilityPolicyService;
-import decentralabs.blockchain.service.availability.LabAvailabilityRule;
+import decentralabs.blockchain.dto.health.LabMetadata;
+import decentralabs.blockchain.service.health.LabMetadataService;
+import decentralabs.blockchain.service.wallet.InstitutionalWalletService;
+import decentralabs.blockchain.service.wallet.WalletService;
+import java.math.BigDecimal;
 import java.math.BigInteger;
 import java.time.Instant;
+import java.time.LocalDateTime;
+import java.time.ZoneOffset;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Component;
@@ -25,11 +31,13 @@ import org.web3j.abi.datatypes.Address;
 import org.web3j.abi.datatypes.Event;
 import org.web3j.abi.datatypes.generated.Bytes32;
 import org.web3j.abi.datatypes.generated.Uint256;
+import org.web3j.crypto.Credentials;
 import org.web3j.protocol.Web3j;
 import org.web3j.protocol.core.DefaultBlockParameter;
 import org.web3j.protocol.core.DefaultBlockParameterName;
 import org.web3j.protocol.core.methods.request.EthFilter;
 import org.web3j.protocol.core.methods.response.Log;
+import org.web3j.protocol.core.methods.response.TransactionReceipt;
 import org.web3j.tx.Contract;
 import org.web3j.tx.ReadonlyTransactionManager;
 import org.web3j.tx.gas.StaticGasProvider;
@@ -41,6 +49,7 @@ import org.web3j.utils.Numeric;
 @Component
 @RequiredArgsConstructor
 @Slf4j
+@ConditionalOnProperty(value = "features.providers.enabled", havingValue = "true", matchIfMissing = true)
 public class ContractEventListenerConfig {
 
     private static final String RESERVATION_REQUESTED = "ReservationRequested";
@@ -92,6 +101,9 @@ public class ContractEventListenerConfig {
         )
     );
 
+    private static final int DEFAULT_RESERVATION_USER_COUNT = 1;
+    private static final String ACTION_REQUESTED = "requested";
+
     private static final Map<String, Event> SUPPORTED_EVENTS = Map.of(
         RESERVATION_REQUESTED, RESERVATION_REQUESTED_EVENT,
         RESERVATION_CONFIRMED, RESERVATION_CONFIRMED_EVENT,
@@ -101,12 +113,16 @@ public class ContractEventListenerConfig {
     );
 
     private final WalletService walletService;
-    private final AvailabilityPolicyService availabilityPolicyService;
+    private final LabMetadataService labMetadataService;
+    private final InstitutionalWalletService institutionalWalletService;
 
     @Value("${contract.address}")
     private String diamondContractAddress;
 
     private volatile Diamond cachedDiamond;
+    private volatile Diamond writableDiamond;
+
+    private final Map<BigInteger, String> labMetadataUriCache = new ConcurrentHashMap<>();
 
     @Value("${contract.events.to.listen:}")
     private String eventsToListen;
@@ -116,6 +132,12 @@ public class ContractEventListenerConfig {
 
     @Value("${contract.event.start.block:latest}")
     private String startBlock;
+
+    @Value("${ethereum.gas.price.default:1}")
+    private BigDecimal defaultGasPriceGwei;
+
+    @Value("${ethereum.gas.limit.contract:300000}")
+    private BigInteger contractGasLimit;
 
     /**
      * Configure event listeners for Diamond contract on application startup.
@@ -386,46 +408,184 @@ public class ContractEventListenerConfig {
             log.debug("On-chain status: {}", describeStatus(status))
         );
 
-        payload.startEpoch().ifPresent(start ->
-            log.debug(
-                "Reservation window {} → {} (epoch seconds)",
-                formatEpoch(start),
-                payload.endEpoch().map(this::formatEpoch).orElse("n/a")
-            )
-        );
 
-        triggerReservationDecisionWorkflow(action, payload);
+    payload.startEpoch().ifPresent(start ->
+        log.debug(
+            "Reservation window {} → {} (epoch seconds)",
+            formatEpoch(start),
+            payload.endEpoch().map(this::formatEpoch).orElse("n/a")
+        )
+    );
+
+    if (ACTION_REQUESTED.equalsIgnoreCase(action)) {
+        processReservationRequest(payload);
+    }
+}
+
+private void processReservationRequest(ReservationEventPayload payload) {
+    log.info(
+        "Evaluating reservation request for key={} labId={} renter={} payerInstitution={} puc={}",
+        payload.reservationKey(),
+        payload.labId(),
+        payload.renter().orElse("unknown"),
+        payload.payerInstitution().orElse("n/a"),
+        payload.puc().orElse("n/a")
+    );
+
+    if (!isPending(payload)) {
+        log.info("Reservation {} already processed on-chain. Skipping.", payload.reservationKey());
+        return;
     }
 
-    private void triggerReservationDecisionWorkflow(String action, ReservationEventPayload payload) {
-        log.info(
-            "Dispatching reservation workflow [{}] for key={} labId={} renter={} payerInstitution={} puc={}",
-            action,
+    try {
+        LabMetadata metadata = loadLabMetadata(payload.labId())
+            .orElseThrow(() -> new IllegalStateException("Missing metadata for lab " + payload.labId()));
+
+        LocalDateTime start = toUtcDateTime(payload.startEpoch())
+            .orElseThrow(() -> new IllegalStateException("Missing reservation start time"));
+        LocalDateTime end = toUtcDateTime(payload.endEpoch())
+            .orElseThrow(() -> new IllegalStateException("Missing reservation end time"));
+
+        labMetadataService.validateAvailability(metadata, start, end, DEFAULT_RESERVATION_USER_COUNT);
+        confirmReservationOnChain(payload.reservationKey());
+        log.info("Reservation {} auto-approved for lab {}", payload.reservationKey(), payload.labId());
+    } catch (Exception ex) {
+        log.warn(
+            "Auto-approval failed for reservation {} on lab {}: {}",
             payload.reservationKey(),
             payload.labId(),
-            payload.renter().orElse("unknown"),
-            payload.payerInstitution().orElse("n/a"),
-            payload.puc().orElse("n/a")
+            ex.getMessage()
         );
-        LabAvailabilityRule rule = availabilityPolicyService.resolveRule(payload.labId());
-        applyAvailabilityRule(action, payload, rule);
+        autoDenyReservation(payload, ex.getMessage());
+    }
+}
+
+private boolean isPending(ReservationEventPayload payload) {
+    return payload.status().map(status -> status.intValue() == 0).orElse(true);
+}
+
+private void autoDenyReservation(ReservationEventPayload payload, String reason) {
+    if (!isPending(payload)) {
+        log.info(
+            "Reservation {} already processed on-chain. Skipping auto-denial (reason: {}).",
+            payload.reservationKey(),
+            reason
+        );
+        return;
+    }
+    log.info(
+        "Auto-denying reservation {} for lab {}: {}",
+        payload.reservationKey(),
+        payload.labId(),
+        reason
+    );
+    denyReservationOnChain(payload.reservationKey(), reason);
+}
+    private Optional<LocalDateTime> toUtcDateTime(Optional<BigInteger> epochSeconds) {
+        return epochSeconds.map(value ->
+            LocalDateTime.ofInstant(Instant.ofEpochSecond(value.longValue()), ZoneOffset.UTC)
+        );
     }
 
-    private void applyAvailabilityRule(String action, ReservationEventPayload payload, LabAvailabilityRule rule) {
-        switch (rule.action()) {
-            case AUTO_APPROVE -> log.info("Auto-approval rule matched for lab {} (note: {})", payload.labId(), rule.note());
-            case AUTO_DENY -> log.info("Auto-denial rule matched for lab {} (note: {})", payload.labId(), rule.note());
-            case MANUAL -> log.info("Manual review required for lab {} (note: {})", payload.labId(), rule.note());
+    private Optional<LabMetadata> loadLabMetadata(BigInteger labId) {
+        return fetchLabMetadataUri(labId).flatMap(uri -> {
+            try {
+                return Optional.ofNullable(labMetadataService.getLabMetadata(uri));
+            } catch (RuntimeException ex) {
+                log.error("Failed to load metadata for lab {} ({}): {}", labId, uri, ex.getMessage());
+                return Optional.empty();
+            }
+        });
+    }
+
+    private Optional<String> fetchLabMetadataUri(BigInteger labId) {
+        if (labId == null) {
+            return Optional.empty();
         }
 
-        if (!rule.notificationChannels().isEmpty()) {
-            log.info(
-                "Notifying channels {} about reservation {} on lab {}",
-                rule.notificationChannels(),
-                payload.reservationKey(),
-                payload.labId()
-            );
+        String cached = labMetadataUriCache.get(labId);
+        if (cached != null) {
+            return Optional.of(cached);
         }
+
+        try {
+            Diamond contract = getDiamondContract();
+            Diamond.Lab lab = contract.getLab(labId).send();
+            if (lab == null || lab.base == null) {
+                return Optional.empty();
+            }
+            Optional<String> uri = normalizeNonEmptyString(lab.base.uri);
+            uri.ifPresent(value -> labMetadataUriCache.put(labId, value));
+            return uri;
+        } catch (Exception ex) {
+            log.warn("Unable to fetch metadata URI for lab {}: {}", labId, ex.getMessage());
+            return Optional.empty();
+        }
+    }
+
+    private void confirmReservationOnChain(String reservationKey) throws Exception {
+        Diamond contract = getWritableDiamondContract();
+        byte[] keyBytes = reservationKeyToBytes(reservationKey);
+        TransactionReceipt receipt = contract.confirmReservationRequest(keyBytes).send();
+        log.info("Reservation {} confirmed on-chain (tx={})", reservationKey, receipt.getTransactionHash());
+    }
+
+    private void denyReservationOnChain(String reservationKey, String reason) {
+        try {
+            Diamond contract = getWritableDiamondContract();
+            byte[] keyBytes = reservationKeyToBytes(reservationKey);
+            TransactionReceipt receipt = contract.denyReservationRequest(keyBytes).send();
+            log.info(
+                "Reservation {} denied on-chain (tx={}). Reason: {}",
+                reservationKey,
+                receipt.getTransactionHash(),
+                reason
+            );
+        } catch (Exception ex) {
+            log.error("Failed to deny reservation {}: {}", reservationKey, ex.getMessage(), ex);
+        }
+    }
+
+    private byte[] reservationKeyToBytes(String reservationKey) {
+        if (reservationKey == null || reservationKey.isBlank()) {
+            throw new IllegalArgumentException("Reservation key is required");
+        }
+        byte[] keyBytes = Numeric.hexStringToByteArray(reservationKey);
+        if (keyBytes.length != 32) {
+            throw new IllegalArgumentException("Reservation key must be 32 bytes long");
+        }
+        return keyBytes;
+    }
+
+    private Diamond getWritableDiamondContract() {
+        Diamond local = writableDiamond;
+        if (local == null) {
+            synchronized (this) {
+                local = writableDiamond;
+                if (local == null) {
+                    Web3j web3j = walletService.getWeb3jInstance();
+                    local = Diamond.load(
+                        diamondContractAddress,
+                        web3j,
+                        getProviderCredentials(),
+                        new StaticGasProvider(resolveGasPriceWei(), contractGasLimit)
+                    );
+                    writableDiamond = local;
+                }
+            }
+        }
+        return local;
+    }
+
+    private Credentials getProviderCredentials() {
+        return institutionalWalletService.getInstitutionalCredentials();
+    }
+
+    private BigInteger resolveGasPriceWei() {
+        BigDecimal gwei = (defaultGasPriceGwei == null || defaultGasPriceGwei.signum() <= 0)
+            ? BigDecimal.ONE
+            : defaultGasPriceGwei;
+        return org.web3j.utils.Convert.toWei(gwei, org.web3j.utils.Convert.Unit.GWEI).toBigInteger();
     }
 
     private String describeStatus(BigInteger status) {
@@ -460,8 +620,8 @@ public class ContractEventListenerConfig {
                         : new BigInteger(normalized);
                     yield DefaultBlockParameter.valueOf(blockNumber);
                 } catch (NumberFormatException ex) {
-                    log.warn("Invalid value '{}' for contract.event.start.block. Falling back to latest.", startBlock);
-                    yield DefaultBlockParameterName.LATEST;
+                    throw new IllegalArgumentException(
+                        "Invalid contract.event.start.block: " + startBlock, ex);
                 }
             }
         };

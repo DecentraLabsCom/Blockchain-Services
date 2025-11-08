@@ -44,15 +44,15 @@ public class SecurityConfig {
     @Value("${endpoint.wallet}")
     private String walletEndpoint;
     
-    @Value("${endpoint.wallet-institutional}")
-    private String walletInstitutionalEndpoint;
+    @Value("${endpoint.treasury}")
+    private String treasuryEndpoint;
 
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
         http
             .cors(cors -> cors.configurationSource(corsConfigurationSource()))
             .csrf(csrf -> csrf
-                .ignoringAntMatchers(
+                .ignoringRequestMatchers(
                     "/.well-known/*",
                     jwksEndpoint,
                     messageEndpoint,
@@ -62,22 +62,22 @@ public class SecurityConfig {
                     samlAuth2Endpoint,
                     healthEndpoint,
                     walletEndpoint + "/**",
-                    walletInstitutionalEndpoint
+                    treasuryEndpoint + "/**"
                 )
             )
             .authorizeHttpRequests(authorize -> authorize
-                .antMatchers(HttpMethod.OPTIONS, "/**").permitAll()
-                .antMatchers("/.well-known/*").permitAll()
-                .antMatchers(jwksEndpoint).permitAll()
-                .antMatchers(messageEndpoint).permitAll()
-                .antMatchers(walletAuthEndpoint).permitAll()
-                .antMatchers(walletAuth2Endpoint).permitAll()
-                .antMatchers(samlAuthEndpoint).permitAll()
-                .antMatchers(samlAuth2Endpoint).permitAll()
-                .antMatchers(healthEndpoint).permitAll()
+                .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
+                .requestMatchers("/.well-known/*").permitAll()
+                .requestMatchers(jwksEndpoint).permitAll()
+                .requestMatchers(messageEndpoint).permitAll()
+                .requestMatchers(walletAuthEndpoint).permitAll()
+                .requestMatchers(walletAuth2Endpoint).permitAll()
+                .requestMatchers(samlAuthEndpoint).permitAll()
+                .requestMatchers(samlAuth2Endpoint).permitAll()
+                .requestMatchers(healthEndpoint).permitAll()
                 // ALL wallet endpoints - restricted by CORS to localhost
-                .antMatchers(walletEndpoint + "/**").permitAll()
-                .antMatchers(walletInstitutionalEndpoint).permitAll()
+                .requestMatchers(walletEndpoint + "/**").permitAll()
+                .requestMatchers(treasuryEndpoint + "/**").permitAll()
                 .anyRequest().denyAll()
             );
 
@@ -107,8 +107,8 @@ public class SecurityConfig {
         
         // ALL wallet endpoints - localhost only, except institutional reservation
         source.registerCorsConfiguration(walletEndpoint + "/**", localhostConfiguration);
-        source.registerCorsConfiguration(walletInstitutionalEndpoint, publicConfiguration);
-        
+        source.registerCorsConfiguration(treasuryEndpoint + "/**", localhostConfiguration);
+
         return source;
     }
 }

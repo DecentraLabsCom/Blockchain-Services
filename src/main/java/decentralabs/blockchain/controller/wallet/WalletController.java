@@ -1,12 +1,15 @@
 package decentralabs.blockchain.controller.wallet;
 
+import decentralabs.blockchain.util.EthereumAddressValidator;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
-import decentralabs.blockchain.dto.*;
-import decentralabs.blockchain.service.InstitutionalReservationService;
-import decentralabs.blockchain.service.WalletService;
+import decentralabs.blockchain.dto.wallet.*;
+import decentralabs.blockchain.service.RateLimitService;
+import decentralabs.blockchain.service.wallet.WalletService;
 
 @RestController
 @RequestMapping("/wallet")
@@ -14,14 +17,14 @@ import decentralabs.blockchain.service.WalletService;
 public class WalletController {
 
     private final WalletService walletService;
-    private final InstitutionalReservationService institutionalReservationService;
+    private final RateLimitService rateLimitService;
 
     /**
      * POST /wallet/create
      * Creates a new Ethereum wallet with randomly generated private key
      */
     @PostMapping("/create")
-    public ResponseEntity<WalletResponse> createWallet(@RequestBody WalletCreateRequest request) {
+    public ResponseEntity<WalletResponse> createWallet(@Valid @RequestBody WalletCreateRequest request) {
         try {
             WalletResponse response = walletService.createWallet(request.getPassword());
             return ResponseEntity.ok(response);
@@ -36,7 +39,7 @@ public class WalletController {
      * Imports a wallet from private key or mnemonic
      */
     @PostMapping("/import")
-    public ResponseEntity<WalletResponse> importWallet(@RequestBody WalletImportRequest request) {
+    public ResponseEntity<WalletResponse> importWallet(@Valid @RequestBody WalletImportRequest request) {
         try {
             WalletResponse response = walletService.importWallet(request);
             return ResponseEntity.ok(response);
@@ -52,57 +55,24 @@ public class WalletController {
      */
     @GetMapping("/{address}/balance")
     public ResponseEntity<BalanceResponse> getBalance(@PathVariable String address) {
+        // Validate Ethereum address format
+        if (!EthereumAddressValidator.isValidAddress(address)) {
+            return ResponseEntity.badRequest()
+                .body(BalanceResponse.error("Invalid Ethereum address format"));
+        }
+        
+        // Rate limiting check
+        if (!rateLimitService.allowBalanceCheck(address)) {
+            return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS)
+                .body(BalanceResponse.error("Rate limit exceeded. Too many balance checks."));
+        }
+        
         try {
             BalanceResponse response = walletService.getBalance(address);
             return ResponseEntity.ok(response);
         } catch (Exception e) {
             return ResponseEntity.badRequest()
                 .body(BalanceResponse.error("Error getting balance: " + e.getMessage()));
-        }
-    }
-
-    /**
-     * POST /wallet/sign-message
-     * Signs a message with the wallet's private key
-     */
-    @PostMapping("/sign-message")
-    public ResponseEntity<SignMessageResponse> signMessage(@RequestBody SignMessageRequest request) {
-        try {
-            SignMessageResponse response = walletService.signMessage(request);
-            return ResponseEntity.ok(response);
-        } catch (Exception e) {
-            return ResponseEntity.badRequest()
-                .body(SignMessageResponse.error("Error signing message: " + e.getMessage()));
-        }
-    }
-
-    /**
-     * POST /wallet/sign-transaction
-     * Signs an Ethereum transaction
-     */
-    @PostMapping("/sign-transaction")
-    public ResponseEntity<SignTransactionResponse> signTransaction(@RequestBody SignTransactionRequest request) {
-        try {
-            SignTransactionResponse response = walletService.signTransaction(request);
-            return ResponseEntity.ok(response);
-        } catch (Exception e) {
-            return ResponseEntity.badRequest()
-                .body(SignTransactionResponse.error("Error signing transaction: " + e.getMessage()));
-        }
-    }
-
-    /**
-     * POST /wallet/send-transaction
-     * Sends a signed transaction to the network
-     */
-    @PostMapping("/send-transaction")
-    public ResponseEntity<SendTransactionResponse> sendTransaction(@RequestBody SendTransactionRequest request) {
-        try {
-            SendTransactionResponse response = walletService.sendTransaction(request);
-            return ResponseEntity.ok(response);
-        } catch (Exception e) {
-            return ResponseEntity.badRequest()
-                .body(SendTransactionResponse.error("Error sending transaction: " + e.getMessage()));
         }
     }
 
@@ -166,17 +136,4 @@ public class WalletController {
         }
     }
 
-    /**
-     * POST /wallet/institutional-reservation
-     * Processes an institutional reservation request
-     */
-    @PostMapping("/institutional-reservation")
-    public ResponseEntity<?> createInstitutionalReservation(@RequestBody InstitutionalReservationRequest request) {
-        try {
-            return ResponseEntity.ok(institutionalReservationService.processReservation(request));
-        } catch (Exception e) {
-            return ResponseEntity.badRequest()
-                .body(java.util.Map.of("success", false, "error", e.getMessage()));
-        }
-    }
 }

@@ -227,6 +227,30 @@ public class Diamond extends Contract {
     }
 
     /**
+     * Confirm a pending reservation request.
+     */
+    public RemoteFunctionCall<TransactionReceipt> confirmReservationRequest(byte[] reservationKey) {
+        final Function function = new Function(
+            "confirmReservationRequest",
+            Arrays.asList(new Bytes32(reservationKey)),
+            List.of()
+        );
+        return executeRemoteCallTransaction(function);
+    }
+
+    /**
+     * Deny a pending reservation request.
+     */
+    public RemoteFunctionCall<TransactionReceipt> denyReservationRequest(byte[] reservationKey) {
+        final Function function = new Function(
+            "denyReservationRequest",
+            Arrays.asList(new Bytes32(reservationKey)),
+            List.of()
+        );
+        return executeRemoteCallTransaction(function);
+    }
+
+    /**
      * Get number of reservations for a user
      */
     @SuppressWarnings("rawtypes")

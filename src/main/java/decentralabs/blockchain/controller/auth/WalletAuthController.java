@@ -1,21 +1,23 @@
 package decentralabs.blockchain.controller.auth;
 
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.*;
-
-import decentralabs.blockchain.dto.AuthResponse;
-import decentralabs.blockchain.dto.WalletAuthRequest;
-import decentralabs.blockchain.service.WalletAuthService;
-
+import decentralabs.blockchain.dto.auth.AuthResponse;
+import decentralabs.blockchain.dto.auth.WalletAuthRequest;
+import decentralabs.blockchain.service.auth.WalletAuthService;
 import java.util.HashMap;
 import java.util.Map;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.*;
 
 /**
  * Controller for wallet-based authentication endpoints
  */
 @RestController
 @RequestMapping("/auth")
+@ConditionalOnProperty(value = "features.providers.enabled", havingValue = "true", matchIfMissing = true)
+@Slf4j
 public class WalletAuthController {
     
     @Autowired
@@ -54,7 +56,7 @@ public class WalletAuthController {
         } catch (SecurityException e) {
             return ResponseEntity.status(401).body(AuthResponse.errorJson(e.getMessage()));
         } catch (Exception e) {
-            System.err.println("Wallet authentication error: " + e.getMessage());
+            log.error("Wallet authentication error", e);
             return ResponseEntity.status(500).body(AuthResponse.errorJson("Internal server error"));
         }
     }
@@ -75,7 +77,7 @@ public class WalletAuthController {
         } catch (SecurityException e) {
             return ResponseEntity.status(401).body(AuthResponse.errorJson(e.getMessage()));
         } catch (Exception e) {
-            System.err.println("Wallet authentication error: " + e.getMessage());
+            log.error("Wallet authentication error", e);
             return ResponseEntity.status(500).body(AuthResponse.errorJson("Internal server error"));
         }
     }

@@ -1,18 +1,18 @@
 package decentralabs.blockchain.controller.auth;
 
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.beans.factory.annotation.Value;
-import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.*;
-
-import decentralabs.blockchain.service.JwtService;
-import decentralabs.blockchain.service.KeyService;
-
+import decentralabs.blockchain.service.auth.JwtService;
+import decentralabs.blockchain.service.auth.KeyService;
 import java.math.BigInteger;
 import java.security.interfaces.RSAPublicKey;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.*;
 
 /**
  * Main controller for OpenID Connect and JWKS endpoints
@@ -22,12 +22,14 @@ import java.util.Map;
  * - SamlAuthController (SAML-based authentication)
  */
 @RestController
+@ConditionalOnProperty(value = "features.providers.enabled", havingValue = "true", matchIfMissing = true)
+@Slf4j
 public class AuthController {
 
-    @Value("${base.domain}")
+    @Value("${base.domain:http://localhost}")
     private String baseDomain;
     
-    @Value("${auth.base-path}")
+    @Value("${auth.base-path:/auth}")
     private String authPath;
     
     @Value("${endpoint.wallet-auth2}")
@@ -97,8 +99,7 @@ public class AuthController {
 
             return ResponseEntity.ok(response);
         } catch (Exception e) {
-            System.err.println("JWKS generation error: " + e.getMessage());
-            e.printStackTrace();
+            log.error("JWKS generation error: {}", e.getMessage(), e);
             return ResponseEntity.status(500)
                 .body(Collections.singletonMap("error", "Failed to process the public key"));
         }
