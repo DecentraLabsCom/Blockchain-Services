@@ -270,6 +270,9 @@ public class AdminDashboardController {
                 networkBalance.put("balanceWei", balanceResponse.getBalanceWei());
                 networkBalance.put("balanceEth", balanceResponse.getBalanceEth());
                 networkBalance.put("network", balanceResponse.getNetwork());
+                networkBalance.put("labTokenAddress", balanceResponse.getLabTokenAddress());
+                networkBalance.put("labBalanceRaw", balanceResponse.getLabBalanceRaw());
+                networkBalance.put("labBalance", balanceResponse.getLabBalance());
                 
                 balances.put(networkId, networkBalance);
             } catch (Exception e) {

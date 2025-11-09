@@ -16,6 +16,9 @@ public class BalanceResponse {
     private String balanceEth;
     private String network;
     private String error;
+    private String labTokenAddress;
+    private String labBalanceRaw;
+    private String labBalance;
 
     public static BalanceResponse error(String error) {
         return BalanceResponse.builder()

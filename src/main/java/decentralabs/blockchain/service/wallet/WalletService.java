@@ -1,9 +1,11 @@
 package decentralabs.blockchain.service.wallet;
 
+import decentralabs.blockchain.event.NetworkSwitchEvent;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import okhttp3.OkHttpClient;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 
 import jakarta.annotation.PostConstruct;
@@ -13,9 +15,17 @@ import javax.crypto.SecretKeyFactory;
 import javax.crypto.spec.GCMParameterSpec;
 import javax.crypto.spec.PBEKeySpec;
 import javax.crypto.spec.SecretKeySpec;
+import org.web3j.abi.FunctionEncoder;
+import org.web3j.abi.FunctionReturnDecoder;
+import org.web3j.abi.TypeReference;
+import org.web3j.abi.datatypes.Address;
+import org.web3j.abi.datatypes.Function;
+import org.web3j.abi.datatypes.Type;
+import org.web3j.abi.datatypes.generated.Uint256;
 import org.web3j.crypto.*;
 import org.web3j.protocol.Web3j;
 import org.web3j.protocol.core.DefaultBlockParameterName;
+import org.web3j.protocol.core.methods.request.Transaction;
 import org.web3j.protocol.core.methods.response.*;
 import org.web3j.protocol.http.HttpService;
 import org.web3j.utils.Convert;
@@ -25,6 +35,7 @@ import decentralabs.blockchain.dto.wallet.*;
 import decentralabs.blockchain.service.persistence.WalletPersistenceService;
 
 import java.math.BigDecimal;
+import java.math.BigInteger;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.security.SecureRandom;
@@ -53,6 +64,7 @@ import java.util.concurrent.TimeUnit;
 public class WalletService {
 
     private final WalletPersistenceService walletPersistenceService;
+    private final ApplicationEventPublisher eventPublisher;
 
     @Value("${contract.address}")
     private String contractAddress;
@@ -69,6 +81,9 @@ public class WalletService {
 
     @Value("${ethereum.sepolia.rpc.url:https://rpc.sepolia.org}")
     private String sepoliaRpcUrl;
+    
+    @Value("${blockchain.network.active:sepolia}")
+    private String defaultNetwork;
 
     @Value("${wallet.encryption.salt:DecentraLabsTestSalt}")
     private String encryptionSalt;
@@ -84,6 +99,9 @@ public class WalletService {
     private final Map<String, List<String>> networkRpcUrls = new ConcurrentHashMap<>();
     private final Map<String, Integer> currentRpcIndex = new ConcurrentHashMap<>();
     private String activeNetwork;
+    
+    // Cache for LAB token address (queried from Diamond contract)
+    private volatile String cachedLabTokenAddress = null;
     
     // Shared OkHttpClient with connection pooling for all Web3j instances
     private OkHttpClient httpClient;
@@ -106,11 +124,11 @@ public class WalletService {
         currentRpcIndex.put("mainnet", 0);
         currentRpcIndex.put("sepolia", 0);
             
-        // Use sepolia by default
-        this.activeNetwork = "sepolia";
-        List<String> sepoliaUrls = networkRpcUrls.get("sepolia");
+        // Use configured default network
+        this.activeNetwork = defaultNetwork;
+        List<String> activeUrls = networkRpcUrls.get(activeNetwork);
         log.info("WalletService initialized with active network: {} using RPC endpoints: {}", 
-                 activeNetwork, String.join(", ", sepoliaUrls));
+                 activeNetwork, String.join(", ", activeUrls));
     }
     
     /**
@@ -228,11 +246,24 @@ public class WalletService {
 
             BigDecimal ethBalance = Convert.fromWei(balance.getBalance().toString(), Convert.Unit.ETHER);
 
+            // Get LAB token balance
+            String labTokenAddress = getLabTokenAddress();
+            BigInteger labTokenBalance = BigInteger.ZERO;
+            if (labTokenAddress != null && !labTokenAddress.equals("0x0000000000000000000000000000000000000000")) {
+                labTokenBalance = getERC20Balance(address, labTokenAddress);
+            }
+            
+            // LAB token has 6 decimals
+            BigDecimal labBalance = new BigDecimal(labTokenBalance).divide(BigDecimal.valueOf(1_000_000));
+
             return BalanceResponse.builder()
                 .success(true)
                 .address(address)
                 .balanceWei(balance.getBalance().toString())
                 .balanceEth(ethBalance.toString())
+                .labTokenAddress(labTokenAddress)
+                .labBalanceRaw(labTokenBalance.toString())
+                .labBalance(labBalance.toString())
                 .network(activeNetwork)
                 .build();
 
@@ -241,6 +272,94 @@ public class WalletService {
             return BalanceResponse.error("Failed to get balance: " + e.getMessage());
         }
     }
+
+    /**
+     * Gets the LAB token address from the Diamond contract
+     * Caches the result to avoid repeated contract calls
+     */
+    private String getLabTokenAddress() {
+        if (cachedLabTokenAddress != null) {
+            return cachedLabTokenAddress;
+        }
+        
+        try {
+            Web3j web3j = getWeb3jInstance();
+            
+            // Call getLabTokenAddress() function on Diamond contract
+            // function getLabTokenAddress() public view returns (address)
+            Function function = new Function(
+                "getLabTokenAddress",
+                Collections.emptyList(),
+                Collections.singletonList(new TypeReference<Address>() {})
+            );
+            
+            String encodedFunction = FunctionEncoder.encode(function);
+            
+            EthCall response = web3j.ethCall(
+                Transaction.createEthCallTransaction(null, contractAddress, encodedFunction),
+                DefaultBlockParameterName.LATEST
+            ).send();
+            
+            if (response.hasError()) {
+                log.warn("Error calling getLabTokenAddress(): {}", response.getError().getMessage());
+                return null;
+            }
+            
+            List<Type> decoded = FunctionReturnDecoder.decode(response.getValue(), function.getOutputParameters());
+            if (!decoded.isEmpty()) {
+                cachedLabTokenAddress = decoded.get(0).getValue().toString();
+                log.info("LAB token address retrieved from Diamond contract: {}", cachedLabTokenAddress);
+                return cachedLabTokenAddress;
+            }
+            
+            return null;
+        } catch (Exception e) {
+            log.error("Error getting LAB token address from Diamond contract", e);
+            return null;
+        }
+    }
+    
+    /**
+     * Gets the ERC20 token balance for an address
+     * @param walletAddress The address to check balance for
+     * @param tokenAddress The ERC20 token contract address
+     * @return Token balance as BigInteger
+     */
+    private BigInteger getERC20Balance(String walletAddress, String tokenAddress) {
+        try {
+            Web3j web3j = getWeb3jInstance();
+            
+            // Call balanceOf(address) function on ERC20 token
+            Function function = new Function(
+                "balanceOf",
+                Collections.singletonList(new Address(walletAddress)),
+                Collections.singletonList(new TypeReference<Uint256>() {})
+            );
+            
+            String encodedFunction = FunctionEncoder.encode(function);
+            
+            EthCall response = web3j.ethCall(
+                Transaction.createEthCallTransaction(null, tokenAddress, encodedFunction),
+                DefaultBlockParameterName.LATEST
+            ).send();
+            
+            if (response.hasError()) {
+                log.warn("Error calling balanceOf() on token {}: {}", tokenAddress, response.getError().getMessage());
+                return BigInteger.ZERO;
+            }
+            
+            List<Type> decoded = FunctionReturnDecoder.decode(response.getValue(), function.getOutputParameters());
+            if (!decoded.isEmpty()) {
+                return (BigInteger) decoded.get(0).getValue();
+            }
+            
+            return BigInteger.ZERO;
+        } catch (Exception e) {
+            log.error("Error getting ERC20 balance for token {}", tokenAddress, e);
+            return BigInteger.ZERO;
+        }
+    }
+
 
     /**
      * Gets the transaction history (simplified)
@@ -314,8 +433,12 @@ public class WalletService {
             return NetworkResponse.error("Invalid network: " + networkId);
         }
 
+        String oldNetwork = activeNetwork;
         activeNetwork = networkId;
-        log.info("Switched to network: {}", networkId);
+        log.info("Switched network from {} to {}", oldNetwork, networkId);
+        
+        // Publish event to notify other components
+        eventPublisher.publishEvent(new NetworkSwitchEvent(this, oldNetwork, networkId));
 
         return getAvailableNetworks();
     }

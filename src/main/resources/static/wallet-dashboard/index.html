@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>DecentraLabs - Treasury Admin Dashboard</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link rel="stylesheet" href="assets/css/admin.css">
 </head>
 <body>
@@ -65,7 +66,14 @@
                         </div>
                         <div class="info-item">
                             <span class="info-label">Active Network</span>
-                            <span class="info-value" id="activeNetwork">Loading...</span>
+                            <div class="network-buttons-container">
+                                <button id="sepoliaBtn" class="network-btn" data-network="sepolia">
+                                    Sepolia
+                                </button>
+                                <button id="mainnetBtn" class="network-btn" data-network="mainnet">
+                                    Mainnet
+                                </button>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -75,9 +83,6 @@
             <section class="card">
                 <div class="card-header">
                     <h2>Wallet Balances</h2>
-                    <div class="card-actions">
-                        <button id="refreshBalanceBtn" class="btn btn-small">Refresh</button>
-                    </div>
                 </div>
                 <div class="card-body">
                     <div class="balance-grid" id="balanceGrid">
@@ -87,6 +92,8 @@
                             <div class="balance-amount">--</div>
                         </div>
                     </div>
+                    <!-- Promotional message container -->
+                    <div id="labPromoMessage" style="display: none;"></div>
                 </div>
             </section>
 
@@ -223,7 +230,7 @@
 
         <!-- Footer -->
         <footer class="dashboard-footer">
-            <p>&copy; 2025 DecentraLabs. Treasury Administration Dashboard v1.0</p>
+            <p>&copy; 2025 DecentraLabs. Institutional Treasury Administration Dashboard</p>
             <p class="security-notice">🔒 This dashboard is only accessible from localhost for security</p>
         </footer>
     </div>

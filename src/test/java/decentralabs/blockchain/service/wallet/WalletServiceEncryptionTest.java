@@ -1,6 +1,5 @@
 package decentralabs.blockchain.service.wallet;
 
-import decentralabs.blockchain.service.persistence.WalletPersistenceService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
@@ -15,7 +14,7 @@ class WalletServiceEncryptionTest {
 
     @BeforeEach
     void setUp() {
-        walletService = new WalletService(Mockito.mock(WalletPersistenceService.class));
+        walletService = Mockito.mock(WalletService.class, Mockito.CALLS_REAL_METHODS);
         ReflectionTestUtils.setField(walletService, "baseDomain", "localhost");
         ReflectionTestUtils.setField(walletService, "defaultRpcUrl", "http://localhost");
         ReflectionTestUtils.setField(walletService, "contractAddress", "0x0");

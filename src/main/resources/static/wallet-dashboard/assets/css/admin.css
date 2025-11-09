@@ -250,6 +250,57 @@ body {
     text-transform: capitalize;
 }
 
+/* Network buttons container */
+.network-buttons-container {
+    display: flex;
+    gap: var(--spacing-xs);
+    justify-content: center;
+}
+
+.network-btn {
+    flex: 1;
+    background: var(--bg-secondary);
+    color: var(--text-muted);
+    border: 2px solid var(--border-color);
+    border-radius: var(--radius-sm);
+    padding: 0.5rem 1rem;
+    font-size: 0.9rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.network-btn:hover {
+    background: rgba(0, 212, 255, 0.1);
+    border-color: var(--neon-blue);
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(0, 212, 255, 0.3);
+}
+
+.network-btn.active {
+    background: linear-gradient(135deg, rgba(0, 212, 255, 0.2), rgba(0, 255, 127, 0.2));
+    border-color: var(--neon-green);
+    color: var(--neon-green);
+    box-shadow: 0 0 20px rgba(0, 255, 127, 0.4);
+}
+
+.network-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+/* Center info values */
+.info-value {
+    color: var(--text-primary);
+    font-size: 1.1rem;
+    font-weight: 500;
+    word-break: break-all;
+    text-align: center;
+}
+
+
 /* Wallet setup dropdown */
 .wallet-setup-dropdown {
     position: fixed;

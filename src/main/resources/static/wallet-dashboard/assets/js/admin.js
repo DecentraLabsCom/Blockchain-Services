@@ -85,22 +85,9 @@ async function loadSystemStatus() {
             document.getElementById('contractAddress').textContent = 
                 data.contractAddress ? formatAddress(data.contractAddress) : 'Not configured';
             
-            // Display active network
-            const activeNetworkEl = document.getElementById('activeNetwork');
-            if (data.availableNetworks) {
-                const networks = data.availableNetworks;
-                const activeNet = data.activeNetwork || 'sepolia'; // Default to sepolia
-                const networkInfo = networks[activeNet];
-                if (networkInfo) {
-                    const displayName = (networkInfo.name || activeNet).charAt(0).toUpperCase() + (networkInfo.name || activeNet).slice(1);
-                    activeNetworkEl.innerHTML = `<span class="network-badge">${displayName}</span>`;
-                } else {
-                    const displayName = activeNet.charAt(0).toUpperCase() + activeNet.slice(1);
-                    activeNetworkEl.innerHTML = `<span class="network-badge">${displayName}</span>`;
-                }
-            } else {
-                activeNetworkEl.textContent = 'Unknown';
-            }
+            // Update network buttons to show active network
+            const activeNet = data.activeNetwork || 'sepolia';
+            updateNetworkButtons(activeNet);
             
             // Update status indicator
             const statusIndicator = document.getElementById('statusIndicator');
@@ -145,33 +132,151 @@ function toggleWalletSetupDropdown() {
     }
 }
 
+// Update network buttons to show active network
+function updateNetworkButtons(activeNetwork) {
+    const sepoliaBtn = document.getElementById('sepoliaBtn');
+    const mainnetBtn = document.getElementById('mainnetBtn');
+    
+    if (sepoliaBtn && mainnetBtn) {
+        // Remove active class from both
+        sepoliaBtn.classList.remove('active');
+        mainnetBtn.classList.remove('active');
+        
+        // Add active class to the current network
+        if (activeNetwork === 'sepolia') {
+            sepoliaBtn.classList.add('active');
+        } else if (activeNetwork === 'mainnet') {
+            mainnetBtn.classList.add('active');
+        }
+    }
+}
+
+
+// Switch blockchain network
+async function switchNetwork(networkId) {
+    const sepoliaBtn = document.getElementById('sepoliaBtn');
+    const mainnetBtn = document.getElementById('mainnetBtn');
+    
+    try {
+        // Disable buttons during switch
+        if (sepoliaBtn) sepoliaBtn.disabled = true;
+        if (mainnetBtn) mainnetBtn.disabled = true;
+        
+        showToast(`Switching to ${networkId}...`, 'info');
+        
+        const data = await API.switchNetwork(networkId);
+        
+        if (data.success) {
+            showToast(`Successfully switched to ${networkId}`, 'success');
+            
+            // Update network buttons
+            updateNetworkButtons(networkId);
+            
+            // Auto-refresh all data to reflect new network
+            await refreshAllData();
+        } else {
+            showToast(`Failed to switch network: ${data.error || 'Unknown error'}`, 'error');
+            
+            // Revert buttons to previous state
+            await loadSystemStatus();
+        }
+    } catch (error) {
+        console.error('Network switch failed:', error);
+        showToast(`Network switch failed: ${error.message}`, 'error');
+        
+        // Revert buttons to previous state
+        await loadSystemStatus();
+    } finally {
+        // Re-enable buttons
+        if (sepoliaBtn) sepoliaBtn.disabled = false;
+        if (mainnetBtn) mainnetBtn.disabled = false;
+    }
+}
+
+
 // Load wallet balances
 async function loadBalances() {
     try {
+        // Get system status to know the active network
+        const statusData = await API.getSystemStatus();
+        const activeNetwork = statusData.activeNetwork || 'sepolia';
+        
+        // Get all balances
         const data = await API.getBalance();
         
         if (data.success && data.balances) {
             const balanceGrid = document.getElementById('balanceGrid');
             balanceGrid.innerHTML = '';
             
-            for (const [network, balanceData] of Object.entries(data.balances)) {
-                if (balanceData.error) {
+            // Only show balance for the active network
+            const balanceData = data.balances[activeNetwork];
+            
+            if (!balanceData) {
+                balanceGrid.innerHTML = `
+                    <div class="balance-item">
+                        <div class="balance-network">${activeNetwork}</div>
+                        <div class="balance-amount" style="color: var(--text-muted); font-size: 1rem;">
+                            No data available
+                        </div>
+                    </div>
+                `;
+                return;
+            }
+            
+            if (balanceData.error) {
+                balanceGrid.innerHTML = `
+                    <div class="balance-item">
+                        <div class="balance-network">${activeNetwork}</div>
+                        <div class="balance-amount" style="color: var(--neon-red); font-size: 1rem;">
+                            Error: ${balanceData.error}
+                        </div>
+                    </div>
+                `;
+            } else {
+                const ethBalance = balanceData.balanceEth || weiToEth(balanceData.balanceWei);
+                
+                // Display ETH balance
+                balanceGrid.innerHTML += `
+                    <div class="balance-item">
+                        <div class="balance-label">ETH Balance</div>
+                        <div class="balance-amount">${ethBalance} ETH</div>
+                    </div>
+                `;
+                
+                // Display LAB token balance (always show, even if token not configured)
+                if (balanceData.labBalance !== undefined) {
+                    const labBalance = balanceData.labBalance || '0';
                     balanceGrid.innerHTML += `
                         <div class="balance-item">
-                            <div class="balance-network">${network}</div>
-                            <div class="balance-amount" style="color: var(--neon-red); font-size: 1rem;">
-                                Error: ${balanceData.error}
-                            </div>
+                            <div class="balance-label">LAB Balance</div>
+                            <div class="balance-amount">${labBalance} LAB</div>
                         </div>
                     `;
-                } else {
-                    const ethBalance = balanceData.balanceEth || weiToEth(balanceData.balanceWei);
-                    balanceGrid.innerHTML += `
-                        <div class="balance-item">
-                            <div class="balance-network">${network}</div>
-                            <div class="balance-amount">${ethBalance} ETH</div>
-                        </div>
-                    `;
+                    
+                    // Show promotional message if LAB balance is 0 (in separate container)
+                    const promoContainer = document.getElementById('labPromoMessage');
+                    if (promoContainer) {
+                        if (parseFloat(labBalance) === 0) {
+                            promoContainer.style.display = 'block';
+                            promoContainer.innerHTML = `
+                                <div style="text-align: center; padding: 1.5rem; background: linear-gradient(135deg, rgba(0, 255, 157, 0.1), rgba(0, 229, 255, 0.1)); border-radius: 0.5rem; margin-top: 1rem; border: 1px solid rgba(0, 255, 157, 0.2);">
+                                    <div style="font-size: 1.1rem; color: var(--neon-cyan); margin-bottom: 0.5rem;">
+                                        <i class="fas fa-rocket" style="margin-right: 0.5rem; color: var(--neon-green);"></i>
+                                        Register as a provider now to get <strong style="color: var(--neon-green);">1000 $LAB</strong>!
+                                    </div>
+                                    <a href="https://marketplace-decentralabs.vercel.app" 
+                                       target="_blank" 
+                                       style="color: var(--neon-green); text-decoration: none; font-weight: bold; font-size: 1rem; transition: all 0.3s ease; display: inline-flex; align-items: center; gap: 0.5rem;">
+                                        <i class="fas fa-external-link-alt"></i>
+                                        Visit Marketplace
+                                    </a>
+                                </div>
+                            `;
+                        } else {
+                            promoContainer.style.display = 'none';
+                            promoContainer.innerHTML = '';
+                        }
+                    }
                 }
             }
         }
@@ -396,6 +501,24 @@ function setupButtonHandlers() {
     
     // Refresh balance button
     document.getElementById('refreshBalanceBtn').addEventListener('click', loadBalances);
+    
+    // Network buttons
+    const sepoliaBtn = document.getElementById('sepoliaBtn');
+    const mainnetBtn = document.getElementById('mainnetBtn');
+    if (sepoliaBtn) {
+        sepoliaBtn.addEventListener('click', () => {
+            if (!sepoliaBtn.classList.contains('active')) {
+                switchNetwork('sepolia');
+            }
+        });
+    }
+    if (mainnetBtn) {
+        mainnetBtn.addEventListener('click', () => {
+            if (!mainnetBtn.classList.contains('active')) {
+                switchNetwork('mainnet');
+            }
+        });
+    }
     
     // Refresh transactions button
     document.getElementById('refreshTxBtn').addEventListener('click', loadRecentTransactions);

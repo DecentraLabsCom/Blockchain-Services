@@ -2,9 +2,11 @@ package decentralabs.blockchain.config;
 
 import decentralabs.blockchain.contract.Diamond;
 import decentralabs.blockchain.dto.health.LabMetadata;
+import decentralabs.blockchain.event.NetworkSwitchEvent;
 import decentralabs.blockchain.service.health.LabMetadataService;
 import decentralabs.blockchain.service.wallet.InstitutionalWalletService;
 import decentralabs.blockchain.service.wallet.WalletService;
+import io.reactivex.disposables.Disposable;
 import java.math.BigDecimal;
 import java.math.BigInteger;
 import java.time.Instant;
@@ -123,6 +125,7 @@ public class ContractEventListenerConfig {
     private volatile Diamond writableDiamond;
 
     private final Map<BigInteger, String> labMetadataUriCache = new ConcurrentHashMap<>();
+    private final List<Disposable> activeSubscriptions = new java.util.concurrent.CopyOnWriteArrayList<>();
 
     @Value("${contract.events.to.listen:}")
     private String eventsToListen;
@@ -168,6 +171,36 @@ public class ContractEventListenerConfig {
         } catch (Exception e) {
             log.error("Error configuring contract event listeners", e);
         }
+    }
+    
+    /**
+     * Handles network switch events by reconfiguring all contract event listeners
+     */
+    @EventListener(NetworkSwitchEvent.class)
+    public void onNetworkSwitch(NetworkSwitchEvent event) {
+        if (!eventListeningEnabled) {
+            return;
+        }
+        
+        log.info("Network switched from {} to {}, reconfiguring contract event listeners...", 
+                 event.getOldNetwork(), event.getNewNetwork());
+        
+        // Dispose all active subscriptions
+        for (Disposable subscription : activeSubscriptions) {
+            if (subscription != null && !subscription.isDisposed()) {
+                subscription.dispose();
+            }
+        }
+        activeSubscriptions.clear();
+        
+        // Clear cached Diamond instances (they're network-specific)
+        cachedDiamond = null;
+        writableDiamond = null;
+        
+        // Reconfigure listeners with new network
+        configureContractEventListeners();
+        
+        log.info("Contract event listeners reconfigured for network: {}", event.getNewNetwork());
     }
 
     private List<String> parseConfiguredEvents() {
@@ -217,11 +250,14 @@ public class ContractEventListenerConfig {
 
         log.info("Setting up listener for '{}' with signature {}", eventName, eventSignature);
 
-        web3j.ethLogFlowable(filter).subscribe(
+        Disposable subscription = web3j.ethLogFlowable(filter).subscribe(
             eventLog -> handleLogIfMatches(eventName, eventDefinition, eventSignature, eventLog),
             error -> log.error("Error listening for {} events: {}", eventName, error.getMessage(), error),
             () -> log.info("Event listener for {} completed", eventName)
         );
+        
+        // Store subscription so it can be disposed on network switch
+        activeSubscriptions.add(subscription);
     }
 
     private void handleLogIfMatches(String eventName, Event eventDefinition, String eventSignature, Log eventLog) {

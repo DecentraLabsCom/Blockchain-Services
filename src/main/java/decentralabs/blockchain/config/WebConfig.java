@@ -14,7 +14,9 @@ public class WebConfig implements WebMvcConfigurer {
 
     @Override
     public void addViewControllers(@NonNull ViewControllerRegistry registry) {
-        // Forward /wallet-dashboard/ to /wallet-dashboard/index.html
+        // Forward /wallet-dashboard to /wallet-dashboard/index.html (with or without trailing slash)
+        registry.addViewController("/wallet-dashboard")
+                .setViewName("forward:/wallet-dashboard/index.html");
         registry.addViewController("/wallet-dashboard/")
                 .setViewName("forward:/wallet-dashboard/index.html");
     }

@@ -173,6 +173,18 @@ const API = {
             providerAddress,
             backendAddress
         });
+    },
+
+    /**
+     * POST /wallet/switch-network
+     * Switch the active blockchain network
+     * @param {string} networkId - Network identifier ('mainnet' or 'sepolia')
+     */
+    async switchNetwork(networkId) {
+        return await this.request('/wallet/switch-network', {
+            method: 'POST',
+            body: JSON.stringify({ networkId })
+        });
     }
 };
 
