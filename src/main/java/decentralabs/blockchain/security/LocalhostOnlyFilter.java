@@ -6,6 +6,7 @@ import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.core.annotation.Order;
 import org.springframework.lang.NonNull;
 import org.springframework.stereotype.Component;
@@ -16,6 +17,7 @@ import org.springframework.web.filter.OncePerRequestFilter;
  */
 @Component
 @Order(0)
+@Slf4j
 public class LocalhostOnlyFilter extends OncePerRequestFilter {
 
     private static final List<String> LOCALHOST_ADDRESSES = List.of(
@@ -37,7 +39,13 @@ public class LocalhostOnlyFilter extends OncePerRequestFilter {
         @NonNull FilterChain filterChain
     ) throws ServletException, IOException {
 
+        String path = request.getServletPath();
+        String clientIp = request.getRemoteAddr();
+        
+        log.debug("LocalhostOnlyFilter: path={}, clientIp={}", path, clientIp);
+        
         if (requiresLocalhost(request) && !isLocalhost(request)) {
+            log.warn("Blocked non-localhost request: path={}, clientIp={}", path, clientIp);
             response.sendError(HttpServletResponse.SC_FORBIDDEN,
                 "Endpoint is available from localhost only");
             return;
@@ -48,6 +56,8 @@ public class LocalhostOnlyFilter extends OncePerRequestFilter {
 
     private boolean requiresLocalhost(HttpServletRequest request) {
         String path = request.getServletPath();
+        // Allow /admin/ static resources (dashboard HTML/CSS/JS) for all users from localhost
+        // But protect /treasury and /wallet API endpoints
         return RESTRICTED_PREFIXES.stream().anyMatch(path::startsWith);
     }
 
@@ -57,6 +67,18 @@ public class LocalhostOnlyFilter extends OncePerRequestFilter {
             return false;
         }
         clientIp = clientIp.trim();
-        return LOCALHOST_ADDRESSES.contains(clientIp);
+        
+        // Allow standard localhost addresses
+        if (LOCALHOST_ADDRESSES.contains(clientIp)) {
+            return true;
+        }
+        
+        // Allow Docker internal network addresses (172.x.x.x, 10.x.x.x)
+        // These are typical Docker bridge network IPs
+        if (clientIp.startsWith("172.") || clientIp.startsWith("10.")) {
+            return true;
+        }
+        
+        return false;
     }
 }

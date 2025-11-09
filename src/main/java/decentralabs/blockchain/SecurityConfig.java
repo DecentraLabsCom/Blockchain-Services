@@ -75,6 +75,8 @@ public class SecurityConfig {
                 .requestMatchers(samlAuthEndpoint).permitAll()
                 .requestMatchers(samlAuth2Endpoint).permitAll()
                 .requestMatchers(healthEndpoint).permitAll()
+                // Wallet dashboard static resources (HTML/CSS/JS)
+                .requestMatchers("/wallet-dashboard/**").permitAll()
                 // ALL wallet endpoints - restricted by CORS to localhost
                 .requestMatchers(walletEndpoint + "/**").permitAll()
                 .requestMatchers(treasuryEndpoint + "/**").permitAll()

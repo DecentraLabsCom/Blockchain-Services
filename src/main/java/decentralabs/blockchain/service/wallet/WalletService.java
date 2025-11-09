@@ -138,7 +138,7 @@ public class WalletService {
             // Generate random private key
             ECKeyPair keyPair = Keys.createEcKeyPair();
             String privateKey = Numeric.toHexStringWithPrefix(keyPair.getPrivateKey());
-            String address = Keys.getAddress(keyPair.getPublicKey());
+            String address = "0x" + Keys.getAddress(keyPair.getPublicKey());
 
             // Encrypt the private key
             String encryptedPrivateKey = encryptPrivateKey(privateKey, password);

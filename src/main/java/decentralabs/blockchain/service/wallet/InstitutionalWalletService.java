@@ -61,6 +61,13 @@ public class InstitutionalWalletService {
     private String institutionalWalletPassword;
     
     /**
+     * Path to wallet configuration file (address + password)
+     * Used as fallback if environment variables are not set
+     */
+    @Value("${wallet.config.file:./data/wallet-config.properties}")
+    private String walletConfigFile;
+    
+    /**
      * Cached credentials to avoid decrypting on every transaction
      * Only initialized when first needed (lazy loading)
      */
@@ -70,23 +77,44 @@ public class InstitutionalWalletService {
      * Validates that the institutional wallet exists in persistence on startup.
      * Does NOT decrypt the wallet yet (lazy initialization for better startup time).
      * 
+     * Loads configuration from:
+     * 1. Environment variables (institutional.wallet.address, institutional.wallet.password)
+     * 2. Wallet config file (./data/wallet-config.properties) as fallback
+     * 3. Persistence service (auto-detect single wallet)
+     * 
      * @throws IllegalStateException if wallet address or password not configured
      * @throws IllegalStateException if wallet not found in persistence
      */
     @PostConstruct
     public void initializeInstitutionalWallet() {
+        // Try to load from config file if environment variables not set
+        if ((institutionalWalletAddress == null || institutionalWalletAddress.isBlank()) ||
+            (institutionalWalletPassword == null || institutionalWalletPassword.isBlank())) {
+            
+            log.info("Environment variables not set, trying to load from config file: {}", walletConfigFile);
+            loadFromConfigFile();
+        }
+        
+        // If still not configured, try to auto-detect from persistence
+        if (institutionalWalletAddress == null || institutionalWalletAddress.isBlank()) {
+            String detectedAddress = persistenceService.getCurrentWalletAddress();
+            if (detectedAddress != null) {
+                log.info("Auto-detected wallet from persistence: {}", detectedAddress);
+                institutionalWalletAddress = detectedAddress;
+            }
+        }
+        
         // Check if institutional wallet is configured
         if (institutionalWalletAddress == null || institutionalWalletAddress.isBlank()) {
             log.warn("Institutional wallet address not configured. " +
-                    "Set institutional.wallet.address in application.properties. " +
+                    "Create a wallet using the dashboard or POST /wallet/create. " +
                     "Automated transaction signing will not be available.");
             return;
         }
         
         if (institutionalWalletPassword == null || institutionalWalletPassword.isBlank()) {
             log.warn("Institutional wallet password not configured. " +
-                    "Set institutional.wallet.password in application.properties. " +
-                    "Automated transaction signing will not be available.");
+                    "Cannot decrypt wallet. Automated transaction signing will not be available.");
             return;
         }
         
@@ -94,15 +122,89 @@ public class InstitutionalWalletService {
         String encryptedKey = persistenceService.getWallet(institutionalWalletAddress);
         
         if (encryptedKey == null) {
-            throw new IllegalStateException(
-                "Institutional wallet not found at address: " + institutionalWalletAddress + ". " +
-                "Please create it first using POST /wallet/create with your institutional password, " +
-                "then configure institutional.wallet.address and institutional.wallet.password."
-            );
+            log.warn("Institutional wallet not found at address: {}. " +
+                    "Please create it first using POST /wallet/create or the dashboard.", 
+                    institutionalWalletAddress);
+            return;
         }
         
         log.info("Institutional wallet verified in persistence: {}", institutionalWalletAddress);
         log.info("Institutional wallet ready for automated transaction signing");
+    }
+    
+    /**
+     * Loads wallet configuration from file
+     */
+    private void loadFromConfigFile() {
+        try {
+            java.nio.file.Path path = java.nio.file.Paths.get(walletConfigFile);
+            if (!java.nio.file.Files.exists(path)) {
+                log.debug("Wallet config file does not exist: {}", walletConfigFile);
+                return;
+            }
+            
+            java.util.Properties props = new java.util.Properties();
+            try (java.io.FileInputStream fis = new java.io.FileInputStream(path.toFile())) {
+                props.load(fis);
+            }
+            
+            String address = props.getProperty("institutional.wallet.address");
+            String password = props.getProperty("institutional.wallet.password");
+            
+            if (address != null && !address.isBlank()) {
+                institutionalWalletAddress = address;
+                log.info("Loaded wallet address from config file");
+            }
+            
+            if (password != null && !password.isBlank()) {
+                institutionalWalletPassword = password;
+                log.info("Loaded wallet password from config file");
+            }
+            
+        } catch (Exception e) {
+            log.error("Failed to load wallet config from file: {}", walletConfigFile, e);
+        }
+    }
+    
+    /**
+     * Saves wallet configuration to file for persistence across restarts
+     * 
+     * @param address Wallet address
+     * @param password Wallet password
+     */
+    public void saveConfigToFile(String address, String password) {
+        try {
+            java.nio.file.Path path = java.nio.file.Paths.get(walletConfigFile);
+            
+            // Create parent directories if needed
+            java.nio.file.Files.createDirectories(path.getParent());
+            
+            java.util.Properties props = new java.util.Properties();
+            props.setProperty("institutional.wallet.address", address);
+            props.setProperty("institutional.wallet.password", password);
+            
+            try (java.io.FileOutputStream fos = new java.io.FileOutputStream(path.toFile())) {
+                props.store(fos, "Institutional Wallet Configuration - Auto-generated");
+            }
+            
+            // Set restrictive permissions (600) on Unix systems
+            try {
+                if (!System.getProperty("os.name").toLowerCase().contains("win")) {
+                    java.util.Set<java.nio.file.attribute.PosixFilePermission> perms = java.util.Set.of(
+                        java.nio.file.attribute.PosixFilePermission.OWNER_READ,
+                        java.nio.file.attribute.PosixFilePermission.OWNER_WRITE
+                    );
+                    java.nio.file.Files.setPosixFilePermissions(path, perms);
+                }
+            } catch (UnsupportedOperationException e) {
+                // Windows - ignore
+            }
+            
+            log.info("Saved wallet configuration to file: {}", walletConfigFile);
+            
+        } catch (Exception e) {
+            log.error("Failed to save wallet config to file: {}", walletConfigFile, e);
+        }
     }
     
     /**

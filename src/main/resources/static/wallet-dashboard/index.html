@@ -1,0 +1,238 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DecentraLabs - Treasury Admin Dashboard</title>
+    <link rel="stylesheet" href="assets/css/admin.css">
+</head>
+<body>
+    <div class="container">
+        <!-- Header -->
+        <header class="dashboard-header">
+            <div class="header-content">
+                <h1 class="logo">
+                    <span class="logo-icon">◈</span>
+                    DecentraLabs Treasury
+                </h1>
+                <div class="header-actions">
+                    <button id="refreshBtn" class="btn btn-secondary">
+                        <span class="icon">↻</span>
+                        Refresh
+                    </button>
+                    <div class="status-indicator" id="statusIndicator">
+                        <span class="status-dot"></span>
+                        <span class="status-text">Connected</span>
+                    </div>
+                </div>
+            </div>
+        </header>
+
+        <!-- Main Content -->
+        <main class="dashboard-main">
+            <!-- System Status Section -->
+            <section class="card">
+                <div class="card-header">
+                    <h2>System Status</h2>
+                    <span class="timestamp" id="lastUpdate">Last update: --</span>
+                </div>
+                <div class="card-body">
+                    <div class="info-grid">
+                        <div class="info-item">
+                            <span class="info-label">Institutional Wallet</span>
+                            <span class="info-value" id="walletAddress">Loading...</span>
+                            <!-- Wallet Setup Dropdown (shown when not configured) -->
+                            <div class="wallet-setup-dropdown" id="walletSetupDropdown" style="display: none;">
+                                <div class="dropdown-content">
+                                    <h3>Setup Institutional Wallet</h3>
+                                    <p class="dropdown-description">Choose an option to configure the institutional wallet:</p>
+                                    <div class="wallet-setup-options">
+                                        <button id="createWalletBtn" class="btn btn-primary btn-block">
+                                            <span class="icon">+</span>
+                                            Create New Wallet
+                                        </button>
+                                        <button id="importWalletBtn" class="btn btn-secondary btn-block">
+                                            <span class="icon">↓</span>
+                                            Import Existing Wallet
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="info-item">
+                            <span class="info-label">Contract Address</span>
+                            <span class="info-value" id="contractAddress">Loading...</span>
+                        </div>
+                        <div class="info-item">
+                            <span class="info-label">Active Network</span>
+                            <span class="info-value" id="activeNetwork">Loading...</span>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Wallet Balances Section -->
+            <section class="card">
+                <div class="card-header">
+                    <h2>Wallet Balances</h2>
+                    <div class="card-actions">
+                        <button id="refreshBalanceBtn" class="btn btn-small">Refresh</button>
+                    </div>
+                </div>
+                <div class="card-body">
+                    <div class="balance-grid" id="balanceGrid">
+                        <!-- Balances will be loaded dynamically -->
+                        <div class="balance-item skeleton">
+                            <div class="balance-network">Loading...</div>
+                            <div class="balance-amount">--</div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Spending Limits Section -->
+            <section class="card">
+                <div class="card-header">
+                    <h2>Spending Limits</h2>
+                    <div class="card-actions">
+                        <button id="editLimitsBtn" class="btn btn-small">Edit Limits</button>
+                    </div>
+                </div>
+                <div class="card-body">
+                    <div class="limits-container" id="limitsContainer">
+                        <!-- Limits will be loaded dynamically -->
+                        <div class="limit-item">
+                            <div class="limit-header">
+                                <span class="limit-label">Daily Limit</span>
+                                <span class="limit-value" id="dailyLimit">Loading...</span>
+                            </div>
+                            <div class="progress-bar">
+                                <div class="progress-fill" id="dailyProgress" style="width: 0%"></div>
+                            </div>
+                            <div class="limit-footer">
+                                <span class="limit-spent" id="dailySpent">0 ETH spent</span>
+                                <span class="limit-remaining" id="dailyRemaining">-- remaining</span>
+                            </div>
+                        </div>
+
+                        <div class="limit-item">
+                            <div class="limit-header">
+                                <span class="limit-label">Weekly Limit</span>
+                                <span class="limit-value" id="weeklyLimit">Loading...</span>
+                            </div>
+                            <div class="progress-bar">
+                                <div class="progress-fill" id="weeklyProgress" style="width: 0%"></div>
+                            </div>
+                            <div class="limit-footer">
+                                <span class="limit-spent" id="weeklySpent">0 ETH spent</span>
+                                <span class="limit-remaining" id="weeklyRemaining">-- remaining</span>
+                            </div>
+                        </div>
+
+                        <div class="limit-item">
+                            <div class="limit-header">
+                                <span class="limit-label">Monthly Limit</span>
+                                <span class="limit-value" id="monthlyLimit">Loading...</span>
+                            </div>
+                            <div class="progress-bar">
+                                <div class="progress-fill" id="monthlyProgress" style="width: 0%"></div>
+                            </div>
+                            <div class="limit-footer">
+                                <span class="limit-spent" id="monthlySpent">0 ETH spent</span>
+                                <span class="limit-remaining" id="monthlyRemaining">-- remaining</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Administrative Operations Section -->
+            <section class="card">
+                <div class="card-header">
+                    <h2>Administrative Operations</h2>
+                    <span class="warning-badge">⚠ Localhost Only</span>
+                </div>
+                <div class="card-body">
+                    <div class="operations-grid">
+                        <div class="operation-card">
+                            <h3>Modify Spending Limits</h3>
+                            <form id="limitsForm" class="operation-form">
+                                <div class="form-group">
+                                    <label>User Limit (Wei)</label>
+                                    <input type="text" id="userLimitInput" placeholder="e.g., 100000000000000000000">
+                                </div>
+                                <button type="submit" class="btn btn-primary">Update Limit</button>
+                            </form>
+                        </div>
+
+                        <div class="operation-card">
+                            <h3>Manage Spending Period</h3>
+                            <form id="periodForm" class="operation-form">
+                                <div class="form-group">
+                                    <label>Period (seconds)</label>
+                                    <input type="text" id="periodInput" placeholder="e.g., 86400 (1 day)">
+                                </div>
+                                <button type="submit" class="btn btn-primary">Update Period</button>
+                            </form>
+                        </div>
+
+                        <div class="operation-card">
+                            <h3>Reset Period</h3>
+                            <p class="operation-description">Reset the current spending period counters</p>
+                            <button id="resetPeriodBtn" class="btn btn-warning full-width">
+                                Reset Spending Period
+                            </button>
+                        </div>
+
+                        <div class="operation-card">
+                            <h3>Treasury Operations</h3>
+                            <form id="treasuryForm" class="operation-form">
+                                <div class="form-group">
+                                    <label>Amount (Wei)</label>
+                                    <input type="text" id="treasuryAmount" placeholder="Amount in wei">
+                                </div>
+                                <div class="button-group">
+                                    <button type="button" id="depositBtn" class="btn btn-success">Deposit</button>
+                                    <button type="button" id="withdrawBtn" class="btn btn-danger">Withdraw</button>
+                                </div>
+                            </form>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Recent Transactions Section -->
+            <section class="card">
+                <div class="card-header">
+                    <h2>Recent Transactions</h2>
+                    <div class="card-actions">
+                        <button id="refreshTxBtn" class="btn btn-small">Refresh</button>
+                    </div>
+                </div>
+                <div class="card-body">
+                    <div class="transactions-container" id="transactionsContainer">
+                        <div class="no-data">
+                            <span class="icon">📋</span>
+                            <p>Transaction history tracking not yet implemented</p>
+                            <small>Consider integrating Etherscan API or event indexing</small>
+                        </div>
+                    </div>
+                </div>
+            </section>
+        </main>
+
+        <!-- Footer -->
+        <footer class="dashboard-footer">
+            <p>&copy; 2025 DecentraLabs. Treasury Administration Dashboard v1.0</p>
+            <p class="security-notice">🔒 This dashboard is only accessible from localhost for security</p>
+        </footer>
+    </div>
+
+    <!-- Toast Notification -->
+    <div id="toast" class="toast"></div>
+
+    <!-- Scripts -->
+    <script src="assets/js/api.js"></script>
+    <script src="assets/js/admin.js"></script>
+</body>
+</html>

@@ -10,6 +10,7 @@ import org.springframework.web.bind.annotation.*;
 import decentralabs.blockchain.dto.wallet.*;
 import decentralabs.blockchain.service.RateLimitService;
 import decentralabs.blockchain.service.wallet.WalletService;
+import decentralabs.blockchain.service.wallet.InstitutionalWalletService;
 
 @RestController
 @RequestMapping("/wallet")
@@ -18,6 +19,7 @@ public class WalletController {
 
     private final WalletService walletService;
     private final RateLimitService rateLimitService;
+    private final InstitutionalWalletService institutionalWalletService;
 
     /**
      * POST /wallet/create
@@ -27,6 +29,14 @@ public class WalletController {
     public ResponseEntity<WalletResponse> createWallet(@Valid @RequestBody WalletCreateRequest request) {
         try {
             WalletResponse response = walletService.createWallet(request.getPassword());
+            
+            // Auto-configure as institutional wallet
+            if (response.isSuccess() && response.getAddress() != null) {
+                institutionalWalletService.saveConfigToFile(response.getAddress(), request.getPassword());
+                // Reinitialize to load the new config
+                institutionalWalletService.initializeInstitutionalWallet();
+            }
+            
             return ResponseEntity.ok(response);
         } catch (Exception e) {
             return ResponseEntity.badRequest()
@@ -42,6 +52,14 @@ public class WalletController {
     public ResponseEntity<WalletResponse> importWallet(@Valid @RequestBody WalletImportRequest request) {
         try {
             WalletResponse response = walletService.importWallet(request);
+            
+            // Auto-configure as institutional wallet
+            if (response.isSuccess() && response.getAddress() != null) {
+                institutionalWalletService.saveConfigToFile(response.getAddress(), request.getPassword());
+                // Reinitialize to load the new config
+                institutionalWalletService.initializeInstitutionalWallet();
+            }
+            
             return ResponseEntity.ok(response);
         } catch (Exception e) {
             return ResponseEntity.badRequest()
