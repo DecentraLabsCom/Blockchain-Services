@@ -163,6 +163,31 @@ docker run -p 8080:8080 \
   blockchain-services:latest
 ```
 
+### Testing Wallet Endpoints Locally
+
+⚠️ **IMPORTANT**: Due to `LocalhostOnlyFilter` security restrictions, wallet endpoints (`/wallet/*`, `/treasury/*`) can only be accessed from localhost (`127.0.0.1`).
+
+**For development/testing on your local machine**, you must execute curl commands **inside the Docker container**:
+
+```bash
+# Create a new wallet
+docker exec blockchain-services sh -c 'curl -X POST http://localhost:8080/wallet/create \
+  -H "Content-Type: application/json" \
+  -d "{\"password\":\"TestPassword123\"}"'
+
+# Check wallet balance
+docker exec blockchain-services curl http://localhost:8080/wallet/0xYourAddress/balance
+```
+
+**In production**, when you have a frontend web application running in another Docker container on the same network, it can access these endpoints directly:
+
+```bash
+# From another container in the same Docker network
+curl -X POST http://blockchain-services:8080/wallet/create \
+  -H "Content-Type: application/json" \
+  -d '{"password":"myStrongPassword"}'
+```
+
 ## 🔐 Security
 
 **CRITICAL**: This service handles sensitive cryptographic keys and blockchain transactions.

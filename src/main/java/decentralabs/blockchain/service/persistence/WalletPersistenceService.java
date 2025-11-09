@@ -17,28 +17,27 @@ import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * Persistence service for wallet storage
+ * Persistence service for institutional wallet storage
  * 
- * Three storage modes:
+ * IMPORTANT: This service stores ONLY ONE institutional wallet at a time.
+ * Creating or importing a new wallet will REPLACE the existing one.
+ * 
+ * Storage modes:
  * 
  * MODE 1 - In-Memory (Default, wallet.persistence.enabled=false):
  *   - Fast, no I/O overhead
  *   - Lost on restart
- *   - Good for: development, testing, stateless auth
+ *   - Good for: development, testing
  * 
  * MODE 2 - File-Based (wallet.persistence.enabled=true, wallet.persistence.file.enabled=true):
- *   - Wallets stored in JSON file on disk
+ *   - Single wallet stored in JSON file on disk
  *   - Survives restarts
  *   - File protected with 0600 permissions (Linux/Mac)
- *   - Good for: single instance, simple deployment
+ *   - Good for: production, single instance
  *   - Configure: wallet.persistence.file.path (default: ./data/wallets.json)
  * 
- * MODE 3 - Redis/DB (wallet.persistence.enabled=true, wallet.persistence.file.enabled=false):
- *   - Requires implementing Redis/DB code
- *   - Good for: multiple instances, high availability
- * 
  * Security notes:
- * - Wallets are already AES-256-GCM encrypted BEFORE storage
+ * - Wallet is already AES-256-GCM encrypted BEFORE storage
  * - File contains encrypted data only (double protection)
  * - File permissions set to 0600 (owner read/write only)
  * - Consider encrypting the entire filesystem for extra security
@@ -59,7 +58,8 @@ public class WalletPersistenceService {
 
     private final ObjectMapper objectMapper = new ObjectMapper();
 
-    // In-memory storage (always used for fast access)
+    // In-memory storage for the single institutional wallet
+    // Key: wallet address, Value: encrypted private key
     private final Map<String, String> inMemoryStorage = new ConcurrentHashMap<>();
 
     @PostConstruct
@@ -70,13 +70,16 @@ public class WalletPersistenceService {
     }
 
     /**
-     * Stores an encrypted wallet
+     * Stores the institutional wallet (REPLACES any existing wallet)
      * 
      * @param walletAddress The wallet address (used as key)
      * @param encryptedData The encrypted wallet data (already AES-256-GCM encrypted)
      */
     public void saveWallet(String walletAddress, String encryptedData) {
-        // Always save to in-memory for fast access
+        // Clear any existing wallet (only ONE wallet allowed)
+        inMemoryStorage.clear();
+        
+        // Save the new wallet
         inMemoryStorage.put(walletAddress, encryptedData);
         
         // Additionally persist to file if enabled
@@ -84,7 +87,7 @@ public class WalletPersistenceService {
             saveWalletsToFile();
         }
         
-        log.debug("Wallet stored for address: {} (persistence: {})", 
+        log.info("Institutional wallet stored for address: {} (persistence: {})", 
             walletAddress, persistenceEnabled && filePersistenceEnabled ? "file" : "memory-only");
     }
 
@@ -109,7 +112,7 @@ public class WalletPersistenceService {
     }
 
     /**
-     * Deletes a wallet
+     * Deletes the institutional wallet
      * 
      * @param walletAddress The wallet address
      */
@@ -121,18 +124,27 @@ public class WalletPersistenceService {
             saveWalletsToFile();
         }
         
-        log.debug("Wallet deleted for address: {}", walletAddress);
+        log.info("Institutional wallet deleted for address: {}", walletAddress);
     }
 
     /**
-     * Gets the count of stored wallets
+     * Gets the count of stored wallets (should always be 0 or 1)
      */
     public int getWalletCount() {
         return inMemoryStorage.size();
     }
+    
+    /**
+     * Gets the current institutional wallet address (if any)
+     * 
+     * @return The wallet address, or null if no wallet is stored
+     */
+    public String getCurrentWalletAddress() {
+        return inMemoryStorage.isEmpty() ? null : inMemoryStorage.keySet().iterator().next();
+    }
 
     /**
-     * Loads wallets from JSON file on startup
+     * Loads wallet from JSON file on startup
      */
     private void loadWalletsFromFile() {
         try {
@@ -148,18 +160,35 @@ public class WalletPersistenceService {
             @SuppressWarnings("unchecked")
             Map<String, String> loadedWallets = objectMapper.readValue(file, Map.class);
             
+            if (loadedWallets.isEmpty()) {
+                log.info("No institutional wallet found in file: {}", walletFilePath);
+                return;
+            }
+            
+            // Only load the wallet (should be just one)
             inMemoryStorage.putAll(loadedWallets);
             
-            log.info("Loaded {} wallets from file: {}", loadedWallets.size(), walletFilePath);
+            if (loadedWallets.size() > 1) {
+                log.warn("Multiple wallets found in file (expected 1). Using the first one and clearing others.");
+                // Keep only the first wallet
+                String firstAddress = loadedWallets.keySet().iterator().next();
+                String firstEncrypted = loadedWallets.get(firstAddress);
+                inMemoryStorage.clear();
+                inMemoryStorage.put(firstAddress, firstEncrypted);
+                saveWalletsToFile(); // Persist the cleanup
+            }
+            
+            log.info("Loaded institutional wallet from file: {} (address: {})", 
+                walletFilePath, getCurrentWalletAddress());
             
         } catch (IOException e) {
-            log.error("Failed to load wallets from file: {}", walletFilePath, e);
+            log.error("Failed to load wallet from file: {}", walletFilePath, e);
             log.warn("Starting with empty wallet storage");
         }
     }
 
     /**
-     * Saves all wallets to JSON file
+     * Saves the institutional wallet to JSON file
      */
     private void saveWalletsToFile() {
         try {
@@ -174,7 +203,7 @@ public class WalletPersistenceService {
                 }
             }
             
-            // Write wallets to JSON file (pretty print for readability)
+            // Write wallet to JSON file (pretty print for readability)
             objectMapper.writerWithDefaultPrettyPrinter()
                 .writeValue(path.toFile(), inMemoryStorage);
             
@@ -192,10 +221,11 @@ public class WalletPersistenceService {
                 log.debug("POSIX permissions not supported on this system");
             }
             
-            log.debug("Saved {} wallets to file: {}", inMemoryStorage.size(), walletFilePath);
+            log.info("Saved institutional wallet to file: {} (address: {})", 
+                walletFilePath, getCurrentWalletAddress());
             
         } catch (IOException e) {
-            log.error("Failed to save wallets to file: {}", walletFilePath, e);
+            log.error("Failed to save wallet to file: {}", walletFilePath, e);
         }
     }
 }

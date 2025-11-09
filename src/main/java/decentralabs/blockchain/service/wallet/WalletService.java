@@ -54,9 +54,6 @@ public class WalletService {
 
     private final WalletPersistenceService walletPersistenceService;
 
-    @Value("${rpc.url}")
-    private String defaultRpcUrl;
-
     @Value("${contract.address}")
     private String contractAddress;
 
@@ -66,11 +63,11 @@ public class WalletService {
     @Value("${base.domain:http://localhost}")
     private String baseDomain;
 
-    // Optional network-specific RPC configurations (with default values)
-    @Value("${ethereum.mainnet.rpc.url:https://mainnet.infura.io/v3/YOUR_PROJECT_ID}")
+    // Network-specific RPC configurations (comma-separated for fallback)
+    @Value("${ethereum.mainnet.rpc.url:https://eth.public-rpc.com}")
     private String mainnetRpcUrl;
 
-    @Value("${ethereum.sepolia.rpc.url:https://sepolia.infura.io/v3/YOUR_PROJECT_ID}")
+    @Value("${ethereum.sepolia.rpc.url:https://rpc.sepolia.org}")
     private String sepoliaRpcUrl;
 
     @Value("${wallet.encryption.salt:DecentraLabsTestSalt}")
@@ -82,8 +79,10 @@ public class WalletService {
     private static final int PBKDF2_ITERATIONS = 65536;
     private static final int AES_KEY_SIZE = 256;
 
-    // Cache of Web3j connections per network
+    // Cache of Web3j connections per network (with fallback URLs)
     private final Map<String, Web3j> web3jInstances = new ConcurrentHashMap<>();
+    private final Map<String, List<String>> networkRpcUrls = new ConcurrentHashMap<>();
+    private final Map<String, Integer> currentRpcIndex = new ConcurrentHashMap<>();
     private String activeNetwork;
     
     // Shared OkHttpClient with connection pooling for all Web3j instances
@@ -98,10 +97,30 @@ public class WalletService {
             .readTimeout(30, TimeUnit.SECONDS)
             .writeTimeout(30, TimeUnit.SECONDS)
             .build();
+        
+        // Parse RPC URLs (comma-separated list for fallback)
+        networkRpcUrls.put("mainnet", parseRpcUrls(mainnetRpcUrl));
+        networkRpcUrls.put("sepolia", parseRpcUrls(sepoliaRpcUrl));
+        
+        // Initialize RPC index to 0 for each network
+        currentRpcIndex.put("mainnet", 0);
+        currentRpcIndex.put("sepolia", 0);
             
-        // Use sepolia by default since rpc.url points to sepolia
+        // Use sepolia by default
         this.activeNetwork = "sepolia";
-        log.info("WalletService initialized with active network: {} using RPC: {}", activeNetwork, defaultRpcUrl);
+        List<String> sepoliaUrls = networkRpcUrls.get("sepolia");
+        log.info("WalletService initialized with active network: {} using RPC endpoints: {}", 
+                 activeNetwork, String.join(", ", sepoliaUrls));
+    }
+    
+    /**
+     * Parse comma-separated RPC URLs into a list
+     */
+    private List<String> parseRpcUrls(String rpcUrlConfig) {
+        return Arrays.stream(rpcUrlConfig.split(","))
+                     .map(String::trim)
+                     .filter(url -> !url.isEmpty())
+                     .toList();
     }
 
     // Cache of encrypted wallets (use Redis/database in production)
@@ -112,6 +131,10 @@ public class WalletService {
      */
     public WalletResponse createWallet(String password) {
         try {
+            // Check if a wallet already exists
+            String existingWallet = walletPersistenceService.getCurrentWalletAddress();
+            boolean replacingExisting = existingWallet != null;
+            
             // Generate random private key
             ECKeyPair keyPair = Keys.createEcKeyPair();
             String privateKey = Numeric.toHexStringWithPrefix(keyPair.getPrivateKey());
@@ -120,16 +143,20 @@ public class WalletService {
             // Encrypt the private key
             String encryptedPrivateKey = encryptPrivateKey(privateKey, password);
 
-            // Save using persistence service (with fallback to in-memory)
+            // Save using persistence service (replaces any existing wallet)
             walletPersistenceService.saveWallet(address, encryptedPrivateKey);
 
-            log.info("Created new wallet: {}", address);
+            String message = replacingExisting 
+                ? String.format("New institutional wallet created (replaced previous wallet %s)", existingWallet)
+                : "Institutional wallet created successfully";
+            
+            log.info("Created new institutional wallet: {} (replaced: {})", address, replacingExisting);
 
             return WalletResponse.builder()
                 .success(true)
                 .address(address)
                 .encryptedPrivateKey(encryptedPrivateKey)
-                .message("Wallet created successfully")
+                .message(message)
                 .build();
 
         } catch (Exception e) {
@@ -139,10 +166,15 @@ public class WalletService {
     }
 
     /**
-     * Imports a wallet from private key or mnemonic
+     * Imports a wallet from private key or mnemonic.
+     * Note: This replaces any existing institutional wallet.
      */
     public WalletResponse importWallet(WalletImportRequest request) {
         try {
+            // Check if a wallet already exists
+            String existingWallet = walletPersistenceService.getCurrentWalletAddress();
+            boolean replacingExisting = existingWallet != null;
+
             String address;
             String encryptedPrivateKey;
 
@@ -166,13 +198,18 @@ public class WalletService {
             // Save to cache
             encryptedWallets.put(address, encryptedPrivateKey);
 
-            log.info("Imported wallet: {}", address);
+            String message = replacingExisting 
+                ? String.format("Institutional wallet imported (replaced previous wallet %s)", existingWallet)
+                : "Institutional wallet imported successfully";
+
+            log.info("Imported wallet: {} {}", address, 
+                replacingExisting ? "(replaced " + existingWallet + ")" : "");
 
             return WalletResponse.builder()
                 .success(true)
                 .address(address)
                 .encryptedPrivateKey(encryptedPrivateKey)
-                .message("Wallet imported successfully")
+                .message(message)
                 .build();
 
         } catch (Exception e) {
@@ -256,8 +293,10 @@ public class WalletService {
      */
     public NetworkResponse getAvailableNetworks() {
         List<NetworkInfo> networks = Arrays.asList(
-            new NetworkInfo("mainnet", "Ethereum Mainnet", mainnetRpcUrl, 1),
-            new NetworkInfo("sepolia", "Sepolia Testnet", sepoliaRpcUrl, 11155111)
+            new NetworkInfo("mainnet", "Ethereum Mainnet", 
+                          String.join(",", networkRpcUrls.getOrDefault("mainnet", List.of(mainnetRpcUrl))), 1),
+            new NetworkInfo("sepolia", "Sepolia Testnet", 
+                          String.join(",", networkRpcUrls.getOrDefault("sepolia", List.of(sepoliaRpcUrl))), 11155111)
         );
 
         return NetworkResponse.builder()
@@ -284,19 +323,61 @@ public class WalletService {
     // Helper methods
 
     public Web3j getWeb3jInstance() {
-        return web3jInstances.computeIfAbsent(activeNetwork, this::createWeb3jInstance);
+        return getWeb3jInstanceWithFallback(activeNetwork);
     }
-
-    private Web3j createWeb3jInstance(String network) {
-        String rpcUrl = switch (network) {
-            case "mainnet" -> mainnetRpcUrl; // Use specific configuration if available
-            case "sepolia" -> sepoliaRpcUrl; // Use specific configuration if available
-            default -> defaultRpcUrl;        // Fallback to existing rpc.url
-        };
-
-        // Use HttpService with OkHttpClient for connection pooling
-        HttpService httpService = new HttpService(rpcUrl, httpClient);
-        return Web3j.build(httpService);
+    
+    /**
+     * Gets Web3j instance with automatic RPC fallback
+     * Tries the current RPC endpoint, and if it fails, tries the next one
+     */
+    private Web3j getWeb3jInstanceWithFallback(String network) {
+        List<String> rpcUrls = networkRpcUrls.getOrDefault(network, List.of(sepoliaRpcUrl));
+        int startIndex = currentRpcIndex.getOrDefault(network, 0);
+        
+        // Try all available RPC endpoints starting from current index
+        for (int i = 0; i < rpcUrls.size(); i++) {
+            int index = (startIndex + i) % rpcUrls.size();
+            String rpcUrl = rpcUrls.get(index);
+            
+            try {
+                // Create or get existing Web3j instance for this specific URL
+                String cacheKey = network + ":" + index;
+                Web3j web3j = web3jInstances.computeIfAbsent(cacheKey, k -> {
+                    log.info("Creating Web3j instance for {} using RPC endpoint [{}]: {}", 
+                             network, index, rpcUrl);
+                    HttpService httpService = new HttpService(rpcUrl, httpClient);
+                    return Web3j.build(httpService);
+                });
+                
+                // Test the connection with a simple call (with short timeout)
+                try {
+                    web3j.ethBlockNumber().send();
+                    
+                    // Success! Update current index for this network
+                    if (index != startIndex) {
+                        log.info("Successfully switched to fallback RPC endpoint [{}]: {}", index, rpcUrl);
+                        currentRpcIndex.put(network, index);
+                    }
+                    
+                    return web3j;
+                } catch (Exception e) {
+                    log.warn("RPC endpoint [{}] failed ({}): {} - trying next...", 
+                             index, rpcUrl, e.getMessage());
+                    
+                    // Remove failed instance from cache
+                    web3jInstances.remove(cacheKey);
+                    
+                    // Continue to next RPC endpoint
+                }
+            } catch (Exception e) {
+                log.warn("Error creating Web3j instance for endpoint [{}]: {} - trying next...", 
+                         index, e.getMessage());
+            }
+        }
+        
+        // All RPC endpoints failed, throw exception
+        throw new RuntimeException("All RPC endpoints failed for network: " + network + 
+                                   ". Tried: " + String.join(", ", rpcUrls));
     }
 
     /**
