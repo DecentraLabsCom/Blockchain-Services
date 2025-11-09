@@ -55,14 +55,6 @@ const API = {
     },
 
     /**
-     * GET /treasury/admin/limits
-     * Get spending limits configuration
-     */
-    async getSpendingLimits() {
-        return await this.request('/treasury/admin/limits');
-    },
-
-    /**
      * GET /treasury/admin/transactions?limit=X
      * Get recent transactions
      * @param {number} limit - Number of transactions to fetch
@@ -185,6 +177,28 @@ const API = {
             method: 'POST',
             body: JSON.stringify({ networkId })
         });
+    },
+
+    /**
+     * Reset spending period
+     */
+    async resetSpendingPeriod() {
+        return await this.executeAdminOperation('RESET_SPENDING_PERIOD', {});
+    },
+
+    /**
+     * Get treasury information (limit, period, balance)
+     */
+    async getTreasuryInfo() {
+        return await this.request('/treasury/admin/treasury-info');
+    },
+
+    /**
+     * Get top spenders for current period
+     * @param {number} limit - Number of top spenders to retrieve (default: 10)
+     */
+    async getTopSpenders(limit = 10) {
+        return await this.request(`/treasury/admin/top-spenders?limit=${limit}`);
     }
 };
 

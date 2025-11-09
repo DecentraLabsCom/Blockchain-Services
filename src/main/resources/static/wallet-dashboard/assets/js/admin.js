@@ -41,6 +41,105 @@ function showToast(message, type = 'info') {
     }, 5000);
 }
 
+// Custom Modal Input (replaces prompt())
+function showInputModal(title, message, type = 'password') {
+    return new Promise((resolve) => {
+        const modal = document.getElementById('inputModal');
+        const titleEl = document.getElementById('inputModalTitle');
+        const messageEl = document.getElementById('inputModalMessage');
+        const inputField = document.getElementById('inputModalField');
+        const confirmBtn = document.getElementById('inputModalConfirm');
+        const cancelBtn = document.getElementById('inputModalCancel');
+        const closeBtn = document.getElementById('closeInputModal');
+        
+        // Set modal content
+        titleEl.innerHTML = `<i class="fas fa-keyboard"></i> ${title}`;
+        messageEl.textContent = message;
+        inputField.type = type;
+        inputField.value = '';
+        inputField.placeholder = type === 'password' ? 'Enter password...' : 'Enter value...';
+        
+        // Show modal
+        modal.classList.add('show');
+        inputField.focus();
+        
+        // Handle confirmation
+        const handleConfirm = () => {
+            const value = inputField.value.trim();
+            cleanup();
+            resolve(value || null);
+        };
+        
+        // Handle cancellation
+        const handleCancel = () => {
+            cleanup();
+            resolve(null);
+        };
+        
+        // Cleanup function
+        const cleanup = () => {
+            modal.classList.remove('show');
+            confirmBtn.removeEventListener('click', handleConfirm);
+            cancelBtn.removeEventListener('click', handleCancel);
+            closeBtn.removeEventListener('click', handleCancel);
+            inputField.removeEventListener('keypress', handleKeyPress);
+        };
+        
+        // Handle Enter key
+        const handleKeyPress = (e) => {
+            if (e.key === 'Enter') {
+                handleConfirm();
+            } else if (e.key === 'Escape') {
+                handleCancel();
+            }
+        };
+        
+        // Attach event listeners
+        confirmBtn.addEventListener('click', handleConfirm);
+        cancelBtn.addEventListener('click', handleCancel);
+        closeBtn.addEventListener('click', handleCancel);
+        inputField.addEventListener('keypress', handleKeyPress);
+    });
+}
+
+// Custom Info Modal (replaces alert())
+function showInfoModal(title, content, isSuccess = true) {
+    return new Promise((resolve) => {
+        const modal = document.getElementById('infoModal');
+        const titleEl = document.getElementById('infoModalTitle');
+        const contentEl = document.getElementById('infoModalContent');
+        const closeBtn = document.getElementById('infoModalClose');
+        const closeIconBtn = document.getElementById('closeInfoModal');
+        
+        // Set modal content
+        const icon = isSuccess ? 'check-circle' : 'info-circle';
+        titleEl.innerHTML = `<i class="fas fa-${icon}"></i> ${title}`;
+        
+        // Format content (can be HTML)
+        if (typeof content === 'string') {
+            contentEl.innerHTML = content;
+        } else {
+            contentEl.innerHTML = '';
+            contentEl.appendChild(content);
+        }
+        
+        // Show modal
+        modal.classList.add('show');
+        
+        // Handle close
+        const handleClose = () => {
+            modal.classList.remove('show');
+            closeBtn.removeEventListener('click', handleClose);
+            closeIconBtn.removeEventListener('click', handleClose);
+            resolve();
+        };
+        
+        // Attach event listeners
+        closeBtn.addEventListener('click', handleClose);
+        closeIconBtn.addEventListener('click', handleClose);
+    });
+}
+
 // Update last refresh timestamp
 function updateLastRefreshTime() {
     const now = Date.now();
@@ -53,15 +152,23 @@ function updateLastRefreshTime() {
 
 // Load system status
 async function loadSystemStatus() {
+    console.log('[loadSystemStatus] Starting...');
     try {
+        console.log('[loadSystemStatus] Calling API.getSystemStatus()...');
         const data = await API.getSystemStatus();
+        console.log('[loadSystemStatus] Received data:', data);
         
         if (data.success) {
             const walletConfigured = data.walletConfigured;
             const walletAddress = data.institutionalWalletAddress;
             
+            console.log('[loadSystemStatus] Wallet configured:', walletConfigured);
+            console.log('[loadSystemStatus] Wallet address:', walletAddress);
+            console.log('[loadSystemStatus] Contract address:', data.contractAddress);
+            
             // Update wallet address display
             const walletAddressEl = document.getElementById('walletAddress');
+            console.log('[loadSystemStatus] walletAddressEl:', walletAddressEl);
             if (walletAddress) {
                 walletAddressEl.textContent = formatAddress(walletAddress);
                 walletAddressEl.classList.remove('warning-text');
@@ -85,6 +192,8 @@ async function loadSystemStatus() {
             document.getElementById('contractAddress').textContent = 
                 data.contractAddress ? formatAddress(data.contractAddress) : 'Not configured';
             
+            console.log('[loadSystemStatus] Updated contract address element');
+            
             // Update network buttons to show active network
             const activeNet = data.activeNetwork || 'sepolia';
             updateNetworkButtons(activeNet);
@@ -101,7 +210,9 @@ async function loadSystemStatus() {
         }
         
         updateLastRefreshTime();
+        console.log('[loadSystemStatus] Completed successfully');
     } catch (error) {
+        console.error('[loadSystemStatus] ERROR:', error);
         console.error('Failed to load system status:', error);
         showToast('Failed to load system status: ' + error.message, 'error');
         
@@ -286,65 +397,45 @@ async function loadBalances() {
     }
 }
 
-// Load spending limits
-async function loadSpendingLimits() {
+// Load treasury administration data
+async function loadTreasuryAdminData() {
     try {
-        const data = await API.getSpendingLimits();
+        const data = await API.getTreasuryInfo();
         
-        if (data.success && data.limits) {
-            const limits = data.limits;
+        if (data.success) {
+            // Check if wallet is configured
+            if (data.walletConfigured === false) {
+                // Wallet NOT configured - show "--" or "Not configured"
+                document.getElementById('currentUserLimit').textContent = '--';
+                document.getElementById('currentPeriod').textContent = '--';
+                document.getElementById('periodStartDateTop').textContent = '--';
+                document.getElementById('periodEndDateTop').textContent = '--';
+                return;
+            }
             
-            // Daily limit
-            updateLimitDisplay('daily', 
-                limits.dailyLimit, 
-                limits.dailySpent, 
-                limits.dailyLimit
-            );
+            // Wallet IS configured - show values (either from contract or defaults)
+            // Update current user limit
+            const limitTokens = (parseFloat(data.userLimit) / 1e6).toFixed(2);
+            document.getElementById('currentUserLimit').textContent = `${limitTokens} LAB`;
             
-            // Weekly limit
-            updateLimitDisplay('weekly',
-                limits.weeklyLimit,
-                limits.weeklySpent,
-                limits.weeklyLimit
-            );
+            // Update current period
+            const periodDays = Math.floor(data.periodDuration / 86400);
+            document.getElementById('currentPeriod').textContent = `${periodDays} days`;
             
-            // Monthly limit
-            updateLimitDisplay('monthly',
-                limits.monthlyLimit,
-                limits.monthlySpent,
-                limits.monthlyLimit
-            );
+            // Update top ongoing period box
+            const startDate = new Date(data.periodStart * 1000);
+            const endDate = new Date(data.periodEnd * 1000);
+            document.getElementById('periodStartDateTop').textContent = startDate.toLocaleDateString();
+            document.getElementById('periodEndDateTop').textContent = endDate.toLocaleDateString();
         }
     } catch (error) {
-        console.error('Failed to load spending limits:', error);
-        showToast('Failed to load spending limits: ' + error.message, 'error');
-    }
-}
-
-// Update limit display
-function updateLimitDisplay(period, limitWei, spentWei, totalWei) {
-    const limitEth = weiToEth(limitWei);
-    const spentEth = weiToEth(spentWei);
-    const totalEth = weiToEth(totalWei);
-    const remainingEth = (parseFloat(totalEth) - parseFloat(spentEth)).toFixed(6);
-    
-    const percentage = totalWei !== '0' 
-        ? (parseFloat(spentEth) / parseFloat(totalEth) * 100).toFixed(2)
-        : 0;
-    
-    document.getElementById(`${period}Limit`).textContent = `${limitEth} ETH`;
-    document.getElementById(`${period}Spent`).textContent = `${spentEth} ETH spent`;
-    document.getElementById(`${period}Remaining`).textContent = `${remainingEth} ETH remaining`;
-    document.getElementById(`${period}Progress`).style.width = `${percentage}%`;
-    
-    // Color code progress bar based on usage
-    const progressBar = document.getElementById(`${period}Progress`);
-    if (percentage > 90) {
-        progressBar.style.background = 'linear-gradient(90deg, var(--neon-red), var(--neon-orange))';
-    } else if (percentage > 70) {
-        progressBar.style.background = 'linear-gradient(90deg, var(--neon-orange), var(--neon-yellow))';
-    } else {
-        progressBar.style.background = 'linear-gradient(90deg, var(--neon-green), var(--neon-blue))';
+        console.error('Failed to load treasury data:', error);
+        
+        // On error, show "--" (likely wallet not configured)
+        document.getElementById('currentUserLimit').textContent = '--';
+        document.getElementById('currentPeriod').textContent = '--';
+        document.getElementById('periodStartDateTop').textContent = '--';
+        document.getElementById('periodEndDateTop').textContent = '--';
     }
 }
 
@@ -355,21 +446,27 @@ async function loadRecentTransactions() {
         
         const container = document.getElementById('transactionsContainer');
         
-        if (data.transactions && data.transactions.length > 0) {
+        if (data.success && data.transactions && data.transactions.length > 0) {
             container.innerHTML = data.transactions.map(tx => `
                 <div class="transaction-item">
-                    <div class="tx-hash">${formatAddress(tx.hash)}</div>
-                    <div class="tx-time">${formatTimestamp(tx.timestamp)}</div>
-                    <div class="tx-amount">${tx.amount} ETH</div>
+                    <div class="tx-row">
+                        <div class="tx-type">${tx.type || 'Tx'}</div>
+                        <div class="tx-hash">${formatAddress(tx.hash)}</div>
+                    </div>
+                    <div class="tx-description">${tx.description || ''}</div>
+                    <div class="tx-meta">
+                        <span>${tx.amountTokens || '--'}</span>
+                        <span>${formatTimestamp(tx.timestamp)}</span>
+                        <span class="tx-status">${tx.status || 'submitted'}</span>
+                    </div>
                 </div>
             `).join('');
         } else {
-            // Keep the "not implemented" message
             container.innerHTML = `
                 <div class="no-data">
-                    <span class="icon">📋</span>
-                    <p>Transaction history tracking not yet implemented</p>
-                    <small>${data.note || 'Consider integrating Etherscan API or event indexing'}</small>
+                    <span class="icon">?</span>
+                    <p>No transactions recorded yet</p>
+                    <small>${data.note || 'Execute an admin operation or institutional reservation to populate this list.'}</small>
                 </div>
             `;
         }
@@ -384,10 +481,84 @@ async function refreshAllData() {
     await Promise.all([
         loadSystemStatus(),
         loadBalances(),
-        loadSpendingLimits(),
+        loadTreasuryAdminData(),
         loadRecentTransactions()
     ]);
     showToast('Dashboard refreshed successfully', 'success');
+}
+
+// Show top spenders modal
+async function showTopSpendersModal() {
+    const modal = document.getElementById('topSpendersModal');
+    const container = document.getElementById('topSpendersContainer');
+    
+    // Show modal
+    modal.classList.add('show');
+    
+    // Show loading
+    container.innerHTML = `
+        <div class="loading-spinner">
+            <i class="fas fa-spinner fa-spin"></i> Loading spenders data...
+        </div>
+    `;
+    
+    try {
+        const data = await API.getTopSpenders(10);
+        
+        if (data.success && data.spenders && data.spenders.length > 0) {
+            container.innerHTML = `
+                <table class="spenders-table">
+                    <thead>
+                        <tr>
+                            <th>Rank</th>
+                            <th>User (PUC)</th>
+                            <th>Spent (current period)</th>
+                            <th>Remaining</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${data.spenders.map((spender, index) => {
+                            const rank = index + 1;
+                            const rankClass = rank === 1 ? 'gold' : rank === 2 ? 'silver' : rank === 3 ? 'bronze' : 'normal';
+                            
+                            return `
+                                <tr>
+                                    <td>
+                                        <span class="rank-badge ${rankClass}">${rank}</span>
+                                    </td>
+                                    <td class="puc-cell">${spender.puc}</td>
+                                    <td class="spent-amount">${spender.amountLab || '0'} LAB</td>
+                                    <td class="spent-amount">${spender.remainingLab || '--'} LAB</td>
+                                </tr>
+                            `;
+                        }).join('')}
+                    </tbody>
+                </table>
+            `;
+        } else {
+            container.innerHTML = `
+                <div class="no-data-modal">
+                    <i class="fas fa-inbox"></i>
+                    <p>${data.note || 'No spending data available for the current period'}</p>
+                </div>
+            `;
+        }
+    } catch (error) {
+        console.error('Failed to load top spenders:', error);
+        container.innerHTML = `
+            <div class="no-data-modal">
+                <i class="fas fa-exclamation-triangle"></i>
+                <p>Failed to load spenders data</p>
+                <small>${error.message}</small>
+            </div>
+        `;
+    }
+}
+
+// Close top spenders modal
+function closeTopSpendersModal() {
+    const modal = document.getElementById('topSpendersModal');
+    modal.classList.remove('show');
 }
 
 // Handle form submissions
@@ -395,19 +566,22 @@ function setupFormHandlers() {
     // Set user limit form
     document.getElementById('limitsForm').addEventListener('submit', async (e) => {
         e.preventDefault();
-        const limitWei = document.getElementById('userLimitInput').value.trim();
+        const limitTokens = document.getElementById('userLimitInput').value.trim();
         
-        if (!limitWei) {
-            showToast('Please enter a valid limit in wei', 'error');
+        if (!limitTokens || isNaN(limitTokens)) {
+            showToast('Please enter a valid limit in LAB tokens', 'error');
             return;
         }
         
+        // Convert LAB tokens to raw amount (6 decimals)
+        const limitRaw = (parseFloat(limitTokens) * 1e6).toString();
+        
         try {
-            const result = await API.setUserLimit(limitWei);
+            const result = await API.setUserLimit(limitRaw);
             if (result.success) {
                 showToast(`Limit updated successfully. Tx: ${formatAddress(result.transactionHash)}`, 'success');
                 document.getElementById('userLimitInput').value = '';
-                setTimeout(() => loadSpendingLimits(), 5000); // Reload after 5 seconds
+                setTimeout(() => loadTreasuryAdminData(), 5000); // Reload after 5 seconds
             } else {
                 showToast('Failed to update limit: ' + result.message, 'error');
             }
@@ -419,18 +593,22 @@ function setupFormHandlers() {
     // Set spending period form
     document.getElementById('periodForm').addEventListener('submit', async (e) => {
         e.preventDefault();
-        const periodSeconds = document.getElementById('periodInput').value.trim();
+        const periodDays = document.getElementById('periodInput').value.trim();
         
-        if (!periodSeconds) {
-            showToast('Please enter a valid period in seconds', 'error');
+        if (!periodDays || isNaN(periodDays)) {
+            showToast('Please enter a valid period in days', 'error');
             return;
         }
+        
+        // Convert days to seconds
+        const periodSeconds = (parseFloat(periodDays) * 86400).toString();
         
         try {
             const result = await API.setSpendingPeriod(periodSeconds);
             if (result.success) {
                 showToast(`Period updated successfully. Tx: ${formatAddress(result.transactionHash)}`, 'success');
                 document.getElementById('periodInput').value = '';
+                setTimeout(() => loadTreasuryAdminData(), 5000);
             } else {
                 showToast('Failed to update period: ' + result.message, 'error');
             }
@@ -441,23 +619,29 @@ function setupFormHandlers() {
     
     // Treasury deposit button
     document.getElementById('depositBtn').addEventListener('click', async () => {
-        const amountWei = document.getElementById('treasuryAmount').value.trim();
+        const amountTokens = document.getElementById('treasuryAmount').value.trim();
         
-        if (!amountWei) {
-            showToast('Please enter an amount in wei', 'error');
+        if (!amountTokens || isNaN(amountTokens)) {
+            showToast('Please enter a valid amount in LAB tokens', 'error');
             return;
         }
         
-        if (!confirm(`Deposit ${weiToEth(amountWei)} ETH to treasury?`)) {
+        // Convert LAB tokens to raw amount (6 decimals)
+        const amountRaw = (parseFloat(amountTokens) * 1e6).toString();
+        
+        if (!confirm(`Deposit ${amountTokens} LAB tokens to treasury?`)) {
             return;
         }
         
         try {
-            const result = await API.depositTreasury(amountWei);
+            const result = await API.depositTreasury(amountRaw);
             if (result.success) {
                 showToast(`Deposit successful. Tx: ${formatAddress(result.transactionHash)}`, 'success');
                 document.getElementById('treasuryAmount').value = '';
-                setTimeout(() => loadBalances(), 5000);
+                setTimeout(() => {
+                    loadBalances();
+                    loadTreasuryAdminData();
+                }, 5000);
             } else {
                 showToast('Deposit failed: ' + result.message, 'error');
             }
@@ -468,23 +652,29 @@ function setupFormHandlers() {
     
     // Treasury withdraw button
     document.getElementById('withdrawBtn').addEventListener('click', async () => {
-        const amountWei = document.getElementById('treasuryAmount').value.trim();
+        const amountTokens = document.getElementById('treasuryAmount').value.trim();
         
-        if (!amountWei) {
-            showToast('Please enter an amount in wei', 'error');
+        if (!amountTokens || isNaN(amountTokens)) {
+            showToast('Please enter a valid amount in LAB tokens', 'error');
             return;
         }
         
-        if (!confirm(`⚠️ Withdraw ${weiToEth(amountWei)} ETH from treasury? This action cannot be undone.`)) {
+        // Convert LAB tokens to raw amount (6 decimals)
+        const amountRaw = (parseFloat(amountTokens) * 1e6).toString();
+        
+        if (!confirm(`⚠️ Withdraw ${amountTokens} LAB tokens from treasury? This action cannot be undone.`)) {
             return;
         }
         
         try {
-            const result = await API.withdrawTreasury(amountWei);
+            const result = await API.withdrawTreasury(amountRaw);
             if (result.success) {
                 showToast(`Withdrawal successful. Tx: ${formatAddress(result.transactionHash)}`, 'success');
                 document.getElementById('treasuryAmount').value = '';
-                setTimeout(() => loadBalances(), 5000);
+                setTimeout(() => {
+                    loadBalances();
+                    loadTreasuryAdminData();
+                }, 5000);
             } else {
                 showToast('Withdrawal failed: ' + result.message, 'error');
             }
@@ -497,10 +687,16 @@ function setupFormHandlers() {
 // Setup button handlers
 function setupButtonHandlers() {
     // Refresh button
-    document.getElementById('refreshBtn').addEventListener('click', refreshAllData);
+    const refreshBtn = document.getElementById('refreshBtn');
+    if (refreshBtn) {
+        refreshBtn.addEventListener('click', refreshAllData);
+    }
     
-    // Refresh balance button
-    document.getElementById('refreshBalanceBtn').addEventListener('click', loadBalances);
+    // Refresh balance button (optional - may not exist)
+    const refreshBalanceBtn = document.getElementById('refreshBalanceBtn');
+    if (refreshBalanceBtn) {
+        refreshBalanceBtn.addEventListener('click', loadBalances);
+    }
     
     // Network buttons
     const sepoliaBtn = document.getElementById('sepoliaBtn');
@@ -521,17 +717,55 @@ function setupButtonHandlers() {
     }
     
     // Refresh transactions button
-    document.getElementById('refreshTxBtn').addEventListener('click', loadRecentTransactions);
+    const refreshTxBtn = document.getElementById('refreshTxBtn');
+    if (refreshTxBtn) {
+        refreshTxBtn.addEventListener('click', loadRecentTransactions);
+    }
     
-    // Edit limits button (placeholder)
-    document.getElementById('editLimitsBtn').addEventListener('click', () => {
-        showToast('Use the administrative operations section to modify limits', 'info');
-    });
+    // Reset period button
+    const resetPeriodBtn = document.getElementById('resetPeriodBtn');
+    if (resetPeriodBtn) {
+        resetPeriodBtn.addEventListener('click', async () => {
+        if (!confirm('⚠️ Reset spending period? All users\' spending will be reset to zero and a new period will begin immediately.')) {
+            return;
+        }
+        
+        try {
+            showToast('Resetting spending period...', 'info');
+            const result = await API.resetSpendingPeriod();
+            if (result.success) {
+                showToast(`Period reset successful. Tx: ${formatAddress(result.transactionHash)}`, 'success');
+                setTimeout(() => loadTreasuryAdminData(), 5000);
+            } else {
+                showToast('Failed to reset period: ' + result.message, 'error');
+            }
+        } catch (error) {
+            showToast('Error resetting period: ' + error.message, 'error');
+        }
+        });
+    }
     
-    // Reset period button (placeholder - needs implementation)
-    document.getElementById('resetPeriodBtn').addEventListener('click', () => {
-        showToast('Period reset functionality coming soon', 'info');
-    });
+    // Show top spenders button
+    const showTopSpendersBtn = document.getElementById('showTopSpendersBtn');
+    if (showTopSpendersBtn) {
+        showTopSpendersBtn.addEventListener('click', showTopSpendersModal);
+    }
+    
+    // Close modal button
+    const closeTopSpendersModalBtn = document.getElementById('closeTopSpendersModal');
+    if (closeTopSpendersModalBtn) {
+        closeTopSpendersModalBtn.addEventListener('click', closeTopSpendersModal);
+    }
+    
+    // Close modal on click outside
+    const topSpendersModal = document.getElementById('topSpendersModal');
+    if (topSpendersModal) {
+        topSpendersModal.addEventListener('click', (e) => {
+            if (e.target.id === 'topSpendersModal') {
+                closeTopSpendersModal();
+            }
+        });
+    }
     
     // Wallet setup buttons
     const createWalletBtn = document.getElementById('createWalletBtn');
@@ -543,13 +777,23 @@ function setupButtonHandlers() {
             const dropdown = document.getElementById('walletSetupDropdown');
             if (dropdown) dropdown.style.display = 'none';
             
-            const password = prompt('Enter a secure password for the new wallet:');
+            const password = await showInputModal(
+                'Create Wallet Password',
+                'Enter a secure password for the new wallet (minimum 8 characters):',
+                'password'
+            );
+            
             if (!password || password.length < 8) {
                 showToast('Password must be at least 8 characters', 'error');
                 return;
             }
             
-            const confirmPassword = prompt('Confirm password:');
+            const confirmPassword = await showInputModal(
+                'Confirm Password',
+                'Re-enter your password to confirm:',
+                'password'
+            );
+            
             if (password !== confirmPassword) {
                 showToast('Passwords do not match', 'error');
                 return;
@@ -567,9 +811,24 @@ function setupButtonHandlers() {
                 if (data.success && data.address) {
                     showToast('✓ Wallet created and configured successfully!', 'success');
                     
-                    alert('✓ Institutional Wallet Created!\n\n' +
-                          'Address: ' + data.address + '\n\n' +
-                          'Refreshing dashboard...');
+                    // Format success message with HTML
+                    const content = `
+                        <div class="info-line">
+                            <span class="info-label">Status:</span>
+                            <span class="info-value">Wallet Created Successfully</span>
+                        </div>
+                        <div class="info-line">
+                            <span class="info-label">Address:</span>
+                            <span class="info-value">${data.address}</span>
+                        </div>
+                        <div class="warning-text">
+                            <i class="fas fa-exclamation-triangle"></i>
+                            <strong>Important:</strong> Make sure to backup your wallet securely. 
+                            The dashboard will now refresh to show your new wallet.
+                        </div>
+                    `;
+                    
+                    await showInfoModal('Institutional Wallet Created', content, true);
                     
                     // Refresh dashboard to show new wallet
                     await refreshAllData();
@@ -588,13 +847,23 @@ function setupButtonHandlers() {
             const dropdown = document.getElementById('walletSetupDropdown');
             if (dropdown) dropdown.style.display = 'none';
             
-            const mnemonic = prompt('Enter your 12-word mnemonic phrase:');
+            const mnemonic = await showInputModal(
+                'Import Wallet',
+                'Enter your 12-word mnemonic phrase:',
+                'text'
+            );
+            
             if (!mnemonic || mnemonic.trim().split(/\s+/).length !== 12) {
                 showToast('Invalid mnemonic (must be exactly 12 words)', 'error');
                 return;
             }
             
-            const password = prompt('Enter password to encrypt the wallet:');
+            const password = await showInputModal(
+                'Wallet Password',
+                'Enter password to encrypt the imported wallet (minimum 8 characters):',
+                'password'
+            );
+            
             if (!password || password.length < 8) {
                 showToast('Password must be at least 8 characters', 'error');
                 return;
@@ -611,10 +880,25 @@ function setupButtonHandlers() {
                 const data = await response.json();
                 if (data.success && data.address) {
                     showToast('✓ Wallet imported and configured successfully!', 'success');
-                    alert('✓ Institutional Wallet Imported!\n\n' +
-                          'Address: ' + data.address + '\n\n' +
-                          'The wallet has been automatically configured and saved.\n' +
-                          'Refreshing dashboard...');
+                    
+                    // Format success message with HTML
+                    const content = `
+                        <div class="info-line">
+                            <span class="info-label">Status:</span>
+                            <span class="info-value">Wallet Imported Successfully</span>
+                        </div>
+                        <div class="info-line">
+                            <span class="info-label">Address:</span>
+                            <span class="info-value">${data.address}</span>
+                        </div>
+                        <div class="warning-text">
+                            <i class="fas fa-check-circle"></i>
+                            The wallet has been automatically configured and saved. 
+                            The dashboard will now refresh to show your imported wallet.
+                        </div>
+                    `;
+                    
+                    await showInfoModal('Institutional Wallet Imported', content, true);
                     
                     // Refresh dashboard to show imported wallet
                     await refreshAllData();
@@ -686,3 +970,4 @@ if (document.readyState === 'loading') {
 } else {
     initDashboard();
 }
+

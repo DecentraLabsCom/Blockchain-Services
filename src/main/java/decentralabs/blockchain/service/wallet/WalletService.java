@@ -21,6 +21,7 @@ import org.web3j.abi.TypeReference;
 import org.web3j.abi.datatypes.Address;
 import org.web3j.abi.datatypes.Function;
 import org.web3j.abi.datatypes.Type;
+import org.web3j.abi.datatypes.Utf8String;
 import org.web3j.abi.datatypes.generated.Uint256;
 import org.web3j.crypto.*;
 import org.web3j.protocol.Web3j;
@@ -31,6 +32,7 @@ import org.web3j.protocol.http.HttpService;
 import org.web3j.utils.Convert;
 import org.web3j.utils.Numeric;
 
+import decentralabs.blockchain.dto.treasury.InstitutionalUserFinancialStats;
 import decentralabs.blockchain.dto.wallet.*;
 import decentralabs.blockchain.service.persistence.WalletPersistenceService;
 
@@ -316,6 +318,197 @@ public class WalletService {
         } catch (Exception e) {
             log.error("Error getting LAB token address from Diamond contract", e);
             return null;
+        }
+    }
+    
+    /**
+     * Gets the institutional user spending limit from the Diamond contract
+     * @return User spending limit in LAB token base units (6 decimals), or null if error
+     */
+    public BigInteger getInstitutionalUserLimit(String providerAddress) {
+        if (providerAddress == null || providerAddress.isBlank()) {
+            return null;
+        }
+        try {
+            Web3j web3j = getWeb3jInstance();
+            
+            // Call getInstitutionalUserLimit() function on Diamond contract
+            // function getInstitutionalUserLimit(address provider) public view returns (uint256)
+            Function function = new Function(
+                "getInstitutionalUserLimit",
+                Collections.singletonList(new Address(providerAddress)),
+                Collections.singletonList(new TypeReference<Uint256>() {})
+            );
+            
+            String encodedFunction = FunctionEncoder.encode(function);
+            
+            EthCall response = web3j.ethCall(
+                Transaction.createEthCallTransaction(null, contractAddress, encodedFunction),
+                DefaultBlockParameterName.LATEST
+            ).send();
+            
+            if (response.hasError()) {
+                log.warn("Error calling getInstitutionalUserLimit() for {}: {}", providerAddress, response.getError().getMessage());
+                return null;
+            }
+            
+            List<Type> decoded = FunctionReturnDecoder.decode(response.getValue(), function.getOutputParameters());
+            if (!decoded.isEmpty()) {
+                BigInteger limit = (BigInteger) decoded.get(0).getValue();
+                log.info("Institutional user limit for {}: {}", providerAddress, limit);
+                return limit;
+            }
+            
+            return null;
+        } catch (Exception e) {
+            log.error("Error getting institutional user limit from Diamond contract", e);
+            return null;
+        }
+    }
+    
+    /**
+     * Gets the institutional spending period duration from the Diamond contract
+     * @return Period duration in seconds, or null if error
+     */
+    public BigInteger getInstitutionalSpendingPeriod(String providerAddress) {
+        if (providerAddress == null || providerAddress.isBlank()) {
+            return null;
+        }
+        try {
+            Web3j web3j = getWeb3jInstance();
+            
+            // Call getInstitutionalSpendingPeriod() function on Diamond contract
+            // function getInstitutionalSpendingPeriod(address provider) public view returns (uint256)
+            Function function = new Function(
+                "getInstitutionalSpendingPeriod",
+                Collections.singletonList(new Address(providerAddress)),
+                Collections.singletonList(new TypeReference<Uint256>() {})
+            );
+            
+            String encodedFunction = FunctionEncoder.encode(function);
+            
+            EthCall response = web3j.ethCall(
+                Transaction.createEthCallTransaction(null, contractAddress, encodedFunction),
+                DefaultBlockParameterName.LATEST
+            ).send();
+            
+            if (response.hasError()) {
+                log.warn("Error calling getInstitutionalSpendingPeriod() for {}: {}", providerAddress, response.getError().getMessage());
+                return null;
+            }
+            
+            List<Type> decoded = FunctionReturnDecoder.decode(response.getValue(), function.getOutputParameters());
+            if (!decoded.isEmpty()) {
+                BigInteger period = (BigInteger) decoded.get(0).getValue();
+                log.info("Institutional spending period for {}: {} seconds", providerAddress, period);
+                return period;
+            }
+            
+            return null;
+        } catch (Exception e) {
+            log.error("Error getting institutional spending period from Diamond contract", e);
+            return null;
+        }
+    }
+    
+    /**
+     * Gets the institutional treasury balance from the Diamond contract
+     * @return Treasury balance in LAB token base units (6 decimals), or null if error
+     */
+    public BigInteger getInstitutionalTreasuryBalance(String providerAddress) {
+        if (providerAddress == null || providerAddress.isBlank()) {
+            return null;
+        }
+        try {
+            Web3j web3j = getWeb3jInstance();
+            
+            // Call getInstitutionalTreasuryBalance() function on Diamond contract
+            // function getInstitutionalTreasuryBalance(address provider) public view returns (uint256)
+            Function function = new Function(
+                "getInstitutionalTreasuryBalance",
+                Collections.singletonList(new Address(providerAddress)),
+                Collections.singletonList(new TypeReference<Uint256>() {})
+            );
+            
+            String encodedFunction = FunctionEncoder.encode(function);
+            
+            EthCall response = web3j.ethCall(
+                Transaction.createEthCallTransaction(null, contractAddress, encodedFunction),
+                DefaultBlockParameterName.LATEST
+            ).send();
+            
+            if (response.hasError()) {
+                log.warn("Error calling getInstitutionalTreasuryBalance() for {}: {}", providerAddress, response.getError().getMessage());
+                return null;
+            }
+            
+            List<Type> decoded = FunctionReturnDecoder.decode(response.getValue(), function.getOutputParameters());
+            if (!decoded.isEmpty()) {
+                BigInteger balance = (BigInteger) decoded.get(0).getValue();
+                log.info("Institutional treasury balance for {}: {}", providerAddress, balance);
+                return balance;
+            }
+            
+            return null;
+        } catch (Exception e) {
+            log.error("Error getting institutional treasury balance from Diamond contract", e);
+            return null;
+        }
+    }
+
+    /**
+     * Returns per-user financial stats stored on-chain, if that user has interacted before.
+     */
+    public Optional<InstitutionalUserFinancialStats> getInstitutionalUserFinancialStats(String providerAddress, String puc) {
+        if (providerAddress == null || providerAddress.isBlank() || puc == null || puc.isBlank()) {
+            return Optional.empty();
+        }
+        try {
+            Web3j web3j = getWeb3jInstance();
+
+            Function function = new Function(
+                "getInstitutionalUserFinancialStats",
+                Arrays.asList(new Address(providerAddress), new Utf8String(puc)),
+                Arrays.asList(
+                    new TypeReference<Uint256>() {},
+                    new TypeReference<Uint256>() {},
+                    new TypeReference<Uint256>() {},
+                    new TypeReference<Uint256>() {},
+                    new TypeReference<Uint256>() {},
+                    new TypeReference<Uint256>() {},
+                    new TypeReference<Uint256>() {}
+                )
+            );
+
+            String encodedFunction = FunctionEncoder.encode(function);
+            EthCall response = web3j.ethCall(
+                Transaction.createEthCallTransaction(null, contractAddress, encodedFunction),
+                DefaultBlockParameterName.LATEST
+            ).send();
+
+            if (response.hasError()) {
+                log.warn("Error calling getInstitutionalUserFinancialStats() for {} / {}: {}", providerAddress, puc, response.getError().getMessage());
+                return Optional.empty();
+            }
+
+            List<Type> decoded = FunctionReturnDecoder.decode(response.getValue(), function.getOutputParameters());
+            if (decoded.size() < 7) {
+                return Optional.empty();
+            }
+
+            InstitutionalUserFinancialStats stats = InstitutionalUserFinancialStats.builder()
+                .currentPeriodSpent((BigInteger) decoded.get(0).getValue())
+                .totalHistoricalSpent((BigInteger) decoded.get(1).getValue())
+                .spendingLimit((BigInteger) decoded.get(2).getValue())
+                .remainingAllowance((BigInteger) decoded.get(3).getValue())
+                .periodStart((BigInteger) decoded.get(4).getValue())
+                .periodEnd((BigInteger) decoded.get(5).getValue())
+                .periodDuration((BigInteger) decoded.get(6).getValue())
+                .build();
+            return Optional.of(stats);
+        } catch (Exception e) {
+            log.error("Error getting institutional user stats for {} / {}", providerAddress, puc, e);
+            return Optional.empty();
         }
     }
     

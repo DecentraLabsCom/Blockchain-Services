@@ -43,6 +43,8 @@ class InstitutionalReservationServiceTest {
     @Mock
     private InstitutionalWalletService institutionalWalletService;
     @Mock
+    private InstitutionalAnalyticsService analyticsService;
+    @Mock
     private Web3j web3j;
 
     private InstitutionalReservationService reservationService;
@@ -55,6 +57,7 @@ class InstitutionalReservationServiceTest {
             marketplaceKeyService,
             samlValidationService,
             institutionalWalletService,
+            analyticsService,
             web3j
         );
         ReflectionTestUtils.setField(reservationService, "contractAddress", "0xABC");

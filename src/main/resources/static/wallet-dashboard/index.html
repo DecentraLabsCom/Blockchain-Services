@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>DecentraLabs - Treasury Admin Dashboard</title>
+    <link rel="icon" type="image/x-icon" href="assets/favicon.ico">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link rel="stylesheet" href="assets/css/admin.css">
 </head>
@@ -13,7 +14,7 @@
         <header class="dashboard-header">
             <div class="header-content">
                 <h1 class="logo">
-                    <span class="logo-icon">◈</span>
+                    <img src="assets/logo.svg" alt="DecentraLabs" class="logo-icon-img">
                     DecentraLabs Treasury
                 </h1>
                 <div class="header-actions">
@@ -94,116 +95,101 @@
                     </div>
                     <!-- Promotional message container -->
                     <div id="labPromoMessage" style="display: none;"></div>
-                </div>
-            </section>
-
-            <!-- Spending Limits Section -->
-            <section class="card">
-                <div class="card-header">
-                    <h2>Spending Limits</h2>
-                    <div class="card-actions">
-                        <button id="editLimitsBtn" class="btn btn-small">Edit Limits</button>
-                    </div>
-                </div>
-                <div class="card-body">
-                    <div class="limits-container" id="limitsContainer">
-                        <!-- Limits will be loaded dynamically -->
-                        <div class="limit-item">
-                            <div class="limit-header">
-                                <span class="limit-label">Daily Limit</span>
-                                <span class="limit-value" id="dailyLimit">Loading...</span>
-                            </div>
-                            <div class="progress-bar">
-                                <div class="progress-fill" id="dailyProgress" style="width: 0%"></div>
-                            </div>
-                            <div class="limit-footer">
-                                <span class="limit-spent" id="dailySpent">0 ETH spent</span>
-                                <span class="limit-remaining" id="dailyRemaining">-- remaining</span>
-                            </div>
-                        </div>
-
-                        <div class="limit-item">
-                            <div class="limit-header">
-                                <span class="limit-label">Weekly Limit</span>
-                                <span class="limit-value" id="weeklyLimit">Loading...</span>
-                            </div>
-                            <div class="progress-bar">
-                                <div class="progress-fill" id="weeklyProgress" style="width: 0%"></div>
-                            </div>
-                            <div class="limit-footer">
-                                <span class="limit-spent" id="weeklySpent">0 ETH spent</span>
-                                <span class="limit-remaining" id="weeklyRemaining">-- remaining</span>
-                            </div>
-                        </div>
-
-                        <div class="limit-item">
-                            <div class="limit-header">
-                                <span class="limit-label">Monthly Limit</span>
-                                <span class="limit-value" id="monthlyLimit">Loading...</span>
-                            </div>
-                            <div class="progress-bar">
-                                <div class="progress-fill" id="monthlyProgress" style="width: 0%"></div>
-                            </div>
-                            <div class="limit-footer">
-                                <span class="limit-spent" id="monthlySpent">0 ETH spent</span>
-                                <span class="limit-remaining" id="monthlyRemaining">-- remaining</span>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </section>
-
-            <!-- Administrative Operations Section -->
-            <section class="card">
-                <div class="card-header">
-                    <h2>Administrative Operations</h2>
-                    <span class="warning-badge">⚠ Localhost Only</span>
-                </div>
-                <div class="card-body">
-                    <div class="operations-grid">
-                        <div class="operation-card">
-                            <h3>Modify Spending Limits</h3>
-                            <form id="limitsForm" class="operation-form">
-                                <div class="form-group">
-                                    <label>User Limit (Wei)</label>
-                                    <input type="text" id="userLimitInput" placeholder="e.g., 100000000000000000000">
-                                </div>
-                                <button type="submit" class="btn btn-primary">Update Limit</button>
-                            </form>
-                        </div>
-
-                        <div class="operation-card">
-                            <h3>Manage Spending Period</h3>
-                            <form id="periodForm" class="operation-form">
-                                <div class="form-group">
-                                    <label>Period (seconds)</label>
-                                    <input type="text" id="periodInput" placeholder="e.g., 86400 (1 day)">
-                                </div>
-                                <button type="submit" class="btn btn-primary">Update Period</button>
-                            </form>
-                        </div>
-
-                        <div class="operation-card">
-                            <h3>Reset Period</h3>
-                            <p class="operation-description">Reset the current spending period counters</p>
-                            <button id="resetPeriodBtn" class="btn btn-warning full-width">
-                                Reset Spending Period
+                    
+                    <!-- Treasury Actions -->
+                    <div class="treasury-actions-form">
+                        <div class="treasury-actions-buttons">
+                            <button type="button" id="depositBtn" class="btn btn-success">
+                                <i class="fas fa-plus-circle"></i> Deposit
+                            </button>
+                            <button type="button" id="withdrawBtn" class="btn btn-danger">
+                                <i class="fas fa-minus-circle"></i> Withdraw
                             </button>
                         </div>
+                    </div>
+                </div>
+            </section>
 
+            <!-- Treasury Administration Section -->
+            <section class="card">
+                <div class="card-header">
+                    <h2>Treasury Administration</h2>
+                    <span class="warning-badge">⚠ Localhost Only</span>
+                </div>
+                
+                <!-- Ongoing Period Info Box -->
+                <div class="ongoing-period-box">
+                    <h3><i class="fas fa-hourglass-half"></i> Ongoing Period</h3>
+                    <div class="period-dates-inline">
+                        <div class="date-item-inline">
+                            <i class="fas fa-calendar-day"></i>
+                            <span class="date-label">Start:</span>
+                            <span id="periodStartDateTop" class="date-value">--</span>
+                        </div>
+                        <div class="date-separator">→</div>
+                        <div class="date-item-inline">
+                            <i class="fas fa-calendar-check"></i>
+                            <span class="date-label">End:</span>
+                            <span id="periodEndDateTop" class="date-value">--</span>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="card-body">
+                    <div class="operations-grid">
+                        <!-- User Spending Limit Card -->
                         <div class="operation-card">
-                            <h3>Treasury Operations</h3>
-                            <form id="treasuryForm" class="operation-form">
+                            <h3><i class="fas fa-user-check"></i> User Spending Limit</h3>
+                            <div class="current-value-display">
+                                <span class="label">Current Limit:</span>
+                                <span class="value" id="currentUserLimit">--</span>
+                            </div>
+                            <form id="limitsForm" class="operation-form">
                                 <div class="form-group">
-                                    <label>Amount (Wei)</label>
-                                    <input type="text" id="treasuryAmount" placeholder="Amount in wei">
+                                    <label>New Limit (LAB Tokens)</label>
+                                    <input type="text" id="userLimitInput" placeholder="e.g., 1000">
                                 </div>
-                                <div class="button-group">
-                                    <button type="button" id="depositBtn" class="btn btn-success">Deposit</button>
-                                    <button type="button" id="withdrawBtn" class="btn btn-danger">Withdraw</button>
-                                </div>
+                                <button type="submit" class="btn btn-primary">
+                                    <i class="fas fa-edit"></i> Update Limit
+                                </button>
                             </form>
                         </div>
+
+                        <!-- Spending Period Card -->
+                        <div class="operation-card">
+                            <h3><i class="fas fa-calendar-alt"></i> Spending Period</h3>
+                            <div class="current-value-display">
+                                <span class="label">Current Period:</span>
+                                <span class="value" id="currentPeriod">--</span>
+                            </div>
+                            <form id="periodForm" class="operation-form">
+                                <div class="form-group">
+                                    <label>Period Duration (days)</label>
+                                    <input type="text" id="periodInput" placeholder="e.g., 30">
+                                </div>
+                                <button type="submit" class="btn btn-primary">
+                                    <i class="fas fa-edit"></i> Update Period
+                                </button>
+                            </form>
+                        </div>
+
+                        <!-- Reset Period Card -->
+                        <div class="operation-card">
+                            <h3><i class="fas fa-redo-alt"></i> Reset Period</h3>
+                            <p class="operation-description">
+                                Reset the spending period counters. All users' spending will be reset to zero and a new period will begin immediately.
+                            </p>
+                            <button id="resetPeriodBtn" class="btn btn-warning full-width">
+                                <i class="fas fa-sync-alt"></i> Reset Spending Period
+                            </button>
+                        </div>
+                    </div>
+                    
+                    <!-- Top Spenders Section -->
+                    <div class="top-spenders-section">
+                        <button id="showTopSpendersBtn" class="btn btn-secondary full-width">
+                            <i class="fas fa-chart-line"></i> View Top 10 Spenders
+                        </button>
                     </div>
                 </div>
             </section>
@@ -212,9 +198,6 @@
             <section class="card">
                 <div class="card-header">
                     <h2>Recent Transactions</h2>
-                    <div class="card-actions">
-                        <button id="refreshTxBtn" class="btn btn-small">Refresh</button>
-                    </div>
                 </div>
                 <div class="card-body">
                     <div class="transactions-container" id="transactionsContainer">
@@ -230,13 +213,86 @@
 
         <!-- Footer -->
         <footer class="dashboard-footer">
-            <p>&copy; 2025 DecentraLabs. Institutional Treasury Administration Dashboard</p>
-            <p class="security-notice">🔒 This dashboard is only accessible from localhost for security</p>
+            <div class="footer-content">
+                <div class="footer-logo">
+                    <img src="assets/LogoBannerDLabs.png" alt="DecentraLabs" class="footer-logo-img">
+                </div>
+                <div class="footer-text">
+                    <p>&copy; 2025 DecentraLabs. Institutional Treasury Administration Dashboard</p>
+                    <p class="security-notice">🔒 This dashboard is only accessible from localhost for security</p>
+                </div>
+                <div class="footer-logo">
+                    <img src="assets/LogoBannerNebsyst.png" alt="Nebulous Systems" class="footer-logo-img">
+                </div>
+            </div>
         </footer>
     </div>
 
     <!-- Toast Notification -->
     <div id="toast" class="toast"></div>
+
+    <!-- Input Modal (for prompts) -->
+    <div id="inputModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 id="inputModalTitle"><i class="fas fa-keyboard"></i> Input Required</h2>
+                <button class="modal-close" id="closeInputModal">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <div class="modal-body">
+                <p id="inputModalMessage"></p>
+                <input type="password" id="inputModalField" class="modal-input" placeholder="Enter value...">
+                <div class="modal-actions">
+                    <button id="inputModalCancel" class="btn btn-secondary">
+                        <i class="fas fa-times"></i> Cancel
+                    </button>
+                    <button id="inputModalConfirm" class="btn btn-primary">
+                        <i class="fas fa-check"></i> Confirm
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Info Modal (for alerts/results) -->
+    <div id="infoModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 id="infoModalTitle"><i class="fas fa-check-circle"></i> Success</h2>
+                <button class="modal-close" id="closeInfoModal">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <div class="modal-body">
+                <div id="infoModalContent"></div>
+                <div class="modal-actions">
+                    <button id="infoModalClose" class="btn btn-primary">
+                        <i class="fas fa-check"></i> OK
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Top Spenders Modal -->
+    <div id="topSpendersModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2><i class="fas fa-trophy"></i> Top 10 Spenders - Current Period</h2>
+                <button class="modal-close" id="closeTopSpendersModal">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <div class="modal-body">
+                <div id="topSpendersContainer">
+                    <div class="loading-spinner">
+                        <i class="fas fa-spinner fa-spin"></i> Loading spenders data...
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
 
     <!-- Scripts -->
     <script src="assets/js/api.js"></script>

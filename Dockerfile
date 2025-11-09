@@ -62,10 +62,9 @@ RUN chmod 700 ./data
 # Switch to non-root user
 USER appuser
 
-# Environment variables documentation (these MUST be provided at runtime)
-# CRITICAL SECURITY VARIABLES (required for production):
-ENV CONTRACT_ADDRESS="" \
-    RPC_URL=""
+# Environment variables documentation (can be provided at runtime to override defaults)
+# Note: CONTRACT_ADDRESS has a default value in application.properties
+# Only set these environment variables if you need to override the defaults
 
 # INSTITUTIONAL WALLET CONFIGURATION:
 # The institutional wallet is used for ALL automated transactions.

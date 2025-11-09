@@ -1,5 +1,6 @@
 package decentralabs.blockchain.controller.treasury;
 
+import decentralabs.blockchain.service.treasury.InstitutionalAnalyticsService;
 import decentralabs.blockchain.service.wallet.InstitutionalWalletService;
 import decentralabs.blockchain.service.wallet.WalletService;
 import jakarta.servlet.http.HttpServletRequest;
@@ -12,7 +13,11 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.math.BigDecimal;
+import java.math.BigInteger;
+import java.math.RoundingMode;
 import java.util.*;
+import java.util.stream.Collectors;
 
 /**
  * REST Controller for Treasury Administration Dashboard
@@ -27,6 +32,9 @@ public class AdminDashboardController {
 
     private final InstitutionalWalletService institutionalWalletService;
     private final WalletService walletService;
+    private final InstitutionalAnalyticsService institutionalAnalyticsService;
+
+    private static final int LAB_TOKEN_DECIMALS = 6;
 
     @Value("${contract.address}")
     private String contractAddress;
@@ -88,10 +96,18 @@ public class AdminDashboardController {
         try {
             String institutionalAddress = institutionalWalletService.getInstitutionalWalletAddress();
             if (institutionalAddress == null || institutionalAddress.isBlank()) {
-                return ResponseEntity.badRequest().body(Map.of(
-                    "success", false,
-                    "error", "Institutional wallet not configured"
-                ));
+                // Wallet not configured - return zeros
+                Map<String, Object> result = new LinkedHashMap<>();
+                result.put("success", true);
+                result.put("walletConfigured", false);
+                result.put("institutionalWalletAddress", null);
+                result.put("ethBalance", "0");
+                result.put("ethBalanceFormatted", "0.0");
+                result.put("labTokenAddress", null);
+                result.put("labBalanceRaw", "0");
+                result.put("labBalance", "0.0");
+                result.put("note", "Institutional wallet not configured");
+                return ResponseEntity.ok(result);
             }
 
             // If no chainId provided, get balance on all configured networks
@@ -107,46 +123,6 @@ public class AdminDashboardController {
             return ResponseEntity.internalServerError().body(Map.of(
                 "success", false,
                 "error", "Failed to retrieve balance: " + e.getMessage()
-            ));
-        }
-    }
-
-    /**
-     * GET /treasury/admin/limits
-     * Get configured spending limits (from contract or configuration)
-     * TODO: Implement contract call to get actual on-chain limits
-     */
-    @GetMapping("/limits")
-    public ResponseEntity<?> getSpendingLimits(HttpServletRequest request) {
-        if (!isLocalhostRequest(request)) {
-            return ResponseEntity.status(403).body(Map.of(
-                "success", false,
-                "error", "Access denied: administrative endpoints only accessible from localhost"
-            ));
-        }
-
-        try {
-            // TODO: Call smart contract to get actual limits
-            // For now, return placeholder data
-            Map<String, Object> limits = new LinkedHashMap<>();
-            limits.put("success", true);
-            limits.put("limits", Map.of(
-                "dailyLimit", "100000000000000000000",  // 100 ETH in wei
-                "weeklyLimit", "500000000000000000000", // 500 ETH in wei
-                "monthlyLimit", "2000000000000000000000", // 2000 ETH in wei
-                "dailySpent", "0",
-                "weeklySpent", "0",
-                "monthlySpent", "0",
-                "lastResetTimestamp", System.currentTimeMillis()
-            ));
-            limits.put("note", "Contract integration pending - showing placeholder values");
-
-            return ResponseEntity.ok(limits);
-        } catch (Exception e) {
-            log.error("Error getting spending limits: {}", e.getMessage(), e);
-            return ResponseEntity.internalServerError().body(Map.of(
-                "success", false,
-                "error", "Failed to retrieve limits: " + e.getMessage()
             ));
         }
     }
@@ -169,17 +145,25 @@ public class AdminDashboardController {
         }
 
         try {
-            // TODO: Implement transaction history
-            // Options:
-            // 1. Use Etherscan/Blockscout API
-            // 2. Index events from contract
-            // 3. Store transaction hashes in database
-            
+            String providerAddress = institutionalWalletService.getInstitutionalWalletAddress();
+            if (providerAddress == null || providerAddress.isBlank()) {
+                return ResponseEntity.badRequest().body(Map.of(
+                    "success", false,
+                    "error", "Institutional wallet not configured"
+                ));
+            }
+
+            int safeLimit = Math.min(Math.max(limit, 1), 50);
+            List<InstitutionalAnalyticsService.TransactionRecord> transactions =
+                institutionalAnalyticsService.getRecentTransactions(providerAddress, safeLimit);
+
             Map<String, Object> result = new LinkedHashMap<>();
             result.put("success", true);
-            result.put("transactions", new ArrayList<>());
-            result.put("note", "Transaction history tracking not yet implemented");
-            result.put("suggestion", "Use Etherscan API or implement event indexing");
+            result.put("transactions", transactions);
+            result.put("provider", providerAddress);
+            if (transactions.isEmpty()) {
+                result.put("note", "No local transactions recorded yet. Execute an admin action or reservation to populate the feed.");
+            }
 
             return ResponseEntity.ok(result);
         } catch (Exception e) {
@@ -315,6 +299,14 @@ public class AdminDashboardController {
             ));
         }
     }
+
+    private String formatLabTokens(BigInteger rawValue) {
+        if (rawValue == null) {
+            return "0";
+        }
+        BigDecimal decimal = new BigDecimal(rawValue).movePointLeft(LAB_TOKEN_DECIMALS);
+        return decimal.stripTrailingZeros().toPlainString();
+    }
     
     /**
      * Map chainId to network identifier
@@ -325,5 +317,164 @@ public class AdminDashboardController {
             case 11155111 -> "sepolia";
             default -> throw new IllegalArgumentException("Unsupported chainId: " + chainId);
         };
+    }
+
+    /**
+     * GET /treasury/admin/treasury-info
+     * Get treasury configuration (limit, period, balance)
+     * Returns contract default values if wallet not configured
+     */
+    @GetMapping("/treasury-info")
+    public ResponseEntity<?> getTreasuryInfo(HttpServletRequest request) {
+        if (!isLocalhostRequest(request)) {
+            return ResponseEntity.status(403).body(Map.of(
+                "success", false,
+                "error", "Access denied: administrative endpoints only accessible from localhost"
+            ));
+        }
+
+        try {
+            String institutionalAddress = institutionalWalletService.getInstitutionalWalletAddress();
+            
+            // Default contract values (if wallet not configured or contract call fails)
+            final String DEFAULT_USER_LIMIT = "10000000"; // 10 LAB tokens (6 decimals)
+            final long DEFAULT_PERIOD_DURATION = 10368000L; // 120 days in seconds
+            
+            // If wallet not configured, return contract default values
+            if (institutionalAddress == null || institutionalAddress.isBlank()) {
+                Map<String, Object> defaults = new LinkedHashMap<>();
+                defaults.put("success", true);
+                defaults.put("userLimit", DEFAULT_USER_LIMIT);
+                defaults.put("periodDuration", DEFAULT_PERIOD_DURATION);
+                defaults.put("periodStart", System.currentTimeMillis() / 1000); // Current timestamp
+                defaults.put("periodEnd", (System.currentTimeMillis() / 1000) + DEFAULT_PERIOD_DURATION);
+                defaults.put("treasuryBalance", "0"); // 0 LAB tokens
+                defaults.put("walletConfigured", false);
+                defaults.put("note", "Showing contract default values - wallet not configured");
+                return ResponseEntity.ok(defaults);
+            }
+
+            // Wallet is configured - get actual values from contract
+            Map<String, Object> info = new LinkedHashMap<>();
+            info.put("success", true);
+            info.put("walletConfigured", true);
+            
+            // Get user spending limit from contract
+            java.math.BigInteger userLimit = walletService.getInstitutionalUserLimit(institutionalAddress);
+            if (userLimit != null && userLimit.compareTo(java.math.BigInteger.ZERO) > 0) {
+                info.put("userLimit", userLimit.toString());
+            } else {
+                // If 0 or null, wallet not registered as provider - use defaults
+                info.put("userLimit", DEFAULT_USER_LIMIT);
+                info.put("note", "Wallet not registered as provider - showing contract default values");
+            }
+            
+            // Get spending period from contract
+            java.math.BigInteger periodDuration = walletService.getInstitutionalSpendingPeriod(institutionalAddress);
+            if (periodDuration != null && periodDuration.compareTo(java.math.BigInteger.ZERO) > 0) {
+                info.put("periodDuration", periodDuration.longValue());
+                info.put("periodStart", System.currentTimeMillis() / 1000);
+                info.put("periodEnd", (System.currentTimeMillis() / 1000) + periodDuration.longValue());
+            } else {
+                // If 0 or null, use defaults
+                info.put("periodDuration", DEFAULT_PERIOD_DURATION);
+                info.put("periodStart", System.currentTimeMillis() / 1000);
+                info.put("periodEnd", (System.currentTimeMillis() / 1000) + DEFAULT_PERIOD_DURATION);
+                if (!info.containsKey("note")) {
+                    info.put("note", "Wallet not registered as provider - showing contract default values");
+                }
+            }
+            
+            // Get treasury balance from contract
+            java.math.BigInteger treasuryBalance = walletService.getInstitutionalTreasuryBalance(institutionalAddress);
+            if (treasuryBalance != null) {
+                info.put("treasuryBalance", treasuryBalance.toString());
+            } else {
+                info.put("treasuryBalance", "0");
+            }
+
+            return ResponseEntity.ok(info);
+        } catch (Exception e) {
+            log.error("Error getting treasury info: {}", e.getMessage(), e);
+            return ResponseEntity.internalServerError().body(Map.of(
+                "success", false,
+                "error", "Failed to retrieve treasury info: " + e.getMessage()
+            ));
+        }
+    }
+
+    /**
+     * GET /treasury/admin/top-spenders?limit=10
+     * Get top spenders in current period
+     */
+    @GetMapping("/top-spenders")
+    public ResponseEntity<?> getTopSpenders(
+        @RequestParam(defaultValue = "10") int limit,
+        HttpServletRequest request
+    ) {
+        if (!isLocalhostRequest(request)) {
+            return ResponseEntity.status(403).body(Map.of(
+                "success", false,
+                "error", "Access denied: administrative endpoints only accessible from localhost"
+            ));
+        }
+
+        try {
+            String institutionalAddress = institutionalWalletService.getInstitutionalWalletAddress();
+            if (institutionalAddress == null || institutionalAddress.isBlank()) {
+                return ResponseEntity.badRequest().body(Map.of(
+                    "success", false,
+                    "error", "Institutional wallet not configured"
+                ));
+            }
+
+            List<InstitutionalAnalyticsService.UserActivity> knownUsers =
+                institutionalAnalyticsService.getKnownUsers(institutionalAddress, 50);
+
+            List<Map<String, Object>> spenders = new ArrayList<>();
+            for (InstitutionalAnalyticsService.UserActivity user : knownUsers) {
+                walletService.getInstitutionalUserFinancialStats(institutionalAddress, user.getPuc())
+                    .ifPresent(stats -> {
+                        Map<String, Object> entry = new LinkedHashMap<>();
+                        entry.put("puc", user.getPuc());
+                        entry.put("amountRaw", stats.getCurrentPeriodSpent().toString());
+                        entry.put("amountLab", formatLabTokens(stats.getCurrentPeriodSpent()));
+                        entry.put("remainingLab", formatLabTokens(stats.getRemainingAllowance()));
+                        entry.put("limitLab", formatLabTokens(stats.getSpendingLimit()));
+                        entry.put("periodStart", stats.getPeriodStart().longValue());
+                        entry.put("periodEnd", stats.getPeriodEnd().longValue());
+                        entry.put("lastSeen", user.getLastSeenEpochMillis());
+                        spenders.add(entry);
+                    });
+            }
+
+            spenders.sort((a, b) -> {
+                BigInteger spentA = new BigInteger((String) a.get("amountRaw"));
+                BigInteger spentB = new BigInteger((String) b.get("amountRaw"));
+                return spentB.compareTo(spentA);
+            });
+            int safeLimit = Math.min(Math.max(limit, 1), spenders.size());
+            List<Map<String, Object>> limited = spenders.stream()
+                .limit(safeLimit)
+                .collect(Collectors.toList());
+
+            Map<String, Object> result = new LinkedHashMap<>();
+            result.put("success", true);
+            result.put("spenders", limited);
+            result.put("provider", institutionalAddress);
+            if (limited.isEmpty()) {
+                result.put("note", knownUsers.isEmpty()
+                    ? "No institutional users have interacted yet from this provider."
+                    : "Users recorded but no on-chain spending detected for current period.");
+            }
+
+            return ResponseEntity.ok(result);
+        } catch (Exception e) {
+            log.error("Error getting top spenders: {}", e.getMessage(), e);
+            return ResponseEntity.internalServerError().body(Map.of(
+                "success", false,
+                "error", "Failed to retrieve top spenders: " + e.getMessage()
+            ));
+        }
     }
 }

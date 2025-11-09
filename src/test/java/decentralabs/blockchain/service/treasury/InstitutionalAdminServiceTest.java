@@ -36,12 +36,14 @@ class InstitutionalAdminServiceTest {
     private RateLimitService rateLimitService;
     @Mock
     private InstitutionalWalletService institutionalWalletService;
+    @Mock
+    private InstitutionalAnalyticsService analyticsService;
 
     private InstitutionalAdminService adminService;
 
     @BeforeEach
     void setUp() {
-        adminService = new InstitutionalAdminService(web3j, httpServletRequest, rateLimitService, institutionalWalletService);
+        adminService = new InstitutionalAdminService(web3j, httpServletRequest, rateLimitService, institutionalWalletService, analyticsService);
         ReflectionTestUtils.setField(adminService, "contractAddress", "0xABC");
     }
 

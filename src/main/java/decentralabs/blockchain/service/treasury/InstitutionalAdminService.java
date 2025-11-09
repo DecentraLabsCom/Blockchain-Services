@@ -6,7 +6,9 @@ import decentralabs.blockchain.dto.treasury.InstitutionalAdminRequest;
 import decentralabs.blockchain.dto.treasury.InstitutionalAdminResponse;
 import decentralabs.blockchain.util.EthereumAddressValidator;
 import jakarta.servlet.http.HttpServletRequest;
+import java.math.BigDecimal;
 import java.math.BigInteger;
+import java.math.RoundingMode;
 import java.util.Arrays;
 import java.util.Collections;
 import lombok.RequiredArgsConstructor;
@@ -40,6 +42,9 @@ public class InstitutionalAdminService {
     private final HttpServletRequest request;
     private final RateLimitService rateLimitService;
     private final InstitutionalWalletService institutionalWalletService;
+    private final InstitutionalAnalyticsService analyticsService;
+
+    private static final int LAB_TOKEN_DECIMALS = 6;
 
     @Value("${contract.address}")
     private String contractAddress;
@@ -141,6 +146,9 @@ public class InstitutionalAdminService {
             case SET_SPENDING_PERIOD:
                 return setSpendingPeriod(credentials, request);
 
+            case RESET_SPENDING_PERIOD:
+                return resetSpendingPeriod(credentials, request);
+
             case DEPOSIT_TREASURY:
                 return depositTreasury(credentials, request);
 
@@ -164,6 +172,13 @@ public class InstitutionalAdminService {
         );
 
         String txHash = sendTransaction(credentials, function);
+        recordAdminTransaction(
+            credentials.getAddress(),
+            txHash,
+            "AUTHORIZE_BACKEND",
+            "Authorized backend " + request.getBackendAddress(),
+            null
+        );
         return InstitutionalAdminResponse.success(
             "Backend authorized successfully",
             txHash,
@@ -179,6 +194,13 @@ public class InstitutionalAdminService {
         );
 
         String txHash = sendTransaction(credentials, function);
+        recordAdminTransaction(
+            credentials.getAddress(),
+            txHash,
+            "REVOKE_BACKEND",
+            "Revoked backend access",
+            null
+        );
         return InstitutionalAdminResponse.success(
             "Backend revoked successfully",
             txHash,
@@ -205,6 +227,13 @@ public class InstitutionalAdminService {
         );
 
         String txHash = sendTransaction(credentials, function);
+        recordAdminTransaction(
+            credentials.getAddress(),
+            txHash,
+            "ADMIN_RESET_BACKEND",
+            "Admin reset backend for " + request.getProviderAddress(),
+            null
+        );
         return InstitutionalAdminResponse.success(
             "Backend reset by admin successfully",
             txHash,
@@ -225,6 +254,13 @@ public class InstitutionalAdminService {
         );
 
         String txHash = sendTransaction(credentials, function);
+        recordAdminTransaction(
+            credentials.getAddress(),
+            txHash,
+            "SET_USER_LIMIT",
+            "Updated user spending limit",
+            formatLabTokens(limit)
+        );
         return InstitutionalAdminResponse.success(
             "User spending limit updated successfully",
             txHash,
@@ -245,11 +281,40 @@ public class InstitutionalAdminService {
         );
 
         String txHash = sendTransaction(credentials, function);
+        recordAdminTransaction(
+            credentials.getAddress(),
+            txHash,
+            "SET_SPENDING_PERIOD",
+            "Updated spending period",
+            formatPeriodDays(period)
+        );
         return InstitutionalAdminResponse.success(
             "Spending period updated successfully",
             txHash,
             "SET_SPENDING_PERIOD"
         ).withSpendingPeriod(request.getSpendingPeriod());
+    }
+
+    private InstitutionalAdminResponse resetSpendingPeriod(Credentials credentials, InstitutionalAdminRequest request) throws Exception {
+        Function function = new Function(
+            "resetInstitutionalSpendingPeriod",
+            Collections.emptyList(),
+            Collections.emptyList()
+        );
+
+        String txHash = sendTransaction(credentials, function);
+        recordAdminTransaction(
+            credentials.getAddress(),
+            txHash,
+            "RESET_SPENDING_PERIOD",
+            "Reset spending counters for all users",
+            null
+        );
+        return InstitutionalAdminResponse.success(
+            "Spending period reset successfully - all user spending counters cleared",
+            txHash,
+            "RESET_SPENDING_PERIOD"
+        );
     }
 
     private InstitutionalAdminResponse depositTreasury(Credentials credentials, InstitutionalAdminRequest request) throws Exception {
@@ -265,6 +330,13 @@ public class InstitutionalAdminService {
         );
 
         String txHash = sendTransaction(credentials, function);
+        recordAdminTransaction(
+            credentials.getAddress(),
+            txHash,
+            "DEPOSIT_TREASURY",
+            "Treasury deposit",
+            formatLabTokens(amount)
+        );
         return InstitutionalAdminResponse.success(
             "Treasury deposit completed successfully",
             txHash,
@@ -285,6 +357,13 @@ public class InstitutionalAdminService {
         );
 
         String txHash = sendTransaction(credentials, function);
+        recordAdminTransaction(
+            credentials.getAddress(),
+            txHash,
+            "WITHDRAW_TREASURY",
+            "Treasury withdrawal",
+            formatLabTokens(amount)
+        );
         return InstitutionalAdminResponse.success(
             "Treasury withdrawal completed successfully",
             txHash,
@@ -333,5 +412,48 @@ public class InstitutionalAdminService {
         }
 
         return ethSendTransaction.getTransactionHash();
+    }
+
+    private void recordAdminTransaction(
+        String providerAddress,
+        String txHash,
+        String type,
+        String description,
+        String amountDisplay
+    ) {
+        if (providerAddress == null || providerAddress.isBlank()) {
+            providerAddress = institutionalWalletService.getInstitutionalWalletAddress();
+        }
+        if (providerAddress == null || providerAddress.isBlank()) {
+            return;
+        }
+        analyticsService.recordTransaction(
+            providerAddress,
+            new InstitutionalAnalyticsService.TransactionRecord(
+                txHash,
+                type,
+                description,
+                amountDisplay,
+                System.currentTimeMillis(),
+                "submitted"
+            )
+        );
+    }
+
+    private String formatLabTokens(BigInteger rawValue) {
+        if (rawValue == null) {
+            return null;
+        }
+        BigDecimal decimal = new BigDecimal(rawValue).movePointLeft(LAB_TOKEN_DECIMALS);
+        return decimal.stripTrailingZeros().toPlainString() + " LAB";
+    }
+
+    private String formatPeriodDays(BigInteger seconds) {
+        if (seconds == null) {
+            return null;
+        }
+        BigDecimal days = new BigDecimal(seconds)
+            .divide(BigDecimal.valueOf(86_400), 2, RoundingMode.HALF_UP);
+        return days.stripTrailingZeros().toPlainString() + " days";
     }
 }

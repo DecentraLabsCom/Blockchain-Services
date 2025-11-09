@@ -31,6 +31,7 @@ public class InstitutionalAdminRequest {
         ADMIN_RESET_BACKEND,
         SET_USER_LIMIT,
         SET_SPENDING_PERIOD,
+        RESET_SPENDING_PERIOD,
         DEPOSIT_TREASURY,
         WITHDRAW_TREASURY
     }

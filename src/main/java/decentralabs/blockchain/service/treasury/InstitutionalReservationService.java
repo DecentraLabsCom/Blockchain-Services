@@ -39,6 +39,7 @@ public class InstitutionalReservationService {
     private final MarketplaceKeyService marketplaceKeyService;
     private final SamlValidationService samlValidationService;
     private final InstitutionalWalletService institutionalWalletService;
+    private final InstitutionalAnalyticsService institutionalAnalyticsService;
     private final Web3j web3j;
     
     @Value("${contract.address}")
@@ -75,7 +76,20 @@ public class InstitutionalReservationService {
         
         Credentials institutionalCredentials = institutionalWalletService.getInstitutionalCredentials();
         String transactionHash = executeBlockchainReservation(request, institutionalCredentials);
-        
+
+        institutionalAnalyticsService.recordUserActivity(institutionalCredentials.getAddress(), request.getUserId());
+        institutionalAnalyticsService.recordTransaction(
+            institutionalCredentials.getAddress(),
+            new InstitutionalAnalyticsService.TransactionRecord(
+                transactionHash,
+                "RESERVATION",
+                "Reservation for lab " + request.getLabId(),
+                null,
+                System.currentTimeMillis(),
+                "submitted"
+            )
+        );
+
         log.info("Reservation processed successfully. Transaction: {}", transactionHash);
         
         return Map.of(
