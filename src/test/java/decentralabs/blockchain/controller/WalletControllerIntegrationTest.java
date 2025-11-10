@@ -5,6 +5,7 @@ import decentralabs.blockchain.controller.wallet.WalletController;
 import decentralabs.blockchain.dto.wallet.WalletCreateRequest;
 import decentralabs.blockchain.dto.wallet.WalletResponse;
 import decentralabs.blockchain.service.RateLimitService;
+import decentralabs.blockchain.service.wallet.InstitutionalWalletService;
 import decentralabs.blockchain.service.wallet.WalletService;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -36,6 +37,9 @@ public class WalletControllerIntegrationTest {
 
     @MockBean
     private RateLimitService rateLimitService;
+
+    @MockBean
+    private InstitutionalWalletService institutionalWalletService;
 
     @Test
     public void testCreateWallet() throws Exception {

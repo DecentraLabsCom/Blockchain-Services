@@ -12,6 +12,7 @@ import decentralabs.blockchain.dto.wallet.WalletImportRequest;
 import decentralabs.blockchain.dto.wallet.WalletResponse;
 import decentralabs.blockchain.service.RateLimitService;
 import decentralabs.blockchain.service.wallet.WalletService;
+import decentralabs.blockchain.service.wallet.InstitutionalWalletService;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -51,6 +52,9 @@ class WalletControllerOperationsIntegrationTest {
 
     @MockBean
     private RateLimitService rateLimitService;
+
+    @MockBean
+    private InstitutionalWalletService institutionalWalletService;
 
     @Test
     void shouldReturnBalanceForValidAddress() throws Exception {

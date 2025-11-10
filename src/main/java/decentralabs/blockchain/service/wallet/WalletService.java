@@ -195,15 +195,22 @@ public class WalletService {
             String address;
             String encryptedPrivateKey;
 
-            if (request.getPrivateKey() != null) {
+            String privateKey = request.getPrivateKey();
+            String mnemonic = request.getMnemonic();
+
+            if (privateKey != null && !privateKey.trim().isEmpty()) {
+                String normalizedPrivateKey = privateKey.trim().startsWith("0x")
+                    ? privateKey.trim()
+                    : "0x" + privateKey.trim();
+
                 // Import from private key
-                ECKeyPair keyPair = ECKeyPair.create(Numeric.toBigInt(request.getPrivateKey()));
-                address = Keys.getAddress(keyPair.getPublicKey());
-                encryptedPrivateKey = encryptPrivateKey(request.getPrivateKey(), request.getPassword());
-            } else if (request.getMnemonic() != null) {
+                ECKeyPair keyPair = ECKeyPair.create(Numeric.toBigInt(normalizedPrivateKey));
+                address = "0x" + Keys.getAddress(keyPair.getPublicKey());
+                encryptedPrivateKey = encryptPrivateKey(normalizedPrivateKey, request.getPassword());
+            } else if (mnemonic != null && !mnemonic.trim().isEmpty()) {
                 // Import from mnemonic (BIP39)
                 Credentials credentials = WalletUtils.loadBip39Credentials(
-                    request.getPassword(), request.getMnemonic());
+                    request.getPassword(), mnemonic.trim());
                 address = credentials.getAddress();
                 encryptedPrivateKey = encryptPrivateKey(
                     Numeric.toHexStringWithPrefix(credentials.getEcKeyPair().getPrivateKey()),
@@ -214,6 +221,8 @@ public class WalletService {
 
             // Save to cache
             encryptedWallets.put(address, encryptedPrivateKey);
+            // Persist imported wallet so it becomes the active institutional wallet
+            walletPersistenceService.saveWallet(address, encryptedPrivateKey);
 
             String message = replacingExisting 
                 ? String.format("Institutional wallet imported (replaced previous wallet %s)", existingWallet)

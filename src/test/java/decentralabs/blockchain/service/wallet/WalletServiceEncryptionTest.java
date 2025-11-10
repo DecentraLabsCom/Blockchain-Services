@@ -16,7 +16,8 @@ class WalletServiceEncryptionTest {
     void setUp() {
         walletService = Mockito.mock(WalletService.class, Mockito.CALLS_REAL_METHODS);
         ReflectionTestUtils.setField(walletService, "baseDomain", "localhost");
-        ReflectionTestUtils.setField(walletService, "defaultRpcUrl", "http://localhost");
+        ReflectionTestUtils.setField(walletService, "mainnetRpcUrl", "http://localhost");
+        ReflectionTestUtils.setField(walletService, "sepoliaRpcUrl", "http://localhost");
         ReflectionTestUtils.setField(walletService, "contractAddress", "0x0");
         ReflectionTestUtils.setField(walletService, "defaultWalletAddress", "0x0");
     }

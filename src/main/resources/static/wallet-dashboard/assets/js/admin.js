@@ -847,14 +847,22 @@ function setupButtonHandlers() {
             const dropdown = document.getElementById('walletSetupDropdown');
             if (dropdown) dropdown.style.display = 'none';
             
-            const mnemonic = await showInputModal(
+            const privateKeyInput = await showInputModal(
                 'Import Wallet',
-                'Enter your 12-word mnemonic phrase:',
+                'Enter the wallet private key (64 hex chars, with or without 0x):',
                 'text'
             );
-            
-            if (!mnemonic || mnemonic.trim().split(/\s+/).length !== 12) {
-                showToast('Invalid mnemonic (must be exactly 12 words)', 'error');
+
+            if (!privateKeyInput) {
+                showToast('Private key is required to import a wallet', 'error');
+                return;
+            }
+
+            const trimmedKey = privateKeyInput.trim();
+            const normalizedKey = trimmedKey.startsWith('0x') ? trimmedKey : `0x${trimmedKey}`;
+            const privateKeyPattern = /^0x[0-9a-fA-F]{64}$/;
+            if (!privateKeyPattern.test(normalizedKey)) {
+                showToast('Invalid private key format. Expected 0x followed by 64 hex characters.', 'error');
                 return;
             }
             
@@ -874,12 +882,12 @@ function setupButtonHandlers() {
                 const response = await fetch('/wallet/import', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ mnemonic: mnemonic.trim(), password })
+                    body: JSON.stringify({ privateKey: normalizedKey, password })
                 });
                 
                 const data = await response.json();
                 if (data.success && data.address) {
-                    showToast('✓ Wallet imported and configured successfully!', 'success');
+                    showToast('Wallet imported and configured successfully!', 'success');
                     
                     // Format success message with HTML
                     const content = `
