@@ -336,21 +336,21 @@ ethereum.sepolia.rpc.url=https://rpc1.sepolia.org,https://rpc2.sepolia.org,https
                v
 ┌─────────────────────────────────┐
 │  Validate User Financial Stats  │
-│  - Check spending limit          │
-│  - Verify remaining allowance    │
+│  - Check spending limit         │
+│  - Verify remaining allowance   │
 └──────────────┬──────────────────┘
                │
                v
 ┌─────────────────────────────────┐
 │  Validate Lab Availability      │
-│  - Check operating hours         │
-│  - Verify day of week            │
+│  - Check operating hours        │
+│  - Verify day of week           │
 └──────────────┬──────────────────┘
                │
                v
 ┌─────────────────────────────────┐
 │  Check Maintenance Windows      │
-│  - No scheduled maintenance      │
+│  - No scheduled maintenance     │
 └──────────────┬──────────────────┘
                │
                v
@@ -358,7 +358,7 @@ ethereum.sepolia.rpc.url=https://rpc1.sepolia.org,https://rpc2.sepolia.org,https
        │                │
        v                v
    ┌───────┐      ┌──────────┐
-   │APPROVE│      │  DENY    │
+   │APPROVE│      │   DENY   │
    └───────┘      └──────────┘
 ```
 
