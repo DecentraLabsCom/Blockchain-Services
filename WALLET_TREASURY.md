@@ -4,12 +4,14 @@ The Institutional Wallet & Treasury component provides complete Ethereum wallet 
 
 ## Overview
 
-This component enables institutional providers to:
+This component enables institutional consumers and providers to:
 - Create and manage encrypted Ethereum wallets
 - Interact with the Diamond smart contract for treasury operations
+- Manage spending limits and user financial stats
+
+Additionaly, for lab providers, this also enables to:
 - Handle lab reservations with automatic approval/denial
 - Monitor blockchain events and transaction status
-- Manage spending limits and user financial stats
 
 ## Features
 
@@ -417,47 +419,6 @@ Lab metadata should be stored in the smart contract or backend with the followin
 }
 ```
 
-## Security Considerations
-
-### Localhost-Only Filter
-
-All wallet and treasury endpoints are protected by `LocalhostOnlyFilter`:
-
-```java
-@Component
-public class LocalhostOnlyFilter implements Filter {
-    @Override
-    public void doFilter(ServletRequest request, ...) {
-        String remoteAddr = request.getRemoteAddr();
-        if (!remoteAddr.equals("127.0.0.1") && !remoteAddr.equals("0:0:0:0:0:0:0:1")) {
-            throw new AccessDeniedException("Wallet endpoints only accessible from localhost");
-        }
-        chain.doFilter(request, response);
-    }
-}
-```
-
-### Wallet Encryption
-
-- Private keys are never stored in plaintext
-- Each wallet has unique salt and IV
-- Global pepper adds additional security layer
-- Password must meet minimum complexity requirements
-
-### Transaction Signing
-
-- Private keys are decrypted only in memory
-- Signing happens server-side
-- No private key exposure to clients
-- Automatic gas estimation with safety margins
-
-### Smart Contract Interaction
-
-- All contract calls use view/pure functions when possible
-- Write operations require wallet password
-- Transaction nonces managed automatically
-- Gas price estimation with fallback strategies
-
 ## Integration Examples
 
 ### Creating Provider Wallet
@@ -507,11 +468,9 @@ curl http://localhost:8080/wallet/0x742d35Cc6634C0532925a3b844Bc454e4438f44e/bal
 curl http://localhost:8080/wallet//balance
 ```
 
-## Web Dashboards
+## Web Dashboard
 
-### Wallet Dashboard
-
-Located at `/static/wallet-dashboard/index.html` - Treasury admin interface with:
+Located at `/static/wallet-dashboard/` - Treasury admin interface with:
 - Contract address and network information
 - Provider wallet balance display
 - Treasury admin operations:
@@ -520,81 +479,6 @@ Located at `/static/wallet-dashboard/index.html` - Treasury admin interface with
   - Reset spending periods
   - Deposit/withdraw treasury funds (requires additional UI)
 
-### Provider Dashboard
-
-Located at `/static/provider-dashboard/index.html` - Lab provider management with:
-- Provider status and backend authorization
-- Reservation metrics (7-day statistics)
-- Labs overview with auto-confirm status
-- Pending reservations queue
-- Metadata sync alerts
-
-## Troubleshooting
-
-### Common Issues
-
-**Wallet creation fails:**
-- Check encryption salt is configured
-- Verify password meets complexity requirements
-- Ensure sufficient disk space for wallet storage
-
-**Balance queries return zero:**
-- Verify correct network is active
-- Check contract address is correctly configured
-- Ensure RPC endpoints are reachable
-
-**Reservation auto-denied:**
-- Check lab metadata configuration
-- Verify user has sufficient spending allowance
-- Ensure request time is within lab hours
-
-**Transaction fails:**
-- Verify wallet has sufficient ETH for gas
-- Check gas price estimation is reasonable
-- Ensure nonce management is working correctly
-
-### Debug Mode
-
-Enable detailed logging:
-```properties
-logging.level.decentralabs.blockchain.service.wallet=DEBUG
-logging.level.decentralabs.blockchain.service.treasury=DEBUG
-logging.level.org.web3j=DEBUG
-```
-
-### Health Checks
-
-Monitor wallet service health:
-```bash
-curl http://localhost:8080/health | jq '.endpoints'
-```
-
-## Performance Optimization
-
-### RPC Failover
-
-Configure multiple RPC endpoints for reliability:
-```properties
-ethereum.sepolia.rpc.url=https://rpc1.sepolia.org,https://rpc2.sepolia.org,https://rpc3.sepolia.org
-```
-
-### Web3j Connection Pooling
-
-The service maintains persistent Web3j connections:
-- Connections are cached per network
-- Automatic reconnection on failure
-- Connection health monitoring
-
-### Event Listening Optimization
-
-Event listeners use:
-- Filtered logs for specific contracts
-- Block range batching
-- Checkpoint persistence
-
 ## Related Documentation
 
 - [Authentication Service](AUTH_SERVICE.md)
-- [Wallet Implementation](dev/WALLET_README.md)
-- [Security Guidelines](dev/SECURITY.md)
-- [Smart Contract Integration](contracts/README.md)

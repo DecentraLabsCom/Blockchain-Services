@@ -65,12 +65,6 @@ This documentation is organized into specialized sections:
 - **Reservation Engine**: Metadata-driven auto-approval/denial based on lab availability
 - **Event Monitoring**: Real-time blockchain event listening and status reporting
 
-### Platform Features
-- **Security**: Localhost-only filters for sensitive endpoints, encrypted credential storage
-- **Observability**: Health checks, structured logging, Spring Boot actuator integration
-- **Docker-Ready**: Multi-stage builds, environment-based configuration
-- **CORS Support**: Configurable origin policies for frontend integration
-
 ## 🔧 API Overview
 
 ### Authentication Endpoints (`/auth`)
@@ -111,7 +105,7 @@ This documentation is organized into specialized sections:
 
 ### Prerequisites
 
-* Java 18+
+* Java 21+
 * Maven 3.6+
 * Docker (optional, for containerized deployment)
 
@@ -212,13 +206,6 @@ docker run -p 8080:8080 \
 - ✅ Localhost-only filters enabled for sensitive operations
 - ✅ CORS origins restricted to trusted domains
 
-### Security Documentation
-
-For detailed security guidelines, see:
-- **[SECURITY.md](dev/SECURITY.md)** - Complete security configuration guide
-- **[SAML Signature Validation](dev/SAML_SIGNATURE_VALIDATION.md)** - SAML2 security setup
-- **[Wallet Security](dev/WALLET_README.md)** - Wallet encryption and key management
-
 ## 📊 Monitoring & Health Checks
 
 Health endpoint available at `/health`:
@@ -246,31 +233,6 @@ Health endpoint available at `/health`:
 }
 ```
 
-## 🚀 Deployment
-
-### Docker Compose
-
-See the included `docker-compose.example.yml` for a complete deployment configuration.
-
-### Kubernetes
-
-When deploying to Kubernetes, ensure:
-- Secrets are properly configured for private keys and encryption salts
-- ConfigMaps contain non-sensitive configuration
-- Network policies restrict access to wallet/treasury endpoints
-- Persistent volumes are used for wallet storage
-
-### Production Checklist
-
-- [ ] Environment variables configured with production values
-- [ ] RSA keys generated and mounted securely
-- [ ] Encryption salt changed from default
-- [ ] RPC endpoints configured with rate-limited providers
-- [ ] CORS origins restricted to production domains
-- [ ] Health check endpoints monitored
-- [ ] Logging configured for centralized aggregation
-- [ ] Backup strategy in place for wallet data
-
 ## 🤝 Contributing
 
 1. Fork the project
@@ -287,6 +249,3 @@ See [LICENSE](LICENSE) file for details.
 
 - [Authentication Service Details](AUTH_SERVICE.md)
 - [Wallet & Treasury Details](WALLET_TREASURY.md)
-- [Security Guidelines](dev/SECURITY.md)
-- [SAML Configuration](dev/SAML_AUTO_DISCOVERY.md)
-- [Wallet Implementation](dev/WALLET_README.md)
