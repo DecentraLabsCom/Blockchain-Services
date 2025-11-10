@@ -307,6 +307,7 @@ public class WalletService {
                 return null;
             }
             
+            @SuppressWarnings("rawtypes")
             List<Type> decoded = FunctionReturnDecoder.decode(response.getValue(), function.getOutputParameters());
             if (!decoded.isEmpty()) {
                 cachedLabTokenAddress = decoded.get(0).getValue().toString();
@@ -352,6 +353,7 @@ public class WalletService {
                 return null;
             }
             
+            @SuppressWarnings("rawtypes")
             List<Type> decoded = FunctionReturnDecoder.decode(response.getValue(), function.getOutputParameters());
             if (!decoded.isEmpty()) {
                 BigInteger limit = (BigInteger) decoded.get(0).getValue();
@@ -397,6 +399,7 @@ public class WalletService {
                 return null;
             }
             
+            @SuppressWarnings("rawtypes")
             List<Type> decoded = FunctionReturnDecoder.decode(response.getValue(), function.getOutputParameters());
             if (!decoded.isEmpty()) {
                 BigInteger period = (BigInteger) decoded.get(0).getValue();
@@ -442,6 +445,7 @@ public class WalletService {
                 return null;
             }
             
+            @SuppressWarnings("rawtypes")
             List<Type> decoded = FunctionReturnDecoder.decode(response.getValue(), function.getOutputParameters());
             if (!decoded.isEmpty()) {
                 BigInteger balance = (BigInteger) decoded.get(0).getValue();
@@ -491,6 +495,7 @@ public class WalletService {
                 return Optional.empty();
             }
 
+            @SuppressWarnings("rawtypes")
             List<Type> decoded = FunctionReturnDecoder.decode(response.getValue(), function.getOutputParameters());
             if (decoded.size() < 7) {
                 return Optional.empty();
@@ -541,6 +546,7 @@ public class WalletService {
                 return BigInteger.ZERO;
             }
             
+            @SuppressWarnings("rawtypes")
             List<Type> decoded = FunctionReturnDecoder.decode(response.getValue(), function.getOutputParameters());
             if (!decoded.isEmpty()) {
                 return (BigInteger) decoded.get(0).getValue();
