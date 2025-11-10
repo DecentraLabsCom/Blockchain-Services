@@ -155,7 +155,6 @@ This documentation is organized into specialized sections:
 |----------|----------|-------------|---------|
 | `CONTRACT_ADDRESS` | 🔴 Yes | Diamond contract address | - |
 | `WALLET_ADDRESS` | 🔴 Yes | Institutional wallet address | - |
-| `WALLET_ENCRYPTION_SALT` | 🟡 Recommended | Encryption pepper for wallet storage | `DecentraLabsTestSalt` |
 | `BLOCKCHAIN_NETWORK_ACTIVE` | 🟡 Recommended | Initial network (`mainnet`/`sepolia`) | `sepolia` |
 | `ETHEREUM_MAINNET_RPC_URL` | 🟡 Recommended | Mainnet RPC endpoints (comma-separated) | Public RPCs |
 | `ETHEREUM_SEPOLIA_RPC_URL` | 🟡 Recommended | Sepolia RPC endpoints (comma-separated) | Public RPCs |
@@ -187,7 +186,6 @@ config/
 docker run -p 8080:8080 \
   -e CONTRACT_ADDRESS=0xYourContractAddress \
   -e WALLET_ADDRESS=0xYourWalletAddress \
-  -e WALLET_ENCRYPTION_SALT=YourSecureSalt \
   -e ETHEREUM_SEPOLIA_RPC_URL=https://your-rpc-endpoint \
   -v /secure/keys:/app/config/keys:ro \
   blockchain-services:latest
@@ -201,7 +199,6 @@ docker run -p 8080:8080 \
 
 - ✅ Private keys provided via environment variables (never hardcoded)
 - ✅ RSA keys mounted with proper permissions (`chmod 400`)
-- ✅ Encryption salt changed from default value
 - ✅ RPC URLs configured with authenticated endpoints
 - ✅ Localhost-only filters enabled for sensitive operations
 - ✅ CORS origins restricted to trusted domains

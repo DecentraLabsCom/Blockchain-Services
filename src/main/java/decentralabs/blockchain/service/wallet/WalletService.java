@@ -87,9 +87,6 @@ public class WalletService {
     @Value("${blockchain.network.active:sepolia}")
     private String defaultNetwork;
 
-    @Value("${wallet.encryption.salt:DecentraLabsTestSalt}")
-    private String encryptionSalt;
-
     // AES-GCM parameters
     private static final int GCM_IV_LENGTH = 12; // 96 bits
     private static final int GCM_TAG_LENGTH = 128; // 128 bits

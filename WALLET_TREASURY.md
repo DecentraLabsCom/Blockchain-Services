@@ -297,7 +297,7 @@ Wallets are stored encrypted using:
 - **Algorithm**: AES-256-GCM
 - **Key Derivation**: PBKDF2 with SHA-256
 - **Iterations**: 65,536
-- **Salt**: Per-wallet random salt + optional global pepper
+- **Salt**: Per-wallet random salt generated automatically
 
 ```
 Stored Wallet Structure:
@@ -369,7 +369,6 @@ ethereum.sepolia.rpc.url=https://rpc1.sepolia.org,https://rpc2.sepolia.org,https
 | Variable | Description | Default |
 |----------|-------------|---------|
 | `WALLET_ADDRESS` | Default institutional wallet | - |
-| `WALLET_ENCRYPTION_SALT` | Global encryption pepper | `DecentraLabsTestSalt` |
 | `CONTRACT_ADDRESS` | Diamond contract address | - |
 | `BLOCKCHAIN_NETWORK_ACTIVE` | Initial active network | `sepolia` |
 | `ETHEREUM_MAINNET_RPC_URL` | Mainnet RPC endpoints | Public RPCs |
@@ -381,7 +380,6 @@ ethereum.sepolia.rpc.url=https://rpc1.sepolia.org,https://rpc2.sepolia.org,https
 ```properties
 # Wallet Configuration
 wallet.address=${WALLET_ADDRESS:}
-wallet.encryption.salt=${WALLET_ENCRYPTION_SALT:DecentraLabsTestSalt}
 
 # Network Configuration
 blockchain.network.active=${BLOCKCHAIN_NETWORK_ACTIVE:sepolia}

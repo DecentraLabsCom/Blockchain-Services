@@ -84,7 +84,6 @@ ENV INSTITUTIONAL_WALLET_ADDRESS="" \
     INSTITUTIONAL_WALLET_PASSWORD=""
 
 # OPTIONAL SECURITY VARIABLES (recommended to override defaults):
-# - WALLET_ENCRYPTION_SALT: Salt for wallet encryption (change from default)
 # - WALLET_PERSISTENCE_ENABLED: Enable wallet persistence (true/false)
 # - WALLET_FILE_PATH: Path to wallet storage file (default: /app/data/wallets.json)
 # - ETHEREUM_MAINNET_RPC_URL: Mainnet RPC endpoint with your API key
@@ -98,7 +97,6 @@ ENV INSTITUTIONAL_WALLET_ADDRESS="" \
 #   -e INSTITUTIONAL_WALLET_PASSWORD=YourSecurePassword \
 #   -e CONTRACT_ADDRESS=0xYourContractAddress \
 #   -e RPC_URL=https://your-rpc-url \
-#   -e WALLET_ENCRYPTION_SALT=YourRandomSalt \
 #   -e WALLET_PERSISTENCE_ENABLED=true \
 #   -v /secure/path/keys:/app/config/keys:ro \
 #   -v /secure/path/data:/app/data \
