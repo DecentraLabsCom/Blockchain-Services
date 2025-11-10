@@ -19,6 +19,9 @@ public class SecurityConfig {
 
     @Value("${allowed-origins}")
     private String[] allowedOrigins;
+
+    @Value("${wallet.allowed-origins}")
+    private String[] walletAllowedOrigins;
     
     @Value("${endpoint.wallet-auth}")
     private String walletAuthEndpoint;
@@ -93,10 +96,10 @@ public class SecurityConfig {
         publicConfiguration.setAllowedMethods(Arrays.asList("GET", "POST"));
         publicConfiguration.addAllowedHeader("*");
 
-        CorsConfiguration localhostConfiguration = new CorsConfiguration();
-        localhostConfiguration.setAllowedOrigins(Arrays.asList("http://localhost:3000", "http://127.0.0.1:3000"));
-        localhostConfiguration.setAllowedMethods(Arrays.asList("GET", "POST"));
-        localhostConfiguration.addAllowedHeader("*");
+        CorsConfiguration walletConfiguration = new CorsConfiguration();
+        walletConfiguration.setAllowedOrigins(Arrays.asList(walletAllowedOrigins));
+        walletConfiguration.setAllowedMethods(Arrays.asList("GET", "POST"));
+        walletConfiguration.addAllowedHeader("*");
 
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
         // Public endpoints
@@ -108,8 +111,8 @@ public class SecurityConfig {
         source.registerCorsConfiguration(healthEndpoint, publicConfiguration);
         
         // ALL wallet endpoints - localhost only, except institutional reservation
-        source.registerCorsConfiguration(walletEndpoint + "/**", localhostConfiguration);
-        source.registerCorsConfiguration(treasuryEndpoint + "/**", localhostConfiguration);
+        source.registerCorsConfiguration(walletEndpoint + "/**", walletConfiguration);
+        source.registerCorsConfiguration(treasuryEndpoint + "/**", walletConfiguration);
 
         return source;
     }
