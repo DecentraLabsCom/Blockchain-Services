@@ -1,9 +1,9 @@
 ---
 description: >-
-  Authentication and authorization service connecting your lab access control system to the blockchain
+  Blockchain services connecting your institutional users and lab access control system to the blockchain
 ---
 
-# Blockchain Auth Service
+# Blockchain Services
 
 JWT authentication microservice for the DecentraLabs ecosystem with full Ethereum wallet capabilities.
 
@@ -51,69 +51,69 @@ The process for authenticating and authorizing an SSO-logged in user will be add
 ## 🚀 Features
 
 ### Authentication & Authorization
-* **Wallet Authentication**: Wallet signature verification
-* **JWT Authentication**: JWT token validation
-* **SAML Authentication**: SSO integration with marketplace
-* **Dynamic Key Retrieval**: Automatic public key downloading
-* **Blockchain Integration**: Smart contract integration
+- Wallet challenge flows (auth + authz) with JWT claims tied to smart-contract reservations
+- Dual SAML2 paths (authentication-only and booking-aware) for institutional SSO
+- JWKS discovery + dynamic public key rotation for relying dApps
+- Direct smart-contract queries to validate bookings and spending limits
 
-### 🆕 Ethereum Wallet Management
-* **Wallet Creation**: Generate new Ethereum wallets with encrypted private keys
-* **Wallet Import**: Import from private key or BIP39 mnemonic phrases
-* **Multi-Network Support**: Mainnet, Sepolia, Goerli networks
-* **Balance Queries**: Real-time ETH balance checking
-* **Transaction Signing**: Secure transaction and message signing
-* **Transaction Broadcasting**: Send signed transactions to network
-* **Event Listening**: Monitor smart contract events
-* **Transaction History**: Basic transaction history (extensible)
+### Ethereum Wallet Orchestration
+- Create/import institutional wallets; credentials are encrypted with AES-256-GCM + PBKDF2 and an optional pepper (`wallet.encryption.salt`)
+- Multi-network Web3 layer (Mainnet/Sepolia/Goerli) with cached clients and automatic RPC fallback across comma-separated endpoints
+- Balance, LAB token accounting (6 decimals) and lightweight transaction history that work even when callers skip the address (falls back to persisted/default wallet)
+- Event listener status reporting that reflects the configured `base.domain` and active network
+- Treasury helpers: institutional user stats, spending limits, windows and balances straight from the Diamond contract
 
-### Infrastructure
-* **Health Monitoring**: Health endpoint for monitoring
-* **Maven Deployment**: Maven-ready to be deployed in production
-* **Docker Ready**: Multi-stage build containerization
-* **Spring Boot 2.7**: Modern Java framework
+### Platform & Operations
+- Health checks, structured logging and Spring Boot actuator integrations
+- Docker-ready build, Maven packaging and IaC-friendly configuration files
+- Local-only administrative endpoints guarded by remote address filtering
 
 ## 🏗️ Architecture
 
 ```
-┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
-│   Marketplace   │───▶│   Auth Service  │───▶│   Blockchain    │
-│   Frontend      │    │   (JWT + Keys)  │    │   (Contracts)   │
-└─────────────────┘    └─────────────────┘    └─────────────────┘
++--------------+     +-------------------+     +------------------+
+| Marketplace  | <-->| Auth / Wallet Svc | <-->| Smart Contracts  |
+| Frontend dApp|     | Spring Boot + Web3|     | Diamond + tokens |
++--------------+     +-------------------+     +------------------+
+        ^                     |                           ^
+        |                     v                           |
+    Users & SSO        Treasury & Wallet APIs        Ethereum (L1/Testnet)
 ```
+
 
 ## 🔧 Endpoints
 
 ### Health Check Endpoint
-* `GET /health` - Health check
+- `GET /health` - Health check
 
 ### OIDC Endpoint
-* `GET /auth/.well-known/openid-configuration` - OIDC discovery metadata
+- `GET /auth/.well-known/openid-configuration` - OIDC discovery metadata
 
 ### Authentication Endpoints
-* `GET /auth/jwks` - JSON Web Keys
-* `GET /auth/message` - Wallet challenge message
-* `POST /auth/wallet-auth` - Wallet authentication (doesn't check bookings)
-* `POST /auth/wallet-auth2` - Wallet authentication + authorization (checks bookings)
-* `POST /auth/saml-auth` - SAML2 authentication
-* `POST /auth/saml-auth2` - SAML2 authentication + authorization
+- `GET /auth/jwks` - JSON Web Keys
+- `GET /auth/message` - Wallet challenge message
+- `POST /auth/wallet-auth` - Wallet authentication (no booking validation)
+- `POST /auth/wallet-auth2` - Wallet authentication + authorization (checks reservations)
+- `POST /auth/saml-auth` - SAML2 authentication
+- `POST /auth/saml-auth2` - SAML2 authentication + authorization
 
-### ?? Wallet Endpoints (localhost only)
-* `POST /wallet/create`
-* `POST /wallet/import`
-* `GET /wallet/{address}/balance`
-* `GET /wallet/{address}/transactions`
-* `GET /wallet/listen-events`
-* `GET /wallet/networks`
-* `POST /wallet/switch-network`
+### Wallet Endpoints *(localhost only)*
+- `POST /wallet/create`
+- `POST /wallet/import`
+- `GET /wallet/{address}/balance` *(address optional; falls back to persisted/default wallet)*
+- `GET /wallet/{address}/transactions` *(same fallback logic)*
+- `GET /wallet/listen-events`
+- `GET /wallet/networks`
+- `POST /wallet/switch-network`
 
-### ?? Treasury Endpoints (localhost only)
-* `POST /treasury/reservations` – triple validation + metadata-driven auto-approval/denial
-* `POST /treasury/admin/execute` – institutional admin operations (localhost + wallet ownership)
+### Treasury Endpoints *(localhost only)*
+- `POST /treasury/reservations` – triple validation + metadata-driven auto-approval/denial
+- `POST /treasury/admin/execute` – institutional admin operations (localhost + wallet ownership)
 
 > Reservations are always auto-approved/denied based on lab metadata (available days/hours and maintenance windows).
 >
 > Todas las rutas anteriores están protegidas por un filtro que sólo acepta peticiones cuyo `remoteAddr` sea `127.0.0.1` / `::1`.
+
 ## 🛠️ Local Development
 
 ### Prerequisites
@@ -209,41 +209,49 @@ curl -X POST http://blockchain-services:8080/wallet/create \
 
 ### Critical Environment Variables (Production)
 
-* `WALLET_PRIVATE_KEY` - 🔴 **REQUIRED** Ethereum wallet private key
-* `CONTRACT_ADDRESS` - 🔴 **REQUIRED** Smart contract address
-* `RPC_URL` - 🔴 **REQUIRED** Blockchain RPC endpoint
-* `WALLET_ADDRESS` - 🔴 **REQUIRED** Wallet address
-* `WALLET_ENCRYPTION_SALT` - 🟡 **RECOMMENDED** Salt for wallet encryption
-* `ETHEREUM_MAINNET_RPC_URL` - 🟡 **RECOMMENDED** Mainnet RPC with API key
-* `ETHEREUM_SEPOLIA_RPC_URL` - 🟡 **RECOMMENDED** Sepolia RPC with API key
+- `CONTRACT_ADDRESS` - 🔴 **REQUIRED** Diamond (LAB) contract address
+- `WALLET_ADDRESS` - 🔴 **REQUIRED** Institutional wallet address used as fallback
+- `WALLET_ENCRYPTION_SALT` - 🟡 **RECOMMENDED** Server-side pepper mixed with per-wallet salts
+- `BLOCKCHAIN_NETWORK_ACTIVE` - 🟡 **RECOMMENDED** Default network (`mainnet`/`sepolia`)
+- `ETHEREUM_MAINNET_RPC_URL` - 🟡 **RECOMMENDED** Comma-separated HTTPS RPC endpoints with API keys
+- `ETHEREUM_SEPOLIA_RPC_URL` - 🟡 **RECOMMENDED** Sepolia RPC endpoints
 
 ### Optional Environment Variables
 
-* `SPRING_PROFILES_ACTIVE` - Active profile (default, docker, prod)
-* `JAVA_OPTS` - JVM options
-* `ALLOWED_ORIGINS` - Allowed CORS origins
-* `PRIVATE_KEY_PATH` - Path to JWT private key
-* `PUBLIC_KEY_PATH` - Path to JWT public key
+- `SPRING_PROFILES_ACTIVE` - Active profile (default, docker, prod)
+- `JAVA_OPTS` - JVM options
+- `ALLOWED_ORIGINS` - Allowed CORS origins
+- `PRIVATE_KEY_PATH` - Path to JWT private key
+- `PUBLIC_KEY_PATH` - Path to JWT public key
+- `BASE_DOMAIN` - Base URL used in JWTs and event-listener diagnostics
 
 ### 🆕 Wallet Configuration
 
 ```properties
-# Ethereum Network RPC URLs (use environment variables in production)
-ethereum.mainnet.rpc.url=${ETHEREUM_MAINNET_RPC_URL:https://mainnet.infura.io/v3/YOUR_PROJECT_ID}
-ethereum.sepolia.rpc.url=${ETHEREUM_SEPOLIA_RPC_URL:https://sepolia.infura.io/v3/YOUR_PROJECT_ID}
-ethereum.goerli.rpc.url=${ETHEREUM_GOERLI_RPC_URL:https://goerli.infura.io/v3/YOUR_PROJECT_ID}
+# Active network (used at startup until /wallet/switch-network overrides it)
+blockchain.network.active=${BLOCKCHAIN_NETWORK_ACTIVE:sepolia}
 
-# Wallet Security Settings
-wallet.encryption.salt=DecentraLabs2025
-wallet.default.network=sepolia
-wallet.max.transactions.per.hour=100
-wallet.max.balance.checks.per.minute=60
+# RPC endpoints (comma-separated entries enable automatic fallback)
+ethereum.mainnet.rpc.url=${ETHEREUM_MAINNET_RPC_URL:https://eth.public-rpc.com,https://rpc.flashbots.net}
+ethereum.sepolia.rpc.url=${ETHEREUM_SEPOLIA_RPC_URL:https://rpc.sepolia.org}
+ethereum.goerli.rpc.url=${ETHEREUM_GOERLI_RPC_URL:https://rpc.goerli.mudit.blog}
 
-# Gas Settings
-ethereum.gas.price.default=20
-ethereum.gas.limit.default=21000
-ethereum.gas.limit.contract=100000
+# Wallet defaults
+wallet.address=${WALLET_ADDRESS:}
+wallet.encryption.salt=${WALLET_ENCRYPTION_SALT:DecentraLabsTestSalt}
+base.domain=${BASE_DOMAIN:http://localhost}
 ```
+
+### Configuration Highlights
+
+| Property | Description | Default |
+| --- | --- | --- |
+| `blockchain.network.active` | Initial Web3 network | `sepolia` |
+| `ethereum.<network>.rpc.url` | Comma separated RPC URLs for fallback | Public RPCs |
+| `wallet.address` | Institutional wallet fallback for endpoints | *(empty)* |
+| `wallet.encryption.salt` | Optional pepper mixed with per-wallet salts | `DecentraLabsTestSalt` |
+| `base.domain` | Used in JWT claims and event listener status | `http://localhost` |
+| `contract.address` | Diamond contract queried for LAB/treasury data | *(none)* |
 
 ### Configuration Files
 
@@ -343,6 +351,8 @@ curl -X POST http://localhost:8080/wallet/import \
 ### 3. Check Balance *(localhost only)*
 ```bash
 curl http://localhost:8080/wallet/0x742d35Cc6634C0532925a3b844Bc454e4438f44e/balance
+# or omit the address to use the persisted/default wallet
+curl http://localhost:8080/wallet//balance
 ```
 
 ### 4. Switch Network *(localhost only)*

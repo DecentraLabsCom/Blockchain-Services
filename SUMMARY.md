@@ -1,3 +1,3 @@
 # Table of contents
 
-* [Auth Service](README.md)
+* [Blockchain Services](README.md)
