@@ -1,5 +1,11 @@
 #!/bin/bash
 
+# OPTIONAL: Manual API testing script (via docker exec)
+# This script is provided for developers who want to test wallet APIs via CLI.
+# 
+# Most users should use the web UI instead:
+#   http://localhost:8080/wallet-dashboard
+#
 # Test Wallet Endpoints Locally (via docker exec)
 # This script demonstrates how to test wallet endpoints from your local machine
 # by executing curl commands inside the Docker container.

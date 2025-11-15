@@ -29,9 +29,9 @@ import org.web3j.crypto.Credentials;
  * - Access: Protected by localhost-only endpoints and CORS
  * 
  * Setup flow:
- * 1. Create wallet: POST /wallet/create {"password": "SecurePass123!"}
- * 2. Configure: INSTITUTIONAL_WALLET_ADDRESS=0x... INSTITUTIONAL_WALLET_PASSWORD=SecurePass123!
- * 3. Restart service: Service loads encrypted wallet from persistence
+ * 1. Create/import wallet via dashboard or POST /wallet/create {"password": "..."}
+ * 2. Service encrypts it into persistence and writes wallet-config.properties
+ * 3. Institutional wallet auto-loads (env vars can override if provided)
  * 4. Auto-sign: Service decrypts wallet when needed to sign transactions
  * 
  * @see WalletService for wallet creation and encryption

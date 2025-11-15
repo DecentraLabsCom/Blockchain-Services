@@ -6,6 +6,8 @@ description: >-
 # Blockchain Services
 
 [![Build & Test](https://github.com/DecentraLabsCom/blockchain-services/actions/workflows/tests.yml/badge.svg)](https://github.com/DecentraLabsCom/blockchain-services/actions/workflows/tests.yml)
+[![Security Scan](https://github.com/DecentraLabsCom/blockchain-services/actions/workflows/security.yml/badge.svg)](https://github.com/DecentraLabsCom/blockchain-services/actions/workflows/security.yml)
+[![Release](https://github.com/DecentraLabsCom/blockchain-services/actions/workflows/release.yml/badge.svg)](https://github.com/DecentraLabsCom/blockchain-services/actions/workflows/release.yml)
 
 Comprehensive Spring Boot service for the DecentraLabs ecosystem that combines authentication, authorization, and institutional treasury management with full Ethereum wallet capabilities. While it is designed so that it can be deployed as an independent container, it is recommended to use it with the Lab Gateway. 
 
@@ -99,10 +101,6 @@ This documentation is organized into specialized sections:
 
 > 🔒 Wallet and Treasury endpoints are protected by `LocalhostOnlyFilter` and only accept requests from `127.0.0.1` / `::1`
 
-**For detailed API documentation, see:**
-- [Authentication Service API](AUTH_SERVICE.md#api-reference)
-- [Wallet & Treasury API](WALLET_TREASURY.md#api-reference)
-
 ## 🛠️ Quick Start
 
 ### Prerequisites
@@ -128,26 +126,90 @@ This documentation is organized into specialized sections:
    - OIDC discovery: http://localhost:8080/auth/.well-known/openid-configuration
    - JWKS endpoint: http://localhost:8080/auth/jwks
 
-### Docker Deployment
+### Docker Deployment (Development)
 
-1. **Build Docker image:**
+> ⚠️ **IMPORTANT**: Docker deployment requires RSA keys and wallet configuration that are NOT included in the repository.
+
+1. **Generate RSA keys for JWT signing:**
    ```bash
-   docker build -t blockchain-services:latest .
+   mkdir -p keys
+   openssl genrsa -out keys/private_key.pem 2048
+   openssl rsa -in keys/private_key.pem -pubout -out keys/public_key.pem
+   chmod 400 keys/*.pem
    ```
 
-2. **Run with Docker Compose:**
+2. **Start services:**
    ```bash
    docker-compose up -d
    ```
 
-3. **Test wallet endpoints (from inside container):**
+3. **Configure institutional wallet:**
+   
+   Open http://localhost:8080/wallet-dashboard in your browser
+   
+   - **Create new wallet:** Click "Create Wallet" → Set password → Save credentials
+   - **Import existing:** Click "Import Wallet" → Provide private key + password
+   - The backend automatically encrypts the private key into `/app/data/wallets.json`, stores the address/password in `/app/data/wallet-config.properties`, and hot-reloads the institutional wallet.
+   
+   > 💡 Nothing else to configure unless you want to override the wallet via environment variables (see below).
+
+> 💡 **Testing APIs:** For manual testing, use `test-wallet-local.sh` / `test-wallet-local.ps1`
+
+> 💡 **Reverse Proxy:** If behind OpenResty, comment out `ports: 8080:8080` in `docker-compose.yml`
+
+### 📦 CI/CD & Production Deployment
+
+This project uses a **security-first deployment approach**:
+
+#### GitHub Actions Workflows
+
+| Pipeline | Purpose | Output | Trigger |
+|----------|---------|--------|---------|
+| **Build & Test** | Validates code quality | Test results | Every PR/push |
+| **Security Scan** | Detects vulnerabilities | Security alerts | Weekly + PR |
+| **Release** | Creates versioned artifacts | WAR + checksums | Git tag `v*.*.*` |
+| **Docker Image** | Builds container | Docker image | Manual dispatch |
+
+#### Secrets Management
+
+- ✅ `.env.example` tracked (public template). Copy it to `.env` locally (gitignored) before running anything.
+- 🔐 `keys/*.pem` gitignored (generate per environment)
+- 🔐 Wallet address/password captured through `/wallet-dashboard` → stored encrypted in `/app/data/wallets.json` plus `wallet-config.properties`; override via env/secrets manager only if you need external secret management.
+
+#### Production Deployment Steps
+
+1. **Download release artifacts:**
    ```bash
-   docker exec blockchain-services sh -c 'curl http://localhost:8080/wallet/create \
-     -H "Content-Type: application/json" \
-     -d "{\"password\":\"TestPassword123\"}"'
+   # Get latest release WAR
+   wget https://github.com/DecentraLabsCom/blockchain-services/releases/latest/download/blockchain-services-X.Y.Z.war
+   
+   # Verify integrity
+   sha256sum -c blockchain-services-X.Y.Z.war.sha256
    ```
 
-> ⚠️ **Production Deployment**: Never run in production without proper security configuration. See the [Configuration](#configuration) section below.
+2. **Prepare environment:**
+   ```bash
+   # Generate RSA keys
+   mkdir -p keys
+   openssl genrsa -out keys/private_key.pem 2048
+   openssl rsa -in keys/private_key.pem -pubout -out keys/public_key.pem
+   chmod 400 keys/*.pem
+   
+   # Configure production secrets in AWS/Azure secret manager
+   # INSTITUTIONAL_WALLET_PASSWORD
+   # RPC URLs with API keys
+   ```
+
+3. **Deploy:**
+   ```bash
+   docker-compose up -d
+   ```
+
+4. **Configure institutional wallet:**
+   
+   Access http://your-domain/wallet-dashboard and create/import the wallet.
+
+> ⚠️ **CRITICAL:** Never commit secrets. Use AWS Secrets Manager / Azure Key Vault for production.
 
 ## ⚙️ Configuration
 
@@ -155,7 +217,7 @@ This documentation is organized into specialized sections:
 
 | Variable | Required | Description | Default |
 |----------|----------|-------------|---------|
-| `CONTRACT_ADDRESS` | 🔴 Yes | Diamond contract address | - |
+| `CONTRACT_ADDRESS` | 🔴 Yes | DecentraLabs contract address | - |
 | `WALLET_ADDRESS` | 🔴 Yes | Institutional wallet address | - |
 | `BLOCKCHAIN_NETWORK_ACTIVE` | 🟡 Recommended | Initial network (`mainnet`/`sepolia`) | `sepolia` |
 | `ETHEREUM_MAINNET_RPC_URL` | 🟡 Recommended | Mainnet RPC endpoints (comma-separated) | Public RPCs |
@@ -174,13 +236,34 @@ This documentation is organized into specialized sections:
 
 ### Configuration Files
 
+**Repository structure:**
 ```
-config/
-├── application.properties    # Main configuration
-└── keys/
-    ├── private_key.pem       # JWT signing key
-    └── public_key.pem        # JWT verification key
+.env.example                  # Environment template (tracked in git)
+.env                          # Local config (gitignored)
+data/
+└── wallet-config.properties  # Auto-generated wallet address/password (gitignored)
+keys/                         # RSA keys (gitignored)
+├── private_key.pem           # JWT signing key
+└── public_key.pem            # JWT verification key
+src/main/resources/
+└── application.properties    # Compiled into WAR
 ```
+
+**Docker container structure:**
+```
+/app/
+├── blockchain-services.war   # Application
+├── config/
+│   └── keys/                 # Mounted from ./keys
+│       ├── private_key.pem
+│       └── public_key.pem
+├── data/                     # Persistent volume
+│   └── wallets.json          # Encrypted wallets
+└── logs/                     # Mounted from ./logs
+```
+
+> 💡 Configuration priority: Environment variables > `.env` (local file) > application.properties.
+> For the institutional wallet specifically: env vars / secrets manager > `wallet-config.properties` (auto-generated) > persisted wallet metadata.
 
 ### Example Docker Run
 
@@ -243,8 +326,3 @@ Health endpoint available at `/health`:
 ## 📄 License
 
 See [LICENSE](LICENSE) file for details.
-
-## 🔗 Related Documentation
-
-- [Authentication Service Details](AUTH_SERVICE.md)
-- [Wallet & Treasury Details](WALLET_TREASURY.md)

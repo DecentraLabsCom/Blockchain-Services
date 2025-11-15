@@ -1,0 +1,105 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+
+jobs:
+  build-release:
+    name: Build & Publish Release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      
+      - name: Set up Temurin JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+          cache: maven
+      
+      - name: Extract version from tag
+        id: version
+        run: echo "VERSION=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
+      
+      - name: Build & Test
+        run: mvn -B -ntp verify
+      
+      - name: Generate checksums
+        run: |
+          cd target
+          sha256sum blockchain-services-1.0-SNAPSHOT.war > blockchain-services-${{ steps.version.outputs.VERSION }}.war.sha256
+          mv blockchain-services-1.0-SNAPSHOT.war blockchain-services-${{ steps.version.outputs.VERSION }}.war
+      
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            target/blockchain-services-${{ steps.version.outputs.VERSION }}.war
+            target/blockchain-services-${{ steps.version.outputs.VERSION }}.war.sha256
+          body: |
+            ## 🚀 Release ${{ steps.version.outputs.VERSION }}
+            
+            ### ⚠️ Deployment Requirements
+            
+            This WAR requires external configuration before deployment:
+            
+            1. **Environment Configuration**
+               - Copy `.env.example` to `.env`
+               - Configure required variables (contract address, RPC URLs, feature toggles)
+
+            2. **Security Keys**
+               - Generate RSA key pair for JWT signing
+               - Place in `config/keys/` directory with restrictive permissions (400)
+
+            3. **Institutional Wallet**
+               - Start the service and create/import the wallet via `/wallet-dashboard`
+               - The app encrypts it into `/app/data/wallets.json` and stores credentials in `wallet-config.properties`
+               - Only set `INSTITUTIONAL_WALLET_*` env vars if you prefer overriding via a secrets manager
+
+            4. **Production Secrets**
+               - Use AWS Secrets Manager, Azure Key Vault, or similar for production
+               - Never commit secrets to version control
+            
+            **DO NOT** deploy this WAR without completing all security requirements above.
+            
+            ### 📦 Artifacts
+            
+            - `blockchain-services-${{ steps.version.outputs.VERSION }}.war` - Application package
+            - `blockchain-services-${{ steps.version.outputs.VERSION }}.war.sha256` - SHA256 checksum
+            
+            ### 🔍 Verify Integrity
+            
+            ```bash
+            sha256sum -c blockchain-services-${{ steps.version.outputs.VERSION }}.war.sha256
+            ```
+            
+            ### 🐳 Docker Deployment
+            
+            ```bash
+            # 1. Prepare configuration
+            cp .env.example .env
+            # Edit .env with your values (wallet credentials are handled via /wallet-dashboard)
+            
+            # 2. Build image with this release
+            docker build -t blockchain-services:${{ steps.version.outputs.VERSION }} .
+            
+            # 3. Deploy with docker-compose
+            docker-compose up -d
+            ```
+            
+            ### 📚 Documentation
+            
+            - [Authentication Service](https://github.com/DecentraLabsCom/blockchain-services/blob/main/AUTH_SERVICE.md)
+            - [Wallet & Treasury](https://github.com/DecentraLabsCom/blockchain-services/blob/main/WALLET_TREASURY.md)
+            - [Security Configuration](https://github.com/DecentraLabsCom/blockchain-services/blob/main/README.md#-security)
+          draft: false
+          prerelease: false
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

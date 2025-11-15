@@ -67,18 +67,17 @@ USER appuser
 # Only set these environment variables if you need to override the defaults
 
 # INSTITUTIONAL WALLET CONFIGURATION:
-# The institutional wallet is used for ALL automated transactions.
-# 
-# SETUP (one-time):
-# 1. Start container: docker-compose up -d
-# 2. Create wallet: curl -X POST http://localhost:8080/wallet/create -d '{"password":"YourPassword"}'
-# 3. Configure environment variables with the returned address and your password
-# 4. Restart container: docker-compose restart
+# The institutional wallet (auto-created/imported via /wallet-dashboard) is used
+# for ALL automated transactions. By default, the container:
+#   - Encrypts the wallet into /app/data/wallets.json
+#   - Stores address/password in /app/data/wallet-config.properties
+#   - Reloads the wallet without restarting
+# Set the env vars below only if you need to override that auto-config with an
+# external secret manager or CI pipeline.
 #
 # SECURITY:
 # - Wallet private key is AES-256-GCM encrypted in /app/data/wallets.json (never in plain text)
-# - Only the password is in environment variables (rotatable)
-# - Use AWS Secrets Manager / Azure Key Vault for production
+# - Passwords stored in env vars or wallet-config.properties should come from a secret manager
 # - Never commit the password to version control
 ENV INSTITUTIONAL_WALLET_ADDRESS="" \
     INSTITUTIONAL_WALLET_PASSWORD=""
@@ -91,7 +90,7 @@ ENV INSTITUTIONAL_WALLET_ADDRESS="" \
 # - PRIVATE_KEY_PATH: Path to JWT private key (default: /app/config/keys/private_key.pem)
 # - PUBLIC_KEY_PATH: Path to JWT public key (default: /app/config/keys/public_key.pem)
 
-# Example Docker run command:
+# Example Docker run command (overrides auto-config via env vars):
 # docker run -d \
 #   -e INSTITUTIONAL_WALLET_ADDRESS=0xYourWalletAddress \
 #   -e INSTITUTIONAL_WALLET_PASSWORD=YourSecurePassword \

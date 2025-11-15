@@ -1,5 +1,14 @@
-# Docker Compose Example for Blockchain Services
-# Copy this file to docker-compose.yml and configure your environment variables
+# Docker Compose configuration for Blockchain Services
+# 
+# Quick Start:
+# 1. Generate RSA keys (see README.md)
+# 2. Copy .env.example -> .env (gitignored) with default values
+# 3. Run: docker-compose up -d
+# 4. Open /wallet-dashboard and create/import the institutional wallet.
+#    The service auto-stores the encrypted key + credentials (no restart needed).
+#
+# Note: If deploying behind a reverse proxy (e.g., OpenResty), 
+#       comment out the ports mapping to avoid conflicts.
 
 version: '3.8'
 
@@ -9,7 +18,7 @@ services:
     image: blockchain-services:latest
     container_name: blockchain-services
     
-    # SECURITY: Load secrets from .env file (never commit .env to git!)
+    # Loads environment configuration from your local .env (gitignored).
     env_file:
       - .env
     
@@ -30,6 +39,7 @@ services:
       # Persistent storage for encrypted wallets (survives container restart)
       - wallet-data:/app/data
     
+    # Port mapping (comment out if using behind a reverse proxy like OpenResty)
     ports:
       - "8080:8080"
     
