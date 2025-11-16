@@ -36,6 +36,8 @@ class InstitutionalWalletServiceTest {
         institutionalWalletService = new InstitutionalWalletService(walletService, persistenceService);
         ReflectionTestUtils.setField(institutionalWalletService, "institutionalWalletAddress", CREDENTIALS.getAddress());
         ReflectionTestUtils.setField(institutionalWalletService, "institutionalWalletPassword", "secret");
+        ReflectionTestUtils.setField(institutionalWalletService, "walletEncryptionKeyFile", "./test-data/.wallet-encryption-key");
+        ReflectionTestUtils.setField(institutionalWalletService, "walletConfigEncryptionKey", "test-encryption-key");
     }
 
     @Test

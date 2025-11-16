@@ -222,8 +222,11 @@ This project uses a **security-first deployment approach**:
    openssl genrsa -out keys/private_key.pem 2048
    openssl rsa -in keys/private_key.pem -pubout -out keys/public_key.pem
    chmod 400 keys/*.pem
+
+   # Copy .env file and edit it in case you need it
+   cp .env.example .env
    
-   # Configure production secrets in AWS/Azure secret manager
+   # For improved security, configure production secrets in AWS/Azure secret manager
    # INSTITUTIONAL_WALLET_PASSWORD
    # RPC URLs with API keys
    ```
