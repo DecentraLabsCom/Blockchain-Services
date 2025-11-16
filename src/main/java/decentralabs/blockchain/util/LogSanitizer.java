@@ -41,10 +41,15 @@ public final class LogSanitizer {
         if (sanitized.isEmpty()) {
             return "";
         }
-        if (sanitized.length() <= 10) {
-            return sanitized;
+        if (sanitized.length() == 1) {
+            return "*";
         }
-        return sanitized.substring(0, 6) + "..." + sanitized.substring(sanitized.length() - 4);
+        if (sanitized.length() <= 4) {
+            return sanitized.charAt(0) + "***";
+        }
+        int prefixLength = Math.min(6, sanitized.length() / 2);
+        int suffixLength = Math.min(4, Math.max(1, sanitized.length() - prefixLength));
+        return sanitized.substring(0, prefixLength) + "..." + sanitized.substring(sanitized.length() - suffixLength);
     }
 
     /**

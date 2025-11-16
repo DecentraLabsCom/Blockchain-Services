@@ -69,7 +69,8 @@ public class InstitutionalReservationService {
      * @return Result map with transaction details
      */
     public Map<String, Object> processReservation(InstitutionalReservationRequest request) {
-        log.info("Processing institutional reservation for user: {} from institution: {}",
+        log.info("Processing institutional reservation request");
+        log.debug("Reservation context: user={} institution={}",
                 LogSanitizer.maskIdentifier(request.getUserId()),
                 LogSanitizer.maskIdentifier(request.getInstitutionId()));
         
@@ -92,7 +93,8 @@ public class InstitutionalReservationService {
             )
         );
 
-        log.info("Reservation processed successfully. Transaction: {}", LogSanitizer.maskIdentifier(transactionHash));
+        log.info("Reservation processed successfully.");
+        log.debug("Reservation transaction hash: {}", LogSanitizer.maskIdentifier(transactionHash));
         
         return Map.of(
                 "success", true,
@@ -146,7 +148,8 @@ public class InstitutionalReservationService {
                 throw new SecurityException("Request institutionId does not match SAML affiliation");
             }
             
-            log.info("✅ 3-Layer validation passed for user: {} from institution: {}",
+            log.info("✅ 3-Layer validation passed.");
+            log.debug("Validation context: user={} institution={}",
                     LogSanitizer.maskIdentifier(samlUserId),
                     LogSanitizer.maskIdentifier(samlAffiliation));
             
@@ -179,8 +182,8 @@ public class InstitutionalReservationService {
     
     private Map<String, String> validateSAMLAssertion(String samlAssertion) throws Exception {
         Map<String, String> attributes = samlValidationService.validateSamlAssertionWithSignature(samlAssertion);
-        log.info("✅ Layer 2: SAML assertion validated WITH SIGNATURE for user: {}",
-                LogSanitizer.maskIdentifier(attributes.get("userid")));
+        log.info("✅ Layer 2: SAML assertion validated WITH SIGNATURE.");
+        log.debug("Layer 2 context user: {}", LogSanitizer.maskIdentifier(attributes.get("userid")));
         return attributes;
     }
     
@@ -203,7 +206,8 @@ public class InstitutionalReservationService {
             BigInteger endEpoch = BigInteger.valueOf(request.getEndTime().toEpochSecond(ZoneOffset.UTC));
             String puc = request.getUserId(); // Using SAML user identifier as PUC
 
-            log.info("Executing blockchain transaction for lab: {} with institutional wallet: {}",
+            log.info("Executing blockchain transaction for reservation.");
+            log.debug("Blockchain transaction context lab={} wallet={}",
                     LogSanitizer.maskIdentifier(String.valueOf(request.getLabId())),
                     LogSanitizer.maskIdentifier(credentials.getAddress()));
 
@@ -215,7 +219,8 @@ public class InstitutionalReservationService {
                 endEpoch
             ).send();
 
-            log.info("Blockchain transaction executed: {}", LogSanitizer.maskIdentifier(receipt.getTransactionHash()));
+            log.info("Blockchain transaction executed.");
+            log.debug("Blockchain transaction hash: {}", LogSanitizer.maskIdentifier(receipt.getTransactionHash()));
             return receipt.getTransactionHash();
             
         } catch (Exception e) {

@@ -38,7 +38,8 @@ public class RateLimitService {
         boolean allowed = bucket.tryConsume(1);
         
         if (!allowed) {
-            log.warn("Transaction rate limit exceeded for wallet: {}", LogSanitizer.maskIdentifier(walletAddress));
+            log.warn("Transaction rate limit exceeded for wallet");
+            log.debug("Transaction rate limit exceeded for wallet: {}", LogSanitizer.maskIdentifier(walletAddress));
         }
         
         return allowed;
@@ -54,7 +55,8 @@ public class RateLimitService {
         boolean allowed = bucket.tryConsume(1);
         
         if (!allowed) {
-            log.warn("Balance check rate limit exceeded for wallet: {}", LogSanitizer.maskIdentifier(walletAddress));
+            log.warn("Balance check rate limit exceeded for wallet");
+            log.debug("Balance check rate limit exceeded for wallet: {}", LogSanitizer.maskIdentifier(walletAddress));
         }
         
         return allowed;
