@@ -202,7 +202,7 @@ This project uses a **security-first deployment approach**:
 
 - ✅ `.env.example` tracked (public template). Copy it to `.env` locally (gitignored) before running anything.
 - 🔐 `keys/*.pem` gitignored (generate per environment)
-- 🔐 Wallet address/password captured through `/wallet-dashboard` → private key encrypted into `/app/data/wallets.json`, password stored as `institutional.wallet.password.encrypted` inside `wallet-config.properties`. Persist `wallet.config.encryption-key` separately (env/secret manager) so restarts can decrypt the password. Provide env overrides only if you need full external secret management.
+- 🔐 Wallet address/password captured through `/wallet-dashboard` → private key encrypted into `/app/data/wallets.json`, password stored as `institutional.wallet.password.encrypted` inside `wallet-config.properties`. Persist `wallet.config.encryption-key` separately (env/secrets manager) or let the service auto-generate it into `/app/data/.wallet-encryption-key` (configurable via `wallet.config.encryption-key-file`). Just ensure that `/app/data` is a persistent volume so restarts can decrypt the password; provide env overrides only if you need full external secret management.
 
 #### Production Deployment Steps
 

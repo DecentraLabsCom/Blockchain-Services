@@ -13,7 +13,6 @@ import java.security.GeneralSecurityException;
 import java.security.MessageDigest;
 import java.security.SecureRandom;
 import java.util.Base64;
-import java.util.List;
 import javax.crypto.Cipher;
 import javax.crypto.spec.GCMParameterSpec;
 import javax.crypto.spec.SecretKeySpec;
@@ -95,8 +94,8 @@ public class InstitutionalWalletService {
     @Value("${wallet.config.encryption-key:}")
     private String walletConfigEncryptionKey;
 
-    @Value("${wallet.env.file:.env}")
-    private String envFilePath;
+    @Value("${wallet.config.encryption-key-file:/app/data/.wallet-encryption-key}")
+    private String walletEncryptionKeyFile;
     
     /**
      * Cached credentials to avoid decrypting on every transaction
@@ -118,6 +117,8 @@ public class InstitutionalWalletService {
      */
     @PostConstruct
     public void initializeInstitutionalWallet() {
+        loadEncryptionKeyFromFileIfMissing();
+
         // Try to load from config file if environment variables not set
         if ((institutionalWalletAddress == null || institutionalWalletAddress.isBlank()) ||
             (institutionalWalletPassword == null || institutionalWalletPassword.isBlank())) {
@@ -202,7 +203,7 @@ public class InstitutionalWalletService {
     }
     
     /**
-     * Generates a secure encryption key and writes it to the .env file.
+     * Generates a secure encryption key and writes it to the configured key file.
      * This key is used to encrypt the wallet password in wallet-config.properties.
      * 
      * @return the generated encryption key
@@ -214,68 +215,61 @@ public class InstitutionalWalletService {
             SECURE_RANDOM.nextBytes(keyBytes);
             String encryptionKey = Base64.getEncoder().encodeToString(keyBytes);
             
-            // Update the .env file
-            Path envPath = Paths.get(envFilePath);
-            
-            if (!Files.exists(envPath)) {
-                log.warn(".env file not found at {}, encryption key will not be persisted to file", envFilePath);
-                return encryptionKey;
+            Path keyPath = Paths.get(walletEncryptionKeyFile);
+            if (keyPath.getParent() != null) {
+                Files.createDirectories(keyPath.getParent());
             }
-            
-            List<String> lines = Files.readAllLines(envPath);
-            boolean keyFound = false;
-            
-            // Look for existing WALLET_CONFIG_ENCRYPTION_KEY line
-            for (int i = 0; i < lines.size(); i++) {
-                String line = lines.get(i).trim();
-                if (line.startsWith("WALLET_CONFIG_ENCRYPTION_KEY=")) {
-                    // Update existing line if empty
-                    String currentValue = line.substring("WALLET_CONFIG_ENCRYPTION_KEY=".length()).trim();
-                    if (currentValue.isEmpty()) {
-                        lines.set(i, "WALLET_CONFIG_ENCRYPTION_KEY=" + encryptionKey);
-                        log.info("Updated existing empty WALLET_CONFIG_ENCRYPTION_KEY in .env file");
-                    } else {
-                        log.info("WALLET_CONFIG_ENCRYPTION_KEY already set in .env file, keeping existing value");
-                        return currentValue; // Use existing key
-                    }
-                    keyFound = true;
-                    break;
+
+            Files.writeString(
+                keyPath,
+                encryptionKey,
+                StandardCharsets.UTF_8,
+                StandardOpenOption.CREATE,
+                StandardOpenOption.TRUNCATE_EXISTING,
+                StandardOpenOption.WRITE
+            );
+
+            try {
+                if (!System.getProperty("os.name").toLowerCase().contains("win")) {
+                    java.util.Set<java.nio.file.attribute.PosixFilePermission> perms = java.util.Set.of(
+                        java.nio.file.attribute.PosixFilePermission.OWNER_READ,
+                        java.nio.file.attribute.PosixFilePermission.OWNER_WRITE
+                    );
+                    Files.setPosixFilePermissions(keyPath, perms);
                 }
+            } catch (UnsupportedOperationException e) {
+                // Windows - ignore
             }
-            
-            // If not found, add it after the WALLET_FILE_PATH line
-            if (!keyFound) {
-                for (int i = 0; i < lines.size(); i++) {
-                    if (lines.get(i).trim().startsWith("WALLET_FILE_PATH=")) {
-                        lines.add(i + 1, "");
-                        lines.add(i + 2, "# Auto-generated encryption key for wallet password storage");
-                        lines.add(i + 3, "WALLET_CONFIG_ENCRYPTION_KEY=" + encryptionKey);
-                        log.info("Added WALLET_CONFIG_ENCRYPTION_KEY to .env file");
-                        keyFound = true;
-                        break;
-                    }
-                }
-                
-                // If WALLET_FILE_PATH not found, append at the end
-                if (!keyFound) {
-                    lines.add("");
-                    lines.add("# Auto-generated encryption key for wallet password storage");
-                    lines.add("WALLET_CONFIG_ENCRYPTION_KEY=" + encryptionKey);
-                    log.info("Appended WALLET_CONFIG_ENCRYPTION_KEY to end of .env file");
-                }
-            }
-            
-            // Write back to file
-            Files.write(envPath, lines, StandardCharsets.UTF_8, StandardOpenOption.WRITE, StandardOpenOption.TRUNCATE_EXISTING);
-            
-            // Update the instance variable so it's available immediately
+
             walletConfigEncryptionKey = encryptionKey;
-            
+            log.info("Persisted wallet encryption key to {}", walletEncryptionKeyFile);
             return encryptionKey;
-            
+
         } catch (IOException e) {
-            log.error("Failed to write encryption key to .env file: {}", envFilePath, e);
-            throw new IllegalStateException("Unable to persist encryption key to .env file", e);
+            log.error("Failed to persist encryption key to {}: {}", walletEncryptionKeyFile, e.getMessage(), e);
+            throw new IllegalStateException("Unable to persist encryption key to file", e);
+        }
+    }
+
+    private void loadEncryptionKeyFromFileIfMissing() {
+        if (hasEncryptionKey()) {
+            return;
+        }
+        try {
+            Path keyPath = Paths.get(walletEncryptionKeyFile);
+            if (!Files.exists(keyPath)) {
+                log.debug("Encryption key file does not exist: {}", walletEncryptionKeyFile);
+                return;
+            }
+            String key = Files.readString(keyPath, StandardCharsets.UTF_8).trim();
+            if (key.isBlank()) {
+                log.warn("Encryption key file {} is empty; ignoring", walletEncryptionKeyFile);
+                return;
+            }
+            walletConfigEncryptionKey = key;
+            log.info("Loaded wallet encryption key from {}", walletEncryptionKeyFile);
+        } catch (IOException e) {
+            log.error("Failed to read wallet encryption key file {}: {}", walletEncryptionKeyFile, e.getMessage(), e);
         }
     }
 
@@ -356,6 +350,12 @@ public class InstitutionalWalletService {
                 throw new IllegalStateException(
                     "Institutional wallet address not configured. " +
                     "Set institutional.wallet.address in application.properties."
+                );
+            }
+            if (institutionalWalletPassword == null || institutionalWalletPassword.isBlank()) {
+                throw new IllegalStateException(
+                    "Institutional wallet password not available. " +
+                    "Ensure wallet.config.encryption-key is set and wallet-config.properties contains the encrypted password."
                 );
             }
             
