@@ -70,9 +70,6 @@ public class InstitutionalReservationService {
      */
     public Map<String, Object> processReservation(InstitutionalReservationRequest request) {
         log.info("Processing institutional reservation request");
-        log.debug("Reservation context: user={} institution={}",
-                LogSanitizer.maskIdentifier(request.getUserId()),
-                LogSanitizer.maskIdentifier(request.getInstitutionId()));
         
         // Step 1-3: 3-Layer Validation (same as SAML auth)
         validateUserAuthenticationThreeLayer(request);
@@ -94,7 +91,6 @@ public class InstitutionalReservationService {
         );
 
         log.info("Reservation processed successfully.");
-        log.debug("Reservation transaction hash: {}", LogSanitizer.maskIdentifier(transactionHash));
         
         return Map.of(
                 "success", true,
@@ -149,9 +145,6 @@ public class InstitutionalReservationService {
             }
             
             log.info("✅ 3-Layer validation passed.");
-            log.debug("Validation context: user={} institution={}",
-                    LogSanitizer.maskIdentifier(samlUserId),
-                    LogSanitizer.maskIdentifier(samlAffiliation));
             
         } catch (Exception e) {
             log.error("Authentication validation failed", e);
@@ -183,7 +176,6 @@ public class InstitutionalReservationService {
     private Map<String, String> validateSAMLAssertion(String samlAssertion) throws Exception {
         Map<String, String> attributes = samlValidationService.validateSamlAssertionWithSignature(samlAssertion);
         log.info("✅ Layer 2: SAML assertion validated WITH SIGNATURE.");
-        log.debug("Layer 2 context user: {}", LogSanitizer.maskIdentifier(attributes.get("userid")));
         return attributes;
     }
     
@@ -207,9 +199,6 @@ public class InstitutionalReservationService {
             String puc = request.getUserId(); // Using SAML user identifier as PUC
 
             log.info("Executing blockchain transaction for reservation.");
-            log.debug("Blockchain transaction context lab={} wallet={}",
-                    LogSanitizer.maskIdentifier(String.valueOf(request.getLabId())),
-                    LogSanitizer.maskIdentifier(credentials.getAddress()));
 
             TransactionReceipt receipt = contract.institutionalReservationRequest(
                 credentials.getAddress(),  // Use actual wallet address from credentials
@@ -220,7 +209,6 @@ public class InstitutionalReservationService {
             ).send();
 
             log.info("Blockchain transaction executed.");
-            log.debug("Blockchain transaction hash: {}", LogSanitizer.maskIdentifier(receipt.getTransactionHash()));
             return receipt.getTransactionHash();
             
         } catch (Exception e) {

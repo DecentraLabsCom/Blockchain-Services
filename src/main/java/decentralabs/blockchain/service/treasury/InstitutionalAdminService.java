@@ -119,9 +119,6 @@ public class InstitutionalAdminService {
 
         if (!isAuthorized) {
             log.warn("Administrative access attempt with unauthorized wallet");
-            log.debug("Unauthorized wallet: {} (expected: {})",
-                LogSanitizer.maskIdentifier(adminWalletAddress),
-                LogSanitizer.maskIdentifier(institutionalAddress));
         }
 
         return isAuthorized;
@@ -191,7 +188,6 @@ public class InstitutionalAdminService {
 
     private InstitutionalAdminResponse revokeBackend(Credentials credentials, InstitutionalAdminRequest request) throws Exception {
         log.info("Revoking backend access request received.");
-        log.debug("Revocation requested by {}", LogSanitizer.maskIdentifier(request.getAdminWalletAddress()));
         Function function = new Function(
             "revokeBackend",
             Collections.emptyList(),
@@ -302,7 +298,6 @@ public class InstitutionalAdminService {
 
     private InstitutionalAdminResponse resetSpendingPeriod(Credentials credentials, InstitutionalAdminRequest request) throws Exception {
         log.info("Resetting spending period request received.");
-        log.debug("Spending period reset requested by {}", LogSanitizer.maskIdentifier(request.getAdminWalletAddress()));
         Function function = new Function(
             "resetInstitutionalSpendingPeriod",
             Collections.emptyList(),

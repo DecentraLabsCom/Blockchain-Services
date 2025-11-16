@@ -303,7 +303,7 @@ public class WalletService {
 
         } catch (Exception e) {
             log.error("Error getting balance");
-            log.debug("Error getting balance for address: {}", LogSanitizer.maskIdentifier(address), e);
+            log.debug("Error getting balance (context omitted for safety)", e);
             return BalanceResponse.error("Failed to get balance: " + e.getMessage());
         }
     }
@@ -429,9 +429,7 @@ public class WalletService {
             
             if (response.hasError()) {
                 log.warn("Error calling getInstitutionalSpendingPeriod()");
-                log.debug("getInstitutionalSpendingPeriod() error for {}: {}", 
-                    LogSanitizer.maskIdentifier(providerAddress),
-                    LogSanitizer.sanitize(response.getError().getMessage()));
+                log.debug("getInstitutionalSpendingPeriod() RPC error (details omitted)");
                 return null;
             }
             
@@ -439,8 +437,7 @@ public class WalletService {
             List<Type> decoded = FunctionReturnDecoder.decode(response.getValue(), function.getOutputParameters());
             if (!decoded.isEmpty()) {
                 BigInteger period = (BigInteger) decoded.get(0).getValue();
-                log.debug("Institutional spending period for {}: {} seconds", 
-                    LogSanitizer.maskIdentifier(providerAddress), period);
+                log.debug("Institutional spending period retrieved");
                 return period;
             }
             
@@ -479,9 +476,7 @@ public class WalletService {
             
             if (response.hasError()) {
                 log.warn("Error calling getInstitutionalTreasuryBalance()");
-                log.debug("getInstitutionalTreasuryBalance() error for {}: {}", 
-                    LogSanitizer.maskIdentifier(providerAddress),
-                    LogSanitizer.sanitize(response.getError().getMessage()));
+                log.debug("getInstitutionalTreasuryBalance() RPC error (details omitted)");
                 return null;
             }
             
@@ -489,8 +484,7 @@ public class WalletService {
             List<Type> decoded = FunctionReturnDecoder.decode(response.getValue(), function.getOutputParameters());
             if (!decoded.isEmpty()) {
                 BigInteger balance = (BigInteger) decoded.get(0).getValue();
-                log.debug("Institutional treasury balance for {}: {}", 
-                    LogSanitizer.maskIdentifier(providerAddress), balance);
+                log.debug("Institutional treasury balance retrieved");
                 return balance;
             }
             
@@ -533,10 +527,7 @@ public class WalletService {
 
             if (response.hasError()) {
                 log.warn("Error calling getInstitutionalUserFinancialStats()");
-                log.debug("getInstitutionalUserFinancialStats() error for provider {} / puc {}: {}", 
-                    LogSanitizer.maskIdentifier(providerAddress),
-                    LogSanitizer.maskIdentifier(puc),
-                    LogSanitizer.sanitize(response.getError().getMessage()));
+                log.debug("getInstitutionalUserFinancialStats() RPC error (details omitted)");
                 return Optional.empty();
             }
 
@@ -558,9 +549,7 @@ public class WalletService {
             return Optional.of(stats);
         } catch (Exception e) {
             log.error("Error getting institutional user stats");
-            log.debug("Institutional user stats error for provider {} / puc {}", 
-                LogSanitizer.maskIdentifier(providerAddress),
-                LogSanitizer.maskIdentifier(puc), e);
+            log.debug("Institutional user stats error (context omitted)", e);
             return Optional.empty();
         }
     }
@@ -591,9 +580,7 @@ public class WalletService {
             
             if (response.hasError()) {
                 log.warn("Error calling balanceOf()");
-                log.debug("balanceOf() failed on token {}: {}", 
-                    LogSanitizer.maskIdentifier(tokenAddress), 
-                    LogSanitizer.sanitize(response.getError().getMessage()));
+                log.debug("balanceOf() RPC error (details omitted)");
                 return BigInteger.ZERO;
             }
             
@@ -606,7 +593,7 @@ public class WalletService {
             return BigInteger.ZERO;
         } catch (Exception e) {
             log.error("Error getting ERC20 balance");
-            log.debug("ERC20 balance lookup failed for token {}", LogSanitizer.maskIdentifier(tokenAddress), e);
+            log.debug("ERC20 balance lookup failed (context omitted)", e);
             return BigInteger.ZERO;
         }
     }
@@ -636,7 +623,7 @@ public class WalletService {
 
         } catch (Exception e) {
             log.error("Error getting transaction history");
-            log.debug("Transaction history lookup failed for {}", LogSanitizer.maskIdentifier(address), e);
+            log.debug("Transaction history lookup failed (context omitted)", e);
             return TransactionHistoryResponse.error("Failed to get transaction history: " + e.getMessage());
         }
     }

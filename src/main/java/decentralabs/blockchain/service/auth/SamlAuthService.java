@@ -153,11 +153,6 @@ public class SamlAuthService {
      */
     private void auditSAMLAuthentication(String userid, String affiliation, String labId, String reservationKey) {
         log.info("SAML Authentication attempt recorded");
-        log.debug("SAML Authentication: userid={} affiliation={} labId={} reservationKey={}",
-            LogSanitizer.maskIdentifier(userid),
-            LogSanitizer.maskIdentifier(affiliation),
-            LogSanitizer.maskIdentifier(labId),
-            LogSanitizer.maskIdentifier(reservationKey));
     }
 
     private void enforceBookingInfoEntitlement(Map<String, Object> marketplaceClaims, String userId) {
@@ -172,9 +167,6 @@ public class SamlAuthService {
             return;
         }
         log.warn("Booking info request denied - missing required scope");
-        log.debug("Booking info request denied for {} - missing scope {}", 
-            LogSanitizer.maskIdentifier(userId), 
-            LogSanitizer.sanitize(requiredBookingScope));
         throw new SecurityException("Marketplace token missing required scope '" + requiredBookingScope + "' for booking info");
     }
 

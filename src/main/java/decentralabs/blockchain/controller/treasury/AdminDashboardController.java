@@ -234,7 +234,6 @@ public class AdminDashboardController {
 
         if (!allowed) {
             log.warn("Blocked administrative dashboard access from non-local address.");
-            log.debug("Blocked admin dashboard access from address: {}", LogSanitizer.sanitize(candidate));
         }
 
         return allowed;
@@ -289,7 +288,6 @@ public class AdminDashboardController {
                 balances.put(networkId, networkBalance);
             } catch (Exception e) {
                 log.warn("Failed to get network balance");
-                log.debug("Failed to get {} balance: {}", LogSanitizer.sanitize(networkId), LogSanitizer.sanitize(e.getMessage()), e);
                 balances.put(networkId, Map.of("error", "Failed to retrieve balance"));
             }
         }
