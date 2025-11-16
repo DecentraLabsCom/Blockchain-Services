@@ -86,9 +86,12 @@ public class SamlAuthService {
         // Audit log
         auditSAMLAuthentication();
         
+        boolean bookingInfoRequested = includeBookingInfo;
+        // Always invoke enforcement helper so request flags cannot bypass checks
+        enforceBookingInfoAccess(bookingInfoRequested, marketplaceJWTClaims, jwtUserId);
+
         // Generate JWT token
-        if (includeBookingInfo) {
-            enforceBookingInfoEntitlement(marketplaceJWTClaims, jwtUserId);
+        if (bookingInfoRequested) {
             // Get booking information from blockchain (SAML users)
             String institutionalProviderWallet = (String) marketplaceJWTClaims.get("institutionalProviderWallet");
             String puc = (String) marketplaceJWTClaims.get("puc");
@@ -168,6 +171,17 @@ public class SamlAuthService {
         }
         log.warn("Booking info request denied - missing required scope");
         throw new SecurityException("Marketplace token missing required scope '" + requiredBookingScope + "' for booking info");
+    }
+
+    private void enforceBookingInfoAccess(
+        boolean bookingInfoRequested,
+        Map<String, Object> marketplaceClaims,
+        String userId
+    ) {
+        if (!bookingInfoRequested) {
+            return;
+        }
+        enforceBookingInfoEntitlement(marketplaceClaims, userId);
     }
 
     private boolean scopeContainsRequiredScope(Object scopeClaim) {
