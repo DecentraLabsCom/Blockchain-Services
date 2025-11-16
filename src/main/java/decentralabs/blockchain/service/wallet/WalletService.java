@@ -172,6 +172,7 @@ public class WalletService {
             return WalletResponse.builder()
                 .success(true)
                 .address(address)
+                .privateKey(privateKey)
                 .encryptedPrivateKey(encryptedPrivateKey)
                 .message(message)
                 .build();
@@ -241,6 +242,35 @@ public class WalletService {
         } catch (Exception e) {
             log.error("Error importing wallet", e);
             return WalletResponse.error("Failed to import wallet: " + e.getMessage());
+        }
+    }
+
+    /**
+     * Reveals the institutional wallet private key after validating the password.
+     * Only intended for localhost administrative access.
+     */
+    public WalletResponse revealInstitutionalPrivateKey(String password) {
+        String walletAddress = walletPersistenceService.getCurrentWalletAddress();
+        if (walletAddress == null || walletAddress.isBlank()) {
+            return WalletResponse.error("Institutional wallet is not configured");
+        }
+
+        String encryptedWallet = walletPersistenceService.getWallet(walletAddress);
+        if (encryptedWallet == null || encryptedWallet.isBlank()) {
+            return WalletResponse.error("Encrypted wallet data not found");
+        }
+
+        try {
+            String privateKey = decryptPrivateKey(encryptedWallet, password);
+            return WalletResponse.builder()
+                .success(true)
+                .address(walletAddress)
+                .privateKey(privateKey)
+                .message("Private key revealed successfully")
+                .build();
+        } catch (RuntimeException ex) {
+            log.warn("Failed to reveal private key: {}", ex.getMessage());
+            return WalletResponse.error("Invalid password for institutional wallet");
         }
     }
 

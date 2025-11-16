@@ -140,6 +140,77 @@ function showInfoModal(title, content, isSuccess = true) {
     });
 }
 
+function buildPrivateKeyContent(privateKey, address = null, note = 'Keep this private key offline. Anyone with this value can control the institutional wallet.') {
+    if (!privateKey) {
+        return '';
+    }
+    return `
+        ${address ? `
+            <div class="secret-header">
+                <span class="info-label">Wallet Address</span>
+                <button class="btn btn-secondary btn-small" onclick="copyToClipboard('${address}')">
+                    <i class="fas fa-copy"></i>
+                    Copy
+                </button>
+            </div>
+            <code class="secret-value">${address}</code>
+        ` : ''}
+        <div class="secret-header" style="margin-top: ${address ? 'var(--spacing-md)' : '0'}">
+            <span class="info-label">Private Key</span>
+            <button class="btn btn-secondary btn-small" onclick="copyToClipboard('${privateKey}')">
+                <i class="fas fa-copy"></i>
+                Copy
+            </button>
+        </div>
+        <code class="secret-value">${privateKey}</code>
+        <div class="warning-text" style="margin-top: var(--spacing-md)">
+            <i class="fas fa-lock"></i>
+            ${note}
+        </div>
+    `;
+}
+
+function fallbackCopy(text) {
+    const textarea = document.createElement('textarea');
+    textarea.value = text;
+    textarea.style.position = 'fixed';
+    textarea.style.opacity = '0';
+    document.body.appendChild(textarea);
+    textarea.focus();
+    textarea.select();
+    try {
+        document.execCommand('copy');
+        showToast('Copied to clipboard', 'success');
+    } catch (err) {
+        console.error('Clipboard copy failed', err);
+        showToast('Unable to copy to clipboard', 'error');
+    } finally {
+        document.body.removeChild(textarea);
+    }
+}
+
+function copyToClipboard(text) {
+    if (!text) return;
+    if (navigator.clipboard && window.isSecureContext) {
+        navigator.clipboard.writeText(text)
+            .then(() => showToast('Copied to clipboard', 'success'))
+            .catch(() => fallbackCopy(text));
+    } else {
+        fallbackCopy(text);
+    }
+}
+
+window.copyToClipboard = copyToClipboard;
+
+async function showPrivateKeyModal(privateKey, address = null, title = 'Institutional Wallet Private Key') {
+    const content = buildPrivateKeyContent(
+        privateKey,
+        address,
+        'Keep this private key offline. Anyone with this value can control the institutional wallet.'
+    );
+    await showInfoModal(title, content, true);
+}
+
 // Update last refresh timestamp
 function updateLastRefreshTime() {
     const now = Date.now();
@@ -181,6 +252,13 @@ async function loadSystemStatus() {
                         trigger.addEventListener('click', toggleWalletSetupDropdown);
                     }
                 }, 100);
+            }
+
+            // Show/hide reveal private key button in header
+            const revealPrivateKeyBtn = document.getElementById('revealPrivateKeyBtn');
+            if (revealPrivateKeyBtn) {
+                revealPrivateKeyBtn.style.display = walletAddress ? 'inline-flex' : 'none';
+                revealPrivateKeyBtn.disabled = !walletAddress;
             }
             
             // Show/hide wallet setup dropdown
@@ -259,6 +337,30 @@ function updateNetworkButtons(activeNetwork) {
         } else if (activeNetwork === 'mainnet') {
             mainnetBtn.classList.add('active');
         }
+    }
+}
+
+async function handleRevealPrivateKey() {
+    const password = await showInputModal(
+        'Reveal Private Key',
+        'Enter the institutional wallet password to decrypt the private key:',
+        'password'
+    );
+
+    if (!password) {
+        return;
+    }
+
+    try {
+        showToast('Decrypting wallet...', 'info');
+        const data = await API.revealPrivateKey(password);
+        if (data.success && data.privateKey) {
+            await showPrivateKeyModal(data.privateKey, data.address);
+        } else {
+            showToast(data.error || 'Failed to reveal private key', 'error');
+        }
+    } catch (error) {
+        showToast('Failed to reveal private key: ' + error.message, 'error');
     }
 }
 
@@ -721,7 +823,12 @@ function setupButtonHandlers() {
     if (refreshTxBtn) {
         refreshTxBtn.addEventListener('click', loadRecentTransactions);
     }
-    
+
+    const revealPrivateKeyBtn = document.getElementById('revealPrivateKeyBtn');
+    if (revealPrivateKeyBtn) {
+        revealPrivateKeyBtn.addEventListener('click', handleRevealPrivateKey);
+    }
+
     // Reset period button
     const resetPeriodBtn = document.getElementById('resetPeriodBtn');
     if (resetPeriodBtn) {
@@ -827,8 +934,16 @@ function setupButtonHandlers() {
                             The dashboard will now refresh to show your new wallet.
                         </div>
                     `;
+
+                    const secretSection = data.privateKey
+                        ? buildPrivateKeyContent(
+                            data.privateKey,
+                            data.address,
+                            'Copy and store this private key in a secure manager. You will not be able to view it again unless you reveal it with the password.'
+                          )
+                        : '';
                     
-                    await showInfoModal('Institutional Wallet Created', content, true);
+                    await showInfoModal('Institutional Wallet Created', content + secretSection, true);
                     
                     // Refresh dashboard to show new wallet
                     await refreshAllData();

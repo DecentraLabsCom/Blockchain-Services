@@ -209,14 +209,41 @@ public class AdminDashboardController {
 
     // ==================== PRIVATE HELPER METHODS ====================
 
+    @Value("${admin.dashboard.local-only:true}")
+    private boolean adminDashboardLocalOnly;
+
+    private static final Set<String> LOOPBACK_ADDRESSES = Set.of(
+        "127.0.0.1",
+        "0:0:0:0:0:0:0:1",
+        "::1"
+    );
+
     /**
-     * Check if request comes from localhost
+     * Check if request comes from localhost (unless explicitly disabled)
      */
     private boolean isLocalhostRequest(HttpServletRequest request) {
-        // TODO: Re-enable localhost validation for production deployment
-        // DEVELOPMENT MODE: Allowing all access for testing
-        log.info("Administrative dashboard access from: {}", request.getRemoteAddr());
-        return true;
+        if (!adminDashboardLocalOnly) {
+            return true;
+        }
+
+        String candidate = extractClientIp(request);
+        boolean allowed = candidate == null
+            || LOOPBACK_ADDRESSES.contains(candidate)
+            || candidate.startsWith("127.");
+
+        if (!allowed) {
+            log.warn("Blocked administrative dashboard access from non-local address: {}", candidate);
+        }
+
+        return allowed;
+    }
+
+    private String extractClientIp(HttpServletRequest request) {
+        String forwarded = request.getHeader("X-Forwarded-For");
+        if (forwarded != null && !forwarded.isBlank()) {
+            return forwarded.split(",")[0].trim();
+        }
+        return request.getRemoteAddr();
     }
 
     /**

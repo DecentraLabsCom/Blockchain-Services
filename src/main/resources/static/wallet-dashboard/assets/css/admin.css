@@ -222,6 +222,30 @@ body {
     word-break: break-all;
 }
 
+.wallet-actions {
+    margin-top: 0.5rem;
+    display: none;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+}
+
+.wallet-actions .btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+}
+
+@media (max-width: 768px) {
+    .wallet-actions {
+        width: 100%;
+    }
+
+    .wallet-actions .btn {
+        width: 100%;
+        justify-content: center;
+    }
+}
+
 .info-value .warning-text {
     color: var(--neon-yellow);
     font-size: 0.95rem;
@@ -314,6 +338,12 @@ body {
     opacity: 0;
     pointer-events: none;
     transition: opacity 0.3s ease;
+    background: linear-gradient(135deg, var(--bg-card) 0%, #1f2547 100%);
+    border: 1px solid var(--neon-blue);
+    border-radius: var(--radius-md);
+    padding: var(--spacing-md);
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4),
+                0 0 20px rgba(0, 212, 255, 0.2);
 }
 
 .wallet-setup-dropdown[style*="display: block"] {
@@ -330,15 +360,6 @@ body {
     background: rgba(0, 0, 0, 0.7);
     backdrop-filter: blur(4px);
     z-index: -1;
-}
-
-.wallet-setup-dropdown .dropdown-content {
-    background: linear-gradient(135deg, var(--bg-card) 0%, #1f2547 100%);
-    border: 1px solid var(--neon-blue);
-    border-radius: var(--radius-md);
-    padding: var(--spacing-md);
-    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4),
-                0 0 20px rgba(0, 212, 255, 0.2);
 }
 
 .wallet-setup-dropdown h3 {
@@ -1282,5 +1303,25 @@ body {
     line-height: 2;
     font-size: 1.1rem;
     color: var(--neon-green);
+}
+
+#infoModalContent .secret-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: var(--spacing-md);
+}
+
+#infoModalContent .secret-value {
+    display: block;
+    font-family: 'Roboto Mono', 'Fira Code', monospace;
+    font-size: 1rem;
+    letter-spacing: 0.05rem;
+    padding: var(--spacing-md);
+    border-radius: var(--radius-sm);
+    background: rgba(5, 7, 13, 0.9);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    color: var(--text-light);
+    word-break: break-all;
 }
 

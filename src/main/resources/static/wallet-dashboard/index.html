@@ -22,6 +22,10 @@
                         <span class="icon">↻</span>
                         Refresh
                     </button>
+                    <button id="revealPrivateKeyBtn" class="btn btn-secondary" style="display: none;">
+                        <i class="fas fa-key"></i>
+                        Reveal Private Key
+                    </button>
                     <div class="status-indicator" id="statusIndicator">
                         <span class="status-dot"></span>
                         <span class="status-text">Connected</span>
@@ -45,19 +49,17 @@
                             <span class="info-value" id="walletAddress">Loading...</span>
                             <!-- Wallet Setup Dropdown (shown when not configured) -->
                             <div class="wallet-setup-dropdown" id="walletSetupDropdown" style="display: none;">
-                                <div class="dropdown-content">
-                                    <h3>Setup Institutional Wallet</h3>
-                                    <p class="dropdown-description">Choose an option to configure the institutional wallet:</p>
-                                    <div class="wallet-setup-options">
-                                        <button id="createWalletBtn" class="btn btn-primary btn-block">
-                                            <span class="icon">+</span>
-                                            Create New Wallet
-                                        </button>
-                                        <button id="importWalletBtn" class="btn btn-secondary btn-block">
-                                            <span class="icon">↓</span>
-                                            Import Existing Wallet
-                                        </button>
-                                    </div>
+                                <h3>Setup Institutional Wallet</h3>
+                                <p class="dropdown-description">Choose an option to configure the institutional wallet:</p>
+                                <div class="wallet-setup-options">
+                                    <button id="createWalletBtn" class="btn btn-primary btn-block">
+                                        <span class="icon">+</span>
+                                        Create New Wallet
+                                    </button>
+                                    <button id="importWalletBtn" class="btn btn-secondary btn-block">
+                                        <span class="icon">↓</span>
+                                        Import Existing Wallet
+                                    </button>
                                 </div>
                             </div>
                         </div>
@@ -219,7 +221,7 @@
                 </div>
                 <div class="footer-text">
                     <p>&copy; 2025 DecentraLabs. Institutional Treasury Administration Dashboard</p>
-                    <p class="security-notice">🔒 This dashboard is only accessible from localhost for security</p>
+                    <p class="security-notice">🔒 This dashboard is only accessible internally for security</p>
                 </div>
                 <div class="footer-logo">
                     <img src="assets/images/LogoBannerNebsyst.png" alt="Nebulous Systems" class="footer-logo-img">

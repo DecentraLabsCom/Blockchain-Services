@@ -180,6 +180,17 @@ const API = {
     },
 
     /**
+     * POST /wallet/reveal
+     * Reveal the institutional wallet private key (password required)
+     */
+    async revealPrivateKey(password) {
+        return await this.request('/wallet/reveal', {
+            method: 'POST',
+            body: JSON.stringify({ password })
+        });
+    },
+
+    /**
      * Reset spending period
      */
     async resetSpendingPeriod() {

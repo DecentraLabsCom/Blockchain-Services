@@ -92,6 +92,7 @@ This documentation is organized into specialized sections:
 | `/wallet/listen-events` | GET | Event listener status |
 | `/wallet/networks` | GET | List available networks |
 | `/wallet/switch-network` | POST | Switch active network |
+| `/wallet/reveal` | POST | Reveal institutional private key (localhost + password) |
 
 ### Treasury Endpoints (`/treasury`) 🔒 *localhost only*
 | Endpoint | Method | Description |
@@ -138,7 +139,7 @@ This documentation is organized into specialized sections:
    chmod 400 keys/*.pem
    ```
 
-2. **Start services:**
+2. **Start services (local dev uses the bundled `docker-compose.override.yml` to expose port 8080):**
    ```bash
    docker-compose up -d
    ```
@@ -155,7 +156,7 @@ This documentation is organized into specialized sections:
 
 > 💡 **Testing APIs:** For manual testing, use `test-wallet-local.sh` / `test-wallet-local.ps1`
 
-> 💡 **Reverse Proxy:** If behind OpenResty, comment out `ports: 8080:8080` in `docker-compose.yml`
+> 💡 **Reverse Proxy:** When this project is consumed as a submodule behind OpenResty, reference only `docker-compose.yml` (omit `docker-compose.override.yml`) so the container stays on the internal network without publishing `8080`.
 
 ### 📦 CI/CD & Production Deployment
 
@@ -233,6 +234,7 @@ This project uses a **security-first deployment approach**:
 | `PRIVATE_KEY_PATH` | Path to JWT private key | `config/keys/private_key.pem` |
 | `PUBLIC_KEY_PATH` | Path to JWT public key | `config/keys/public_key.pem` |
 | `BASE_DOMAIN` | Base URL for JWT claims | `http://localhost` |
+| `ADMIN_DASHBOARD_LOCAL_ONLY` | `true` blocks `/treasury/admin/**` to localhost, `false` keeps it open (dev default) | `true` |
 
 ### Configuration Files
 

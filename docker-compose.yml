@@ -39,9 +39,9 @@ services:
       # Persistent storage for encrypted wallets (survives container restart)
       - wallet-data:/app/data
     
-    # Port mapping (comment out if using behind a reverse proxy like OpenResty)
-    ports:
-      - "8080:8080"
+    # Expose container port for internal networks; host mapping handled via override
+    expose:
+      - "8080"
     
     restart: unless-stopped
     

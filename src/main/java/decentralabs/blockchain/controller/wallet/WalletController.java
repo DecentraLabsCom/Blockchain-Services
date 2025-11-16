@@ -68,6 +68,17 @@ public class WalletController {
     }
 
     /**
+     * POST /wallet/reveal
+     * Reveals the institutional wallet private key (localhost-only access)
+     */
+    @PostMapping("/reveal")
+    public ResponseEntity<WalletResponse> revealPrivateKey(@Valid @RequestBody WalletRevealRequest request) {
+        WalletResponse response = walletService.revealInstitutionalPrivateKey(request.getPassword());
+        HttpStatus status = response.isSuccess() ? HttpStatus.OK : HttpStatus.BAD_REQUEST;
+        return ResponseEntity.status(status).body(response);
+    }
+
+    /**
      * GET /wallet/{address}/balance
      * Gets the balance of an Ethereum address
      */
