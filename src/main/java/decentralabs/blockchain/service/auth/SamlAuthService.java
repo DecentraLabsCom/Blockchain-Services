@@ -56,6 +56,9 @@ public class SamlAuthService {
         String labId = request.getLabId();
         String reservationKey = request.getReservationKey();
         
+        // Always record an audit entry before any validation to avoid bypass
+        auditSAMLAuthentication();
+
         // Validate required fields
         if (marketplaceToken == null || marketplaceToken.isEmpty()) {
             throw new IllegalArgumentException("Missing marketplaceToken");
@@ -63,9 +66,6 @@ public class SamlAuthService {
         if (samlAssertion == null || samlAssertion.isEmpty()) {
             throw new IllegalArgumentException("Missing samlAssertion");
         }
-        
-        // Always record an audit entry before validation to avoid bypass
-        auditSAMLAuthentication();
         
         // LAYER 1: Basic JWT validation (signature + expiration)
         Map<String, Object> marketplaceJWTClaims = validateMarketplaceJWTBasic(marketplaceToken);
