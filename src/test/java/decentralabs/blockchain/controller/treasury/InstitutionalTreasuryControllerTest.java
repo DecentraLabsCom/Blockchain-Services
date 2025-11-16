@@ -105,6 +105,10 @@ class InstitutionalTreasuryControllerTest {
 
         mockMvc.perform(post("/treasury/admin/execute")
                 .with(csrf())
+                .with(request1 -> {
+                    request1.setRemoteAddr("127.0.0.1");
+                    return request1;
+                })
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(objectMapper.writeValueAsString(request)))
             .andExpect(status().isOk())
@@ -121,6 +125,10 @@ class InstitutionalTreasuryControllerTest {
 
         mockMvc.perform(post("/treasury/admin/execute")
                 .with(csrf())
+                .with(request1 -> {
+                    request1.setRemoteAddr("127.0.0.1");
+                    return request1;
+                })
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(objectMapper.writeValueAsString(request)))
             .andExpect(status().isBadRequest())
@@ -136,6 +144,11 @@ class InstitutionalTreasuryControllerTest {
         InstitutionalAdminRequest request = new InstitutionalAdminRequest("0x123", AdminOperation.AUTHORIZE_BACKEND, null, "0xbackend", null, null, null);
 
         mockMvc.perform(post("/treasury/admin/execute")
+                .with(csrf())
+                .with(request1 -> {
+                    request1.setRemoteAddr("127.0.0.1");
+                    return request1;
+                })
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(objectMapper.writeValueAsString(request)))
             .andExpect(status().isInternalServerError())
