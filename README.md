@@ -57,36 +57,29 @@ This documentation is organized into specialized sections:
 ## 🛠️ Technology Stack
 
 ### Core Framework
-- **Spring Boot** `3.4.3` - Application framework with embedded Tomcat
-- **Java** `21` - LTS version with modern language features
-- **Maven** `3.9+` - Build automation and dependency management
+- **Spring Boot** - Application framework with embedded Tomcat
+- **Java** - LTS version with modern language features
+- **Maven** - Build automation and dependency management
 
 ### Security & Authentication
-- **Spring Security** `6.4.3` - Authentication and authorization
-- **JJWT** `0.13.0` - JWT generation and validation
-- **Bouncy Castle** `1.79` - Cryptographic operations (AES-256-GCM, PBKDF2)
+- **Spring Security** - Authentication and authorization
+- **JJWT** - JWT generation and validation
+- **Bouncy Castle** - Cryptographic operations (AES-256-GCM, PBKDF2)
 
 ### Blockchain Integration
-- **Web3j** `5.0.1` - Ethereum client library for smart contract interactions
-- **Netty** `4.1.118.Final` - Async I/O for RPC communication
-- **OkHttp** `4.12.0` - HTTP client with connection pooling
+- **Web3j** - Ethereum client library for smart contract interactions
+- **Netty** - Async I/O for RPC communication
+- **OkHttp** - HTTP client with connection pooling
 
 ### Data Processing
-- **Jackson** `2.18.2` - JSON serialization/deserialization
-- **Lombok** `1.18.42` - Boilerplate code reduction
-- **Bucket4j** `8.10.1` - Rate limiting for API endpoints
+- **Jackson** - JSON serialization/deserialization
+- **Lombok** - Boilerplate code reduction
+- **Bucket4j** - Rate limiting for API endpoints
 
 ### Deployment & Operations
 - **Docker** - Containerized deployment with multi-stage builds
-- **Tomcat Embedded** `10.1.36` - Servlet container (via Spring Boot)
+- **Tomcat Embedded** - Servlet container (via Spring Boot)
 - **GitHub Actions** - CI/CD for build, test, security scanning, and releases
-
-### Security Posture
-✅ **All dependencies updated to latest stable versions** (as of v1.0.0)  
-📊 **OWASP Dependency Check** configured with suppression for non-applicable CVEs  
-🔐 **Regular security audits** via Dependabot and GitHub Security Alerts
-
-> **Note**: Some reported CVEs in Tomcat and Netty are not applicable to this deployment model (see [SECURITY_ANALYSIS.md](SECURITY_ANALYSIS.md) for details).
 
 ## 🚀 Key Features
 
