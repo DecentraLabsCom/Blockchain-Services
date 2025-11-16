@@ -344,7 +344,7 @@ public class WalletService {
             List<Type> decoded = FunctionReturnDecoder.decode(response.getValue(), function.getOutputParameters());
             if (!decoded.isEmpty()) {
                 cachedLabTokenAddress = decoded.get(0).getValue().toString();
-                log.info("LAB token address retrieved from Diamond contract: {}", LogSanitizer.maskIdentifier(cachedLabTokenAddress));
+                log.info("LAB token address retrieved from Diamond contract");
                 return cachedLabTokenAddress;
             }
             

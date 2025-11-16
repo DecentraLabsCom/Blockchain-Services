@@ -84,7 +84,7 @@ public class SamlAuthService {
         }
         
         // Audit log
-        auditSAMLAuthentication(jwtUserId, jwtAffiliation, labId, reservationKey);
+        auditSAMLAuthentication();
         
         // Generate JWT token
         if (includeBookingInfo) {
@@ -144,14 +144,14 @@ public class SamlAuthService {
      */
     private Map<String, String> validateSAMLAssertion(String samlAssertion) throws Exception {
         Map<String, String> attributes = samlValidationService.validateSamlAssertionWithSignature(samlAssertion);
-        log.info("SAML assertion validated WITH SIGNATURE for user: {}", LogSanitizer.maskIdentifier(attributes.get("userid")));
+        log.info("SAML assertion validated WITH SIGNATURE.");
         return attributes;
     }
     
     /**
      * Audit log for SAML authentication attempts
      */
-    private void auditSAMLAuthentication(String userid, String affiliation, String labId, String reservationKey) {
+    private void auditSAMLAuthentication() {
         log.info("SAML Authentication attempt recorded");
     }
 

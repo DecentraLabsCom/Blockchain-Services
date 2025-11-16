@@ -135,7 +135,7 @@ public class InstitutionalAdminService {
                 return authorizeBackend(credentials, request);
 
             case REVOKE_BACKEND:
-                return revokeBackend(credentials, request);
+                return revokeBackend(credentials);
 
             case ADMIN_RESET_BACKEND:
                 return adminResetBackend(credentials, request);
@@ -147,7 +147,7 @@ public class InstitutionalAdminService {
                 return setSpendingPeriod(credentials, request);
 
             case RESET_SPENDING_PERIOD:
-                return resetSpendingPeriod(credentials, request);
+                return resetSpendingPeriod(credentials);
 
             case DEPOSIT_TREASURY:
                 return depositTreasury(credentials, request);
@@ -186,7 +186,7 @@ public class InstitutionalAdminService {
         );
     }
 
-    private InstitutionalAdminResponse revokeBackend(Credentials credentials, InstitutionalAdminRequest request) throws Exception {
+    private InstitutionalAdminResponse revokeBackend(Credentials credentials) throws Exception {
         log.info("Revoking backend access request received.");
         Function function = new Function(
             "revokeBackend",
@@ -296,7 +296,7 @@ public class InstitutionalAdminService {
         ).withSpendingPeriod(request.getSpendingPeriod());
     }
 
-    private InstitutionalAdminResponse resetSpendingPeriod(Credentials credentials, InstitutionalAdminRequest request) throws Exception {
+    private InstitutionalAdminResponse resetSpendingPeriod(Credentials credentials) throws Exception {
         log.info("Resetting spending period request received.");
         Function function = new Function(
             "resetInstitutionalSpendingPeriod",
