@@ -41,7 +41,9 @@ public class LocalhostOnlyFilter extends OncePerRequestFilter {
     ) throws ServletException, IOException {
 
         String path = LogSanitizer.sanitize(request.getServletPath());
-        String clientIp = LogSanitizer.sanitize(request.getRemoteAddr());
+        String clientIp = LogSanitizer.sanitize(
+            request.getRemoteAddr() != null ? request.getRemoteAddr() : ""
+        );
         
         log.debug("LocalhostOnlyFilter: path={}, clientIp={}", path, clientIp);
         
