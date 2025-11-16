@@ -140,9 +140,6 @@ public class WalletService {
                      .toList();
     }
 
-    // Cache of encrypted wallets (use Redis/database in production)
-    private final Map<String, String> encryptedWallets = new ConcurrentHashMap<>();
-
     /**
      * Creates a new Ethereum wallet
      */
@@ -220,8 +217,6 @@ public class WalletService {
                 return WalletResponse.error("Either privateKey or mnemonic must be provided");
             }
 
-            // Save to cache
-            encryptedWallets.put(address, encryptedPrivateKey);
             // Persist imported wallet so it becomes the active institutional wallet
             walletPersistenceService.saveWallet(address, encryptedPrivateKey);
 

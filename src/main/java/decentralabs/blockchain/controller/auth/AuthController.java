@@ -55,11 +55,6 @@ public class AuthController {
         Map<String, Object> config = new HashMap<>();
         config.put("issuer", baseDomain + authPath);
         
-        // Multiple authorization endpoints for different authentication methods
-        Map<String, String> authEndpoints = new HashMap<>();
-        authEndpoints.put("wallet", baseDomain + walletAuth2Endpoint);
-        authEndpoints.put("saml", baseDomain + samlAuth2Endpoint);
-        
         // Primary authorization endpoint (wallet-based by default)
         config.put("authorization_endpoint", baseDomain + walletAuth2Endpoint);
 
