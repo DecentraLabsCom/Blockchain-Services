@@ -1,6 +1,5 @@
 package decentralabs.blockchain.service;
 
-import decentralabs.blockchain.util.LogSanitizer;
 import io.github.bucket4j.Bandwidth;
 import io.github.bucket4j.Bucket;
 import lombok.extern.slf4j.Slf4j;
