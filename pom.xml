@@ -13,12 +13,14 @@
     <parent>
         <groupId>org.springframework.boot</groupId>
         <artifactId>spring-boot-starter-parent</artifactId>
-        <version>3.2.11</version>
+        <version>3.4.3</version>
         <relativePath/> <!-- lookup parent from repository -->
     </parent>
 
     <properties>
         <java.version>21</java.version>
+        <jackson.version>2.18.3</jackson.version>
+        <netty.version>4.1.118.Final</netty.version>
     </properties>
 
     <dependencies>
@@ -128,6 +130,19 @@
         </dependency>
     </dependencies>
 
+    <dependencyManagement>
+        <dependencies>
+            <!-- Override Netty versions from Web3j to fix security vulnerabilities -->
+            <dependency>
+                <groupId>io.netty</groupId>
+                <artifactId>netty-bom</artifactId>
+                <version>${netty.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+        </dependencies>
+    </dependencyManagement>
+
     <build>
         <plugins>
             <!-- Spring Boot plugin to package the project into a WAR -->
@@ -173,6 +188,18 @@
                     <jdkToolchain>
                         <version>21</version>
                     </jdkToolchain>
+                </configuration>
+            </plugin>
+            
+            <!-- OWASP Dependency Check plugin for security scanning -->
+            <plugin>
+                <groupId>org.owasp</groupId>
+                <artifactId>dependency-check-maven</artifactId>
+                <version>12.1.9</version>
+                <configuration>
+                    <failBuildOnCVSS>7</failBuildOnCVSS>
+                    <suppressionFile>${project.basedir}/dependency-check-suppression.xml</suppressionFile>
+                    <skipSystemScope>true</skipSystemScope>
                 </configuration>
             </plugin>
         </plugins>
