@@ -33,13 +33,17 @@ import org.web3j.crypto.Credentials;
  * 
  * Security model:
  * - Private key: AES-256-GCM encrypted in /app/data/wallets.json (never in plain text)
- * - Password: Stored in environment variable (INSTITUTIONAL_WALLET_PASSWORD)
+ * - Password: AES-256-GCM encrypted inside wallet-config.properties
+ *            (`institutional.wallet.password.encrypted`) using the
+ *            `wallet.config.encryption-key` provided via env/secret manager.
+ *            INSTITUTIONAL_WALLET_PASSWORD env var still overrides when present.
  * - Credentials: Cached in memory after first decryption (ephemeral)
  * - Access: Protected by localhost-only endpoints and CORS
  * 
  * Setup flow:
  * 1. Create/import wallet via dashboard or POST /wallet/create {"password": "..."}
  * 2. Service encrypts it into persistence and writes wallet-config.properties
+ *    (address + encrypted password, requires wallet.config.encryption-key)
  * 3. Institutional wallet auto-loads (env vars can override if provided)
  * 4. Auto-sign: Service decrypts wallet when needed to sign transactions
  * 

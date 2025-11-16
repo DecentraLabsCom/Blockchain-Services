@@ -177,7 +177,7 @@ This documentation is organized into specialized sections:
    
    - **Create new wallet:** Click "Create Wallet" → Set password → Save credentials
    - **Import existing:** Click "Import Wallet" → Provide private key + password
-   - The backend automatically encrypts the private key into `/app/data/wallets.json`, stores the address/password in `/app/data/wallet-config.properties`, and hot-reloads the institutional wallet.
+   - The backend automatically encrypts the private key into `/app/data/wallets.json`, stores the address and an AES-GCM–encrypted password in `/app/data/wallet-config.properties` (`institutional.wallet.password.encrypted`), and hot-reloads the institutional wallet. Configure `wallet.config.encryption-key` via `.env`/secret manager so the service can encrypt and later decrypt that value.
    
    > 💡 Nothing else to configure unless you want to override the wallet via environment variables (see below).
 
@@ -202,7 +202,7 @@ This project uses a **security-first deployment approach**:
 
 - ✅ `.env.example` tracked (public template). Copy it to `.env` locally (gitignored) before running anything.
 - 🔐 `keys/*.pem` gitignored (generate per environment)
-- 🔐 Wallet address/password captured through `/wallet-dashboard` → stored encrypted in `/app/data/wallets.json` plus `wallet-config.properties`; override via env/secrets manager only if you need external secret management.
+- 🔐 Wallet address/password captured through `/wallet-dashboard` → private key encrypted into `/app/data/wallets.json`, password stored as `institutional.wallet.password.encrypted` inside `wallet-config.properties`. Persist `wallet.config.encryption-key` separately (env/secret manager) so restarts can decrypt the password. Provide env overrides only if you need full external secret management.
 
 #### Production Deployment Steps
 
@@ -270,7 +270,7 @@ This project uses a **security-first deployment approach**:
 .env.example                  # Environment template (tracked in git)
 .env                          # Local config (gitignored)
 data/
-└── wallet-config.properties  # Auto-generated wallet address/password (gitignored)
+└── wallet-config.properties  # Auto-generated wallet address + encrypted password (gitignored)
 keys/                         # RSA keys (gitignored)
 ├── private_key.pem           # JWT signing key
 └── public_key.pem            # JWT verification key
@@ -292,7 +292,7 @@ src/main/resources/
 ```
 
 > 💡 Configuration priority: Environment variables > `.env` (local file) > application.properties.
-> For the institutional wallet specifically: env vars / secrets manager > `wallet-config.properties` (auto-generated) > persisted wallet metadata.
+> For the institutional wallet specifically: env vars / secrets manager > `wallet-config.properties` (auto-generated `institutional.wallet.address` + encrypted password) > persisted wallet metadata. A legacy plain-text `institutional.wallet.password` will be auto-migrated once `wallet.config.encryption-key` is present.
 
 ### Example Docker Run
 
