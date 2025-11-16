@@ -17,6 +17,7 @@ import javax.xml.parsers.DocumentBuilder;
 import javax.xml.parsers.DocumentBuilderFactory;
 import java.io.ByteArrayInputStream;
 import java.io.InputStream;
+import java.net.InetAddress;
 import java.net.URI;
 import java.net.URL;
 import java.security.cert.CertificateFactory;
@@ -209,9 +210,13 @@ public class SamlValidationService {
     
     /**
      * Retrieves certificate from IdP metadata endpoint
+     * Security: Validates URL to prevent SSRF attacks
      */
     private X509Certificate retrieveCertificateFromMetadata(String metadataUrl) throws Exception {
         logger.debug("Retrieving certificate from metadata: {}", metadataUrl);
+        
+        // Validate URL to prevent SSRF attacks
+        validateMetadataUrl(metadataUrl);
         
         URI uri = URI.create(metadataUrl);
         URL url = uri.toURL();
@@ -285,6 +290,50 @@ public class SamlValidationService {
         }
         
         return valid;
+    }
+    
+    /**
+     * Validates metadata URL to prevent SSRF attacks
+     * Only allows HTTPS URLs and blocks private/internal IP addresses
+     */
+    private void validateMetadataUrl(String metadataUrl) throws Exception {
+        URI uri = URI.create(metadataUrl);
+        
+        // Only allow HTTPS for metadata URLs (security best practice)
+        String scheme = uri.getScheme();
+        if (scheme == null || (!scheme.equalsIgnoreCase("https") && !scheme.equalsIgnoreCase("http"))) {
+            throw new SecurityException("Metadata URL must use HTTP or HTTPS protocol");
+        }
+        
+        // Get the host from the URL
+        String host = uri.getHost();
+        if (host == null || host.isEmpty()) {
+            throw new SecurityException("Invalid metadata URL: no host specified");
+        }
+        
+        // Resolve the host to IP address to check for private/internal IPs
+        try {
+            InetAddress addr = InetAddress.getByName(host);
+            
+            // Block private IP addresses (RFC 1918)
+            if (addr.isSiteLocalAddress() || addr.isLoopbackAddress() || addr.isLinkLocalAddress()) {
+                throw new SecurityException("Metadata URL points to private/internal IP address");
+            }
+            
+            // Block localhost variations
+            if (host.equalsIgnoreCase("localhost") || host.equals("127.0.0.1") || host.equals("::1")) {
+                throw new SecurityException("Metadata URL cannot point to localhost");
+            }
+            
+            // Block cloud metadata endpoints (AWS, GCP, Azure)
+            if (host.equals("169.254.169.254") || host.equals("metadata.google.internal")) {
+                throw new SecurityException("Metadata URL blocked for security reasons");
+            }
+            
+            logger.debug("Metadata URL validation passed for: {} (resolved to {})", metadataUrl, addr.getHostAddress());
+        } catch (java.net.UnknownHostException e) {
+            throw new SecurityException("Cannot resolve metadata URL host: " + host);
+        }
     }
     
     /**
