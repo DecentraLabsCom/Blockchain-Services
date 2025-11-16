@@ -64,6 +64,9 @@ public class SamlAuthService {
             throw new IllegalArgumentException("Missing samlAssertion");
         }
         
+        // Always record an audit entry before validation to avoid bypass
+        auditSAMLAuthentication();
+        
         // LAYER 1: Basic JWT validation (signature + expiration)
         Map<String, Object> marketplaceJWTClaims = validateMarketplaceJWTBasic(marketplaceToken);
         
@@ -82,9 +85,6 @@ public class SamlAuthService {
         if (jwtAffiliation == null || !jwtAffiliation.equals(samlAffiliation)) {
             throw new SecurityException("JWT and SAML affiliation mismatch");
         }
-        
-        // Audit log
-        auditSAMLAuthentication();
         
         boolean bookingInfoRequested = includeBookingInfo;
         // Always invoke enforcement helper so request flags cannot bypass checks
