@@ -1,5 +1,6 @@
 package decentralabs.blockchain.security;
 
+import decentralabs.blockchain.util.LogSanitizer;
 import java.io.IOException;
 import java.util.List;
 import jakarta.servlet.FilterChain;
@@ -39,8 +40,8 @@ public class LocalhostOnlyFilter extends OncePerRequestFilter {
         @NonNull FilterChain filterChain
     ) throws ServletException, IOException {
 
-        String path = request.getServletPath();
-        String clientIp = request.getRemoteAddr();
+        String path = LogSanitizer.sanitize(request.getServletPath());
+        String clientIp = LogSanitizer.sanitize(request.getRemoteAddr());
         
         log.debug("LocalhostOnlyFilter: path={}, clientIp={}", path, clientIp);
         

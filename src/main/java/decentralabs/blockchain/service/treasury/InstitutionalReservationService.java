@@ -24,6 +24,7 @@ import java.util.Map;
 import decentralabs.blockchain.service.auth.MarketplaceKeyService;
 import decentralabs.blockchain.service.auth.SamlValidationService;
 import decentralabs.blockchain.service.wallet.InstitutionalWalletService;
+import decentralabs.blockchain.util.LogSanitizer;
 /**
  * Service for processing institutional reservations.
  * Uses the SAME 3-layer validation as SamlAuthService:
@@ -68,8 +69,9 @@ public class InstitutionalReservationService {
      * @return Result map with transaction details
      */
     public Map<String, Object> processReservation(InstitutionalReservationRequest request) {
-        log.info("Processing institutional reservation for user: {} from institution: {}", 
-                request.getUserId(), request.getInstitutionId());
+        log.info("Processing institutional reservation for user: {} from institution: {}",
+                LogSanitizer.maskIdentifier(request.getUserId()),
+                LogSanitizer.maskIdentifier(request.getInstitutionId()));
         
         // Step 1-3: 3-Layer Validation (same as SAML auth)
         validateUserAuthenticationThreeLayer(request);
@@ -90,7 +92,7 @@ public class InstitutionalReservationService {
             )
         );
 
-        log.info("Reservation processed successfully. Transaction: {}", transactionHash);
+        log.info("Reservation processed successfully. Transaction: {}", LogSanitizer.maskIdentifier(transactionHash));
         
         return Map.of(
                 "success", true,
@@ -144,8 +146,9 @@ public class InstitutionalReservationService {
                 throw new SecurityException("Request institutionId does not match SAML affiliation");
             }
             
-            log.info("✅ 3-Layer validation passed for user: {} from institution: {}", 
-                    samlUserId, samlAffiliation);
+            log.info("✅ 3-Layer validation passed for user: {} from institution: {}",
+                    LogSanitizer.maskIdentifier(samlUserId),
+                    LogSanitizer.maskIdentifier(samlAffiliation));
             
         } catch (Exception e) {
             log.error("Authentication validation failed", e);
@@ -169,15 +172,15 @@ public class InstitutionalReservationService {
             return jws.getPayload();
             
         } catch (Exception e) {
-            log.error("Marketplace JWT validation failed: {}", e.getMessage());
+            log.error("Marketplace JWT validation failed: {}", LogSanitizer.sanitize(e.getMessage()));
             throw new SecurityException("Invalid marketplace token: " + e.getMessage(), e);
         }
     }
     
     private Map<String, String> validateSAMLAssertion(String samlAssertion) throws Exception {
         Map<String, String> attributes = samlValidationService.validateSamlAssertionWithSignature(samlAssertion);
-        log.info("✅ Layer 2: SAML assertion validated WITH SIGNATURE for user: {}", 
-                attributes.get("userid"));
+        log.info("✅ Layer 2: SAML assertion validated WITH SIGNATURE for user: {}",
+                LogSanitizer.maskIdentifier(attributes.get("userid")));
         return attributes;
     }
     
@@ -200,8 +203,9 @@ public class InstitutionalReservationService {
             BigInteger endEpoch = BigInteger.valueOf(request.getEndTime().toEpochSecond(ZoneOffset.UTC));
             String puc = request.getUserId(); // Using SAML user identifier as PUC
 
-            log.info("Executing blockchain transaction for lab: {} with institutional wallet: {}", 
-                    request.getLabId(), credentials.getAddress());
+            log.info("Executing blockchain transaction for lab: {} with institutional wallet: {}",
+                    LogSanitizer.maskIdentifier(String.valueOf(request.getLabId())),
+                    LogSanitizer.maskIdentifier(credentials.getAddress()));
 
             TransactionReceipt receipt = contract.institutionalReservationRequest(
                 credentials.getAddress(),  // Use actual wallet address from credentials
@@ -211,7 +215,7 @@ public class InstitutionalReservationService {
                 endEpoch
             ).send();
 
-            log.info("Blockchain transaction executed: {}", receipt.getTransactionHash());
+            log.info("Blockchain transaction executed: {}", LogSanitizer.maskIdentifier(receipt.getTransactionHash()));
             return receipt.getTransactionHash();
             
         } catch (Exception e) {

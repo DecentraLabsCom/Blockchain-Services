@@ -1,5 +1,6 @@
 package decentralabs.blockchain.service;
 
+import decentralabs.blockchain.util.LogSanitizer;
 import io.github.bucket4j.Bandwidth;
 import io.github.bucket4j.Bucket;
 import lombok.extern.slf4j.Slf4j;
@@ -37,7 +38,7 @@ public class RateLimitService {
         boolean allowed = bucket.tryConsume(1);
         
         if (!allowed) {
-            log.warn("Transaction rate limit exceeded for wallet: {}", walletAddress);
+            log.warn("Transaction rate limit exceeded for wallet: {}", LogSanitizer.maskIdentifier(walletAddress));
         }
         
         return allowed;
@@ -53,7 +54,7 @@ public class RateLimitService {
         boolean allowed = bucket.tryConsume(1);
         
         if (!allowed) {
-            log.warn("Balance check rate limit exceeded for wallet: {}", walletAddress);
+            log.warn("Balance check rate limit exceeded for wallet: {}", LogSanitizer.maskIdentifier(walletAddress));
         }
         
         return allowed;

@@ -5,6 +5,7 @@ import decentralabs.blockchain.service.wallet.InstitutionalWalletService;
 import decentralabs.blockchain.dto.treasury.InstitutionalAdminRequest;
 import decentralabs.blockchain.dto.treasury.InstitutionalAdminResponse;
 import decentralabs.blockchain.util.EthereumAddressValidator;
+import decentralabs.blockchain.util.LogSanitizer;
 import jakarta.servlet.http.HttpServletRequest;
 import java.math.BigDecimal;
 import java.math.BigInteger;
@@ -68,7 +69,7 @@ public class InstitutionalAdminService {
             return executeOperation(request);
 
         } catch (Exception e) {
-            log.error("Error executing admin operation: {}", e.getMessage(), e);
+            log.error("Error executing admin operation: {}", LogSanitizer.sanitize(e.getMessage()), e);
             return InstitutionalAdminResponse.error("Administrative operation failed: " + e.getMessage());
         }
     }
@@ -95,7 +96,7 @@ public class InstitutionalAdminService {
             }
         }
 
-        log.warn("Administrative access attempt from non-localhost IP: {}", remoteAddr);
+        log.warn("Administrative access attempt from non-localhost IP: {}", LogSanitizer.sanitize(remoteAddr));
         return false;
     }
 
@@ -118,7 +119,8 @@ public class InstitutionalAdminService {
 
         if (!isAuthorized) {
             log.warn("Administrative access attempt with unauthorized wallet: {} (expected: {})",
-                adminWalletAddress, institutionalAddress);
+                LogSanitizer.maskIdentifier(adminWalletAddress),
+                LogSanitizer.maskIdentifier(institutionalAddress));
         }
 
         return isAuthorized;
@@ -135,7 +137,7 @@ public class InstitutionalAdminService {
                 return authorizeBackend(credentials, request);
 
             case REVOKE_BACKEND:
-                return revokeBackend(credentials);
+                return revokeBackend(credentials, request);
 
             case ADMIN_RESET_BACKEND:
                 return adminResetBackend(credentials, request);
@@ -147,7 +149,7 @@ public class InstitutionalAdminService {
                 return setSpendingPeriod(credentials, request);
 
             case RESET_SPENDING_PERIOD:
-                return resetSpendingPeriod(credentials);
+                return resetSpendingPeriod(credentials, request);
 
             case DEPOSIT_TREASURY:
                 return depositTreasury(credentials, request);
@@ -186,7 +188,8 @@ public class InstitutionalAdminService {
         );
     }
 
-    private InstitutionalAdminResponse revokeBackend(Credentials credentials) throws Exception {
+    private InstitutionalAdminResponse revokeBackend(Credentials credentials, InstitutionalAdminRequest request) throws Exception {
+        log.info("Revoking backend access requested by {}", LogSanitizer.maskIdentifier(request.getAdminWalletAddress()));
         Function function = new Function(
             "revokeBackend",
             Collections.emptyList(),
@@ -295,7 +298,8 @@ public class InstitutionalAdminService {
         ).withSpendingPeriod(request.getSpendingPeriod());
     }
 
-    private InstitutionalAdminResponse resetSpendingPeriod(Credentials credentials) throws Exception {
+    private InstitutionalAdminResponse resetSpendingPeriod(Credentials credentials, InstitutionalAdminRequest request) throws Exception {
+        log.info("Resetting spending period requested by {}", LogSanitizer.maskIdentifier(request.getAdminWalletAddress()));
         Function function = new Function(
             "resetInstitutionalSpendingPeriod",
             Collections.emptyList(),

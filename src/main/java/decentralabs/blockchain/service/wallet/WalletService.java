@@ -35,6 +35,7 @@ import org.web3j.utils.Numeric;
 import decentralabs.blockchain.dto.treasury.InstitutionalUserFinancialStats;
 import decentralabs.blockchain.dto.wallet.*;
 import decentralabs.blockchain.service.persistence.WalletPersistenceService;
+import decentralabs.blockchain.util.LogSanitizer;
 
 import java.math.BigDecimal;
 import java.math.BigInteger;
@@ -301,7 +302,7 @@ public class WalletService {
                 .build();
 
         } catch (Exception e) {
-            log.error("Error getting balance for address: {}", address, e);
+            log.error("Error getting balance for address: {}", LogSanitizer.maskIdentifier(address), e);
             return BalanceResponse.error("Failed to get balance: " + e.getMessage());
         }
     }
@@ -334,7 +335,7 @@ public class WalletService {
             ).send();
             
             if (response.hasError()) {
-                log.warn("Error calling getLabTokenAddress(): {}", response.getError().getMessage());
+                log.warn("Error calling getLabTokenAddress(): {}", LogSanitizer.sanitize(response.getError().getMessage()));
                 return null;
             }
             
@@ -342,7 +343,7 @@ public class WalletService {
             List<Type> decoded = FunctionReturnDecoder.decode(response.getValue(), function.getOutputParameters());
             if (!decoded.isEmpty()) {
                 cachedLabTokenAddress = decoded.get(0).getValue().toString();
-                log.info("LAB token address retrieved from Diamond contract: {}", cachedLabTokenAddress);
+                log.info("LAB token address retrieved from Diamond contract: {}", LogSanitizer.maskIdentifier(cachedLabTokenAddress));
                 return cachedLabTokenAddress;
             }
             
@@ -380,7 +381,7 @@ public class WalletService {
             ).send();
             
             if (response.hasError()) {
-                log.warn("Error calling getInstitutionalUserLimit() for {}: {}", providerAddress, response.getError().getMessage());
+                log.warn("Error calling getInstitutionalUserLimit() for {}: {}", LogSanitizer.maskIdentifier(providerAddress), LogSanitizer.sanitize(response.getError().getMessage()));
                 return null;
             }
             
@@ -388,7 +389,7 @@ public class WalletService {
             List<Type> decoded = FunctionReturnDecoder.decode(response.getValue(), function.getOutputParameters());
             if (!decoded.isEmpty()) {
                 BigInteger limit = (BigInteger) decoded.get(0).getValue();
-                log.info("Institutional user limit for {}: {}", providerAddress, limit);
+                log.info("Institutional user limit for {}: {}", LogSanitizer.maskIdentifier(providerAddress), limit);
                 return limit;
             }
             
@@ -573,7 +574,7 @@ public class WalletService {
             ).send();
             
             if (response.hasError()) {
-                log.warn("Error calling balanceOf() on token {}: {}", tokenAddress, response.getError().getMessage());
+                log.warn("Error calling balanceOf() on token {}: {}", LogSanitizer.maskIdentifier(tokenAddress), LogSanitizer.sanitize(response.getError().getMessage()));
                 return BigInteger.ZERO;
             }
             
@@ -585,7 +586,7 @@ public class WalletService {
             
             return BigInteger.ZERO;
         } catch (Exception e) {
-            log.error("Error getting ERC20 balance for token {}", tokenAddress, e);
+            log.error("Error getting ERC20 balance for token {}", LogSanitizer.maskIdentifier(tokenAddress), e);
             return BigInteger.ZERO;
         }
     }
@@ -614,7 +615,7 @@ public class WalletService {
                 .build();
 
         } catch (Exception e) {
-            log.error("Error getting transaction history for address: {}", address, e);
+            log.error("Error getting transaction history for address: {}", LogSanitizer.maskIdentifier(address), e);
             return TransactionHistoryResponse.error("Failed to get transaction history: " + e.getMessage());
         }
     }

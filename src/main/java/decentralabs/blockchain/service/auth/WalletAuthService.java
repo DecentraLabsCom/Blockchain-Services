@@ -150,17 +150,18 @@ public class WalletAuthService {
             throw new SignatureException("Invalid signature length: " + signatureBytes.length);
         }
         
-        byte v = signatureBytes[64];
-        if (v < 27) {
-            v += 27;
+        int recoveryId = signatureBytes[64] & 0xFF;
+        if (recoveryId < 27) {
+            recoveryId += 27;
         }
+        byte normalizedV = (byte) recoveryId;
         
         byte[] r = Arrays.copyOfRange(signatureBytes, 0, 32);
         byte[] s = Arrays.copyOfRange(signatureBytes, 32, 64);
         
         // Create SignatureData object
         Sign.SignatureData signatureData = new Sign.SignatureData(
-            v,
+            normalizedV,
             r,
             s
         );

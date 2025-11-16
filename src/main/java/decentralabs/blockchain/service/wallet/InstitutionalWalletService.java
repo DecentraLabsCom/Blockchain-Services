@@ -2,6 +2,15 @@ package decentralabs.blockchain.service.wallet;
 
 import decentralabs.blockchain.service.persistence.WalletPersistenceService;
 import jakarta.annotation.PostConstruct;
+import java.nio.ByteBuffer;
+import java.nio.charset.StandardCharsets;
+import java.security.GeneralSecurityException;
+import java.security.MessageDigest;
+import java.security.SecureRandom;
+import java.util.Base64;
+import javax.crypto.Cipher;
+import javax.crypto.spec.GCMParameterSpec;
+import javax.crypto.spec.SecretKeySpec;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -44,6 +53,13 @@ public class InstitutionalWalletService {
     
     private final WalletService walletService;
     private final WalletPersistenceService persistenceService;
+
+    private static final String ADDRESS_PROPERTY = "institutional.wallet.address";
+    private static final String ENCRYPTED_PASSWORD_PROPERTY = "institutional.wallet.password.encrypted";
+    private static final String LEGACY_PASSWORD_PROPERTY = "institutional.wallet.password";
+    private static final int CONFIG_GCM_TAG_LENGTH = 128;
+    private static final int CONFIG_IV_LENGTH = 12;
+    private static final SecureRandom SECURE_RANDOM = new SecureRandom();
     
     /**
      * Address of the institutional wallet (configured in application.properties)
@@ -66,6 +82,9 @@ public class InstitutionalWalletService {
      */
     @Value("${wallet.config.file:./data/wallet-config.properties}")
     private String walletConfigFile;
+
+    @Value("${wallet.config.encryption-key:}")
+    private String walletConfigEncryptionKey;
     
     /**
      * Cached credentials to avoid decrypting on every transaction
@@ -148,17 +167,29 @@ public class InstitutionalWalletService {
                 props.load(fis);
             }
             
-            String address = props.getProperty("institutional.wallet.address");
-            String password = props.getProperty("institutional.wallet.password");
+            String address = props.getProperty(ADDRESS_PROPERTY);
+            String encryptedPassword = props.getProperty(ENCRYPTED_PASSWORD_PROPERTY);
+            String legacyPassword = props.getProperty(LEGACY_PASSWORD_PROPERTY);
             
             if (address != null && !address.isBlank()) {
                 institutionalWalletAddress = address;
                 log.info("Loaded wallet address from config file");
             }
             
-            if (password != null && !password.isBlank()) {
-                institutionalWalletPassword = password;
-                log.info("Loaded wallet password from config file");
+            if (encryptedPassword != null && !encryptedPassword.isBlank()) {
+                if (!hasEncryptionKey()) {
+                    log.warn("Encrypted institutional wallet password present but wallet.config.encryption-key is not configured; skipping");
+                } else {
+                    institutionalWalletPassword = decryptPassword(encryptedPassword.trim());
+                    log.info("Loaded wallet password from encrypted config file");
+                }
+            } else if (legacyPassword != null && !legacyPassword.isBlank()) {
+                log.warn("Wallet password is stored in plain text; please configure wallet.config.encryption-key to re-encrypt securely");
+                institutionalWalletPassword = legacyPassword;
+                if (hasEncryptionKey() && address != null && !address.isBlank()) {
+                    // Automatically migrate to encrypted format
+                    saveConfigToFile(address, legacyPassword);
+                }
             }
             
         } catch (Exception e) {
@@ -174,14 +205,20 @@ public class InstitutionalWalletService {
      */
     public void saveConfigToFile(String address, String password) {
         try {
+            if (!hasEncryptionKey()) {
+                throw new IllegalStateException("wallet.config.encryption-key must be configured to persist the institutional wallet password securely");
+            }
+
             java.nio.file.Path path = java.nio.file.Paths.get(walletConfigFile);
             
             // Create parent directories if needed
-            java.nio.file.Files.createDirectories(path.getParent());
+            if (path.getParent() != null) {
+                java.nio.file.Files.createDirectories(path.getParent());
+            }
             
             java.util.Properties props = new java.util.Properties();
-            props.setProperty("institutional.wallet.address", address);
-            props.setProperty("institutional.wallet.password", password);
+            props.setProperty(ADDRESS_PROPERTY, address);
+            props.setProperty(ENCRYPTED_PASSWORD_PROPERTY, encryptPassword(password));
             
             try (java.io.FileOutputStream fos = new java.io.FileOutputStream(path.toFile())) {
                 props.store(fos, "Institutional Wallet Configuration - Auto-generated");
@@ -281,6 +318,58 @@ public class InstitutionalWalletService {
             
             return local;
         }
+    }
+
+    private boolean hasEncryptionKey() {
+        return walletConfigEncryptionKey != null && !walletConfigEncryptionKey.isBlank();
+    }
+
+    private String encryptPassword(String password) {
+        try {
+            byte[] iv = new byte[CONFIG_IV_LENGTH];
+            SECURE_RANDOM.nextBytes(iv);
+
+            Cipher cipher = Cipher.getInstance("AES/GCM/NoPadding");
+            cipher.init(Cipher.ENCRYPT_MODE, buildSecretKey(), new GCMParameterSpec(CONFIG_GCM_TAG_LENGTH, iv));
+            byte[] cipherText = cipher.doFinal(password.getBytes(StandardCharsets.UTF_8));
+
+            ByteBuffer buffer = ByteBuffer.allocate(iv.length + cipherText.length);
+            buffer.put(iv);
+            buffer.put(cipherText);
+            return Base64.getEncoder().encodeToString(buffer.array());
+        } catch (GeneralSecurityException e) {
+            throw new IllegalStateException("Unable to encrypt institutional wallet password", e);
+        }
+    }
+
+    private String decryptPassword(String encoded) {
+        try {
+            byte[] payload = Base64.getDecoder().decode(encoded);
+            if (payload.length <= CONFIG_IV_LENGTH) {
+                throw new IllegalStateException("Encrypted password payload is malformed");
+            }
+            ByteBuffer buffer = ByteBuffer.wrap(payload);
+            byte[] iv = new byte[CONFIG_IV_LENGTH];
+            buffer.get(iv);
+            byte[] cipherText = new byte[buffer.remaining()];
+            buffer.get(cipherText);
+
+            Cipher cipher = Cipher.getInstance("AES/GCM/NoPadding");
+            cipher.init(Cipher.DECRYPT_MODE, buildSecretKey(), new GCMParameterSpec(CONFIG_GCM_TAG_LENGTH, iv));
+            byte[] plaintext = cipher.doFinal(cipherText);
+            return new String(plaintext, StandardCharsets.UTF_8);
+        } catch (GeneralSecurityException | IllegalArgumentException e) {
+            throw new IllegalStateException("Unable to decrypt institutional wallet password", e);
+        }
+    }
+
+    private SecretKeySpec buildSecretKey() throws GeneralSecurityException {
+        if (!hasEncryptionKey()) {
+            throw new GeneralSecurityException("wallet.config.encryption-key is not configured");
+        }
+        MessageDigest digest = MessageDigest.getInstance("SHA-256");
+        byte[] keyBytes = digest.digest(walletConfigEncryptionKey.getBytes(StandardCharsets.UTF_8));
+        return new SecretKeySpec(keyBytes, "AES");
     }
     
     /**

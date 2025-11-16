@@ -94,15 +94,17 @@ class WalletAuthServiceTest {
             System.arraycopy(s, 0, sPadded, sOffset, s.length);
             
             // Ensure v is in the correct range (27 or 28)
-            if (v < 27) {
-                v += 27;
+            int recoveryId = v & 0xFF;
+            if (recoveryId < 27) {
+                recoveryId += 27;
             }
+            byte normalizedV = (byte) recoveryId;
             
             // Combine r, s, v into single byte array (65 bytes total)
             byte[] signatureBytes = new byte[65];
             System.arraycopy(rPadded, 0, signatureBytes, 0, 32);
             System.arraycopy(sPadded, 0, signatureBytes, 32, 32);
-            signatureBytes[64] = v;
+            signatureBytes[64] = normalizedV;
             
             // Convert to hex manually to preserve all leading zeros
             StringBuilder signatureHex = new StringBuilder();

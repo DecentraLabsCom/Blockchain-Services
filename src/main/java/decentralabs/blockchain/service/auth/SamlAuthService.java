@@ -3,13 +3,18 @@ package decentralabs.blockchain.service.auth;
 import decentralabs.blockchain.dto.auth.AuthResponse;
 import decentralabs.blockchain.dto.auth.SamlAuthRequest;
 import decentralabs.blockchain.service.wallet.BlockchainBookingService;
+import decentralabs.blockchain.util.LogSanitizer;
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.Jws;
 import io.jsonwebtoken.Jwts;
 import java.security.PublicKey;
+import java.util.Collection;
 import java.util.Map;
+import java.util.Objects;
+import java.util.stream.Stream;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 /**
@@ -30,6 +35,12 @@ public class SamlAuthService {
     
     @Autowired
     private SamlValidationService samlValidationService;
+
+    @Value("${auth.saml.require-booking-scope:true}")
+    private boolean requireBookingScope;
+
+    @Value("${auth.saml.required-booking-scope:booking:read}")
+    private String requiredBookingScope;
     
     /**
      * Handles SAML authentication request with 3-layer validation
@@ -77,6 +88,7 @@ public class SamlAuthService {
         
         // Generate JWT token
         if (includeBookingInfo) {
+            enforceBookingInfoEntitlement(marketplaceJWTClaims, jwtUserId);
             // Get booking information from blockchain (SAML users)
             String institutionalProviderWallet = (String) marketplaceJWTClaims.get("institutionalProviderWallet");
             String puc = (String) marketplaceJWTClaims.get("puc");
@@ -118,7 +130,7 @@ public class SamlAuthService {
             
             return jws.getPayload();
         } catch (Exception e) {
-            log.error("Marketplace JWT validation failed: {}", e.getMessage(), e);
+            log.error("Marketplace JWT validation failed: {}", LogSanitizer.sanitize(e.getMessage()), e);
             throw new SecurityException("Invalid marketplace token: " + e.getMessage(), e);
         }
     }
@@ -132,7 +144,7 @@ public class SamlAuthService {
      */
     private Map<String, String> validateSAMLAssertion(String samlAssertion) throws Exception {
         Map<String, String> attributes = samlValidationService.validateSamlAssertionWithSignature(samlAssertion);
-        log.info("SAML assertion validated WITH SIGNATURE for user: {}", attributes.get("userid"));
+        log.info("SAML assertion validated WITH SIGNATURE for user: {}", LogSanitizer.maskIdentifier(attributes.get("userid")));
         return attributes;
     }
     
@@ -141,6 +153,38 @@ public class SamlAuthService {
      */
     private void auditSAMLAuthentication(String userid, String affiliation, String labId, String reservationKey) {
         log.info("SAML Authentication: userid={} affiliation={} labId={} reservationKey={}",
-            userid, affiliation, labId, reservationKey);
+            LogSanitizer.maskIdentifier(userid),
+            LogSanitizer.maskIdentifier(affiliation),
+            LogSanitizer.maskIdentifier(labId),
+            LogSanitizer.maskIdentifier(reservationKey));
+    }
+
+    private void enforceBookingInfoEntitlement(Map<String, Object> marketplaceClaims, String userId) {
+        if (!requireBookingScope) {
+            return;
+        }
+        if (Boolean.TRUE.equals(marketplaceClaims.get("bookingInfoAllowed"))) {
+            return;
+        }
+        Object scopeClaim = marketplaceClaims.getOrDefault("scope", marketplaceClaims.get("scopes"));
+        if (scopeClaim != null && scopeContainsRequiredScope(scopeClaim)) {
+            return;
+        }
+        log.warn("Booking info request denied for {} - missing scope {}", LogSanitizer.maskIdentifier(userId), requiredBookingScope);
+        throw new SecurityException("Marketplace token missing required scope '" + requiredBookingScope + "' for booking info");
+    }
+
+    private boolean scopeContainsRequiredScope(Object scopeClaim) {
+        if (scopeClaim instanceof String scopeText) {
+            return Stream.of(scopeText.split("[\\s,]+"))
+                .anyMatch(token -> token.equals(requiredBookingScope));
+        }
+        if (scopeClaim instanceof Collection<?> collection) {
+            return collection.stream()
+                .filter(Objects::nonNull)
+                .map(Object::toString)
+                .anyMatch(token -> token.equals(requiredBookingScope));
+        }
+        return false;
     }
 }

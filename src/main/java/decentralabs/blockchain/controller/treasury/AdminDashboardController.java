@@ -3,6 +3,7 @@ package decentralabs.blockchain.controller.treasury;
 import decentralabs.blockchain.service.treasury.InstitutionalAnalyticsService;
 import decentralabs.blockchain.service.wallet.InstitutionalWalletService;
 import decentralabs.blockchain.service.wallet.WalletService;
+import decentralabs.blockchain.util.LogSanitizer;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -232,7 +233,8 @@ public class AdminDashboardController {
             || candidate.startsWith("127.");
 
         if (!allowed) {
-            log.warn("Blocked administrative dashboard access from non-local address: {}", candidate);
+            log.warn("Blocked administrative dashboard access from non-local address: {}",
+                LogSanitizer.sanitize(candidate));
         }
 
         return allowed;
