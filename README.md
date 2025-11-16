@@ -177,7 +177,7 @@ This documentation is organized into specialized sections:
    
    - **Create new wallet:** Click "Create Wallet" → Set password → Save credentials
    - **Import existing:** Click "Import Wallet" → Provide private key + password
-   - The backend automatically encrypts the private key into `/app/data/wallets.json`, stores the address and an AES-GCM–encrypted password in `/app/data/wallet-config.properties` (`institutional.wallet.password.encrypted`), and hot-reloads the institutional wallet. Configure `wallet.config.encryption-key` via `.env`/secret manager so the service can encrypt and later decrypt that value.
+   - The backend automatically encrypts the private key into `/app/data/wallets.json`, stores the address and an AES-GCM–encrypted password in `/app/data/wallet-config.properties` (`institutional.wallet.password.encrypted`), and hot-reloads the institutional wallet.
    
    > 💡 Nothing else to configure unless you want to override the wallet via environment variables (see below).
 
@@ -292,7 +292,7 @@ src/main/resources/
 ```
 
 > 💡 Configuration priority: Environment variables > `.env` (local file) > application.properties.
-> For the institutional wallet specifically: env vars / secrets manager > `wallet-config.properties` (auto-generated `institutional.wallet.address` + encrypted password) > persisted wallet metadata. A legacy plain-text `institutional.wallet.password` will be auto-migrated once `wallet.config.encryption-key` is present.
+> For the institutional wallet specifically: env vars / secrets manager > `wallet-config.properties` (auto-generated `institutional.wallet.address` + encrypted password) > persisted wallet metadata.
 
 ### Example Docker Run
 

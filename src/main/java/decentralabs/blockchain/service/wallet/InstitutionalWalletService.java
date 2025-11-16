@@ -2,12 +2,18 @@ package decentralabs.blockchain.service.wallet;
 
 import decentralabs.blockchain.service.persistence.WalletPersistenceService;
 import jakarta.annotation.PostConstruct;
+import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.nio.file.StandardOpenOption;
 import java.security.GeneralSecurityException;
 import java.security.MessageDigest;
 import java.security.SecureRandom;
 import java.util.Base64;
+import java.util.List;
 import javax.crypto.Cipher;
 import javax.crypto.spec.GCMParameterSpec;
 import javax.crypto.spec.SecretKeySpec;
@@ -60,7 +66,6 @@ public class InstitutionalWalletService {
 
     private static final String ADDRESS_PROPERTY = "institutional.wallet.address";
     private static final String ENCRYPTED_PASSWORD_PROPERTY = "institutional.wallet.password.encrypted";
-    private static final String LEGACY_PASSWORD_PROPERTY = "institutional.wallet.password";
     private static final int CONFIG_GCM_TAG_LENGTH = 128;
     private static final int CONFIG_IV_LENGTH = 12;
     private static final SecureRandom SECURE_RANDOM = new SecureRandom();
@@ -89,6 +94,9 @@ public class InstitutionalWalletService {
 
     @Value("${wallet.config.encryption-key:}")
     private String walletConfigEncryptionKey;
+
+    @Value("${wallet.env.file:.env}")
+    private String envFilePath;
     
     /**
      * Cached credentials to avoid decrypting on every transaction
@@ -173,7 +181,6 @@ public class InstitutionalWalletService {
             
             String address = props.getProperty(ADDRESS_PROPERTY);
             String encryptedPassword = props.getProperty(ENCRYPTED_PASSWORD_PROPERTY);
-            String legacyPassword = props.getProperty(LEGACY_PASSWORD_PROPERTY);
             
             if (address != null && !address.isBlank()) {
                 institutionalWalletAddress = address;
@@ -187,13 +194,6 @@ public class InstitutionalWalletService {
                     institutionalWalletPassword = decryptPassword(encryptedPassword.trim());
                     log.info("Loaded wallet password from encrypted config file");
                 }
-            } else if (legacyPassword != null && !legacyPassword.isBlank()) {
-                log.warn("Wallet password is stored in plain text; please configure wallet.config.encryption-key to re-encrypt securely");
-                institutionalWalletPassword = legacyPassword;
-                if (hasEncryptionKey() && address != null && !address.isBlank()) {
-                    // Automatically migrate to encrypted format
-                    saveConfigToFile(address, legacyPassword);
-                }
             }
             
         } catch (Exception e) {
@@ -202,6 +202,84 @@ public class InstitutionalWalletService {
     }
     
     /**
+     * Generates a secure encryption key and writes it to the .env file.
+     * This key is used to encrypt the wallet password in wallet-config.properties.
+     * 
+     * @return the generated encryption key
+     */
+    private String generateAndSaveEncryptionKey() {
+        try {
+            // Generate a secure 256-bit key
+            byte[] keyBytes = new byte[32];
+            SECURE_RANDOM.nextBytes(keyBytes);
+            String encryptionKey = Base64.getEncoder().encodeToString(keyBytes);
+            
+            // Update the .env file
+            Path envPath = Paths.get(envFilePath);
+            
+            if (!Files.exists(envPath)) {
+                log.warn(".env file not found at {}, encryption key will not be persisted to file", envFilePath);
+                return encryptionKey;
+            }
+            
+            List<String> lines = Files.readAllLines(envPath);
+            boolean keyFound = false;
+            
+            // Look for existing WALLET_CONFIG_ENCRYPTION_KEY line
+            for (int i = 0; i < lines.size(); i++) {
+                String line = lines.get(i).trim();
+                if (line.startsWith("WALLET_CONFIG_ENCRYPTION_KEY=")) {
+                    // Update existing line if empty
+                    String currentValue = line.substring("WALLET_CONFIG_ENCRYPTION_KEY=".length()).trim();
+                    if (currentValue.isEmpty()) {
+                        lines.set(i, "WALLET_CONFIG_ENCRYPTION_KEY=" + encryptionKey);
+                        log.info("Updated existing empty WALLET_CONFIG_ENCRYPTION_KEY in .env file");
+                    } else {
+                        log.info("WALLET_CONFIG_ENCRYPTION_KEY already set in .env file, keeping existing value");
+                        return currentValue; // Use existing key
+                    }
+                    keyFound = true;
+                    break;
+                }
+            }
+            
+            // If not found, add it after the WALLET_FILE_PATH line
+            if (!keyFound) {
+                for (int i = 0; i < lines.size(); i++) {
+                    if (lines.get(i).trim().startsWith("WALLET_FILE_PATH=")) {
+                        lines.add(i + 1, "");
+                        lines.add(i + 2, "# Auto-generated encryption key for wallet password storage");
+                        lines.add(i + 3, "WALLET_CONFIG_ENCRYPTION_KEY=" + encryptionKey);
+                        log.info("Added WALLET_CONFIG_ENCRYPTION_KEY to .env file");
+                        keyFound = true;
+                        break;
+                    }
+                }
+                
+                // If WALLET_FILE_PATH not found, append at the end
+                if (!keyFound) {
+                    lines.add("");
+                    lines.add("# Auto-generated encryption key for wallet password storage");
+                    lines.add("WALLET_CONFIG_ENCRYPTION_KEY=" + encryptionKey);
+                    log.info("Appended WALLET_CONFIG_ENCRYPTION_KEY to end of .env file");
+                }
+            }
+            
+            // Write back to file
+            Files.write(envPath, lines, StandardCharsets.UTF_8, StandardOpenOption.WRITE, StandardOpenOption.TRUNCATE_EXISTING);
+            
+            // Update the instance variable so it's available immediately
+            walletConfigEncryptionKey = encryptionKey;
+            
+            return encryptionKey;
+            
+        } catch (IOException e) {
+            log.error("Failed to write encryption key to .env file: {}", envFilePath, e);
+            throw new IllegalStateException("Unable to persist encryption key to .env file", e);
+        }
+    }
+
+    /**
      * Saves wallet configuration to file for persistence across restarts
      * 
      * @param address Wallet address
@@ -209,8 +287,10 @@ public class InstitutionalWalletService {
      */
     public void saveConfigToFile(String address, String password) {
         try {
+            // Auto-generate encryption key if not configured
             if (!hasEncryptionKey()) {
-                throw new IllegalStateException("wallet.config.encryption-key must be configured to persist the institutional wallet password securely");
+                log.info("Encryption key not found, generating and saving to .env file");
+                generateAndSaveEncryptionKey();
             }
 
             java.nio.file.Path path = java.nio.file.Paths.get(walletConfigFile);
@@ -276,13 +356,6 @@ public class InstitutionalWalletService {
                 throw new IllegalStateException(
                     "Institutional wallet address not configured. " +
                     "Set institutional.wallet.address in application.properties."
-                );
-            }
-            
-            if (institutionalWalletPassword == null || institutionalWalletPassword.isBlank()) {
-                throw new IllegalStateException(
-                    "Institutional wallet password not configured. " +
-                    "Set institutional.wallet.password in application.properties."
                 );
             }
             
