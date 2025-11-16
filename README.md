@@ -263,7 +263,6 @@ This project uses a **security-first deployment approach**:
 | `ALLOWED_ORIGINS` | CORS allowed origins | - |
 | `PRIVATE_KEY_PATH` | Path to JWT private key | `config/keys/private_key.pem` |
 | `PUBLIC_KEY_PATH` | Path to JWT public key | `config/keys/public_key.pem` |
-| `BASE_DOMAIN` | Base URL for JWT claims | `http://localhost` |
 | `ADMIN_DASHBOARD_LOCAL_ONLY` | `true` blocks `/treasury/admin/**` to localhost, `false` keeps it open (dev default) | `true` |
 
 ### Configuration Files

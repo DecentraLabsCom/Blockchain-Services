@@ -312,7 +312,6 @@ openssl rsa -in private_key.pem -pubout -out public_key.pem
 |----------|-------------|---------|
 | `PRIVATE_KEY_PATH` | Path to JWT signing key | `config/keys/private_key.pem` |
 | `PUBLIC_KEY_PATH` | Path to JWT verification key | `config/keys/public_key.pem` |
-| `BASE_DOMAIN` | Base URL for JWT issuer | `http://localhost` |
 | `ALLOWED_ORIGINS` | CORS allowed origins | - |
 | `CONTRACT_ADDRESS` | Diamond contract for reservations | - |
 
@@ -322,7 +321,6 @@ openssl rsa -in private_key.pem -pubout -out public_key.pem
 # JWT Configuration
 jwt.private.key.path=${PRIVATE_KEY_PATH:config/keys/private_key.pem}
 jwt.public.key.path=${PUBLIC_KEY_PATH:config/keys/public_key.pem}
-base.domain=${BASE_DOMAIN:http://localhost}
 
 # CORS Configuration
 cors.allowed.origins=${ALLOWED_ORIGINS:}
