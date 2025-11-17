@@ -75,9 +75,6 @@ public class WalletService {
     @Value("${wallet.address}")
     private String defaultWalletAddress;
 
-    @Value("${base.domain:http://localhost}")
-    private String baseDomain;
-
     // Network-specific RPC configurations (comma-separated for fallback)
     @Value("${ethereum.mainnet.rpc.url:https://eth.public-rpc.com}")
     private String mainnetRpcUrl;

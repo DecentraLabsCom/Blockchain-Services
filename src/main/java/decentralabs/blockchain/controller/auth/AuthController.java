@@ -1,5 +1,6 @@
 package decentralabs.blockchain.controller.auth;
 
+import decentralabs.blockchain.service.GatewayUrlResolver;
 import decentralabs.blockchain.service.auth.JwtService;
 import decentralabs.blockchain.service.auth.KeyService;
 import java.math.BigInteger;
@@ -26,9 +27,6 @@ import org.springframework.web.bind.annotation.*;
 @Slf4j
 public class AuthController {
 
-    @Value("${base.domain:http://localhost}")
-    private String baseDomain;
-    
     @Value("${auth.base-path:/auth}")
     private String authPath;
     
@@ -43,6 +41,9 @@ public class AuthController {
 
     @Autowired
     private KeyService keyService;
+    
+    @Autowired
+    private GatewayUrlResolver gatewayUrlResolver;
 
     /**
      * OpenID Connect Discovery endpoint
@@ -52,6 +53,7 @@ public class AuthController {
      */
     @GetMapping("/.well-known/openid-configuration")
     public ResponseEntity<Map<String, Object>> openidConfig() {
+        String baseDomain = gatewayUrlResolver.resolveBaseDomain();
         Map<String, Object> config = new HashMap<>();
         config.put("issuer", baseDomain + authPath);
         

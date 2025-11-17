@@ -3,6 +3,7 @@ package decentralabs.blockchain.service.auth;
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.JwtBuilder;
 import io.jsonwebtoken.Jwts;
+import decentralabs.blockchain.service.GatewayUrlResolver;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
@@ -22,20 +23,20 @@ import java.util.UUID;
 @Service
 public class JwtService {
 
-    @Value("${base.domain:http://localhost}")
-    private String baseDomain;
-    
     @Value("${auth.base-path:/auth}")
     private String authPath;
     
     @Autowired
     private KeyService keyService;
     
+    @Autowired
+    private GatewayUrlResolver gatewayUrlResolver;
+    
     /**
      * Helper method to construct the issuer URL from base domain and context path
      */
     private String getIssuerUrl() {
-        return baseDomain + authPath;
+        return gatewayUrlResolver.resolveIssuer(authPath);
     }
 
     /**

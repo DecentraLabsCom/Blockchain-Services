@@ -30,9 +30,6 @@ public class BlockchainBookingService {
     
     private final WalletService walletService;
     
-    @Value("${base.domain:http://localhost}")
-    private String baseDomain;
-
     private static final BigInteger STATUS_CONFIRMED = BigInteger.ONE;
     private static final BigInteger STATUS_IN_USE = BigInteger.valueOf(2);
 
