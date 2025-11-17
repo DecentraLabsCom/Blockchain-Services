@@ -45,7 +45,6 @@ class BlockchainBookingServiceTest {
     void setUp() {
         service = new BlockchainBookingService(walletService);
         ReflectionTestUtils.setField(service, "contractAddress", TEST_CONTRACT_ADDRESS);
-        ReflectionTestUtils.setField(service, "baseDomain", "https://test.domain");
 
         lenient().when(walletService.getWeb3jInstance()).thenReturn(web3j);
     }

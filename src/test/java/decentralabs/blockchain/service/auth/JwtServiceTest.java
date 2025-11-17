@@ -1,5 +1,6 @@
 package decentralabs.blockchain.service.auth;
 
+import decentralabs.blockchain.service.GatewayUrlResolver;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -24,6 +25,9 @@ class JwtServiceTest {
     @Mock
     private KeyService keyService;
 
+    @Mock
+    private GatewayUrlResolver gatewayUrlResolver;
+
     @InjectMocks
     private JwtService jwtService;
 
@@ -43,6 +47,7 @@ class JwtServiceTest {
         // Use lenient() to prevent UnnecessaryStubbing errors
         lenient().when(keyService.loadPrivateKey()).thenReturn(mockPrivateKey);
         lenient().when(keyService.getPublicKey()).thenReturn(mockPublicKey);
+        lenient().when(gatewayUrlResolver.resolveIssuer(anyString())).thenReturn("http://localhost:8080/auth");
     }
 
     @Test
