@@ -11,8 +11,54 @@ const DashboardState = {
     lastUpdate: null,
     walletAddress: null,
     welcomeModalDismissed: false,
-    inviteTokenApplied: false  // Track if invite token has been applied
+    inviteTokenApplied: false,  // Track if invite token has been applied
+    invitePromptedWallet: null  // Track which wallet has been prompted this session
 };
+
+const INVITE_TOKEN_STORAGE_PREFIX = 'dlabs_invite_token_applied:';
+
+function getInviteTokenStorageKey(address) {
+    return `${INVITE_TOKEN_STORAGE_PREFIX}${(address || '').toLowerCase()}`;
+}
+
+function loadInviteTokenState(address) {
+    if (!address) {
+        return false;
+    }
+    try {
+        return localStorage.getItem(getInviteTokenStorageKey(address)) === 'true';
+    } catch (error) {
+        console.warn('Unable to read invite token state from storage', error);
+        return false;
+    }
+}
+
+function persistInviteTokenState(address, applied) {
+    if (!address) {
+        return;
+    }
+    try {
+        const storageKey = getInviteTokenStorageKey(address);
+        if (applied) {
+            localStorage.setItem(storageKey, 'true');
+        } else {
+            localStorage.removeItem(storageKey);
+        }
+    } catch (error) {
+        console.warn('Unable to persist invite token state', error);
+    }
+}
+
+function maybePromptInviteToken(force = false) {
+    const wallet = DashboardState.walletAddress;
+    if (!wallet || DashboardState.inviteTokenApplied) {
+        return;
+    }
+    if (!force && DashboardState.invitePromptedWallet === wallet) {
+        return;
+    }
+    showInviteTokenModal();
+}
 
 // Utility: Format wei to ETH
 function weiToEth(weiString) {
@@ -270,6 +316,10 @@ function showInviteTokenModal() {
     const tokenInput = document.getElementById('inviteTokenInput');
     const resultDiv = document.getElementById('inviteResult');
     
+    if (DashboardState.walletAddress) {
+        DashboardState.invitePromptedWallet = DashboardState.walletAddress;
+    }
+    
     if (modal) {
         modal.style.display = 'flex';
         if (tokenInput) tokenInput.value = '';
@@ -321,6 +371,8 @@ async function applyInviteToken() {
         
         if (data.success) {
             DashboardState.inviteTokenApplied = true;
+            persistInviteTokenState(DashboardState.walletAddress, true);
+            DashboardState.invitePromptedWallet = DashboardState.walletAddress;
             updateApplyInviteButtonVisibility();
         }
 
@@ -373,7 +425,20 @@ async function loadSystemStatus() {
         if (data.success) {
             const walletConfigured = data.walletConfigured;
             const walletAddress = data.institutionalWalletAddress;
+            const previousWallet = DashboardState.walletAddress;
             DashboardState.walletAddress = walletAddress || null;
+            
+            if (DashboardState.walletAddress !== previousWallet) {
+                DashboardState.invitePromptedWallet = null;
+            }
+            
+            if (DashboardState.walletAddress) {
+                DashboardState.inviteTokenApplied = loadInviteTokenState(DashboardState.walletAddress);
+            } else {
+                DashboardState.inviteTokenApplied = false;
+                DashboardState.invitePromptedWallet = null;
+                hideInviteTokenModal();
+            }
             
             // Update marketplace URL if provided
             if (data.marketplaceUrl) {
@@ -417,6 +482,7 @@ async function loadSystemStatus() {
             
             // Update Apply Invite Token button visibility
             updateApplyInviteButtonVisibility();
+            maybePromptInviteToken();
             
             // Show/hide wallet setup dropdown
             const dropdown = document.getElementById('walletSetupDropdown');
@@ -1134,13 +1200,13 @@ function setupButtonHandlers() {
                     
                     await showInfoModal('Institutional Wallet Created', content + secretSection, true);
                     
+                    DashboardState.walletAddress = data.address;
+                    DashboardState.inviteTokenApplied = false;
+                    DashboardState.invitePromptedWallet = null;
+                    persistInviteTokenState(data.address, false);
+                    
                     // Refresh dashboard to show new wallet
                     await refreshAllData();
-                    
-                    // Show invite token modal after wallet creation
-                    if (!DashboardState.inviteTokenApplied) {
-                        showInviteTokenModal();
-                    }
                 } else {
                     showToast('Failed to create wallet: ' + (data.error || data.message || 'Unknown error'), 'error');
                 }
@@ -1217,13 +1283,13 @@ function setupButtonHandlers() {
                     
                     await showInfoModal('Institutional Wallet Imported', content, true);
                     
+                    DashboardState.walletAddress = data.address;
+                    DashboardState.inviteTokenApplied = false;
+                    DashboardState.invitePromptedWallet = null;
+                    persistInviteTokenState(data.address, false);
+                    
                     // Refresh dashboard to show imported wallet
                     await refreshAllData();
-                    
-                    // Show invite token modal after wallet import
-                    if (!DashboardState.inviteTokenApplied) {
-                        showInviteTokenModal();
-                    }
                 } else {
                     showToast('Failed to import wallet: ' + (data.error || data.message || 'Unknown error'), 'error');
                 }

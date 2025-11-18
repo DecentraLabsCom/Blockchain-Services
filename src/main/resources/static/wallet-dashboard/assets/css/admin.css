@@ -1497,7 +1497,6 @@ body {
 
 /* Invite Token Modal - Centering and Layout Fix */
 #inviteTokenModal {
-    display: flex;
     justify-content: center;
     align-items: center;
 }
