@@ -46,7 +46,11 @@ class ContractEventListenerConfigTest {
 
     @BeforeEach
     void setUp() {
-        config = new ContractEventListenerConfig(walletService, labMetadataService, institutionalWalletService);
+        config = new ContractEventListenerConfig(
+            walletService,
+            labMetadataService,
+            institutionalWalletService
+        );
         ReflectionTestUtils.setField(config, "diamondContractAddress", "0x1234567890abcdef");
         ReflectionTestUtils.setField(config, "startBlock", "latest");
     }

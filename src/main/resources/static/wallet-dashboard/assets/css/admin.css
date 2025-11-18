@@ -188,6 +188,40 @@ body {
     font-size: 0.85rem;
 }
 
+.invite-body {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-sm);
+}
+
+.token-input {
+    width: 100%;
+    margin-top: 8px;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    color: var(--text-primary);
+    border-radius: var(--radius-md);
+    padding: var(--spacing-sm);
+    font-family: 'Fira Code', 'Courier New', monospace;
+    resize: vertical;
+}
+
+.token-input:focus {
+    outline: none;
+    border-color: var(--neon-blue);
+    box-shadow: 0 0 0 2px rgba(0, 212, 255, 0.2);
+}
+
+.invite-actions {
+    display: flex;
+    gap: var(--spacing-sm);
+    flex-wrap: wrap;
+}
+
+.invite-result {
+    min-height: 1.5rem;
+}
+
 /* Info Grid */
 .info-grid {
     display: grid;
@@ -310,6 +344,142 @@ body {
     border-color: var(--neon-green);
     color: var(--neon-green);
     box-shadow: 0 0 20px rgba(0, 255, 127, 0.4);
+}
+
+/* Welcome Modal */
+.welcome-modal {
+    display: none;
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(10, 10, 15, 0.95);
+    backdrop-filter: blur(8px);
+    z-index: 10000;
+    justify-content: center;
+    align-items: center;
+    animation: fadeIn 0.3s ease-out;
+}
+
+.welcome-modal.show {
+    display: flex;
+}
+
+.welcome-modal-content {
+    background: linear-gradient(135deg, var(--bg-secondary) 0%, var(--bg-primary) 100%);
+    border: 2px solid var(--border-color);
+    border-radius: var(--radius-lg);
+    padding: var(--spacing-xl);
+    max-width: 600px;
+    width: 90%;
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+    animation: slideUp 0.3s ease-out;
+}
+
+.welcome-modal-header {
+    text-align: center;
+    margin-bottom: var(--spacing-lg);
+}
+
+.welcome-modal-header h1 {
+    font-size: 2rem;
+    margin-bottom: var(--spacing-sm);
+    background: linear-gradient(135deg, var(--neon-blue) 0%, var(--neon-purple) 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+}
+
+.welcome-modal-body {
+    margin-bottom: var(--spacing-lg);
+}
+
+.welcome-message {
+    background: var(--bg-secondary);
+    border-left: 4px solid var(--neon-blue);
+    padding: var(--spacing-md);
+    border-radius: var(--radius-md);
+    margin-bottom: var(--spacing-lg);
+    line-height: 1.6;
+}
+
+.welcome-message p {
+    margin-bottom: var(--spacing-sm);
+}
+
+.welcome-message p:last-child {
+    margin-bottom: 0;
+}
+
+.welcome-actions {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-md);
+}
+
+.btn-marketplace {
+    background: linear-gradient(135deg, var(--neon-blue) 0%, var(--neon-purple) 100%);
+    color: white;
+    padding: var(--spacing-md) var(--spacing-lg);
+    border: none;
+    border-radius: var(--radius-md);
+    font-size: 1.1rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: var(--spacing-sm);
+    text-decoration: none;
+    box-shadow: 0 4px 15px rgba(0, 212, 255, 0.3);
+}
+
+.btn-marketplace:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 20px rgba(0, 212, 255, 0.5);
+}
+
+.btn-continue {
+    background: transparent;
+    color: var(--text-secondary);
+    padding: var(--spacing-md) var(--spacing-lg);
+    border: 2px solid var(--border-color);
+    border-radius: var(--radius-md);
+    font-size: 1rem;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: var(--spacing-sm);
+}
+
+.btn-continue:hover {
+    border-color: var(--neon-blue);
+    color: var(--neon-blue);
+    background: rgba(0, 212, 255, 0.05);
+}
+
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+    }
+    to {
+        opacity: 1;
+    }
+}
+
+@keyframes slideUp {
+    from {
+        transform: translateY(30px);
+        opacity: 0;
+    }
+    to {
+        transform: translateY(0);
+        opacity: 1;
+    }
 }
 
 .network-btn:disabled {
@@ -1009,7 +1179,7 @@ body {
 }
 
 .modal-body {
-    padding: var(--spacing-lg);
+    padding: var(--spacing-md);
     max-height: calc(80vh - 100px);
     overflow-y: auto;
 }
@@ -1325,3 +1495,38 @@ body {
     word-break: break-all;
 }
 
+/* Invite Token Modal - Centering and Layout Fix */
+#inviteTokenModal {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+
+#inviteTokenModal .modal-content {
+    margin: 0;
+    max-width: 600px;
+    width: 90%;
+}
+
+#inviteTokenModal .modal-body {
+    padding-bottom: var(--spacing-xs);
+}
+
+#inviteTokenModal .modal-footer {
+    padding: var(--spacing-sm) var(--spacing-lg) var(--spacing-lg);
+    display: flex;
+    justify-content: center;
+    gap: var(--spacing-md);
+}
+
+/* Header button icons spacing */
+.header-actions .btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.6rem;
+}
+
+.header-actions .btn i,
+.header-actions .btn .icon {
+    margin-right: 0;
+}

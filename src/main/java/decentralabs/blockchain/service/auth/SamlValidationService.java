@@ -22,8 +22,11 @@ import java.net.URI;
 import java.net.URL;
 import java.security.cert.CertificateFactory;
 import java.security.cert.X509Certificate;
+import java.util.ArrayList;
 import java.util.Base64;
 import java.util.Collections;
+import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -66,6 +69,18 @@ public class SamlValidationService {
      * @throws Exception if validation fails or signature is invalid
      */
     public Map<String, String> validateSamlAssertionWithSignature(String samlAssertion) throws Exception {
+        SamlAssertionAttributes attrs = validateSamlAssertionDetailed(samlAssertion);
+        Map<String, String> attributes = new LinkedHashMap<>();
+        attributes.put("userid", attrs.userid());
+        attributes.put("affiliation", attrs.affiliation());
+        if (attrs.email() != null) {
+            attributes.put("email", attrs.email());
+        }
+        attributes.put("issuer", attrs.issuer());
+        return attributes;
+    }
+
+    public SamlAssertionAttributes validateSamlAssertionDetailed(String samlAssertion) throws Exception {
         // Decode Base64
         byte[] decodedBytes = Base64.getDecoder().decode(samlAssertion);
         String xmlContent = new String(decodedBytes);
@@ -109,6 +124,15 @@ public class SamlValidationService {
         // Extract attributes after signature validation
         String userid = extractSAMLAttribute(doc, "userid");
         String affiliation = extractSAMLAttribute(doc, "affiliation");
+        String email = firstNonEmpty(
+            extractSAMLAttribute(doc, "mail"),
+            extractSAMLAttribute(doc, "email")
+        );
+        String displayName = firstNonEmpty(
+            extractSAMLAttribute(doc, "displayName"),
+            extractSAMLAttribute(doc, "cn")
+        );
+        List<String> schacHomeOrganizations = extractSAMLAttributeValues(doc, "schacHomeOrganization");
         
         if (userid == null || userid.isEmpty()) {
             throw new SecurityException("SAML assertion missing 'userid' attribute");
@@ -117,11 +141,32 @@ public class SamlValidationService {
             throw new SecurityException("SAML assertion missing 'affiliation' attribute");
         }
         
+        if (schacHomeOrganizations.isEmpty()) {
+            String scopedAffiliation = extractSAMLAttribute(doc, "schacHomeOrganization");
+            if (scopedAffiliation != null && !scopedAffiliation.isBlank()) {
+                schacHomeOrganizations = List.of(scopedAffiliation.trim().toLowerCase());
+            }
+        }
+
         logger.info("✅ SAML assertion validated WITH SIGNATURE for user: {}", userid);
-        
-        return Map.of(
-            "userid", userid,
-            "affiliation", affiliation
+
+        Map<String, List<String>> capturedAttributes = new LinkedHashMap<>();
+        putAttribute(capturedAttributes, "userid", userid);
+        putAttribute(capturedAttributes, "affiliation", affiliation);
+        putAttribute(capturedAttributes, "email", email);
+        putAttribute(capturedAttributes, "displayName", displayName);
+        if (!schacHomeOrganizations.isEmpty()) {
+            capturedAttributes.put("schacHomeOrganization", schacHomeOrganizations);
+        }
+
+        return new SamlAssertionAttributes(
+            issuer,
+            userid,
+            affiliation,
+            email,
+            displayName,
+            schacHomeOrganizations,
+            capturedAttributes
         );
     }
     
@@ -385,6 +430,46 @@ public class SamlValidationService {
             logger.error("Error extracting SAML attribute '" + attributeName + "'", e);
             return null;
         }
+    }
+
+    private List<String> extractSAMLAttributeValues(Document doc, String attributeName) {
+        List<String> values = new ArrayList<>();
+        try {
+            NodeList attributes = doc.getElementsByTagNameNS("*", "Attribute");
+            for (int i = 0; i < attributes.getLength(); i++) {
+                Element attribute = (Element) attributes.item(i);
+                String name = attribute.getAttribute("Name");
+                if (name != null && name.equals(attributeName)) {
+                    NodeList items = attribute.getElementsByTagNameNS("*", "AttributeValue");
+                    for (int j = 0; j < items.getLength(); j++) {
+                        String value = items.item(j).getTextContent();
+                        if (value != null && !value.isBlank()) {
+                            values.add(value.trim().toLowerCase());
+                        }
+                    }
+                }
+            }
+        } catch (Exception e) {
+            logger.error("Error extracting SAML attribute values for '" + attributeName + "'", e);
+        }
+        return values;
+    }
+
+    private void putAttribute(Map<String, List<String>> attributes, String key, String value) {
+        if (value == null || value.isBlank()) {
+            return;
+        }
+        attributes.put(key, List.of(value));
+    }
+
+    private String firstNonEmpty(String one, String two) {
+        if (one != null && !one.isBlank()) {
+            return one;
+        }
+        if (two != null && !two.isBlank()) {
+            return two;
+        }
+        return null;
     }
     
     /**

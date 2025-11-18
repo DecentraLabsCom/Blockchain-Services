@@ -114,6 +114,30 @@ public class Diamond extends Contract {
             this.base = base;
         }
     }
+
+    /**
+     * Register a schacHomeOrganization for the calling provider (InstitutionalOrgRegistryFacet)
+     */
+    public RemoteFunctionCall<TransactionReceipt> registerSchacHomeOrganization(String organization) {
+        final Function function = new Function(
+            "registerSchacHomeOrganization",
+            Arrays.asList(new Utf8String(organization)),
+            List.of()
+        );
+        return executeRemoteCallTransaction(function);
+    }
+
+    /**
+     * Admin helper to grant institution role and register an organization (InstitutionFacet)
+     */
+    public RemoteFunctionCall<TransactionReceipt> grantInstitutionRole(String institution, String organization) {
+        final Function function = new Function(
+            "grantInstitutionRole",
+            Arrays.asList(new Address(institution), new Utf8String(organization)),
+            List.of()
+        );
+        return executeRemoteCallTransaction(function);
+    }
     
     /**
      * Get reservation by key (ReservationFacet)

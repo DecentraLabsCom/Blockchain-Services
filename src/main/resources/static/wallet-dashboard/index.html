@@ -9,6 +9,59 @@
     <link rel="stylesheet" href="assets/css/admin.css">
 </head>
 <body>
+    <!-- Welcome Modal -->
+    <div id="welcomeModal" class="welcome-modal">
+        <div class="welcome-modal-content">
+            <div class="welcome-modal-header">
+                <h1><i class="fas fa-rocket"></i> Welcome to DecentraLabs</h1>
+            </div>
+            <div class="welcome-modal-body">
+                <div class="welcome-message">
+                    <p><strong>No institutional wallet detected.</strong></p>
+                    <p>To get started with DecentraLabs, you'll need an <strong>invitation token</strong> from the marketplace.</p>
+                    <p>Visit the marketplace now to request access for your institution.</p>
+                </div>
+                <div class="welcome-actions">
+                    <a id="marketplaceLink" href="https://marketplace-decentralabs.vercel.app/" target="_blank" class="btn-marketplace">
+                        <i class="fas fa-store"></i>
+                        Get Invitation Token from Marketplace
+                    </a>
+                    <button id="continueBtn" class="btn-continue">
+                        <i class="fas fa-check-circle"></i>
+                        I Already Have a Token, Let Me In
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Invite Token Modal -->
+    <div id="inviteTokenModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2><i class="fas fa-ticket-alt"></i> Apply Institution Invite Token</h2>
+                <button class="modal-close" id="closeInviteModalBtn">&times;</button>
+            </div>
+            <div class="modal-body">
+                <p class="info-text">
+                    Paste the invite token provided by the DecentraLabs marketplace to register your institution on-chain.
+                </p>
+                <textarea id="inviteTokenInput" class="token-input" rows="5"
+                    placeholder="Paste your invite token here..."></textarea>
+                <div id="inviteResult" class="invite-result"></div>
+            </div>
+            <div class="modal-footer">
+                <button id="applyInviteBtn" class="btn btn-primary">
+                    <i class="fas fa-paper-plane"></i>
+                    Apply Token
+                </button>
+                <button id="cancelInviteBtn" class="btn btn-secondary">
+                    Cancel
+                </button>
+            </div>
+        </div>
+    </div>
+
     <div class="container">
         <!-- Header -->
         <header class="dashboard-header">
@@ -22,9 +75,11 @@
                         <span class="icon">↻</span>
                         Refresh
                     </button>
+                    <button id="applyInviteTokenHeaderBtn" class="btn btn-primary" style="display: none;">
+                        <i class="fas fa-ticket-alt"></i> Use Invite Token
+                    </button>
                     <button id="revealPrivateKeyBtn" class="btn btn-secondary" style="display: none;">
-                        <i class="fas fa-key"></i>
-                        Reveal Private Key
+                        <i class="fas fa-key"></i> Show Private Key
                     </button>
                     <div class="status-indicator" id="statusIndicator">
                         <span class="status-dot"></span>
@@ -246,11 +301,11 @@
                 <p id="inputModalMessage"></p>
                 <input type="password" id="inputModalField" class="modal-input" placeholder="Enter value...">
                 <div class="modal-actions">
-                    <button id="inputModalCancel" class="btn btn-secondary">
-                        <i class="fas fa-times"></i> Cancel
-                    </button>
                     <button id="inputModalConfirm" class="btn btn-primary">
                         <i class="fas fa-check"></i> Confirm
+                    </button>
+                    <button id="inputModalCancel" class="btn btn-secondary">
+                        <i class="fas fa-times"></i> Cancel
                     </button>
                 </div>
             </div>

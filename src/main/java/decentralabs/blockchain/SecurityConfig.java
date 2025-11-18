@@ -65,7 +65,8 @@ public class SecurityConfig {
                     samlAuth2Endpoint,
                     healthEndpoint,
                     walletEndpoint + "/**",
-                    treasuryEndpoint + "/**"
+                    treasuryEndpoint + "/**",
+                    "/onboarding/**"
                 )
             )
             .authorizeHttpRequests(authorize -> authorize
@@ -78,6 +79,7 @@ public class SecurityConfig {
                 .requestMatchers(samlAuthEndpoint).permitAll()
                 .requestMatchers(samlAuth2Endpoint).permitAll()
                 .requestMatchers(healthEndpoint).permitAll()
+                .requestMatchers("/onboarding/**").permitAll()
                 // Wallet dashboard static resources (HTML/CSS/JS)
                 .requestMatchers("/wallet-dashboard/**").permitAll()
                 // ALL wallet endpoints - restricted by CORS to localhost
@@ -113,6 +115,7 @@ public class SecurityConfig {
         // ALL wallet endpoints - localhost only, except institutional reservation
         source.registerCorsConfiguration(walletEndpoint + "/**", walletConfiguration);
         source.registerCorsConfiguration(treasuryEndpoint + "/**", walletConfiguration);
+        source.registerCorsConfiguration("/onboarding/**", walletConfiguration);
 
         return source;
     }

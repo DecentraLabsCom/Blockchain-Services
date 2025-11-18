@@ -38,6 +38,9 @@ public class AdminDashboardController {
     @Value("${contract.address}")
     private String contractAddress;
 
+    @Value("${marketplace.url:https://marketplace-decentralabs.vercel.app}")
+    private String marketplaceUrl;
+
     /**
      * GET /treasury/admin/status
      * Overall system status for dashboard
@@ -60,6 +63,7 @@ public class AdminDashboardController {
             status.put("walletConfigured", walletConfigured);
             status.put("institutionalWalletAddress", walletConfigured ? institutionalAddress : null);
             status.put("contractAddress", contractAddress);
+            status.put("marketplaceUrl", marketplaceUrl);
             status.put("timestamp", System.currentTimeMillis());
             
             var networksResponse = walletService.getAvailableNetworks();

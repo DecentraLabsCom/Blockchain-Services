@@ -8,7 +8,10 @@ const DashboardState = {
     autoRefreshInterval: null,
     autoRefreshEnabled: true,
     refreshIntervalMs: 30000, // 30 seconds
-    lastUpdate: null
+    lastUpdate: null,
+    walletAddress: null,
+    welcomeModalDismissed: false,
+    inviteTokenApplied: false  // Track if invite token has been applied
 };
 
 // Utility: Format wei to ETH
@@ -221,6 +224,144 @@ function updateLastRefreshTime() {
     }
 }
 
+function renderInviteResult(result) {
+    const container = document.getElementById('inviteResult');
+    if (!container) {
+        return;
+    }
+    if (!result) {
+        container.innerHTML = '';
+        return;
+    }
+
+    const entries = (result.domains || []).map(entry => {
+        if (entry.transactionHash) {
+            return `
+                <div class="info-line">
+                    <span class="info-label">${entry.organization}</span>
+                    <span class="info-value"><code>${entry.transactionHash}</code></span>
+                </div>
+            `;
+        }
+        return `
+            <div class="info-line">
+                <span class="info-label">${entry.organization}</span>
+                <span class="info-value warning-text">${entry.error || 'Failed'}</span>
+            </div>
+        `;
+    }).join('');
+
+    container.innerHTML = entries || '<span class="muted">No organizations returned.</span>';
+}
+
+// Update header button visibility based on wallet and token status
+function updateApplyInviteButtonVisibility() {
+    const headerBtn = document.getElementById('applyInviteTokenHeaderBtn');
+    if (headerBtn) {
+        // Show button only if wallet is configured AND token not yet applied
+        const shouldShow = DashboardState.walletAddress && !DashboardState.inviteTokenApplied;
+        headerBtn.style.display = shouldShow ? 'inline-flex' : 'none';
+    }
+}
+
+// Show/hide invite token modal
+function showInviteTokenModal() {
+    const modal = document.getElementById('inviteTokenModal');
+    const tokenInput = document.getElementById('inviteTokenInput');
+    const resultDiv = document.getElementById('inviteResult');
+    
+    if (modal) {
+        modal.style.display = 'flex';
+        if (tokenInput) tokenInput.value = '';
+        if (resultDiv) resultDiv.innerHTML = '';
+    }
+}
+
+function hideInviteTokenModal() {
+    const modal = document.getElementById('inviteTokenModal');
+    if (modal) {
+        modal.style.display = 'none';
+    }
+}
+
+async function applyInviteToken() {
+    const tokenInput = document.getElementById('inviteTokenInput');
+    if (!tokenInput) {
+        return;
+    }
+
+    const token = tokenInput.value.trim();
+    if (!token) {
+        showToast('Invite token cannot be empty.', 'error');
+        return;
+    }
+
+    if (!DashboardState.walletAddress) {
+        showToast('Configure your institutional wallet before applying a token.', 'error');
+        return;
+    }
+
+    try {
+        showToast('Applying invite token...', 'info');
+        const response = await fetch('/onboarding/token/apply', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                token,
+                walletAddress: DashboardState.walletAddress
+            })
+        });
+
+        const data = await response.json();
+        if (!response.ok) {
+            throw new Error(data.message || 'Unable to apply invite token.');
+        }
+
+        renderInviteResult(data);
+        
+        if (data.success) {
+            DashboardState.inviteTokenApplied = true;
+            updateApplyInviteButtonVisibility();
+        }
+
+        await showInfoModal(
+            'Invite Token Applied',
+            data.message || 'Organizations registered on-chain.',
+            data.success
+        );
+
+        hideInviteTokenModal();
+        await refreshAllData();
+    } catch (error) {
+        console.error('Failed to apply invite token:', error);
+        showToast(error.message || 'Failed to apply invite token', 'error');
+        renderInviteResult({ domains: [{ organization: 'Error', error: error.message }] });
+    }
+}
+
+// Welcome Modal Functions
+function showWelcomeModal() {
+    const modal = document.getElementById('welcomeModal');
+    if (modal) {
+        modal.classList.add('show');
+    }
+}
+
+function hideWelcomeModal() {
+    const modal = document.getElementById('welcomeModal');
+    if (modal) {
+        modal.classList.remove('show');
+    }
+    DashboardState.welcomeModalDismissed = true;
+}
+
+function updateMarketplaceUrl(url) {
+    const link = document.getElementById('marketplaceLink');
+    if (link && url) {
+        link.href = url;
+    }
+}
+
 // Load system status
 async function loadSystemStatus() {
     console.log('[loadSystemStatus] Starting...');
@@ -232,6 +373,19 @@ async function loadSystemStatus() {
         if (data.success) {
             const walletConfigured = data.walletConfigured;
             const walletAddress = data.institutionalWalletAddress;
+            DashboardState.walletAddress = walletAddress || null;
+            
+            // Update marketplace URL if provided
+            if (data.marketplaceUrl) {
+                updateMarketplaceUrl(data.marketplaceUrl);
+            }
+            
+            // Show welcome modal if no wallet and not already dismissed
+            if (!walletAddress && !DashboardState.welcomeModalDismissed) {
+                showWelcomeModal();
+            } else {
+                hideWelcomeModal();
+            }
             
             console.log('[loadSystemStatus] Wallet configured:', walletConfigured);
             console.log('[loadSystemStatus] Wallet address:', walletAddress);
@@ -260,6 +414,9 @@ async function loadSystemStatus() {
                 revealPrivateKeyBtn.style.display = walletAddress ? 'inline-flex' : 'none';
                 revealPrivateKeyBtn.disabled = !walletAddress;
             }
+            
+            // Update Apply Invite Token button visibility
+            updateApplyInviteButtonVisibility();
             
             // Show/hide wallet setup dropdown
             const dropdown = document.getElementById('walletSetupDropdown');
@@ -342,7 +499,7 @@ function updateNetworkButtons(activeNetwork) {
 
 async function handleRevealPrivateKey() {
     const password = await showInputModal(
-        'Reveal Private Key',
+        'Show Private Key',
         'Enter the institutional wallet password to decrypt the private key:',
         'password'
     );
@@ -788,6 +945,12 @@ function setupFormHandlers() {
 
 // Setup button handlers
 function setupButtonHandlers() {
+    // Welcome modal continue button
+    const continueBtn = document.getElementById('continueBtn');
+    if (continueBtn) {
+        continueBtn.addEventListener('click', hideWelcomeModal);
+    }
+    
     // Refresh button
     const refreshBtn = document.getElementById('refreshBtn');
     if (refreshBtn) {
@@ -798,6 +961,28 @@ function setupButtonHandlers() {
     const refreshBalanceBtn = document.getElementById('refreshBalanceBtn');
     if (refreshBalanceBtn) {
         refreshBalanceBtn.addEventListener('click', loadBalances);
+    }
+
+    // Apply Invite Token button in header
+    const applyInviteHeaderBtn = document.getElementById('applyInviteTokenHeaderBtn');
+    if (applyInviteHeaderBtn) {
+        applyInviteHeaderBtn.addEventListener('click', showInviteTokenModal);
+    }
+    
+    // Apply Invite Token button in modal
+    const applyInviteBtn = document.getElementById('applyInviteBtn');
+    if (applyInviteBtn) {
+        applyInviteBtn.addEventListener('click', applyInviteToken);
+    }
+    
+    // Cancel/Close Invite Modal buttons
+    const closeInviteModalBtn = document.getElementById('closeInviteModalBtn');
+    const cancelInviteBtn = document.getElementById('cancelInviteBtn');
+    if (closeInviteModalBtn) {
+        closeInviteModalBtn.addEventListener('click', hideInviteTokenModal);
+    }
+    if (cancelInviteBtn) {
+        cancelInviteBtn.addEventListener('click', hideInviteTokenModal);
     }
     
     // Network buttons
@@ -924,11 +1109,15 @@ function setupButtonHandlers() {
                             <span class="info-label">Status:</span>
                             <span class="info-value">Wallet Created Successfully</span>
                         </div>
-                        <div class="info-line">
-                            <span class="info-label">Address:</span>
-                            <span class="info-value">${data.address}</span>
+                        <div class="secret-header">
+                            <span class="info-label">Wallet Address</span>
+                            <button class="btn btn-secondary btn-small" onclick="copyToClipboard('${data.address}')">
+                                <i class="fas fa-copy"></i>
+                                Copy
+                            </button>
                         </div>
-                        <div class="warning-text">
+                        <code class="secret-value">${data.address}</code>
+                        <div class="warning-text" style="margin-top: var(--spacing-md)">
                             <i class="fas fa-exclamation-triangle"></i>
                             <strong>Important:</strong> Make sure to backup your wallet securely. 
                             The dashboard will now refresh to show your new wallet.
@@ -938,7 +1127,7 @@ function setupButtonHandlers() {
                     const secretSection = data.privateKey
                         ? buildPrivateKeyContent(
                             data.privateKey,
-                            data.address,
+                            null, // Don't show address again, already shown above
                             'Copy and store this private key in a secure manager. You will not be able to view it again unless you reveal it with the password.'
                           )
                         : '';
@@ -947,6 +1136,11 @@ function setupButtonHandlers() {
                     
                     // Refresh dashboard to show new wallet
                     await refreshAllData();
+                    
+                    // Show invite token modal after wallet creation
+                    if (!DashboardState.inviteTokenApplied) {
+                        showInviteTokenModal();
+                    }
                 } else {
                     showToast('Failed to create wallet: ' + (data.error || data.message || 'Unknown error'), 'error');
                 }
@@ -1025,6 +1219,11 @@ function setupButtonHandlers() {
                     
                     // Refresh dashboard to show imported wallet
                     await refreshAllData();
+                    
+                    // Show invite token modal after wallet import
+                    if (!DashboardState.inviteTokenApplied) {
+                        showInviteTokenModal();
+                    }
                 } else {
                     showToast('Failed to import wallet: ' + (data.error || data.message || 'Unknown error'), 'error');
                 }

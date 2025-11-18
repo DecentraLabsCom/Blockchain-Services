@@ -33,6 +33,7 @@ import org.web3j.abi.datatypes.Address;
 import org.web3j.abi.datatypes.Event;
 import org.web3j.abi.datatypes.generated.Bytes32;
 import org.web3j.abi.datatypes.generated.Uint256;
+import org.web3j.abi.datatypes.Utf8String;
 import org.web3j.crypto.Credentials;
 import org.web3j.protocol.Web3j;
 import org.web3j.protocol.core.DefaultBlockParameter;
@@ -51,7 +52,7 @@ import org.web3j.utils.Numeric;
 @Component
 @RequiredArgsConstructor
 @Slf4j
-@ConditionalOnProperty(value = "features.providers.enabled", havingValue = "true", matchIfMissing = true)
+@ConditionalOnProperty(value = "features.organizations.enabled", havingValue = "true", matchIfMissing = true)
 public class ContractEventListenerConfig {
 
     private static final String RESERVATION_REQUESTED = "ReservationRequested";
@@ -59,6 +60,7 @@ public class ContractEventListenerConfig {
     private static final String RESERVATION_DENIED = "ReservationRequestDenied";
     private static final String RESERVATION_CANCELED = "ReservationRequestCanceled";
     private static final String BOOKING_CANCELED = "BookingCanceled";
+    private static final String PROVIDER_ADDED = "ProviderAdded";
 
     private static final Event RESERVATION_REQUESTED_EVENT = new Event(
         RESERVATION_REQUESTED,
@@ -103,6 +105,16 @@ public class ContractEventListenerConfig {
         )
     );
 
+    private static final Event PROVIDER_ADDED_EVENT = new Event(
+        PROVIDER_ADDED,
+        Arrays.<TypeReference<?>>asList(
+            new TypeReference<Address>(true) {},
+            new TypeReference<Utf8String>() {},
+            new TypeReference<Utf8String>() {},
+            new TypeReference<Utf8String>() {}
+        )
+    );
+
     private static final int DEFAULT_RESERVATION_USER_COUNT = 1;
     private static final String ACTION_REQUESTED = "requested";
 
@@ -111,7 +123,8 @@ public class ContractEventListenerConfig {
         RESERVATION_CONFIRMED, RESERVATION_CONFIRMED_EVENT,
         RESERVATION_DENIED, RESERVATION_DENIED_EVENT,
         RESERVATION_CANCELED, RESERVATION_CANCELED_EVENT,
-        BOOKING_CANCELED, BOOKING_CANCELED_EVENT
+        BOOKING_CANCELED, BOOKING_CANCELED_EVENT,
+        PROVIDER_ADDED, PROVIDER_ADDED_EVENT
     );
 
     private final WalletService walletService;
@@ -292,6 +305,7 @@ public class ContractEventListenerConfig {
                 case RESERVATION_DENIED -> handleReservationDenied(eventValues, eventLog);
                 case RESERVATION_CANCELED -> handleReservationCanceled(eventValues, eventLog);
                 case BOOKING_CANCELED -> handleBookingCanceled(eventValues, eventLog);
+                case PROVIDER_ADDED -> handleProviderAdded(eventValues, eventLog);
                 default -> log.warn("Unhandled event type: {}", eventName);
             }
 
@@ -381,6 +395,24 @@ public class ContractEventListenerConfig {
         );
 
         dispatchReservationLifecycleEvent("booking-canceled", payload);
+    }
+
+    private void handleProviderAdded(EventValues eventValues, Log eventLog) {
+        String account = ((Address) eventValues.getIndexedValues().get(0)).getValue();
+        String name = ((Utf8String) eventValues.getNonIndexedValues().get(0)).getValue();
+        String email = ((Utf8String) eventValues.getNonIndexedValues().get(1)).getValue();
+        String country = ((Utf8String) eventValues.getNonIndexedValues().get(2)).getValue();
+        log.info(
+            "ProviderAdded event detected (account={} tx={})",
+            account,
+            eventLog.getTransactionHash()
+        );
+        log.debug(
+            "Provider metadata (name={}, email={}, country={}) stored for auditing purposes.",
+            name,
+            email,
+            country
+        );
     }
 
     private ReservationEventPayload buildPayload(
