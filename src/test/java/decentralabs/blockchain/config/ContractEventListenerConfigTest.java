@@ -3,6 +3,7 @@ package decentralabs.blockchain.config;
 import decentralabs.blockchain.service.health.LabMetadataService;
 import decentralabs.blockchain.service.wallet.InstitutionalWalletService;
 import decentralabs.blockchain.service.wallet.WalletService;
+import decentralabs.blockchain.notification.ReservationNotificationService;
 import io.reactivex.Flowable;
 import java.math.BigInteger;
 import java.util.List;
@@ -40,6 +41,9 @@ class ContractEventListenerConfigTest {
     private InstitutionalWalletService institutionalWalletService;
 
     @Mock
+    private ReservationNotificationService reservationNotificationService;
+
+    @Mock
     private Web3j web3j;
 
     private ContractEventListenerConfig config;
@@ -49,7 +53,8 @@ class ContractEventListenerConfigTest {
         config = new ContractEventListenerConfig(
             walletService,
             labMetadataService,
-            institutionalWalletService
+            institutionalWalletService,
+            reservationNotificationService
         );
         ReflectionTestUtils.setField(config, "diamondContractAddress", "0x1234567890abcdef");
         ReflectionTestUtils.setField(config, "startBlock", "latest");

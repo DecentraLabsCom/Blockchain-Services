@@ -319,6 +319,15 @@ docker run -p 8080:8080 \
 - ✅ Localhost-only filters enabled for sensitive operations
 - ✅ CORS origins restricted to trusted domains
 
+## Reservation Notifications (email + ICS)
+
+- Enable with `NOTIFICATIONS_MAIL_ENABLED=true` and choose driver `NOTIFICATIONS_MAIL_DRIVER=smtp|graph|noop` (default: noop).
+- Common settings: `NOTIFICATIONS_MAIL_FROM`, `NOTIFICATIONS_MAIL_DEFAULT_TO` (comma-separated), and `NOTIFICATIONS_MAIL_TIMEZONE` (IANA zone, e.g., `Europe/Madrid`).
+- SMTP driver: configure `NOTIFICATIONS_MAIL_SMTP_HOST`, `PORT`, `USERNAME`, `PASSWORD`, plus `NOTIFICATIONS_MAIL_SMTP_STARTTLS` when required.
+- Microsoft Graph driver: `NOTIFICATIONS_MAIL_GRAPH_TENANT_ID`, `CLIENT_ID`, `CLIENT_SECRET`, `GRAPH_FROM` (UPN/mailbox with Mail.Send app permission).
+- ICS invite attached when start/end are available; subject `Reserva aprobada: <lab>` and body includes lab, window, renter, payer, and tx hash.
+- Runtime config (localhost): `GET/POST /treasury/admin/notifications` to view/update settings; persisted at `./data/notifications-config.json`.
+
 ## 📊 Monitoring & Health Checks
 
 Health endpoint available at `/health`:

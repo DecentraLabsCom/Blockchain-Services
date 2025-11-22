@@ -3,6 +3,8 @@ package decentralabs.blockchain.config;
 import decentralabs.blockchain.contract.Diamond;
 import decentralabs.blockchain.dto.health.LabMetadata;
 import decentralabs.blockchain.event.NetworkSwitchEvent;
+import decentralabs.blockchain.notification.ReservationNotificationData;
+import decentralabs.blockchain.notification.ReservationNotificationService;
 import decentralabs.blockchain.service.health.LabMetadataService;
 import decentralabs.blockchain.service.wallet.InstitutionalWalletService;
 import decentralabs.blockchain.service.wallet.WalletService;
@@ -130,6 +132,7 @@ public class ContractEventListenerConfig {
     private final WalletService walletService;
     private final LabMetadataService labMetadataService;
     private final InstitutionalWalletService institutionalWalletService;
+    private final ReservationNotificationService reservationNotificationService;
 
     @Value("${contract.address}")
     private String diamondContractAddress;
@@ -476,79 +479,140 @@ public class ContractEventListenerConfig {
             log.debug("On-chain status: {}", describeStatus(status))
         );
 
+        payload.startEpoch().ifPresent(start ->
+            log.debug(
+                "Reservation window {} -> {} (epoch seconds)",
+                formatEpoch(start),
+                payload.endEpoch().map(this::formatEpoch).orElse("n/a")
+            )
+        );
 
-    payload.startEpoch().ifPresent(start ->
-        log.debug(
-            "Reservation window {} → {} (epoch seconds)",
-            formatEpoch(start),
-            payload.endEpoch().map(this::formatEpoch).orElse("n/a")
-        )
-    );
+        if ("confirmed".equalsIgnoreCase(action)) {
+            sendReservationApprovedNotification(payload);
+        }
+        if ("canceled".equalsIgnoreCase(action) || "booking-canceled".equalsIgnoreCase(action)) {
+            sendReservationCanceledNotification(payload);
+        }
 
-    if (ACTION_REQUESTED.equalsIgnoreCase(action)) {
-        processReservationRequest(payload);
-    }
-}
-
-private void processReservationRequest(ReservationEventPayload payload) {
-    log.info(
-        "Evaluating reservation request for key={} labId={} renter={} payerInstitution={} puc={}",
-        payload.reservationKey(),
-        payload.labId(),
-        payload.renter().orElse("unknown"),
-        payload.payerInstitution().orElse("n/a"),
-        payload.puc().orElse("n/a")
-    );
-
-    if (!isPending(payload)) {
-        log.info("Reservation {} already processed on-chain. Skipping.", payload.reservationKey());
-        return;
+        if (ACTION_REQUESTED.equalsIgnoreCase(action)) {
+            processReservationRequest(payload);
+        }
     }
 
-    try {
-        LabMetadata metadata = loadLabMetadata(payload.labId())
-            .orElseThrow(() -> new IllegalStateException("Missing metadata for lab " + payload.labId()));
-
-        LocalDateTime start = toUtcDateTime(payload.startEpoch())
-            .orElseThrow(() -> new IllegalStateException("Missing reservation start time"));
-        LocalDateTime end = toUtcDateTime(payload.endEpoch())
-            .orElseThrow(() -> new IllegalStateException("Missing reservation end time"));
-
-        labMetadataService.validateAvailability(metadata, start, end, DEFAULT_RESERVATION_USER_COUNT);
-        confirmReservationOnChain(payload.reservationKey());
-        log.info("Reservation {} auto-approved for lab {}", payload.reservationKey(), payload.labId());
-    } catch (Exception ex) {
-        log.warn(
-            "Auto-approval failed for reservation {} on lab {}: {}",
+    private void processReservationRequest(ReservationEventPayload payload) {
+        log.info(
+            "Evaluating reservation request for key={} labId={} renter={} payerInstitution={} puc={}",
             payload.reservationKey(),
             payload.labId(),
-            ex.getMessage()
+            payload.renter().orElse("unknown"),
+            payload.payerInstitution().orElse("n/a"),
+            payload.puc().orElse("n/a")
         );
-        autoDenyReservation(payload, ex.getMessage());
+
+        if (!isPending(payload)) {
+            log.info("Reservation {} already processed on-chain. Skipping.", payload.reservationKey());
+            return;
+        }
+
+        try {
+            LabMetadata metadata = loadLabMetadata(payload.labId())
+                .orElseThrow(() -> new IllegalStateException("Missing metadata for lab " + payload.labId()));
+
+            LocalDateTime start = toUtcDateTime(payload.startEpoch())
+                .orElseThrow(() -> new IllegalStateException("Missing reservation start time"));
+            LocalDateTime end = toUtcDateTime(payload.endEpoch())
+                .orElseThrow(() -> new IllegalStateException("Missing reservation end time"));
+
+            labMetadataService.validateAvailability(metadata, start, end, DEFAULT_RESERVATION_USER_COUNT);
+            confirmReservationOnChain(payload.reservationKey());
+            log.info("Reservation {} auto-approved for lab {}", payload.reservationKey(), payload.labId());
+        } catch (Exception ex) {
+            log.warn(
+                "Auto-approval failed for reservation {} on lab {}: {}",
+                payload.reservationKey(),
+                payload.labId(),
+                ex.getMessage()
+            );
+            autoDenyReservation(payload, ex.getMessage());
+        }
     }
-}
 
-private boolean isPending(ReservationEventPayload payload) {
-    return payload.status().map(status -> status.intValue() == 0).orElse(true);
-}
+    private boolean isPending(ReservationEventPayload payload) {
+        return payload.status().map(status -> status.intValue() == 0).orElse(true);
+    }
 
-private void autoDenyReservation(ReservationEventPayload payload, String reason) {
-    if (!isPending(payload)) {
+    private void autoDenyReservation(ReservationEventPayload payload, String reason) {
+        if (!isPending(payload)) {
+            log.info(
+                "Reservation {} already processed on-chain. Skipping auto-denial (reason: {}).",
+                payload.reservationKey(),
+                reason
+            );
+            return;
+        }
         log.info(
-            "Reservation {} already processed on-chain. Skipping auto-denial (reason: {}).",
+            "Auto-denying reservation {} for lab {}: {}",
             payload.reservationKey(),
+            payload.labId(),
             reason
         );
-        return;
+        denyReservationOnChain(payload.reservationKey(), reason);
     }
-    log.info(
-        "Auto-denying reservation {} for lab {}: {}",
-        payload.reservationKey(),
-        payload.labId(),
-        reason
-    );
-    denyReservationOnChain(payload.reservationKey(), reason);
-}
+
+    private void sendReservationApprovedNotification(ReservationEventPayload payload) {
+        try {
+            LabMetadata metadata = loadLabMetadata(payload.labId()).orElse(null);
+            String labName = (metadata != null && metadata.getName() != null && !metadata.getName().isBlank())
+                ? metadata.getName()
+                : "Lab " + payload.labId();
+
+            ReservationNotificationData data = new ReservationNotificationData(
+                payload.reservationKey(),
+                payload.labId(),
+                labName,
+                payload.renter().orElse(null),
+                payload.payerInstitution().orElse(null),
+                payload.startEpoch().map(value -> Instant.ofEpochSecond(value.longValue())).orElse(null),
+                payload.endEpoch().map(value -> Instant.ofEpochSecond(value.longValue())).orElse(null),
+                payload.rawLog().getTransactionHash()
+            );
+            reservationNotificationService.notifyReservationApproved(data);
+        } catch (Exception ex) {
+            log.warn(
+                "Unable to send reservation notification for {}: {}",
+                payload.reservationKey(),
+                ex.getMessage()
+            );
+        }
+    }
+
+    private void sendReservationCanceledNotification(ReservationEventPayload payload) {
+        try {
+            LabMetadata metadata = loadLabMetadata(payload.labId()).orElse(null);
+            String labName = (metadata != null && metadata.getName() != null && !metadata.getName().isBlank())
+                ? metadata.getName()
+                : "Lab " + payload.labId();
+
+            ReservationNotificationData data = new ReservationNotificationData(
+                payload.reservationKey(),
+                payload.labId(),
+                labName,
+                payload.renter().orElse(null),
+                payload.payerInstitution().orElse(null),
+                payload.startEpoch().map(value -> Instant.ofEpochSecond(value.longValue())).orElse(null),
+                payload.endEpoch().map(value -> Instant.ofEpochSecond(value.longValue())).orElse(null),
+                payload.rawLog().getTransactionHash()
+            );
+            reservationNotificationService.notifyReservationCancelled(data);
+        } catch (Exception ex) {
+            log.warn(
+                "Unable to send reservation cancellation for {}: {}",
+                payload.reservationKey(),
+                ex.getMessage()
+            );
+        }
+    }
+
     private Optional<LocalDateTime> toUtcDateTime(Optional<BigInteger> epochSeconds) {
         return epochSeconds.map(value ->
             LocalDateTime.ofInstant(Instant.ofEpochSecond(value.longValue()), ZoneOffset.UTC)

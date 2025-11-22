@@ -216,6 +216,9 @@ public class AdminDashboardController {
     @Value("${admin.dashboard.local-only:true}")
     private boolean adminDashboardLocalOnly;
 
+    @Value("${admin.dashboard.allow-private:true}")
+    private boolean adminDashboardAllowPrivate;
+
     private static final Set<String> LOOPBACK_ADDRESSES = Set.of(
         "127.0.0.1",
         "0:0:0:0:0:0:0:1",
@@ -231,15 +234,40 @@ public class AdminDashboardController {
         }
 
         String candidate = extractClientIp(request);
+        log.info("Admin access check from IP={}", candidate);
         boolean allowed = candidate == null
             || LOOPBACK_ADDRESSES.contains(candidate)
-            || candidate.startsWith("127.");
+            || candidate.startsWith("127.")
+            || (adminDashboardAllowPrivate && isPrivateAddress(candidate));
 
         if (!allowed) {
             log.warn("Blocked administrative dashboard access from non-local address.");
         }
 
         return allowed;
+    }
+
+    private boolean isPrivateAddress(String address) {
+        if (address == null || address.isBlank()) {
+            return false;
+        }
+        return address.startsWith("10.")
+            || address.startsWith("192.168.")
+            || (address.startsWith("172.") && isInRange(address, 16, 31))
+            || address.startsWith("169.254.");
+    }
+
+    private boolean isInRange(String address, int start, int end) {
+        try {
+            String[] parts = address.split("\\.");
+            if (parts.length < 2) {
+                return false;
+            }
+            int second = Integer.parseInt(parts[1]);
+            return second >= start && second <= end;
+        } catch (NumberFormatException ex) {
+            return false;
+        }
     }
 
     private String extractClientIp(HttpServletRequest request) {
