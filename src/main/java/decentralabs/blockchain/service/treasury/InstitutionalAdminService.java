@@ -79,21 +79,9 @@ public class InstitutionalAdminService {
      */
     private boolean isLocalhostRequest() {
         String remoteAddr = request.getRemoteAddr();
-        String forwardedFor = request.getHeader("X-Forwarded-For");
 
-        // Check direct IP
-        if ("127.0.0.1".equals(remoteAddr) || "::1".equals(remoteAddr)) {
+        if ("127.0.0.1".equals(remoteAddr) || remoteAddr.startsWith("127.") || "::1".equals(remoteAddr)) {
             return true;
-        }
-
-        // Check X-Forwarded-For header (for proxies/load balancers)
-        if (forwardedFor != null) {
-            String[] forwardedIps = forwardedFor.split(",");
-            for (String ip : forwardedIps) {
-                if ("127.0.0.1".equals(ip.trim()) || "::1".equals(ip.trim())) {
-                    return true;
-                }
-            }
         }
 
         log.warn("Administrative access attempt from non-localhost IP: {}", LogSanitizer.sanitize(remoteAddr));

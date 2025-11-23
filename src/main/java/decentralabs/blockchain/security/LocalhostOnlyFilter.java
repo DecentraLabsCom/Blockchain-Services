@@ -2,11 +2,13 @@ package decentralabs.blockchain.security;
 
 import decentralabs.blockchain.util.LogSanitizer;
 import java.io.IOException;
+import java.net.InetAddress;
 import java.util.List;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import org.springframework.beans.factory.annotation.Value;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.core.annotation.Order;
 import org.springframework.lang.NonNull;
@@ -20,6 +22,9 @@ import org.springframework.web.filter.OncePerRequestFilter;
 @Order(0)
 @Slf4j
 public class LocalhostOnlyFilter extends OncePerRequestFilter {
+
+    @Value("${security.allow-private-networks:false}")
+    private boolean allowPrivateNetworks;
 
     private static final List<String> LOCALHOST_ADDRESSES = List.of(
         "127.0.0.1",
@@ -69,19 +74,27 @@ public class LocalhostOnlyFilter extends OncePerRequestFilter {
         if (clientIp == null) {
             return false;
         }
-        clientIp = clientIp.trim();
-        
-        // Allow standard localhost addresses
-        if (LOCALHOST_ADDRESSES.contains(clientIp)) {
+
+        String normalized = clientIp.trim();
+        if (LOCALHOST_ADDRESSES.contains(normalized)) {
             return true;
         }
-        
-        // Allow Docker internal network addresses (172.x.x.x, 10.x.x.x)
-        // These are typical Docker bridge network IPs
-        if (clientIp.startsWith("172.") || clientIp.startsWith("10.")) {
+
+        // In standalone docker, requests often arrive from a bridge IP (172.x/10.x).
+        // Only allow those when explicitly enabled.
+        if (allowPrivateNetworks && isPrivateAddress(normalized)) {
             return true;
         }
-        
+
         return false;
+    }
+
+    private boolean isPrivateAddress(String ip) {
+        try {
+            InetAddress addr = InetAddress.getByName(ip);
+            return addr.isSiteLocalAddress();
+        } catch (Exception e) {
+            return false;
+        }
     }
 }

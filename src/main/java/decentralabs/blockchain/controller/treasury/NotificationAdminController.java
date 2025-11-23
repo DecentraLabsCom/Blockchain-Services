@@ -29,12 +29,6 @@ public class NotificationAdminController {
     @Value("${admin.dashboard.allow-private:true}")
     private boolean adminDashboardAllowPrivate;
 
-    private static final Set<String> LOOPBACK_ADDRESSES = Set.of(
-        "127.0.0.1",
-        "0:0:0:0:0:0:0:1",
-        "::1"
-    );
-
     @GetMapping
     public ResponseEntity<?> getConfig(HttpServletRequest request) {
         if (!isLocalhostRequest(request)) {
@@ -79,11 +73,11 @@ public class NotificationAdminController {
         if (!adminDashboardLocalOnly) {
             return true;
         }
-        String candidate = extractClientIp(request);
-        boolean allowed = candidate == null
-            || LOOPBACK_ADDRESSES.contains(candidate)
-            || candidate.startsWith("127.")
+
+        String candidate = request.getRemoteAddr();
+        boolean allowed = isLoopback(candidate)
             || (adminDashboardAllowPrivate && isPrivateAddress(candidate));
+
         if (!allowed) {
             log.warn("Blocked administrative notification access from non-local address.");
         }
@@ -113,11 +107,13 @@ public class NotificationAdminController {
         }
     }
 
-    private String extractClientIp(HttpServletRequest request) {
-        String forwarded = request.getHeader("X-Forwarded-For");
-        if (forwarded != null && !forwarded.isBlank()) {
-            return forwarded.split(",")[0].trim();
+    private boolean isLoopback(String address) {
+        if (address == null || address.isBlank()) {
+            return false;
         }
-        return request.getRemoteAddr();
+        return address.equals("127.0.0.1")
+            || address.startsWith("127.")
+            || address.equals("0:0:0:0:0:0:0:1")
+            || address.equals("::1");
     }
 }

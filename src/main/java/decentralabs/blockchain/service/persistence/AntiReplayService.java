@@ -1,32 +1,19 @@
 package decentralabs.blockchain.service.persistence;
 
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import jakarta.annotation.PostConstruct;
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
-import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
-
 /**
- * Anti-replay protection service using timestamp tracking
- * 
- * Current implementation uses in-memory storage (ConcurrentHashMap).
- * For production deployment with multiple instances, use Redis:
- * 
- * Redis implementation:
- *   1. Add dependency: spring-boot-starter-data-redis
- *   2. Use RedisTemplate or Spring Cache with Redis
- *   3. Store timestamps with automatic expiration (TTL = 5 minutes)
- *   4. Key format: "replay:{walletAddress}:{timestamp}"
- *   5. Command: SET key "used" EX 300 NX (atomic check-and-set)
- * 
- * Benefits of Redis:
- * - Shared state across multiple service instances
- * - Automatic expiration (no manual cleanup needed)
- * - Atomic operations prevent race conditions
- * - Persistence survives service restarts
- * 
- * Alternative: Database with indexed timestamps and cleanup job
+ * Anti-replay protection service using timestamp tracking with optional disk persistence.
  */
 @Service
 @Slf4j
@@ -37,68 +24,106 @@ public class AntiReplayService {
     @Value("${antireplay.persistence.enabled:false}")
     private boolean persistenceEnabled;
 
-    // In-memory fallback: wallet-timestamp -> insertion time
+    @Value("${antireplay.persistence.file.path:./data/antireplay-cache.json}")
+    private String persistenceFilePath;
+
+    // In-memory storage: wallet-timestamp -> insertion time
     private final Map<String, Long> usedTimestamps = new ConcurrentHashMap<>();
+    private final ObjectMapper objectMapper = new ObjectMapper();
+
+    @PostConstruct
+    public void loadPersistentCache() {
+        if (!persistenceEnabled) {
+            return;
+        }
+        Path path = Path.of(persistenceFilePath);
+        if (!Files.exists(path)) {
+            return;
+        }
+        try {
+            Map<String, Long> stored = objectMapper.readValue(path.toFile(), new TypeReference<>() {});
+            long cutoff = System.currentTimeMillis() - TIMESTAMP_EXPIRATION_MS;
+            stored.entrySet().stream()
+                .filter(entry -> entry.getValue() >= cutoff)
+                .forEach(entry -> usedTimestamps.put(entry.getKey(), entry.getValue()));
+            cleanupExpiredTimestamps();
+            log.info("Anti-replay cache loaded from {}", persistenceFilePath);
+        } catch (IOException ex) {
+            log.warn("Failed to load anti-replay cache from {}: {}", persistenceFilePath, ex.getMessage());
+        }
+    }
 
     /**
-     * Checks if a timestamp has been used and marks it as used
-     * 
+     * Checks if a timestamp has been used and marks it as used.
+     *
      * @param walletAddress The wallet address
-     * @param timestamp The timestamp to check
+     * @param timestamp     The timestamp to check
      * @return true if timestamp was already used (replay attack), false if it's new
      */
     public boolean isTimestampUsed(String walletAddress, long timestamp) {
         String key = walletAddress + "-" + timestamp;
-        
-        if (persistenceEnabled) {
-            // TODO: Implement Redis SETNX with expiration
-            log.warn("Anti-replay persistence enabled but not implemented. Using in-memory storage.");
-        }
-        
+
+        cleanupExpiredTimestamps();
+
         // Check if already used
         if (usedTimestamps.containsKey(key)) {
             log.warn("Replay attack detected for wallet {} with timestamp {}", walletAddress, timestamp);
             return true;
         }
-        
+
         // Mark as used
         usedTimestamps.put(key, System.currentTimeMillis());
-        
-        // Cleanup old entries (over 5 minutes old)
-        cleanupExpiredTimestamps();
-        
+
+        if (persistenceEnabled) {
+            persistToDisk();
+        }
+
         return false;
     }
 
     /**
-     * Removes timestamps older than expiration time
-     * Called periodically to prevent memory leaks
+     * Removes timestamps older than expiration time.
      */
     private void cleanupExpiredTimestamps() {
         long now = System.currentTimeMillis();
         long cutoff = now - TIMESTAMP_EXPIRATION_MS;
-        
+
         // Remove entries older than 5 minutes
         usedTimestamps.entrySet().removeIf(entry -> entry.getValue() < cutoff);
-        
+
         if (usedTimestamps.size() > 10000) {
-            log.warn("Anti-replay cache has {} entries. Consider enabling Redis persistence.", 
+            log.warn("Anti-replay cache has {} entries. Consider enabling a shared store such as Redis.",
                 usedTimestamps.size());
         }
     }
 
     /**
-     * Gets the count of tracked timestamps (for monitoring)
+     * Gets the count of tracked timestamps (for monitoring).
      */
     public int getTrackedTimestampCount() {
         return usedTimestamps.size();
     }
 
     /**
-     * Clears all tracked timestamps (use with caution)
+     * Clears all tracked timestamps (use with caution).
      */
     public void clearAll() {
         usedTimestamps.clear();
+        if (persistenceEnabled) {
+            persistToDisk();
+        }
         log.info("Anti-replay cache cleared");
+    }
+
+    private void persistToDisk() {
+        Path path = Path.of(persistenceFilePath);
+        try {
+            if (path.getParent() != null) {
+                Files.createDirectories(path.getParent());
+            }
+            objectMapper.writerWithDefaultPrettyPrinter().writeValue(path.toFile(), usedTimestamps);
+        } catch (IOException ex) {
+            log.warn("Failed to persist anti-replay cache to {}: {}", persistenceFilePath, ex.getMessage());
+        }
     }
 }
