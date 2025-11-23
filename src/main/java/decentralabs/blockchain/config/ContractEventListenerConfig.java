@@ -6,6 +6,7 @@ import decentralabs.blockchain.event.NetworkSwitchEvent;
 import decentralabs.blockchain.notification.ReservationNotificationData;
 import decentralabs.blockchain.notification.ReservationNotificationService;
 import decentralabs.blockchain.service.health.LabMetadataService;
+import decentralabs.blockchain.service.persistence.ReservationPersistenceService;
 import decentralabs.blockchain.service.wallet.InstitutionalWalletService;
 import decentralabs.blockchain.service.wallet.WalletService;
 import io.reactivex.disposables.Disposable;
@@ -133,6 +134,7 @@ public class ContractEventListenerConfig {
     private final LabMetadataService labMetadataService;
     private final InstitutionalWalletService institutionalWalletService;
     private final ReservationNotificationService reservationNotificationService;
+    private final ReservationPersistenceService reservationPersistenceService;
 
     @Value("${contract.address}")
     private String diamondContractAddress;
@@ -334,6 +336,7 @@ public class ContractEventListenerConfig {
         );
 
         dispatchReservationLifecycleEvent("requested", payload);
+        persistLifecycle(payload, "PENDING");
     }
 
     private void handleReservationConfirmed(EventValues eventValues, Log eventLog) {
@@ -350,6 +353,7 @@ public class ContractEventListenerConfig {
         );
 
         dispatchReservationLifecycleEvent("confirmed", payload);
+        persistLifecycle(payload, "CONFIRMED");
     }
 
     private void handleReservationDenied(EventValues eventValues, Log eventLog) {
@@ -366,6 +370,7 @@ public class ContractEventListenerConfig {
         );
 
         dispatchReservationLifecycleEvent("denied", payload);
+        persistLifecycle(payload, "CANCELLED");
     }
 
     private void handleReservationCanceled(EventValues eventValues, Log eventLog) {
@@ -382,6 +387,7 @@ public class ContractEventListenerConfig {
         );
 
         dispatchReservationLifecycleEvent("canceled", payload);
+        persistLifecycle(payload, "CANCELLED");
     }
 
     private void handleBookingCanceled(EventValues eventValues, Log eventLog) {
@@ -398,6 +404,7 @@ public class ContractEventListenerConfig {
         );
 
         dispatchReservationLifecycleEvent("booking-canceled", payload);
+        persistLifecycle(payload, "CANCELLED");
     }
 
     private void handleProviderAdded(EventValues eventValues, Log eventLog) {
@@ -496,6 +503,25 @@ public class ContractEventListenerConfig {
 
         if (ACTION_REQUESTED.equalsIgnoreCase(action)) {
             processReservationRequest(payload);
+        }
+    }
+
+    private void persistLifecycle(ReservationEventPayload payload, String status) {
+        Instant startTs = payload.startEpoch().map(val -> Instant.ofEpochSecond(val.longValue())).orElse(null);
+        Instant endTs = payload.endEpoch().map(val -> Instant.ofEpochSecond(val.longValue())).orElse(null);
+        String renter = payload.renter().orElse(null);
+        String labId = payload.labId() != null ? payload.labId().toString() : null;
+        try {
+            reservationPersistenceService.upsertReservation(
+                payload.reservationKey(),
+                renter,
+                labId,
+                startTs,
+                endTs,
+                status
+            );
+        } catch (Exception ex) {
+            log.debug("Skipping reservation persistence for {}: {}", payload.reservationKey(), ex.getMessage());
         }
     }
 

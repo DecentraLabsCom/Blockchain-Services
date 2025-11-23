@@ -23,6 +23,7 @@ import java.util.Map;
 
 import decentralabs.blockchain.service.auth.MarketplaceKeyService;
 import decentralabs.blockchain.service.auth.SamlValidationService;
+import decentralabs.blockchain.service.persistence.ReservationPersistenceService;
 import decentralabs.blockchain.service.wallet.InstitutionalWalletService;
 import decentralabs.blockchain.util.LogSanitizer;
 /**
@@ -41,6 +42,7 @@ public class InstitutionalReservationService {
     private final SamlValidationService samlValidationService;
     private final InstitutionalWalletService institutionalWalletService;
     private final InstitutionalAnalyticsService institutionalAnalyticsService;
+    private final ReservationPersistenceService reservationPersistenceService;
     private final Web3j web3j;
     
     @Value("${contract.address}")
@@ -91,6 +93,20 @@ public class InstitutionalReservationService {
         );
 
         log.info("Reservation processed successfully.");
+
+        try {
+            String walletForPersistence = institutionalCredentials.getAddress();
+            reservationPersistenceService.upsertReservation(
+                transactionHash,
+                walletForPersistence,
+                request.getLabId().toString(),
+                request.getStartTime().toInstant(ZoneOffset.UTC),
+                request.getEndTime().toInstant(ZoneOffset.UTC),
+                "CONFIRMED"
+            );
+        } catch (Exception e) {
+            log.debug("Skipping reservation persistence for {}: {}", transactionHash, e.getMessage());
+        }
         
         return Map.of(
                 "success", true,
