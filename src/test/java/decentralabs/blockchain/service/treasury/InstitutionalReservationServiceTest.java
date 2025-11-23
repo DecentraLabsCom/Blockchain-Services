@@ -4,6 +4,7 @@ import decentralabs.blockchain.contract.Diamond;
 import decentralabs.blockchain.dto.treasury.InstitutionalReservationRequest;
 import decentralabs.blockchain.service.auth.MarketplaceKeyService;
 import decentralabs.blockchain.service.auth.SamlValidationService;
+import decentralabs.blockchain.service.persistence.ReservationPersistenceService;
 import decentralabs.blockchain.service.wallet.InstitutionalWalletService;
 import io.jsonwebtoken.Jwts;
 import java.math.BigDecimal;
@@ -45,6 +46,8 @@ class InstitutionalReservationServiceTest {
     @Mock
     private InstitutionalAnalyticsService analyticsService;
     @Mock
+    private ReservationPersistenceService persistenceService;
+    @Mock
     private Web3j web3j;
 
     private InstitutionalReservationService reservationService;
@@ -58,6 +61,7 @@ class InstitutionalReservationServiceTest {
             samlValidationService,
             institutionalWalletService,
             analyticsService,
+            persistenceService,
             web3j
         );
         ReflectionTestUtils.setField(reservationService, "contractAddress", "0xABC");
