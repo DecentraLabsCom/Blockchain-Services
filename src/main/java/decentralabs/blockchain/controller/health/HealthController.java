@@ -91,7 +91,7 @@ public class HealthController {
 
     private boolean checkMarketplaceKeyAvailability() {
         try {
-            return marketplaceKeyService.isKeyAvailable() || marketplaceKeyService.getPublicKey(false) != null;
+            return marketplaceKeyService.ensureKey(false);
         } catch (Exception e) {
             log.warn("Marketplace key availability check failed: {}", e.getMessage());
             return false;

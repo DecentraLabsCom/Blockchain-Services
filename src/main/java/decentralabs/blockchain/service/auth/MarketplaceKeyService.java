@@ -23,10 +23,14 @@ public class MarketplaceKeyService {
     @Value("${marketplace.key.cache-ms:3600000}")
     private long keyCacheDurationMs;
 
+    @Value("${marketplace.key.retry-ms:60000}")
+    private long keyRetryMs;
+
     private final RestTemplate restTemplate = new RestTemplate();
 
     private volatile PublicKey cachedMarketplacePublicKey = null;
     private volatile long lastKeyFetchTime = 0;
+    private volatile long lastFailureTime = 0;
 
     /**
      * Gets the marketplace public key, using cache if available
@@ -44,10 +48,31 @@ public class MarketplaceKeyService {
             String publicKeyPEM = fetchPublicKeyFromUrl();
             cachedMarketplacePublicKey = parsePublicKey(publicKeyPEM);
             lastKeyFetchTime = currentTime;
+            lastFailureTime = 0;
             log.info("Marketplace public key refreshed successfully");
         }
 
         return cachedMarketplacePublicKey;
+    }
+
+    /**
+     * Ensures a key is present, retrying if cache is missing/expired or last failure is older than retry window.
+     */
+    public boolean ensureKey(boolean forceRefresh) {
+        long now = System.currentTimeMillis();
+        boolean shouldRetry = cachedMarketplacePublicKey == null
+            || (now - lastKeyFetchTime) > keyCacheDurationMs
+            || (lastFailureTime > 0 && (now - lastFailureTime) > keyRetryMs);
+        if (forceRefresh || shouldRetry) {
+            try {
+                getPublicKey(forceRefresh);
+                return true;
+            } catch (Exception e) {
+                lastFailureTime = now;
+                return false;
+            }
+        }
+        return true;
     }
 
     private String fetchPublicKeyFromUrl() throws Exception {
