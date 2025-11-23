@@ -50,7 +50,6 @@ class InstitutionalAdminServiceTest {
     @Test
     void executeAdminOperationRejectsNonLocalhostRequests() {
         when(httpServletRequest.getRemoteAddr()).thenReturn("10.0.0.5");
-        when(httpServletRequest.getHeader("X-Forwarded-For")).thenReturn(null);
 
         InstitutionalAdminRequest request = new InstitutionalAdminRequest("0x123", AdminOperation.AUTHORIZE_BACKEND, null, null, null, null, null);
         InstitutionalAdminResponse response = adminService.executeAdminOperation(request);
