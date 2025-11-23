@@ -36,13 +36,13 @@ class LocalhostOnlyFilterPrivateNetworksTest {
     }
 
     @RestController
-    static class TestController {
+    public static class TestController {
         @PostMapping("/wallet/test")
         ResponseEntity<String> wallet() { return ResponseEntity.ok("ok"); }
     }
 
     @Configuration
-    static class TestSecurity {
+    public static class TestSecurity {
         @Bean
         SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
             http.csrf(csrf -> csrf.disable())
