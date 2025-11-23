@@ -33,11 +33,6 @@ public class LocalhostOnlyFilter extends OncePerRequestFilter {
         "::ffff:127.0.0.1"
     );
 
-    private static final List<String> RESTRICTED_PREFIXES = List.of(
-        "/wallet",
-        "/treasury"
-    );
-
     @Override
     protected void doFilterInternal(
         @NonNull HttpServletRequest request,
@@ -64,9 +59,11 @@ public class LocalhostOnlyFilter extends OncePerRequestFilter {
 
     private boolean requiresLocalhost(HttpServletRequest request) {
         String path = request.getServletPath();
-        // Allow /admin/ static resources (dashboard HTML/CSS/JS) for all users from localhost
-        // But protect /treasury and /wallet API endpoints
-        return RESTRICTED_PREFIXES.stream().anyMatch(path::startsWith);
+        // Protect wallet/treasury APIs, admin notifications, and the wallet dashboard UI.
+        return path.startsWith("/wallet")
+            || path.startsWith("/treasury")
+            || path.startsWith("/treasury/admin/notifications")
+            || path.startsWith("/wallet-dashboard");
     }
 
     private boolean isLocalhost(HttpServletRequest request) {
