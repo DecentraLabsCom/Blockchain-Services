@@ -21,7 +21,8 @@ public class SmtpMailSenderAdapter implements MailSenderAdapter {
 
     @Override
     public void send(NotificationMessage message) {
-        if (mailSender.getHost() == null || mailSender.getHost().isBlank()) {
+        String host = mailSender.getHost();
+        if (host == null || host.isBlank()) {
             log.warn("SMTP host not configured. Skipping email notification.");
             return;
         }

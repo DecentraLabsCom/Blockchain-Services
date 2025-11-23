@@ -4,7 +4,6 @@ import decentralabs.blockchain.notification.NotificationConfigService;
 import decentralabs.blockchain.notification.NotificationUpdateRequest;
 import jakarta.servlet.http.HttpServletRequest;
 import java.util.Map;
-import java.util.Set;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;

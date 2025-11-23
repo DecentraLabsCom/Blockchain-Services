@@ -5,7 +5,6 @@ import decentralabs.blockchain.service.health.LabMetadataService;
 import decentralabs.blockchain.service.persistence.ReservationPersistenceService;
 import decentralabs.blockchain.service.wallet.InstitutionalWalletService;
 import decentralabs.blockchain.service.wallet.WalletService;
-import decentralabs.blockchain.notification.ReservationNotificationService;
 import io.reactivex.Flowable;
 import java.math.BigInteger;
 import java.util.List;
