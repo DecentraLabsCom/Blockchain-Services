@@ -1,12 +1,17 @@
 package decentralabs.blockchain.controller.treasury;
 
+import decentralabs.blockchain.notification.MailSenderAdapter;
+import decentralabs.blockchain.notification.MailSenderFactory;
 import decentralabs.blockchain.notification.NotificationConfigService;
+import decentralabs.blockchain.notification.NotificationMessage;
+import decentralabs.blockchain.notification.NotificationProperties;
 import decentralabs.blockchain.notification.NotificationUpdateRequest;
 import jakarta.servlet.http.HttpServletRequest;
 import java.util.Map;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -21,6 +26,7 @@ import org.springframework.web.bind.annotation.RestController;
 public class NotificationAdminController {
 
     private final NotificationConfigService notificationConfigService;
+    private final MailSenderFactory mailSenderFactory;
 
     @Value("${admin.dashboard.local-only:true}")
     private boolean adminDashboardLocalOnly;
@@ -48,6 +54,13 @@ public class NotificationAdminController {
             return forbidden();
         }
         try {
+            var errors = notificationConfigService.validateUpdate(request);
+            if (!errors.isEmpty()) {
+                return ResponseEntity.badRequest().body(Map.of(
+                    "success", false,
+                    "error", String.join("; ", errors)
+                ));
+            }
             return ResponseEntity.ok(Map.of(
                 "success", true,
                 "config", notificationConfigService.updateMailConfig(request)
@@ -57,6 +70,45 @@ public class NotificationAdminController {
             return ResponseEntity.internalServerError().body(Map.of(
                 "success", false,
                 "error", "Failed to update notification config: " + ex.getMessage()
+            ));
+        }
+    }
+
+    @PostMapping("/test")
+    public ResponseEntity<?> sendTest(HttpServletRequest httpRequest) {
+        if (!isLocalhostRequest(httpRequest)) {
+            return forbidden();
+        }
+        NotificationProperties.Mail mail = notificationConfigService.getMailConfig();
+        var validation = notificationConfigService.validateMailConfig();
+        if (!validation.isEmpty()) {
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(Map.of(
+                "success", false,
+                "error", String.join("; ", validation)
+            ));
+        }
+        if (mail.getDefaultTo().isEmpty()) {
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(Map.of(
+                "success", false,
+                "error", "No recipients configured (defaultTo is empty)"
+            ));
+        }
+        try {
+            MailSenderAdapter sender = mailSenderFactory.resolve();
+            sender.send(new NotificationMessage(
+                mail.getDefaultTo(),
+                "Lab Gateway notification test",
+                "Test message from Lab Gateway",
+                "<p>Test message from Lab Gateway</p>",
+                null,
+                null
+            ));
+            return ResponseEntity.ok(Map.of("success", true));
+        } catch (Exception ex) {
+            log.error("Failed to send test notification: {}", ex.getMessage(), ex);
+            return ResponseEntity.internalServerError().body(Map.of(
+                "success", false,
+                "error", "Failed to send test notification: " + ex.getMessage()
             ));
         }
     }

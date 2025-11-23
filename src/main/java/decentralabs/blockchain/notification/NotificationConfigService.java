@@ -33,7 +33,23 @@ public class NotificationConfigService {
     }
 
     public NotificationProperties.Mail updateMailConfig(NotificationUpdateRequest request) {
+        List<String> errors = validateUpdate(request);
+        if (!errors.isEmpty()) {
+            throw new IllegalArgumentException(String.join("; ", errors));
+        }
         NotificationProperties.Mail mail = properties.getMail();
+        applyUpdate(mail, request);
+        persistConfig(mail);
+        return mail;
+    }
+
+    public List<String> validateUpdate(NotificationUpdateRequest request) {
+        NotificationProperties.Mail snapshot = objectMapper.convertValue(properties.getMail(), NotificationProperties.Mail.class);
+        applyUpdate(snapshot, request);
+        return validateMail(snapshot);
+    }
+
+    private void applyUpdate(NotificationProperties.Mail mail, NotificationUpdateRequest request) {
         if (request.enabled() != null) {
             mail.setEnabled(request.enabled());
         }
@@ -73,9 +89,6 @@ public class NotificationConfigService {
             if (reqGraph.clientSecret() != null) graph.setClientSecret(reqGraph.clientSecret());
             if (reqGraph.from() != null) graph.setFrom(reqGraph.from());
         }
-
-        persistConfig(mail);
-        return mail;
     }
 
     public Map<String, Object> getPublicConfig() {
@@ -155,6 +168,60 @@ public class NotificationConfigService {
         } catch (IOException e) {
             log.warn("Failed to persist notification config to {}: {}", path, e.getMessage());
         }
+    }
+
+    public List<String> validateMailConfig() {
+        return validateMail(properties.getMail());
+    }
+
+    private List<String> validateMail(NotificationProperties.Mail mail) {
+        List<String> errors = new ArrayList<>();
+        MailDriver driver = mail.getDriver() != null ? mail.getDriver() : MailDriver.NOOP;
+        if (!mail.isEnabled() || driver == MailDriver.NOOP) {
+            return errors;
+        }
+        if (driver == MailDriver.SMTP) {
+            NotificationProperties.Smtp smtp = mail.getSmtp();
+            if (smtp == null) {
+                errors.add("SMTP settings are required");
+            } else {
+                if (smtp.getHost() == null || smtp.getHost().isBlank()) {
+                    errors.add("SMTP host is required");
+                }
+                if (smtp.getPort() <= 0) {
+                    errors.add("SMTP port must be > 0");
+                }
+                if (smtp.isAuth()) {
+                    if (smtp.getUsername() == null || smtp.getUsername().isBlank()) {
+                        errors.add("SMTP username is required when auth=true");
+                    }
+                    if (smtp.getPassword() == null || smtp.getPassword().isBlank()) {
+                        errors.add("SMTP password is required when auth=true");
+                    }
+                }
+            }
+        } else if (driver == MailDriver.GRAPH) {
+            NotificationProperties.Graph graph = mail.getGraph();
+            if (graph == null) {
+                errors.add("Graph settings are required");
+            } else {
+                if (graph.getTenantId() == null || graph.getTenantId().isBlank()) {
+                    errors.add("Graph tenantId is required");
+                }
+                if (graph.getClientId() == null || graph.getClientId().isBlank()) {
+                    errors.add("Graph clientId is required");
+                }
+                if (graph.getClientSecret() == null || graph.getClientSecret().isBlank()) {
+                    errors.add("Graph clientSecret is required");
+                }
+                boolean hasFrom = (graph.getFrom() != null && !graph.getFrom().isBlank())
+                    || (mail.getFrom() != null && !mail.getFrom().isBlank());
+                if (!hasFrom) {
+                    errors.add("Graph from is required (graph.from or mail.from)");
+                }
+            }
+        }
+        return errors;
     }
 
     private List<String> normalizeRecipients(List<String> recipients) {
