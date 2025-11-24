@@ -2,6 +2,8 @@ package decentralabs.blockchain.controller.health;
 
 import decentralabs.blockchain.service.auth.MarketplaceKeyService;
 import decentralabs.blockchain.service.auth.SamlValidationService;
+import decentralabs.blockchain.service.organization.InstitutionInviteService;
+import decentralabs.blockchain.service.wallet.InstitutionalWalletService;
 import decentralabs.blockchain.service.wallet.WalletService;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -10,9 +12,11 @@ import java.util.HashMap;
 import java.util.Map;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.web.bind.annotation.CrossOrigin;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -27,6 +31,9 @@ public class HealthController {
     private final MarketplaceKeyService marketplaceKeyService;
     private final WalletService walletService;
     private final SamlValidationService samlValidationService;
+    private final InstitutionalWalletService institutionalWalletService;
+    private final InstitutionInviteService institutionInviteService;
+    private final ObjectProvider<JdbcTemplate> jdbcTemplateProvider;
 
     @Value("${marketplace.public-key-url}")
     private String marketplacePublicKeyUrl;
@@ -39,6 +46,9 @@ public class HealthController {
 
     @Value("${contract.event.listening.enabled:true}")
     private boolean eventListeningEnabled;
+
+    @Value("${contract.address:}")
+    private String contractAddress;
 
     @GetMapping
     @CrossOrigin(origins = "*")
@@ -62,6 +72,10 @@ public class HealthController {
             healthStatus.put("private_key_present", isPrivateKeyPresent());
             healthStatus.put("saml_validation_ready", samlValidationService.isConfigured());
             healthStatus.put("event_listener_enabled", eventListeningEnabled);
+            healthStatus.put("database_up", isDatabaseUp());
+            healthStatus.put("wallet_configured", institutionalWalletService.isConfigured());
+            healthStatus.put("treasury_configured", isTreasuryConfigured());
+            healthStatus.put("invite_token_configured", institutionInviteService.isInviteConfigured());
             healthStatus.put("endpoints", getEndpointStatus());
 
             return buildResponse(healthStatus);
@@ -81,8 +95,12 @@ public class HealthController {
         boolean rpcUp = Boolean.TRUE.equals(status.get("rpc_up"));
         boolean keyPresent = Boolean.TRUE.equals(status.get("private_key_present"));
         boolean marketplaceReady = Boolean.TRUE.equals(status.get("marketplace_key_cached"));
+        boolean dbUp = Boolean.TRUE.equals(status.get("database_up"));
+        boolean walletConfigured = Boolean.TRUE.equals(status.get("wallet_configured"));
+        boolean treasuryConfigured = Boolean.TRUE.equals(status.get("treasury_configured"));
+        boolean inviteConfigured = Boolean.TRUE.equals(status.get("invite_token_configured"));
 
-        if (!rpcUp || !keyPresent || !marketplaceReady) {
+        if (!rpcUp || !keyPresent || !marketplaceReady || !dbUp || !walletConfigured || !treasuryConfigured || !inviteConfigured) {
             status.put("status", "DEGRADED");
             return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).body(status);
         }
@@ -155,5 +173,27 @@ public class HealthController {
 
         endpoints.put("health", "available");
         return endpoints;
+    }
+
+    private boolean isDatabaseUp() {
+        try {
+            JdbcTemplate jdbcTemplate = jdbcTemplateProvider.getIfAvailable();
+            if (jdbcTemplate == null) {
+                log.warn("No JdbcTemplate available for database health check");
+                return false;
+            }
+            Integer result = jdbcTemplate.queryForObject("SELECT 1", Integer.class);
+            return result != null && result == 1;
+        } catch (Exception e) {
+            log.warn("Database connectivity check failed: {}", e.getMessage());
+            return false;
+        }
+    }
+
+    private boolean isTreasuryConfigured() {
+        return providersEnabled
+            && contractAddress != null
+            && !contractAddress.isBlank()
+            && institutionalWalletService.isConfigured();
     }
 }

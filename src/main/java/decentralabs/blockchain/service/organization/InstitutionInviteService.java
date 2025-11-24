@@ -114,6 +114,10 @@ public class InstitutionInviteService {
             .build();
     }
 
+    public boolean isInviteConfigured() {
+        return inviteSecret != null && !inviteSecret.isBlank();
+    }
+
     private InvitePayload verifyToken(String token) {
         if (token == null || token.isBlank()) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Invite token cannot be empty.");
