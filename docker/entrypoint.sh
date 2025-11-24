@@ -26,11 +26,17 @@ else
     echo "Using default configuration"
 fi
 
-# Check keys (if mounted)
-if [ -f "./config/keys/private_key.pem" ]; then
-    echo "Private key found in ./config/keys"
+# Ensure keys exist (generate if missing)
+KEY_DIR="./config/keys"
+mkdir -p "$KEY_DIR"
+if [ ! -f "$KEY_DIR/private_key.pem" ]; then
+    echo "Private key not found. Generating RSA key pair..."
+    openssl genrsa -out "$KEY_DIR/private_key.pem" 2048
+    openssl rsa -in "$KEY_DIR/private_key.pem" -pubout -out "$KEY_DIR/public_key.pem"
+    cp "$KEY_DIR/public_key.pem" "$KEY_DIR/certificate.pem"
+    echo "Generated RSA key pair in $KEY_DIR"
 else
-    echo "Private key not found in ./config/keys - some features may not work"
+    echo "Private key found in $KEY_DIR"
 fi
 
 # Start application
