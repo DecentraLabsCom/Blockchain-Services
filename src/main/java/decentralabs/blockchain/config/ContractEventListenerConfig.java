@@ -13,8 +13,6 @@ import io.reactivex.disposables.Disposable;
 import java.math.BigDecimal;
 import java.math.BigInteger;
 import java.time.Instant;
-import java.time.LocalDateTime;
-import java.time.ZoneOffset;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Locale;
@@ -544,9 +542,9 @@ public class ContractEventListenerConfig {
             LabMetadata metadata = loadLabMetadata(payload.labId())
                 .orElseThrow(() -> new IllegalStateException("Missing metadata for lab " + payload.labId()));
 
-            LocalDateTime start = toUtcDateTime(payload.startEpoch())
+            Instant start = toInstant(payload.startEpoch())
                 .orElseThrow(() -> new IllegalStateException("Missing reservation start time"));
-            LocalDateTime end = toUtcDateTime(payload.endEpoch())
+            Instant end = toInstant(payload.endEpoch())
                 .orElseThrow(() -> new IllegalStateException("Missing reservation end time"));
 
             labMetadataService.validateAvailability(metadata, start, end, DEFAULT_RESERVATION_USER_COUNT);
@@ -639,9 +637,9 @@ public class ContractEventListenerConfig {
         }
     }
 
-    private Optional<LocalDateTime> toUtcDateTime(Optional<BigInteger> epochSeconds) {
+    private Optional<Instant> toInstant(Optional<BigInteger> epochSeconds) {
         return epochSeconds.map(value ->
-            LocalDateTime.ofInstant(Instant.ofEpochSecond(value.longValue()), ZoneOffset.UTC)
+            Instant.ofEpochSecond(value.longValue())
         );
     }
 

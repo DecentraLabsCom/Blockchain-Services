@@ -20,6 +20,14 @@ public class LabMetadata {
     private String description;
     private String image;
 
+    // Timezone and schedule windows (epoch seconds)
+    private String timezone;
+    private Long opens;   // inclusive, Unix seconds
+    private Long closes;  // inclusive, Unix seconds
+
+    // Slot sizes in minutes
+    private List<Integer> timeSlots;
+
     // Availability configuration
     private List<DayOfWeek> availableDays;
     private TimeRange availableHours;
@@ -29,7 +37,6 @@ public class LabMetadata {
     // Existing attributes can be added here as needed
     private String category;
     private List<String> keywords;
-    private List<Integer> availableTimeSlots;
     private List<String> documentation;
     private List<String> additionalImages;
 }
