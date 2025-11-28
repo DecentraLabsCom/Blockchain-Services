@@ -5,8 +5,6 @@ import decentralabs.blockchain.service.health.LabMetadataService;
 import decentralabs.blockchain.service.persistence.ReservationPersistenceService;
 import decentralabs.blockchain.service.wallet.InstitutionalWalletService;
 import decentralabs.blockchain.service.wallet.WalletService;
-import io.reactivex.Flowable;
-import java.math.BigInteger;
 import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -15,22 +13,18 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.test.util.ReflectionTestUtils;
 import org.web3j.protocol.Web3j;
-import org.web3j.protocol.core.DefaultBlockParameter;
-import org.web3j.protocol.core.DefaultBlockParameterNumber;
-import org.web3j.protocol.core.methods.request.EthFilter;
-import org.web3j.protocol.core.methods.response.Log;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.mockito.Mockito.any;
-import static org.mockito.Mockito.never;
-import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
 class ContractEventListenerConfigTest {
+
+    @Mock
+    private EventPollingFallbackService eventPollingFallbackService;
 
     @Mock
     private WalletService walletService;
@@ -55,6 +49,7 @@ class ContractEventListenerConfigTest {
     @BeforeEach
     void setUp() {
         config = new ContractEventListenerConfig(
+            eventPollingFallbackService,
             walletService,
             labMetadataService,
             institutionalWalletService,
@@ -71,12 +66,12 @@ class ContractEventListenerConfigTest {
         ReflectionTestUtils.setField(config, "eventListeningEnabled", true);
 
         when(walletService.getWeb3jInstance()).thenReturn(web3j);
-        when(web3j.ethLogFlowable(any(EthFilter.class))).thenReturn(Flowable.<Log>empty());
 
         config.configureContractEventListeners();
 
         verify(walletService).getWeb3jInstance();
-        verify(web3j, times(2)).ethLogFlowable(any(EthFilter.class));
+        verify(eventPollingFallbackService).initialize(web3j, "0x1234567890abcdef");
+        verify(eventPollingFallbackService).start();
     }
 
     @Test
@@ -86,8 +81,7 @@ class ContractEventListenerConfigTest {
 
         config.configureContractEventListeners();
 
-        verifyNoInteractions(walletService, labMetadataService);
-        verify(web3j, never()).ethLogFlowable(any(EthFilter.class));
+        verifyNoInteractions(walletService, labMetadataService, eventPollingFallbackService);
     }
 
     @Test
@@ -97,22 +91,6 @@ class ContractEventListenerConfigTest {
         List<String> events = ReflectionTestUtils.invokeMethod(config, "parseConfiguredEvents");
 
         assertThat(events).containsExactly("ReservationRequested", "ReservationConfirmed");
-    }
-
-    @Test
-    void shouldResolveHexadecimalStartBlock() {
-        ReflectionTestUtils.setField(config, "startBlock", "0x10");
-
-        DefaultBlockParameter result = ReflectionTestUtils.invokeMethod(config, "resolveStartBlockParameter");
-
-        assertThat(result).isNotNull().isInstanceOf(DefaultBlockParameterNumber.class);
-        if (result != null) {
-            String value = ((DefaultBlockParameterNumber) result).getValue();
-            BigInteger block = value.startsWith("0x")
-                ? new BigInteger(value.substring(2), 16)
-                : new BigInteger(value);
-            assertThat(block).isEqualTo(BigInteger.valueOf(16));
-        }
     }
 
     @Test
