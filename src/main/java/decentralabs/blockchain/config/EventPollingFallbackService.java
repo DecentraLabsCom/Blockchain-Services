@@ -281,10 +281,11 @@ public class EventPollingFallbackService {
                 return;
             }
 
-            List<EthLog.LogResult> logs = ethLog.getLogs();
+            @SuppressWarnings("unchecked")
+            List<EthLog.LogResult<?>> logs = (List<EthLog.LogResult<?>>) (List<?>) ethLog.getLogs();
             int processed = 0;
             
-            for (EthLog.LogResult logResult : logs) {
+            for (EthLog.LogResult<?> logResult : logs) {
                 if (logResult instanceof EthLog.LogObject) {
                     Log eventLog = ((EthLog.LogObject) logResult).get();
                     if (handleEventLog(registration, eventLog, "polling")) {
