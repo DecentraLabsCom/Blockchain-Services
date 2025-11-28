@@ -9,7 +9,6 @@ import decentralabs.blockchain.service.health.LabMetadataService;
 import decentralabs.blockchain.service.persistence.ReservationPersistenceService;
 import decentralabs.blockchain.service.wallet.InstitutionalWalletService;
 import decentralabs.blockchain.service.wallet.WalletService;
-import io.reactivex.disposables.Disposable;
 import java.math.BigDecimal;
 import java.math.BigInteger;
 import java.time.Instant;
@@ -37,9 +36,6 @@ import org.web3j.abi.datatypes.generated.Uint256;
 import org.web3j.abi.datatypes.Utf8String;
 import org.web3j.crypto.Credentials;
 import org.web3j.protocol.Web3j;
-import org.web3j.protocol.core.DefaultBlockParameter;
-import org.web3j.protocol.core.DefaultBlockParameterName;
-import org.web3j.protocol.core.methods.request.EthFilter;
 import org.web3j.protocol.core.methods.response.Log;
 import org.web3j.protocol.core.methods.response.TransactionReceipt;
 import org.web3j.tx.Contract;
@@ -62,6 +58,8 @@ public class ContractEventListenerConfig {
     private static final String RESERVATION_CANCELED = "ReservationRequestCanceled";
     private static final String BOOKING_CANCELED = "BookingCanceled";
     private static final String PROVIDER_ADDED = "ProviderAdded";
+
+    private final EventPollingFallbackService eventPollingFallbackService;
 
     private static final Event RESERVATION_REQUESTED_EVENT = new Event(
         RESERVATION_REQUESTED,
@@ -141,7 +139,6 @@ public class ContractEventListenerConfig {
     private volatile Diamond writableDiamond;
 
     private final Map<BigInteger, String> labMetadataUriCache = new ConcurrentHashMap<>();
-    private final List<Disposable> activeSubscriptions = new java.util.concurrent.CopyOnWriteArrayList<>();
 
     @Value("${contract.events.to.listen:}")
     private String eventsToListen;
@@ -160,6 +157,8 @@ public class ContractEventListenerConfig {
 
     /**
      * Configure event listeners for Diamond contract on application startup.
+     * Uses EventPollingFallbackService for reliable event capture with both
+     * WebSocket subscriptions and HTTP polling fallback.
      */
     @EventListener(ApplicationReadyEvent.class)
     public void configureContractEventListeners() {
@@ -180,10 +179,21 @@ public class ContractEventListenerConfig {
 
         try {
             Web3j web3j = walletService.getWeb3jInstance();
+            
+            // Initialize the polling fallback service
+            eventPollingFallbackService.initialize(web3j, diamondContractAddress);
+            
+            // Register all configured events
+            BigInteger startBlockNum = resolveStartBlockNumber();
             for (String eventName : configuredEvents) {
-                setupEventListener(web3j, diamondContractAddress, eventName);
+                registerEventWithFallback(eventName, startBlockNum);
             }
-            log.info("Contract event listener configuration completed for {} events", configuredEvents.size());
+            
+            // Start the service (WebSocket + polling)
+            eventPollingFallbackService.start();
+            
+            log.info("Contract event listener configuration completed for {} events (with polling fallback)", 
+                configuredEvents.size());
         } catch (Exception e) {
             log.error("Error configuring contract event listeners", e);
         }
@@ -201,22 +211,61 @@ public class ContractEventListenerConfig {
         log.info("Network switched from {} to {}, reconfiguring contract event listeners...", 
                  event.getOldNetwork(), event.getNewNetwork());
         
-        // Dispose all active subscriptions
-        for (Disposable subscription : activeSubscriptions) {
-            if (subscription != null && !subscription.isDisposed()) {
-                subscription.dispose();
-            }
-        }
-        activeSubscriptions.clear();
-        
         // Clear cached Diamond instances (they're network-specific)
         cachedDiamond = null;
         writableDiamond = null;
         
-        // Reconfigure listeners with new network
-        configureContractEventListeners();
+        // Reset the polling fallback service with new network
+        Web3j web3j = walletService.getWeb3jInstance();
+        eventPollingFallbackService.resetForNetworkSwitch(web3j, diamondContractAddress);
         
         log.info("Contract event listeners reconfigured for network: {}", event.getNewNetwork());
+    }
+
+    /**
+     * Register an event with the polling fallback service.
+     */
+    private void registerEventWithFallback(String eventName, BigInteger startBlock) {
+        Event eventDefinition = SUPPORTED_EVENTS.get(eventName);
+        if (eventDefinition == null) {
+            log.warn("Event '{}' is not supported and will be ignored", eventName);
+            return;
+        }
+
+        String eventSignature = EventEncoder.encode(eventDefinition);
+        log.info("Registering '{}' with signature {} (startBlock={})", eventName, eventSignature, startBlock);
+
+        eventPollingFallbackService.registerEvent(
+            eventName,
+            eventDefinition,
+            startBlock,
+            eventLog -> handleLogIfMatches(eventName, eventDefinition, eventSignature, eventLog)
+        );
+    }
+
+    /**
+     * Resolve start block as BigInteger for polling service.
+     */
+    private BigInteger resolveStartBlockNumber() {
+        if (startBlock == null || startBlock.isBlank()) {
+            return null; // Will use lookback from current
+        }
+
+        String normalized = startBlock.trim().toLowerCase(Locale.ROOT);
+        return switch (normalized) {
+            case "earliest" -> BigInteger.ZERO;
+            case "latest", "pending" -> null; // Use lookback
+            default -> {
+                try {
+                    yield normalized.startsWith("0x")
+                        ? new BigInteger(normalized.substring(2), 16)
+                        : new BigInteger(normalized);
+                } catch (NumberFormatException ex) {
+                    log.warn("Invalid start block '{}', using lookback", startBlock);
+                    yield null;
+                }
+            }
+        };
     }
 
     private List<String> parseConfiguredEvents() {
@@ -245,35 +294,6 @@ public class ContractEventListenerConfig {
         return parsed.stream()
             .filter(SUPPORTED_EVENTS::containsKey)
             .toList();
-    }
-
-    /**
-     * Sets up a listener for a specific contract event.
-     */
-    private void setupEventListener(Web3j web3j, String contractAddress, String eventName) {
-        Event eventDefinition = SUPPORTED_EVENTS.get(eventName);
-        if (eventDefinition == null) {
-            log.warn("Event '{}' is not supported and will be ignored", eventName);
-            return;
-        }
-
-        String eventSignature = EventEncoder.encode(eventDefinition);
-        EthFilter filter = new EthFilter(
-            resolveStartBlockParameter(),
-            DefaultBlockParameterName.LATEST,
-            contractAddress
-        );
-
-        log.info("Setting up listener for '{}' with signature {}", eventName, eventSignature);
-
-        Disposable subscription = web3j.ethLogFlowable(filter).subscribe(
-            eventLog -> handleLogIfMatches(eventName, eventDefinition, eventSignature, eventLog),
-            error -> log.error("Error listening for {} events: {}", eventName, error.getMessage(), error),
-            () -> log.info("Event listener for {} completed", eventName)
-        );
-        
-        // Store subscription so it can be disposed on network switch
-        activeSubscriptions.add(subscription);
     }
 
     private void handleLogIfMatches(String eventName, Event eventDefinition, String eventSignature, Log eventLog) {
@@ -756,30 +776,6 @@ public class ContractEventListenerConfig {
             case 4 -> "COLLECTED";
             case 5 -> "CANCELLED";
             default -> "UNKNOWN(" + status + ")";
-        };
-    }
-
-    private DefaultBlockParameter resolveStartBlockParameter() {
-        if (startBlock == null || startBlock.isBlank()) {
-            return DefaultBlockParameterName.LATEST;
-        }
-
-        String normalized = startBlock.trim().toLowerCase(Locale.ROOT);
-        return switch (normalized) {
-            case "earliest" -> DefaultBlockParameterName.EARLIEST;
-            case "latest" -> DefaultBlockParameterName.LATEST;
-            case "pending" -> DefaultBlockParameterName.PENDING;
-            default -> {
-                try {
-                    BigInteger blockNumber = normalized.startsWith("0x")
-                        ? new BigInteger(normalized.substring(2), 16)
-                        : new BigInteger(normalized);
-                    yield DefaultBlockParameter.valueOf(blockNumber);
-                } catch (NumberFormatException ex) {
-                    throw new IllegalArgumentException(
-                        "Invalid contract.event.start.block: " + startBlock, ex);
-                }
-            }
         };
     }
 
