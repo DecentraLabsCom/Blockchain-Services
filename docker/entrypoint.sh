@@ -31,7 +31,6 @@ KEY_DIR="./config/keys"
 mkdir -p "$KEY_DIR"
 KEY_FILE="$KEY_DIR/private_key.pem"
 PUB_FILE="$KEY_DIR/public_key.pem"
-CRT_FILE="$KEY_DIR/certificate.pem"
 MAX_KEY_AGE_SECONDS="${JWT_KEY_MAX_AGE_SECONDS:-31536000}" # 12 months por defecto
 
 regen_keys=false
@@ -55,9 +54,8 @@ fi
 if [ "$regen_keys" = true ]; then
     openssl genrsa -out "$KEY_FILE" 2048
     openssl rsa -in "$KEY_FILE" -pubout -out "$PUB_FILE"
-    cp "$PUB_FILE" "$CRT_FILE"
     chmod 600 "$KEY_FILE"
-    chmod 644 "$PUB_FILE" "$CRT_FILE"
+    chmod 644 "$PUB_FILE"
     echo "Generated RSA key pair in $KEY_DIR"
 fi
 
