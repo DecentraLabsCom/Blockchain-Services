@@ -420,7 +420,13 @@ public class InstitutionalWalletService {
             cipher.init(Cipher.ENCRYPT_MODE, buildSecretKey(), new GCMParameterSpec(CONFIG_GCM_TAG_LENGTH, iv));
             byte[] cipherText = cipher.doFinal(password.getBytes(StandardCharsets.UTF_8));
 
-            // Total size is bounded: 12 (iv) + max ~300 (encrypted data with GCM tag) = max ~320 bytes
+            // Validate ciphertext size to prevent resource exhaustion
+            // With AES-GCM, ciphertext size = plaintext size + 16 bytes (GCM tag)
+            // Max expected: 256 (password) + 16 (tag) = 272 bytes
+            final int MAX_CIPHERTEXT_SIZE = 512;
+            if (cipherText.length > MAX_CIPHERTEXT_SIZE) {
+                throw new IllegalStateException("Encrypted data exceeds expected size");
+            }
             int totalLength = iv.length + cipherText.length;
             ByteBuffer buffer = ByteBuffer.allocate(totalLength);
             buffer.put(iv);

@@ -460,13 +460,32 @@ public class IntentService {
         }
 
         String expectedChallenge = buildWebauthnChallenge(puc, credentialId, meta);
+        
+        // Extract and validate WebAuthn assertion data before passing to verification
+        // This ensures data is validated at the call site, not just inside the method
+        String clientDataJSON = validateWebauthnField(submission.getWebauthnClientDataJSON(), "clientDataJSON");
+        String authenticatorData = validateWebauthnField(submission.getWebauthnAuthenticatorData(), "authenticatorData");
+        String signature = validateWebauthnField(submission.getWebauthnSignature(), "signature");
+        
         verifyWebauthnSignature(
             cred,
-            submission.getWebauthnClientDataJSON(),
-            submission.getWebauthnAuthenticatorData(),
-            submission.getWebauthnSignature(),
+            clientDataJSON,
+            authenticatorData,
+            signature,
             expectedChallenge
         );
+    }
+    
+    private String validateWebauthnField(String value, String fieldName) {
+        if (value == null || value.isBlank()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "missing_webauthn_" + fieldName);
+        }
+        // Limit field size to prevent resource exhaustion (16KB is generous for WebAuthn)
+        final int MAX_FIELD_SIZE = 16384;
+        if (value.length() > MAX_FIELD_SIZE) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "webauthn_" + fieldName + "_too_large");
+        }
+        return value;
     }
 
     private String buildWebauthnChallenge(String puc, String credentialId, IntentMeta meta) {
