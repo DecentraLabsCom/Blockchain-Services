@@ -243,6 +243,7 @@ public class InstitutionInviteService {
         public String issuer;
         public String institutionWallet;
         public List<String> organizations;
+        @SuppressWarnings("unused")
         public Instant issuedAt;
         public Instant expiresAt;
     }
