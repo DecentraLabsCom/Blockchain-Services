@@ -56,6 +56,10 @@ public class Diamond extends Contract {
         public BigInteger requestPeriodDuration; // uint64 - institutional request window duration
         public String payerInstitution;        // address - institution paying for reservation
         public String collectorInstitution;    // address - institution receiving payout
+        public BigInteger providerShare;       // uint96 - provider allocation
+        public BigInteger projectTreasuryShare; // uint96 - project treasury allocation
+        public BigInteger subsidiesShare;      // uint96 - subsidies allocation
+        public BigInteger governanceShare;     // uint96 - governance allocation
 
         public Reservation(
             BigInteger labId,
@@ -69,7 +73,11 @@ public class Diamond extends Contract {
             BigInteger requestPeriodStart,
             BigInteger requestPeriodDuration,
             String payerInstitution,
-            String collectorInstitution
+            String collectorInstitution,
+            BigInteger providerShare,
+            BigInteger projectTreasuryShare,
+            BigInteger subsidiesShare,
+            BigInteger governanceShare
         ) {
             this.labId = labId;
             this.renter = renter;
@@ -83,6 +91,10 @@ public class Diamond extends Contract {
             this.requestPeriodDuration = requestPeriodDuration;
             this.payerInstitution = payerInstitution;
             this.collectorInstitution = collectorInstitution;
+            this.providerShare = providerShare;
+            this.projectTreasuryShare = projectTreasuryShare;
+            this.subsidiesShare = subsidiesShare;
+            this.governanceShare = governanceShare;
         }
     }
     
@@ -159,7 +171,11 @@ public class Diamond extends Contract {
                     new TypeReference<Uint64>() {},
                     new TypeReference<Uint64>() {},
                     new TypeReference<Address>() {},
-                    new TypeReference<Address>() {}
+                    new TypeReference<Address>() {},
+                    new TypeReference<Uint96>() {},
+                    new TypeReference<Uint96>() {},
+                    new TypeReference<Uint96>() {},
+                    new TypeReference<Uint96>() {}
                 ));
         return new RemoteFunctionCall<>(function,
                 () -> {
@@ -176,7 +192,11 @@ public class Diamond extends Contract {
                         ((Uint64) results.get(8)).getValue(),
                         ((Uint64) results.get(9)).getValue(),
                         ((Address) results.get(10)).getValue(),
-                        ((Address) results.get(11)).getValue()
+                        ((Address) results.get(11)).getValue(),
+                        ((Uint96) results.get(12)).getValue(),
+                        ((Uint96) results.get(13)).getValue(),
+                        ((Uint96) results.get(14)).getValue(),
+                        ((Uint96) results.get(15)).getValue()
                     );
                 });
     }

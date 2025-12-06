@@ -7,6 +7,7 @@ import decentralabs.blockchain.notification.ReservationNotificationData;
 import decentralabs.blockchain.notification.ReservationNotificationService;
 import decentralabs.blockchain.service.health.LabMetadataService;
 import decentralabs.blockchain.service.persistence.ReservationPersistenceService;
+import decentralabs.blockchain.service.intent.IntentService;
 import decentralabs.blockchain.service.wallet.InstitutionalWalletService;
 import decentralabs.blockchain.service.wallet.WalletService;
 import java.math.BigDecimal;
@@ -58,6 +59,8 @@ public class ContractEventListenerConfig {
     private static final String RESERVATION_CANCELED = "ReservationRequestCanceled";
     private static final String BOOKING_CANCELED = "BookingCanceled";
     private static final String PROVIDER_ADDED = "ProviderAdded";
+    private static final String LAB_INTENT_PROCESSED = "LabIntentProcessed";
+    private static final String RESERVATION_INTENT_PROCESSED = "ReservationIntentProcessed";
 
     private final EventPollingFallbackService eventPollingFallbackService;
 
@@ -66,9 +69,9 @@ public class ContractEventListenerConfig {
         Arrays.<TypeReference<?>>asList(
             new TypeReference<Address>(true) {},
             new TypeReference<Uint256>(true) {},
+            new TypeReference<Bytes32>(true) {},
             new TypeReference<Uint256>() {},
-            new TypeReference<Uint256>() {},
-            new TypeReference<Bytes32>() {}
+            new TypeReference<Uint256>() {}
         )
     );
 
@@ -114,6 +117,31 @@ public class ContractEventListenerConfig {
         )
     );
 
+    private static final Event LAB_INTENT_PROCESSED_EVENT = new Event(
+        LAB_INTENT_PROCESSED,
+        Arrays.<TypeReference<?>>asList(
+            new TypeReference<Bytes32>(true) {},
+            new TypeReference<Uint256>() {},
+            new TypeReference<Utf8String>() {},
+            new TypeReference<Address>() {},
+            new TypeReference<org.web3j.abi.datatypes.Bool>() {},
+            new TypeReference<Utf8String>() {}
+        )
+    );
+
+    private static final Event RESERVATION_INTENT_PROCESSED_EVENT = new Event(
+        RESERVATION_INTENT_PROCESSED,
+        Arrays.<TypeReference<?>>asList(
+            new TypeReference<Bytes32>(true) {},
+            new TypeReference<Bytes32>() {},
+            new TypeReference<Utf8String>() {},
+            new TypeReference<Utf8String>() {},
+            new TypeReference<Address>() {},
+            new TypeReference<org.web3j.abi.datatypes.Bool>() {},
+            new TypeReference<Utf8String>() {}
+        )
+    );
+
     private static final int DEFAULT_RESERVATION_USER_COUNT = 1;
     private static final String ACTION_REQUESTED = "requested";
 
@@ -123,7 +151,9 @@ public class ContractEventListenerConfig {
         RESERVATION_DENIED, RESERVATION_DENIED_EVENT,
         RESERVATION_CANCELED, RESERVATION_CANCELED_EVENT,
         BOOKING_CANCELED, BOOKING_CANCELED_EVENT,
-        PROVIDER_ADDED, PROVIDER_ADDED_EVENT
+        PROVIDER_ADDED, PROVIDER_ADDED_EVENT,
+        LAB_INTENT_PROCESSED, LAB_INTENT_PROCESSED_EVENT,
+        RESERVATION_INTENT_PROCESSED, RESERVATION_INTENT_PROCESSED_EVENT
     );
 
     private final WalletService walletService;
@@ -131,6 +161,7 @@ public class ContractEventListenerConfig {
     private final InstitutionalWalletService institutionalWalletService;
     private final ReservationNotificationService reservationNotificationService;
     private final ReservationPersistenceService reservationPersistenceService;
+    private final IntentService intentService;
 
     @Value("${contract.address}")
     private String diamondContractAddress;
@@ -329,6 +360,8 @@ public class ContractEventListenerConfig {
                 case RESERVATION_CANCELED -> handleReservationCanceled(eventValues, eventLog);
                 case BOOKING_CANCELED -> handleBookingCanceled(eventValues, eventLog);
                 case PROVIDER_ADDED -> handleProviderAdded(eventValues, eventLog);
+                case LAB_INTENT_PROCESSED -> handleLabIntentProcessed(eventValues, eventLog);
+                case RESERVATION_INTENT_PROCESSED -> handleReservationIntentProcessed(eventValues, eventLog);
                 default -> log.warn("Unhandled event type: {}", eventName);
             }
 
@@ -340,9 +373,9 @@ public class ContractEventListenerConfig {
     private void handleReservationRequested(EventValues eventValues, Log eventLog) {
         String renter = ((Address) eventValues.getIndexedValues().get(0)).getValue();
         BigInteger labId = ((Uint256) eventValues.getIndexedValues().get(1)).getValue();
+        String reservationKey = toHex((Bytes32) eventValues.getIndexedValues().get(2));
         BigInteger start = ((Uint256) eventValues.getNonIndexedValues().get(0)).getValue();
         BigInteger end = ((Uint256) eventValues.getNonIndexedValues().get(1)).getValue();
-        String reservationKey = toHex((Bytes32) eventValues.getNonIndexedValues().get(2));
 
         ReservationEventPayload payload = buildPayload(
             reservationKey,
@@ -440,6 +473,45 @@ public class ContractEventListenerConfig {
             name,
             email,
             country
+        );
+    }
+
+    private void handleLabIntentProcessed(EventValues eventValues, Log eventLog) {
+        String requestId = toHex((Bytes32) eventValues.getIndexedValues().get(0));
+        BigInteger labId = ((Uint256) eventValues.getNonIndexedValues().get(0)).getValue();
+        String action = ((Utf8String) eventValues.getNonIndexedValues().get(1)).getValue();
+        boolean success = ((org.web3j.abi.datatypes.Bool) eventValues.getNonIndexedValues().get(3)).getValue();
+        String reason = ((Utf8String) eventValues.getNonIndexedValues().get(4)).getValue();
+
+        log.info("LabIntentProcessed requestId={} action={} labId={} success={} tx={}", requestId, action, labId, success, eventLog.getTransactionHash());
+        intentService.updateFromOnChain(
+            requestId,
+            success ? "executed" : "failed",
+            eventLog.getTransactionHash(),
+            eventLog.getBlockNumber().longValue(),
+            labId != null ? labId.toString() : null,
+            null,
+            success ? null : reason
+        );
+    }
+
+    private void handleReservationIntentProcessed(EventValues eventValues, Log eventLog) {
+        String requestId = toHex((Bytes32) eventValues.getIndexedValues().get(0));
+        String reservationKey = toHex((Bytes32) eventValues.getNonIndexedValues().get(0));
+        String action = ((Utf8String) eventValues.getNonIndexedValues().get(1)).getValue();
+        String puc = ((Utf8String) eventValues.getNonIndexedValues().get(2)).getValue();
+        boolean success = ((org.web3j.abi.datatypes.Bool) eventValues.getNonIndexedValues().get(4)).getValue();
+        String reason = ((Utf8String) eventValues.getNonIndexedValues().get(5)).getValue();
+
+        log.info("ReservationIntentProcessed requestId={} action={} reservationKey={} puc={} success={} tx={}", requestId, action, reservationKey, puc, success, eventLog.getTransactionHash());
+        intentService.updateFromOnChain(
+            requestId,
+            success ? "executed" : "failed",
+            eventLog.getTransactionHash(),
+            eventLog.getBlockNumber().longValue(),
+            null,
+            reservationKey,
+            success ? null : reason
         );
     }
 

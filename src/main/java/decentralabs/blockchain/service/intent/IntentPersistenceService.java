@@ -1,0 +1,119 @@
+package decentralabs.blockchain.service.intent;
+
+import java.sql.ResultSet;
+import java.sql.SQLException;
+import java.sql.Timestamp;
+import java.util.Optional;
+
+import javax.sql.DataSource;
+
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.stereotype.Service;
+
+import decentralabs.blockchain.dto.intent.IntentStatus;
+import lombok.extern.slf4j.Slf4j;
+
+@Service
+@Slf4j
+public class IntentPersistenceService {
+
+    private final JdbcTemplate jdbcTemplate;
+
+    public IntentPersistenceService(DataSource dataSource) {
+        this.jdbcTemplate = dataSource != null ? new JdbcTemplate(dataSource) : null;
+    }
+
+    public void upsert(IntentRecord record) {
+        if (jdbcTemplate == null) {
+            log.debug("Skipping intent persistence (no datasource)");
+            return;
+        }
+        try {
+            jdbcTemplate.update(
+                """
+                INSERT INTO intents (
+                    request_id, status, action, provider, lab_id, reservation_key,
+                    tx_hash, block_number, error, reason, updated_at, created_at,
+                    nonce, expires_at, payload_json
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON DUPLICATE KEY UPDATE
+                    status = VALUES(status),
+                    tx_hash = VALUES(tx_hash),
+                    block_number = VALUES(block_number),
+                    error = VALUES(error),
+                    reason = VALUES(reason),
+                    updated_at = VALUES(updated_at),
+                    lab_id = VALUES(lab_id),
+                    reservation_key = VALUES(reservation_key),
+                    nonce = VALUES(nonce),
+                    expires_at = VALUES(expires_at),
+                    payload_json = VALUES(payload_json)
+                """,
+                record.getRequestId(),
+                record.getStatus().getWireValue(),
+                record.getAction(),
+                record.getProvider(),
+                record.getLabId(),
+                record.getReservationKey(),
+                record.getTxHash(),
+                record.getBlockNumber(),
+                record.getError(),
+                record.getReason(),
+                Timestamp.from(record.getUpdatedAt()),
+                Timestamp.from(record.getCreatedAt()),
+                record.getNonce(),
+                record.getExpiresAt(),
+                record.getPayloadJson()
+            );
+        } catch (Exception e) {
+            log.warn("Intent persistence skipped for {}: {}", record.getRequestId(), e.getMessage());
+        }
+    }
+
+    public Optional<IntentRecord> findByRequestId(String requestId) {
+        if (jdbcTemplate == null) {
+            return Optional.empty();
+        }
+        try {
+            return jdbcTemplate.query(
+                "SELECT * FROM intents WHERE request_id = ? LIMIT 1",
+                this::mapRow,
+                requestId
+            ).stream().findFirst();
+        } catch (Exception e) {
+            log.warn("Intent lookup skipped for {}: {}", requestId, e.getMessage());
+            return Optional.empty();
+        }
+    }
+
+    private IntentRecord mapRow(ResultSet rs, int rowNum) throws SQLException {
+        IntentRecord record = new IntentRecord(
+            rs.getString("request_id"),
+            rs.getString("action"),
+            rs.getString("provider")
+        );
+        record.setStatus(IntentStatus.valueOf(rs.getString("status").toUpperCase()));
+        record.setLabId(rs.getString("lab_id"));
+        record.setReservationKey(rs.getString("reservation_key"));
+        record.setTxHash(rs.getString("tx_hash"));
+        record.setBlockNumber(rs.getObject("block_number", Long.class));
+        record.setError(rs.getString("error"));
+        record.setReason(rs.getString("reason"));
+
+        Timestamp updatedAt = rs.getTimestamp("updated_at");
+        Timestamp createdAt = rs.getTimestamp("created_at");
+        record.setNonce(rs.getObject("nonce", Long.class));
+        record.setExpiresAt(rs.getObject("expires_at", Long.class));
+        record.setPayloadJson(rs.getString("payload_json"));
+
+        if (createdAt != null) {
+            record.setCreatedAt(createdAt.toInstant());
+        }
+        if (updatedAt != null) {
+            record.setUpdatedAt(updatedAt.toInstant());
+        } else if (createdAt != null) {
+            record.setUpdatedAt(createdAt.toInstant());
+        }
+        return record;
+    }
+}

@@ -25,6 +25,7 @@ import org.web3j.crypto.Credentials;
 import org.web3j.protocol.Web3j;
 import org.web3j.protocol.core.RemoteFunctionCall;
 import org.web3j.protocol.core.methods.response.TransactionReceipt;
+import org.mockito.ArgumentCaptor;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -110,6 +111,49 @@ class InstitutionalReservationServiceTest {
     }
 
     @Test
+    void processReservationUsesInstitutionalWalletAndPuc() throws Exception {
+        InstitutionalReservationRequest request = sampleRequest();
+        String jwt = buildMarketplaceToken(request.getUserId(), request.getInstitutionId());
+        request.setMarketplaceToken(jwt);
+        request.setSamlAssertion("saml");
+
+        when(marketplaceKeyService.getPublicKey(false)).thenReturn(keyPair.getPublic());
+        when(samlValidationService.validateSamlAssertionWithSignature("saml"))
+            .thenReturn(Map.of("userid", request.getUserId(), "affiliation", request.getInstitutionId()));
+
+        Credentials credentials = Credentials.create("0x123");
+        when(institutionalWalletService.getInstitutionalCredentials()).thenReturn(credentials);
+
+        Diamond contract = mock(Diamond.class);
+        @SuppressWarnings("unchecked")
+        RemoteFunctionCall<TransactionReceipt> functionCall = mock(RemoteFunctionCall.class);
+        TransactionReceipt receipt = new TransactionReceipt();
+        receipt.setTransactionHash("0xhash2");
+        when(functionCall.send()).thenReturn(receipt);
+
+        ArgumentCaptor<String> providerCaptor = ArgumentCaptor.forClass(String.class);
+        ArgumentCaptor<String> pucCaptor = ArgumentCaptor.forClass(String.class);
+
+        when(contract.institutionalReservationRequest(
+            providerCaptor.capture(),
+            pucCaptor.capture(),
+            any(),
+            any(),
+            any()
+        )).thenReturn(functionCall);
+
+        try (MockedStatic<Diamond> diamondMock = mockStatic(Diamond.class)) {
+            diamondMock.when(() -> Diamond.load(eq("0xABC"), eq(web3j), eq(credentials), any()))
+                .thenReturn(contract);
+
+            reservationService.processReservation(request);
+
+            assertThat(providerCaptor.getValue()).isEqualTo(credentials.getAddress());
+            assertThat(pucCaptor.getValue()).isEqualTo(request.getUserId()); // PUC == userId
+        }
+    }
+
+    @Test
     void processReservationFailsWhenJwtAndSamlDoNotMatch() throws Exception {
         InstitutionalReservationRequest request = sampleRequest();
         String jwt = buildMarketplaceToken("user-x", "another-institution");
@@ -123,6 +167,25 @@ class InstitutionalReservationServiceTest {
         assertThatThrownBy(() -> reservationService.processReservation(request))
             .isInstanceOf(IllegalStateException.class)
             .hasMessageContaining("Authentication validation failed");
+    }
+
+    @Test
+    void processReservationFailsWhenRequestInstitutionIdMismatchesSamlAffiliation() throws Exception {
+        InstitutionalReservationRequest request = sampleRequest();
+        // JWT matches SAML but request.institutionId differs from actual SAML affiliation
+        String samlAffiliation = "real-institution-from-saml";
+        String jwt = buildMarketplaceToken(request.getUserId(), samlAffiliation);
+        request.setMarketplaceToken(jwt);
+        request.setSamlAssertion("saml");
+        // request.institutionId = "institution-1" (from sampleRequest), different from samlAffiliation
+
+        when(marketplaceKeyService.getPublicKey(false)).thenReturn(keyPair.getPublic());
+        when(samlValidationService.validateSamlAssertionWithSignature("saml"))
+            .thenReturn(Map.of("userid", request.getUserId(), "affiliation", samlAffiliation));
+
+        assertThatThrownBy(() -> reservationService.processReservation(request))
+            .isInstanceOf(IllegalStateException.class)
+            .hasMessageContaining("Request institutionId does not match SAML affiliation");
     }
 
     private InstitutionalReservationRequest sampleRequest() {

@@ -49,6 +49,9 @@ public class SecurityConfig {
     
     @Value("${endpoint.treasury}")
     private String treasuryEndpoint;
+    
+    @Value("${endpoint.intents:/intents}")
+    private String intentsEndpoint;
 
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
@@ -66,6 +69,8 @@ public class SecurityConfig {
                     healthEndpoint,
                     walletEndpoint + "/**",
                     treasuryEndpoint + "/**",
+                    "/webauthn/**",
+                    intentsEndpoint + "/**",
                     "/onboarding/**"
                 )
             )
@@ -79,7 +84,9 @@ public class SecurityConfig {
                 .requestMatchers(samlAuthEndpoint).permitAll()
                 .requestMatchers(samlAuth2Endpoint).permitAll()
                 .requestMatchers(healthEndpoint).permitAll()
+                .requestMatchers("/webauthn/**").permitAll()
                 .requestMatchers("/onboarding/**").permitAll()
+                .requestMatchers(intentsEndpoint + "/**").permitAll()
                 // Wallet dashboard static resources (HTML/CSS/JS)
                 .requestMatchers("/wallet-dashboard/**").permitAll()
                 // ALL wallet endpoints - restricted by CORS to localhost
@@ -111,6 +118,8 @@ public class SecurityConfig {
         source.registerCorsConfiguration(samlAuthEndpoint, publicConfiguration);
         source.registerCorsConfiguration(samlAuth2Endpoint, publicConfiguration);
         source.registerCorsConfiguration(healthEndpoint, publicConfiguration);
+        source.registerCorsConfiguration(intentsEndpoint + "/**", publicConfiguration);
+        source.registerCorsConfiguration("/webauthn/**", publicConfiguration);
         
         // ALL wallet endpoints - localhost only, except institutional reservation
         source.registerCorsConfiguration(walletEndpoint + "/**", walletConfiguration);

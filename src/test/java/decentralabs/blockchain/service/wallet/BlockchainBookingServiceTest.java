@@ -274,7 +274,11 @@ class BlockchainBookingServiceTest {
                 BigInteger.ZERO, // requestPeriodStart
                 BigInteger.ZERO, // requestPeriodDuration
                 "0x0000000000000000000000000000000000000000", // payerInstitution
-                "0x0000000000000000000000000000000000000000"  // collectorInstitution
+                "0x0000000000000000000000000000000000000000", // collectorInstitution
+                BigInteger.ZERO, // providerShare
+                BigInteger.ZERO, // projectTreasuryShare
+                BigInteger.ZERO, // subsidiesShare
+                BigInteger.ZERO  // governanceShare
         );
     }
 
