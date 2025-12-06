@@ -11,6 +11,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 
 import decentralabs.blockchain.dto.intent.IntentStatus;
+import decentralabs.blockchain.util.LogSanitizer;
 import lombok.extern.slf4j.Slf4j;
 
 @Service
@@ -66,7 +67,7 @@ public class IntentPersistenceService {
                 record.getPayloadJson()
             );
         } catch (Exception e) {
-            log.warn("Intent persistence skipped for {}: {}", record.getRequestId(), e.getMessage());
+            log.warn("Intent persistence skipped for {}: {}", LogSanitizer.sanitize(record.getRequestId()), LogSanitizer.sanitize(e.getMessage()));
         }
     }
 
@@ -81,7 +82,7 @@ public class IntentPersistenceService {
                 requestId
             ).stream().findFirst();
         } catch (Exception e) {
-            log.warn("Intent lookup skipped for {}: {}", requestId, e.getMessage());
+            log.warn("Intent lookup skipped for {}: {}", LogSanitizer.sanitize(requestId), LogSanitizer.sanitize(e.getMessage()));
             return Optional.empty();
         }
     }

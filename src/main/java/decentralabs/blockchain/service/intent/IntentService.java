@@ -31,6 +31,7 @@ import decentralabs.blockchain.dto.intent.ReservationIntentPayload;
 import decentralabs.blockchain.service.auth.SamlValidationService;
 import decentralabs.blockchain.service.auth.WebauthnCredentialService;
 import decentralabs.blockchain.service.auth.WebauthnCredentialService.WebauthnCredential;
+import decentralabs.blockchain.util.LogSanitizer;
 import lombok.extern.slf4j.Slf4j;
 import java.security.MessageDigest;
 import java.security.PublicKey;
@@ -154,7 +155,10 @@ public class IntentService {
         persistenceService.upsert(record);
 
         log.info("Intent {} queued (action={}, provider={}, labId={}, reservationKey={})",
-            meta.getRequestId(), action.getWireValue(), meta.getExecutor(), record.getLabId(), record.getReservationKey());
+            LogSanitizer.sanitize(meta.getRequestId()), action.getWireValue(), 
+            LogSanitizer.maskIdentifier(meta.getExecutor()), 
+            LogSanitizer.sanitize(record.getLabId()), 
+            LogSanitizer.sanitize(record.getReservationKey()));
 
         return buildAcceptedAck(meta.getRequestId());
     }

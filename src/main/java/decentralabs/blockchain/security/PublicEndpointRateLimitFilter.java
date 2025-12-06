@@ -1,5 +1,6 @@
 package decentralabs.blockchain.security;
 
+import decentralabs.blockchain.util.LogSanitizer;
 import io.github.bucket4j.Bandwidth;
 import io.github.bucket4j.Bucket;
 import jakarta.servlet.FilterChain;
@@ -72,7 +73,7 @@ public class PublicEndpointRateLimitFilter extends OncePerRequestFilter {
         // Check if this is a rate-limited endpoint
         if (isAuthEndpoint(path)) {
             if (!checkAuthRateLimit(clientIp)) {
-                log.warn("Rate limit exceeded for auth endpoint: path={}, ip={}", path, maskIp(clientIp));
+                log.warn("Rate limit exceeded for auth endpoint: path={}, ip={}", LogSanitizer.sanitize(path), maskIp(clientIp));
                 sendRateLimitResponse(response);
                 return;
             }
