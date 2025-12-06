@@ -93,11 +93,14 @@ public class InstitutionInviteService {
                     .build());
             } catch (Exception ex) {
                 allSuccess = false;
-                // Sanitize both organization name and error message to prevent log injection (CRLF)
-                String safeOrg = sanitizeLogMessage(normalizedOrg);
+                // Log only exception type to avoid log injection with user data
+                // The organization index can be correlated with request data if needed
+                int orgIndex = payload.organizations.indexOf(organization);
+                log.warn("Unable to grant institution role for organization at index {}: {}", 
+                    orgIndex, ex.getClass().getSimpleName());
+                // Store sanitized error for API response
                 String rawMessage = ex.getMessage() != null ? ex.getMessage() : ex.getClass().getSimpleName();
                 String sanitized = sanitizeLogMessage(rawMessage);
-                log.warn("Unable to grant institution role for {}: {}", safeOrg, sanitized);
                 results.add(DomainResult.builder()
                     .organization(normalizedOrg)
                     .error(sanitized)

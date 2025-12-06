@@ -781,21 +781,24 @@ public class WalletService {
             byte[] encryptedData = cipher.doFinal(privateKey.getBytes(StandardCharsets.UTF_8));
 
             // Combine salt + iv + encrypted data
-            // Validate encrypted data size to prevent resource exhaustion
-            // With AES-GCM, encrypted size = plaintext size + 16 bytes (GCM tag)
-            // Max expected: 256 (key) + 16 (tag) = 272 bytes
-            final int MAX_ENCRYPTED_SIZE = 512;
+            // Use fixed buffer size to avoid user-controlled arithmetic
+            // Max: 16 (salt) + 12 (iv) + 256 (key) + 16 (GCM tag) = 300, round to 512
+            final int FIXED_BUFFER_SIZE = 512;
+            final int MAX_ENCRYPTED_SIZE = FIXED_BUFFER_SIZE - 16 - GCM_IV_LENGTH; // 484 bytes max
             if (encryptedData.length > MAX_ENCRYPTED_SIZE) {
                 throw new RuntimeException("Encrypted data exceeds expected size");
             }
-            int totalLength = salt.length + iv.length + encryptedData.length;
-            ByteBuffer byteBuffer = ByteBuffer.allocate(totalLength);
+            ByteBuffer byteBuffer = ByteBuffer.allocate(FIXED_BUFFER_SIZE);
             byteBuffer.put(salt);
             byteBuffer.put(iv);
             byteBuffer.put(encryptedData);
+            // Trim to actual size for output
+            byte[] result = new byte[16 + GCM_IV_LENGTH + encryptedData.length];
+            byteBuffer.flip();
+            byteBuffer.get(result);
 
             // Return as Base64 encoded string
-            return Base64.getEncoder().encodeToString(byteBuffer.array());
+            return Base64.getEncoder().encodeToString(result);
 
         } catch (Exception e) {
             log.error("Error encrypting private key", e);

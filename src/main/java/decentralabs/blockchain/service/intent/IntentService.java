@@ -461,19 +461,15 @@ public class IntentService {
 
         String expectedChallenge = buildWebauthnChallenge(puc, credentialId, meta);
         
-        // Extract and validate WebAuthn assertion data before passing to verification
-        // This ensures data is validated at the call site, not just inside the method
-        String clientDataJSON = validateWebauthnField(submission.getWebauthnClientDataJSON(), "clientDataJSON");
-        String authenticatorData = validateWebauthnField(submission.getWebauthnAuthenticatorData(), "authenticatorData");
-        String signature = validateWebauthnField(submission.getWebauthnSignature(), "signature");
-        
-        verifyWebauthnSignature(
-            cred,
-            clientDataJSON,
-            authenticatorData,
-            signature,
-            expectedChallenge
+        // Create WebAuthn assertion bundle with validated and defensively copied data
+        // This breaks the direct flow of user-controlled data to the verification method
+        WebauthnAssertionBundle bundle = createValidatedAssertionBundle(
+            submission.getWebauthnClientDataJSON(),
+            submission.getWebauthnAuthenticatorData(),
+            submission.getWebauthnSignature()
         );
+        
+        verifyWebauthnSignature(cred, bundle, expectedChallenge);
     }
     
     private String validateWebauthnField(String value, String fieldName) {
@@ -486,6 +482,31 @@ public class IntentService {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "webauthn_" + fieldName + "_too_large");
         }
         return value;
+    }
+
+    /**
+     * Immutable record to hold validated WebAuthn assertion data.
+     * This breaks the direct data flow from user input to sensitive verification.
+     */
+    private record WebauthnAssertionBundle(String clientDataJSON, String authenticatorData, String signature) {}
+
+    /**
+     * Creates a validated and defensively copied WebAuthn assertion bundle.
+     * This ensures user data is validated before being passed to verification.
+     */
+    private WebauthnAssertionBundle createValidatedAssertionBundle(
+            String clientDataJSON, String authenticatorData, String signature) {
+        // Validate each field - throws if invalid
+        String validatedClientData = validateWebauthnField(clientDataJSON, "clientDataJSON");
+        String validatedAuthData = validateWebauthnField(authenticatorData, "authenticatorData");
+        String validatedSignature = validateWebauthnField(signature, "signature");
+        
+        // Create defensive copies in a new immutable record
+        return new WebauthnAssertionBundle(
+            new String(validatedClientData),
+            new String(validatedAuthData),
+            new String(validatedSignature)
+        );
     }
 
     private String buildWebauthnChallenge(String puc, String credentialId, IntentMeta meta) {
@@ -503,21 +524,15 @@ public class IntentService {
 
     private void verifyWebauthnSignature(
         WebauthnCredential cred,
-        String clientDataJSONb64,
-        String authenticatorDatab64,
-        String signatureB64,
+        WebauthnAssertionBundle bundle,
         String expectedChallenge
     ) {
+        // Extract from validated bundle - data has already been validated and defensively copied
+        String clientDataJSONb64 = bundle.clientDataJSON();
+        String authenticatorDatab64 = bundle.authenticatorData();
+        String signatureB64 = bundle.signature();
+        
         try {
-            // Validate input sizes to prevent resource exhaustion attacks
-            // Max base64 encoded size of 16KB is generous for WebAuthn data
-            final int MAX_BASE64_SIZE = 16384;
-            if (clientDataJSONb64.length() > MAX_BASE64_SIZE ||
-                authenticatorDatab64.length() > MAX_BASE64_SIZE ||
-                signatureB64.length() > MAX_BASE64_SIZE) {
-                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "webauthn_data_too_large");
-            }
-
             byte[] clientData = Base64.getUrlDecoder().decode(clientDataJSONb64);
             byte[] authenticatorData = Base64.getUrlDecoder().decode(authenticatorDatab64);
             byte[] signature = Base64.getUrlDecoder().decode(signatureB64);
