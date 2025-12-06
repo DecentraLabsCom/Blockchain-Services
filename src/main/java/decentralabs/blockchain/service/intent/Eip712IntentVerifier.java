@@ -203,8 +203,10 @@ public class Eip712IntentVerifier {
             throw new IllegalArgumentException("Invalid signature length: " + signatureBytes.length);
         }
         byte v = signatureBytes[64];
+        // Explicit cast to avoid implicit narrowing conversion warning
+        // The v value in Ethereum signatures is expected to be 27 or 28
         if (v < 27) {
-            v += 27;
+            v = (byte) (v + 27);
         }
         byte[] r = new byte[32];
         byte[] s = new byte[32];

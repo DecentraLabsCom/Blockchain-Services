@@ -490,6 +490,15 @@ public class IntentService {
         String expectedChallenge
     ) {
         try {
+            // Validate input sizes to prevent resource exhaustion attacks
+            // Max base64 encoded size of 16KB is generous for WebAuthn data
+            final int MAX_BASE64_SIZE = 16384;
+            if (clientDataJSONb64.length() > MAX_BASE64_SIZE ||
+                authenticatorDatab64.length() > MAX_BASE64_SIZE ||
+                signatureB64.length() > MAX_BASE64_SIZE) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "webauthn_data_too_large");
+            }
+
             byte[] clientData = Base64.getUrlDecoder().decode(clientDataJSONb64);
             byte[] authenticatorData = Base64.getUrlDecoder().decode(authenticatorDatab64);
             byte[] signature = Base64.getUrlDecoder().decode(signatureB64);
@@ -539,7 +548,17 @@ public class IntentService {
     }
 
     private byte[] concat(byte[] a, byte[] b) {
-        byte[] out = new byte[a.length + b.length];
+        // Validate array lengths to prevent integer overflow and excessive allocation
+        // Max reasonable size for WebAuthn signature data is 64KB
+        final int MAX_COMBINED_SIZE = 65536;
+        if (a.length > MAX_COMBINED_SIZE || b.length > MAX_COMBINED_SIZE) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "webauthn_data_too_large");
+        }
+        int combinedLength = a.length + b.length;
+        if (combinedLength < 0 || combinedLength > MAX_COMBINED_SIZE) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "webauthn_data_too_large");
+        }
+        byte[] out = new byte[combinedLength];
         System.arraycopy(a, 0, out, 0, a.length);
         System.arraycopy(b, 0, out, a.length, b.length);
         return out;

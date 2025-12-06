@@ -749,6 +749,16 @@ public class WalletService {
      */
     private String encryptPrivateKey(String privateKey, String password) {
         try {
+            // Validate private key size to prevent resource exhaustion
+            // Ethereum private keys are 64 hex chars, with some margin for format variations
+            final int MAX_PRIVATE_KEY_LENGTH = 256;
+            if (privateKey == null || privateKey.isEmpty()) {
+                throw new IllegalArgumentException("Private key cannot be null or empty");
+            }
+            if (privateKey.length() > MAX_PRIVATE_KEY_LENGTH) {
+                throw new IllegalArgumentException("Private key exceeds maximum allowed length");
+            }
+
             // Generate random salt for this encryption
             SecureRandom secureRandom = new SecureRandom();
             byte[] salt = new byte[16];
@@ -771,7 +781,9 @@ public class WalletService {
             byte[] encryptedData = cipher.doFinal(privateKey.getBytes(StandardCharsets.UTF_8));
 
             // Combine salt + iv + encrypted data
-            ByteBuffer byteBuffer = ByteBuffer.allocate(salt.length + iv.length + encryptedData.length);
+            // Total size is bounded: 16 (salt) + 12 (iv) + max ~300 (encrypted data) = max ~330 bytes
+            int totalLength = salt.length + iv.length + encryptedData.length;
+            ByteBuffer byteBuffer = ByteBuffer.allocate(totalLength);
             byteBuffer.put(salt);
             byteBuffer.put(iv);
             byteBuffer.put(encryptedData);

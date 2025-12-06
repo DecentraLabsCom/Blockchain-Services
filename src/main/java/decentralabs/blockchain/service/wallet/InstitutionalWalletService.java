@@ -403,6 +403,16 @@ public class InstitutionalWalletService {
 
     private String encryptPassword(String password) {
         try {
+            // Validate password size to prevent resource exhaustion
+            // Reasonable max password length is 256 characters
+            final int MAX_PASSWORD_LENGTH = 256;
+            if (password == null || password.isEmpty()) {
+                throw new IllegalArgumentException("Password cannot be null or empty");
+            }
+            if (password.length() > MAX_PASSWORD_LENGTH) {
+                throw new IllegalArgumentException("Password exceeds maximum allowed length");
+            }
+
             byte[] iv = new byte[CONFIG_IV_LENGTH];
             SECURE_RANDOM.nextBytes(iv);
 
@@ -410,7 +420,9 @@ public class InstitutionalWalletService {
             cipher.init(Cipher.ENCRYPT_MODE, buildSecretKey(), new GCMParameterSpec(CONFIG_GCM_TAG_LENGTH, iv));
             byte[] cipherText = cipher.doFinal(password.getBytes(StandardCharsets.UTF_8));
 
-            ByteBuffer buffer = ByteBuffer.allocate(iv.length + cipherText.length);
+            // Total size is bounded: 12 (iv) + max ~300 (encrypted data with GCM tag) = max ~320 bytes
+            int totalLength = iv.length + cipherText.length;
+            ByteBuffer buffer = ByteBuffer.allocate(totalLength);
             buffer.put(iv);
             buffer.put(cipherText);
             return Base64.getEncoder().encodeToString(buffer.array());

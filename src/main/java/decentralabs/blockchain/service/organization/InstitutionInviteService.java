@@ -93,7 +93,9 @@ public class InstitutionInviteService {
                     .build());
             } catch (Exception ex) {
                 allSuccess = false;
-                String sanitized = ex.getMessage() != null ? ex.getMessage() : ex.toString();
+                // Sanitize error message to prevent log injection attacks (CRLF) and limit information leakage
+                String rawMessage = ex.getMessage() != null ? ex.getMessage() : ex.getClass().getSimpleName();
+                String sanitized = sanitizeLogMessage(rawMessage);
                 log.warn("Unable to grant institution role for {}: {}", normalizedOrg, sanitized);
                 results.add(DomainResult.builder()
                     .organization(normalizedOrg)
@@ -236,6 +238,24 @@ public class InstitutionInviteService {
             return "";
         }
         return organization.trim().toLowerCase(Locale.ROOT);
+    }
+
+    /**
+     * Sanitizes a message for safe logging, preventing log injection attacks (CRLF)
+     * and limiting the length to avoid log flooding.
+     */
+    private String sanitizeLogMessage(String message) {
+        if (message == null) {
+            return "null";
+        }
+        // Remove control characters (CR, LF, tabs) that could be used for log injection
+        String sanitized = message.replaceAll("[\\r\\n\\t]", " ");
+        // Limit length to prevent log flooding
+        final int MAX_LOG_MESSAGE_LENGTH = 200;
+        if (sanitized.length() > MAX_LOG_MESSAGE_LENGTH) {
+            sanitized = sanitized.substring(0, MAX_LOG_MESSAGE_LENGTH) + "...";
+        }
+        return sanitized;
     }
 
     private static final class InvitePayload {
