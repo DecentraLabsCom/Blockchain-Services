@@ -8,6 +8,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import decentralabs.blockchain.controller.TestSecurityConfig;
 import decentralabs.blockchain.dto.auth.WebauthnOnboardingCompleteRequest;
 import decentralabs.blockchain.dto.auth.WebauthnOnboardingCompleteResponse;
 import decentralabs.blockchain.dto.auth.WebauthnOnboardingOptionsRequest;
@@ -22,39 +23,18 @@ import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
-import org.springframework.context.annotation.Bean;
-import org.springframework.context.annotation.Configuration;
-import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.context.annotation.Import;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.http.MediaType;
-import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.test.context.support.WithMockUser;
 import org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors;
-import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
 
-@WebMvcTest(WebauthnOnboardingController.class)
-@Import(WebauthnOnboardingControllerTest.TestSecurityConfig.class)
+@WebMvcTest(controllers = WebauthnOnboardingController.class)
+@Import(TestSecurityConfig.class)
 @TestPropertySource(properties = "webauthn.rp.id=localhost")
 class WebauthnOnboardingControllerTest {
-    /**
-     * Test security configuration that permits all requests to the onboarding endpoints.
-     * This mimics the actual SecurityConfig behavior for /onboarding/** paths.
-     */
-    @Configuration
-    static class TestSecurityConfig {
-        @Bean
-        public SecurityFilterChain testSecurityFilterChain(HttpSecurity http) throws Exception {
-            http
-                .csrf(csrf -> csrf.disable())
-                .authorizeHttpRequests(authorize -> authorize
-                    .requestMatchers("/onboarding/**").permitAll()
-                    .anyRequest().authenticated()
-                );
-            return http.build();
-        }
-    }
 
     @Autowired
     private MockMvc mockMvc;
@@ -173,8 +153,9 @@ class WebauthnOnboardingControllerTest {
         when(onboardingService.generateOptions(any())).thenReturn(response);
 
         // This test verifies that the endpoint is accessible without authentication
-        // TestSecurityConfig disables CSRF for /onboarding/** paths
+        // TestSecurityConfig permits all requests but requires CSRF token
         mockMvc.perform(post("/onboarding/webauthn/options")
+                .with(SecurityMockMvcRequestPostProcessors.csrf())
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(objectMapper.writeValueAsString(request)))
             .andExpect(status().isOk());
