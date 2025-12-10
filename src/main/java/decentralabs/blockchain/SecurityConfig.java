@@ -120,11 +120,14 @@ public class SecurityConfig {
         source.registerCorsConfiguration(healthEndpoint, publicConfiguration);
         source.registerCorsConfiguration(intentsEndpoint + "/**", publicConfiguration);
         source.registerCorsConfiguration("/webauthn/**", publicConfiguration);
+        // WebAuthn onboarding: browser comes from SP/marketplace, needs public origins
+        source.registerCorsConfiguration("/onboarding/webauthn/**", publicConfiguration);
         
         // ALL wallet endpoints - localhost only, except institutional reservation
         source.registerCorsConfiguration(walletEndpoint + "/**", walletConfiguration);
         source.registerCorsConfiguration(treasuryEndpoint + "/**", walletConfiguration);
-        source.registerCorsConfiguration("/onboarding/**", walletConfiguration);
+        // Token-based onboarding (invite tokens) - localhost only
+        source.registerCorsConfiguration("/onboarding/token/**", walletConfiguration);
 
         return source;
     }

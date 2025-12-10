@@ -109,6 +109,22 @@ This documentation is organized into specialized sections:
 | `/auth/saml-auth` | POST | SAML2 authentication |
 | `/auth/saml-auth2` | POST | SAML2 authentication + authorization |
 
+### WebAuthn Onboarding Endpoints (`/onboarding/webauthn`)
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/onboarding/webauthn/options` | POST | Get credential creation options (challenge) |
+| `/onboarding/webauthn/complete` | POST | Complete registration with attestation |
+
+> These endpoints implement the dedicated onboarding endpoint from the Federated SSO Architecture spec.
+> The browser talks directly to the WIB for WebAuthn credential registration, ensuring the SP never sees
+> the challenge or user signature.
+
+### WebAuthn Credential Management (`/webauthn`)
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/webauthn/register` | POST | Register pre-authenticated credential (legacy) |
+| `/webauthn/revoke` | POST | Revoke a user's credential |
+
 ### Wallet Endpoints (`/wallet`) 🔒 *localhost only*
 | Endpoint | Method | Description |
 |----------|--------|-------------|
@@ -264,6 +280,24 @@ This project uses a **security-first deployment approach**:
 | `PRIVATE_KEY_PATH` | Path to JWT private key | `config/keys/private_key.pem` |
 | `PUBLIC_KEY_PATH` | Path to JWT public key | `config/keys/public_key.pem` |
 | `ADMIN_DASHBOARD_LOCAL_ONLY` | `true` blocks `/treasury/admin/**` to localhost, `false` keeps it open (dev default) | `true` |
+
+### WebAuthn Onboarding Configuration
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `WEBAUTHN_RP_ID` | Relying Party ID (domain users see in browser) | `${BASE_DOMAIN}` or `localhost` |
+| `WEBAUTHN_RP_NAME` | Display name for the RP | `DecentraLabs Gateway` |
+| `WEBAUTHN_RP_ORIGINS` | Allowed origins for attestation (comma-separated) | `https://localhost,https://localhost:443` |
+| `WEBAUTHN_TIMEOUT_MS` | Ceremony timeout in milliseconds | `120000` |
+| `WEBAUTHN_SESSION_TTL_SECONDS` | Challenge expiration time | `300` |
+| `WEBAUTHN_ATTESTATION_CONVEYANCE` | `none`, `indirect`, or `direct` | `none` |
+| `WEBAUTHN_AUTHENTICATOR_ATTACHMENT` | `platform`, `cross-platform`, or empty | (empty) |
+| `WEBAUTHN_RESIDENT_KEY` | `required`, `preferred`, or `discouraged` | `preferred` |
+| `WEBAUTHN_USER_VERIFICATION` | `required`, `preferred`, or `discouraged` | `preferred` |
+
+> **Important for Lab Gateway:** When deploying behind the Lab Gateway, set `WEBAUTHN_RP_ID` to the gateway's
+> public domain (e.g., `lab.institution.edu`) and ensure `WEBAUTHN_RP_ORIGINS` includes all HTTPS variants
+> of the gateway URL. The `BASE_DOMAIN` env var, if set, is used as the default RP ID.
 
 ### Configuration Files
 

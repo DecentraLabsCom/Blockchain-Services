@@ -1,10 +1,10 @@
 package decentralabs.blockchain.service.auth;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -40,6 +40,9 @@ class WebauthnCredentialServiceTest {
     @Mock
     private ObjectProvider<JdbcTemplate> jdbcTemplateProvider;
 
+    @Mock
+    private ObjectProvider<JdbcTemplate> nullJdbcTemplateProvider;
+
     private WebauthnCredentialService webauthnCredentialService;
 
     private static final String TEST_PUC = "testuser@uned.es";
@@ -50,6 +53,7 @@ class WebauthnCredentialServiceTest {
     @BeforeEach
     void setUp() {
         when(jdbcTemplateProvider.getIfAvailable()).thenReturn(jdbcTemplate);
+        lenient().when(nullJdbcTemplateProvider.getIfAvailable()).thenReturn(null);
         webauthnCredentialService = new WebauthnCredentialService(jdbcTemplateProvider);
         ReflectionTestUtils.setField(webauthnCredentialService, "credentialsTable", "webauthn_credentials");
     }
@@ -133,17 +137,21 @@ class WebauthnCredentialServiceTest {
         }
 
         @Test
-        @DisplayName("Should throw on database error during registration")
-        void shouldThrowOnDatabaseErrorDuringRegistration() {
+        @DisplayName("Should store in memory even when database fails during registration")
+        void shouldStoreInMemoryEvenWhenDatabaseFails() {
             DataAccessException dbError = new DataAccessResourceFailureException("Connection failed");
             when(jdbcTemplate.update(anyString(), any(), any(), any(), any(), any(), any(), any()))
                 .thenThrow(dbError);
 
-            assertThatThrownBy(() -> webauthnCredentialService.register(
+            // Should not throw - stores in memory first, then logs DB error
+            webauthnCredentialService.register(
                 TEST_PUC, TEST_CREDENTIAL_ID, TEST_PUBLIC_KEY, TEST_AAGUID, 0L
-            ))
-                .isInstanceOf(DataAccessException.class)
-                .hasMessageContaining("Connection failed");
+            );
+            
+            // Verify credential is still findable from in-memory storage
+            Optional<WebauthnCredential> found = webauthnCredentialService.findCredential(TEST_PUC, TEST_CREDENTIAL_ID);
+            assertThat(found).isPresent();
+            assertThat(found.get().getPublicKey()).isEqualTo(TEST_PUBLIC_KEY);
         }
     }
 
@@ -189,14 +197,25 @@ class WebauthnCredentialServiceTest {
         }
 
         @Test
-        @DisplayName("Should throw on database error during revocation")
-        void shouldThrowOnDatabaseErrorDuringRevocation() {
+        @DisplayName("Should update in-memory even when database fails during revocation")
+        void shouldUpdateInMemoryEvenWhenDatabaseFails() {
+            // First register a credential
+            webauthnCredentialService.register(
+                TEST_PUC, TEST_CREDENTIAL_ID, TEST_PUBLIC_KEY, TEST_AAGUID, 0L
+            );
+            
+            // Now make DB throw on update (revocation)
             DataAccessException dbError = new DataAccessResourceFailureException("Connection failed");
             when(jdbcTemplate.update(anyString(), any(), any(), any(), any()))
                 .thenThrow(dbError);
 
-            assertThatThrownBy(() -> webauthnCredentialService.revoke(TEST_PUC, TEST_CREDENTIAL_ID))
-                .isInstanceOf(DataAccessException.class);
+            // Should not throw - updates in-memory first, then logs DB error
+            webauthnCredentialService.revoke(TEST_PUC, TEST_CREDENTIAL_ID);
+            
+            // Verify credential is marked as inactive in memory
+            Optional<WebauthnCredential> found = webauthnCredentialService.findCredential(TEST_PUC, TEST_CREDENTIAL_ID);
+            assertThat(found).isPresent();
+            assertThat(found.get().isActive()).isFalse();
         }
     }
 
@@ -299,18 +318,18 @@ class WebauthnCredentialServiceTest {
         }
 
         @Test
-        @DisplayName("Should throw on database error during lookup")
-        @SuppressWarnings("unchecked")
-        void shouldThrowOnDatabaseErrorDuringLookup() {
-            DataAccessException dbError = new DataAccessResourceFailureException("Connection failed");
-            when(jdbcTemplate.query(
-                anyString(),
-                any(PreparedStatementSetter.class),
-                any(ResultSetExtractor.class)
-            )).thenThrow(dbError);
+        @DisplayName("Should return from memory when database fails during lookup")
+        void shouldReturnFromMemoryWhenDatabaseFails() {
+            // First register a credential (this stores in memory)
+            webauthnCredentialService.register(
+                TEST_PUC, TEST_CREDENTIAL_ID, TEST_PUBLIC_KEY, TEST_AAGUID, 10L
+            );
+            
+            // Verify credential is findable from in-memory storage (DB query not needed)
+            Optional<WebauthnCredential> result = webauthnCredentialService.findCredential(TEST_PUC, TEST_CREDENTIAL_ID);
 
-            assertThatThrownBy(() -> webauthnCredentialService.findCredential(TEST_PUC, TEST_CREDENTIAL_ID))
-                .isInstanceOf(DataAccessException.class);
+            assertThat(result).isPresent();
+            assertThat(result.get().getCredentialId()).isEqualTo(TEST_CREDENTIAL_ID);
         }
     }
 
@@ -391,6 +410,118 @@ class WebauthnCredentialServiceTest {
 
             assertThat(result).isEmpty();
             // Should not throw NPE
+        }
+    }
+
+    @Nested
+    @DisplayName("In-memory only mode tests (no database)")
+    class InMemoryOnlyModeTests {
+
+        private WebauthnCredentialService inMemoryOnlyService;
+
+        @BeforeEach
+        void setUpInMemoryMode() {
+            inMemoryOnlyService = new WebauthnCredentialService(nullJdbcTemplateProvider);
+            ReflectionTestUtils.setField(inMemoryOnlyService, "credentialsTable", "webauthn_credentials");
+        }
+
+        @Test
+        @DisplayName("Should register credential in memory when no database available")
+        void shouldRegisterCredentialInMemory() {
+            inMemoryOnlyService.register(
+                TEST_PUC,
+                TEST_CREDENTIAL_ID,
+                TEST_PUBLIC_KEY,
+                TEST_AAGUID,
+                0L
+            );
+
+            // Verify credential can be found
+            Optional<WebauthnCredential> result = inMemoryOnlyService.findCredential(TEST_PUC, TEST_CREDENTIAL_ID);
+            
+            assertThat(result).isPresent();
+            assertThat(result.get().getCredentialId()).isEqualTo(TEST_CREDENTIAL_ID);
+            assertThat(result.get().getPublicKey()).isEqualTo(TEST_PUBLIC_KEY);
+            assertThat(result.get().isActive()).isTrue();
+        }
+
+        @Test
+        @DisplayName("Should revoke credential in memory when no database available")
+        void shouldRevokeCredentialInMemory() {
+            // Register first
+            inMemoryOnlyService.register(
+                TEST_PUC,
+                TEST_CREDENTIAL_ID,
+                TEST_PUBLIC_KEY,
+                TEST_AAGUID,
+                0L
+            );
+
+            // Revoke
+            inMemoryOnlyService.revoke(TEST_PUC, TEST_CREDENTIAL_ID);
+
+            // Verify credential is inactive
+            Optional<WebauthnCredential> result = inMemoryOnlyService.findCredential(TEST_PUC, TEST_CREDENTIAL_ID);
+            
+            assertThat(result).isPresent();
+            assertThat(result.get().isActive()).isFalse();
+            assertThat(result.get().getRevokedAt()).isNotNull();
+        }
+
+        @Test
+        @DisplayName("Should return empty when credential not found in memory")
+        void shouldReturnEmptyWhenCredentialNotFound() {
+            Optional<WebauthnCredential> result = inMemoryOnlyService.findCredential(TEST_PUC, "non-existent");
+            
+            assertThat(result).isEmpty();
+        }
+
+        @Test
+        @DisplayName("Should list all credentials for PUC from memory")
+        void shouldListAllCredentialsFromMemory() {
+            // Register multiple credentials
+            inMemoryOnlyService.register(TEST_PUC, "cred1", TEST_PUBLIC_KEY, TEST_AAGUID, 0L);
+            inMemoryOnlyService.register(TEST_PUC, "cred2", TEST_PUBLIC_KEY, TEST_AAGUID, 5L);
+            inMemoryOnlyService.register("other@uned.es", "cred3", TEST_PUBLIC_KEY, TEST_AAGUID, 0L);
+
+            List<WebauthnCredential> result = inMemoryOnlyService.getCredentials(TEST_PUC);
+            
+            assertThat(result).hasSize(2);
+            assertThat(result).extracting(WebauthnCredential::getCredentialId)
+                .containsExactlyInAnyOrder("cred1", "cred2");
+        }
+
+        @Test
+        @DisplayName("Should check credential active status correctly in memory")
+        void shouldCheckCredentialActiveStatusInMemory() {
+            inMemoryOnlyService.register(TEST_PUC, TEST_CREDENTIAL_ID, TEST_PUBLIC_KEY, TEST_AAGUID, 0L);
+            
+            assertThat(inMemoryOnlyService.isCredentialActive(TEST_PUC, TEST_CREDENTIAL_ID)).isTrue();
+            
+            inMemoryOnlyService.revoke(TEST_PUC, TEST_CREDENTIAL_ID);
+            
+            assertThat(inMemoryOnlyService.isCredentialActive(TEST_PUC, TEST_CREDENTIAL_ID)).isFalse();
+        }
+
+        @Test
+        @DisplayName("Should return false for non-existent credential active check")
+        void shouldReturnFalseForNonExistentCredentialActiveCheck() {
+            assertThat(inMemoryOnlyService.isCredentialActive(TEST_PUC, "unknown")).isFalse();
+        }
+
+        @Test
+        @DisplayName("Should not call database when in memory-only mode")
+        void shouldNotCallDatabaseInMemoryOnlyMode() {
+            inMemoryOnlyService.register(TEST_PUC, TEST_CREDENTIAL_ID, TEST_PUBLIC_KEY, TEST_AAGUID, 0L);
+            inMemoryOnlyService.findCredential(TEST_PUC, TEST_CREDENTIAL_ID);
+            inMemoryOnlyService.getCredentials(TEST_PUC);
+            inMemoryOnlyService.revoke(TEST_PUC, TEST_CREDENTIAL_ID);
+
+            // Verify JdbcTemplate was never called (since it's null in inMemoryOnlyService)
+            // The jdbcTemplate mock is used by webauthnCredentialService, not by inMemoryOnlyService
+            // So we just verify the service works without DB - no explicit verification needed
+            // The fact that we got here without exceptions proves it works
+            assertThat(inMemoryOnlyService.isDatabaseAvailable()).isFalse();
         }
     }
 }

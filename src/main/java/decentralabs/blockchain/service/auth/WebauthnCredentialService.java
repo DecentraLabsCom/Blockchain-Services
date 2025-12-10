@@ -1,8 +1,10 @@
 package decentralabs.blockchain.service.auth;
 
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
+import java.util.concurrent.ConcurrentHashMap;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
@@ -13,6 +15,14 @@ import org.springframework.dao.DataAccessException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 
+/**
+ * Service for storing and retrieving WebAuthn credentials.
+ * 
+ * When running with Lab Gateway (MySQL available), credentials are persisted to the database.
+ * When running standalone (no database), credentials are stored in memory only and will be
+ * lost on service restart. This is acceptable for standalone mode since credential storage
+ * is primarily needed for the Lab Gateway deployment.
+ */
 @Service
 @Slf4j
 public class WebauthnCredentialService {
@@ -20,19 +30,48 @@ public class WebauthnCredentialService {
     @Value("${webauthn.credentials.table:webauthn_credentials}")
     private String credentialsTable;
 
-    private final JdbcTemplate jdbcTemplate;
+    private final JdbcTemplate jdbcTemplate; // May be null if no datasource
+
+    /**
+     * In-memory fallback storage when database is not available.
+     * Key: puc + ":" + credentialId
+     */
+    private final ConcurrentHashMap<String, WebauthnCredential> inMemoryCredentials = new ConcurrentHashMap<>();
 
     public WebauthnCredentialService(ObjectProvider<JdbcTemplate> jdbcTemplateProvider) {
         this.jdbcTemplate = jdbcTemplateProvider.getIfAvailable();
         if (this.jdbcTemplate == null) {
-            throw new IllegalStateException("WebauthnCredentialService requires a configured datasource/JdbcTemplate");
+            log.warn("WebauthnCredentialService: No database configured. Credentials will be stored in memory only and lost on restart.");
         }
+    }
+
+    /**
+     * Check if database persistence is available.
+     */
+    public boolean isDatabaseAvailable() {
+        return jdbcTemplate != null;
     }
 
     public synchronized void register(String puc, String credentialId, String publicKey, String aaguid, Long signCount) {
         String normalizedPuc = normalize(puc);
         String normalizedCred = normalize(credentialId);
         long now = Instant.now().getEpochSecond();
+
+        // Always store in memory (for immediate lookup)
+        String key = normalizedPuc + ":" + normalizedCred;
+        WebauthnCredential credential = new WebauthnCredential(
+            normalizedCred, publicKey, aaguid, 
+            signCount != null ? signCount : 0L, 
+            true, now, now, null
+        );
+        inMemoryCredentials.put(key, credential);
+
+        // Also persist to database if available
+        if (jdbcTemplate == null) {
+            log.debug("WebAuthn credential stored in memory only (no database): puc={}", normalizedPuc);
+            return;
+        }
+
         try {
             String sql = "INSERT INTO " + credentialsTable + " (puc, credential_id, public_key, aaguid, sign_count, active, created_at, updated_at) " +
                 "VALUES (?, ?, ?, ?, ?, TRUE, FROM_UNIXTIME(?), FROM_UNIXTIME(?)) " +
@@ -53,8 +92,8 @@ public class WebauthnCredentialService {
                 now
             );
         } catch (DataAccessException ex) {
-            log.warn("webAuthn DB persistence failed: {}", ex.getMessage());
-            throw ex;
+            log.warn("webAuthn DB persistence failed (credential still in memory): {}", ex.getMessage());
+            // Don't throw - credential is still usable from memory
         }
     }
 
@@ -62,6 +101,22 @@ public class WebauthnCredentialService {
         String normalizedPuc = normalize(puc);
         String normalizedCred = normalize(credentialId);
         long now = Instant.now().getEpochSecond();
+
+        // Update in-memory
+        String key = normalizedPuc + ":" + normalizedCred;
+        WebauthnCredential existing = inMemoryCredentials.get(key);
+        if (existing != null) {
+            existing.setActive(false);
+            existing.setRevokedAt(now);
+            existing.setUpdatedAt(now);
+        }
+
+        // Also update database if available
+        if (jdbcTemplate == null) {
+            log.debug("WebAuthn credential revoked in memory only (no database): puc={}", normalizedPuc);
+            return;
+        }
+
         try {
             String sql = "UPDATE " + credentialsTable + " " +
                 "SET active=FALSE, revoked_at=FROM_UNIXTIME(?), updated_at=FROM_UNIXTIME(?) " +
@@ -74,7 +129,7 @@ public class WebauthnCredentialService {
             );
         } catch (DataAccessException ex) {
             log.warn("webAuthn DB revoke failed: {}", ex.getMessage());
-            throw ex;
+            // Don't throw - credential is still revoked in memory
         }
     }
 
@@ -85,6 +140,19 @@ public class WebauthnCredentialService {
     public Optional<WebauthnCredential> findCredential(String puc, String credentialId) {
         String normalizedPuc = normalize(puc);
         String normalizedCred = normalize(credentialId);
+
+        // Check in-memory first
+        String key = normalizedPuc + ":" + normalizedCred;
+        WebauthnCredential inMemory = inMemoryCredentials.get(key);
+        if (inMemory != null) {
+            return Optional.of(inMemory);
+        }
+
+        // Fall back to database if available
+        if (jdbcTemplate == null) {
+            return Optional.empty();
+        }
+
         try {
             String sql = "SELECT credential_id, public_key, aaguid, sign_count, active, " +
                 "UNIX_TIMESTAMP(created_at), UNIX_TIMESTAMP(updated_at), UNIX_TIMESTAMP(revoked_at) " +
@@ -117,12 +185,28 @@ public class WebauthnCredentialService {
 
     public List<WebauthnCredential> getCredentials(String puc) {
         String normalizedPuc = normalize(puc);
+        String keyPrefix = normalizedPuc + ":";
+
+        // Collect from in-memory
+        List<WebauthnCredential> result = new ArrayList<>();
+        for (var entry : inMemoryCredentials.entrySet()) {
+            if (entry.getKey().startsWith(keyPrefix)) {
+                result.add(entry.getValue());
+            }
+        }
+
+        // If no database, return in-memory results
+        if (jdbcTemplate == null) {
+            return result;
+        }
+
+        // Merge with database results (database may have credentials from previous sessions)
         try {
             String sql = "SELECT credential_id, public_key, aaguid, sign_count, active, " +
                 "UNIX_TIMESTAMP(created_at), UNIX_TIMESTAMP(updated_at), UNIX_TIMESTAMP(revoked_at) " +
                 "FROM " + credentialsTable + " " +
                 "WHERE puc = ?";
-            return jdbcTemplate.query(sql,
+            List<WebauthnCredential> dbCredentials = jdbcTemplate.query(sql,
                 ps -> ps.setString(1, normalizedPuc),
                 (rs, rowNum) -> new WebauthnCredential(
                     rs.getString(1),
@@ -135,9 +219,18 @@ public class WebauthnCredentialService {
                     rs.getObject(8) != null ? rs.getLong(8) : null
                 )
             );
+            
+            // Add DB credentials not already in memory
+            for (WebauthnCredential dbCred : dbCredentials) {
+                String key = normalizedPuc + ":" + dbCred.getCredentialId();
+                if (!inMemoryCredentials.containsKey(key)) {
+                    result.add(dbCred);
+                }
+            }
+            return result;
         } catch (DataAccessException ex) {
-            log.warn("webAuthn DB fetch all failed: {}", ex.getMessage());
-            throw ex;
+            log.warn("webAuthn DB fetch all failed, returning in-memory only: {}", ex.getMessage());
+            return result;
         }
     }
 
