@@ -140,6 +140,13 @@
             <scope>test</scope>
         </dependency>
 
+        <!-- Spring Boot Test Autoconfigure (explicit for WebMvcTest) -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-test-autoconfigure</artifactId>
+            <scope>test</scope>
+        </dependency>
+
         <!-- Spring Security Test for security integration tests -->
         <dependency>
             <groupId>org.springframework.security</groupId>
