@@ -129,6 +129,9 @@ public class WebauthnOnboardingService {
     @Value("${webauthn.completed-session.ttl.seconds:3600}")
     private long completedSessionTtlSeconds;
 
+    @Value("${webauthn.base-url:}")
+    private String baseUrl;
+
     public WebauthnOnboardingService(
             WebauthnCredentialService credentialService,
             ObjectProvider<SamlValidationService> samlValidationServiceProvider) {
@@ -228,11 +231,15 @@ public class WebauthnOnboardingService {
         log.info("WebAuthn onboarding session created. SessionId: {}, Institution: {}", 
             sessionId, institutionId);
 
+        // Build the onboarding URL where the SP should redirect the browser
+        String onboardingUrl = buildOnboardingUrl(sessionId);
+
         // Build response following W3C WebAuthn spec
         String displayName = request.getDisplayName() != null ? request.getDisplayName() : stableUserId;
 
         return WebauthnOnboardingOptionsResponse.builder()
             .sessionId(sessionId)
+            .onboardingUrl(onboardingUrl)
             .challenge(challenge)
             .rp(RelyingParty.builder()
                 .id(rpId)
@@ -400,6 +407,62 @@ public class WebauthnOnboardingService {
         }
 
         throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Session not found: " + sessionId);
+    }
+
+    /**
+     * Build the onboarding URL where the SP should redirect the browser.
+     * The IB serves the ceremony page at this URL, acting as the WebAuthn Relying Party.
+     */
+    private String buildOnboardingUrl(String sessionId) {
+        String effectiveBaseUrl = baseUrl;
+        if (effectiveBaseUrl == null || effectiveBaseUrl.isBlank()) {
+            // Fallback: construct from rpId (assumes HTTPS)
+            effectiveBaseUrl = "https://" + rpId;
+        }
+        // Remove trailing slash if present
+        if (effectiveBaseUrl.endsWith("/")) {
+            effectiveBaseUrl = effectiveBaseUrl.substring(0, effectiveBaseUrl.length() - 1);
+        }
+        return effectiveBaseUrl + "/onboarding/webauthn/ceremony/" + sessionId;
+    }
+
+    /**
+     * Get the WebAuthn options for an existing session.
+     * Used by the ceremony page to retrieve the challenge and options.
+     */
+    public WebauthnOnboardingOptionsResponse getSessionOptions(String sessionId) {
+        OnboardingSession session = pendingSessions.get(sessionId);
+        if (session == null) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Session not found or expired: " + sessionId);
+        }
+        if (session.isExpired()) {
+            pendingSessions.remove(sessionId);
+            throw new ResponseStatusException(HttpStatus.GONE, "Session expired: " + sessionId);
+        }
+
+        String displayName = session.getDisplayName() != null ? session.getDisplayName() : session.getStableUserId();
+
+        return WebauthnOnboardingOptionsResponse.builder()
+            .sessionId(sessionId)
+            .challenge(session.getChallenge())
+            .rp(RelyingParty.builder()
+                .id(rpId)
+                .name(rpName)
+                .build())
+            .user(User.builder()
+                .id(session.getUserHandle())
+                .name(session.getStableUserId())
+                .displayName(displayName)
+                .build())
+            .pubKeyCredParams(Arrays.asList(
+                PubKeyCredParam.builder().type("public-key").alg(COSE_ALG_ES256).build(),
+                PubKeyCredParam.builder().type("public-key").alg(COSE_ALG_RS256).build(),
+                PubKeyCredParam.builder().type("public-key").alg(COSE_ALG_EDDSA).build()
+            ))
+            .timeout(timeoutMs)
+            .attestation(attestationConveyance)
+            .authenticatorSelection(buildAuthenticatorSelection())
+            .build();
     }
 
     /**
@@ -668,6 +731,10 @@ public class WebauthnOnboardingService {
         private String attributes;
         private String callbackUrl; // Optional SP callback URL
         private Instant expiresAt;
+
+        public boolean isExpired() {
+            return Instant.now().isAfter(expiresAt);
+        }
     }
 
     /**

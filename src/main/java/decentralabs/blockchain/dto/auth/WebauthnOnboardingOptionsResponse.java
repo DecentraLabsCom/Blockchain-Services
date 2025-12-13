@@ -22,6 +22,13 @@ public class WebauthnOnboardingOptionsResponse {
     private String sessionId;
 
     /**
+     * URL where the SP should redirect the browser to perform the WebAuthn ceremony.
+     * The IB serves the ceremony page at this URL, acting as the WebAuthn Relying Party.
+     * Example: https://gateway.institution.edu/onboarding/webauthn/ceremony/{sessionId}
+     */
+    private String onboardingUrl;
+
+    /**
      * Base64url-encoded challenge bytes. The authenticator signs this.
      */
     private String challenge;

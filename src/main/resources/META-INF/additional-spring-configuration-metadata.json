@@ -1,563 +1,566 @@
-{
-  "properties": [
-    {
-      "name": "base.domain",
-      "type": "java.lang.String",
-      "description": "Base domain for the service. Can be overridden via BASE_DOMAIN environment variable."
-    },
-    {
-      "name": "auth.base-path",
-      "type": "java.lang.String",
-      "description": "Base path for auth endpoints (must remain /auth to match gateway).",
-      "defaultValue": "/auth"
-    },
-    {
-      "name": "endpoint.health",
-      "type": "java.lang.String",
-      "description": "Health endpoint path.",
-      "defaultValue": "/health"
-    },
-    {
-      "name": "endpoint.wallet-auth",
-      "type": "java.lang.String",
-      "description": "Wallet auth endpoint path.",
-      "defaultValue": "/auth/wallet-auth"
-    },
-    {
-      "name": "endpoint.wallet-auth2",
-      "type": "java.lang.String",
-      "description": "Wallet auth2 endpoint path.",
-      "defaultValue": "/auth/wallet-auth2"
-    },
-    {
-      "name": "endpoint.saml-auth",
-      "type": "java.lang.String",
-      "description": "SAML auth endpoint path.",
-      "defaultValue": "/auth/saml-auth"
-    },
-    {
-      "name": "endpoint.saml-auth2",
-      "type": "java.lang.String",
-      "description": "SAML auth2 endpoint path.",
-      "defaultValue": "/auth/saml-auth2"
-    },
-    {
-      "name": "endpoint.jwks",
-      "type": "java.lang.String",
-      "description": "JWKS endpoint path.",
-      "defaultValue": "/auth/jwks"
-    },
-    {
-      "name": "endpoint.message",
-      "type": "java.lang.String",
-      "description": "Message endpoint path.",
-      "defaultValue": "/auth/message"
-    },
-    {
-      "name": "endpoint.wallet",
-      "type": "java.lang.String",
-      "description": "Wallet endpoint path.",
-      "defaultValue": "/wallet"
-    },
-    {
-      "name": "endpoint.treasury",
-      "type": "java.lang.String",
-      "description": "Treasury endpoint path.",
-      "defaultValue": "/treasury"
-    },
-    {
-      "name": "endpoint.intents",
-      "type": "java.lang.String",
-      "description": "Intents endpoint path.",
-      "defaultValue": "/intents"
-    },
-    {
-      "name": "intents.api-key",
-      "type": "java.lang.String",
-      "description": "API key for intents service."
-    },
-    {
-      "name": "intent.trusted-signer",
-      "type": "java.lang.String",
-      "description": "Trusted signer address for intent validation."
-    },
-    {
-      "name": "intent.default-eta",
-      "type": "java.lang.String",
-      "description": "Default ETA for intent execution.",
-      "defaultValue": "15s"
-    },
-    {
-      "name": "intent.domain.name",
-      "type": "java.lang.String",
-      "description": "EIP-712 domain name.",
-      "defaultValue": "DecentraLabsIntent"
-    },
-    {
-      "name": "intent.domain.version",
-      "type": "java.lang.String",
-      "description": "EIP-712 domain version.",
-      "defaultValue": "1"
-    },
-    {
-      "name": "intent.domain.chain-id",
-      "type": "java.lang.Long",
-      "description": "EIP-712 domain chain ID.",
-      "defaultValue": 11155111
-    },
-    {
-      "name": "intent.domain.verifying-contract",
-      "type": "java.lang.String",
-      "description": "EIP-712 verifying contract address.",
-      "defaultValue": "0x0000000000000000000000000000000000000000"
-    },
-    {
-      "name": "intent.reconciliation-interval-ms",
-      "type": "java.lang.Long",
-      "description": "Interval for intent reconciliation in milliseconds.",
-      "defaultValue": 10000
-    },
-    {
-      "name": "intent.webhook.url",
-      "type": "java.lang.String",
-      "description": "Webhook URL for intent notifications."
-    },
-    {
-      "name": "intent.webhook.secret",
-      "type": "java.lang.String",
-      "description": "Secret for webhook HMAC signatures."
-    },
-    {
-      "name": "intent.execution-interval-ms",
-      "type": "java.lang.Long",
-      "description": "Interval for intent execution in milliseconds.",
-      "defaultValue": 5000
-    },
-    {
-      "name": "webauthn.credentials.table",
-      "type": "java.lang.String",
-      "description": "Database table name for WebAuthn credentials.",
-      "defaultValue": "webauthn_credentials"
-    },
-    {
-      "name": "webauthn.rp.id",
-      "type": "java.lang.String",
-      "description": "WebAuthn Relying Party ID. Must match the domain users see in browser.",
-      "defaultValue": "localhost"
-    },
-    {
-      "name": "webauthn.rp.name",
-      "type": "java.lang.String",
-      "description": "WebAuthn Relying Party display name.",
-      "defaultValue": "DecentraLabs Gateway"
-    },
-    {
-      "name": "webauthn.rp.origins",
-      "type": "java.lang.String",
-      "description": "Comma-separated list of allowed origins for WebAuthn attestation.",
-      "defaultValue": "https://localhost,https://localhost:443,https://localhost:8443"
-    },
-    {
-      "name": "webauthn.timeout.ms",
-      "type": "java.lang.Long",
-      "description": "WebAuthn ceremony timeout in milliseconds.",
-      "defaultValue": 120000
-    },
-    {
-      "name": "webauthn.session.ttl.seconds",
-      "type": "java.lang.Long",
-      "description": "WebAuthn onboarding session TTL in seconds.",
-      "defaultValue": 300
-    },
-    {
-      "name": "webauthn.session.cleanup.interval.seconds",
-      "type": "java.lang.Long",
-      "description": "Interval for purging expired WebAuthn sessions in seconds.",
-      "defaultValue": 60
-    },
-    {
-      "name": "webauthn.attestation.conveyance",
-      "type": "java.lang.String",
-      "description": "Attestation conveyance preference: none, indirect, or direct.",
-      "defaultValue": "none"
-    },
-    {
-      "name": "webauthn.authenticator.attachment",
-      "type": "java.lang.String",
-      "description": "Authenticator attachment preference: platform, cross-platform, or empty."
-    },
-    {
-      "name": "webauthn.resident-key",
-      "type": "java.lang.String",
-      "description": "Resident key preference: required, preferred, or discouraged.",
-      "defaultValue": "preferred"
-    },
-    {
-      "name": "webauthn.user-verification",
-      "type": "java.lang.String",
-      "description": "User verification preference: required, preferred, or discouraged.",
-      "defaultValue": "preferred"
-    },
-    {
-      "name": "features.providers.enabled",
-      "type": "java.lang.Boolean",
-      "description": "Enable provider features.",
-      "defaultValue": true
-    },
-    {
-      "name": "features.organizations.enabled",
-      "type": "java.lang.Boolean",
-      "description": "Enable organization onboarding features.",
-      "defaultValue": true
-    },
-    {
-      "name": "organization.invite.hmac-secret",
-      "type": "java.lang.String",
-      "description": "HMAC secret for organization invite links."
-    },
-    {
-      "name": "organization.invite.default-issuer",
-      "type": "java.lang.String",
-      "description": "Default issuer for organization invites.",
-      "defaultValue": "DecentraLabs Marketplace"
-    },
-    {
-      "name": "marketplace.url",
-      "type": "java.lang.String",
-      "description": "URL of the DecentraLabs marketplace.",
-      "defaultValue": "https://marketplace-decentralabs.vercel.app"
-    },
-    {
-      "name": "marketplace.public-key-url",
-      "type": "java.lang.String",
-      "description": "URL where the marketplace exposes its public key for JWT validation.",
-      "defaultValue": "https://marketplace-decentralabs.vercel.app/.well-known/public-key.pem"
-    },
-    {
-      "name": "marketplace.key.cache-ms",
-      "type": "java.lang.Long",
-      "description": "Cache duration for marketplace public key in milliseconds.",
-      "defaultValue": 3600000
-    },
-    {
-      "name": "contract.address",
-      "type": "java.lang.String",
-      "description": "Diamond contract address on the blockchain."
-    },
-    {
-      "name": "institutional.wallet.address",
-      "type": "java.lang.String",
-      "description": "Institutional wallet address for automated transactions."
-    },
-    {
-      "name": "institutional.wallet.password",
-      "type": "java.lang.String",
-      "description": "Password for decrypting institutional wallet key."
-    },
-    {
-      "name": "saml.idp.trust-mode",
-      "type": "java.lang.String",
-      "description": "Trust mode for IdPs: whitelist or any.",
-      "defaultValue": "any"
-    },
-    {
-      "name": "saml.trusted.idp",
-      "type": "java.lang.String",
-      "description": "Trusted IdP issuers JSON map (only used if trust-mode=whitelist)."
-    },
-    {
-      "name": "private.key.path",
-      "type": "java.lang.String",
-      "description": "Path to private key PEM file for JWT signing.",
-      "defaultValue": "/app/config/keys/private_key.pem"
-    },
-    {
-      "name": "public.key.path",
-      "type": "java.lang.String",
-      "description": "Path to public key PEM file for JWT verification.",
-      "defaultValue": "/app/config/keys/public_key.pem"
-    },
-    {
-      "name": "admin.dashboard.local-only",
-      "type": "java.lang.Boolean",
-      "description": "Restrict admin dashboard to local connections only.",
-      "defaultValue": true
-    },
-    {
-      "name": "admin.dashboard.allow-private",
-      "type": "java.lang.Boolean",
-      "description": "Allow admin dashboard access from private networks.",
-      "defaultValue": true
-    },
-    {
-      "name": "security.allow-private-networks",
-      "type": "java.lang.Boolean",
-      "description": "Allow connections from private networks.",
-      "defaultValue": true
-    },
-    {
-      "name": "allowed-origins",
-      "type": "java.lang.String",
-      "description": "Comma-separated list of allowed CORS origins."
-    },
-    {
-      "name": "wallet.allowed-origins",
-      "type": "java.lang.String",
-      "description": "Comma-separated list of allowed CORS origins for wallet endpoints.",
-      "defaultValue": "http://localhost:8080"
-    },
-    {
-      "name": "wallet.address",
-      "type": "java.lang.String",
-      "description": "Default wallet address.",
-      "defaultValue": "0x0000000000000000000000000000000000000000"
-    },
-    {
-      "name": "blockchain.network.active",
-      "type": "java.lang.String",
-      "description": "Active blockchain network (mainnet or sepolia).",
-      "defaultValue": "sepolia"
-    },
-    {
-      "name": "ethereum.mainnet.rpc.url",
-      "type": "java.lang.String",
-      "description": "Ethereum Mainnet RPC URL(s), comma-separated for fallback.",
-      "defaultValue": "https://eth.public-rpc.com"
-    },
-    {
-      "name": "ethereum.sepolia.rpc.url",
-      "type": "java.lang.String",
-      "description": "Ethereum Sepolia RPC URL(s), comma-separated for fallback."
-    },
-    {
-      "name": "wallet.max.transactions.per.hour",
-      "type": "java.lang.Integer",
-      "description": "Maximum transactions per hour for wallet security.",
-      "defaultValue": 100
-    },
-    {
-      "name": "wallet.max.balance.checks.per.minute",
-      "type": "java.lang.Integer",
-      "description": "Maximum balance checks per minute for wallet security.",
-      "defaultValue": 60
-    },
-    {
-      "name": "wallet.persistence.enabled",
-      "type": "java.lang.Boolean",
-      "description": "Enable persistent storage of encrypted wallets.",
-      "defaultValue": true
-    },
-    {
-      "name": "wallet.persistence.file.path",
-      "type": "java.lang.String",
-      "description": "Path to wallet storage file.",
-      "defaultValue": "./data/wallets.json"
-    },
-    {
-      "name": "wallet.config.encryption-key",
-      "type": "java.lang.String",
-      "description": "Encryption key for wallet password in wallet-config.properties."
-    },
-    {
-      "name": "wallet.config.encryption-key-file",
-      "type": "java.lang.String",
-      "description": "Path where the auto-generated encryption key is stored.",
-      "defaultValue": "/app/data/.wallet-encryption-key"
-    },
-    {
-      "name": "antireplay.persistence.enabled",
-      "type": "java.lang.Boolean",
-      "description": "Enable anti-replay persistence (for multi-instance deployments).",
-      "defaultValue": false
-    },
-    {
-      "name": "ethereum.gas.price.default",
-      "type": "java.lang.Integer",
-      "description": "Default gas price in gwei.",
-      "defaultValue": 1
-    },
-    {
-      "name": "ethereum.gas.limit.default",
-      "type": "java.lang.Integer",
-      "description": "Default gas limit for simple transactions.",
-      "defaultValue": 21000
-    },
-    {
-      "name": "ethereum.gas.limit.contract",
-      "type": "java.lang.Integer",
-      "description": "Default gas limit for contract interactions.",
-      "defaultValue": 100000
-    },
-    {
-      "name": "contract.events.to.listen",
-      "type": "java.lang.String",
-      "description": "Comma-separated list of contract events to listen for."
-    },
-    {
-      "name": "contract.event.listening.enabled",
-      "type": "java.lang.Boolean",
-      "description": "Enable contract event listening.",
-      "defaultValue": true
-    },
-    {
-      "name": "contract.event.start.block",
-      "type": "java.lang.String",
-      "description": "Starting block for event listening.",
-      "defaultValue": "latest"
-    },
-    {
-      "name": "contract.event.polling.enabled",
-      "type": "java.lang.Boolean",
-      "description": "Enable polling fallback for unreliable RPC nodes.",
-      "defaultValue": true
-    },
-    {
-      "name": "contract.event.polling.interval.seconds",
-      "type": "java.lang.Integer",
-      "description": "Polling interval in seconds.",
-      "defaultValue": 60
-    },
-    {
-      "name": "contract.event.polling.block.range",
-      "type": "java.lang.Integer",
-      "description": "Maximum block range per poll.",
-      "defaultValue": 1000
-    },
-    {
-      "name": "contract.event.polling.lookback.blocks",
-      "type": "java.lang.Integer",
-      "description": "Initial lookback blocks when starting.",
-      "defaultValue": 100
-    },
-    {
-      "name": "notifications.mail.enabled",
-      "type": "java.lang.Boolean",
-      "description": "Enable email notifications.",
-      "defaultValue": true
-    },
-    {
-      "name": "notifications.mail.driver",
-      "type": "java.lang.String",
-      "description": "Mail driver: noop, smtp, or graph.",
-      "defaultValue": "noop"
-    },
-    {
-      "name": "notifications.mail.from",
-      "type": "java.lang.String",
-      "description": "Email sender address."
-    },
-    {
-      "name": "notifications.mail.from-name",
-      "type": "java.lang.String",
-      "description": "Email sender display name.",
-      "defaultValue": "Lab Gateway"
-    },
-    {
-      "name": "notifications.mail.default-to",
-      "type": "java.lang.String",
-      "description": "Default recipient email address."
-    },
-    {
-      "name": "notifications.mail.timezone",
-      "type": "java.lang.String",
-      "description": "Timezone for email notifications.",
-      "defaultValue": "UTC"
-    },
-    {
-      "name": "notifications.mail.smtp.host",
-      "type": "java.lang.String",
-      "description": "SMTP server hostname."
-    },
-    {
-      "name": "notifications.mail.smtp.port",
-      "type": "java.lang.Integer",
-      "description": "SMTP server port.",
-      "defaultValue": 587
-    },
-    {
-      "name": "notifications.mail.smtp.username",
-      "type": "java.lang.String",
-      "description": "SMTP authentication username."
-    },
-    {
-      "name": "notifications.mail.smtp.password",
-      "type": "java.lang.String",
-      "description": "SMTP authentication password."
-    },
-    {
-      "name": "notifications.mail.smtp.auth",
-      "type": "java.lang.Boolean",
-      "description": "Enable SMTP authentication.",
-      "defaultValue": true
-    },
-    {
-      "name": "notifications.mail.smtp.start-tls",
-      "type": "java.lang.Boolean",
-      "description": "Enable STARTTLS for SMTP.",
-      "defaultValue": true
-    },
-    {
-      "name": "notifications.mail.smtp.timeout-ms",
-      "type": "java.lang.Integer",
-      "description": "SMTP connection timeout in milliseconds.",
-      "defaultValue": 10000
-    },
-    {
-      "name": "notifications.mail.graph.tenant-id",
-      "type": "java.lang.String",
-      "description": "Microsoft Graph tenant ID."
-    },
-    {
-      "name": "notifications.mail.graph.client-id",
-      "type": "java.lang.String",
-      "description": "Microsoft Graph client ID."
-    },
-    {
-      "name": "notifications.mail.graph.client-secret",
-      "type": "java.lang.String",
-      "description": "Microsoft Graph client secret."
-    },
-    {
-      "name": "notifications.mail.graph.from",
-      "type": "java.lang.String",
-      "description": "Microsoft Graph sender email."
-    },
-    {
-      "name": "notifications.config-file",
-      "type": "java.lang.String",
-      "description": "Path to notifications configuration file.",
-      "defaultValue": "./data/notifications-config.json"
-    },
-    {
-      "name": "rpc.url",
-      "type": "java.lang.String",
-      "description": "RPC URL for blockchain connection (used in tests)."
-    },
-    {
-      "name": "institutional.wallet.private.key",
-      "type": "java.lang.String",
-      "description": "Private key for institutional wallet (used in tests only, use encrypted keys in production)."
-    },
-    {
-      "name": "institutional.admin.wallet",
-      "type": "java.lang.String",
-      "description": "Admin wallet address for institutional operations."
-    },
-    {
-      "name": "saml.idp.metadata.url",
-      "type": "java.lang.String",
-      "description": "URL to SAML IdP metadata."
-    },
-    {
-      "name": "saml.idp.certificate.path",
-      "type": "java.lang.String",
-      "description": "Path to SAML IdP certificate PEM file."
-    },
-    {
-      "name": "jwt.keys.path",
-      "type": "java.lang.String",
-      "description": "Path to JWT keys directory.",
-      "defaultValue": "./keys"
-    }
-  ]
-}
+{"properties": [
+  {
+    "name": "base.domain",
+    "type": "java.lang.String",
+    "description": "Base domain for the service. Can be overridden via BASE_DOMAIN environment variable."
+  },
+  {
+    "name": "auth.base-path",
+    "type": "java.lang.String",
+    "description": "Base path for auth endpoints (must remain /auth to match gateway).",
+    "defaultValue": "/auth"
+  },
+  {
+    "name": "endpoint.health",
+    "type": "java.lang.String",
+    "description": "Health endpoint path.",
+    "defaultValue": "/health"
+  },
+  {
+    "name": "endpoint.wallet-auth",
+    "type": "java.lang.String",
+    "description": "Wallet auth endpoint path.",
+    "defaultValue": "/auth/wallet-auth"
+  },
+  {
+    "name": "endpoint.wallet-auth2",
+    "type": "java.lang.String",
+    "description": "Wallet auth2 endpoint path.",
+    "defaultValue": "/auth/wallet-auth2"
+  },
+  {
+    "name": "endpoint.saml-auth",
+    "type": "java.lang.String",
+    "description": "SAML auth endpoint path.",
+    "defaultValue": "/auth/saml-auth"
+  },
+  {
+    "name": "endpoint.saml-auth2",
+    "type": "java.lang.String",
+    "description": "SAML auth2 endpoint path.",
+    "defaultValue": "/auth/saml-auth2"
+  },
+  {
+    "name": "endpoint.jwks",
+    "type": "java.lang.String",
+    "description": "JWKS endpoint path.",
+    "defaultValue": "/auth/jwks"
+  },
+  {
+    "name": "endpoint.message",
+    "type": "java.lang.String",
+    "description": "Message endpoint path.",
+    "defaultValue": "/auth/message"
+  },
+  {
+    "name": "endpoint.wallet",
+    "type": "java.lang.String",
+    "description": "Wallet endpoint path.",
+    "defaultValue": "/wallet"
+  },
+  {
+    "name": "endpoint.treasury",
+    "type": "java.lang.String",
+    "description": "Treasury endpoint path.",
+    "defaultValue": "/treasury"
+  },
+  {
+    "name": "endpoint.intents",
+    "type": "java.lang.String",
+    "description": "Intents endpoint path.",
+    "defaultValue": "/intents"
+  },
+  {
+    "name": "intents.api-key",
+    "type": "java.lang.String",
+    "description": "API key for intents service."
+  },
+  {
+    "name": "intent.trusted-signer",
+    "type": "java.lang.String",
+    "description": "Trusted signer address for intent validation."
+  },
+  {
+    "name": "intent.default-eta",
+    "type": "java.lang.String",
+    "description": "Default ETA for intent execution.",
+    "defaultValue": "15s"
+  },
+  {
+    "name": "intent.domain.name",
+    "type": "java.lang.String",
+    "description": "EIP-712 domain name.",
+    "defaultValue": "DecentraLabsIntent"
+  },
+  {
+    "name": "intent.domain.version",
+    "type": "java.lang.String",
+    "description": "EIP-712 domain version.",
+    "defaultValue": "1"
+  },
+  {
+    "name": "intent.domain.chain-id",
+    "type": "java.lang.Long",
+    "description": "EIP-712 domain chain ID.",
+    "defaultValue": 11155111
+  },
+  {
+    "name": "intent.domain.verifying-contract",
+    "type": "java.lang.String",
+    "description": "EIP-712 verifying contract address.",
+    "defaultValue": "0x0000000000000000000000000000000000000000"
+  },
+  {
+    "name": "intent.reconciliation-interval-ms",
+    "type": "java.lang.Long",
+    "description": "Interval for intent reconciliation in milliseconds.",
+    "defaultValue": 10000
+  },
+  {
+    "name": "intent.webhook.url",
+    "type": "java.lang.String",
+    "description": "Webhook URL for intent notifications."
+  },
+  {
+    "name": "intent.webhook.secret",
+    "type": "java.lang.String",
+    "description": "Secret for webhook HMAC signatures."
+  },
+  {
+    "name": "intent.execution-interval-ms",
+    "type": "java.lang.Long",
+    "description": "Interval for intent execution in milliseconds.",
+    "defaultValue": 5000
+  },
+  {
+    "name": "webauthn.credentials.table",
+    "type": "java.lang.String",
+    "description": "Database table name for WebAuthn credentials.",
+    "defaultValue": "webauthn_credentials"
+  },
+  {
+    "name": "webauthn.rp.id",
+    "type": "java.lang.String",
+    "description": "WebAuthn Relying Party ID. Must match the domain users see in browser.",
+    "defaultValue": "localhost"
+  },
+  {
+    "name": "webauthn.rp.name",
+    "type": "java.lang.String",
+    "description": "WebAuthn Relying Party display name.",
+    "defaultValue": "DecentraLabs Gateway"
+  },
+  {
+    "name": "webauthn.rp.origins",
+    "type": "java.lang.String",
+    "description": "Comma-separated list of allowed origins for WebAuthn attestation.",
+    "defaultValue": "https://localhost,https://localhost:443,https://localhost:8443"
+  },
+  {
+    "name": "webauthn.timeout.ms",
+    "type": "java.lang.Long",
+    "description": "WebAuthn ceremony timeout in milliseconds.",
+    "defaultValue": 120000
+  },
+  {
+    "name": "webauthn.session.ttl.seconds",
+    "type": "java.lang.Long",
+    "description": "WebAuthn onboarding session TTL in seconds.",
+    "defaultValue": 300
+  },
+  {
+    "name": "webauthn.session.cleanup.interval.seconds",
+    "type": "java.lang.Long",
+    "description": "Interval for purging expired WebAuthn sessions in seconds.",
+    "defaultValue": 60
+  },
+  {
+    "name": "webauthn.attestation.conveyance",
+    "type": "java.lang.String",
+    "description": "Attestation conveyance preference: none, indirect, or direct.",
+    "defaultValue": "none"
+  },
+  {
+    "name": "webauthn.authenticator.attachment",
+    "type": "java.lang.String",
+    "description": "Authenticator attachment preference: platform, cross-platform, or empty."
+  },
+  {
+    "name": "webauthn.resident-key",
+    "type": "java.lang.String",
+    "description": "Resident key preference: required, preferred, or discouraged.",
+    "defaultValue": "preferred"
+  },
+  {
+    "name": "webauthn.user-verification",
+    "type": "java.lang.String",
+    "description": "User verification preference: required, preferred, or discouraged.",
+    "defaultValue": "preferred"
+  },
+  {
+    "name": "features.providers.enabled",
+    "type": "java.lang.Boolean",
+    "description": "Enable provider features.",
+    "defaultValue": true
+  },
+  {
+    "name": "features.organizations.enabled",
+    "type": "java.lang.Boolean",
+    "description": "Enable organization onboarding features.",
+    "defaultValue": true
+  },
+  {
+    "name": "organization.invite.hmac-secret",
+    "type": "java.lang.String",
+    "description": "HMAC secret for organization invite links."
+  },
+  {
+    "name": "organization.invite.default-issuer",
+    "type": "java.lang.String",
+    "description": "Default issuer for organization invites.",
+    "defaultValue": "DecentraLabs Marketplace"
+  },
+  {
+    "name": "marketplace.url",
+    "type": "java.lang.String",
+    "description": "URL of the DecentraLabs marketplace.",
+    "defaultValue": "https://marketplace-decentralabs.vercel.app"
+  },
+  {
+    "name": "marketplace.public-key-url",
+    "type": "java.lang.String",
+    "description": "URL where the marketplace exposes its public key for JWT validation.",
+    "defaultValue": "https://marketplace-decentralabs.vercel.app/.well-known/public-key.pem"
+  },
+  {
+    "name": "marketplace.key.cache-ms",
+    "type": "java.lang.Long",
+    "description": "Cache duration for marketplace public key in milliseconds.",
+    "defaultValue": 3600000
+  },
+  {
+    "name": "contract.address",
+    "type": "java.lang.String",
+    "description": "Diamond contract address on the blockchain."
+  },
+  {
+    "name": "institutional.wallet.address",
+    "type": "java.lang.String",
+    "description": "Institutional wallet address for automated transactions."
+  },
+  {
+    "name": "institutional.wallet.password",
+    "type": "java.lang.String",
+    "description": "Password for decrypting institutional wallet key."
+  },
+  {
+    "name": "saml.idp.trust-mode",
+    "type": "java.lang.String",
+    "description": "Trust mode for IdPs: whitelist or any.",
+    "defaultValue": "any"
+  },
+  {
+    "name": "saml.trusted.idp",
+    "type": "java.lang.String",
+    "description": "Trusted IdP issuers JSON map (only used if trust-mode=whitelist)."
+  },
+  {
+    "name": "private.key.path",
+    "type": "java.lang.String",
+    "description": "Path to private key PEM file for JWT signing.",
+    "defaultValue": "/app/config/keys/private_key.pem"
+  },
+  {
+    "name": "public.key.path",
+    "type": "java.lang.String",
+    "description": "Path to public key PEM file for JWT verification.",
+    "defaultValue": "/app/config/keys/public_key.pem"
+  },
+  {
+    "name": "admin.dashboard.local-only",
+    "type": "java.lang.Boolean",
+    "description": "Restrict admin dashboard to local connections only.",
+    "defaultValue": true
+  },
+  {
+    "name": "admin.dashboard.allow-private",
+    "type": "java.lang.Boolean",
+    "description": "Allow admin dashboard access from private networks.",
+    "defaultValue": true
+  },
+  {
+    "name": "security.allow-private-networks",
+    "type": "java.lang.Boolean",
+    "description": "Allow connections from private networks.",
+    "defaultValue": true
+  },
+  {
+    "name": "allowed-origins",
+    "type": "java.lang.String",
+    "description": "Comma-separated list of allowed CORS origins."
+  },
+  {
+    "name": "wallet.allowed-origins",
+    "type": "java.lang.String",
+    "description": "Comma-separated list of allowed CORS origins for wallet endpoints.",
+    "defaultValue": "http://localhost:8080"
+  },
+  {
+    "name": "wallet.address",
+    "type": "java.lang.String",
+    "description": "Default wallet address.",
+    "defaultValue": "0x0000000000000000000000000000000000000000"
+  },
+  {
+    "name": "blockchain.network.active",
+    "type": "java.lang.String",
+    "description": "Active blockchain network (mainnet or sepolia).",
+    "defaultValue": "sepolia"
+  },
+  {
+    "name": "ethereum.mainnet.rpc.url",
+    "type": "java.lang.String",
+    "description": "Ethereum Mainnet RPC URL(s), comma-separated for fallback.",
+    "defaultValue": "https://eth.public-rpc.com"
+  },
+  {
+    "name": "ethereum.sepolia.rpc.url",
+    "type": "java.lang.String",
+    "description": "Ethereum Sepolia RPC URL(s), comma-separated for fallback."
+  },
+  {
+    "name": "wallet.max.transactions.per.hour",
+    "type": "java.lang.Integer",
+    "description": "Maximum transactions per hour for wallet security.",
+    "defaultValue": 100
+  },
+  {
+    "name": "wallet.max.balance.checks.per.minute",
+    "type": "java.lang.Integer",
+    "description": "Maximum balance checks per minute for wallet security.",
+    "defaultValue": 60
+  },
+  {
+    "name": "wallet.persistence.enabled",
+    "type": "java.lang.Boolean",
+    "description": "Enable persistent storage of encrypted wallets.",
+    "defaultValue": true
+  },
+  {
+    "name": "wallet.persistence.file.path",
+    "type": "java.lang.String",
+    "description": "Path to wallet storage file.",
+    "defaultValue": "./data/wallets.json"
+  },
+  {
+    "name": "wallet.config.encryption-key",
+    "type": "java.lang.String",
+    "description": "Encryption key for wallet password in wallet-config.properties."
+  },
+  {
+    "name": "wallet.config.encryption-key-file",
+    "type": "java.lang.String",
+    "description": "Path where the auto-generated encryption key is stored.",
+    "defaultValue": "/app/data/.wallet-encryption-key"
+  },
+  {
+    "name": "antireplay.persistence.enabled",
+    "type": "java.lang.Boolean",
+    "description": "Enable anti-replay persistence (for multi-instance deployments).",
+    "defaultValue": false
+  },
+  {
+    "name": "ethereum.gas.price.default",
+    "type": "java.lang.Integer",
+    "description": "Default gas price in gwei.",
+    "defaultValue": 1
+  },
+  {
+    "name": "ethereum.gas.limit.default",
+    "type": "java.lang.Integer",
+    "description": "Default gas limit for simple transactions.",
+    "defaultValue": 21000
+  },
+  {
+    "name": "ethereum.gas.limit.contract",
+    "type": "java.lang.Integer",
+    "description": "Default gas limit for contract interactions.",
+    "defaultValue": 100000
+  },
+  {
+    "name": "contract.events.to.listen",
+    "type": "java.lang.String",
+    "description": "Comma-separated list of contract events to listen for."
+  },
+  {
+    "name": "contract.event.listening.enabled",
+    "type": "java.lang.Boolean",
+    "description": "Enable contract event listening.",
+    "defaultValue": true
+  },
+  {
+    "name": "contract.event.start.block",
+    "type": "java.lang.String",
+    "description": "Starting block for event listening.",
+    "defaultValue": "latest"
+  },
+  {
+    "name": "contract.event.polling.enabled",
+    "type": "java.lang.Boolean",
+    "description": "Enable polling fallback for unreliable RPC nodes.",
+    "defaultValue": true
+  },
+  {
+    "name": "contract.event.polling.interval.seconds",
+    "type": "java.lang.Integer",
+    "description": "Polling interval in seconds.",
+    "defaultValue": 60
+  },
+  {
+    "name": "contract.event.polling.block.range",
+    "type": "java.lang.Integer",
+    "description": "Maximum block range per poll.",
+    "defaultValue": 1000
+  },
+  {
+    "name": "contract.event.polling.lookback.blocks",
+    "type": "java.lang.Integer",
+    "description": "Initial lookback blocks when starting.",
+    "defaultValue": 100
+  },
+  {
+    "name": "notifications.mail.enabled",
+    "type": "java.lang.Boolean",
+    "description": "Enable email notifications.",
+    "defaultValue": true
+  },
+  {
+    "name": "notifications.mail.driver",
+    "type": "java.lang.String",
+    "description": "Mail driver: noop, smtp, or graph.",
+    "defaultValue": "noop"
+  },
+  {
+    "name": "notifications.mail.from",
+    "type": "java.lang.String",
+    "description": "Email sender address."
+  },
+  {
+    "name": "notifications.mail.from-name",
+    "type": "java.lang.String",
+    "description": "Email sender display name.",
+    "defaultValue": "Lab Gateway"
+  },
+  {
+    "name": "notifications.mail.default-to",
+    "type": "java.lang.String",
+    "description": "Default recipient email address."
+  },
+  {
+    "name": "notifications.mail.timezone",
+    "type": "java.lang.String",
+    "description": "Timezone for email notifications.",
+    "defaultValue": "UTC"
+  },
+  {
+    "name": "notifications.mail.smtp.host",
+    "type": "java.lang.String",
+    "description": "SMTP server hostname."
+  },
+  {
+    "name": "notifications.mail.smtp.port",
+    "type": "java.lang.Integer",
+    "description": "SMTP server port.",
+    "defaultValue": 587
+  },
+  {
+    "name": "notifications.mail.smtp.username",
+    "type": "java.lang.String",
+    "description": "SMTP authentication username."
+  },
+  {
+    "name": "notifications.mail.smtp.password",
+    "type": "java.lang.String",
+    "description": "SMTP authentication password."
+  },
+  {
+    "name": "notifications.mail.smtp.auth",
+    "type": "java.lang.Boolean",
+    "description": "Enable SMTP authentication.",
+    "defaultValue": true
+  },
+  {
+    "name": "notifications.mail.smtp.start-tls",
+    "type": "java.lang.Boolean",
+    "description": "Enable STARTTLS for SMTP.",
+    "defaultValue": true
+  },
+  {
+    "name": "notifications.mail.smtp.timeout-ms",
+    "type": "java.lang.Integer",
+    "description": "SMTP connection timeout in milliseconds.",
+    "defaultValue": 10000
+  },
+  {
+    "name": "notifications.mail.graph.tenant-id",
+    "type": "java.lang.String",
+    "description": "Microsoft Graph tenant ID."
+  },
+  {
+    "name": "notifications.mail.graph.client-id",
+    "type": "java.lang.String",
+    "description": "Microsoft Graph client ID."
+  },
+  {
+    "name": "notifications.mail.graph.client-secret",
+    "type": "java.lang.String",
+    "description": "Microsoft Graph client secret."
+  },
+  {
+    "name": "notifications.mail.graph.from",
+    "type": "java.lang.String",
+    "description": "Microsoft Graph sender email."
+  },
+  {
+    "name": "notifications.config-file",
+    "type": "java.lang.String",
+    "description": "Path to notifications configuration file.",
+    "defaultValue": "./data/notifications-config.json"
+  },
+  {
+    "name": "rpc.url",
+    "type": "java.lang.String",
+    "description": "RPC URL for blockchain connection (used in tests)."
+  },
+  {
+    "name": "institutional.wallet.private.key",
+    "type": "java.lang.String",
+    "description": "Private key for institutional wallet (used in tests only, use encrypted keys in production)."
+  },
+  {
+    "name": "institutional.admin.wallet",
+    "type": "java.lang.String",
+    "description": "Admin wallet address for institutional operations."
+  },
+  {
+    "name": "saml.idp.metadata.url",
+    "type": "java.lang.String",
+    "description": "URL to SAML IdP metadata."
+  },
+  {
+    "name": "saml.idp.certificate.path",
+    "type": "java.lang.String",
+    "description": "Path to SAML IdP certificate PEM file."
+  },
+  {
+    "name": "jwt.keys.path",
+    "type": "java.lang.String",
+    "description": "Path to JWT keys directory.",
+    "defaultValue": "./keys"
+  },
+  {
+    "name": "webauthn.base-url",
+    "type": "java.lang.String",
+    "description": "A description for 'webauthn.base-url'"
+  }
+]}
