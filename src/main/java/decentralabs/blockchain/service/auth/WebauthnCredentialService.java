@@ -238,6 +238,51 @@ public class WebauthnCredentialService {
         return value == null ? "" : value.trim();
     }
 
+    /**
+     * Get the key status for a user - whether they have registered credentials.
+     * This is used by the SP to determine if onboarding is needed.
+     * 
+     * @param puc The stable user identifier (Principal User Claim)
+     * @return KeyStatus containing credential information
+     */
+    public KeyStatus getKeyStatus(String puc) {
+        String normalizedPuc = normalize(puc);
+        List<WebauthnCredential> credentials = getCredentials(normalizedPuc);
+        
+        int activeCount = 0;
+        int revokedCount = 0;
+        Long mostRecentRegistration = null;
+        
+        for (WebauthnCredential cred : credentials) {
+            if (cred.isActive()) {
+                activeCount++;
+                if (mostRecentRegistration == null || 
+                    (cred.getCreatedAt() != null && cred.getCreatedAt() > mostRecentRegistration)) {
+                    mostRecentRegistration = cred.getCreatedAt();
+                }
+            } else {
+                revokedCount++;
+            }
+        }
+        
+        return new KeyStatus(
+            activeCount > 0,
+            activeCount,
+            revokedCount > 0,
+            mostRecentRegistration
+        );
+    }
+
+    @Data
+    @NoArgsConstructor
+    @AllArgsConstructor
+    public static class KeyStatus {
+        private boolean hasCredential;
+        private int credentialCount;
+        private boolean hasRevokedCredentials;
+        private Long lastRegisteredEpoch;
+    }
+
     @Data
     @NoArgsConstructor
     @AllArgsConstructor

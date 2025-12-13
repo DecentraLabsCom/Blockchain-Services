@@ -1,12 +1,15 @@
 package decentralabs.blockchain.controller.auth;
 
+import decentralabs.blockchain.dto.auth.UserKeyStatusResponse;
 import decentralabs.blockchain.dto.auth.WebauthnOnboardingCompleteRequest;
 import decentralabs.blockchain.dto.auth.WebauthnOnboardingCompleteResponse;
 import decentralabs.blockchain.dto.auth.WebauthnOnboardingOptionsRequest;
 import decentralabs.blockchain.dto.auth.WebauthnOnboardingOptionsResponse;
 import decentralabs.blockchain.dto.auth.WebauthnOnboardingStatusResponse;
+import decentralabs.blockchain.service.auth.WebauthnCredentialService;
 import decentralabs.blockchain.service.auth.WebauthnOnboardingService;
 import jakarta.validation.Valid;
+import java.time.Instant;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
@@ -15,6 +18,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
@@ -46,6 +50,39 @@ import org.springframework.web.bind.annotation.RestController;
 public class WebauthnOnboardingController {
 
     private final WebauthnOnboardingService onboardingService;
+    private final WebauthnCredentialService credentialService;
+
+    /**
+     * Check if a user has registered WebAuthn credentials.
+     * 
+     * Called by the SP to determine if onboarding is needed before requesting an action.
+     * This allows the SP to skip the onboarding flow for users who already have credentials.
+     * 
+     * @param stableUserId The stable user identifier (e.g., SAML NameID, uid)
+     * @param institutionId Optional institution filter (for future multi-institution support)
+     * @return Key status including whether credentials exist and count
+     */
+    @GetMapping("/key-status/{stableUserId}")
+    public ResponseEntity<UserKeyStatusResponse> getKeyStatus(
+            @PathVariable String stableUserId,
+            @RequestParam(required = false) String institutionId) {
+        log.debug("Key status check for user: {}, institution: {}", stableUserId, institutionId);
+        
+        WebauthnCredentialService.KeyStatus keyStatus = credentialService.getKeyStatus(stableUserId);
+        
+        UserKeyStatusResponse response = UserKeyStatusResponse.builder()
+            .hasCredential(keyStatus.isHasCredential())
+            .credentialCount(keyStatus.getCredentialCount())
+            .stableUserId(stableUserId)
+            .institutionId(institutionId)
+            .lastRegistered(keyStatus.getLastRegisteredEpoch() != null 
+                ? Instant.ofEpochSecond(keyStatus.getLastRegisteredEpoch()) 
+                : null)
+            .hasRevokedCredentials(keyStatus.isHasRevokedCredentials())
+            .build();
+        
+        return ResponseEntity.ok(response);
+    }
 
     /**
      * Request WebAuthn credential creation options.

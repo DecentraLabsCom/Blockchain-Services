@@ -112,8 +112,10 @@ This documentation is organized into specialized sections:
 ### WebAuthn Onboarding Endpoints (`/onboarding/webauthn`)
 | Endpoint | Method | Description |
 |----------|--------|-------------|
+| `/onboarding/webauthn/key-status/{stableUserId}` | GET | Check if user has registered credentials |
 | `/onboarding/webauthn/options` | POST | Get credential creation options (challenge) |
 | `/onboarding/webauthn/complete` | POST | Complete registration with attestation |
+| `/onboarding/webauthn/status/{sessionId}` | GET | Poll for onboarding session result |
 
 > These endpoints implement the dedicated onboarding endpoint from the Federated SSO Architecture spec.
 > The browser talks directly to the WIB for WebAuthn credential registration, ensuring the SP never sees

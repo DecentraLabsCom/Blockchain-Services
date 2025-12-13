@@ -17,6 +17,7 @@ import decentralabs.blockchain.dto.auth.WebauthnOnboardingOptionsResponse.PubKey
 import decentralabs.blockchain.dto.auth.WebauthnOnboardingOptionsResponse.RelyingParty;
 import decentralabs.blockchain.dto.auth.WebauthnOnboardingOptionsResponse.User;
 import decentralabs.blockchain.dto.auth.WebauthnOnboardingStatusResponse;
+import decentralabs.blockchain.service.auth.WebauthnCredentialService;
 import decentralabs.blockchain.service.auth.WebauthnOnboardingService;
 import java.time.Instant;
 import java.util.List;
@@ -44,6 +45,9 @@ class WebauthnOnboardingControllerTest {
 
     @MockitoBean
     private WebauthnOnboardingService onboardingService;
+
+    @MockitoBean
+    private WebauthnCredentialService credentialService;
 
     @Test
     @WithMockUser
@@ -215,5 +219,75 @@ class WebauthnOnboardingControllerTest {
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.status").value("FAILED"))
             .andExpect(jsonPath("$.error").value("Attestation verification failed"));
+    }
+
+    // ==================== Key Status Tests ====================
+
+    @Test
+    @WithMockUser
+    void getKeyStatus_userWithCredentials_returnsHasCredential() throws Exception {
+        WebauthnCredentialService.KeyStatus keyStatus = new WebauthnCredentialService.KeyStatus(
+            true, 2, false, 1702400000L
+        );
+        
+        when(credentialService.getKeyStatus(eq("user@institution.edu"))).thenReturn(keyStatus);
+
+        mockMvc.perform(get("/onboarding/webauthn/key-status/user@institution.edu")
+                .with(SecurityMockMvcRequestPostProcessors.csrf()))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.hasCredential").value(true))
+            .andExpect(jsonPath("$.credentialCount").value(2))
+            .andExpect(jsonPath("$.stableUserId").value("user@institution.edu"))
+            .andExpect(jsonPath("$.hasRevokedCredentials").value(false));
+    }
+
+    @Test
+    @WithMockUser
+    void getKeyStatus_userWithoutCredentials_returnsNoCredential() throws Exception {
+        WebauthnCredentialService.KeyStatus keyStatus = new WebauthnCredentialService.KeyStatus(
+            false, 0, false, null
+        );
+        
+        when(credentialService.getKeyStatus(eq("newuser@institution.edu"))).thenReturn(keyStatus);
+
+        mockMvc.perform(get("/onboarding/webauthn/key-status/newuser@institution.edu")
+                .with(SecurityMockMvcRequestPostProcessors.csrf()))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.hasCredential").value(false))
+            .andExpect(jsonPath("$.credentialCount").value(0))
+            .andExpect(jsonPath("$.stableUserId").value("newuser@institution.edu"))
+            .andExpect(jsonPath("$.lastRegistered").doesNotExist());
+    }
+
+    @Test
+    @WithMockUser
+    void getKeyStatus_withInstitutionId_includesInstitutionInResponse() throws Exception {
+        WebauthnCredentialService.KeyStatus keyStatus = new WebauthnCredentialService.KeyStatus(
+            true, 1, true, 1702400000L
+        );
+        
+        when(credentialService.getKeyStatus(eq("user@institution.edu"))).thenReturn(keyStatus);
+
+        mockMvc.perform(get("/onboarding/webauthn/key-status/user@institution.edu")
+                .param("institutionId", "institution.edu")
+                .with(SecurityMockMvcRequestPostProcessors.csrf()))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.hasCredential").value(true))
+            .andExpect(jsonPath("$.institutionId").value("institution.edu"))
+            .andExpect(jsonPath("$.hasRevokedCredentials").value(true));
+    }
+
+    @Test
+    void getKeyStatus_withoutAuth_stillAccessible() throws Exception {
+        WebauthnCredentialService.KeyStatus keyStatus = new WebauthnCredentialService.KeyStatus(
+            true, 1, false, 1702400000L
+        );
+        
+        when(credentialService.getKeyStatus(any())).thenReturn(keyStatus);
+
+        // This endpoint should be publicly accessible for SP integration
+        mockMvc.perform(get("/onboarding/webauthn/key-status/user@institution.edu")
+                .with(SecurityMockMvcRequestPostProcessors.csrf()))
+            .andExpect(status().isOk());
     }
 }
