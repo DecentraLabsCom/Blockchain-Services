@@ -44,8 +44,11 @@ public class SamlValidationService {
     
     private static final Logger logger = LoggerFactory.getLogger(SamlValidationService.class);
     
-    @Value("${saml.idp.trust-mode:any}")
+    @Value("${saml.idp.trust-mode:whitelist}")
     private String trustMode;
+
+    @Value("${saml.metadata.allow-http:false}")
+    private boolean allowHttpMetadata;
     
     // Optional: only used in whitelist mode
     private Map<String, String> trustedIdps = Collections.emptyMap();
@@ -344,10 +347,15 @@ public class SamlValidationService {
     private void validateMetadataUrl(String metadataUrl) throws Exception {
         URI uri = URI.create(metadataUrl);
         
-        // Only allow HTTPS for metadata URLs (security best practice)
+        // Only allow HTTPS for metadata URLs unless explicitly allowed
         String scheme = uri.getScheme();
-        if (scheme == null || (!scheme.equalsIgnoreCase("https") && !scheme.equalsIgnoreCase("http"))) {
-            throw new SecurityException("Metadata URL must use HTTP or HTTPS protocol");
+        if (scheme == null) {
+            throw new SecurityException("Metadata URL must specify a protocol");
+        }
+        if (!scheme.equalsIgnoreCase("https")) {
+            if (!(allowHttpMetadata && scheme.equalsIgnoreCase("http"))) {
+                throw new SecurityException("Metadata URL must use HTTPS");
+            }
         }
         
         // Get the host from the URL

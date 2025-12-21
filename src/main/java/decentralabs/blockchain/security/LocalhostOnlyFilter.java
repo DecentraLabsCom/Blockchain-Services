@@ -26,6 +26,18 @@ public class LocalhostOnlyFilter extends OncePerRequestFilter {
     @Value("${security.allow-private-networks:false}")
     private boolean allowPrivateNetworks;
 
+    @Value("${security.internal-token:}")
+    private String internalToken;
+
+    @Value("${security.internal-token-header:X-Internal-Token}")
+    private String internalTokenHeader;
+
+    @Value("${security.internal-token-cookie:internal_token}")
+    private String internalTokenCookie;
+
+    @Value("${security.internal-token.required:true}")
+    private boolean internalTokenRequired;
+
     private static final List<String> LOCALHOST_ADDRESSES = List.of(
         "127.0.0.1",
         "0:0:0:0:0:0:0:1",
@@ -63,7 +75,8 @@ public class LocalhostOnlyFilter extends OncePerRequestFilter {
         return path.startsWith("/wallet")
             || path.startsWith("/treasury")
             || path.startsWith("/treasury/admin/notifications")
-            || path.startsWith("/wallet-dashboard");
+            || path.startsWith("/wallet-dashboard")
+            || path.startsWith("/onboarding/token");
     }
 
     private boolean isLocalhost(HttpServletRequest request) {
@@ -78,11 +91,48 @@ public class LocalhostOnlyFilter extends OncePerRequestFilter {
         }
 
         // In standalone docker, requests often arrive from a bridge IP (172.x/10.x).
-        // Only allow those when explicitly enabled.
+        // Only allow those when explicitly enabled and secured with an internal token.
         if (allowPrivateNetworks && isPrivateAddress(normalized)) {
-            return true;
+            if (!internalTokenRequired) {
+                return true;
+            }
+            if (internalToken == null || internalToken.isBlank()) {
+                log.warn("Private network access is enabled but no internal token is configured.");
+                return false;
+            }
+            if (hasValidInternalToken(request)) {
+                return true;
+            }
+            log.warn("Missing or invalid internal token for private network access.");
+            return false;
         }
 
+        return false;
+    }
+
+    private boolean hasValidInternalToken(HttpServletRequest request) {
+        if (internalToken == null || internalToken.isBlank()) {
+            return false;
+        }
+        String headerToken = request.getHeader(internalTokenHeader);
+        if (headerToken != null && !headerToken.isBlank()) {
+            return internalToken.equals(headerToken.trim());
+        }
+        String authorization = request.getHeader("Authorization");
+        if (authorization != null) {
+            String lower = authorization.toLowerCase();
+            if (lower.startsWith("bearer ")) {
+                String bearer = authorization.substring("bearer ".length()).trim();
+                return internalToken.equals(bearer);
+            }
+        }
+        if (internalTokenCookie != null && request.getCookies() != null) {
+            for (var cookie : request.getCookies()) {
+                if (internalTokenCookie.equals(cookie.getName())) {
+                    return internalToken.equals(cookie.getValue());
+                }
+            }
+        }
         return false;
     }
 

@@ -19,6 +19,9 @@ class LocalhostOnlyFilterTest {
     void setUp() {
         filter = new LocalhostOnlyFilter();
         ReflectionTestUtils.setField(filter, "allowPrivateNetworks", false);
+        ReflectionTestUtils.setField(filter, "internalToken", "test-token");
+        ReflectionTestUtils.setField(filter, "internalTokenHeader", "X-Internal-Token");
+        ReflectionTestUtils.setField(filter, "internalTokenRequired", true);
         mockMvc = MockMvcBuilders
             .standaloneSetup(new LocalhostFilterTestController())
             .addFilters(filter)
@@ -44,14 +47,41 @@ class LocalhostOnlyFilterTest {
     }
 
     @Test
-    void onboarding_remainsOpen() throws Exception {
+    void onboarding_token_blockedFromPublicIp() throws Exception {
         mockMvc.perform(post("/onboarding/token/apply").with(req -> { req.setRemoteAddr("8.8.8.8"); return req; }))
+            .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void allowsPrivateNetworkWhenEnabledWithToken() throws Exception {
+        ReflectionTestUtils.setField(filter, "allowPrivateNetworks", true);
+        mockMvc = MockMvcBuilders
+            .standaloneSetup(new LocalhostFilterTestController())
+            .addFilters(filter)
+            .build();
+
+        mockMvc.perform(post("/wallet/test")
+                .header("X-Internal-Token", "test-token")
+                .with(req -> { req.setRemoteAddr("172.17.0.1"); return req; }))
             .andExpect(status().isOk());
     }
 
     @Test
-    void allowsPrivateNetworkWhenEnabled() throws Exception {
+    void blocksPrivateNetworkWithoutToken() throws Exception {
         ReflectionTestUtils.setField(filter, "allowPrivateNetworks", true);
+        mockMvc = MockMvcBuilders
+            .standaloneSetup(new LocalhostFilterTestController())
+            .addFilters(filter)
+            .build();
+
+        mockMvc.perform(post("/wallet/test").with(req -> { req.setRemoteAddr("172.17.0.1"); return req; }))
+            .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void allowsPrivateNetworkWhenTokenNotRequired() throws Exception {
+        ReflectionTestUtils.setField(filter, "allowPrivateNetworks", true);
+        ReflectionTestUtils.setField(filter, "internalTokenRequired", false);
         mockMvc = MockMvcBuilders
             .standaloneSetup(new LocalhostFilterTestController())
             .addFilters(filter)

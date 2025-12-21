@@ -50,6 +50,24 @@ public class InstitutionalAdminService {
     @Value("${contract.address}")
     private String contractAddress;
 
+    @Value("${admin.dashboard.allow-private:false}")
+    private boolean adminDashboardAllowPrivate;
+
+    @Value("${security.allow-private-networks:false}")
+    private boolean allowPrivateNetworks;
+
+    @Value("${security.internal-token:}")
+    private String internalToken;
+
+    @Value("${security.internal-token-header:X-Internal-Token}")
+    private String internalTokenHeader;
+
+    @Value("${security.internal-token-cookie:internal_token}")
+    private String internalTokenCookie;
+
+    @Value("${security.internal-token.required:true}")
+    private boolean internalTokenRequired;
+
     /**
      * Execute administrative operation with localhost and wallet ownership validation
      */
@@ -84,8 +102,62 @@ public class InstitutionalAdminService {
             return true;
         }
 
+        if (adminDashboardAllowPrivate && allowPrivateNetworks && isPrivateAddress(remoteAddr)
+            && (!internalTokenRequired || hasValidInternalToken())) {
+            return true;
+        }
+
         log.warn("Administrative access attempt from non-localhost IP: {}", LogSanitizer.sanitize(remoteAddr));
         return false;
+    }
+
+    private boolean hasValidInternalToken() {
+        if (internalToken == null || internalToken.isBlank()) {
+            return false;
+        }
+        String headerToken = request.getHeader(internalTokenHeader);
+        if (headerToken != null && !headerToken.isBlank()) {
+            return internalToken.equals(headerToken.trim());
+        }
+        String authorization = request.getHeader("Authorization");
+        if (authorization != null) {
+            String lower = authorization.toLowerCase();
+            if (lower.startsWith("bearer ")) {
+                String bearer = authorization.substring("bearer ".length()).trim();
+                return internalToken.equals(bearer);
+            }
+        }
+        if (internalTokenCookie != null && request.getCookies() != null) {
+            for (var cookie : request.getCookies()) {
+                if (internalTokenCookie.equals(cookie.getName())) {
+                    return internalToken.equals(cookie.getValue());
+                }
+            }
+        }
+        return false;
+    }
+
+    private boolean isPrivateAddress(String address) {
+        if (address == null || address.isBlank()) {
+            return false;
+        }
+        return address.startsWith("10.")
+            || address.startsWith("192.168.")
+            || (address.startsWith("172.") && isInRange(address, 16, 31))
+            || address.startsWith("169.254.");
+    }
+
+    private boolean isInRange(String address, int start, int end) {
+        try {
+            String[] parts = address.split("\\.");
+            if (parts.length < 2) {
+                return false;
+            }
+            int second = Integer.parseInt(parts[1]);
+            return second >= start && second <= end;
+        } catch (NumberFormatException ex) {
+            return false;
+        }
     }
 
     /**

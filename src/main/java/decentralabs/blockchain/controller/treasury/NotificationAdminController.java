@@ -34,6 +34,21 @@ public class NotificationAdminController {
     @Value("${admin.dashboard.allow-private:true}")
     private boolean adminDashboardAllowPrivate;
 
+    @Value("${security.allow-private-networks:false}")
+    private boolean allowPrivateNetworks;
+
+    @Value("${security.internal-token:}")
+    private String internalToken;
+
+    @Value("${security.internal-token-header:X-Internal-Token}")
+    private String internalTokenHeader;
+
+    @Value("${security.internal-token-cookie:internal_token}")
+    private String internalTokenCookie;
+
+    @Value("${security.internal-token.required:true}")
+    private boolean internalTokenRequired;
+
     @GetMapping
     public ResponseEntity<?> getConfig(HttpServletRequest request) {
         if (!isLocalhostRequest(request)) {
@@ -127,7 +142,10 @@ public class NotificationAdminController {
 
         String candidate = request.getRemoteAddr();
         boolean allowed = isLoopback(candidate)
-            || (adminDashboardAllowPrivate && isPrivateAddress(candidate));
+            || (adminDashboardAllowPrivate
+                && allowPrivateNetworks
+                && isPrivateAddress(candidate)
+                && (!internalTokenRequired || hasValidInternalToken(request)));
 
         if (!allowed) {
             log.warn("Blocked administrative notification access from non-local address.");
@@ -166,5 +184,31 @@ public class NotificationAdminController {
             || address.startsWith("127.")
             || address.equals("0:0:0:0:0:0:0:1")
             || address.equals("::1");
+    }
+
+    private boolean hasValidInternalToken(HttpServletRequest request) {
+        if (internalToken == null || internalToken.isBlank()) {
+            return false;
+        }
+        String headerToken = request.getHeader(internalTokenHeader);
+        if (headerToken != null && !headerToken.isBlank()) {
+            return internalToken.equals(headerToken.trim());
+        }
+        String authorization = request.getHeader("Authorization");
+        if (authorization != null) {
+            String lower = authorization.toLowerCase();
+            if (lower.startsWith("bearer ")) {
+                String bearer = authorization.substring("bearer ".length()).trim();
+                return internalToken.equals(bearer);
+            }
+        }
+        if (request.getCookies() != null) {
+            for (var cookie : request.getCookies()) {
+                if (internalTokenCookie.equals(cookie.getName())) {
+                    return internalToken.equals(cookie.getValue());
+                }
+            }
+        }
+        return false;
     }
 }

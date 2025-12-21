@@ -220,6 +220,21 @@ public class AdminDashboardController {
     @Value("${admin.dashboard.allow-private:true}")
     private boolean adminDashboardAllowPrivate;
 
+    @Value("${security.allow-private-networks:false}")
+    private boolean allowPrivateNetworks;
+
+    @Value("${security.internal-token:}")
+    private String internalToken;
+
+    @Value("${security.internal-token-header:X-Internal-Token}")
+    private String internalTokenHeader;
+
+    @Value("${security.internal-token-cookie:internal_token}")
+    private String internalTokenCookie;
+
+    @Value("${security.internal-token.required:true}")
+    private boolean internalTokenRequired;
+
     private static final Set<String> LOOPBACK_ADDRESSES = Set.of(
         "127.0.0.1",
         "0:0:0:0:0:0:0:1",
@@ -239,7 +254,10 @@ public class AdminDashboardController {
         boolean allowed = candidate == null
             || LOOPBACK_ADDRESSES.contains(candidate)
             || candidate.startsWith("127.")
-            || (adminDashboardAllowPrivate && isPrivateAddress(candidate));
+            || (adminDashboardAllowPrivate
+                && allowPrivateNetworks
+                && isPrivateAddress(candidate)
+                && (!internalTokenRequired || hasValidInternalToken(request)));
 
         if (!allowed) {
             log.warn("Blocked administrative dashboard access from non-local address.");
@@ -272,11 +290,33 @@ public class AdminDashboardController {
     }
 
     private String extractClientIp(HttpServletRequest request) {
-        String forwarded = request.getHeader("X-Forwarded-For");
-        if (forwarded != null && !forwarded.isBlank()) {
-            return forwarded.split(",")[0].trim();
-        }
         return request.getRemoteAddr();
+    }
+
+    private boolean hasValidInternalToken(HttpServletRequest request) {
+        if (internalToken == null || internalToken.isBlank()) {
+            return false;
+        }
+        String headerToken = request.getHeader(internalTokenHeader);
+        if (headerToken != null && !headerToken.isBlank()) {
+            return internalToken.equals(headerToken.trim());
+        }
+        String authorization = request.getHeader("Authorization");
+        if (authorization != null) {
+            String lower = authorization.toLowerCase();
+            if (lower.startsWith("bearer ")) {
+                String bearer = authorization.substring("bearer ".length()).trim();
+                return internalToken.equals(bearer);
+            }
+        }
+        if (request.getCookies() != null) {
+            for (var cookie : request.getCookies()) {
+                if (internalTokenCookie.equals(cookie.getName())) {
+                    return internalToken.equals(cookie.getValue());
+                }
+            }
+        }
+        return false;
     }
 
     /**

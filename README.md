@@ -184,9 +184,14 @@ This documentation is organized into specialized sections:
    chmod 400 keys/*.pem
    ```
 
-2. **Start services (local dev uses the bundled `docker-compose.override.yml` to expose port 8080):**
+2. **Start services (dev; `docker-compose.override.yml` is auto-loaded to expose port 8080):**
    ```bash
-   docker-compose up -d
+   docker compose up -d
+   ```
+
+   **Production (no port exposure):**
+   ```bash
+   docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
    ```
 
 3. **Configure institutional wallet:**
@@ -201,7 +206,7 @@ This documentation is organized into specialized sections:
 
 > 💡 **Testing APIs:** For manual testing, use `test-wallet-local.sh` / `test-wallet-local.ps1`
 
-> 💡 **Reverse Proxy:** When this project is consumed as a submodule behind OpenResty, reference only `docker-compose.yml` (omit `docker-compose.override.yml`) so the container stays on the internal network without publishing `8080`.
+> 💡 **Reverse Proxy:** When this project is consumed as a submodule behind OpenResty, use `docker-compose.yml` + `docker-compose.prod.yml` so the container stays on the internal network without publishing `8080`.
 
 ### 📦 CI/CD & Production Deployment
 
@@ -281,7 +286,19 @@ This project uses a **security-first deployment approach**:
 | `ALLOWED_ORIGINS` | CORS allowed origins | - |
 | `PRIVATE_KEY_PATH` | Path to JWT private key | `config/keys/private_key.pem` |
 | `PUBLIC_KEY_PATH` | Path to JWT public key | `config/keys/public_key.pem` |
-| `ADMIN_DASHBOARD_LOCAL_ONLY` | `true` blocks `/treasury/admin/**` to localhost, `false` keeps it open (dev default) | `true` |
+| `ADMIN_DASHBOARD_LOCAL_ONLY` | `true` blocks `/treasury/admin/**` unless request is localhost/private and internally authenticated | `true` |
+| `ADMIN_DASHBOARD_ALLOW_PRIVATE` | Allow private network access for admin endpoints (requires internal token) | `false` |
+| `SECURITY_ALLOW_PRIVATE_NETWORKS` | Allow private networks for internal endpoints (requires internal token) | `false` |
+| `SECURITY_INTERNAL_TOKEN` | Shared secret for internal endpoints (`/wallet`, `/treasury`, `/wallet-dashboard`) | - |
+| `SECURITY_INTERNAL_TOKEN_HEADER` | Header name for internal token | `X-Internal-Token` |
+| `SECURITY_INTERNAL_TOKEN_COOKIE` | Cookie name for internal token | `internal_token` |
+| `SECURITY_INTERNAL_TOKEN_REQUIRED` | Require internal token for private networks | `true` |
+| `SAML_IDP_TRUST_MODE` | `whitelist` or `any` for IdP trust | `any` |
+| `SAML_METADATA_ALLOW_HTTP` | Allow HTTP metadata URLs (not recommended) | `false` |
+> When deploying behind a reverse proxy, set `SECURITY_ALLOW_PRIVATE_NETWORKS=true` and a strong `SECURITY_INTERNAL_TOKEN`.
+> Configure the proxy to send `X-Internal-Token` (or the `internal_token` cookie) when calling `/wallet`, `/treasury`, and `/wallet-dashboard`.
+> For local dev, set `SECURITY_INTERNAL_TOKEN_REQUIRED=false` to skip the token check.
+
 
 ### WebAuthn Onboarding Configuration
 
@@ -353,6 +370,7 @@ docker run -p 8080:8080 \
 - ✅ RSA keys mounted with proper permissions (`chmod 400`)
 - ✅ RPC URLs configured with authenticated endpoints
 - ✅ Localhost-only filters enabled for sensitive operations
+- ✅ Internal token required when allowing private network access
 - ✅ CORS origins restricted to trusted domains
 
 ## Reservation Notifications (email + ICS)
