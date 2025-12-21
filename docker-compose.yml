@@ -31,14 +31,15 @@ services:
       # Path to wallet storage file (mounted as volume below)
       - WALLET_FILE_PATH=/app/data/wallets.json
       # MySQL datasource for persistence (auth, WebAuthn, intents)
-      - SPRING_DATASOURCE_URL=jdbc:mysql://mysql:3306/${MYSQL_DATABASE:-blockchain_services}?serverTimezone=UTC&characterEncoding=UTF-8&useSSL=false
-      - SPRING_DATASOURCE_USERNAME=${MYSQL_USER:-blockchain}
-      - SPRING_DATASOURCE_PASSWORD=${MYSQL_PASSWORD:-blockchain}
+      - SPRING_DATASOURCE_URL=jdbc:mysql://mysql:3306/${BCHAIN_MYSQL_DATABASE:-blockchain_services}?serverTimezone=UTC&characterEncoding=UTF-8&useSSL=false&allowPublicKeyRetrieval=true
+      - SPRING_DATASOURCE_USERNAME=${BCHAIN_MYSQL_USER:-blockchain}
+      - SPRING_DATASOURCE_PASSWORD=${BCHAIN_MYSQL_PASSWORD:-blockchain}
     
     # Mount volumes for keys, logs, and wallet data
     # SECURITY: Ensure key files have proper permissions (chmod 400 for private key)
     volumes:
-      - ./keys:/app/config/keys:ro
+      # RW so entrypoint can generate keys if missing; use :ro in hardened setups.
+      - ./keys:/app/config/keys
       - ./logs:/app/logs
       # Persistent storage for encrypted wallets (survives container restart)
       - wallet-data:/app/data
@@ -81,10 +82,10 @@ services:
   mysql:
     image: mysql:8.0.41
     environment:
-      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-change-me}
-      MYSQL_DATABASE: ${MYSQL_DATABASE:-blockchain_services}
-      MYSQL_USER: ${MYSQL_USER:-blockchain}
-      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-blockchain}
+      MYSQL_ROOT_PASSWORD: ${BCHAIN_MYSQL_ROOT_PASSWORD:-change-me}
+      MYSQL_DATABASE: ${BCHAIN_MYSQL_DATABASE:-blockchain_services}
+      MYSQL_USER: ${BCHAIN_MYSQL_USER:-blockchain}
+      MYSQL_PASSWORD: ${BCHAIN_MYSQL_PASSWORD:-blockchain}
     volumes:
       - mysql_data:/var/lib/mysql
     healthcheck:

@@ -53,13 +53,16 @@ public class SecurityConfig {
     @Value("${endpoint.intents:/intents}")
     private String intentsEndpoint;
 
+    @Value("${auth.base-path:/auth}")
+    private String authBasePath;
+
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
         http
             .cors(cors -> cors.configurationSource(corsConfigurationSource()))
             .csrf(csrf -> csrf
                 .ignoringRequestMatchers(
-                    "/.well-known/*",
+                    authBasePath + "/.well-known/*",
                     jwksEndpoint,
                     messageEndpoint,
                     walletAuthEndpoint,
@@ -76,7 +79,7 @@ public class SecurityConfig {
             )
             .authorizeHttpRequests(authorize -> authorize
                 .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
-                .requestMatchers("/.well-known/*").permitAll()
+                .requestMatchers(authBasePath + "/.well-known/*").permitAll()
                 .requestMatchers(jwksEndpoint).permitAll()
                 .requestMatchers(messageEndpoint).permitAll()
                 .requestMatchers(walletAuthEndpoint).permitAll()

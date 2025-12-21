@@ -176,20 +176,21 @@ This documentation is organized into specialized sections:
 
 > ⚠️ **IMPORTANT**: Docker deployment requires RSA keys and wallet configuration that are NOT included in the repository.
 
-1. **Generate RSA keys for JWT signing:**
+1. **Generate RSA keys for JWT signing (or let the container create them):**
    ```bash
    mkdir -p keys
    openssl genrsa -out keys/private_key.pem 2048
    openssl rsa -in keys/private_key.pem -pubout -out keys/public_key.pem
    chmod 400 keys/*.pem
    ```
+   If you skip this step, the container will generate the keys on first start as long as `./keys` is writable.
 
 2. **Start services (dev; `docker-compose.override.yml` is auto-loaded to expose port 8080):**
    ```bash
    docker compose up -d
    ```
 
-   This compose file starts a MySQL container and wires `SPRING_DATASOURCE_*` from `MYSQL_*` in your `.env`.
+   This compose file starts a MySQL container and wires `SPRING_DATASOURCE_*` from `BCHAIN_MYSQL_*` in your `.env`.
 
    **Production (no port exposure):**
    ```bash
@@ -306,6 +307,25 @@ This project uses a **security-first deployment approach**:
 > When deploying behind a reverse proxy, set `SECURITY_ALLOW_PRIVATE_NETWORKS=true` and a strong `SECURITY_INTERNAL_TOKEN`.
 > Configure the proxy to send `X-Internal-Token` (or the `internal_token` cookie) when calling `/wallet`, `/treasury`, and `/wallet-dashboard`.
 > For local dev, set `SECURITY_INTERNAL_TOKEN_REQUIRED=false` to skip the token check.
+
+### Docker Compose `.env` variables (standalone)
+
+The compose files in this repo use prefixed variables to avoid collisions with Lab Gateway settings.
+They are mapped to the standard Spring variables inside the container.
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `BCHAIN_MYSQL_ROOT_PASSWORD` | MySQL root password for the local container | `change-me` |
+| `BCHAIN_MYSQL_DATABASE` | MySQL schema for blockchain-services | `blockchain_services` |
+| `BCHAIN_MYSQL_USER` | MySQL app user | `blockchain` |
+| `BCHAIN_MYSQL_PASSWORD` | MySQL app password | `blockchain` |
+| `BCHAIN_ADMIN_DASHBOARD_LOCAL_ONLY` | Maps to `ADMIN_DASHBOARD_LOCAL_ONLY` | `true` |
+| `BCHAIN_ADMIN_DASHBOARD_ALLOW_PRIVATE` | Maps to `ADMIN_DASHBOARD_ALLOW_PRIVATE` | `true` |
+| `BCHAIN_SECURITY_ALLOW_PRIVATE_NETWORKS` | Maps to `SECURITY_ALLOW_PRIVATE_NETWORKS` | `true` |
+| `BCHAIN_SECURITY_INTERNAL_TOKEN` | Maps to `SECURITY_INTERNAL_TOKEN` | - |
+| `BCHAIN_SECURITY_INTERNAL_TOKEN_HEADER` | Maps to `SECURITY_INTERNAL_TOKEN_HEADER` | `X-Internal-Token` |
+| `BCHAIN_SECURITY_INTERNAL_TOKEN_COOKIE` | Maps to `SECURITY_INTERNAL_TOKEN_COOKIE` | `internal_token` |
+| `BCHAIN_SECURITY_INTERNAL_TOKEN_REQUIRED` | Maps to `SECURITY_INTERNAL_TOKEN_REQUIRED` | `false` |
 
 
 ### WebAuthn Onboarding Configuration

@@ -14,9 +14,10 @@ public class WebConfig implements WebMvcConfigurer {
 
     @Override
     public void addViewControllers(@NonNull ViewControllerRegistry registry) {
-        // Forward /wallet-dashboard to /wallet-dashboard/index.html (with or without trailing slash)
+        // Redirect to include trailing slash so relative assets resolve correctly.
         registry.addViewController("/wallet-dashboard")
-                .setViewName("forward:/wallet-dashboard/index.html");
+                .setViewName("redirect:/wallet-dashboard/");
+        // Forward /wallet-dashboard/ to /wallet-dashboard/index.html
         registry.addViewController("/wallet-dashboard/")
                 .setViewName("forward:/wallet-dashboard/index.html");
     }
