@@ -265,6 +265,12 @@
     "description": "Trusted IdP issuers JSON map (only used if trust-mode=whitelist)."
   },
   {
+    "name": "saml.metadata.allow-http",
+    "type": "java.lang.Boolean",
+    "description": "Allow HTTP SAML metadata URLs (not recommended).",
+    "defaultValue": false
+  },
+  {
     "name": "private.key.path",
     "type": "java.lang.String",
     "description": "Path to private key PEM file for JWT signing.",
@@ -292,6 +298,29 @@
     "name": "security.allow-private-networks",
     "type": "java.lang.Boolean",
     "description": "Allow connections from private networks.",
+    "defaultValue": true
+  },
+  {
+    "name": "security.internal-token",
+    "type": "java.lang.String",
+    "description": "Shared secret token required for internal endpoints."
+  },
+  {
+    "name": "security.internal-token-header",
+    "type": "java.lang.String",
+    "description": "Header name for the internal token.",
+    "defaultValue": "X-Internal-Token"
+  },
+  {
+    "name": "security.internal-token-cookie",
+    "type": "java.lang.String",
+    "description": "Cookie name for the internal token.",
+    "defaultValue": "internal_token"
+  },
+  {
+    "name": "security.internal-token.required",
+    "type": "java.lang.Boolean",
+    "description": "Require internal token for private network access.",
     "defaultValue": true
   },
   {

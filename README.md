@@ -194,6 +194,9 @@ This documentation is organized into specialized sections:
    docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
    ```
 
+   **Database migrations:** When `SPRING_DATASOURCE_URL` is configured, Flyway automatically creates the
+   auth, WebAuthn, and intents tables on startup. This is how Lab Gateway keeps the schema in sync.
+
 3. **Configure institutional wallet:**
    
    Open http://localhost:8080/wallet-dashboard in your browser
@@ -283,6 +286,9 @@ This project uses a **security-first deployment approach**:
 |----------|-------------|---------|
 | `SPRING_PROFILES_ACTIVE` | Active Spring profile | `default` |
 | `JAVA_OPTS` | JVM options | - |
+| `SPRING_DATASOURCE_URL` | JDBC URL for MySQL (enables persistence + migrations) | - |
+| `SPRING_DATASOURCE_USERNAME` | MySQL username | - |
+| `SPRING_DATASOURCE_PASSWORD` | MySQL password | - |
 | `ALLOWED_ORIGINS` | CORS allowed origins | - |
 | `PRIVATE_KEY_PATH` | Path to JWT private key | `config/keys/private_key.pem` |
 | `PUBLIC_KEY_PATH` | Path to JWT public key | `config/keys/public_key.pem` |
