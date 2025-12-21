@@ -189,6 +189,8 @@ This documentation is organized into specialized sections:
    docker compose up -d
    ```
 
+   This compose file starts a MySQL container and wires `SPRING_DATASOURCE_*` from `MYSQL_*` in your `.env`.
+
    **Production (no port exposure):**
    ```bash
    docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
