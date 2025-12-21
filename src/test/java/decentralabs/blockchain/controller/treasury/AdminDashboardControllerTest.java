@@ -223,6 +223,44 @@ class AdminDashboardControllerTest {
         }
     }
 
+    @Nested
+    @DisplayName("Access Control Tests")
+    class AccessControlTests {
+
+        @BeforeEach
+        void setUpAccess() {
+            ReflectionTestUtils.setField(adminDashboardController, "adminDashboardLocalOnly", true);
+            ReflectionTestUtils.setField(adminDashboardController, "adminDashboardAllowPrivate", true);
+            ReflectionTestUtils.setField(adminDashboardController, "allowPrivateNetworks", true);
+            ReflectionTestUtils.setField(adminDashboardController, "internalToken", "test-token");
+            ReflectionTestUtils.setField(adminDashboardController, "internalTokenHeader", "X-Internal-Token");
+            ReflectionTestUtils.setField(adminDashboardController, "internalTokenCookie", "internal_token");
+            ReflectionTestUtils.setField(adminDashboardController, "internalTokenRequired", true);
+            mockMvc = MockMvcBuilders.standaloneSetup(adminDashboardController).build();
+        }
+
+        @Test
+        @DisplayName("Should reject private network without internal token")
+        void shouldRejectPrivateNetworkWithoutToken() throws Exception {
+            mockMvc.perform(get("/treasury/admin/status")
+                    .with(req -> { req.setRemoteAddr("10.0.0.5"); return req; }))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.success").value(false));
+        }
+
+        @Test
+        @DisplayName("Should allow private network with valid internal token")
+        void shouldAllowPrivateNetworkWithToken() throws Exception {
+            when(walletService.getAvailableNetworks()).thenReturn(createNetworkResponse());
+
+            mockMvc.perform(get("/treasury/admin/status")
+                    .header("X-Internal-Token", "test-token")
+                    .with(req -> { req.setRemoteAddr("10.0.0.5"); return req; }))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true));
+        }
+    }
+
     private NetworkResponse createNetworkResponse() {
         NetworkInfo sepolia = NetworkInfo.builder()
             .id("sepolia")

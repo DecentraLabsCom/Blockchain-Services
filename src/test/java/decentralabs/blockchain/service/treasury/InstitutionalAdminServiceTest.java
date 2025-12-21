@@ -127,6 +127,41 @@ class InstitutionalAdminServiceTest {
             assertThat(response.isSuccess()).isFalse();
             assertThat(response.getMessage()).contains("localhost");
         }
+
+        @Test
+        @DisplayName("Should allow private network with valid internal token when enabled")
+        void shouldAllowPrivateNetworkWithTokenWhenEnabled() {
+            ReflectionTestUtils.setField(adminService, "adminDashboardAllowPrivate", true);
+            ReflectionTestUtils.setField(adminService, "allowPrivateNetworks", true);
+            ReflectionTestUtils.setField(adminService, "internalToken", "test-token");
+            ReflectionTestUtils.setField(adminService, "internalTokenHeader", "X-Internal-Token");
+            ReflectionTestUtils.setField(adminService, "internalTokenRequired", true);
+
+            when(httpServletRequest.getRemoteAddr()).thenReturn("10.0.0.5");
+            when(httpServletRequest.getHeader("X-Internal-Token")).thenReturn("test-token");
+            when(institutionalWalletService.getInstitutionalWalletAddress()).thenReturn("0xABCDEF");
+
+            InstitutionalAdminRequest request = new InstitutionalAdminRequest("0x123", AdminOperation.AUTHORIZE_BACKEND, null, null, null, null, null);
+            InstitutionalAdminResponse response = adminService.executeAdminOperation(request);
+
+            assertThat(response.getMessage()).doesNotContain("only allowed from localhost");
+        }
+
+        @Test
+        @DisplayName("Should allow private network when token is not required")
+        void shouldAllowPrivateNetworkWhenTokenNotRequired() {
+            ReflectionTestUtils.setField(adminService, "adminDashboardAllowPrivate", true);
+            ReflectionTestUtils.setField(adminService, "allowPrivateNetworks", true);
+            ReflectionTestUtils.setField(adminService, "internalTokenRequired", false);
+
+            when(httpServletRequest.getRemoteAddr()).thenReturn("10.0.0.5");
+            when(institutionalWalletService.getInstitutionalWalletAddress()).thenReturn("0xABCDEF");
+
+            InstitutionalAdminRequest request = new InstitutionalAdminRequest("0x123", AdminOperation.AUTHORIZE_BACKEND, null, null, null, null, null);
+            InstitutionalAdminResponse response = adminService.executeAdminOperation(request);
+
+            assertThat(response.getMessage()).doesNotContain("only allowed from localhost");
+        }
     }
 
     @Nested

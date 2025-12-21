@@ -6,6 +6,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import jakarta.servlet.http.Cookie;
 import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
@@ -21,6 +22,7 @@ class LocalhostOnlyFilterTest {
         ReflectionTestUtils.setField(filter, "allowPrivateNetworks", false);
         ReflectionTestUtils.setField(filter, "internalToken", "test-token");
         ReflectionTestUtils.setField(filter, "internalTokenHeader", "X-Internal-Token");
+        ReflectionTestUtils.setField(filter, "internalTokenCookie", "internal_token");
         ReflectionTestUtils.setField(filter, "internalTokenRequired", true);
         mockMvc = MockMvcBuilders
             .standaloneSetup(new LocalhostFilterTestController())
@@ -62,6 +64,34 @@ class LocalhostOnlyFilterTest {
 
         mockMvc.perform(post("/wallet/test")
                 .header("X-Internal-Token", "test-token")
+                .with(req -> { req.setRemoteAddr("172.17.0.1"); return req; }))
+            .andExpect(status().isOk());
+    }
+
+    @Test
+    void allowsPrivateNetworkWithBearerToken() throws Exception {
+        ReflectionTestUtils.setField(filter, "allowPrivateNetworks", true);
+        mockMvc = MockMvcBuilders
+            .standaloneSetup(new LocalhostFilterTestController())
+            .addFilters(filter)
+            .build();
+
+        mockMvc.perform(post("/wallet/test")
+                .header("Authorization", "Bearer test-token")
+                .with(req -> { req.setRemoteAddr("172.17.0.1"); return req; }))
+            .andExpect(status().isOk());
+    }
+
+    @Test
+    void allowsPrivateNetworkWithCookieToken() throws Exception {
+        ReflectionTestUtils.setField(filter, "allowPrivateNetworks", true);
+        mockMvc = MockMvcBuilders
+            .standaloneSetup(new LocalhostFilterTestController())
+            .addFilters(filter)
+            .build();
+
+        mockMvc.perform(post("/wallet/test")
+                .cookie(new Cookie("internal_token", "test-token"))
                 .with(req -> { req.setRemoteAddr("172.17.0.1"); return req; }))
             .andExpect(status().isOk());
     }

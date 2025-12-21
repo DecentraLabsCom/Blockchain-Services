@@ -233,4 +233,42 @@ class NotificationAdminControllerTest {
                 .andExpect(jsonPath("$.success").value(false));
         }
     }
+
+    @Nested
+    @DisplayName("Access Control Tests")
+    class AccessControlTests {
+
+        @BeforeEach
+        void setUpAccess() {
+            ReflectionTestUtils.setField(notificationAdminController, "adminDashboardLocalOnly", true);
+            ReflectionTestUtils.setField(notificationAdminController, "adminDashboardAllowPrivate", true);
+            ReflectionTestUtils.setField(notificationAdminController, "allowPrivateNetworks", true);
+            ReflectionTestUtils.setField(notificationAdminController, "internalToken", "test-token");
+            ReflectionTestUtils.setField(notificationAdminController, "internalTokenHeader", "X-Internal-Token");
+            ReflectionTestUtils.setField(notificationAdminController, "internalTokenCookie", "internal_token");
+            ReflectionTestUtils.setField(notificationAdminController, "internalTokenRequired", true);
+            mockMvc = MockMvcBuilders.standaloneSetup(notificationAdminController).build();
+        }
+
+        @Test
+        @DisplayName("Should reject private network without internal token")
+        void shouldRejectPrivateNetworkWithoutToken() throws Exception {
+            mockMvc.perform(get("/treasury/admin/notifications")
+                    .with(req -> { req.setRemoteAddr("10.0.0.5"); return req; }))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.success").value(false));
+        }
+
+        @Test
+        @DisplayName("Should allow private network with valid internal token")
+        void shouldAllowPrivateNetworkWithToken() throws Exception {
+            when(notificationConfigService.getPublicConfig()).thenReturn(Map.of("enabled", false));
+
+            mockMvc.perform(get("/treasury/admin/notifications")
+                    .header("X-Internal-Token", "test-token")
+                    .with(req -> { req.setRemoteAddr("10.0.0.5"); return req; }))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true));
+        }
+    }
 }
