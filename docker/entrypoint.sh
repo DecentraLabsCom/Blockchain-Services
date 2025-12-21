@@ -9,13 +9,37 @@ echo "Java Options: ${JAVA_OPTS:-default}"
 
 # Wait for dependencies
 echo "Waiting for dependencies..."
-if [ -n "$MYSQL_HOST" ]; then
-    echo "Waiting for MySQL at $MYSQL_HOST:${MYSQL_PORT:-3306}..."
-    while ! nc -z $MYSQL_HOST ${MYSQL_PORT:-3306}; do
-        sleep 1
-    done
-    echo "MySQL is ready!"
+
+# Extract MySQL host from SPRING_DATASOURCE_URL if MYSQL_HOST not set
+if [ -z "$MYSQL_HOST" ] && [ -n "$SPRING_DATASOURCE_URL" ]; then
+    # Parse jdbc:mysql://host:port/db from URL
+    MYSQL_HOST=$(echo "$SPRING_DATASOURCE_URL" | sed -n 's|.*://\([^:/]*\).*|\1|p')
+    MYSQL_PORT=$(echo "$SPRING_DATASOURCE_URL" | sed -n 's|.*://[^:]*:\([0-9]*\)/.*|\1|p')
+    MYSQL_PORT=${MYSQL_PORT:-3306}
 fi
+
+MYSQL_HOST=${MYSQL_HOST:-mysql}
+MYSQL_PORT=${MYSQL_PORT:-3306}
+MYSQL_WAIT_TIMEOUT=${MYSQL_WAIT_TIMEOUT:-120}
+
+echo "Waiting for MySQL at $MYSQL_HOST:$MYSQL_PORT (timeout: ${MYSQL_WAIT_TIMEOUT}s)..."
+waited=0
+while ! nc -z "$MYSQL_HOST" "$MYSQL_PORT" 2>/dev/null; do
+    if [ "$waited" -ge "$MYSQL_WAIT_TIMEOUT" ]; then
+        echo "WARNING: MySQL port not available after ${MYSQL_WAIT_TIMEOUT}s, proceeding anyway..."
+        break
+    fi
+    sleep 2
+    waited=$((waited + 2))
+done
+
+if nc -z "$MYSQL_HOST" "$MYSQL_PORT" 2>/dev/null; then
+    echo "MySQL port is open. Waiting for database to be ready..."
+    # Additional wait for MySQL to complete initialization
+    sleep 5
+fi
+
+echo "MySQL is ready!"
 
 # Check configuration (if mounted)
 if [ -f "./config/application.properties" ]; then
