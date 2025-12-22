@@ -48,7 +48,13 @@ public class SmtpMailSenderAdapter implements MailSenderAdapter {
 
             helper.setTo(message.recipients().toArray(new String[0]));
             helper.setSubject(message.subject());
-            helper.setText(message.textBody(), message.htmlBody());
+            String textBody = message.textBody() != null ? message.textBody() : "";
+            String htmlBody = message.htmlBody();
+            if (htmlBody == null || htmlBody.isBlank()) {
+                helper.setText(textBody, false);
+            } else {
+                helper.setText(textBody, htmlBody);
+            }
 
             if (message.icsContent() != null && !message.icsContent().isBlank()) {
                 ByteArrayResource ics = new ByteArrayResource(message.icsContent().getBytes(StandardCharsets.UTF_8));

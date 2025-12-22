@@ -28,7 +28,7 @@ public class IntentExecutionService {
     public void processQueuedIntents() {
         Map<String, IntentRecord> current = intentService.getQueuedIntents();
         List<IntentRecord> pending = current.values().stream()
-            .filter(r -> r.getStatus() == IntentStatus.QUEUED || r.getStatus() == IntentStatus.IN_PROGRESS)
+            .filter(r -> r.getStatus() == IntentStatus.QUEUED)
             .collect(Collectors.toList());
 
         if (pending.isEmpty()) {
