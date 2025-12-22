@@ -36,6 +36,16 @@ public class WebauthnOnboardingCompleteResponse {
     private String credentialId;
 
     /**
+     * The credential public key (COSE, base64url-encoded).
+     */
+    private String publicKey;
+
+    /**
+     * RP ID used for the credential.
+     */
+    private String rpId;
+
+    /**
      * Human-readable message.
      */
     private String message;

@@ -312,8 +312,11 @@ public class WebauthnOnboardingService {
                 .stableUserId(session.getStableUserId())
                 .institutionId(session.getInstitutionId())
                 .credentialId(credentialId)
+                .publicKey(publicKeyBase64)
+                .rpId(rpId)
                 .aaguid(aaguid)
                 .message("Credential registered successfully")
+                .timestamp(Instant.now().getEpochSecond())
                 .build();
 
             // Store completed onboarding for status polling
@@ -322,6 +325,8 @@ public class WebauthnOnboardingService {
                 session.getStableUserId(),
                 session.getInstitutionId(),
                 credentialId,
+                publicKeyBase64,
+                rpId,
                 null,
                 Instant.now()
             );
@@ -340,6 +345,8 @@ public class WebauthnOnboardingService {
                 "FAILED",
                 session != null ? session.getStableUserId() : null,
                 session != null ? session.getInstitutionId() : null,
+                null,
+                null,
                 null,
                 e.getReason(),
                 Instant.now()
@@ -360,6 +367,8 @@ public class WebauthnOnboardingService {
                 "FAILED",
                 session != null ? session.getStableUserId() : null,
                 session != null ? session.getInstitutionId() : null,
+                null,
+                null,
                 null,
                 "Attestation verification failed: " + e.getMessage(),
                 Instant.now()
@@ -401,6 +410,8 @@ public class WebauthnOnboardingService {
                 .stableUserId(completed.stableUserId())
                 .institutionId(completed.institutionId())
                 .credentialId(completed.credentialId())
+                .publicKey(completed.publicKey())
+                .rpId(completed.rpId())
                 .error(completed.error())
                 .completedAt(completed.completedAt())
                 .build();
@@ -477,6 +488,8 @@ public class WebauthnOnboardingService {
                 payload.put("stableUserId", successResponse.getStableUserId());
                 payload.put("institutionId", successResponse.getInstitutionId());
                 payload.put("credentialId", successResponse.getCredentialId());
+                payload.put("publicKey", successResponse.getPublicKey());
+                payload.put("rpId", successResponse.getRpId());
                 payload.put("aaguid", successResponse.getAaguid());
             } else {
                 payload.put("status", "FAILED");
@@ -745,6 +758,8 @@ public class WebauthnOnboardingService {
         String stableUserId,
         String institutionId,
         String credentialId,
+        String publicKey,
+        String rpId,
         String error,
         Instant completedAt
     ) {}

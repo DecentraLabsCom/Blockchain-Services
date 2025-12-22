@@ -4,6 +4,7 @@ import java.math.BigInteger;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.time.format.DateTimeFormatter;
+import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
@@ -11,6 +12,7 @@ import java.util.concurrent.ConcurrentHashMap;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 
+import jakarta.annotation.PostConstruct;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -74,6 +76,28 @@ public class IntentService {
         this.webhookService = webhookService;
         this.samlValidationService = samlValidationService;
         this.webauthnCredentialService = webauthnCredentialService;
+    }
+
+    @PostConstruct
+    public void loadPendingIntents() {
+        List<IntentRecord> pending = persistenceService.findPending();
+        if (pending.isEmpty()) {
+            return;
+        }
+        int loaded = 0;
+        for (IntentRecord record : pending) {
+            if (record == null || record.getRequestId() == null) {
+                continue;
+            }
+            intents.put(record.getRequestId(), record);
+            if (record.getSigner() != null && record.getNonce() != null) {
+                nonceIndex.put(buildNonceKey(record.getSigner(), record.getNonce()), record.getRequestId());
+            }
+            loaded++;
+        }
+        if (loaded > 0) {
+            log.info("Loaded {} pending intents from persistence", loaded);
+        }
     }
 
     public IntentAckResponse processIntent(IntentSubmission submission) {
@@ -323,6 +347,12 @@ public class IntentService {
     private String buildNonceKey(IntentMeta meta) {
         String signer = meta.getSigner() == null ? "" : meta.getSigner();
         return signer.toLowerCase(Locale.ROOT) + ":" + meta.getNonce();
+    }
+
+    private String buildNonceKey(String signer, Long nonce) {
+        String safeSigner = signer == null ? "" : signer;
+        String safeNonce = nonce == null ? "" : nonce.toString();
+        return safeSigner.toLowerCase(Locale.ROOT) + ":" + safeNonce;
     }
 
     private IntentAckResponse buildAcceptedAck(String requestId) {

@@ -38,6 +38,16 @@ public class WebauthnOnboardingStatusResponse {
     private String credentialId;
 
     /**
+     * The credential public key (COSE, base64url-encoded).
+     */
+    private String publicKey;
+
+    /**
+     * RP ID used for the credential.
+     */
+    private String rpId;
+
+    /**
      * Error message if onboarding failed.
      */
     private String error;

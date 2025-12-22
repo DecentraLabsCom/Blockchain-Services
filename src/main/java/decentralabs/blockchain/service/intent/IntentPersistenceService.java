@@ -3,13 +3,16 @@ package decentralabs.blockchain.service.intent;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Timestamp;
+import java.util.List;
 import java.util.Optional;
 
 import javax.sql.DataSource;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 
+import decentralabs.blockchain.dto.intent.IntentSubmission;
 import decentralabs.blockchain.dto.intent.IntentStatus;
 import decentralabs.blockchain.util.LogSanitizer;
 import lombok.extern.slf4j.Slf4j;
@@ -19,6 +22,7 @@ import lombok.extern.slf4j.Slf4j;
 public class IntentPersistenceService {
 
     private final JdbcTemplate jdbcTemplate;
+    private final ObjectMapper objectMapper = new ObjectMapper();
 
     public IntentPersistenceService(DataSource dataSource) {
         this.jdbcTemplate = dataSource != null ? new JdbcTemplate(dataSource) : null;
@@ -87,6 +91,21 @@ public class IntentPersistenceService {
         }
     }
 
+    public List<IntentRecord> findPending() {
+        if (jdbcTemplate == null) {
+            return List.of();
+        }
+        try {
+            return jdbcTemplate.query(
+                "SELECT * FROM intents WHERE status IN ('queued', 'in_progress')",
+                this::mapRow
+            );
+        } catch (Exception e) {
+            log.warn("Intent pending lookup skipped: {}", LogSanitizer.sanitize(e.getMessage()));
+            return List.of();
+        }
+    }
+
     private IntentRecord mapRow(ResultSet rs, int rowNum) throws SQLException {
         IntentRecord record = new IntentRecord(
             rs.getString("request_id"),
@@ -106,6 +125,7 @@ public class IntentPersistenceService {
         record.setNonce(rs.getObject("nonce", Long.class));
         record.setExpiresAt(rs.getObject("expires_at", Long.class));
         record.setPayloadJson(rs.getString("payload_json"));
+        hydrateFromPayloadJson(record);
 
         if (createdAt != null) {
             record.setCreatedAt(createdAt.toInstant());
@@ -116,5 +136,52 @@ public class IntentPersistenceService {
             record.setUpdatedAt(createdAt.toInstant());
         }
         return record;
+    }
+
+    private void hydrateFromPayloadJson(IntentRecord record) {
+        String payloadJson = record.getPayloadJson();
+        if (payloadJson == null || payloadJson.isBlank()) {
+            return;
+        }
+        try {
+            IntentSubmission submission = objectMapper.readValue(payloadJson, IntentSubmission.class);
+            record.setActionPayload(submission.getActionPayload());
+            record.setReservationPayload(submission.getReservationPayload());
+            record.setSignature(submission.getSignature());
+
+            if (submission.getMeta() != null) {
+                record.setSigner(submission.getMeta().getSigner());
+                record.setExecutor(submission.getMeta().getExecutor());
+                record.setActionId(submission.getMeta().getAction());
+                record.setPayloadHash(submission.getMeta().getPayloadHash());
+                record.setNonce(submission.getMeta().getNonce());
+                record.setRequestedAt(submission.getMeta().getRequestedAt());
+                record.setExpiresAt(submission.getMeta().getExpiresAt());
+            }
+
+            if (record.getReservationPayload() != null) {
+                record.setPuc(record.getReservationPayload().getPuc());
+            } else if (record.getActionPayload() != null) {
+                record.setPuc(record.getActionPayload().getPuc());
+            }
+
+            if (record.getLabId() == null) {
+                if (record.getReservationPayload() != null && record.getReservationPayload().getLabId() != null) {
+                    record.setLabId(record.getReservationPayload().getLabId().toString());
+                } else if (record.getActionPayload() != null && record.getActionPayload().getLabId() != null) {
+                    record.setLabId(record.getActionPayload().getLabId().toString());
+                }
+            }
+
+            if (record.getReservationKey() == null) {
+                if (record.getReservationPayload() != null && record.getReservationPayload().getReservationKey() != null) {
+                    record.setReservationKey(record.getReservationPayload().getReservationKey());
+                } else if (record.getActionPayload() != null && record.getActionPayload().getReservationKey() != null) {
+                    record.setReservationKey(record.getActionPayload().getReservationKey());
+                }
+            }
+        } catch (Exception ex) {
+            log.warn("Unable to hydrate intent {} payload: {}", LogSanitizer.sanitize(record.getRequestId()), LogSanitizer.sanitize(ex.getMessage()));
+        }
     }
 }
