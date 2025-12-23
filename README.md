@@ -9,7 +9,7 @@ description: >-
 [![Security Scan](https://github.com/DecentraLabsCom/blockchain-services/actions/workflows/security.yml/badge.svg)](https://github.com/DecentraLabsCom/blockchain-services/actions/workflows/security.yml)
 [![Release](https://github.com/DecentraLabsCom/blockchain-services/actions/workflows/release.yml/badge.svg)](https://github.com/DecentraLabsCom/blockchain-services/actions/workflows/release.yml)
 
-Comprehensive Spring Boot service for the DecentraLabs ecosystem that combines authentication, authorization, and institutional treasury management with full Ethereum wallet capabilities. While it is designed so that it can be deployed as an independent container, it is recommended to use it with the Lab Gateway. 
+Comprehensive Spring Boot service for the DecentraLabs ecosystem that combines authentication, authorization, and institutional treasury management with full Ethereum wallet capabilities. While it is designed so that it can be deployed as an independent container (use case for lab institutional consumers), but it is also included in the Lab Gateway (use case for lab institutional providers). 
 
 <figure><img src=".gitbook/assets/DecentraLabs - Lab Access.png" alt=""><figcaption></figcaption></figure>
 
