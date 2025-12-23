@@ -22,7 +22,10 @@ import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 import decentralabs.blockchain.dto.auth.AuthResponse;
+import decentralabs.blockchain.dto.auth.CheckInResponse;
+import decentralabs.blockchain.dto.auth.InstitutionalCheckInRequest;
 import decentralabs.blockchain.dto.auth.SamlAuthRequest;
+import decentralabs.blockchain.service.auth.InstitutionalCheckInService;
 import decentralabs.blockchain.service.auth.SamlAuthService;
 
 /**
@@ -34,6 +37,9 @@ class SamlAuthControllerTest {
 
     @Mock
     private SamlAuthService samlAuthService;
+
+    @Mock
+    private InstitutionalCheckInService institutionalCheckInService;
 
     @InjectMocks
     private SamlAuthController samlAuthController;
@@ -198,6 +204,67 @@ class SamlAuthControllerTest {
                     .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isInternalServerError())
                 .andExpect(jsonPath("$.error").value("Internal server error"));
+        }
+    }
+
+    @Nested
+    @DisplayName("Institutional Check-In Endpoint Tests")
+    class InstitutionalCheckInTests {
+
+        @Test
+        @DisplayName("Should accept institutional check-in")
+        void shouldAcceptInstitutionalCheckIn() throws Exception {
+            InstitutionalCheckInRequest request = new InstitutionalCheckInRequest();
+            request.setReservationKey("0x" + "a".repeat(64));
+            request.setSamlAssertion("assertion");
+
+            CheckInResponse response = new CheckInResponse();
+            response.setValid(true);
+
+            when(institutionalCheckInService.checkIn(any(InstitutionalCheckInRequest.class)))
+                .thenReturn(response);
+
+            mockMvc.perform(post("/auth/checkin-institutional")
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.valid").value(true));
+        }
+
+        @Test
+        @DisplayName("Should return 400 for invalid institutional check-in")
+        void shouldReturn400ForInvalidInstitutionalCheckIn() throws Exception {
+            InstitutionalCheckInRequest request = new InstitutionalCheckInRequest();
+            request.setReservationKey("0x" + "a".repeat(64));
+            request.setSamlAssertion("assertion");
+
+            when(institutionalCheckInService.checkIn(any(InstitutionalCheckInRequest.class)))
+                .thenThrow(new IllegalArgumentException("Missing samlAssertion"));
+
+            mockMvc.perform(post("/auth/checkin-institutional")
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.valid").value(false))
+                .andExpect(jsonPath("$.reason").value("Missing samlAssertion"));
+        }
+
+        @Test
+        @DisplayName("Should return 401 for unauthorized institutional check-in")
+        void shouldReturn401ForUnauthorizedInstitutionalCheckIn() throws Exception {
+            InstitutionalCheckInRequest request = new InstitutionalCheckInRequest();
+            request.setReservationKey("0x" + "a".repeat(64));
+            request.setSamlAssertion("assertion");
+
+            when(institutionalCheckInService.checkIn(any(InstitutionalCheckInRequest.class)))
+                .thenThrow(new SecurityException("Invalid SAML assertion"));
+
+            mockMvc.perform(post("/auth/checkin-institutional")
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.valid").value(false))
+                .andExpect(jsonPath("$.reason").value("Invalid SAML assertion"));
         }
     }
 

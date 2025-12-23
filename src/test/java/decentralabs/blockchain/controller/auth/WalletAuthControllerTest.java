@@ -25,7 +25,10 @@ import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 import decentralabs.blockchain.dto.auth.AuthResponse;
+import decentralabs.blockchain.dto.auth.CheckInRequest;
+import decentralabs.blockchain.dto.auth.CheckInResponse;
 import decentralabs.blockchain.dto.auth.WalletAuthRequest;
+import decentralabs.blockchain.service.auth.CheckInOnChainService;
 import decentralabs.blockchain.service.auth.WalletAuthService;
 
 /**
@@ -37,6 +40,9 @@ class WalletAuthControllerTest {
 
     @Mock
     private WalletAuthService walletAuthService;
+
+    @Mock
+    private CheckInOnChainService checkInOnChainService;
 
     @InjectMocks
     private WalletAuthController walletAuthController;
@@ -83,6 +89,39 @@ class WalletAuthControllerTest {
 
             String content = result.getResponse().getContentAsString();
             assertThat(content).containsPattern("\"timestamp\"\\s*:\\s*\"\\d+\"");
+        }
+
+        @Test
+        @DisplayName("Should return typed data for check-in purpose")
+        void shouldReturnCheckInTypedData() throws Exception {
+            mockMvc.perform(get("/auth/message")
+                    .param("purpose", "checkin")
+                    .param("reservationKey", "0xabc")
+                    .param("signer", "0x1234567890123456789012345678901234567890"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.purpose").value("checkin"))
+                .andExpect(jsonPath("$.typedData").exists())
+                .andExpect(jsonPath("$.typedData.message.reservationKey").exists());
+        }
+
+        @Test
+        @DisplayName("Should return 400 when reservationKey is missing for check-in")
+        void shouldReturn400WhenReservationKeyMissing() throws Exception {
+            mockMvc.perform(get("/auth/message")
+                    .param("purpose", "checkin")
+                    .param("signer", "0x1234567890123456789012345678901234567890"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error").value("Missing reservationKey"));
+        }
+
+        @Test
+        @DisplayName("Should return 400 when signer is missing for check-in")
+        void shouldReturn400WhenSignerMissing() throws Exception {
+            mockMvc.perform(get("/auth/message")
+                    .param("purpose", "checkin")
+                    .param("reservationKey", "0xabc"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error").value("Missing signer"));
         }
     }
 
@@ -242,6 +281,69 @@ class WalletAuthControllerTest {
                     .contentType(MediaType.APPLICATION_JSON)
                     .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isInternalServerError());
+        }
+    }
+
+    @Nested
+    @DisplayName("Check-in Endpoint Tests")
+    class CheckInEndpointTests {
+
+        @Test
+        @DisplayName("Should accept valid check-in request")
+        void shouldAcceptValidCheckIn() throws Exception {
+            CheckInRequest request = new CheckInRequest();
+            request.setReservationKey("0x" + "a".repeat(64));
+            request.setSigner("0x1234567890123456789012345678901234567890");
+            request.setSignature("0xSignature");
+            request.setTimestamp(1700000000L);
+
+            CheckInResponse response = new CheckInResponse();
+            response.setValid(true);
+
+            when(checkInOnChainService.verifyAndSubmit(any(CheckInRequest.class)))
+                .thenReturn(response);
+
+            mockMvc.perform(post("/auth/checkin")
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.valid").value(true));
+        }
+
+        @Test
+        @DisplayName("Should return 400 for invalid check-in request")
+        void shouldReturn400ForInvalidCheckIn() throws Exception {
+            CheckInRequest request = new CheckInRequest();
+            request.setReservationKey("0x" + "a".repeat(64));
+            request.setSigner("0x1234567890123456789012345678901234567890");
+
+            when(checkInOnChainService.verifyAndSubmit(any(CheckInRequest.class)))
+                .thenThrow(new IllegalArgumentException("Missing signature"));
+
+            mockMvc.perform(post("/auth/checkin")
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.valid").value(false))
+                .andExpect(jsonPath("$.reason").value("Missing signature"));
+        }
+
+        @Test
+        @DisplayName("Should return 401 for unauthorized check-in")
+        void shouldReturn401ForUnauthorizedCheckIn() throws Exception {
+            CheckInRequest request = new CheckInRequest();
+            request.setReservationKey("0x" + "a".repeat(64));
+            request.setSigner("0x1234567890123456789012345678901234567890");
+
+            when(checkInOnChainService.verifyAndSubmit(any(CheckInRequest.class)))
+                .thenThrow(new SecurityException("Signature mismatch"));
+
+            mockMvc.perform(post("/auth/checkin")
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.valid").value(false))
+                .andExpect(jsonPath("$.reason").value("Signature mismatch"));
         }
     }
 }

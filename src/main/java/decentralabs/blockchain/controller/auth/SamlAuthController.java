@@ -1,8 +1,11 @@
 package decentralabs.blockchain.controller.auth;
 
 import decentralabs.blockchain.dto.auth.AuthResponse;
+import decentralabs.blockchain.dto.auth.CheckInResponse;
+import decentralabs.blockchain.dto.auth.InstitutionalCheckInRequest;
 import decentralabs.blockchain.dto.auth.SamlAuthRequest;
 import decentralabs.blockchain.service.auth.SamlAuthService;
+import decentralabs.blockchain.service.auth.InstitutionalCheckInService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -20,6 +23,9 @@ public class SamlAuthController {
     
     @Autowired
     private SamlAuthService samlAuthService;
+
+    @Autowired
+    private InstitutionalCheckInService institutionalCheckInService;
     
     /**
      * Endpoint for SAML authentication without booking information
@@ -60,6 +66,33 @@ public class SamlAuthController {
         } catch (Exception e) {
             log.error("SAML authentication error", e);
             return ResponseEntity.status(500).body(AuthResponse.errorJson("Internal server error"));
+        }
+    }
+
+    /**
+     * Endpoint to submit an institutional check-in using SAML assertion.
+     */
+    @PostMapping("/checkin-institutional")
+    public ResponseEntity<CheckInResponse> institutionalCheckIn(@RequestBody InstitutionalCheckInRequest request) {
+        try {
+            CheckInResponse response = institutionalCheckInService.checkIn(request);
+            return ResponseEntity.ok(response);
+        } catch (IllegalArgumentException e) {
+            CheckInResponse response = new CheckInResponse();
+            response.setValid(false);
+            response.setReason(e.getMessage());
+            return ResponseEntity.badRequest().body(response);
+        } catch (SecurityException e) {
+            CheckInResponse response = new CheckInResponse();
+            response.setValid(false);
+            response.setReason(e.getMessage());
+            return ResponseEntity.status(401).body(response);
+        } catch (Exception e) {
+            log.error("Institutional check-in error", e);
+            CheckInResponse response = new CheckInResponse();
+            response.setValid(false);
+            response.setReason("Internal server error");
+            return ResponseEntity.status(500).body(response);
         }
     }
 }
