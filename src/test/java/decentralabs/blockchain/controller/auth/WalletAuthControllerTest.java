@@ -30,6 +30,7 @@ import decentralabs.blockchain.dto.auth.CheckInResponse;
 import decentralabs.blockchain.dto.auth.WalletAuthRequest;
 import decentralabs.blockchain.service.auth.CheckInOnChainService;
 import decentralabs.blockchain.service.auth.WalletAuthService;
+import decentralabs.blockchain.service.wallet.BlockchainBookingService;
 
 /**
  * Unit tests for WalletAuthController.
@@ -43,6 +44,9 @@ class WalletAuthControllerTest {
 
     @Mock
     private CheckInOnChainService checkInOnChainService;
+
+    @Mock
+    private BlockchainBookingService blockchainBookingService;
 
     @InjectMocks
     private WalletAuthController walletAuthController;
@@ -105,13 +109,13 @@ class WalletAuthControllerTest {
         }
 
         @Test
-        @DisplayName("Should return 400 when reservationKey is missing for check-in")
+        @DisplayName("Should return 400 when reservationKey and labId are missing for check-in")
         void shouldReturn400WhenReservationKeyMissing() throws Exception {
             mockMvc.perform(get("/auth/message")
                     .param("purpose", "checkin")
                     .param("signer", "0x1234567890123456789012345678901234567890"))
                 .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.error").value("Missing reservationKey"));
+                .andExpect(jsonPath("$.error").value("Missing reservationKey or labId"));
         }
 
         @Test
@@ -122,6 +126,27 @@ class WalletAuthControllerTest {
                     .param("reservationKey", "0xabc"))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.error").value("Missing signer"));
+        }
+
+        @Test
+        @DisplayName("Should resolve reservationKey when labId is provided for check-in")
+        void shouldResolveReservationKeyFromLabId() throws Exception {
+            String resolvedKey = "0x" + "a".repeat(64);
+
+            when(blockchainBookingService.resolveActiveReservationKeyHex(
+                eq("0x1234567890123456789012345678901234567890"),
+                eq("10"),
+                eq("puc-1")
+            )).thenReturn(resolvedKey);
+
+            mockMvc.perform(get("/auth/message")
+                    .param("purpose", "checkin")
+                    .param("labId", "10")
+                    .param("puc", "puc-1")
+                    .param("signer", "0x1234567890123456789012345678901234567890"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.reservationKey").value(resolvedKey))
+                .andExpect(jsonPath("$.typedData.message.reservationKey").value(resolvedKey));
         }
     }
 

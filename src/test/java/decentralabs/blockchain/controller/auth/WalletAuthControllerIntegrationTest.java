@@ -24,6 +24,7 @@ import decentralabs.blockchain.dto.auth.CheckInResponse;
 import decentralabs.blockchain.dto.auth.WalletAuthRequest;
 import decentralabs.blockchain.service.auth.CheckInOnChainService;
 import decentralabs.blockchain.service.auth.WalletAuthService;
+import decentralabs.blockchain.service.wallet.BlockchainBookingService;
 
 @WebMvcTest(controllers = WalletAuthController.class)
 @AutoConfigureMockMvc(addFilters = false)
@@ -40,6 +41,9 @@ class WalletAuthControllerIntegrationTest {
 
     @MockitoBean
     private CheckInOnChainService checkInOnChainService;
+
+    @MockitoBean
+    private BlockchainBookingService blockchainBookingService;
 
     @Test
     void shouldReturnLoginMessage() throws Exception {
@@ -59,6 +63,25 @@ class WalletAuthControllerIntegrationTest {
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.purpose").value("checkin"))
             .andExpect(jsonPath("$.typedData.message.reservationKey").exists());
+    }
+
+    @Test
+    void shouldReturnCheckInTypedDataFromLabId() throws Exception {
+        String resolvedKey = "0x" + "b".repeat(64);
+
+        when(blockchainBookingService.resolveActiveReservationKeyHex(
+            eq("0x1234567890123456789012345678901234567890"),
+            eq("10"),
+            eq(null)
+        )).thenReturn(resolvedKey);
+
+        mockMvc.perform(get("/auth/message")
+                .param("purpose", "checkin")
+                .param("labId", "10")
+                .param("signer", "0x1234567890123456789012345678901234567890"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.reservationKey").value(resolvedKey))
+            .andExpect(jsonPath("$.typedData.message.reservationKey").value(resolvedKey));
     }
 
     @Test

@@ -6,6 +6,7 @@ import decentralabs.blockchain.dto.auth.CheckInResponse;
 import decentralabs.blockchain.dto.auth.WalletAuthRequest;
 import decentralabs.blockchain.service.auth.CheckInOnChainService;
 import decentralabs.blockchain.service.auth.WalletAuthService;
+import decentralabs.blockchain.service.wallet.BlockchainBookingService;
 import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
@@ -34,6 +35,9 @@ public class WalletAuthController {
     @Autowired
     private CheckInOnChainService checkInOnChainService;
 
+    @Autowired
+    private BlockchainBookingService blockchainBookingService;
+
     @org.springframework.beans.factory.annotation.Value("${intent.domain.name:DecentraLabsIntent}")
     private String domainName;
 
@@ -55,22 +59,35 @@ public class WalletAuthController {
     public ResponseEntity<Map<String, Object>> getMessage(
         @RequestParam(name = "purpose", required = false) String purpose,
         @RequestParam(name = "reservationKey", required = false) String reservationKey,
+        @RequestParam(name = "labId", required = false) String labId,
         @RequestParam(name = "puc", required = false) String puc,
         @RequestParam(name = "signer", required = false) String signer
     ) {
         String resolvedPurpose = purpose == null ? "login" : purpose.trim().toLowerCase();
         if ("checkin".equals(resolvedPurpose)) {
-            if (reservationKey == null || reservationKey.isBlank()) {
-                return ResponseEntity.badRequest().body(Map.of("error", "Missing reservationKey"));
-            }
             if (signer == null || signer.isBlank()) {
                 return ResponseEntity.badRequest().body(Map.of("error", "Missing signer"));
+            }
+            String resolvedKey = reservationKey;
+            if (resolvedKey == null || resolvedKey.isBlank()) {
+                if (labId == null || labId.isBlank()) {
+                    return ResponseEntity.badRequest().body(Map.of("error", "Missing reservationKey or labId"));
+                }
+                try {
+                    resolvedKey = blockchainBookingService.resolveActiveReservationKeyHex(signer, labId, puc);
+                } catch (IllegalArgumentException e) {
+                    return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+                }
+                if (resolvedKey == null || resolvedKey.isBlank()) {
+                    return ResponseEntity.badRequest().body(Map.of("error", "No active reservation found"));
+                }
             }
             long timestamp = System.currentTimeMillis() / 1000;
             Map<String, Object> response = new LinkedHashMap<>();
             response.put("purpose", "checkin");
             response.put("timestamp", timestamp);
-            response.put("typedData", buildCheckInTypedData(signer, reservationKey, puc, timestamp));
+            response.put("reservationKey", resolvedKey);
+            response.put("typedData", buildCheckInTypedData(signer, resolvedKey, puc, timestamp));
             return ResponseEntity.ok(response);
         }
 
