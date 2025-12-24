@@ -4,6 +4,7 @@ import decentralabs.blockchain.dto.auth.CheckInRequest;
 import decentralabs.blockchain.dto.auth.CheckInResponse;
 import decentralabs.blockchain.service.wallet.InstitutionalWalletService;
 import decentralabs.blockchain.service.wallet.WalletService;
+import java.io.IOException;
 import java.math.BigInteger;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
@@ -78,13 +79,18 @@ public class CheckInOnChainService {
         );
 
         String encoded = FunctionEncoder.encode(function);
-        EthSendTransaction tx = txManager.sendTransaction(
-            toWei(gasPriceGwei),
-            gasLimit,
-            contractAddress,
-            encoded,
-            BigInteger.ZERO
-        );
+        EthSendTransaction tx;
+        try {
+            tx = txManager.sendTransaction(
+                toWei(gasPriceGwei),
+                gasLimit,
+                contractAddress,
+                encoded,
+                BigInteger.ZERO
+            );
+        } catch (IOException e) {
+            throw new IllegalStateException("Failed to send check-in transaction: " + e.getMessage(), e);
+        }
 
         String txHash = tx.getTransactionHash();
         if (txHash == null || tx.hasError()) {
