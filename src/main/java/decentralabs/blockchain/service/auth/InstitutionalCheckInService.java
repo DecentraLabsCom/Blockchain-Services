@@ -230,7 +230,8 @@ public class InstitutionalCheckInService {
         byte[] sigBytes = new byte[65];
         System.arraycopy(signatureData.getR(), 0, sigBytes, 0, 32);
         System.arraycopy(signatureData.getS(), 0, sigBytes, 32, 32);
-        sigBytes[64] = signatureData.getV();
+        byte[] v = signatureData.getV();
+        sigBytes[64] = v[0];
         return Numeric.toHexString(sigBytes);
     }
 
