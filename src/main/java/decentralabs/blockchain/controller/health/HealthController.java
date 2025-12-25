@@ -76,6 +76,7 @@ public class HealthController {
             healthStatus.put("wallet_configured", institutionalWalletService.isConfigured());
             healthStatus.put("treasury_configured", isTreasuryConfigured());
             healthStatus.put("provider_registered", providerRegistrationService.isProviderRegistered());
+            healthStatus.put("invite_token_configured", true);
             healthStatus.put("endpoints", getEndpointStatus());
 
             return buildResponse(healthStatus);
@@ -98,9 +99,12 @@ public class HealthController {
         boolean dbUp = Boolean.TRUE.equals(status.get("database_up"));
         boolean walletConfigured = Boolean.TRUE.equals(status.get("wallet_configured"));
         boolean treasuryConfigured = Boolean.TRUE.equals(status.get("treasury_configured"));
+        boolean providerRegistered = Boolean.TRUE.equals(status.get("provider_registered"));
         boolean inviteConfigured = Boolean.TRUE.equals(status.get("invite_token_configured"));
 
-        if (!rpcUp || !keyPresent || !marketplaceReady || !dbUp || !walletConfigured || !treasuryConfigured || !inviteConfigured) {
+        boolean providerReady = !providersEnabled || providerRegistered;
+
+        if (!rpcUp || !keyPresent || !marketplaceReady || !dbUp || !walletConfigured || !treasuryConfigured || !providerReady || !inviteConfigured) {
             status.put("status", "DEGRADED");
             return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).body(status);
         }

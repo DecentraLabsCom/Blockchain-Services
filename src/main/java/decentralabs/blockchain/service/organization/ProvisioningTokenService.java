@@ -2,6 +2,7 @@ package decentralabs.blockchain.service.organization;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import decentralabs.blockchain.dto.provider.ConsumerProvisioningTokenPayload;
 import decentralabs.blockchain.dto.provider.ProvisioningTokenPayload;
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.JwtParser;
@@ -41,6 +42,9 @@ public class ProvisioningTokenService {
     // Simple in-memory replay guard keyed by jti with expiration time
     private final Map<String, Instant> usedJti = new ConcurrentHashMap<>();
 
+    /**
+     * Validates provider provisioning token and extracts provider configuration
+     */
     public ProvisioningTokenPayload validateAndExtract(String token, String configuredMarketplaceBaseUrl) {
         try {
             // Decode payload without verifying to get candidate marketplace base URL
@@ -56,7 +60,7 @@ public class ProvisioningTokenService {
             String kid = headerNode.path("kid").asText(null);
             PublicKey publicKey = selectRsaPublicKey(jwkSet, kid);
 
-            JwtParser parser = Jwts.parserBuilder()
+            JwtParser parser = Jwts.parser()
                 .setSigningKey(publicKey)
                 .requireIssuer("marketplace-provisioning")
                 .requireAudience("blockchain-services")
@@ -90,6 +94,64 @@ public class ProvisioningTokenService {
         } catch (Exception ex) {
             log.error("Failed to validate provisioning token: {}", ex.getMessage());
             throw new IllegalArgumentException("Invalid provisioning token");
+        }
+    }
+
+    /**
+     * Validates consumer provisioning token (consumer-only institutions, no labs)
+     */
+    public ConsumerProvisioningTokenPayload validateAndExtractConsumer(String token, String configuredMarketplaceBaseUrl) {
+        try {
+            // Decode payload without verifying to get candidate marketplace base URL
+            JsonNode headerNode = decodePart(token, 0);
+            JsonNode payloadNode = decodePart(token, 1);
+
+            String type = payloadNode.path("type").asText("");
+            if (!"consumer".equals(type)) {
+                throw new IllegalArgumentException("Token is not a consumer provisioning token");
+            }
+
+            String tokenMarketplaceBaseUrl = payloadNode.path("marketplaceBaseUrl").asText("");
+            String marketplaceBaseUrl = resolveMarketplaceBaseUrl(configuredMarketplaceBaseUrl, tokenMarketplaceBaseUrl);
+
+            String jwksUrl = marketplaceBaseUrl + "/api/institutions/provisionConsumer/jwks";
+            JsonNode jwkSet = fetchJwkSet(jwksUrl);
+
+            String kid = headerNode.path("kid").asText(null);
+            PublicKey publicKey = selectRsaPublicKey(jwkSet, kid);
+
+            JwtParser parser = Jwts.parser()
+                .setSigningKey(publicKey)
+                .requireIssuer("marketplace-provisioning")
+                .requireAudience("blockchain-services")
+                .setAllowedClockSkewSeconds(60)
+                .build();
+
+            Claims claims = parser.parseClaimsJws(token).getBody();
+
+            enforceReplayProtection(claims.getId(), claims.getExpiration().toInstant());
+
+            ConsumerProvisioningTokenPayload payload = ConsumerProvisioningTokenPayload.builder()
+                .type("consumer")
+                .marketplaceBaseUrl(validateHttps(marketplaceBaseUrl, "marketplace base URL"))
+                .apiKey(validateApiKey(claims.get("apiKey", String.class)))
+                .consumerName(requireNonBlank(claims.get("consumerName", String.class), "consumer name"))
+                .consumerOrganization(requireNonBlank(claims.get("consumerOrganization", String.class), "consumer organization"))
+                .jti(claims.getId())
+                .build();
+
+            // Ensure claim marketplace matches the trusted base
+            String claimBase = claims.get("marketplaceBaseUrl", String.class);
+            if (claimBase != null && !normalizeUrl(claimBase).equals(normalizeUrl(marketplaceBaseUrl))) {
+                throw new IllegalArgumentException("Marketplace base URL mismatch");
+            }
+
+            return payload;
+        } catch (IllegalArgumentException ex) {
+            throw ex;
+        } catch (Exception ex) {
+            log.error("Failed to validate consumer provisioning token: {}", ex.getMessage());
+            throw new IllegalArgumentException("Invalid consumer provisioning token");
         }
     }
 

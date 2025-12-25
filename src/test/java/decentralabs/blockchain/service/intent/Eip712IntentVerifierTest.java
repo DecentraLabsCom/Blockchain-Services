@@ -428,7 +428,6 @@ class Eip712IntentVerifierTest {
         payload.setUri("");
         payload.setPrice(BigInteger.TEN);
         payload.setMaxBatch(BigInteger.ZERO);
-        payload.setAuth("");
         payload.setAccessURI("");
         payload.setAccessKey("");
         payload.setTokenURI("");

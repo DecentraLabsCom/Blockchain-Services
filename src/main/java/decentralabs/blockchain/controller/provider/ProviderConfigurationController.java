@@ -1,9 +1,11 @@
 package decentralabs.blockchain.controller.provider;
 
+import decentralabs.blockchain.dto.provider.ConsumerProvisioningTokenPayload;
 import decentralabs.blockchain.dto.provider.ProviderConfigurationRequest;
 import decentralabs.blockchain.dto.provider.ProviderConfigurationResponse;
 import decentralabs.blockchain.dto.provider.ProvisioningTokenPayload;
 import decentralabs.blockchain.dto.provider.ProvisioningTokenRequest;
+import decentralabs.blockchain.service.organization.ConsumerRegistrationService;
 import decentralabs.blockchain.service.organization.ProviderConfigurationPersistenceService;
 import decentralabs.blockchain.service.organization.ProviderRegistrationService;
 import decentralabs.blockchain.service.organization.ProvisioningTokenService;
@@ -16,7 +18,6 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Controller;
 import org.springframework.web.bind.annotation.*;
 
-import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -39,6 +40,7 @@ public class ProviderConfigurationController {
     );
 
     private final ProviderRegistrationService registrationService;
+    private final ConsumerRegistrationService consumerRegistrationService;
     private final ProviderConfigurationPersistenceService persistenceService;
     private final ProvisioningTokenService provisioningTokenService;
 
@@ -200,7 +202,7 @@ public class ProviderConfigurationController {
     /**
      * Apply provisioning token issued by Marketplace (SSO staff) and register provider
      */
-    @PostMapping("/apply-token")
+    @PostMapping("/apply-provider-token")
     @ResponseBody
     public ResponseEntity<Map<String, Object>> applyProvisioningToken(@Valid @RequestBody ProvisioningTokenRequest request) {
         Map<String, Object> response = new HashMap<>();
@@ -245,6 +247,52 @@ public class ProviderConfigurationController {
             log.error("Failed to apply provisioning token", e);
             response.put("success", false);
             response.put("error", "Failed to apply provisioning token: " + e.getMessage());
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(response);
+        }
+    }
+
+    /**
+     * Apply consumer provisioning token issued by Marketplace (SSO staff) and register as consumer-only institution
+     * Consumer-only institutions only need wallet/treasury for reservations, they don't publish labs or provide auth endpoint
+     */
+    @PostMapping("/apply-consumer-token")
+    @ResponseBody
+    public ResponseEntity<Map<String, Object>> applyConsumerProvisioningToken(@Valid @RequestBody ProvisioningTokenRequest request) {
+        Map<String, Object> response = new HashMap<>();
+        try {
+            ConfigSnapshot snapshot = loadSnapshot();
+            ConsumerProvisioningTokenPayload payload = provisioningTokenService.validateAndExtractConsumer(request.getToken(), snapshot.marketplaceBaseUrl());
+
+            // Persist minimal consumer configuration from token (source=consumer-token)
+            persistenceService.saveConfigurationFromConsumerToken(payload);
+
+            boolean registered = consumerRegistrationService.registerConsumer(
+                payload.getMarketplaceBaseUrl(),
+                payload.getApiKey(),
+                payload.getConsumerOrganization()
+            );
+
+            response.put("success", true);
+            response.put("registered", registered);
+            response.put("consumerMode", true);
+            response.put("config", Map.of(
+                "marketplaceBaseUrl", payload.getMarketplaceBaseUrl(),
+                "consumerName", payload.getConsumerName(),
+                "consumerOrganization", payload.getConsumerOrganization()
+            ));
+
+            return registered
+                ? ResponseEntity.ok(response)
+                : ResponseEntity.status(HttpStatus.PARTIAL_CONTENT).body(response);
+
+        } catch (IllegalArgumentException e) {
+            response.put("success", false);
+            response.put("error", e.getMessage());
+            return ResponseEntity.badRequest().body(response);
+        } catch (Exception e) {
+            log.error("Failed to apply consumer provisioning token", e);
+            response.put("success", false);
+            response.put("error", "Failed to apply consumer provisioning token: " + e.getMessage());
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(response);
         }
     }

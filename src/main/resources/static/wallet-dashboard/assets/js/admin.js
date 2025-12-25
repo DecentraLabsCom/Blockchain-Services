@@ -57,7 +57,7 @@ function maybePromptInviteToken(force = false) {
     if (!force && DashboardState.invitePromptedWallet === wallet) {
         return;
     }
-    showInviteTokenModal();
+    showProvisioningTokenModal();
 }
 
 // Utility: Format wei to ETH
@@ -270,8 +270,8 @@ function updateLastRefreshTime() {
     }
 }
 
-function renderInviteResult(result) {
-    const container = document.getElementById('inviteResult');
+function renderProvisioningResult(result) {
+    const container = document.getElementById('provisioningResult');
     if (!container) {
         return;
     }
@@ -302,7 +302,7 @@ function renderInviteResult(result) {
 
 // Update header button visibility based on wallet and token status
 function updateApplyInviteButtonVisibility() {
-    const headerBtn = document.getElementById('applyInviteTokenHeaderBtn');
+    const headerBtn = document.getElementById('applyProvisioningTokenHeaderBtn');
     if (headerBtn) {
         // Show button only if wallet is configured AND token not yet applied
         const shouldShow = DashboardState.walletAddress && !DashboardState.inviteTokenApplied;
@@ -311,10 +311,10 @@ function updateApplyInviteButtonVisibility() {
 }
 
 // Show/hide invite token modal
-function showInviteTokenModal() {
-    const modal = document.getElementById('inviteTokenModal');
-    const tokenInput = document.getElementById('inviteTokenInput');
-    const resultDiv = document.getElementById('inviteResult');
+function showProvisioningTokenModal() {
+    const modal = document.getElementById('provisioningTokenModal');
+    const tokenInput = document.getElementById('provisioningTokenInput');
+    const resultDiv = document.getElementById('provisioningResult');
     
     if (DashboardState.walletAddress) {
         DashboardState.invitePromptedWallet = DashboardState.walletAddress;
@@ -327,22 +327,22 @@ function showInviteTokenModal() {
     }
 }
 
-function hideInviteTokenModal() {
-    const modal = document.getElementById('inviteTokenModal');
+function hideProvisioningTokenModal() {
+    const modal = document.getElementById('provisioningTokenModal');
     if (modal) {
         modal.style.display = 'none';
     }
 }
 
-async function applyInviteToken() {
-    const tokenInput = document.getElementById('inviteTokenInput');
+async function applyProvisioningToken() {
+    const tokenInput = document.getElementById('provisioningTokenInput');
     if (!tokenInput) {
         return;
     }
 
     const token = tokenInput.value.trim();
     if (!token) {
-        showToast('Invite token cannot be empty.', 'error');
+        showToast('Provisioning token cannot be empty.', 'error');
         return;
     }
 
@@ -352,22 +352,26 @@ async function applyInviteToken() {
     }
 
     try {
-        showToast('Applying invite token...', 'info');
-        const response = await fetch('/onboarding/token/apply', {
+        showToast('Applying provisioning token...', 'info');
+        
+        // Detect token type by decoding JWT payload
+        const tokenType = detectTokenType(token);
+        const endpoint = tokenType === 'consumer' 
+            ? '/provider-config/apply-consumer-token'
+            : '/provider-config/apply-provider-token';
+        
+        const response = await fetch(endpoint, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                token,
-                walletAddress: DashboardState.walletAddress
-            })
+            body: JSON.stringify({ token })
         });
 
         const data = await response.json();
         if (!response.ok) {
-            throw new Error(data.message || 'Unable to apply invite token.');
+            throw new Error(data.error || 'Unable to apply provisioning token.');
         }
 
-        renderInviteResult(data);
+        renderProvisioningResult(data, tokenType);
         
         if (data.success) {
             DashboardState.inviteTokenApplied = true;
@@ -376,18 +380,66 @@ async function applyInviteToken() {
             updateApplyInviteButtonVisibility();
         }
 
-        await showInfoModal(
-            'Invite Token Applied',
-            data.message || 'Organizations registered on-chain.',
-            data.success
-        );
+        const title = tokenType === 'consumer' 
+            ? 'Consumer Token Applied'
+            : 'Provider Token Applied';
+        const message = data.registered 
+            ? `Registration completed successfully. Type: ${tokenType}`
+            : `Configuration saved but registration pending. Type: ${tokenType}`;
 
-        hideInviteTokenModal();
+        await showInfoModal(title, message, data.success);
+
+        hideProvisioningTokenModal();
         await refreshAllData();
     } catch (error) {
-        console.error('Failed to apply invite token:', error);
-        showToast(error.message || 'Failed to apply invite token', 'error');
-        renderInviteResult({ domains: [{ organization: 'Error', error: error.message }] });
+        console.error('Failed to apply provisioning token:', error);
+        showToast(error.message || 'Failed to apply provisioning token', 'error');
+        renderProvisioningResult({ error: error.message }, 'unknown');
+    }
+}
+
+// Helper function to detect token type from JWT payload
+function detectTokenType(token) {
+    try {
+        const parts = token.split('.');
+        if (parts.length !== 3) return 'provider'; // Default to provider
+        
+        const payload = JSON.parse(atob(parts[1]));
+        return payload.type || 'provider'; // Check 'type' claim
+    } catch (error) {
+        console.warn('Failed to decode token, defaulting to provider type', error);
+        return 'provider';
+    }
+}
+
+// Render provisioning result
+function renderProvisioningResult(data, tokenType) {
+    const resultDiv = document.getElementById('provisioningResult');
+    if (!resultDiv) return;
+    
+    if (data.error) {
+        resultDiv.innerHTML = `<div class="error-message"><i class="fas fa-exclamation-triangle"></i> ${data.error}</div>`;
+        return;
+    }
+    
+    if (data.success) {
+        const config = data.config || {};
+        let html = '<div class="success-message"><i class="fas fa-check-circle"></i> Token applied successfully!</div>';
+        html += '<div class="token-details">';
+        html += `<p><strong>Type:</strong> ${tokenType === 'consumer' ? 'Consumer (reserves only)' : 'Provider (publishes labs)'}</p>`;
+        
+        if (tokenType === 'consumer') {
+            if (config.consumerName) html += `<p><strong>Name:</strong> ${config.consumerName}</p>`;
+            if (config.consumerOrganization) html += `<p><strong>Organization:</strong> ${config.consumerOrganization}</p>`;
+        } else {
+            if (config.providerName) html += `<p><strong>Provider:</strong> ${config.providerName}</p>`;
+            if (config.providerOrganization) html += `<p><strong>Organization:</strong> ${config.providerOrganization}</p>`;
+            if (config.publicBaseUrl) html += `<p><strong>Auth URI:</strong> ${config.publicBaseUrl}</p>`;
+        }
+        
+        html += `<p><strong>Registered:</strong> ${data.registered ? 'Yes ✓' : 'Pending'}</p>`;
+        html += '</div>';
+        resultDiv.innerHTML = html;
     }
 }
 
@@ -437,7 +489,7 @@ async function loadSystemStatus() {
             } else {
                 DashboardState.inviteTokenApplied = false;
                 DashboardState.invitePromptedWallet = null;
-                hideInviteTokenModal();
+                hideProvisioningTokenModal();
             }
             
             // Update marketplace URL if provided
@@ -1030,25 +1082,25 @@ function setupButtonHandlers() {
     }
 
     // Apply Invite Token button in header
-    const applyInviteHeaderBtn = document.getElementById('applyInviteTokenHeaderBtn');
-    if (applyInviteHeaderBtn) {
-        applyInviteHeaderBtn.addEventListener('click', showInviteTokenModal);
+    const applyProvisioningTokenHeaderBtn = document.getElementById('applyProvisioningTokenHeaderBtn');
+    if (applyProvisioningTokenHeaderBtn) {
+        applyProvisioningTokenHeaderBtn.addEventListener('click', showProvisioningTokenModal);
     }
     
     // Apply Invite Token button in modal
-    const applyInviteBtn = document.getElementById('applyInviteBtn');
-    if (applyInviteBtn) {
-        applyInviteBtn.addEventListener('click', applyInviteToken);
+    const applyProvisioningBtn = document.getElementById('applyProvisioningBtn');
+    if (applyProvisioningBtn) {
+        applyProvisioningBtn.addEventListener('click', applyProvisioningToken);
     }
     
     // Cancel/Close Invite Modal buttons
-    const closeInviteModalBtn = document.getElementById('closeInviteModalBtn');
-    const cancelInviteBtn = document.getElementById('cancelInviteBtn');
-    if (closeInviteModalBtn) {
-        closeInviteModalBtn.addEventListener('click', hideInviteTokenModal);
+    const closeProvisioningModalBtn = document.getElementById('closeProvisioningModalBtn');
+    const cancelProvisioningBtn = document.getElementById('cancelProvisioningBtn');
+    if (closeProvisioningModalBtn) {
+        closeProvisioningModalBtn.addEventListener('click', hideProvisioningTokenModal);
     }
-    if (cancelInviteBtn) {
-        cancelInviteBtn.addEventListener('click', hideInviteTokenModal);
+    if (cancelProvisioningBtn) {
+        cancelProvisioningBtn.addEventListener('click', hideProvisioningTokenModal);
     }
     
     // Network buttons

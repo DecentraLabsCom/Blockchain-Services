@@ -1,5 +1,6 @@
 package decentralabs.blockchain.service.organization;
 
+import decentralabs.blockchain.dto.provider.ConsumerProvisioningTokenPayload;
 import decentralabs.blockchain.dto.provider.ProviderConfigurationRequest;
 import decentralabs.blockchain.dto.provider.ProvisioningTokenPayload;
 import lombok.extern.slf4j.Slf4j;
@@ -56,6 +57,38 @@ public class ProviderConfigurationPersistenceService {
             payload.getPublicBaseUrl(),
             "token"
         );
+    }
+
+    /**
+     * Save minimal configuration from consumer provisioning token (no provider fields)
+     */
+    public void saveConfigurationFromConsumerToken(ConsumerProvisioningTokenPayload payload) throws IOException {
+        Properties properties = new Properties();
+
+        // Load existing properties if file exists
+        Path configPath = getConfigFilePath();
+        if (Files.exists(configPath)) {
+            try (FileInputStream fis = new FileInputStream(configPath.toFile())) {
+                properties.load(fis);
+            }
+        } else {
+            // Create directory if it doesn't exist
+            Files.createDirectories(configPath.getParent());
+        }
+
+        // Consumer-only configuration (no publicBaseUrl, no provider fields)
+        properties.setProperty("marketplace.base-url", payload.getMarketplaceBaseUrl());
+        properties.setProperty("marketplace.api-key", payload.getApiKey());
+        properties.setProperty("consumer.name", payload.getConsumerName());
+        properties.setProperty("provider.organization", payload.getConsumerOrganization()); // schacHomeOrganization
+        properties.setProperty("provisioning.source", "consumer-token");
+
+        // Save to file
+        try (FileOutputStream fos = new FileOutputStream(configPath.toFile())) {
+            properties.store(fos, "Consumer Configuration - Auto-saved by DecentraLabs Blockchain Services");
+        }
+
+        log.info("Consumer configuration saved to {}", configPath);
     }
 
     private void saveConfigurationInternal(

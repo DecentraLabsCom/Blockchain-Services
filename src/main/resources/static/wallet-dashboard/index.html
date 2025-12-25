@@ -111,15 +111,47 @@
             <div class="welcome-modal-body">
                 <div class="welcome-message">
                     <p><strong>No institutional wallet detected.</strong></p>
-                    <p>To get started with DecentraLabs, ensure your institution is properly configured in the system.</p>
-                    <p>Provider registration is handled automatically on service startup. Check your configuration files and logs.</p>
+                    <p>To get started with DecentraLabs, you'll need a <strong>provisioning token</strong> from the marketplace.</p>
+                    <p>Visit the marketplace now to request access for your institution.</p>
                 </div>
                 <div class="welcome-actions">
+                    <a id="marketplaceLink" href="https://marketplace-decentralabs.vercel.app/" target="_blank" class="btn-marketplace">
+                        <i class="fas fa-store"></i>
+                        Get Provisioning Token from Marketplace
+                    </a>
                     <button id="continueBtn" class="btn-continue">
                         <i class="fas fa-check-circle"></i>
-                        I Have Configured My Institution, Continue
+                        I Already Have a Token, Let Me In
                     </button>
                 </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Provisioning Token Modal -->
+    <div id="provisioningTokenModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2><i class="fas fa-ticket-alt"></i> Apply Provisioning Token</h2>
+                <button class="modal-close" id="closeProvisioningModalBtn">&times;</button>
+            </div>
+            <div class="modal-body">
+                <p class="info-text">
+                    Paste the provisioning token provided by the DecentraLabs marketplace to register your institution on-chain.
+                    Supports both <strong>Provider</strong> (publishes labs) and <strong>Consumer</strong> (only reserves labs) tokens.
+                </p>
+                <textarea id="provisioningTokenInput" class="token-input" rows="5"
+                    placeholder="Paste your provisioning token here..."></textarea>
+                <div id="provisioningResult" class="invite-result"></div>
+            </div>
+            <div class="modal-footer">
+                <button id="applyProvisioningBtn" class="btn btn-primary">
+                    <i class="fas fa-paper-plane"></i>
+                    Apply Token
+                </button>
+                <button id="cancelProvisioningBtn" class="btn btn-secondary">
+                    Cancel
+                </button>
             </div>
         </div>
     </div>
@@ -136,6 +168,9 @@
                     <button id="openProviderConfigBtn" class="btn btn-secondary">
                         <i class="fas fa-cog"></i>
                         Provider Config
+                    </button>
+                    <button id="applyProvisioningTokenHeaderBtn" class="btn btn-primary" style="display: none;">
+                        <i class="fas fa-ticket-alt"></i> Use Provisioning Token
                     </button>
                     <button id="refreshBtn" class="btn btn-secondary">
                         <span class="icon">↻</span>
