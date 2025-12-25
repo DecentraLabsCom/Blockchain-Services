@@ -181,17 +181,6 @@ class ActionIntentPayloadTest {
         }
 
         @Test
-        @DisplayName("Should get and set auth")
-        void shouldGetSetAuth() {
-            ActionIntentPayload payload = new ActionIntentPayload();
-            String auth = "bearer-token-123";
-
-            payload.setAuth(auth);
-
-            assertEquals(auth, payload.getAuth());
-        }
-
-        @Test
         @DisplayName("Should get and set accessURI")
         void shouldGetSetAccessUri() {
             ActionIntentPayload payload = new ActionIntentPayload();

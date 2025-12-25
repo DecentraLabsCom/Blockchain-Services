@@ -32,7 +32,7 @@ import org.web3j.protocol.core.methods.response.Web3ClientVersion;
 
 import decentralabs.blockchain.service.auth.MarketplaceKeyService;
 import decentralabs.blockchain.service.auth.SamlValidationService;
-import decentralabs.blockchain.service.organization.InstitutionInviteService;
+import decentralabs.blockchain.service.organization.ProviderRegistrationService;
 import decentralabs.blockchain.service.wallet.InstitutionalWalletService;
 import decentralabs.blockchain.service.wallet.WalletService;
 
@@ -52,7 +52,7 @@ class HealthControllerTest {
     private InstitutionalWalletService institutionalWalletService;
 
     @Mock
-    private InstitutionInviteService institutionInviteService;
+    private ProviderRegistrationService providerRegistrationService;
 
     @Mock
     private ObjectProvider<JdbcTemplate> jdbcTemplateProvider;
@@ -76,7 +76,7 @@ class HealthControllerTest {
             walletService,
             samlValidationService,
             institutionalWalletService,
-            institutionInviteService,
+            providerRegistrationService,
             jdbcTemplateProvider
         );
 
@@ -335,14 +335,14 @@ class HealthControllerTest {
         }
 
         @Test
-        @DisplayName("Should return DEGRADED when invite not configured")
-        void shouldReturnDegradedWhenInviteNotConfigured() throws Exception {
+        @DisplayName("Should return DEGRADED when provider not registered")
+        void shouldReturnDegradedWhenProviderNotRegistered() throws Exception {
             setupHealthyEnvironment();
-            when(institutionInviteService.isInviteConfigured()).thenReturn(false);
+            when(providerRegistrationService.isProviderRegistered()).thenReturn(false);
 
             mockMvc.perform(get("/health"))
                 .andExpect(status().isServiceUnavailable())
-                .andExpect(jsonPath("$.invite_token_configured").value(false));
+                .andExpect(jsonPath("$.provider_registered").value(false));
         }
     }
 
@@ -351,7 +351,7 @@ class HealthControllerTest {
         lenient().when(marketplaceKeyService.ensureKey(anyBoolean())).thenReturn(true);
         lenient().when(samlValidationService.isConfigured()).thenReturn(true);
         lenient().when(institutionalWalletService.isConfigured()).thenReturn(true);
-        lenient().when(institutionInviteService.isInviteConfigured()).thenReturn(true);
+        lenient().when(providerRegistrationService.isProviderRegistered()).thenReturn(true);
         lenient().when(jdbcTemplateProvider.getIfAvailable()).thenReturn(jdbcTemplate);
         lenient().when(jdbcTemplate.queryForObject(anyString(), eq(Integer.class))).thenReturn(1);
 

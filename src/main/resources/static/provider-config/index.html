@@ -1,0 +1,568 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DecentraLabs - Provider Configuration</title>
+    <link rel="icon" type="image/x-icon" href="../wallet-dashboard/assets/images/favicon.ico">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="../wallet-dashboard/assets/css/admin.css">
+    <style>
+        body {
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+        }
+
+        .config-container {
+            width: 100%;
+            max-width: 700px;
+            margin: 2rem;
+        }
+
+        .config-card {
+            background: white;
+            border-radius: 16px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            overflow: hidden;
+        }
+
+        .config-header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 2.5rem 2rem;
+            text-align: center;
+        }
+
+        .config-header h1 {
+            margin: 0;
+            font-size: 2rem;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.75rem;
+        }
+
+        .config-header p {
+            margin: 1rem 0 0 0;
+            opacity: 0.95;
+            font-size: 1rem;
+        }
+
+        .config-body {
+            padding: 2.5rem 2rem;
+        }
+
+        .form-section {
+            margin-bottom: 2rem;
+        }
+
+        .form-section:last-child {
+            margin-bottom: 0;
+        }
+
+        .form-section-title {
+            font-size: 1.1rem;
+            font-weight: 600;
+            color: #2d3748;
+            margin-bottom: 1rem;
+            padding-bottom: 0.5rem;
+            border-bottom: 2px solid #e2e8f0;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .form-group {
+            margin-bottom: 1.5rem;
+        }
+
+        .form-group label {
+            display: block;
+            font-weight: 500;
+            margin-bottom: 0.5rem;
+            color: #4a5568;
+            font-size: 0.95rem;
+        }
+
+        .form-group input {
+            width: 100%;
+            padding: 0.85rem 1rem;
+            border: 2px solid #e2e8f0;
+            border-radius: 8px;
+            font-size: 1rem;
+            transition: all 0.2s;
+            box-sizing: border-box;
+        }
+
+        .form-group input:focus {
+            outline: none;
+            border-color: #667eea;
+            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+        }
+
+        .form-group input:disabled {
+            background-color: #f7fafc;
+            cursor: not-allowed;
+        }
+
+        .form-hint {
+            font-size: 0.85rem;
+            color: #718096;
+            margin-top: 0.25rem;
+        }
+
+        .btn {
+            padding: 1rem 2rem;
+            border: none;
+            border-radius: 8px;
+            font-size: 1rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.5rem;
+        }
+
+        .btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            width: 100%;
+        }
+
+        .btn-primary:hover:not(:disabled) {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 20px rgba(102, 126, 234, 0.3);
+        }
+
+        .btn-secondary {
+            background: #e2e8f0;
+            color: #2d3748;
+            width: 100%;
+            margin-top: 0.75rem;
+        }
+
+        .btn-secondary:hover:not(:disabled) {
+            background: #cbd5e0;
+        }
+
+        .alert {
+            padding: 1rem;
+            border-radius: 8px;
+            margin-bottom: 1.5rem;
+            display: none;
+        }
+
+        .alert-success {
+            background-color: #c6f6d5;
+            color: #22543d;
+            border: 1px solid #9ae6b4;
+        }
+
+        .alert-error {
+            background-color: #fed7d7;
+            color: #742a2a;
+            border: 1px solid #fc8181;
+        }
+
+        .alert-info {
+            background-color: #bee3f8;
+            color: #2c5282;
+            border: 1px solid #90cdf4;
+        }
+
+        .loading-spinner {
+            display: inline-block;
+            width: 1rem;
+            height: 1rem;
+            border: 2px solid rgba(255, 255, 255, 0.3);
+            border-radius: 50%;
+            border-top-color: white;
+            animation: spin 0.8s linear infinite;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        .config-footer {
+            background: #f7fafc;
+            padding: 1.5rem 2rem;
+            text-align: center;
+            font-size: 0.875rem;
+            color: #718096;
+        }
+
+        .status-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 0.5rem 1rem;
+            border-radius: 20px;
+            font-size: 0.875rem;
+            font-weight: 600;
+            margin-top: 1rem;
+        }
+
+        .status-badge.registered {
+            background-color: #c6f6d5;
+            color: #22543d;
+        }
+
+        .status-badge.not-registered {
+            background-color: #fed7d7;
+            color: #742a2a;
+        }
+    </style>
+</head>
+<body>
+    <div class="config-container">
+        <div class="config-card">
+            <div class="config-header">
+                <h1>
+                    <i class="fas fa-cog"></i>
+                    Provider Configuration
+                </h1>
+                <p>Configure your institution's provider settings to register with the DecentraLabs Marketplace</p>
+                <div id="statusBadge"></div>
+            </div>
+
+            <div class="config-body">
+                <!-- Alert messages -->
+                <div id="successAlert" class="alert alert-success"></div>
+                <div id="errorAlert" class="alert alert-error"></div>
+                <div id="infoAlert" class="alert alert-info"></div>
+
+                <form id="providerConfigForm">
+                    <!-- Marketplace Configuration -->
+                    <div class="form-section">
+                        <div class="form-section-title">
+                            <i class="fas fa-store"></i>
+                            Marketplace Configuration
+                        </div>
+                        <div class="form-group">
+                            <label for="marketplaceBaseUrl">Marketplace Base URL</label>
+                            <input 
+                                type="url" 
+                                id="marketplaceBaseUrl" 
+                                name="marketplaceBaseUrl" 
+                                placeholder="https://marketplace-decentralabs.vercel.app"
+                                required
+                            />
+                            <div class="form-hint">The base URL of the DecentraLabs Marketplace</div>
+                        </div>
+                        <div class="form-group">
+                            <label for="marketplaceApiKey">Marketplace API Key</label>
+                            <input 
+                                type="password" 
+                                id="marketplaceApiKey" 
+                                name="marketplaceApiKey" 
+                                placeholder="Enter shared secret (min. 32 characters)"
+                                required
+                                minlength="32"
+                            />
+                            <div class="form-hint">Shared secret configured in both Marketplace and Blockchain Services (INSTITUTIONAL_SERVICES_API_KEY)</div>
+                        </div>
+                    </div>
+
+                    <!-- Provider Information -->
+                    <div class="form-section">
+                        <div class="form-section-title">
+                            <i class="fas fa-university"></i>
+                            Provider Information
+                        </div>
+                        <div class="form-group">
+                            <label for="providerName">Institution Name</label>
+                            <input 
+                                type="text" 
+                                id="providerName" 
+                                name="providerName" 
+                                placeholder="My University"
+                                required
+                            />
+                            <div class="form-hint">Full name of your institution</div>
+                        </div>
+                        <div class="form-group">
+                            <label for="providerEmail">Contact Email</label>
+                            <input 
+                                type="email" 
+                                id="providerEmail" 
+                                name="providerEmail" 
+                                placeholder="contact@university.edu"
+                                required
+                            />
+                            <div class="form-hint">Primary contact email for administrative purposes</div>
+                        </div>
+                        <div class="form-group">
+                            <label for="providerCountry">Country</label>
+                            <input 
+                                type="text" 
+                                id="providerCountry" 
+                                name="providerCountry" 
+                                placeholder="Spain"
+                                required
+                            />
+                            <div class="form-hint">Country where your institution is located</div>
+                        </div>
+                        <div class="form-group">
+                            <label for="providerOrganization">Organization (schacHomeOrganization)</label>
+                            <input 
+                                type="text" 
+                                id="providerOrganization" 
+                                name="providerOrganization" 
+                                placeholder="university.edu"
+                                required
+                            />
+                            <div class="form-hint">SAML/eduGAIN schacHomeOrganization identifier</div>
+                        </div>
+                    </div>
+
+                    <!-- Service Configuration -->
+                    <div class="form-section">
+                        <div class="form-section-title">
+                            <i class="fas fa-server"></i>
+                            Service Configuration
+                        </div>
+                        <div class="form-group">
+                            <label for="publicBaseUrl">Public Base URL</label>
+                            <input 
+                                type="url" 
+                                id="publicBaseUrl" 
+                                name="publicBaseUrl" 
+                                placeholder="https://auth.university.edu"
+                                required
+                            />
+                            <div class="form-hint">Publicly accessible base URL for your authentication service (no trailing slash)</div>
+                        </div>
+                    </div>
+
+                    <!-- Action Buttons -->
+                    <button type="submit" class="btn btn-primary" id="saveAndRegisterBtn">
+                        <i class="fas fa-save"></i>
+                        <span id="btnText">Save & Register</span>
+                        <div id="btnSpinner" class="loading-spinner" style="display: none;"></div>
+                    </button>
+
+                    <button type="button" class="btn btn-secondary" id="retryRegistrationBtn" style="display: none;">
+                        <i class="fas fa-redo"></i>
+                        Retry Registration
+                    </button>
+
+                    <button type="button" class="btn btn-secondary" id="continueToDashboardBtn" style="display: none;">
+                        <i class="fas fa-arrow-right"></i>
+                        Continue to Dashboard
+                    </button>
+                </form>
+            </div>
+
+            <div class="config-footer">
+                <i class="fas fa-shield-alt"></i>
+                All configuration data is stored securely and encrypted
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Check configuration status on load
+        async function loadConfigurationStatus() {
+            try {
+                const response = await fetch('/provider-config/status');
+                const data = await response.json();
+
+                // Populate form with existing values
+                if (data.marketplaceBaseUrl) {
+                    document.getElementById('marketplaceBaseUrl').value = data.marketplaceBaseUrl;
+                }
+                if (data.providerName) {
+                    document.getElementById('providerName').value = data.providerName;
+                }
+                if (data.providerEmail) {
+                    document.getElementById('providerEmail').value = data.providerEmail;
+                }
+                if (data.providerCountry) {
+                    document.getElementById('providerCountry').value = data.providerCountry;
+                }
+                if (data.providerOrganization) {
+                    document.getElementById('providerOrganization').value = data.providerOrganization;
+                }
+                if (data.publicBaseUrl) {
+                    document.getElementById('publicBaseUrl').value = data.publicBaseUrl;
+                }
+
+                // Update status badge
+                const statusBadge = document.getElementById('statusBadge');
+                if (data.isRegistered) {
+                    statusBadge.innerHTML = `
+                        <div class="status-badge registered">
+                            <i class="fas fa-check-circle"></i>
+                            Provider Registered
+                        </div>
+                    `;
+                    showInfo('Provider is already registered. You can update configuration and re-register if needed.');
+                    document.getElementById('retryRegistrationBtn').style.display = 'block';
+                    document.getElementById('continueToDashboardBtn').style.display = 'block';
+                } else {
+                    statusBadge.innerHTML = `
+                        <div class="status-badge not-registered">
+                            <i class="fas fa-exclamation-circle"></i>
+                            Not Registered
+                        </div>
+                    `;
+                }
+
+            } catch (error) {
+                console.error('Failed to load configuration status:', error);
+                showError('Failed to load configuration status. Please try again.');
+            }
+        }
+
+        // Form submission
+        document.getElementById('providerConfigForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+
+            const btn = document.getElementById('saveAndRegisterBtn');
+            const btnText = document.getElementById('btnText');
+            const btnSpinner = document.getElementById('btnSpinner');
+
+            // Show loading state
+            btn.disabled = true;
+            btnText.textContent = 'Saving...';
+            btnSpinner.style.display = 'inline-block';
+            hideAlerts();
+
+            const formData = {
+                marketplaceBaseUrl: document.getElementById('marketplaceBaseUrl').value.trim(),
+                marketplaceApiKey: document.getElementById('marketplaceApiKey').value,
+                providerName: document.getElementById('providerName').value.trim(),
+                providerEmail: document.getElementById('providerEmail').value.trim(),
+                providerCountry: document.getElementById('providerCountry').value.trim(),
+                providerOrganization: document.getElementById('providerOrganization').value.trim(),
+                publicBaseUrl: document.getElementById('publicBaseUrl').value.trim()
+            };
+
+            try {
+                const response = await fetch('/provider-config/save-and-register', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(formData)
+                });
+
+                const result = await response.json();
+
+                if (result.success) {
+                    if (result.registered) {
+                        showSuccess('✓ Configuration saved and provider registered successfully!');
+                        document.getElementById('continueToDashboardBtn').style.display = 'block';
+                        
+                        // Update status badge
+                        const statusBadge = document.getElementById('statusBadge');
+                        statusBadge.innerHTML = `
+                            <div class="status-badge registered">
+                                <i class="fas fa-check-circle"></i>
+                                Provider Registered
+                            </div>
+                        `;
+                    } else {
+                        showError('Configuration saved but registration failed. Check logs for details.');
+                        document.getElementById('retryRegistrationBtn').style.display = 'block';
+                    }
+                } else {
+                    showError(result.error || 'Failed to save configuration');
+                }
+
+            } catch (error) {
+                console.error('Error:', error);
+                showError('Failed to save configuration. Please try again.');
+            } finally {
+                btn.disabled = false;
+                btnText.textContent = 'Save & Register';
+                btnSpinner.style.display = 'none';
+            }
+        });
+
+        // Retry registration button
+        document.getElementById('retryRegistrationBtn').addEventListener('click', async () => {
+            const btn = document.getElementById('retryRegistrationBtn');
+            btn.disabled = true;
+            btn.innerHTML = '<i class="fas fa-redo fa-spin"></i> Retrying...';
+            hideAlerts();
+
+            try {
+                const response = await fetch('/provider-config/retry-registration', {
+                    method: 'POST'
+                });
+
+                const result = await response.json();
+
+                if (result.success && result.registered) {
+                    showSuccess('✓ Provider registration completed successfully!');
+                    document.getElementById('continueToDashboardBtn').style.display = 'block';
+                    
+                    // Update status badge
+                    const statusBadge = document.getElementById('statusBadge');
+                    statusBadge.innerHTML = `
+                        <div class="status-badge registered">
+                            <i class="fas fa-check-circle"></i>
+                            Provider Registered
+                        </div>
+                    `;
+                } else {
+                    showError(result.error || 'Registration failed. Check logs for details.');
+                }
+
+            } catch (error) {
+                console.error('Error:', error);
+                showError('Failed to retry registration. Please try again.');
+            } finally {
+                btn.disabled = false;
+                btn.innerHTML = '<i class="fas fa-redo"></i> Retry Registration';
+            }
+        });
+
+        // Continue to dashboard button
+        document.getElementById('continueToDashboardBtn').addEventListener('click', () => {
+            window.location.href = '/wallet-dashboard';
+        });
+
+        function showSuccess(message) {
+            const alert = document.getElementById('successAlert');
+            alert.textContent = message;
+            alert.style.display = 'block';
+        }
+
+        function showError(message) {
+            const alert = document.getElementById('errorAlert');
+            alert.textContent = message;
+            alert.style.display = 'block';
+        }
+
+        function showInfo(message) {
+            const alert = document.getElementById('infoAlert');
+            alert.textContent = message;
+            alert.style.display = 'block';
+        }
+
+        function hideAlerts() {
+            document.getElementById('successAlert').style.display = 'none';
+            document.getElementById('errorAlert').style.display = 'none';
+            document.getElementById('infoAlert').style.display = 'none';
+        }
+
+        // Load configuration on page load
+        loadConfigurationStatus();
+    </script>
+</body>
+</html>

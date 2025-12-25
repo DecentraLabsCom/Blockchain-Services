@@ -134,7 +134,6 @@ public class IntentOnChainExecutor {
         byte[] requestId = toBytes32(record.getRequestId());
         String uri = payload.getUri();
         BigInteger price = payload.getPrice();
-        String auth = payload.getAuth();
         String accessURI = payload.getAccessURI();
         String accessKey = payload.getAccessKey();
         if (uri == null || price == null) {
@@ -142,7 +141,7 @@ public class IntentOnChainExecutor {
         }
         return Optional.of(new Function(
             "addLabWithIntent",
-            List.of(new Bytes32(requestId), new Utf8String(uri), new Uint256(price), new Utf8String(auth), new Utf8String(accessURI), new Utf8String(accessKey)),
+            List.of(new Bytes32(requestId), new Utf8String(uri), new Uint256(price), new Utf8String(accessURI), new Utf8String(accessKey)),
             List.of()
         ));
     }
@@ -155,7 +154,6 @@ public class IntentOnChainExecutor {
         byte[] requestId = toBytes32(record.getRequestId());
         String uri = payload.getUri();
         BigInteger price = payload.getPrice();
-        String auth = payload.getAuth();
         String accessURI = payload.getAccessURI();
         String accessKey = payload.getAccessKey();
         if (uri == null || price == null) {
@@ -163,7 +161,7 @@ public class IntentOnChainExecutor {
         }
         return Optional.of(new Function(
             "addAndListLabWithIntent",
-            List.of(new Bytes32(requestId), new Utf8String(uri), new Uint256(price), new Utf8String(auth), new Utf8String(accessURI), new Utf8String(accessKey)),
+            List.of(new Bytes32(requestId), new Utf8String(uri), new Uint256(price), new Utf8String(accessURI), new Utf8String(accessKey)),
             List.of()
         ));
     }
@@ -200,13 +198,12 @@ public class IntentOnChainExecutor {
         byte[] requestId = toBytes32(record.getRequestId());
         String uri = data.getUri();
         BigInteger price = data.getPrice();
-        String auth = data.getAuth();
         String accessURI = data.getAccessURI();
         String accessKey = data.getAccessKey();
         return Optional.of(new Function(
             "updateLabWithIntent",
             List.of(new Bytes32(requestId), new Uint256(labId), new Utf8String(uri != null ? uri : ""), new Uint256(price != null ? price : BigInteger.ZERO),
-                new Utf8String(auth != null ? auth : ""), new Utf8String(accessURI != null ? accessURI : ""), new Utf8String(accessKey != null ? accessKey : "")),
+                new Utf8String(accessURI != null ? accessURI : ""), new Utf8String(accessKey != null ? accessKey : "")),
             List.of()
         ));
     }

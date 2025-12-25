@@ -27,7 +27,6 @@ public class ActionIntentPayload {
     private String uri;
     private BigInteger price;      // uint96
     private BigInteger maxBatch;   // uint96 (only for REQUEST_FUNDS intent)
-    private String auth;
     private String accessURI;
     private String accessKey;
     private String tokenURI;
@@ -101,14 +100,6 @@ public class ActionIntentPayload {
 
     public void setMaxBatch(BigInteger maxBatch) {
         this.maxBatch = maxBatch;
-    }
-
-    public String getAuth() {
-        return auth;
-    }
-
-    public void setAuth(String auth) {
-        this.auth = auth;
     }
 
     public String getAccessURI() {

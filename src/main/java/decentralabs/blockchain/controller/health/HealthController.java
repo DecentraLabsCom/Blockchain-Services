@@ -2,7 +2,7 @@ package decentralabs.blockchain.controller.health;
 
 import decentralabs.blockchain.service.auth.MarketplaceKeyService;
 import decentralabs.blockchain.service.auth.SamlValidationService;
-import decentralabs.blockchain.service.organization.InstitutionInviteService;
+import decentralabs.blockchain.service.organization.ProviderRegistrationService;
 import decentralabs.blockchain.service.wallet.InstitutionalWalletService;
 import decentralabs.blockchain.service.wallet.WalletService;
 import java.nio.file.Files;
@@ -32,7 +32,7 @@ public class HealthController {
     private final WalletService walletService;
     private final SamlValidationService samlValidationService;
     private final InstitutionalWalletService institutionalWalletService;
-    private final InstitutionInviteService institutionInviteService;
+    private final ProviderRegistrationService providerRegistrationService;
     private final ObjectProvider<JdbcTemplate> jdbcTemplateProvider;
 
     @Value("${marketplace.public-key-url}")
@@ -75,7 +75,7 @@ public class HealthController {
             healthStatus.put("database_up", isDatabaseUp());
             healthStatus.put("wallet_configured", institutionalWalletService.isConfigured());
             healthStatus.put("treasury_configured", isTreasuryConfigured());
-            healthStatus.put("invite_token_configured", institutionInviteService.isInviteConfigured());
+            healthStatus.put("provider_registered", providerRegistrationService.isProviderRegistered());
             healthStatus.put("endpoints", getEndpointStatus());
 
             return buildResponse(healthStatus);

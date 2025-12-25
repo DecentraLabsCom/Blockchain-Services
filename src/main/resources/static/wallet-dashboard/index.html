@@ -7,6 +7,99 @@
     <link rel="icon" type="image/x-icon" href="assets/images/favicon.ico">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link rel="stylesheet" href="assets/css/admin.css">
+    <style>
+        /* Provider config modal tweaks (keeps same modal look, just wider) */
+        .modal-content.provider-config-modal {
+            max-width: 860px;
+            width: 96vw;
+        }
+
+        .provider-config-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+            gap: 1rem;
+        }
+
+        .provider-config-section {
+            margin-bottom: 1rem;
+        }
+
+        .provider-config-section h3 {
+            margin: 0 0 0.5rem 0;
+            font-size: 1rem;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .modal-inline-group label {
+            font-weight: 600;
+        }
+
+        .modal-inline-group input {
+            width: 100%;
+            padding: 0.65rem 0.75rem;
+            border-radius: 8px;
+            border: 1px solid #d6d6d6;
+            font-size: 0.95rem;
+        }
+
+        .modal-inline-group input:focus {
+            outline: none;
+            border-color: #6366f1;
+            box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.15);
+        }
+
+        .modal-hint {
+            font-size: 0.85rem;
+            color: #6b7280;
+            margin-top: 0.25rem;
+        }
+
+        .badge-status {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.35rem;
+            padding: 0.35rem 0.75rem;
+            border-radius: 999px;
+            font-weight: 700;
+            font-size: 0.9rem;
+        }
+
+        .badge-status.success {
+            background: #d1fae5;
+            color: #065f46;
+        }
+
+        .badge-status.warning {
+            background: #fef3c7;
+            color: #92400e;
+        }
+
+        .modal-alert {
+            margin: 0.5rem 0 1rem 0;
+            padding: 0.75rem 1rem;
+            border-radius: 8px;
+            font-weight: 600;
+            display: none;
+        }
+
+        .modal-alert.success { background: #d1fae5; color: #065f46; border: 1px solid #10b981; }
+        .modal-alert.error { background: #fee2e2; color: #991b1b; border: 1px solid #f87171; }
+        .modal-alert.info { background: #dbeafe; color: #1e40af; border: 1px solid #60a5fa; }
+
+        .modal-actions.stacked {
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+        }
+
+        .btn-ghost {
+            background: transparent;
+            border: 1px solid #d1d5db;
+            color: #1f2937;
+        }
+    </style>
 </head>
 <body>
     <!-- Welcome Modal -->
@@ -18,51 +111,20 @@
             <div class="welcome-modal-body">
                 <div class="welcome-message">
                     <p><strong>No institutional wallet detected.</strong></p>
-                    <p>To get started with DecentraLabs, you'll need an <strong>invitation token</strong> from the marketplace.</p>
-                    <p>Visit the marketplace now to request access for your institution.</p>
+                    <p>To get started with DecentraLabs, ensure your institution is properly configured in the system.</p>
+                    <p>Provider registration is handled automatically on service startup. Check your configuration files and logs.</p>
                 </div>
                 <div class="welcome-actions">
-                    <a id="marketplaceLink" href="https://marketplace-decentralabs.vercel.app/" target="_blank" class="btn-marketplace">
-                        <i class="fas fa-store"></i>
-                        Get Invitation Token from Marketplace
-                    </a>
                     <button id="continueBtn" class="btn-continue">
                         <i class="fas fa-check-circle"></i>
-                        I Already Have a Token, Let Me In
+                        I Have Configured My Institution, Continue
                     </button>
                 </div>
             </div>
         </div>
     </div>
 
-    <!-- Invite Token Modal -->
-    <div id="inviteTokenModal" class="modal">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h2><i class="fas fa-ticket-alt"></i> Apply Institution Invite Token</h2>
-                <button class="modal-close" id="closeInviteModalBtn">&times;</button>
-            </div>
-            <div class="modal-body">
-                <p class="info-text">
-                    Paste the invite token provided by the DecentraLabs marketplace to register your institution on-chain.
-                </p>
-                <textarea id="inviteTokenInput" class="token-input" rows="5"
-                    placeholder="Paste your invite token here..."></textarea>
-                <div id="inviteResult" class="invite-result"></div>
-            </div>
-            <div class="modal-footer">
-                <button id="applyInviteBtn" class="btn btn-primary">
-                    <i class="fas fa-paper-plane"></i>
-                    Apply Token
-                </button>
-                <button id="cancelInviteBtn" class="btn btn-secondary">
-                    Cancel
-                </button>
-            </div>
-        </div>
-    </div>
-
-    <div class="container">
+    <!-- Toast Notification -->
         <!-- Header -->
         <header class="dashboard-header">
             <div class="header-content">
@@ -71,12 +133,13 @@
                     DecentraLabs Treasury
                 </h1>
                 <div class="header-actions">
+                    <button id="openProviderConfigBtn" class="btn btn-secondary">
+                        <i class="fas fa-cog"></i>
+                        Provider Config
+                    </button>
                     <button id="refreshBtn" class="btn btn-secondary">
                         <span class="icon">↻</span>
                         Refresh
-                    </button>
-                    <button id="applyInviteTokenHeaderBtn" class="btn btn-primary" style="display: none;">
-                        <i class="fas fa-ticket-alt"></i> Use Invite Token
                     </button>
                     <button id="revealPrivateKeyBtn" class="btn btn-secondary" style="display: none;">
                         <i class="fas fa-key"></i> Show Private Key
@@ -288,6 +351,107 @@
     <!-- Toast Notification -->
     <div id="toast" class="toast"></div>
 
+    <!-- Provider Configuration Modal -->
+    <div id="providerConfigModal" class="modal">
+        <div class="modal-content provider-config-modal">
+            <div class="modal-header">
+                <h2><i class="fas fa-cog"></i> Provider Configuration</h2>
+                <button class="modal-close" id="closeProviderConfigModal">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <div class="modal-body">
+                <div id="providerConfigStatus" style="margin-bottom: 0.75rem;"></div>
+                <div id="providerConfigAlert" class="modal-alert"></div>
+
+                <form id="providerConfigForm">
+                    <!-- Provisioning Token -->
+                    <div class="provider-config-section">
+                        <h3><i class="fas fa-key"></i> Provisioning Token (SSO staff)</h3>
+                        <div class="provider-config-grid">
+                            <div class="modal-inline-group" style="grid-column: 1 / -1;">
+                                <label for="modalProvisioningToken">Token</label>
+                                <textarea id="modalProvisioningToken" name="provisioningToken" rows="3" style="width:100%; padding:0.65rem 0.75rem; border-radius:8px; border:1px solid #d6d6d6; font-family:monospace;"></textarea>
+                                <div class="modal-hint">Pega el token firmado por el Marketplace (rol staff SSO). No editable.</div>
+                            </div>
+                        </div>
+                        <div class="modal-actions" style="justify-content:flex-start; margin-top:0.5rem;">
+                            <button type="button" class="btn btn-secondary" id="applyProvisioningTokenBtn">
+                                <i class="fas fa-plug"></i>
+                                Apply token
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="provider-config-section">
+                        <h3><i class="fas fa-store"></i> Marketplace</h3>
+                        <div class="provider-config-grid">
+                            <div class="modal-inline-group">
+                                <label for="modalMarketplaceBaseUrl">Marketplace Base URL</label>
+                                <input type="url" id="modalMarketplaceBaseUrl" name="marketplaceBaseUrl" placeholder="https://marketplace-decentralabs.vercel.app" required>
+                                <div class="modal-hint">URL del Marketplace</div>
+                            </div>
+                            <div class="modal-inline-group">
+                                <label for="modalMarketplaceApiKey">Marketplace API Key</label>
+                                <input type="password" id="modalMarketplaceApiKey" name="marketplaceApiKey" placeholder="Shared secret (min. 32 chars)" minlength="32" required>
+                                <div class="modal-hint">No se muestra el valor actual por seguridad</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="provider-config-section">
+                        <h3><i class="fas fa-university"></i> Provider</h3>
+                        <div class="provider-config-grid">
+                            <div class="modal-inline-group">
+                                <label for="modalProviderName">Institution Name</label>
+                                <input type="text" id="modalProviderName" name="providerName" placeholder="Mi Universidad" required>
+                            </div>
+                            <div class="modal-inline-group">
+                                <label for="modalProviderEmail">Contact Email</label>
+                                <input type="email" id="modalProviderEmail" name="providerEmail" placeholder="contact@university.edu" required>
+                            </div>
+                            <div class="modal-inline-group">
+                                <label for="modalProviderCountry">Country</label>
+                                <input type="text" id="modalProviderCountry" name="providerCountry" placeholder="Spain" required>
+                            </div>
+                            <div class="modal-inline-group">
+                                <label for="modalProviderOrganization">Organization (schacHomeOrganization)</label>
+                                <input type="text" id="modalProviderOrganization" name="providerOrganization" placeholder="university.edu" required>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="provider-config-section">
+                        <h3><i class="fas fa-server"></i> Service</h3>
+                        <div class="provider-config-grid">
+                            <div class="modal-inline-group">
+                                <label for="modalPublicBaseUrl">Public Base URL (authURI)</label>
+                                <input type="url" id="modalPublicBaseUrl" name="publicBaseUrl" placeholder="https://auth.university.edu" required>
+                                <div class="modal-hint">HTTPS, sin trailing slash</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="modal-actions stacked">
+                        <button type="submit" class="btn btn-primary" id="providerConfigSaveBtn">
+                            <i class="fas fa-save"></i>
+                            <span id="providerConfigBtnText">Save & Register</span>
+                            <i id="providerConfigBtnSpinner" class="fas fa-spinner fa-spin" style="display:none;"></i>
+                        </button>
+                        <button type="button" class="btn btn-secondary" id="providerConfigRetryBtn" style="display:none;">
+                            <i class="fas fa-redo"></i>
+                            Retry Registration
+                        </button>
+                        <button type="button" class="btn btn-ghost" id="providerConfigCloseBtn">
+                            <i class="fas fa-arrow-right"></i>
+                            Continue to Dashboard
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
     <!-- Input Modal (for prompts) -->
     <div id="inputModal" class="modal">
         <div class="modal-content">
@@ -354,5 +518,238 @@
     <!-- Scripts -->
     <script src="assets/js/api.js"></script>
     <script src="assets/js/admin.js"></script>
+    <script>
+        // Provider configuration modal logic (front-end only, reuses /provider-config endpoints)
+        (function() {
+            const modal = document.getElementById('providerConfigModal');
+            if (!modal) return;
+
+            const openBtn = document.getElementById('openProviderConfigBtn');
+            const closeBtn = document.getElementById('closeProviderConfigModal');
+            const footerCloseBtn = document.getElementById('providerConfigCloseBtn');
+            const retryBtn = document.getElementById('providerConfigRetryBtn');
+            const saveBtn = document.getElementById('providerConfigSaveBtn');
+            const btnText = document.getElementById('providerConfigBtnText');
+            const btnSpinner = document.getElementById('providerConfigBtnSpinner');
+            const alertBox = document.getElementById('providerConfigAlert');
+            const statusBox = document.getElementById('providerConfigStatus');
+            const applyTokenBtn = document.getElementById('applyProvisioningTokenBtn');
+            const provisioningTokenInput = document.getElementById('modalProvisioningToken');
+
+            const FIELD_MAP = {
+                marketplaceBaseUrl: 'modalMarketplaceBaseUrl',
+                providerName: 'modalProviderName',
+                providerEmail: 'modalProviderEmail',
+                providerCountry: 'modalProviderCountry',
+                providerOrganization: 'modalProviderOrganization',
+                publicBaseUrl: 'modalPublicBaseUrl'
+            };
+
+            const form = document.getElementById('providerConfigForm');
+
+            function showModal() {
+                modal.style.display = 'block';
+            }
+
+            function hideModal() {
+                modal.style.display = 'none';
+                hideAlert();
+            }
+
+            function showAlert(type, message) {
+                alertBox.className = `modal-alert ${type}`;
+                alertBox.textContent = message;
+                alertBox.style.display = 'block';
+            }
+
+            function hideAlert() {
+                alertBox.style.display = 'none';
+            }
+
+            function setFieldValue(fieldKey, value) {
+                const elId = FIELD_MAP[fieldKey];
+                if (!elId) return;
+                const el = document.getElementById(elId);
+                if (el && typeof value === 'string') {
+                    el.value = value;
+                }
+            }
+
+            function lockFields(locked) {
+                Object.keys(FIELD_MAP).forEach(key => {
+                    const el = document.getElementById(FIELD_MAP[key]);
+                    if (!el) return;
+                    const shouldLock = locked.includes(key);
+                    el.readOnly = shouldLock;
+                    el.disabled = shouldLock;
+                });
+            }
+
+            function setStatus(isConfigured, isRegistered) {
+                if (isRegistered) {
+                    statusBox.innerHTML = '<span class="badge-status success"><i class="fas fa-check-circle"></i> Provider Registered</span>';
+                } else if (isConfigured) {
+                    statusBox.innerHTML = '<span class="badge-status warning"><i class="fas fa-exclamation-circle"></i> Configured, pending registration</span>';
+                } else {
+                    statusBox.innerHTML = '<span class="badge-status warning"><i class="fas fa-exclamation-circle"></i> Configuration required</span>';
+                }
+
+                retryBtn.style.display = isConfigured && !isRegistered ? 'block' : 'none';
+            }
+
+            async function loadStatus(autoOpenIfNeeded = true) {
+                try {
+                    const res = await fetch('/provider-config/status');
+                    const data = await res.json();
+
+                    ['marketplaceBaseUrl','providerName','providerEmail','providerCountry','providerOrganization','publicBaseUrl']
+                        .forEach(key => setFieldValue(key, data[key]));
+
+                    const locked = data.lockedFields || (data.fromProvisioningToken ? ['providerName','providerEmail','providerCountry','providerOrganization'] : []);
+                    lockFields(locked);
+
+                    setStatus(data.isConfigured, data.isRegistered);
+
+                    if (data.fromProvisioningToken) {
+                        showInfo('Configuración aplicada desde token (campos bloqueados)');
+                    }
+
+                    if (autoOpenIfNeeded && (!data.isConfigured || !data.isRegistered)) {
+                        showModal();
+                    }
+                } catch (err) {
+                    console.error('Failed to load provider config status', err);
+                }
+            }
+
+            async function submitConfig(event) {
+                event.preventDefault();
+                hideAlert();
+                saveBtn.disabled = true;
+                btnText.textContent = 'Saving...';
+                btnSpinner.style.display = 'inline-block';
+
+                const payload = {
+                    marketplaceBaseUrl: document.getElementById('modalMarketplaceBaseUrl').value.trim(),
+                    marketplaceApiKey: document.getElementById('modalMarketplaceApiKey').value,
+                    providerName: document.getElementById('modalProviderName').value.trim(),
+                    providerEmail: document.getElementById('modalProviderEmail').value.trim(),
+                    providerCountry: document.getElementById('modalProviderCountry').value.trim(),
+                    providerOrganization: document.getElementById('modalProviderOrganization').value.trim(),
+                    publicBaseUrl: document.getElementById('modalPublicBaseUrl').value.trim()
+                };
+
+                try {
+                    const response = await fetch('/provider-config/save-and-register', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(payload)
+                    });
+
+                    const result = await response.json();
+
+                    if (result.success) {
+                        if (result.registered) {
+                            showAlert('success', 'Configuración guardada y provider registrado');
+                        } else {
+                            showAlert('error', 'Configuración guardada pero el registro falló. Revisa logs y reintenta.');
+                        }
+                        await loadStatus(false);
+                    } else {
+                        showAlert('error', result.error || 'No se pudo guardar la configuración');
+                    }
+                } catch (error) {
+                    console.error('Error saving provider configuration', error);
+                    showAlert('error', 'Error al guardar. Intenta de nuevo.');
+                } finally {
+                    saveBtn.disabled = false;
+                    btnText.textContent = 'Save & Register';
+                    btnSpinner.style.display = 'none';
+                }
+            }
+
+            async function retryRegistration() {
+                hideAlert();
+                retryBtn.disabled = true;
+                retryBtn.innerHTML = '<i class="fas fa-redo fa-spin"></i> Retrying...';
+
+                try {
+                    const response = await fetch('/provider-config/retry-registration', { method: 'POST' });
+                    const result = await response.json();
+
+                    if (result.success && result.registered) {
+                        showAlert('success', 'Provider registrado correctamente');
+                    } else {
+                        showAlert('error', result.error || 'Fallo al registrar. Revisa logs.');
+                    }
+                    await loadStatus(false);
+                } catch (error) {
+                    console.error('Error retrying registration', error);
+                    showAlert('error', 'No se pudo reintentar el registro');
+                } finally {
+                    retryBtn.disabled = false;
+                    retryBtn.innerHTML = '<i class="fas fa-redo"></i> Retry Registration';
+                }
+            }
+
+            async function applyProvisioningToken() {
+                hideAlert();
+                const token = (provisioningTokenInput.value || '').trim();
+                if (!token) {
+                    showAlert('error', 'Token requerido');
+                    return;
+                }
+
+                applyTokenBtn.disabled = true;
+                applyTokenBtn.innerHTML = '<i class="fas fa-plug fa-spin"></i> Applying...';
+
+                try {
+                    const response = await fetch('/provider-config/apply-token', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ token })
+                    });
+
+                    const result = await response.json();
+
+                    if (result.success) {
+                        const cfg = result.config || {};
+                        Object.keys(FIELD_MAP).forEach(key => setFieldValue(key, cfg[key] || ''));
+                        lockFields(result.lockedFields || []);
+
+                        if (result.registered) {
+                            showAlert('success', 'Token aplicado y provider registrado');
+                        } else {
+                            showAlert('info', 'Token aplicado, pero registro falló. Reintenta.');
+                        }
+                        await loadStatus(false);
+                    } else {
+                        showAlert('error', result.error || 'Token inválido');
+                    }
+                } catch (error) {
+                    console.error('Error applying provisioning token', error);
+                    showAlert('error', 'No se pudo aplicar el token');
+                } finally {
+                    applyTokenBtn.disabled = false;
+                    applyTokenBtn.innerHTML = '<i class="fas fa-plug"></i> Apply token';
+                }
+            }
+
+            // Wire events
+            form.addEventListener('submit', submitConfig);
+            retryBtn.addEventListener('click', retryRegistration);
+            applyTokenBtn.addEventListener('click', applyProvisioningToken);
+            openBtn.addEventListener('click', () => showModal());
+            closeBtn.addEventListener('click', hideModal);
+            footerCloseBtn.addEventListener('click', hideModal);
+
+            window.addEventListener('click', (event) => {
+                if (event.target === modal) hideModal();
+            });
+
+            // Auto-load status and open modal if needed
+            loadStatus(true);
+        })();
+    </script>
 </body>
 </html>

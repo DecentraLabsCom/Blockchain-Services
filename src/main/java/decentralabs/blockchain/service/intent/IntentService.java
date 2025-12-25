@@ -305,7 +305,7 @@ public class IntentService {
             }
             switch (action) {
                 case LAB_ADD, LAB_ADD_AND_LIST -> {
-                    if (isBlank(actionPayload.getUri()) || actionPayload.getPrice() == null || isBlank(actionPayload.getAuth()) || isBlank(actionPayload.getAccessURI()) || isBlank(actionPayload.getAccessKey())) {
+                    if (isBlank(actionPayload.getUri()) || actionPayload.getPrice() == null || isBlank(actionPayload.getAccessURI()) || isBlank(actionPayload.getAccessKey())) {
                         throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Missing lab payload fields");
                     }
                 }
