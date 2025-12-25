@@ -54,6 +54,9 @@ function maybePromptInviteToken(force = false) {
     if (!wallet || DashboardState.inviteTokenApplied) {
         return;
     }
+    if (!force && !DashboardState.welcomeModalDismissed) {
+        return;
+    }
     if (!force && DashboardState.invitePromptedWallet === wallet) {
         return;
     }
@@ -316,12 +319,18 @@ function showProvisioningTokenModal() {
     const tokenInput = document.getElementById('provisioningTokenInput');
     const resultDiv = document.getElementById('provisioningResult');
     
+    if (!DashboardState.walletAddress) {
+        showToast('Configure your institutional wallet before applying a token.', 'error');
+        return;
+    }
+
     if (DashboardState.walletAddress) {
         DashboardState.invitePromptedWallet = DashboardState.walletAddress;
     }
     
     if (modal) {
-        modal.style.display = 'flex';
+        modal.classList.add('show');
+        modal.style.display = '';
         if (tokenInput) tokenInput.value = '';
         if (resultDiv) resultDiv.innerHTML = '';
     }
@@ -330,7 +339,8 @@ function showProvisioningTokenModal() {
 function hideProvisioningTokenModal() {
     const modal = document.getElementById('provisioningTokenModal');
     if (modal) {
-        modal.style.display = 'none';
+        modal.classList.remove('show');
+        modal.style.display = '';
     }
 }
 
@@ -451,12 +461,14 @@ function showWelcomeModal() {
     }
 }
 
-function hideWelcomeModal() {
+function hideWelcomeModal(dismissed = false) {
     const modal = document.getElementById('welcomeModal');
     if (modal) {
         modal.classList.remove('show');
     }
-    DashboardState.welcomeModalDismissed = true;
+    if (dismissed) {
+        DashboardState.welcomeModalDismissed = true;
+    }
 }
 
 function updateMarketplaceUrl(url) {
@@ -464,6 +476,21 @@ function updateMarketplaceUrl(url) {
     if (link && url) {
         link.href = url;
     }
+}
+
+function renderWalletSetupPrompt() {
+    const walletAddressEl = document.getElementById('walletAddress');
+    if (!walletAddressEl) {
+        return;
+    }
+
+    walletAddressEl.innerHTML = '<span class="warning-text clickable" id="walletSetupTrigger">Not configured - Click to set up</span>';
+    setTimeout(() => {
+        const trigger = document.getElementById('walletSetupTrigger');
+        if (trigger) {
+            trigger.addEventListener('click', toggleWalletSetupDropdown);
+        }
+    }, 100);
 }
 
 // Load system status
@@ -497,11 +524,12 @@ async function loadSystemStatus() {
                 updateMarketplaceUrl(data.marketplaceUrl);
             }
             
-            // Show welcome modal if no wallet and not already dismissed
-            if (!walletAddress && !DashboardState.welcomeModalDismissed) {
+            // Show welcome modal after wallet exists and token is still pending
+            const shouldPromptToken = !!walletAddress && !DashboardState.inviteTokenApplied;
+            if (shouldPromptToken && !DashboardState.welcomeModalDismissed) {
                 showWelcomeModal();
             } else {
-                hideWelcomeModal();
+                hideWelcomeModal(false);
             }
             
             console.log('[loadSystemStatus] Wallet configured:', walletConfigured);
@@ -515,14 +543,7 @@ async function loadSystemStatus() {
                 walletAddressEl.textContent = formatAddress(walletAddress);
                 walletAddressEl.classList.remove('warning-text');
             } else {
-                walletAddressEl.innerHTML = '<span class="warning-text clickable" id="walletSetupTrigger">⚠️ Not configured - Click to setup</span>';
-                // Add click handler for the warning text
-                setTimeout(() => {
-                    const trigger = document.getElementById('walletSetupTrigger');
-                    if (trigger) {
-                        trigger.addEventListener('click', toggleWalletSetupDropdown);
-                    }
-                }, 100);
+                renderWalletSetupPrompt();
             }
 
             // Show/hide reveal private key button in header
@@ -568,6 +589,18 @@ async function loadSystemStatus() {
         console.error('[loadSystemStatus] ERROR:', error);
         console.error('Failed to load system status:', error);
         showToast('Failed to load system status: ' + error.message, 'error');
+
+        DashboardState.walletAddress = null;
+        DashboardState.inviteTokenApplied = false;
+        DashboardState.invitePromptedWallet = null;
+        hideProvisioningTokenModal();
+        updateApplyInviteButtonVisibility();
+        renderWalletSetupPrompt();
+
+        const contractAddressEl = document.getElementById('contractAddress');
+        if (contractAddressEl) {
+            contractAddressEl.textContent = 'Unavailable';
+        }
         
         // Update status indicator to error state
         const statusIndicator = document.getElementById('statusIndicator');
@@ -1066,7 +1099,10 @@ function setupButtonHandlers() {
     // Welcome modal continue button
     const continueBtn = document.getElementById('continueBtn');
     if (continueBtn) {
-        continueBtn.addEventListener('click', hideWelcomeModal);
+        continueBtn.addEventListener('click', () => {
+            hideWelcomeModal(true);
+            showProvisioningTokenModal();
+        });
     }
     
     // Refresh button

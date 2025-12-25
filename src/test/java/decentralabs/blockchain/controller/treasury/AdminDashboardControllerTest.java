@@ -259,6 +259,17 @@ class AdminDashboardControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.success").value(true));
         }
+
+        @Test
+        @DisplayName("Should allow IPv6-mapped loopback without internal token")
+        void shouldAllowIpv6MappedLoopback() throws Exception {
+            when(walletService.getAvailableNetworks()).thenReturn(createNetworkResponse());
+
+            mockMvc.perform(get("/treasury/admin/status")
+                    .with(req -> { req.setRemoteAddr("::ffff:127.0.0.1"); return req; }))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true));
+        }
     }
 
     private NetworkResponse createNetworkResponse() {

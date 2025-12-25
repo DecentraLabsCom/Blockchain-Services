@@ -1496,22 +1496,22 @@ body {
 }
 
 /* Invite Token Modal - Centering and Layout Fix */
-#inviteTokenModal {
+#provisioningTokenModal {
     justify-content: center;
     align-items: center;
 }
 
-#inviteTokenModal .modal-content {
+#provisioningTokenModal .modal-content {
     margin: 0;
     max-width: 600px;
     width: 90%;
 }
 
-#inviteTokenModal .modal-body {
+#provisioningTokenModal .modal-body {
     padding-bottom: var(--spacing-xs);
 }
 
-#inviteTokenModal .modal-footer {
+#provisioningTokenModal .modal-footer {
     padding: var(--spacing-sm) var(--spacing-lg) var(--spacing-lg);
     display: flex;
     justify-content: center;

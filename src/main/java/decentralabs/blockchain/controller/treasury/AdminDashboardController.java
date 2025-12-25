@@ -238,7 +238,8 @@ public class AdminDashboardController {
     private static final Set<String> LOOPBACK_ADDRESSES = Set.of(
         "127.0.0.1",
         "0:0:0:0:0:0:0:1",
-        "::1"
+        "::1",
+        "::ffff:127.0.0.1"
     );
 
     /**
