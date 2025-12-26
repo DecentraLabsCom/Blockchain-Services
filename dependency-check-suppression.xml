@@ -3,13 +3,13 @@
     
     <!-- 
     ===================================================================================
-    TOMCAT EMBED CORE 10.1.36 - CVEs with questionable applicability
+    TOMCAT EMBED CORE 10.1.x - CVEs with questionable applicability
     ===================================================================================
     
     The following CVEs are suppressed because:
-    1. Versions are at the latest stable release for Spring Boot 3.4.x compatibility
+    1. Versions are at the latest stable release for Spring Boot 3.5.x compatibility
     2. Many CVEs reported with 2025-* IDs appear to be NVD database inconsistencies
-    3. Upgrading to Tomcat 11.x requires migrating to Spring Boot 3.5.x+ with Jakarta EE 11
+    3. Upgrading to Tomcat 11.x requires explicit override and Jakarta EE 11; the gateway stack includes Guacamole 1.6.0 on Tomcat 9
     4. The application doesn't use the vulnerable features (rewrite rules, Windows installer, ANSI console logging)
     -->
     

@@ -412,6 +412,16 @@ docker run -p 8080:8080 \
 
 ## 📊 Monitoring & Health Checks
 
+Actuator endpoints for monitoring and Kubernetes probes (restrict `/actuator/**` at the proxy if exposed publicly):
+
+- `GET /actuator/health/liveness` (liveness probe)
+- `GET /actuator/health/readiness` (readiness probe)
+- `GET /actuator/prometheus` (Prometheus scrape)
+- `GET /actuator/metrics` (metrics index)
+- `GET /actuator/info` (service metadata)
+
+Keep `/health` for the detailed, app-specific checks used by Docker and external status pages:
+
 Health endpoint available at `/health`:
 
 ```json

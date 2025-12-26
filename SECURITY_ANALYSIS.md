@@ -6,17 +6,17 @@
 
 ## Executive Summary
 
-All project dependencies have been updated to their **latest stable versions** compatible with the current technology stack (Spring Boot 3.4.x, Java 21). While OWASP Dependency Check reports several CVEs, detailed analysis shows:
+All project dependencies have been updated to their **latest stable versions** compatible with the current technology stack (Spring Boot 3.5.x, Java 21). While OWASP Dependency Check reports several CVEs, detailed analysis shows:
 
 1. ✅ **Jackson (2.15.4 → 2.18.2)**: All known vulnerabilities resolved
 2. ⚠️ **Netty (4.1.114 → 4.1.118)**: Latest stable 4.x release (5.x is alpha)
-3. ⚠️ **Tomcat Embedded (10.1.31 → 10.1.36)**: Latest for Spring Boot 3.4.x
+3. ⚠️ **Tomcat Embedded (10.1.x)**: Latest for Spring Boot 3.5.x
 
 ## Dependency Updates Performed
 
-### 1. Spring Boot Parent: 3.2.11 → 3.4.3
+### 1. Spring Boot Parent: 3.2.11 → 3.5.9
 - **Benefit**: Updated transitive dependencies including Tomcat and Jackson
-- **Impact**: Tomcat Embed Core upgraded from 10.1.31 to 10.1.36
+- **Impact**: Tomcat Embed Core managed by Spring Boot 3.5.x BOM (10.1.x series)
 - **Status**: Latest stable release
 
 ### 2. Jackson Databind: 2.15.4 → 2.18.2
@@ -31,14 +31,14 @@ All project dependencies have been updated to their **latest stable versions** c
 - **Mitigation**: Using latest stable 4.x release
 - **Status**: ⚠️ Monitoring for Web3j update to Netty 5.x
 
-### 4. Tomcat Embed Core: 10.1.31 → 10.1.36
+### 4. Tomcat Embed Core: 10.1.x (Spring Boot 3.5.x managed)
 - **CVEs Reported**: 13 CVEs with CVSS 7.0-9.8
 - **Analysis**: Most CVEs are **not applicable** to Spring Boot embedded usage:
   - CVE-2025-31651 (9.8): Rewrite rule bypass - **Not using rewrite rules**
   - CVE-2025-55754 (9.6): Windows ANSI console exploit - **Linux containers only**
   - CVE-2025-49124 (8.4): Windows installer flaw - **Docker deployment, no installer**
   - CVE-2025-49125, CVE-2025-52520, etc.: Standalone Tomcat configurations - **Embedded mode**
-- **Constraint**: Tomcat 11.x requires Spring Boot 3.5.x+ and Jakarta EE 11 migration
+- **Constraint**: Tomcat 11.x requires Jakarta EE 11 and explicit override; the gateway stack includes Guacamole 1.6.0 on Tomcat 9, so upgrades must be scoped per service.
 - **Status**: ⚠️ Latest compatible version, vulnerabilities not applicable
 
 ## CVE Risk Assessment
@@ -47,7 +47,7 @@ All project dependencies have been updated to their **latest stable versions** c
 |------------|---------|-----------|-------------|------------|
 | Jackson Databind | 2.18.2 | 0 | N/A | ✅ **SAFE** |
 | Netty Transport | 4.1.118.Final | 1 (8.2) | Unknown (2025-* IDs suspect) | 🟡 **LOW** |
-| Tomcat Embed Core | 10.1.36 | 11 (7.0-9.8) | **NO** (see analysis) | 🟡 **LOW** |
+| Tomcat Embed Core | 10.1.x | 11 (7.0-9.8) | **NO** (see analysis) | 🟡 **LOW** |
 
 ## Mitigation Strategy
 
@@ -76,11 +76,11 @@ All project dependencies have been updated to their **latest stable versions** c
 
 ### Medium Term (1-3 Months)
 - [ ] Monitor Web3j repository for Netty 5.x compatibility
-- [ ] Evaluate Spring Boot 3.5.x upgrade path for Tomcat 11 support
+- [ ] Evaluate Tomcat 11.x upgrade path (Jakarta EE 11) with gateway constraints (Guacamole 1.6.0 / Tomcat 9)
 - [ ] Consider alternative Ethereum libraries if Web3j remains outdated
 
 ### Long Term (3-6 Months)
-- [ ] Migrate to Spring Boot 3.5.x + Tomcat 11.x (Jakarta EE 11)
+- [ ] Migrate to Tomcat 11.x (Jakarta EE 11) once platform constraints allow
 - [ ] Upgrade Netty to 5.x stable when available
 - [ ] Implement automated security scanning in CI/CD pipeline
 

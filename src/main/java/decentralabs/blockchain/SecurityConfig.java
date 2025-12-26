@@ -70,6 +70,10 @@ public class SecurityConfig {
                     samlAuthEndpoint,
                     samlAuth2Endpoint,
                     healthEndpoint,
+                    "/actuator/health/**",
+                    "/actuator/info",
+                    "/actuator/metrics/**",
+                    "/actuator/prometheus",
                     walletEndpoint + "/**",
                     treasuryEndpoint + "/**",
                     "/webauthn/**",
@@ -87,6 +91,10 @@ public class SecurityConfig {
                 .requestMatchers(samlAuthEndpoint).permitAll()
                 .requestMatchers(samlAuth2Endpoint).permitAll()
                 .requestMatchers(healthEndpoint).permitAll()
+                .requestMatchers("/actuator/health/**").permitAll()
+                .requestMatchers("/actuator/info").permitAll()
+                .requestMatchers("/actuator/metrics/**").permitAll()
+                .requestMatchers("/actuator/prometheus").permitAll()
                 .requestMatchers("/webauthn/**").permitAll()
                 .requestMatchers("/onboarding/**").permitAll()
                 .requestMatchers(intentsEndpoint + "/**").permitAll()
