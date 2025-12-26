@@ -64,7 +64,7 @@ class WebauthnOnboardingControllerIntegrationTest {
         when(webauthnOnboardingService.generateOptions(any(WebauthnOnboardingOptionsRequest.class)))
             .thenReturn(response);
 
-        mockMvc.perform(post("/options")
+        mockMvc.perform(post("/onboarding/webauthn/options")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(objectMapper.writeValueAsString(request)))
             .andExpect(status().isOk())
@@ -82,10 +82,10 @@ class WebauthnOnboardingControllerIntegrationTest {
         when(webauthnOnboardingService.generateOptions(any(WebauthnOnboardingOptionsRequest.class)))
             .thenThrow(new IllegalArgumentException("Invalid stable user ID"));
 
-        mockMvc.perform(post("/options")
+        mockMvc.perform(post("/onboarding/webauthn/options")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(objectMapper.writeValueAsString(request)))
-            .andExpect(status().isBadRequest())
+            .andExpect(status().isBadRequest());
     }
 
     @Test
@@ -103,7 +103,7 @@ class WebauthnOnboardingControllerIntegrationTest {
         when(webauthnOnboardingService.completeOnboarding(any(WebauthnOnboardingCompleteRequest.class)))
             .thenReturn(response);
 
-        mockMvc.perform(post("/complete")
+        mockMvc.perform(post("/onboarding/webauthn/complete")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(objectMapper.writeValueAsString(request)))
             .andExpect(status().isOk())
@@ -122,10 +122,10 @@ class WebauthnOnboardingControllerIntegrationTest {
         when(webauthnOnboardingService.completeOnboarding(any(WebauthnOnboardingCompleteRequest.class)))
             .thenThrow(new SecurityException("Invalid attestation signature"));
 
-        mockMvc.perform(post("/complete")
+        mockMvc.perform(post("/onboarding/webauthn/complete")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(objectMapper.writeValueAsString(request)))
-            .andExpect(status().isBadRequest())
+            .andExpect(status().isForbidden());
     }
 
     @Test
@@ -133,7 +133,7 @@ class WebauthnOnboardingControllerIntegrationTest {
         when(webauthnCredentialService.getKeyStatus("user123@university.edu"))
             .thenReturn(new WebauthnCredentialService.KeyStatus(true, 1, false, 1234567890L));
 
-        mockMvc.perform(get("/key-status/user123@university.edu"))
+        mockMvc.perform(get("/onboarding/webauthn/key-status/user123@university.edu"))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.hasCredential").value(true))
             .andExpect(jsonPath("$.credentialCount").value(1))
@@ -145,7 +145,7 @@ class WebauthnOnboardingControllerIntegrationTest {
         when(webauthnCredentialService.getKeyStatus("nonexistent@university.edu"))
             .thenReturn(new WebauthnCredentialService.KeyStatus(false, 0, false, null));
 
-        mockMvc.perform(get("/key-status/nonexistent@university.edu"))
+        mockMvc.perform(get("/onboarding/webauthn/key-status/nonexistent@university.edu"))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.hasCredential").value(false))
             .andExpect(jsonPath("$.credentialCount").value(0))
@@ -163,9 +163,9 @@ class WebauthnOnboardingControllerIntegrationTest {
         when(webauthnOnboardingService.completeOnboarding(any(WebauthnOnboardingCompleteRequest.class)))
             .thenThrow(new SecurityException("Challenge already used"));
 
-        mockMvc.perform(post("/complete")
+        mockMvc.perform(post("/onboarding/webauthn/complete")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(objectMapper.writeValueAsString(request)))
-            .andExpect(status().isBadRequest())
+            .andExpect(status().isForbidden());
     }
 }

@@ -13,6 +13,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
 import org.springframework.web.bind.annotation.*;
 
 /**
@@ -53,7 +54,13 @@ public class AuthController {
      */
     @GetMapping("/.well-known/openid-configuration")
     public ResponseEntity<Map<String, Object>> openidConfig() {
-        String baseDomain = gatewayUrlResolver.resolveBaseDomain();
+        String baseDomain;
+        try {
+            baseDomain = gatewayUrlResolver.resolveBaseDomain();
+        } catch (Exception e) {
+            log.warn("Failed to resolve gateway base domain, using request context", e);
+            baseDomain = fallbackBaseDomain();
+        }
         Map<String, Object> config = new HashMap<>();
         config.put("issuer", baseDomain + authPath);
         
@@ -62,6 +69,16 @@ public class AuthController {
 
         config.put("jwks_uri", baseDomain + jwksEndpoint);
         return ResponseEntity.ok(config);
+    }
+
+    private String fallbackBaseDomain() {
+        try {
+            return ServletUriComponentsBuilder.fromCurrentContextPath()
+                .build()
+                .toUriString();
+        } catch (Exception e) {
+            return "http://localhost:8080";
+        }
     }
 
     /**

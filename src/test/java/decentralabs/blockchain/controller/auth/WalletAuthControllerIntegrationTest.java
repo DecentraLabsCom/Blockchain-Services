@@ -161,13 +161,12 @@ class WalletAuthControllerIntegrationTest {
     @Test
     void shouldAuthenticateWalletWithoutBooking() throws Exception {
         WalletAuthRequest request = new WalletAuthRequest();
-        request.setAddress("0x742d35Cc6634C0532925a3b844Bc454e4438f44e");
+        request.setWallet("0x742d35Cc6634C0532925a3b844Bc454e4438f44e");
         request.setSignature("0x1234567890abcdef...");
-        request.setMessage("Welcome to DecentraLabs! Sign this message to authenticate. Timestamp: 1234567890");
 
         AuthResponse response = new AuthResponse("jwt.token.here");
 
-        when(walletAuthService.authenticateWallet(any(WalletAuthRequest.class), eq(false)))
+        when(walletAuthService.handleAuthentication(any(WalletAuthRequest.class), eq(false)))
             .thenReturn(response);
 
         mockMvc.perform(post("/auth/wallet-auth")
@@ -180,15 +179,14 @@ class WalletAuthControllerIntegrationTest {
     @Test
     void shouldAuthenticateWalletWithBooking() throws Exception {
         WalletAuthRequest request = new WalletAuthRequest();
-        request.setAddress("0x742d35Cc6634C0532925a3b844Bc454e4438f44e");
+        request.setWallet("0x742d35Cc6634C0532925a3b844Bc454e4438f44e");
         request.setSignature("0x1234567890abcdef...");
-        request.setMessage("Welcome to DecentraLabs! Sign this message to authenticate. Timestamp: 1234567890");
         request.setLabId("lab123");
         request.setReservationKey("reservation456");
 
         AuthResponse response = new AuthResponse("jwt.token.with.booking", "lab.url.com");
 
-        when(walletAuthService.authenticateWallet(any(WalletAuthRequest.class), eq(true)))
+        when(walletAuthService.handleAuthentication(any(WalletAuthRequest.class), eq(true)))
             .thenReturn(response);
 
         mockMvc.perform(post("/auth/wallet-auth2")
@@ -202,11 +200,10 @@ class WalletAuthControllerIntegrationTest {
     @Test
     void shouldHandleInvalidSignature() throws Exception {
         WalletAuthRequest request = new WalletAuthRequest();
-        request.setAddress("0x742d35Cc6634C0532925a3b844Bc454e4438f44e");
+        request.setWallet("0x742d35Cc6634C0532925a3b844Bc454e4438f44e");
         request.setSignature("invalid-signature");
-        request.setMessage("Welcome to DecentraLabs! Sign this message to authenticate. Timestamp: 1234567890");
 
-        when(walletAuthService.authenticateWallet(any(WalletAuthRequest.class), eq(false)))
+        when(walletAuthService.handleAuthentication(any(WalletAuthRequest.class), eq(false)))
             .thenThrow(new SecurityException("Invalid signature"));
 
         mockMvc.perform(post("/auth/wallet-auth")
@@ -219,11 +216,10 @@ class WalletAuthControllerIntegrationTest {
     @Test
     void shouldHandleExpiredMessage() throws Exception {
         WalletAuthRequest request = new WalletAuthRequest();
-        request.setAddress("0x742d35Cc6634C0532925a3b844Bc454e4438f44e");
+        request.setWallet("0x742d35Cc6634C0532925a3b844Bc454e4438f44e");
         request.setSignature("0x1234567890abcdef...");
-        request.setMessage("Welcome to DecentraLabs! Sign this message to authenticate. Timestamp: 1234567890");
 
-        when(walletAuthService.authenticateWallet(any(WalletAuthRequest.class), eq(false)))
+        when(walletAuthService.handleAuthentication(any(WalletAuthRequest.class), eq(false)))
             .thenThrow(new SecurityException("Message expired"));
 
         mockMvc.perform(post("/auth/wallet-auth")
@@ -236,11 +232,10 @@ class WalletAuthControllerIntegrationTest {
     @Test
     void shouldHandleInvalidAddress() throws Exception {
         WalletAuthRequest request = new WalletAuthRequest();
-        request.setAddress("invalid-address");
+        request.setWallet("invalid-address");
         request.setSignature("0x1234567890abcdef...");
-        request.setMessage("Welcome to DecentraLabs! Sign this message to authenticate. Timestamp: 1234567890");
 
-        when(walletAuthService.authenticateWallet(any(WalletAuthRequest.class), eq(false)))
+        when(walletAuthService.handleAuthentication(any(WalletAuthRequest.class), eq(false)))
             .thenThrow(new IllegalArgumentException("Invalid Ethereum address"));
 
         mockMvc.perform(post("/auth/wallet-auth")
@@ -253,13 +248,12 @@ class WalletAuthControllerIntegrationTest {
     @Test
     void shouldHandleNoReservationFound() throws Exception {
         WalletAuthRequest request = new WalletAuthRequest();
-        request.setAddress("0x742d35Cc6634C0532925a3b844Bc454e4438f44e");
+        request.setWallet("0x742d35Cc6634C0532925a3b844Bc454e4438f44e");
         request.setSignature("0x1234567890abcdef...");
-        request.setMessage("Welcome to DecentraLabs! Sign this message to authenticate. Timestamp: 1234567890");
         request.setLabId("lab123");
         request.setReservationKey("nonexistent");
 
-        when(walletAuthService.authenticateWallet(any(WalletAuthRequest.class), eq(true)))
+        when(walletAuthService.handleAuthentication(any(WalletAuthRequest.class), eq(true)))
             .thenThrow(new SecurityException("No active reservation found"));
 
         mockMvc.perform(post("/auth/wallet-auth2")
