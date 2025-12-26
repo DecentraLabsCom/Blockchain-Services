@@ -4,6 +4,7 @@ import decentralabs.blockchain.dto.auth.AuthResponse;
 import decentralabs.blockchain.dto.auth.CheckInResponse;
 import decentralabs.blockchain.dto.auth.InstitutionalCheckInRequest;
 import decentralabs.blockchain.dto.auth.SamlAuthRequest;
+import decentralabs.blockchain.exception.*;
 import decentralabs.blockchain.service.auth.SamlAuthService;
 import decentralabs.blockchain.service.auth.InstitutionalCheckInService;
 import lombok.extern.slf4j.Slf4j;
@@ -38,6 +39,12 @@ public class SamlAuthController {
         try {
             AuthResponse response = samlAuthService.handleAuthentication(request, false);
             return ResponseEntity.ok(response.toJson());
+        } catch (SamlExpiredAssertionException | SamlInvalidIssuerException | SamlReplayAttackException e) {
+            return ResponseEntity.status(401).body(AuthResponse.errorJson(e.getMessage()));
+        } catch (SamlMalformedResponseException | SamlMissingAttributesException e) {
+            return ResponseEntity.badRequest().body(AuthResponse.errorJson(e.getMessage()));
+        } catch (SamlServiceUnavailableException e) {
+            return ResponseEntity.status(503).body(AuthResponse.errorJson(e.getMessage()));
         } catch (IllegalArgumentException e) {
             return ResponseEntity.badRequest().body(AuthResponse.errorJson(e.getMessage()));
         } catch (SecurityException e) {
@@ -59,6 +66,12 @@ public class SamlAuthController {
         try {
             AuthResponse response = samlAuthService.handleAuthentication(request, true);
             return ResponseEntity.ok(response.toJson());
+        } catch (SamlExpiredAssertionException | SamlInvalidIssuerException | SamlReplayAttackException e) {
+            return ResponseEntity.status(401).body(AuthResponse.errorJson(e.getMessage()));
+        } catch (SamlMalformedResponseException | SamlMissingAttributesException e) {
+            return ResponseEntity.badRequest().body(AuthResponse.errorJson(e.getMessage()));
+        } catch (SamlServiceUnavailableException e) {
+            return ResponseEntity.status(503).body(AuthResponse.errorJson(e.getMessage()));
         } catch (IllegalArgumentException e) {
             return ResponseEntity.badRequest().body(AuthResponse.errorJson(e.getMessage()));
         } catch (SecurityException e) {

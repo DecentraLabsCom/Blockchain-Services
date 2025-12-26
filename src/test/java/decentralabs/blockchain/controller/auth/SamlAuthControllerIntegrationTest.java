@@ -21,6 +21,7 @@ import decentralabs.blockchain.dto.auth.AuthResponse;
 import decentralabs.blockchain.dto.auth.CheckInResponse;
 import decentralabs.blockchain.dto.auth.InstitutionalCheckInRequest;
 import decentralabs.blockchain.dto.auth.SamlAuthRequest;
+import decentralabs.blockchain.exception.*;
 import decentralabs.blockchain.service.auth.InstitutionalCheckInService;
 import decentralabs.blockchain.service.auth.SamlAuthService;
 
@@ -102,6 +103,91 @@ class SamlAuthControllerIntegrationTest {
                 .content(objectMapper.writeValueAsString(request)))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.valid").value(true));
+    }
+
+    @Test
+    void shouldHandleExpiredSamlAssertion() throws Exception {
+        SamlAuthRequest request = createBaseRequest();
+
+        when(samlAuthService.handleAuthentication(any(SamlAuthRequest.class), eq(false)))
+            .thenThrow(new SamlExpiredAssertionException("SAML assertion has expired"));
+
+        mockMvc.perform(post("/auth/saml-auth")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(request)))
+            .andExpect(status().isUnauthorized())
+            .andExpect(jsonPath("$.error").value("SAML assertion has expired"));
+    }
+
+    @Test
+    void shouldHandleInvalidIssuer() throws Exception {
+        SamlAuthRequest request = createBaseRequest();
+
+        when(samlAuthService.handleAuthentication(any(SamlAuthRequest.class), eq(false)))
+            .thenThrow(new SamlInvalidIssuerException("Issuer not trusted: unknown-idp.edu"));
+
+        mockMvc.perform(post("/auth/saml-auth")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(request)))
+            .andExpect(status().isUnauthorized())
+            .andExpect(jsonPath("$.error").value("Issuer not trusted: unknown-idp.edu"));
+    }
+
+    @Test
+    void shouldHandleMalformedSamlResponse() throws Exception {
+        SamlAuthRequest request = createBaseRequest();
+        request.setSamlAssertion("invalid-base64-data!!!");
+
+        when(samlAuthService.handleAuthentication(any(SamlAuthRequest.class), eq(false)))
+            .thenThrow(new SamlMalformedResponseException("Invalid SAML response format"));
+
+        mockMvc.perform(post("/auth/saml-auth")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(request)))
+            .andExpect(status().isBadRequest())
+            .andExpect(jsonPath("$.error").value("Invalid SAML response format"));
+    }
+
+    @Test
+    void shouldHandleMissingRequiredAttributes() throws Exception {
+        SamlAuthRequest request = createBaseRequest();
+
+        when(samlAuthService.handleAuthentication(any(SamlAuthRequest.class), eq(false)))
+            .thenThrow(new SamlMissingAttributesException("Missing required attribute: schacPersonalUniqueCode"));
+
+        mockMvc.perform(post("/auth/saml-auth")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(request)))
+            .andExpect(status().isBadRequest())
+            .andExpect(jsonPath("$.error").value("Missing required attribute: schacPersonalUniqueCode"));
+    }
+
+    @Test
+    void shouldHandleReplayAttack() throws Exception {
+        SamlAuthRequest request = createBaseRequest();
+
+        when(samlAuthService.handleAuthentication(any(SamlAuthRequest.class), eq(false)))
+            .thenThrow(new SamlReplayAttackException("SAML assertion already used (replay attack detected)"));
+
+        mockMvc.perform(post("/auth/saml-auth")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(request)))
+            .andExpect(status().isUnauthorized())
+            .andExpect(jsonPath("$.error").value("SAML assertion already used (replay attack detected)"));
+    }
+
+    @Test
+    void shouldHandleServiceUnavailable() throws Exception {
+        SamlAuthRequest request = createBaseRequest();
+
+        when(samlAuthService.handleAuthentication(any(SamlAuthRequest.class), eq(false)))
+            .thenThrow(new SamlServiceUnavailableException("IdP metadata service unavailable"));
+
+        mockMvc.perform(post("/auth/saml-auth")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(request)))
+            .andExpect(status().isServiceUnavailable())
+            .andExpect(jsonPath("$.error").value("IdP metadata service unavailable"));
     }
 
     private SamlAuthRequest createBaseRequest() {

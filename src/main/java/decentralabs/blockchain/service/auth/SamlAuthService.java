@@ -2,6 +2,7 @@ package decentralabs.blockchain.service.auth;
 
 import decentralabs.blockchain.dto.auth.AuthResponse;
 import decentralabs.blockchain.dto.auth.SamlAuthRequest;
+import decentralabs.blockchain.exception.*;
 import decentralabs.blockchain.service.wallet.BlockchainBookingService;
 import decentralabs.blockchain.util.LogSanitizer;
 import io.jsonwebtoken.Claims;
@@ -146,9 +147,31 @@ public class SamlAuthService {
      * @throws Exception if validation fails
      */
     private Map<String, String> validateSAMLAssertion(String samlAssertion) throws Exception {
-        Map<String, String> attributes = samlValidationService.validateSamlAssertionWithSignature(samlAssertion);
-        log.info("SAML assertion validated WITH SIGNATURE.");
-        return attributes;
+        try {
+            Map<String, String> attributes = samlValidationService.validateSamlAssertionWithSignature(samlAssertion);
+            log.info("SAML assertion validated WITH SIGNATURE.");
+            return attributes;
+        } catch (Exception e) {
+            String errorMessage = e.getMessage();
+            if (errorMessage != null) {
+                // Map specific error messages to appropriate exceptions
+                if (errorMessage.contains("expired") || errorMessage.contains("not valid")) {
+                    throw new SamlExpiredAssertionException("SAML assertion has expired: " + errorMessage, e);
+                } else if (errorMessage.contains("not in trusted list") || errorMessage.contains("unknown-idp")) {
+                    throw new SamlInvalidIssuerException("Issuer not trusted: " + errorMessage, e);
+                } else if (errorMessage.contains("signature is INVALID") || errorMessage.contains("Could not validate")) {
+                    throw new SamlMalformedResponseException("Invalid SAML response format: " + errorMessage, e);
+                } else if (errorMessage.contains("missing") && (errorMessage.contains("userid") || errorMessage.contains("affiliation"))) {
+                    throw new SamlMissingAttributesException("SAML assertion missing required attributes: " + errorMessage, e);
+                } else if (errorMessage.contains("replay") || errorMessage.contains("already used")) {
+                    throw new SamlReplayAttackException("SAML assertion already used (replay attack detected): " + errorMessage, e);
+                } else if (errorMessage.contains("unavailable") || errorMessage.contains("Could not retrieve")) {
+                    throw new SamlServiceUnavailableException("IdP metadata service unavailable: " + errorMessage, e);
+                }
+            }
+            // Default to malformed response for unknown errors
+            throw new SamlMalformedResponseException("Invalid SAML response format: " + errorMessage, e);
+        }
     }
     
     /**

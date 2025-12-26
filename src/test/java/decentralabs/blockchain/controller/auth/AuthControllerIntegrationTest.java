@@ -66,4 +66,46 @@ class AuthControllerIntegrationTest {
             .andExpect(jsonPath("$.keys[0].e").exists())
             .andExpect(jsonPath("$.keys[0].kid").exists());
     }
+
+    @Test
+    void shouldHandleKeyServiceError() throws Exception {
+        when(keyService.getPublicKey())
+            .thenThrow(new RuntimeException("Key service unavailable"));
+
+        mockMvc.perform(get("/auth/jwks"))
+            .andExpect(status().isInternalServerError());
+    }
+
+    @Test
+    void shouldReturnCorrectKeyFormat() throws Exception {
+        // Generate a test RSA key pair
+        KeyPairGenerator keyGen = KeyPairGenerator.getInstance("RSA");
+        keyGen.initialize(2048);
+        KeyPair keyPair = keyGen.generateKeyPair();
+        RSAPublicKey publicKey = (RSAPublicKey) keyPair.getPublic();
+
+        when(keyService.getPublicKey())
+            .thenReturn(publicKey);
+
+        mockMvc.perform(get("/auth/jwks"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.keys[0].kty").value("RSA"))
+            .andExpect(jsonPath("$.keys[0].alg").value("RS256"))
+            .andExpect(jsonPath("$.keys[0].use").value("sig"))
+            // Verify Base64URL encoding (no padding, URL-safe characters)
+            .andExpect(jsonPath("$.keys[0].n").value(org.hamcrest.Matchers.matchesPattern("^[A-Za-z0-9_-]+$")))
+            .andExpect(jsonPath("$.keys[0].e").value(org.hamcrest.Matchers.matchesPattern("^[A-Za-z0-9_-]+$")))
+            .andExpect(jsonPath("$.keys[0].kid").value(org.hamcrest.Matchers.matchesPattern("^[A-Za-z0-9_-]+$")));
+    }
+
+    @Test
+    void shouldHandleGatewayUrlResolverError() throws Exception {
+        when(gatewayUrlResolver.resolveBaseDomain())
+            .thenThrow(new RuntimeException("Gateway resolver error"));
+
+        // OpenID config should still work with default values
+        mockMvc.perform(get("/.well-known/openid-configuration"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.issuer").exists());
+    }
 }
