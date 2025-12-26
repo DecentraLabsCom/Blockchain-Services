@@ -20,13 +20,6 @@ This service provides two main components:
 
 Together, they offer a bridge between institutional access control systems (like the **Lab Gateway** in the figure above) and blockchain-based smart contracts.
 
-## 📚 Documentation Structure
-
-This documentation is organized into specialized sections:
-
-* **[Authentication Service](AUTH_SERVICE.md)** - Wallet challenges, SAML2 SSO, JWT generation and validation
-* **[Institutional Wallet & Treasury](WALLET_TREASURY.md)** - Ethereum wallet management, treasury operations, and smart contract interactions
-
 ## 🏗️ Architecture Overview
 
 ```
