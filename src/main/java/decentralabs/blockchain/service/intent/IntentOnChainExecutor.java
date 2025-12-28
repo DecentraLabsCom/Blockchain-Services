@@ -11,6 +11,8 @@ import org.web3j.abi.FunctionEncoder;
 import org.web3j.abi.datatypes.Function;
 import org.web3j.abi.datatypes.Utf8String;
 import org.web3j.abi.datatypes.generated.Bytes32;
+import org.web3j.abi.datatypes.generated.Uint32;
+import org.web3j.abi.datatypes.generated.Uint96;
 import org.web3j.abi.datatypes.generated.Uint256;
 import org.web3j.abi.TypeReference;
 import org.web3j.abi.FunctionReturnDecoder;
@@ -63,7 +65,6 @@ public class IntentOnChainExecutor {
 
         return switch (action) {
             case "LAB_ADD" -> send(buildAddLab(record), credentials);
-            case "LAB_ADD_AND_LIST" -> send(buildAddAndListLab(record), credentials);
             case "LAB_UPDATE" -> send(buildUpdateLab(record), credentials);
             case "LAB_LIST" -> send(buildSimple(FunctionName.LIST_TOKEN, record), credentials);
             case "LAB_UNLIST" -> send(buildSimple(FunctionName.UNLIST_TOKEN, record), credentials);
@@ -141,27 +142,7 @@ public class IntentOnChainExecutor {
         }
         return Optional.of(new Function(
             "addLabWithIntent",
-            List.of(new Bytes32(requestId), new Utf8String(uri), new Uint256(price), new Utf8String(accessURI), new Utf8String(accessKey)),
-            List.of()
-        ));
-    }
-
-    private Optional<Function> buildAddAndListLab(IntentRecord record) {
-        ActionIntentPayload payload = record.getActionPayload();
-        if (payload == null) {
-            return Optional.empty();
-        }
-        byte[] requestId = toBytes32(record.getRequestId());
-        String uri = payload.getUri();
-        BigInteger price = payload.getPrice();
-        String accessURI = payload.getAccessURI();
-        String accessKey = payload.getAccessKey();
-        if (uri == null || price == null) {
-            return Optional.empty();
-        }
-        return Optional.of(new Function(
-            "addAndListLabWithIntent",
-            List.of(new Bytes32(requestId), new Utf8String(uri), new Uint256(price), new Utf8String(accessURI), new Utf8String(accessKey)),
+            List.of(new Bytes32(requestId), new Utf8String(uri), new Uint96(price), new Utf8String(accessURI), new Utf8String(accessKey)),
             List.of()
         ));
     }
@@ -202,7 +183,7 @@ public class IntentOnChainExecutor {
         String accessKey = data.getAccessKey();
         return Optional.of(new Function(
             "updateLabWithIntent",
-            List.of(new Bytes32(requestId), new Uint256(labId), new Utf8String(uri != null ? uri : ""), new Uint256(price != null ? price : BigInteger.ZERO),
+            List.of(new Bytes32(requestId), new Uint256(labId), new Utf8String(uri != null ? uri : ""), new Uint96(price != null ? price : BigInteger.ZERO),
                 new Utf8String(accessURI != null ? accessURI : ""), new Utf8String(accessKey != null ? accessKey : "")),
             List.of()
         ));
@@ -277,8 +258,8 @@ public class IntentOnChainExecutor {
                 new org.web3j.abi.datatypes.Address(record.getProvider()),
                 new Utf8String(record.getPuc() != null ? record.getPuc() : ""),
                 new Uint256(labId),
-                new Uint256(start),
-                new Uint256(end)
+                new Uint32(start),
+                new Uint32(end)
             ),
             List.of()
         ));

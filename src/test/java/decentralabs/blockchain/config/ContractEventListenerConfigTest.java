@@ -303,7 +303,7 @@ class ContractEventListenerConfigTest {
         var labCall = (org.web3j.protocol.core.RemoteFunctionCall<decentralabs.blockchain.contract.Diamond.Lab>) mock(org.web3j.protocol.core.RemoteFunctionCall.class);
         decentralabs.blockchain.contract.Diamond.LabBase base =
             new decentralabs.blockchain.contract.Diamond.LabBase(
-                "ipfs://lab-metadata", BigInteger.ZERO, "", "", ""
+                "ipfs://lab-metadata", BigInteger.ZERO, "", "", BigInteger.ZERO
             );
         decentralabs.blockchain.contract.Diamond.Lab lab =
             new decentralabs.blockchain.contract.Diamond.Lab(BigInteger.valueOf(5), base);
@@ -488,7 +488,7 @@ class ContractEventListenerConfigTest {
         var labCall = (org.web3j.protocol.core.RemoteFunctionCall<decentralabs.blockchain.contract.Diamond.Lab>) mock(org.web3j.protocol.core.RemoteFunctionCall.class);
         decentralabs.blockchain.contract.Diamond.LabBase base =
             new decentralabs.blockchain.contract.Diamond.LabBase(
-                "ipfs://auto-lab-metadata", BigInteger.ZERO, "", "", ""
+                "ipfs://auto-lab-metadata", BigInteger.ZERO, "", "", BigInteger.ZERO
             );
         decentralabs.blockchain.contract.Diamond.Lab lab =
             new decentralabs.blockchain.contract.Diamond.Lab(BigInteger.valueOf(15), base);

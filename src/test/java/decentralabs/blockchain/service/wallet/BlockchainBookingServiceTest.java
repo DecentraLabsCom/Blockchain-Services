@@ -286,9 +286,9 @@ class BlockchainBookingServiceTest {
         Diamond.LabBase base = new Diamond.LabBase(
                 metadata,  // uri
                 price,
-                "https://auth.url",  // auth
                 accessURI,
-                accessKey
+                accessKey,
+                BigInteger.ZERO
         );
         return new Diamond.Lab(TEST_LAB_ID, base);
     }

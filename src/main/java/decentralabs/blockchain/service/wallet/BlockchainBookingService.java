@@ -134,6 +134,7 @@ public class BlockchainBookingService {
         BigInteger start = reservation.start;
         BigInteger end = reservation.end;
         BigInteger status = reservation.status;
+        String authURI = resolveProviderAuthURI(diamond, reservation.labProvider);
         if (expectedPuc != null && !expectedPuc.isBlank()) {
             String reservationPuc = reservation.puc;
             if (reservationPuc == null || !reservationPuc.equals(expectedPuc)) {
@@ -150,7 +151,6 @@ public class BlockchainBookingService {
         
         String metadata = base.uri;
         BigInteger labPrice = base.price;
-        String authURI = base.auth;
         String accessURI = base.accessURI;
         String accessKey = base.accessKey;
 
@@ -214,6 +214,7 @@ public class BlockchainBookingService {
         BigInteger start = reservation.start;
         BigInteger end = reservation.end;
         BigInteger status = reservation.status;
+        String authURI = resolveProviderAuthURI(diamond, reservation.labProvider);
 
         // 4. Validate reservation
         validateReservation(wallet, renter, status, start, end);
@@ -224,7 +225,6 @@ public class BlockchainBookingService {
         
         String metadata = base.uri;
         BigInteger labPrice = base.price;
-        String authURI = base.auth;
         String accessURI = base.accessURI;
         String accessKey = base.accessKey;
 
@@ -363,6 +363,18 @@ public class BlockchainBookingService {
 
     private boolean isValidReservationKey(byte[] key) {
         return key != null && key.length == 32 && !Arrays.equals(key, new byte[32]);
+    }
+
+    private String resolveProviderAuthURI(Diamond diamond, String providerAddress) {
+        if (providerAddress == null || providerAddress.isBlank()) {
+            return null;
+        }
+        try {
+            return diamond.getProviderAuthURI(providerAddress).send();
+        } catch (Exception e) {
+            log.warn("Unable to fetch provider authURI: {}", e.getMessage());
+            return null;
+        }
     }
 
     private Diamond loadDiamondContract(String caller) {

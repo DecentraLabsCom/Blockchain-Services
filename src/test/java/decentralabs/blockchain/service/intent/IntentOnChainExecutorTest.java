@@ -170,8 +170,8 @@ class IntentOnChainExecutorTest {
     class LabAddAndListActionTests {
 
         @Test
-        @DisplayName("Should return missing_parameters when payload is null for LAB_ADD_AND_LIST")
-        void shouldReturnMissingParametersWhenPayloadIsNull() throws Exception {
+        @DisplayName("Should return unsupported_action for LAB_ADD_AND_LIST")
+        void shouldReturnUnsupportedActionWhenLabAddAndList() throws Exception {
             when(institutionalWalletService.getInstitutionalCredentials()).thenReturn(testCredentials);
 
             IntentRecord record = new IntentRecord("req-123", "LAB_ADD_AND_LIST", "0xprovider");
@@ -179,7 +179,7 @@ class IntentOnChainExecutorTest {
             ExecutionResult result = executor.execute(record);
 
             assertThat(result.success()).isFalse();
-            assertThat(result.reason()).isEqualTo("missing_parameters");
+            assertThat(result.reason()).isEqualTo("unsupported_action");
         }
     }
 

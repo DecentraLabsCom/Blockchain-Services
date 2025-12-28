@@ -69,9 +69,9 @@ public class ContractEventListenerConfig {
         Arrays.<TypeReference<?>>asList(
             new TypeReference<Address>(true) {},
             new TypeReference<Uint256>(true) {},
-            new TypeReference<Bytes32>(true) {},
             new TypeReference<Uint256>() {},
-            new TypeReference<Uint256>() {}
+            new TypeReference<Uint256>() {},
+            new TypeReference<Bytes32>(true) {}
         )
     );
 

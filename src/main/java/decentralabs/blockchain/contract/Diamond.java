@@ -102,17 +102,17 @@ public class Diamond extends Contract {
     public static class LabBase {
         public String uri;        // metadata URI
         public BigInteger price;  // uint96 in Solidity
-        public String auth;       // auth URI
         public String accessURI;  // access URI
         public String accessKey;  // access key
-        
-        public LabBase(String uri, BigInteger price, String auth, 
-                      String accessURI, String accessKey) {
+        public BigInteger createdAt; // uint32
+
+        public LabBase(String uri, BigInteger price, String accessURI,
+                      String accessKey, BigInteger createdAt) {
             this.uri = uri;
             this.price = price;
-            this.auth = auth;
             this.accessURI = accessURI;
             this.accessKey = accessKey;
+            this.createdAt = createdAt;
         }
     }
     
@@ -323,10 +323,25 @@ public class Diamond extends Contract {
                     return (byte[]) result.getValue();
                 });
     }
+
+    /**
+     * Get the authentication URI for a provider
+     */
+    @SuppressWarnings("rawtypes")
+    public RemoteFunctionCall<String> getProviderAuthURI(String provider) {
+        final Function function = new Function("getProviderAuthURI",
+                Arrays.asList(new Address(provider)),
+                Arrays.asList(new TypeReference<Utf8String>() {}));
+        return new RemoteFunctionCall<>(function,
+                () -> {
+                    Type result = executeCallSingleValueReturn(function);
+                    return (String) result.getValue();
+                });
+    }
     
     /**
      * Get lab information (LabFacet)
-     * Manual ABI decoding for nested struct: Lab(uint256, LabBase(string, uint96, string, string, string))
+     * Manual ABI decoding for nested struct: Lab(uint256, LabBase(string, uint96, string, string, uint32))
      * 
      * Solidity ABI encoding for tuple with dynamic types:
      * - offset_0: labId (uint256) - 32 bytes
@@ -372,27 +387,26 @@ public class Diamond extends Contract {
                     int labBaseStart = tupleOffset + labBaseOffsetRelative;
                     
                     // Read LabBase tuple fields
-                    // LabBase structure: (string uri, uint96 price, string auth, string accessURI, string accessKey)
+                    // LabBase structure: (string uri, uint96 price, string accessURI, string accessKey, uint32 createdAt)
                     // Word 0: offset to uri (relative to LabBase start)
                     // Word 1: price (uint96, right-aligned in 32 bytes)
-                    // Word 2: offset to auth
-                    // Word 3: offset to accessURI  
-                    // Word 4: offset to accessKey
+                    // Word 2: offset to accessURI
+                    // Word 3: offset to accessKey
+                    // Word 4: createdAt (uint32, right-aligned in 32 bytes)
                     // Word 5+: actual string data
                     
                     int uriOffsetRel = new BigInteger(hex.substring(labBaseStart, labBaseStart + 64), 16).intValue() * 2;
                     BigInteger price = new BigInteger(hex.substring(labBaseStart + 64, labBaseStart + 128), 16);
-                    int authOffsetRel = new BigInteger(hex.substring(labBaseStart + 128, labBaseStart + 192), 16).intValue() * 2;
-                    int accessURIOffsetRel = new BigInteger(hex.substring(labBaseStart + 192, labBaseStart + 256), 16).intValue() * 2;
-                    int accessKeyOffsetRel = new BigInteger(hex.substring(labBaseStart + 256, labBaseStart + 320), 16).intValue() * 2;
+                    int accessURIOffsetRel = new BigInteger(hex.substring(labBaseStart + 128, labBaseStart + 192), 16).intValue() * 2;
+                    int accessKeyOffsetRel = new BigInteger(hex.substring(labBaseStart + 192, labBaseStart + 256), 16).intValue() * 2;
+                    BigInteger createdAt = new BigInteger(hex.substring(labBaseStart + 256, labBaseStart + 320), 16);
                     
                     // Decode strings (offsets are relative to LabBase start)
                     String uri = decodeString(hex, labBaseStart + uriOffsetRel);
-                    String auth = decodeString(hex, labBaseStart + authOffsetRel);
                     String accessURI = decodeString(hex, labBaseStart + accessURIOffsetRel);
                     String accessKey = decodeString(hex, labBaseStart + accessKeyOffsetRel);
                     
-                    LabBase base = new LabBase(uri, price, auth, accessURI, accessKey);
+                    LabBase base = new LabBase(uri, price, accessURI, accessKey, createdAt);
                     return new Lab(labId, base);
                 });
     }

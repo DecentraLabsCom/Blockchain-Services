@@ -230,8 +230,12 @@ public class IntentService {
     }
 
     private IntentAction resolveAction(IntentMeta meta) {
-        return IntentAction.fromId(meta.getAction())
+        IntentAction action = IntentAction.fromId(meta.getAction())
             .orElseThrow(() -> new ResponseStatusException(HttpStatus.BAD_REQUEST, "Unsupported action"));
+        if (action == IntentAction.LAB_ADD_AND_LIST) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "unsupported_action");
+        }
+        return action;
     }
 
     private void validatePayload(
@@ -304,7 +308,7 @@ public class IntentService {
                 throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Missing puc");
             }
             switch (action) {
-                case LAB_ADD, LAB_ADD_AND_LIST -> {
+                case LAB_ADD -> {
                     if (isBlank(actionPayload.getUri()) || actionPayload.getPrice() == null || isBlank(actionPayload.getAccessURI()) || isBlank(actionPayload.getAccessKey())) {
                         throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Missing lab payload fields");
                     }
