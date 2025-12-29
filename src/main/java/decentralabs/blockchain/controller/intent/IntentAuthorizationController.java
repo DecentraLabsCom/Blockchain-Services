@@ -6,14 +6,13 @@ import decentralabs.blockchain.dto.intent.IntentAuthorizationCompleteRequest;
 import decentralabs.blockchain.dto.intent.IntentAuthorizationRequest;
 import decentralabs.blockchain.dto.intent.IntentAuthorizationSessionResponse;
 import decentralabs.blockchain.dto.intent.IntentAuthorizationStatusResponse;
+import decentralabs.blockchain.service.intent.IntentAuthService;
 import decentralabs.blockchain.service.intent.IntentAuthorizationService;
 import jakarta.validation.Valid;
 import java.util.HashMap;
 import java.util.Map;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Value;
-import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -22,7 +21,6 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
-import org.springframework.web.server.ResponseStatusException;
 
 @RestController
 @RequestMapping("${endpoint.intents:/intents}")
@@ -33,18 +31,15 @@ public class IntentAuthorizationController {
     private static final long DEFAULT_TIMEOUT_MS = 90_000L;
 
     private final IntentAuthorizationService authorizationService;
+    private final IntentAuthService intentAuthService;
     private final ObjectMapper objectMapper = new ObjectMapper();
-
-    @Value("${intents.api-key:}")
-    private String configuredApiKey;
 
     @PostMapping("/authorize")
     public ResponseEntity<IntentAuthorizationSessionResponse> authorizeIntent(
         @RequestBody @Valid IntentAuthorizationRequest request,
-        @RequestHeader(value = "x-api-key", required = false) String apiKeyHeader,
         @RequestHeader(value = "Authorization", required = false) String authorizationHeader
     ) {
-        enforceApiKey(apiKeyHeader, authorizationHeader);
+        intentAuthService.enforceSubmitAuthorization(authorizationHeader);
         IntentAuthorizationService.AuthorizationSession session = authorizationService.createSession(request);
         IntentAuthorizationSessionResponse response = IntentAuthorizationSessionResponse.builder()
             .sessionId(session.getSessionId())
@@ -58,10 +53,9 @@ public class IntentAuthorizationController {
     @GetMapping("/authorize/status/{sessionId}")
     public ResponseEntity<IntentAuthorizationStatusResponse> getStatus(
         @PathVariable String sessionId,
-        @RequestHeader(value = "x-api-key", required = false) String apiKeyHeader,
         @RequestHeader(value = "Authorization", required = false) String authorizationHeader
     ) {
-        enforceApiKey(apiKeyHeader, authorizationHeader);
+        intentAuthService.enforceStatusAuthorization(authorizationHeader);
         return ResponseEntity.ok(authorizationService.getStatus(sessionId));
     }
 
@@ -78,21 +72,6 @@ public class IntentAuthorizationController {
     ) {
         IntentAckResponse response = authorizationService.completeAuthorization(request);
         return ResponseEntity.ok(response);
-    }
-
-    private void enforceApiKey(String apiKeyHeader, String authorizationHeader) {
-        if (configuredApiKey == null || configuredApiKey.isBlank()) {
-            return;
-        }
-        boolean headerMatch = configuredApiKey.equals(apiKeyHeader);
-        boolean bearerMatch = false;
-        if (authorizationHeader != null && authorizationHeader.toLowerCase().startsWith("bearer ")) {
-            String bearerValue = authorizationHeader.substring("bearer ".length()).trim();
-            bearerMatch = configuredApiKey.equals(bearerValue);
-        }
-        if (!headerMatch && !bearerMatch) {
-            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Invalid API key");
-        }
     }
 
     private String generateCeremonyHtml(IntentAuthorizationService.AuthorizationSession session) {

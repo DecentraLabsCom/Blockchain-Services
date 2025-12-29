@@ -76,6 +76,42 @@
     "description": "API key for intents service."
   },
   {
+    "name": "intents.auth.enabled",
+    "type": "java.lang.Boolean",
+    "description": "Enable JWT auth for intents endpoints.",
+    "defaultValue": true
+  },
+  {
+    "name": "intents.auth.issuer",
+    "type": "java.lang.String",
+    "description": "JWT issuer expected for intents endpoints.",
+    "defaultValue": "marketplace"
+  },
+  {
+    "name": "intents.auth.audience",
+    "type": "java.lang.String",
+    "description": "JWT audience expected for intents endpoints.",
+    "defaultValue": "blockchain-services"
+  },
+  {
+    "name": "intents.auth.submit-scope",
+    "type": "java.lang.String",
+    "description": "Scope required to submit intents.",
+    "defaultValue": "intents:submit"
+  },
+  {
+    "name": "intents.auth.status-scope",
+    "type": "java.lang.String",
+    "description": "Scope required to read intent status.",
+    "defaultValue": "intents:status"
+  },
+  {
+    "name": "intents.auth.clock-skew-seconds",
+    "type": "java.lang.Long",
+    "description": "Clock skew tolerance for intents JWT validation.",
+    "defaultValue": 60
+  },
+  {
     "name": "intent.trusted-signer",
     "type": "java.lang.String",
     "description": "Trusted signer address for intent validation."
