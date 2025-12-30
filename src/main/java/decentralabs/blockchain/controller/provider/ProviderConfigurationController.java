@@ -208,7 +208,11 @@ public class ProviderConfigurationController {
         Map<String, Object> response = new HashMap<>();
         try {
             ConfigSnapshot snapshot = loadSnapshot();
-            ProvisioningTokenPayload payload = provisioningTokenService.validateAndExtract(request.getToken(), snapshot.marketplaceBaseUrl());
+            ProvisioningTokenPayload payload = provisioningTokenService.validateAndExtract(
+                request.getToken(),
+                snapshot.marketplaceBaseUrl(),
+                snapshot.publicBaseUrl()
+            );
 
             // Persist configuration from token (source=token)
             persistenceService.saveConfigurationFromToken(payload);
@@ -261,7 +265,11 @@ public class ProviderConfigurationController {
         Map<String, Object> response = new HashMap<>();
         try {
             ConfigSnapshot snapshot = loadSnapshot();
-            ConsumerProvisioningTokenPayload payload = provisioningTokenService.validateAndExtractConsumer(request.getToken(), snapshot.marketplaceBaseUrl());
+            ConsumerProvisioningTokenPayload payload = provisioningTokenService.validateAndExtractConsumer(
+                request.getToken(),
+                snapshot.marketplaceBaseUrl(),
+                snapshot.publicBaseUrl()
+            );
 
             // Persist minimal consumer configuration from token (source=consumer-token)
             persistenceService.saveConfigurationFromConsumerToken(payload);

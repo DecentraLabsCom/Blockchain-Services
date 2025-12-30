@@ -45,7 +45,7 @@ public class ProvisioningTokenService {
     /**
      * Validates provider provisioning token and extracts provider configuration
      */
-    public ProvisioningTokenPayload validateAndExtract(String token, String configuredMarketplaceBaseUrl) {
+    public ProvisioningTokenPayload validateAndExtract(String token, String configuredMarketplaceBaseUrl, String configuredPublicBaseUrl) {
         try {
             // Decode payload without verifying to get candidate marketplace base URL
             JsonNode headerNode = decodePart(token, 0);
@@ -53,6 +53,7 @@ public class ProvisioningTokenService {
 
             String tokenMarketplaceBaseUrl = payloadNode.path("marketplaceBaseUrl").asText("");
             String marketplaceBaseUrl = resolveMarketplaceBaseUrl(configuredMarketplaceBaseUrl, tokenMarketplaceBaseUrl);
+            String expectedAudience = resolveExpectedAudience(configuredPublicBaseUrl, payloadNode);
 
             String jwksUrl = marketplaceBaseUrl + "/api/institutions/provisionToken/jwks";
             JsonNode jwkSet = fetchJwkSet(jwksUrl);
@@ -62,8 +63,8 @@ public class ProvisioningTokenService {
 
             JwtParser parser = Jwts.parser()
                 .setSigningKey(publicKey)
-                .requireIssuer("marketplace-provisioning")
-                .requireAudience("blockchain-services")
+                .requireIssuer(marketplaceBaseUrl)
+                .requireAudience(expectedAudience)
                 .setAllowedClockSkewSeconds(60)
                 .build();
 
@@ -100,7 +101,7 @@ public class ProvisioningTokenService {
     /**
      * Validates consumer provisioning token (consumer-only institutions, no labs)
      */
-    public ConsumerProvisioningTokenPayload validateAndExtractConsumer(String token, String configuredMarketplaceBaseUrl) {
+    public ConsumerProvisioningTokenPayload validateAndExtractConsumer(String token, String configuredMarketplaceBaseUrl, String configuredPublicBaseUrl) {
         try {
             // Decode payload without verifying to get candidate marketplace base URL
             JsonNode headerNode = decodePart(token, 0);
@@ -113,6 +114,7 @@ public class ProvisioningTokenService {
 
             String tokenMarketplaceBaseUrl = payloadNode.path("marketplaceBaseUrl").asText("");
             String marketplaceBaseUrl = resolveMarketplaceBaseUrl(configuredMarketplaceBaseUrl, tokenMarketplaceBaseUrl);
+            String expectedAudience = resolveExpectedAudience(configuredPublicBaseUrl, payloadNode);
 
             String jwksUrl = marketplaceBaseUrl + "/api/institutions/provisionConsumer/jwks";
             JsonNode jwkSet = fetchJwkSet(jwksUrl);
@@ -122,8 +124,8 @@ public class ProvisioningTokenService {
 
             JwtParser parser = Jwts.parser()
                 .setSigningKey(publicKey)
-                .requireIssuer("marketplace-provisioning")
-                .requireAudience("blockchain-services")
+                .requireIssuer(marketplaceBaseUrl)
+                .requireAudience(expectedAudience)
                 .setAllowedClockSkewSeconds(60)
                 .build();
 
@@ -172,6 +174,31 @@ public class ProvisioningTokenService {
             throw new IllegalArgumentException("Marketplace base URL is required (configure marketplace.base-url or include it in token)");
         }
         return normalizeUrl(fromToken);
+    }
+
+    private String resolveExpectedAudience(String configuredPublicBaseUrl, JsonNode payloadNode) {
+        if (configuredPublicBaseUrl != null && !configuredPublicBaseUrl.isBlank()) {
+            return normalizeUrl(configuredPublicBaseUrl);
+        }
+
+        JsonNode audNode = payloadNode.get("aud");
+        if (audNode == null || audNode.isNull()) {
+            return "blockchain-services";
+        }
+
+        if (audNode.isTextual()) {
+            return normalizeUrl(audNode.asText());
+        }
+
+        if (audNode.isArray()) {
+            for (JsonNode value : audNode) {
+                if (value != null && value.isTextual() && !value.asText().isBlank()) {
+                    return normalizeUrl(value.asText());
+                }
+            }
+        }
+
+        return "blockchain-services";
     }
 
     private String normalizeUrl(String url) {

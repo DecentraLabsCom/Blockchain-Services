@@ -94,7 +94,7 @@ Together, they offer a bridge between institutional access control systems (like
 ### Authentication Endpoints (`/auth`)
 | Endpoint | Method | Description |
 |----------|--------|-------------|
-| `/auth/.well-known/openid-configuration` | GET | OIDC discovery metadata |
+| `/.well-known/openid-configuration` | GET | OIDC discovery metadata |
 | `/auth/jwks` | GET | JSON Web Keys for token validation |
 | `/auth/message` | GET | Get wallet challenge message |
 | `/auth/wallet-auth` | POST | Wallet authentication (no booking) |
@@ -162,7 +162,7 @@ Together, they offer a bridge between institutional access control systems (like
 
 3. **Access the service:**
    - Health check: http://localhost:8080/health
-   - OIDC discovery: http://localhost:8080/auth/.well-known/openid-configuration
+   - OIDC discovery: http://localhost:8080/.well-known/openid-configuration
    - JWKS endpoint: http://localhost:8080/auth/jwks
 
 ### Docker Deployment (Development)
