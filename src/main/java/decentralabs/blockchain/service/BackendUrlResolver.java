@@ -14,10 +14,10 @@ import org.springframework.util.StringUtils;
  *     <li>{@code SERVER_NAME} + {@code HTTP_PORT} (falls back to {@code server.port} or 8080)</li>
  *     <li>Ultimately {@code http://localhost:8080} if nothing else is provided</li>
  * </ol>
- * This keeps standalone blockchain-services behavior identical to the gateway deployment.
+ * This keeps standalone blockchain-services behavior identical to the backend deployment.
  */
 @Service
-public class GatewayUrlResolver {
+public class BackendUrlResolver {
 
     private final String configuredBaseDomain;
     private final String serverName;
@@ -25,7 +25,7 @@ public class GatewayUrlResolver {
     private final String httpPort;
     private final String applicationPort;
 
-    public GatewayUrlResolver(
+    public BackendUrlResolver(
         @Value("${base.domain:}") String configuredBaseDomain,
         @Value("${SERVER_NAME:}") String serverName,
         @Value("${HTTPS_PORT:}") String httpsPort,

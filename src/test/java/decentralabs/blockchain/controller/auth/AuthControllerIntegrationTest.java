@@ -17,7 +17,7 @@ import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
-import decentralabs.blockchain.service.GatewayUrlResolver;
+import decentralabs.blockchain.service.BackendUrlResolver;
 import decentralabs.blockchain.service.auth.KeyService;
 
 @WebMvcTest(controllers = AuthController.class)
@@ -36,17 +36,17 @@ class AuthControllerIntegrationTest {
     private KeyService keyService;
 
     @MockitoBean
-    private GatewayUrlResolver gatewayUrlResolver;
+    private BackendUrlResolver backendUrlResolver;
 
     @Test
     void shouldExposeOpenIdConfiguration() throws Exception {
-        when(gatewayUrlResolver.resolveBaseDomain()).thenReturn("https://gateway.example.com");
+        when(backendUrlResolver.resolveBaseDomain()).thenReturn("https://backend.example.com");
 
         mockMvc.perform(get("/.well-known/openid-configuration"))
             .andExpect(status().isOk())
-            .andExpect(jsonPath("$.issuer").value("https://gateway.example.com/auth"))
-            .andExpect(jsonPath("$.authorization_endpoint").value("https://gateway.example.com/auth/wallet-auth2"))
-            .andExpect(jsonPath("$.jwks_uri").value("https://gateway.example.com/auth/jwks"));
+            .andExpect(jsonPath("$.issuer").value("https://backend.example.com/auth"))
+            .andExpect(jsonPath("$.authorization_endpoint").value("https://backend.example.com/auth/wallet-auth2"))
+            .andExpect(jsonPath("$.jwks_uri").value("https://backend.example.com/auth/jwks"));
     }
 
     @Test
@@ -99,9 +99,9 @@ class AuthControllerIntegrationTest {
     }
 
     @Test
-    void shouldHandleGatewayUrlResolverError() throws Exception {
-        when(gatewayUrlResolver.resolveBaseDomain())
-            .thenThrow(new RuntimeException("Gateway resolver error"));
+    void shouldHandleBackendUrlResolverError() throws Exception {
+        when(backendUrlResolver.resolveBaseDomain())
+            .thenThrow(new RuntimeException("Backend resolver error"));
 
         // OpenID config should still work with default values
         mockMvc.perform(get("/.well-known/openid-configuration"))

@@ -85,12 +85,14 @@ public class ProviderRegistrationService {
             return false;
         }
 
+        String backendUrl = normalizeBackendUrl(authURI);
+
         try {
             log.info("Attempting to register as provider with marketplace...");
             log.info("Provider details: name={}, wallet={}, organization={}, authURI={}", 
                 name, walletAddress, organization, authURI);
 
-            doRegisterProvider(marketplaceUrl, apiKey, walletAddress, name, email, country, organization, authURI);
+            doRegisterProvider(marketplaceUrl, apiKey, walletAddress, name, email, country, organization, authURI, backendUrl);
 
             log.info("Provider registration completed successfully");
             return true;
@@ -111,7 +113,8 @@ public class ProviderRegistrationService {
         String email,
         String country,
         String organization,
-        String authURI
+        String authURI,
+        String backendUrl
     ) {
         String url = marketplaceUrl.trim();
         if (url.endsWith("/")) {
@@ -127,6 +130,9 @@ public class ProviderRegistrationService {
         requestBody.put("country", country.trim());
         requestBody.put("authURI", authURI);
         requestBody.put("organization", organization.trim());
+        if (backendUrl != null && !backendUrl.isBlank()) {
+            requestBody.put("backendUrl", backendUrl);
+        }
 
         // Build headers with API key
         HttpHeaders headers = new HttpHeaders();
@@ -174,5 +180,30 @@ public class ProviderRegistrationService {
         // For now, we'll just return true if configuration is complete
         return marketplaceBaseUrl != null && !marketplaceBaseUrl.isBlank()
             && providerName != null && !providerName.isBlank();
+    }
+
+    private String normalizeBackendUrl(String authURI) {
+        if (authURI == null) {
+            return null;
+        }
+
+        String trimmed = authURI.trim();
+        if (trimmed.isEmpty()) {
+            return null;
+        }
+
+        while (trimmed.endsWith("/")) {
+            trimmed = trimmed.substring(0, trimmed.length() - 1);
+        }
+
+        if (trimmed.endsWith("/auth")) {
+            trimmed = trimmed.substring(0, trimmed.length() - 5);
+        }
+
+        if (!trimmed.startsWith("https://")) {
+            return null;
+        }
+
+        return trimmed;
     }
 }

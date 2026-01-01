@@ -1,6 +1,6 @@
 package decentralabs.blockchain.controller.auth;
 
-import decentralabs.blockchain.service.GatewayUrlResolver;
+import decentralabs.blockchain.service.BackendUrlResolver;
 import decentralabs.blockchain.service.auth.JwtService;
 import decentralabs.blockchain.service.auth.KeyService;
 import java.math.BigInteger;
@@ -44,7 +44,7 @@ public class AuthController {
     private KeyService keyService;
     
     @Autowired
-    private GatewayUrlResolver gatewayUrlResolver;
+    private BackendUrlResolver backendUrlResolver;
 
     /**
      * OpenID Connect Discovery endpoint
@@ -56,9 +56,9 @@ public class AuthController {
     public ResponseEntity<Map<String, Object>> openidConfig() {
         String baseDomain;
         try {
-            baseDomain = gatewayUrlResolver.resolveBaseDomain();
+            baseDomain = backendUrlResolver.resolveBaseDomain();
         } catch (Exception e) {
-            log.warn("Failed to resolve gateway base domain, using request context", e);
+            log.warn("Failed to resolve backend base domain, using request context", e);
             baseDomain = fallbackBaseDomain();
         }
         Map<String, Object> config = new HashMap<>();

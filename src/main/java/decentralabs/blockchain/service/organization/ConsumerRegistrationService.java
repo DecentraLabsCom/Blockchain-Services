@@ -3,6 +3,7 @@ package decentralabs.blockchain.service.organization;
 import decentralabs.blockchain.service.wallet.InstitutionalWalletService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
@@ -28,6 +29,9 @@ public class ConsumerRegistrationService {
     private final InstitutionalWalletService institutionalWalletService;
     private final RestTemplate restTemplate = new RestTemplate();
 
+    @Value("${public.base-url:}")
+    private String publicBaseUrl;
+
     /**
      * Register as consumer-only institution (grants INSTITUTION_ROLE only)
      * 
@@ -51,7 +55,8 @@ public class ConsumerRegistrationService {
             log.info("Attempting to register as consumer-only institution...");
             log.info("Consumer details: wallet={}, organization={}", walletAddress, organization);
 
-            doRegisterConsumer(marketplaceUrl, apiKey, walletAddress, organization);
+            String backendUrl = normalizeBackendUrl(publicBaseUrl);
+            doRegisterConsumer(marketplaceUrl, apiKey, walletAddress, organization, backendUrl);
 
             log.info("Consumer registration completed successfully");
             return true;
@@ -68,7 +73,8 @@ public class ConsumerRegistrationService {
         String marketplaceUrl,
         String apiKey,
         String walletAddress,
-        String organization
+        String organization,
+        String backendUrl
     ) {
         String url = marketplaceUrl.trim();
         if (url.endsWith("/")) {
@@ -80,6 +86,9 @@ public class ConsumerRegistrationService {
         Map<String, String> requestBody = new HashMap<>();
         requestBody.put("walletAddress", walletAddress);
         requestBody.put("organization", organization.trim());
+        if (backendUrl != null && !backendUrl.isBlank()) {
+            requestBody.put("backendUrl", backendUrl);
+        }
 
         // Build headers with API key
         HttpHeaders headers = new HttpHeaders();
@@ -126,5 +135,30 @@ public class ConsumerRegistrationService {
         // Could query the contract or marketplace API
         // For now, return false to allow manual check
         return false;
+    }
+
+    private String normalizeBackendUrl(String baseUrl) {
+        if (baseUrl == null) {
+            return null;
+        }
+
+        String trimmed = baseUrl.trim();
+        if (trimmed.isEmpty()) {
+            return null;
+        }
+
+        while (trimmed.endsWith("/")) {
+            trimmed = trimmed.substring(0, trimmed.length() - 1);
+        }
+
+        if (trimmed.endsWith("/auth")) {
+            trimmed = trimmed.substring(0, trimmed.length() - 5);
+        }
+
+        if (!trimmed.startsWith("https://")) {
+            return null;
+        }
+
+        return trimmed;
     }
 }

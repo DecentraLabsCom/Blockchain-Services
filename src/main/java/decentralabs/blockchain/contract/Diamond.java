@@ -140,6 +140,51 @@ public class Diamond extends Contract {
     }
 
     /**
+     * Set the backend URL for a schacHomeOrganization (InstitutionalOrgRegistryFacet)
+     */
+    public RemoteFunctionCall<TransactionReceipt> setSchacHomeOrganizationBackend(String organization, String backendUrl) {
+        final Function function = new Function(
+            "setSchacHomeOrganizationBackend",
+            Arrays.asList(new Utf8String(organization), new Utf8String(backendUrl)),
+            List.of()
+        );
+        return executeRemoteCallTransaction(function);
+    }
+
+    /**
+     * Admin helper to set a backend URL for an organization (InstitutionalOrgRegistryFacet)
+     */
+    public RemoteFunctionCall<TransactionReceipt> adminSetSchacHomeOrganizationBackend(
+        String provider,
+        String organization,
+        String backendUrl
+    ) {
+        final Function function = new Function(
+            "adminSetSchacHomeOrganizationBackend",
+            Arrays.asList(new Address(provider), new Utf8String(organization), new Utf8String(backendUrl)),
+            List.of()
+        );
+        return executeRemoteCallTransaction(function);
+    }
+
+    /**
+     * Get the backend URL for a schacHomeOrganization (InstitutionalOrgRegistryFacet)
+     */
+    @SuppressWarnings("rawtypes")
+    public RemoteFunctionCall<String> getSchacHomeOrganizationBackend(String organization) {
+        final Function function = new Function(
+            "getSchacHomeOrganizationBackend",
+            Arrays.asList(new Utf8String(organization)),
+            Arrays.asList(new TypeReference<Utf8String>() {})
+        );
+        return new RemoteFunctionCall<>(function,
+            () -> {
+                Type result = executeCallSingleValueReturn(function);
+                return (String) result.getValue();
+            });
+    }
+
+    /**
      * Admin helper to grant institution role and register an organization (InstitutionFacet)
      */
     public RemoteFunctionCall<TransactionReceipt> grantInstitutionRole(String institution, String organization) {

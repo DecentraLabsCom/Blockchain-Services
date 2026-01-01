@@ -22,7 +22,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.test.util.ReflectionTestUtils;
 
-import decentralabs.blockchain.service.GatewayUrlResolver;
+import decentralabs.blockchain.service.BackendUrlResolver;
 import decentralabs.blockchain.service.auth.KeyService;
 
 /**
@@ -37,7 +37,7 @@ class AuthControllerTest {
     private KeyService keyService;
 
     @Mock
-    private GatewayUrlResolver gatewayUrlResolver;
+    private BackendUrlResolver backendUrlResolver;
 
     @InjectMocks
     private AuthController authController;
@@ -65,43 +65,43 @@ class AuthControllerTest {
         @Test
         @DisplayName("Should return OpenID configuration with correct issuer")
         void shouldReturnOpenIdConfigurationWithIssuer() {
-            when(gatewayUrlResolver.resolveBaseDomain()).thenReturn("https://gateway.example.com");
+            when(backendUrlResolver.resolveBaseDomain()).thenReturn("https://backend.example.com");
 
             ResponseEntity<Map<String, Object>> response = authController.openidConfig();
 
             assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
             assertThat(response.getBody()).containsKey("issuer");
-            assertThat(response.getBody().get("issuer")).isEqualTo("https://gateway.example.com/auth");
+            assertThat(response.getBody().get("issuer")).isEqualTo("https://backend.example.com/auth");
         }
 
         @Test
         @DisplayName("Should return authorization endpoint in config")
         void shouldReturnAuthorizationEndpoint() {
-            when(gatewayUrlResolver.resolveBaseDomain()).thenReturn("https://gateway.example.com");
+            when(backendUrlResolver.resolveBaseDomain()).thenReturn("https://backend.example.com");
 
             ResponseEntity<Map<String, Object>> response = authController.openidConfig();
 
             assertThat(response.getBody()).containsKey("authorization_endpoint");
             assertThat(response.getBody().get("authorization_endpoint"))
-                .isEqualTo("https://gateway.example.com/auth/wallet/v2");
+                .isEqualTo("https://backend.example.com/auth/wallet/v2");
         }
 
         @Test
         @DisplayName("Should return JWKS URI in config")
         void shouldReturnJwksUri() {
-            when(gatewayUrlResolver.resolveBaseDomain()).thenReturn("https://gateway.example.com");
+            when(backendUrlResolver.resolveBaseDomain()).thenReturn("https://backend.example.com");
 
             ResponseEntity<Map<String, Object>> response = authController.openidConfig();
 
             assertThat(response.getBody()).containsKey("jwks_uri");
             assertThat(response.getBody().get("jwks_uri"))
-                .isEqualTo("https://gateway.example.com/auth/.well-known/jwks.json");
+                .isEqualTo("https://backend.example.com/auth/.well-known/jwks.json");
         }
 
         @Test
         @DisplayName("Should use configured base domain")
         void shouldUseConfiguredBaseDomain() {
-            when(gatewayUrlResolver.resolveBaseDomain()).thenReturn("https://custom.domain.org");
+            when(backendUrlResolver.resolveBaseDomain()).thenReturn("https://custom.domain.org");
 
             ResponseEntity<Map<String, Object>> response = authController.openidConfig();
 
