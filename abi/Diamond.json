@@ -4388,7 +4388,7 @@
     },
     {
         "type":  "function",
-        "name":  "DEFAULT_ADMIN_ROLE",
+        "name":  "defaultAdminRole",
         "inputs":  [
 
                    ],
