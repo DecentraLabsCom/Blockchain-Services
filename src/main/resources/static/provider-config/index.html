@@ -110,6 +110,23 @@
             cursor: not-allowed;
         }
 
+        .form-group textarea {
+            width: 100%;
+            padding: 0.85rem 1rem;
+            border: 2px solid #e2e8f0;
+            border-radius: 8px;
+            font-size: 0.95rem;
+            transition: all 0.2s;
+            box-sizing: border-box;
+            resize: vertical;
+        }
+
+        .form-group textarea:focus {
+            outline: none;
+            border-color: #667eea;
+            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+        }
+
         .form-hint {
             font-size: 0.85rem;
             color: #718096;
@@ -263,16 +280,15 @@
                             <div class="form-hint">The base URL of the DecentraLabs Marketplace</div>
                         </div>
                         <div class="form-group">
-                            <label for="marketplaceApiKey">Marketplace API Key</label>
-                            <input 
-                                type="password" 
-                                id="marketplaceApiKey" 
-                                name="marketplaceApiKey" 
-                                placeholder="Enter shared secret (min. 32 characters)"
+                            <label for="provisioningToken">Provisioning Token</label>
+                            <textarea
+                                id="provisioningToken"
+                                name="provisioningToken"
+                                rows="4"
+                                placeholder="Paste the provisioning token from the Marketplace"
                                 required
-                                minlength="32"
-                            />
-                            <div class="form-hint">Shared secret configured in both Marketplace and Blockchain Services (INSTITUTIONAL_SERVICES_API_KEY)</div>
+                            ></textarea>
+                            <div class="form-hint">Required to register. Generate it from the Marketplace institutional onboarding flow.</div>
                         </div>
                     </div>
 
@@ -443,12 +459,12 @@
 
             const formData = {
                 marketplaceBaseUrl: document.getElementById('marketplaceBaseUrl').value.trim(),
-                marketplaceApiKey: document.getElementById('marketplaceApiKey').value,
                 providerName: document.getElementById('providerName').value.trim(),
                 providerEmail: document.getElementById('providerEmail').value.trim(),
                 providerCountry: document.getElementById('providerCountry').value.trim(),
                 providerOrganization: document.getElementById('providerOrganization').value.trim(),
-                publicBaseUrl: document.getElementById('publicBaseUrl').value.trim()
+                publicBaseUrl: document.getElementById('publicBaseUrl').value.trim(),
+                provisioningToken: document.getElementById('provisioningToken').value.trim()
             };
 
             try {
@@ -501,8 +517,18 @@
             hideAlerts();
 
             try {
+                const provisioningToken = document.getElementById('provisioningToken').value.trim();
+                if (!provisioningToken) {
+                    showError('Provisioning token is required to register.');
+                    return;
+                }
+
                 const response = await fetch('/provider-config/retry-registration', {
-                    method: 'POST'
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ provisioningToken })
                 });
 
                 const result = await response.json();

@@ -11,7 +11,6 @@ import lombok.Value;
 public class ConsumerProvisioningTokenPayload {
     String type; // Should be "consumer"
     String marketplaceBaseUrl;
-    String apiKey;
     String consumerName;
     String consumerOrganization;
     String jti;

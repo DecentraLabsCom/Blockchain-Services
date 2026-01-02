@@ -36,18 +36,22 @@ public class ConsumerRegistrationService {
      * Register as consumer-only institution (grants INSTITUTION_ROLE only)
      * 
      * @param marketplaceUrl Marketplace base URL
-     * @param apiKey Shared API key for authentication
      * @param organization schacHomeOrganization domain
+     * @param provisioningToken Provisioning token for authentication
      * @return true if registration successful, false otherwise
      */
     public boolean registerConsumer(
         String marketplaceUrl,
-        String apiKey,
-        String organization
+        String organization,
+        String provisioningToken
     ) {
         String walletAddress = institutionalWalletService.getInstitutionalWalletAddress();
         if (walletAddress == null || walletAddress.isBlank()) {
             log.error("Consumer registration failed: institutional wallet address not available");
+            return false;
+        }
+        if (provisioningToken == null || provisioningToken.isBlank()) {
+            log.error("Consumer registration failed: provisioning token is required");
             return false;
         }
 
@@ -56,7 +60,7 @@ public class ConsumerRegistrationService {
             log.info("Consumer details: wallet={}, organization={}", walletAddress, organization);
 
             String backendUrl = normalizeBackendUrl(publicBaseUrl);
-            doRegisterConsumer(marketplaceUrl, apiKey, walletAddress, organization, backendUrl);
+            doRegisterConsumer(marketplaceUrl, provisioningToken, walletAddress, organization, backendUrl);
 
             log.info("Consumer registration completed successfully");
             return true;
@@ -71,7 +75,7 @@ public class ConsumerRegistrationService {
      */
     private void doRegisterConsumer(
         String marketplaceUrl,
-        String apiKey,
+        String provisioningToken,
         String walletAddress,
         String organization,
         String backendUrl
@@ -90,10 +94,10 @@ public class ConsumerRegistrationService {
             requestBody.put("backendUrl", backendUrl);
         }
 
-        // Build headers with API key
+        // Build headers with provisioning token
         HttpHeaders headers = new HttpHeaders();
         headers.setContentType(MediaType.APPLICATION_JSON);
-        headers.set("x-api-key", apiKey);
+        headers.setBearerAuth(provisioningToken.trim());
 
         HttpEntity<Map<String, String>> request = new HttpEntity<>(requestBody, headers);
 
@@ -115,8 +119,8 @@ public class ConsumerRegistrationService {
             if (e.getStatusCode() == HttpStatus.CONFLICT || e.getStatusCode() == HttpStatus.OK) {
                 log.info("Consumer already registered (expected on subsequent startups)");
             } else if (e.getStatusCode() == HttpStatus.UNAUTHORIZED) {
-                log.error("Consumer registration failed: Invalid API key");
-                throw new RuntimeException("Invalid marketplace API key");
+                log.error("Consumer registration failed: Unauthorized (invalid provisioning token)");
+                throw new RuntimeException("Invalid provisioning token");
             } else {
                 log.error("Consumer registration failed with status {}: {}", 
                     e.getStatusCode(), e.getResponseBodyAsString());
@@ -155,7 +159,7 @@ public class ConsumerRegistrationService {
             trimmed = trimmed.substring(0, trimmed.length() - 5);
         }
 
-        if (!trimmed.startsWith("https://")) {
+        if (!trimmed.startsWith("https://") && !trimmed.startsWith("http://")) {
             return null;
         }
 

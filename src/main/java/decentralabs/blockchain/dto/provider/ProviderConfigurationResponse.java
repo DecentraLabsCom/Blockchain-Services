@@ -17,7 +17,6 @@ import java.util.List;
 public class ProviderConfigurationResponse {
 
     private String marketplaceBaseUrl;
-    private boolean hasApiKey; // Don't expose actual key
     private String providerName;
     private String providerEmail;
     private String providerCountry;

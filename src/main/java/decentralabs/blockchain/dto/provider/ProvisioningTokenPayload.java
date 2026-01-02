@@ -10,7 +10,6 @@ import lombok.Value;
 @Builder
 public class ProvisioningTokenPayload {
     String marketplaceBaseUrl;
-    String apiKey;
     String providerName;
     String providerEmail;
     String providerCountry;

@@ -33,7 +33,6 @@ public class ProviderConfigurationPersistenceService {
     public void saveConfiguration(ProviderConfigurationRequest request) throws IOException {
         saveConfigurationInternal(
             request.getMarketplaceBaseUrl(),
-            request.getMarketplaceApiKey(),
             request.getProviderName(),
             request.getProviderEmail(),
             request.getProviderCountry(),
@@ -49,7 +48,6 @@ public class ProviderConfigurationPersistenceService {
     public void saveConfigurationFromToken(ProvisioningTokenPayload payload) throws IOException {
         saveConfigurationInternal(
             payload.getMarketplaceBaseUrl(),
-            payload.getApiKey(),
             payload.getProviderName(),
             payload.getProviderEmail(),
             payload.getProviderCountry(),
@@ -78,7 +76,6 @@ public class ProviderConfigurationPersistenceService {
 
         // Consumer-only configuration (no publicBaseUrl, no provider fields)
         properties.setProperty("marketplace.base-url", payload.getMarketplaceBaseUrl());
-        properties.setProperty("marketplace.api-key", payload.getApiKey());
         properties.setProperty("consumer.name", payload.getConsumerName());
         properties.setProperty("provider.organization", payload.getConsumerOrganization()); // schacHomeOrganization
         properties.setProperty("provisioning.source", "consumer-token");
@@ -93,7 +90,6 @@ public class ProviderConfigurationPersistenceService {
 
     private void saveConfigurationInternal(
         String marketplaceBaseUrl,
-        String marketplaceApiKey,
         String providerName,
         String providerEmail,
         String providerCountry,
@@ -116,7 +112,6 @@ public class ProviderConfigurationPersistenceService {
 
         // Update properties
         properties.setProperty("marketplace.base-url", marketplaceBaseUrl);
-        properties.setProperty("marketplace.api-key", marketplaceApiKey);
         properties.setProperty("provider.name", providerName);
         properties.setProperty("provider.email", providerEmail);
         properties.setProperty("provider.country", providerCountry);

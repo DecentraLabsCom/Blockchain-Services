@@ -74,7 +74,6 @@ public class ProvisioningTokenService {
 
             ProvisioningTokenPayload payload = ProvisioningTokenPayload.builder()
                 .marketplaceBaseUrl(validateHttps(marketplaceBaseUrl, "marketplace base URL"))
-                .apiKey(validateApiKey(claims.get("apiKey", String.class)))
                 .providerName(requireNonBlank(claims.get("providerName", String.class), "provider name"))
                 .providerEmail(validateEmail(claims.get("providerEmail", String.class)))
                 .providerCountry(requireNonBlank(claims.get("providerCountry", String.class), "provider country"))
@@ -136,7 +135,6 @@ public class ProvisioningTokenService {
             ConsumerProvisioningTokenPayload payload = ConsumerProvisioningTokenPayload.builder()
                 .type("consumer")
                 .marketplaceBaseUrl(validateHttps(marketplaceBaseUrl, "marketplace base URL"))
-                .apiKey(validateApiKey(claims.get("apiKey", String.class)))
                 .consumerName(requireNonBlank(claims.get("consumerName", String.class), "consumer name"))
                 .consumerOrganization(requireNonBlank(claims.get("consumerOrganization", String.class), "consumer organization"))
                 .jti(claims.getId())
@@ -183,22 +181,22 @@ public class ProvisioningTokenService {
 
         JsonNode audNode = payloadNode.get("aud");
         if (audNode == null || audNode.isNull()) {
-            return "blockchain-services";
+            throw new IllegalArgumentException("Token audience is required");
         }
 
         if (audNode.isTextual()) {
-            return normalizeUrl(audNode.asText());
+            return validateHttps(audNode.asText(), "token audience");
         }
 
         if (audNode.isArray()) {
             for (JsonNode value : audNode) {
                 if (value != null && value.isTextual() && !value.asText().isBlank()) {
-                    return normalizeUrl(value.asText());
+                    return validateHttps(value.asText(), "token audience");
                 }
             }
         }
 
-        return "blockchain-services";
+        throw new IllegalArgumentException("Token audience is required");
     }
 
     private String normalizeUrl(String url) {
@@ -262,18 +260,10 @@ public class ProvisioningTokenService {
     private String validateHttps(String url, String label) {
         String value = requireNonBlank(url, label);
         String normalized = normalizeUrl(value);
-        if (!normalized.startsWith("https://")) {
-            throw new IllegalArgumentException(label + " must start with https://");
+        if (!normalized.startsWith("https://") && !normalized.startsWith("http://")) {
+            throw new IllegalArgumentException(label + " must start with http:// or https://");
         }
         return normalized;
-    }
-
-    private String validateApiKey(String apiKey) {
-        String value = requireNonBlank(apiKey, "api key");
-        if (value.length() < 32) {
-            throw new IllegalArgumentException("API key must be at least 32 characters");
-        }
-        return value;
     }
 
     private String validateEmail(String email) {

@@ -47,9 +47,6 @@ public class ProviderConfigurationController {
     @Value("${marketplace.base-url:}")
     private String marketplaceBaseUrl;
 
-    @Value("${marketplace.api-key:}")
-    private String marketplaceApiKey;
-
     @Value("${provider.name:}")
     private String providerName;
 
@@ -84,7 +81,6 @@ public class ProviderConfigurationController {
 
         ProviderConfigurationResponse response = ProviderConfigurationResponse.builder()
             .marketplaceBaseUrl(snapshot.marketplaceBaseUrl())
-            .hasApiKey(!snapshot.marketplaceApiKey().isBlank())
             .providerName(snapshot.providerName())
             .providerEmail(snapshot.providerEmail())
             .providerCountry(snapshot.providerCountry())
@@ -114,6 +110,10 @@ public class ProviderConfigurationController {
 
             // Validate configuration
             validateConfiguration(request);
+            if (isBlank(request.getProvisioningToken())) {
+                throw new IllegalArgumentException("Provisioning token is required to register");
+            }
+            String provisioningToken = request.getProvisioningToken().trim();
 
             // Persist configuration to file
             persistenceService.saveConfiguration(request);
@@ -123,12 +123,12 @@ public class ProviderConfigurationController {
             // Trigger registration
             boolean registered = registrationService.registerProvider(
                 request.getMarketplaceBaseUrl(),
-                request.getMarketplaceApiKey(),
                 request.getProviderName(),
                 request.getProviderEmail(),
                 request.getProviderCountry(),
                 request.getProviderOrganization(),
-                request.getPublicBaseUrl()
+                request.getPublicBaseUrl(),
+                provisioningToken
             );
 
             if (registered) {
@@ -161,26 +161,35 @@ public class ProviderConfigurationController {
      */
     @PostMapping("/retry-registration")
     @ResponseBody
-    public ResponseEntity<Map<String, Object>> retryRegistration() {
+    public ResponseEntity<Map<String, Object>> retryRegistration(
+        @RequestBody(required = false) Map<String, String> request
+    ) {
         Map<String, Object> response = new HashMap<>();
 
         try {
             ConfigSnapshot snapshot = loadSnapshot();
+            String provisioningToken = request == null ? null : request.get("provisioningToken");
 
             if (!isFullyConfigured(snapshot)) {
                 response.put("success", false);
                 response.put("error", "Provider configuration is incomplete");
                 return ResponseEntity.badRequest().body(response);
             }
+            if (isBlank(provisioningToken)) {
+                response.put("success", false);
+                response.put("error", "Provisioning token is required to register");
+                return ResponseEntity.badRequest().body(response);
+            }
+            String trimmedToken = provisioningToken.trim();
 
             boolean registered = registrationService.registerProvider(
                 snapshot.marketplaceBaseUrl(),
-                snapshot.marketplaceApiKey(),
                 snapshot.providerName(),
                 snapshot.providerEmail(),
                 snapshot.providerCountry(),
                 snapshot.providerOrganization(),
-                snapshot.publicBaseUrl()
+                snapshot.publicBaseUrl(),
+                trimmedToken
             );
 
             response.put("success", registered);
@@ -208,8 +217,9 @@ public class ProviderConfigurationController {
         Map<String, Object> response = new HashMap<>();
         try {
             ConfigSnapshot snapshot = loadSnapshot();
+            String provisioningToken = request.getToken().trim();
             ProvisioningTokenPayload payload = provisioningTokenService.validateAndExtract(
-                request.getToken(),
+                provisioningToken,
                 snapshot.marketplaceBaseUrl(),
                 snapshot.publicBaseUrl()
             );
@@ -219,12 +229,12 @@ public class ProviderConfigurationController {
 
             boolean registered = registrationService.registerProvider(
                 payload.getMarketplaceBaseUrl(),
-                payload.getApiKey(),
                 payload.getProviderName(),
                 payload.getProviderEmail(),
                 payload.getProviderCountry(),
                 payload.getProviderOrganization(),
-                payload.getPublicBaseUrl()
+                payload.getPublicBaseUrl(),
+                provisioningToken
             );
 
             response.put("success", true);
@@ -265,8 +275,9 @@ public class ProviderConfigurationController {
         Map<String, Object> response = new HashMap<>();
         try {
             ConfigSnapshot snapshot = loadSnapshot();
+            String provisioningToken = request.getToken().trim();
             ConsumerProvisioningTokenPayload payload = provisioningTokenService.validateAndExtractConsumer(
-                request.getToken(),
+                provisioningToken,
                 snapshot.marketplaceBaseUrl(),
                 snapshot.publicBaseUrl()
             );
@@ -276,8 +287,8 @@ public class ProviderConfigurationController {
 
             boolean registered = consumerRegistrationService.registerConsumer(
                 payload.getMarketplaceBaseUrl(),
-                payload.getApiKey(),
-                payload.getConsumerOrganization()
+                payload.getConsumerOrganization(),
+                provisioningToken
             );
 
             response.put("success", true);
@@ -307,7 +318,6 @@ public class ProviderConfigurationController {
 
     private boolean isFullyConfigured(ConfigSnapshot snapshot) {
         return !snapshot.marketplaceBaseUrl().isBlank()
-            && !snapshot.marketplaceApiKey().isBlank()
             && !snapshot.providerName().isBlank()
             && !snapshot.providerEmail().isBlank()
             && !snapshot.providerCountry().isBlank()
@@ -322,7 +332,6 @@ public class ProviderConfigurationController {
     private ConfigSnapshot loadSnapshot() {
         Properties props = persistenceService.loadConfigurationSafe();
         String resolvedMarketplace = firstNonBlank(props.getProperty("marketplace.base-url"), marketplaceBaseUrl);
-        String resolvedApiKey = firstNonBlank(props.getProperty("marketplace.api-key"), marketplaceApiKey);
         String resolvedProviderName = firstNonBlank(props.getProperty("provider.name"), providerName);
         String resolvedProviderEmail = firstNonBlank(props.getProperty("provider.email"), providerEmail);
         String resolvedProviderCountry = firstNonBlank(props.getProperty("provider.country"), providerCountry);
@@ -332,7 +341,6 @@ public class ProviderConfigurationController {
 
         return new ConfigSnapshot(
             resolvedMarketplace,
-            resolvedApiKey,
             resolvedProviderName,
             resolvedProviderEmail,
             resolvedProviderCountry,
@@ -351,7 +359,6 @@ public class ProviderConfigurationController {
 
     private record ConfigSnapshot(
         String marketplaceBaseUrl,
-        String marketplaceApiKey,
         String providerName,
         String providerEmail,
         String providerCountry,
@@ -364,17 +371,9 @@ public class ProviderConfigurationController {
         if (request.getMarketplaceBaseUrl() == null || request.getMarketplaceBaseUrl().isBlank()) {
             throw new IllegalArgumentException("Marketplace base URL is required");
         }
-        if (!request.getMarketplaceBaseUrl().startsWith("https://")) {
-            throw new IllegalArgumentException("Marketplace base URL must start with https://");
+        if (!request.getMarketplaceBaseUrl().startsWith("https://") && !request.getMarketplaceBaseUrl().startsWith("http://")) {
+            throw new IllegalArgumentException("Marketplace base URL must start with http:// or https://");
         }
-
-        if (request.getMarketplaceApiKey() == null || request.getMarketplaceApiKey().isBlank()) {
-            throw new IllegalArgumentException("Marketplace API key is required");
-        }
-        if (request.getMarketplaceApiKey().length() < 32) {
-            throw new IllegalArgumentException("API key must be at least 32 characters for security");
-        }
-
         if (request.getProviderName() == null || request.getProviderName().isBlank()) {
             throw new IllegalArgumentException("Provider name is required");
         }
@@ -397,11 +396,15 @@ public class ProviderConfigurationController {
         if (request.getPublicBaseUrl() == null || request.getPublicBaseUrl().isBlank()) {
             throw new IllegalArgumentException("Public base URL is required");
         }
-        if (!request.getPublicBaseUrl().startsWith("https://")) {
-            throw new IllegalArgumentException("Public base URL must start with https://");
+        if (!request.getPublicBaseUrl().startsWith("https://") && !request.getPublicBaseUrl().startsWith("http://")) {
+            throw new IllegalArgumentException("Public base URL must start with http:// or https://");
         }
         if (request.getPublicBaseUrl().endsWith("/")) {
             throw new IllegalArgumentException("Public base URL must not end with trailing slash");
         }
+    }
+
+    private boolean isBlank(String value) {
+        return value == null || value.trim().isEmpty();
     }
 }

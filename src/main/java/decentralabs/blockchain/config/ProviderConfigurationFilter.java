@@ -17,9 +17,6 @@ public class ProviderConfigurationFilter implements Filter {
     @Value("${marketplace.base-url:}")
     private String marketplaceBaseUrl;
 
-    @Value("${marketplace.api-key:}")
-    private String marketplaceApiKey;
-
     @Value("${provider.name:}")
     private String providerName;
 
@@ -46,7 +43,6 @@ public class ProviderConfigurationFilter implements Filter {
      */
     private boolean isProviderConfigured() {
         return !isBlank(marketplaceBaseUrl)
-            && !isBlank(marketplaceApiKey)
             && !isBlank(providerName)
             && !isBlank(providerEmail)
             && !isBlank(providerCountry)

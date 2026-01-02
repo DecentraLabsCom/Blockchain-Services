@@ -2,7 +2,6 @@ package decentralabs.blockchain.dto.provider;
 
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
-import jakarta.validation.constraints.Size;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -20,10 +19,6 @@ public class ProviderConfigurationRequest {
     @NotBlank(message = "Marketplace base URL is required")
     private String marketplaceBaseUrl;
 
-    @NotBlank(message = "Marketplace API key is required")
-    @Size(min = 32, message = "API key must be at least 32 characters")
-    private String marketplaceApiKey;
-
     @NotBlank(message = "Provider name is required")
     private String providerName;
 
@@ -39,4 +34,6 @@ public class ProviderConfigurationRequest {
 
     @NotBlank(message = "Public base URL is required")
     private String publicBaseUrl;
+
+    private String provisioningToken;
 }

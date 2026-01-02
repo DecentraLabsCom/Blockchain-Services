@@ -36,9 +36,6 @@ public class ProviderRegistrationService {
     @Value("${marketplace.base-url:}")
     private String marketplaceBaseUrl;
 
-    @Value("${marketplace.api-key:}")
-    private String marketplaceApiKey;
-
     @Value("${provider.name:}")
     private String providerName;
 
@@ -62,16 +59,20 @@ public class ProviderRegistrationService {
      */
     public boolean registerProvider(
         String marketplaceUrl,
-        String apiKey,
         String name,
         String email,
         String country,
         String organization,
-        String baseUrl
+        String baseUrl,
+        String provisioningToken
     ) {
         String walletAddress = institutionalWalletService.getInstitutionalWalletAddress();
         if (walletAddress == null || walletAddress.isBlank()) {
             log.error("Provider registration failed: institutional wallet address not available");
+            return false;
+        }
+        if (provisioningToken == null || provisioningToken.isBlank()) {
+            log.error("Provider registration failed: provisioning token is required");
             return false;
         }
 
@@ -80,8 +81,8 @@ public class ProviderRegistrationService {
             authURI = authURI.substring(0, authURI.length() - 1);
         }
 
-        if (!authURI.startsWith("https://")) {
-            log.error("Provider registration failed: public.base-url must start with https://");
+        if (!authURI.startsWith("https://") && !authURI.startsWith("http://")) {
+            log.error("Provider registration failed: public.base-url must start with http:// or https://");
             return false;
         }
 
@@ -92,7 +93,7 @@ public class ProviderRegistrationService {
             log.info("Provider details: name={}, wallet={}, organization={}, authURI={}", 
                 name, walletAddress, organization, authURI);
 
-            doRegisterProvider(marketplaceUrl, apiKey, walletAddress, name, email, country, organization, authURI, backendUrl);
+            doRegisterProvider(marketplaceUrl, provisioningToken, walletAddress, name, email, country, organization, authURI, backendUrl);
 
             log.info("Provider registration completed successfully");
             return true;
@@ -107,7 +108,7 @@ public class ProviderRegistrationService {
      */
     private void doRegisterProvider(
         String marketplaceUrl,
-        String apiKey,
+        String provisioningToken,
         String walletAddress,
         String name,
         String email,
@@ -134,10 +135,10 @@ public class ProviderRegistrationService {
             requestBody.put("backendUrl", backendUrl);
         }
 
-        // Build headers with API key
+        // Build headers with provisioning token
         HttpHeaders headers = new HttpHeaders();
         headers.setContentType(MediaType.APPLICATION_JSON);
-        headers.set("x-api-key", apiKey);
+        headers.setBearerAuth(provisioningToken.trim());
 
         HttpEntity<Map<String, String>> request = new HttpEntity<>(requestBody, headers);
 
@@ -159,8 +160,8 @@ public class ProviderRegistrationService {
             if (e.getStatusCode() == HttpStatus.CONFLICT || e.getStatusCode() == HttpStatus.OK) {
                 log.info("Provider already registered (expected on subsequent startups)");
             } else if (e.getStatusCode() == HttpStatus.UNAUTHORIZED) {
-                log.error("Provider registration failed: Invalid API key");
-                throw new RuntimeException("Invalid marketplace API key");
+                log.error("Provider registration failed: Unauthorized (invalid provisioning token)");
+                throw new RuntimeException("Invalid provisioning token");
             } else {
                 log.error("Provider registration failed with status {}: {}", 
                     e.getStatusCode(), e.getResponseBodyAsString());
@@ -200,7 +201,7 @@ public class ProviderRegistrationService {
             trimmed = trimmed.substring(0, trimmed.length() - 5);
         }
 
-        if (!trimmed.startsWith("https://")) {
+        if (!trimmed.startsWith("https://") && !trimmed.startsWith("http://")) {
             return null;
         }
 
