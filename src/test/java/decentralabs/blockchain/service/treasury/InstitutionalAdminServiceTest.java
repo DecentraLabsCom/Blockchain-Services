@@ -4,6 +4,7 @@ import decentralabs.blockchain.dto.treasury.InstitutionalAdminRequest;
 import decentralabs.blockchain.dto.treasury.InstitutionalAdminRequest.AdminOperation;
 import decentralabs.blockchain.dto.treasury.InstitutionalAdminResponse;
 import decentralabs.blockchain.service.RateLimitService;
+import decentralabs.blockchain.service.persistence.AntiReplayService;
 import decentralabs.blockchain.service.wallet.InstitutionalWalletService;
 import jakarta.servlet.http.HttpServletRequest;
 import org.junit.jupiter.api.BeforeEach;
@@ -23,6 +24,7 @@ import org.web3j.protocol.core.methods.response.EthSendTransaction;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
@@ -41,13 +43,28 @@ class InstitutionalAdminServiceTest {
     private InstitutionalWalletService institutionalWalletService;
     @Mock
     private InstitutionalAnalyticsService analyticsService;
+    @Mock
+    private Eip712TreasuryAdminVerifier adminVerifier;
+    @Mock
+    private AntiReplayService antiReplayService;
 
     private InstitutionalAdminService adminService;
 
     @BeforeEach
     void setUp() {
-        adminService = new InstitutionalAdminService(web3j, httpServletRequest, rateLimitService, institutionalWalletService, analyticsService);
+        adminService = new InstitutionalAdminService(
+            web3j,
+            httpServletRequest,
+            rateLimitService,
+            institutionalWalletService,
+            analyticsService,
+            adminVerifier,
+            antiReplayService
+        );
         ReflectionTestUtils.setField(adminService, "contractAddress", "0xABC");
+        when(adminVerifier.verify(any(), any()))
+            .thenReturn(new Eip712TreasuryAdminVerifier.VerificationResult(true, "0xabc", null));
+        when(antiReplayService.isTimestampUsed(any(), anyLong())).thenReturn(false);
     }
 
     @Nested
@@ -59,7 +76,7 @@ class InstitutionalAdminServiceTest {
         void executeAdminOperationRejectsNonLocalhostRequests() {
             when(httpServletRequest.getRemoteAddr()).thenReturn("10.0.0.5");
 
-            InstitutionalAdminRequest request = new InstitutionalAdminRequest("0x123", AdminOperation.AUTHORIZE_BACKEND, null, null, null, null, null);
+            InstitutionalAdminRequest request = buildRequest("0x123", AdminOperation.AUTHORIZE_BACKEND, null, null, null, null, null);
             InstitutionalAdminResponse response = adminService.executeAdminOperation(request);
 
             assertThat(response.isSuccess()).isFalse();
@@ -72,7 +89,7 @@ class InstitutionalAdminServiceTest {
             when(httpServletRequest.getRemoteAddr()).thenReturn("127.0.0.1");
             when(institutionalWalletService.getInstitutionalWalletAddress()).thenReturn("0xABCDEF");
 
-            InstitutionalAdminRequest request = new InstitutionalAdminRequest("0x123", AdminOperation.AUTHORIZE_BACKEND, null, null, null, null, null);
+            InstitutionalAdminRequest request = buildRequest("0x123", AdminOperation.AUTHORIZE_BACKEND, null, null, null, null, null);
             InstitutionalAdminResponse response = adminService.executeAdminOperation(request);
 
             // Should pass localhost check but fail wallet check
@@ -85,7 +102,7 @@ class InstitutionalAdminServiceTest {
             when(httpServletRequest.getRemoteAddr()).thenReturn("::1");
             when(institutionalWalletService.getInstitutionalWalletAddress()).thenReturn("0xABCDEF");
 
-            InstitutionalAdminRequest request = new InstitutionalAdminRequest("0x123", AdminOperation.AUTHORIZE_BACKEND, null, null, null, null, null);
+            InstitutionalAdminRequest request = buildRequest("0x123", AdminOperation.AUTHORIZE_BACKEND, null, null, null, null, null);
             InstitutionalAdminResponse response = adminService.executeAdminOperation(request);
 
             // Should pass localhost check
@@ -98,7 +115,7 @@ class InstitutionalAdminServiceTest {
             when(httpServletRequest.getRemoteAddr()).thenReturn("127.0.0.2");
             when(institutionalWalletService.getInstitutionalWalletAddress()).thenReturn("0xABCDEF");
 
-            InstitutionalAdminRequest request = new InstitutionalAdminRequest("0x123", AdminOperation.AUTHORIZE_BACKEND, null, null, null, null, null);
+            InstitutionalAdminRequest request = buildRequest("0x123", AdminOperation.AUTHORIZE_BACKEND, null, null, null, null, null);
             InstitutionalAdminResponse response = adminService.executeAdminOperation(request);
 
             assertThat(response.getMessage()).doesNotContain("only allowed from localhost");
@@ -109,7 +126,7 @@ class InstitutionalAdminServiceTest {
         void shouldRejectRequestsFromPublicIp() {
             when(httpServletRequest.getRemoteAddr()).thenReturn("203.0.113.50");
 
-            InstitutionalAdminRequest request = new InstitutionalAdminRequest("0x123", AdminOperation.AUTHORIZE_BACKEND, null, null, null, null, null);
+            InstitutionalAdminRequest request = buildRequest("0x123", AdminOperation.AUTHORIZE_BACKEND, null, null, null, null, null);
             InstitutionalAdminResponse response = adminService.executeAdminOperation(request);
 
             assertThat(response.isSuccess()).isFalse();
@@ -121,7 +138,7 @@ class InstitutionalAdminServiceTest {
         void shouldRejectRequestsFromPrivateNetworkIp() {
             when(httpServletRequest.getRemoteAddr()).thenReturn("192.168.1.100");
 
-            InstitutionalAdminRequest request = new InstitutionalAdminRequest("0x123", AdminOperation.AUTHORIZE_BACKEND, null, null, null, null, null);
+            InstitutionalAdminRequest request = buildRequest("0x123", AdminOperation.AUTHORIZE_BACKEND, null, null, null, null, null);
             InstitutionalAdminResponse response = adminService.executeAdminOperation(request);
 
             assertThat(response.isSuccess()).isFalse();
@@ -141,7 +158,7 @@ class InstitutionalAdminServiceTest {
             when(httpServletRequest.getHeader("X-Internal-Token")).thenReturn("test-token");
             when(institutionalWalletService.getInstitutionalWalletAddress()).thenReturn("0xABCDEF");
 
-            InstitutionalAdminRequest request = new InstitutionalAdminRequest("0x123", AdminOperation.AUTHORIZE_BACKEND, null, null, null, null, null);
+            InstitutionalAdminRequest request = buildRequest("0x123", AdminOperation.AUTHORIZE_BACKEND, null, null, null, null, null);
             InstitutionalAdminResponse response = adminService.executeAdminOperation(request);
 
             assertThat(response.getMessage()).doesNotContain("only allowed from localhost");
@@ -157,7 +174,7 @@ class InstitutionalAdminServiceTest {
             when(httpServletRequest.getRemoteAddr()).thenReturn("10.0.0.5");
             when(institutionalWalletService.getInstitutionalWalletAddress()).thenReturn("0xABCDEF");
 
-            InstitutionalAdminRequest request = new InstitutionalAdminRequest("0x123", AdminOperation.AUTHORIZE_BACKEND, null, null, null, null, null);
+            InstitutionalAdminRequest request = buildRequest("0x123", AdminOperation.AUTHORIZE_BACKEND, null, null, null, null, null);
             InstitutionalAdminResponse response = adminService.executeAdminOperation(request);
 
             assertThat(response.getMessage()).doesNotContain("only allowed from localhost");
@@ -174,7 +191,7 @@ class InstitutionalAdminServiceTest {
             when(httpServletRequest.getRemoteAddr()).thenReturn("127.0.0.1");
             when(institutionalWalletService.getInstitutionalWalletAddress()).thenReturn("0xABCDEF");
 
-            InstitutionalAdminRequest request = new InstitutionalAdminRequest("0x123", AdminOperation.AUTHORIZE_BACKEND, null, null, null, null, null);
+            InstitutionalAdminRequest request = buildRequest("0x123", AdminOperation.AUTHORIZE_BACKEND, null, null, null, null, null);
             InstitutionalAdminResponse response = adminService.executeAdminOperation(request);
 
             assertThat(response.isSuccess()).isFalse();
@@ -186,7 +203,7 @@ class InstitutionalAdminServiceTest {
         void shouldRejectRequestsWithNullWalletAddress() {
             when(httpServletRequest.getRemoteAddr()).thenReturn("127.0.0.1");
 
-            InstitutionalAdminRequest request = new InstitutionalAdminRequest(null, AdminOperation.AUTHORIZE_BACKEND, null, null, null, null, null);
+            InstitutionalAdminRequest request = buildRequest(null, AdminOperation.AUTHORIZE_BACKEND, null, null, null, null, null);
             InstitutionalAdminResponse response = adminService.executeAdminOperation(request);
 
             assertThat(response.isSuccess()).isFalse();
@@ -197,7 +214,7 @@ class InstitutionalAdminServiceTest {
         void shouldRejectRequestsWithEmptyWalletAddress() {
             when(httpServletRequest.getRemoteAddr()).thenReturn("127.0.0.1");
 
-            InstitutionalAdminRequest request = new InstitutionalAdminRequest("", AdminOperation.AUTHORIZE_BACKEND, null, null, null, null, null);
+            InstitutionalAdminRequest request = buildRequest("", AdminOperation.AUTHORIZE_BACKEND, null, null, null, null, null);
             InstitutionalAdminResponse response = adminService.executeAdminOperation(request);
 
             assertThat(response.isSuccess()).isFalse();
@@ -209,7 +226,7 @@ class InstitutionalAdminServiceTest {
             when(httpServletRequest.getRemoteAddr()).thenReturn("127.0.0.1");
             when(institutionalWalletService.getInstitutionalWalletAddress()).thenReturn(null);
 
-            InstitutionalAdminRequest request = new InstitutionalAdminRequest("0x123", AdminOperation.AUTHORIZE_BACKEND, null, null, null, null, null);
+            InstitutionalAdminRequest request = buildRequest("0x123", AdminOperation.AUTHORIZE_BACKEND, null, null, null, null, null);
             InstitutionalAdminResponse response = adminService.executeAdminOperation(request);
 
             assertThat(response.isSuccess()).isFalse();
@@ -223,7 +240,7 @@ class InstitutionalAdminServiceTest {
             when(institutionalWalletService.getInstitutionalCredentials()).thenThrow(new RuntimeException("Missing target"));
 
             // Request with different case
-            InstitutionalAdminRequest request = new InstitutionalAdminRequest(
+            InstitutionalAdminRequest request = buildRequest(
                 "0xabcdef1234567890abcdef1234567890abcdef12",
                 AdminOperation.AUTHORIZE_BACKEND, null,
                 "0x1234567890123456789012345678901234567890",
@@ -262,7 +279,7 @@ class InstitutionalAdminServiceTest {
             when(sendRequest.send()).thenReturn(sendResponse);
             when(web3j.ethSendRawTransaction(any())).thenReturn((Request) sendRequest);
 
-            InstitutionalAdminRequest request = new InstitutionalAdminRequest(
+            InstitutionalAdminRequest request = buildRequest(
                 credentials.getAddress(),
                 AdminOperation.AUTHORIZE_BACKEND,
                 null,
@@ -288,7 +305,7 @@ class InstitutionalAdminServiceTest {
             when(institutionalWalletService.getInstitutionalCredentials()).thenReturn(credentials);
             when(rateLimitService.allowTransaction(credentials.getAddress())).thenReturn(false);
 
-            InstitutionalAdminRequest request = new InstitutionalAdminRequest(
+            InstitutionalAdminRequest request = buildRequest(
                 credentials.getAddress(),
                 AdminOperation.AUTHORIZE_BACKEND,
                 null,
@@ -314,12 +331,34 @@ class InstitutionalAdminServiceTest {
         void errorResponseShouldContainHelpfulMessage() {
             when(httpServletRequest.getRemoteAddr()).thenReturn("10.0.0.1");
 
-            InstitutionalAdminRequest request = new InstitutionalAdminRequest("0x123", AdminOperation.AUTHORIZE_BACKEND, null, null, null, null, null);
+            InstitutionalAdminRequest request = buildRequest("0x123", AdminOperation.AUTHORIZE_BACKEND, null, null, null, null, null);
             InstitutionalAdminResponse response = adminService.executeAdminOperation(request);
 
             assertThat(response.isSuccess()).isFalse();
             assertThat(response.getMessage()).isNotEmpty();
             assertThat(response.getTransactionHash()).isNull();
         }
+    }
+
+    private InstitutionalAdminRequest buildRequest(
+        String adminWalletAddress,
+        AdminOperation operation,
+        String providerAddress,
+        String backendAddress,
+        String spendingLimit,
+        String spendingPeriod,
+        String amount
+    ) {
+        InstitutionalAdminRequest request = new InstitutionalAdminRequest();
+        request.setAdminWalletAddress(adminWalletAddress);
+        request.setOperation(operation);
+        request.setProviderAddress(providerAddress);
+        request.setBackendAddress(backendAddress);
+        request.setSpendingLimit(spendingLimit);
+        request.setSpendingPeriod(spendingPeriod);
+        request.setAmount(amount);
+        request.setTimestamp(System.currentTimeMillis());
+        request.setSignature("0x" + "11".repeat(65));
+        return request;
     }
 }

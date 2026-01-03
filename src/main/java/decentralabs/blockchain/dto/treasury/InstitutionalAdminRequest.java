@@ -18,6 +18,10 @@ public class InstitutionalAdminRequest {
     // Administrative operation type
     private AdminOperation operation;
 
+    // EIP-712 signature payload (timestamp in epoch millis)
+    private Long timestamp;
+    private String signature;
+
     // Operation parameters
     private String providerAddress; // Target provider for admin operations
     private String backendAddress;  // For backend authorization operations

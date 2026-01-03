@@ -139,6 +139,7 @@ Together, they offer a bridge between institutional access control systems (like
 | `/treasury/admin/execute` | POST | Execute treasury admin operations |
 
 > 🔒 Wallet and Treasury endpoints are protected by `LocalhostOnlyFilter` and only accept requests from `127.0.0.1` / `::1`
+> `/treasury/admin/**` also requires a valid internal token when `SECURITY_INTERNAL_TOKEN_REQUIRED=true` (default).
 
 ## 🛠️ Quick Start
 
@@ -295,10 +296,15 @@ This project uses a **security-first deployment approach**:
 | `SECURITY_INTERNAL_TOKEN_HEADER` | Header name for internal token | `X-Internal-Token` |
 | `SECURITY_INTERNAL_TOKEN_COOKIE` | Cookie name for internal token | `internal_token` |
 | `SECURITY_INTERNAL_TOKEN_REQUIRED` | Require internal token for private networks | `true` |
+| `TREASURY_ADMIN_DOMAIN_NAME` | EIP-712 domain name for `/treasury/admin/execute` | `DecentraLabsTreasuryAdmin` |
+| `TREASURY_ADMIN_DOMAIN_VERSION` | EIP-712 domain version for `/treasury/admin/execute` | `1` |
+| `TREASURY_ADMIN_DOMAIN_CHAIN_ID` | EIP-712 chain ID for `/treasury/admin/execute` | `11155111` |
+| `TREASURY_ADMIN_DOMAIN_VERIFYING_CONTRACT` | EIP-712 verifying contract for `/treasury/admin/execute` | `CONTRACT_ADDRESS` |
 | `SAML_IDP_TRUST_MODE` | `whitelist` or `any` for IdP trust | `any` |
 | `SAML_METADATA_ALLOW_HTTP` | Allow HTTP metadata URLs (not recommended) | `false` |
 > When deploying behind a reverse proxy, set `SECURITY_ALLOW_PRIVATE_NETWORKS=true` and a strong `SECURITY_INTERNAL_TOKEN`.
 > Configure the proxy to send `X-Internal-Token` (or the `internal_token` cookie) when calling `/wallet`, `/treasury`, and `/wallet-dashboard`.
+> `/treasury/admin/execute` additionally requires an EIP-712 signature from the institutional wallet (timestamped).
 > For local dev, set `SECURITY_INTERNAL_TOKEN_REQUIRED=false` to skip the token check.
 
 ### Docker Compose `.env` variables (standalone)

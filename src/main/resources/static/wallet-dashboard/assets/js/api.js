@@ -5,6 +5,7 @@
 
 const API = {
     BASE_URL: window.location.origin,
+    ZERO_ADDRESS: '0x0000000000000000000000000000000000000000',
     
     /**
      * Generic fetch wrapper with error handling
@@ -32,6 +33,71 @@ const API = {
             console.error(`API request failed: ${endpoint}`, error);
             throw error;
         }
+    },
+
+    buildTreasuryAdminTypedData(status, payload) {
+        const domainConfig = (status && status.treasuryAdminEip712) || {};
+        const domain = {
+            name: domainConfig.name || 'DecentraLabsTreasuryAdmin',
+            version: domainConfig.version || '1',
+            chainId: domainConfig.chainId || 11155111,
+            verifyingContract: domainConfig.verifyingContract || status.contractAddress || this.ZERO_ADDRESS
+        };
+
+        const message = {
+            signer: payload.adminWalletAddress,
+            operation: payload.operation,
+            providerAddress: payload.providerAddress || this.ZERO_ADDRESS,
+            backendAddress: payload.backendAddress || this.ZERO_ADDRESS,
+            spendingLimit: payload.spendingLimit || '0',
+            spendingPeriod: payload.spendingPeriod || '0',
+            amount: payload.amount || '0',
+            timestamp: payload.timestamp
+        };
+
+        return {
+            types: {
+                EIP712Domain: [
+                    { name: 'name', type: 'string' },
+                    { name: 'version', type: 'string' },
+                    { name: 'chainId', type: 'uint256' },
+                    { name: 'verifyingContract', type: 'address' }
+                ],
+                TreasuryAdminOperation: [
+                    { name: 'signer', type: 'address' },
+                    { name: 'operation', type: 'string' },
+                    { name: 'providerAddress', type: 'address' },
+                    { name: 'backendAddress', type: 'address' },
+                    { name: 'spendingLimit', type: 'uint256' },
+                    { name: 'spendingPeriod', type: 'uint256' },
+                    { name: 'amount', type: 'uint256' },
+                    { name: 'timestamp', type: 'uint64' }
+                ]
+            },
+            domain,
+            primaryType: 'TreasuryAdminOperation',
+            message
+        };
+    },
+
+    async signTreasuryAdminOperation(status, payload) {
+        if (!window.ethereum || !window.ethereum.request) {
+            throw new Error('No wallet provider found. Connect the institutional wallet to sign admin actions.');
+        }
+        const accounts = await window.ethereum.request({ method: 'eth_requestAccounts' });
+        const signer = payload.adminWalletAddress;
+        if (!signer) {
+            throw new Error('Institutional wallet address is missing.');
+        }
+        const match = (accounts || []).find(account => account.toLowerCase() === signer.toLowerCase());
+        if (!match) {
+            throw new Error('Connected wallet does not match the institutional wallet address.');
+        }
+        const typedData = this.buildTreasuryAdminTypedData(status, payload);
+        return await window.ethereum.request({
+            method: 'eth_signTypedData_v4',
+            params: [match, JSON.stringify(typedData)]
+        });
     },
 
     /**
@@ -91,6 +157,9 @@ const API = {
             operation,
             ...params
         };
+
+        payload.timestamp = Date.now();
+        payload.signature = await this.signTreasuryAdminOperation(status, payload);
 
         return await this.request('/treasury/admin/execute', {
             method: 'POST',

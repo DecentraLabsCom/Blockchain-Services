@@ -101,7 +101,12 @@ class InstitutionalTreasuryControllerTest {
         InstitutionalAdminResponse success = InstitutionalAdminResponse.success("ok", "0x1", "AUTHORIZE_BACKEND");
         when(adminService.executeAdminOperation(any(InstitutionalAdminRequest.class))).thenReturn(success);
 
-        InstitutionalAdminRequest request = new InstitutionalAdminRequest("0x123", AdminOperation.AUTHORIZE_BACKEND, null, "0xbackend", null, null, null);
+        InstitutionalAdminRequest request = new InstitutionalAdminRequest();
+        request.setAdminWalletAddress("0x123");
+        request.setOperation(AdminOperation.AUTHORIZE_BACKEND);
+        request.setBackendAddress("0xbackend");
+        request.setTimestamp(System.currentTimeMillis());
+        request.setSignature("0x" + "11".repeat(65));
 
         mockMvc.perform(post("/treasury/admin/execute")
                 .with(csrf())
@@ -121,7 +126,12 @@ class InstitutionalTreasuryControllerTest {
         InstitutionalAdminResponse failure = InstitutionalAdminResponse.error("nope");
         when(adminService.executeAdminOperation(any(InstitutionalAdminRequest.class))).thenReturn(failure);
 
-        InstitutionalAdminRequest request = new InstitutionalAdminRequest("0x123", AdminOperation.AUTHORIZE_BACKEND, null, "0xbackend", null, null, null);
+        InstitutionalAdminRequest request = new InstitutionalAdminRequest();
+        request.setAdminWalletAddress("0x123");
+        request.setOperation(AdminOperation.AUTHORIZE_BACKEND);
+        request.setBackendAddress("0xbackend");
+        request.setTimestamp(System.currentTimeMillis());
+        request.setSignature("0x" + "11".repeat(65));
 
         mockMvc.perform(post("/treasury/admin/execute")
                 .with(csrf())
@@ -141,7 +151,12 @@ class InstitutionalTreasuryControllerTest {
         when(adminService.executeAdminOperation(any(InstitutionalAdminRequest.class)))
             .thenThrow(new RuntimeException("boom"));
 
-        InstitutionalAdminRequest request = new InstitutionalAdminRequest("0x123", AdminOperation.AUTHORIZE_BACKEND, null, "0xbackend", null, null, null);
+        InstitutionalAdminRequest request = new InstitutionalAdminRequest();
+        request.setAdminWalletAddress("0x123");
+        request.setOperation(AdminOperation.AUTHORIZE_BACKEND);
+        request.setBackendAddress("0xbackend");
+        request.setTimestamp(System.currentTimeMillis());
+        request.setSignature("0x" + "11".repeat(65));
 
         mockMvc.perform(post("/treasury/admin/execute")
                 .with(csrf())

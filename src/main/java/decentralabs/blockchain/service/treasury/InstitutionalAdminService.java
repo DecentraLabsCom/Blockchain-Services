@@ -1,6 +1,7 @@
 package decentralabs.blockchain.service.treasury;
 
 import decentralabs.blockchain.service.RateLimitService;
+import decentralabs.blockchain.service.persistence.AntiReplayService;
 import decentralabs.blockchain.service.wallet.InstitutionalWalletService;
 import decentralabs.blockchain.dto.treasury.InstitutionalAdminRequest;
 import decentralabs.blockchain.dto.treasury.InstitutionalAdminResponse;
@@ -44,8 +45,11 @@ public class InstitutionalAdminService {
     private final RateLimitService rateLimitService;
     private final InstitutionalWalletService institutionalWalletService;
     private final InstitutionalAnalyticsService analyticsService;
+    private final Eip712TreasuryAdminVerifier adminVerifier;
+    private final AntiReplayService antiReplayService;
 
     private static final int LAB_TOKEN_DECIMALS = 6;
+    private static final long SIGNATURE_MAX_AGE_MS = 5 * 60 * 1000;
 
     @Value("${contract.address}")
     private String contractAddress;
@@ -76,6 +80,17 @@ public class InstitutionalAdminService {
             // Step 1: Validate localhost access
             if (!isLocalhostRequest()) {
                 return InstitutionalAdminResponse.error("Access denied: administrative operations only allowed from localhost");
+            }
+
+            String institutionalAddress = institutionalWalletService.getInstitutionalWalletAddress();
+            if (institutionalAddress == null || institutionalAddress.isBlank()) {
+                return InstitutionalAdminResponse.error("Institutional wallet not configured");
+            }
+
+            // Step 2: Verify EIP-712 signature and replay protection
+            String signatureError = validateAdminSignature(request, institutionalAddress);
+            if (signatureError != null) {
+                return InstitutionalAdminResponse.error(signatureError);
             }
 
             // Step 2: Validate wallet ownership
@@ -182,6 +197,32 @@ public class InstitutionalAdminService {
         }
 
         return isAuthorized;
+    }
+
+    private String validateAdminSignature(InstitutionalAdminRequest request, String expectedSigner) {
+        if (request == null) {
+            return "Missing administrative request";
+        }
+        Long timestamp = request.getTimestamp();
+        if (timestamp == null || timestamp <= 0) {
+            return "Missing or invalid signature timestamp";
+        }
+        long now = System.currentTimeMillis();
+        long skew = Math.abs(now - timestamp);
+        if (skew > SIGNATURE_MAX_AGE_MS) {
+            return "Signature timestamp is expired or too far in the future";
+        }
+
+        Eip712TreasuryAdminVerifier.VerificationResult result = adminVerifier.verify(request, expectedSigner);
+        if (!result.valid()) {
+            return "Invalid admin signature: " + result.error();
+        }
+
+        if (antiReplayService.isTimestampUsed(expectedSigner, timestamp)) {
+            return "Replay detected for admin signature";
+        }
+
+        return null;
     }
 
     /**

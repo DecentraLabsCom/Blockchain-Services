@@ -42,6 +42,18 @@ public class AdminDashboardController {
     @Value("${marketplace.url:https://marketplace-decentralabs.vercel.app}")
     private String marketplaceUrl;
 
+    @Value("${treasury.admin.domain.name:DecentraLabsTreasuryAdmin}")
+    private String treasuryAdminDomainName;
+
+    @Value("${treasury.admin.domain.version:1}")
+    private String treasuryAdminDomainVersion;
+
+    @Value("${treasury.admin.domain.chain-id:${intent.domain.chain-id:11155111}}")
+    private long treasuryAdminDomainChainId;
+
+    @Value("${treasury.admin.domain.verifying-contract:${contract.address:0x0000000000000000000000000000000000000000}}")
+    private String treasuryAdminDomainVerifyingContract;
+
     /**
      * GET /treasury/admin/status
      * Overall system status for dashboard
@@ -66,7 +78,18 @@ public class AdminDashboardController {
             status.put("contractAddress", contractAddress);
             status.put("marketplaceUrl", marketplaceUrl);
             status.put("timestamp", System.currentTimeMillis());
-            
+
+            Map<String, Object> eip712 = new LinkedHashMap<>();
+            eip712.put("name", treasuryAdminDomainName);
+            eip712.put("version", treasuryAdminDomainVersion);
+            eip712.put("chainId", treasuryAdminDomainChainId);
+            String verifying = treasuryAdminDomainVerifyingContract;
+            if (verifying == null || verifying.isBlank()) {
+                verifying = contractAddress;
+            }
+            eip712.put("verifyingContract", verifying);
+            status.put("treasuryAdminEip712", eip712);
+
             var networksResponse = walletService.getAvailableNetworks();
             status.put("availableNetworks", networksResponse.getNetworks());
             status.put("activeNetwork", networksResponse.getActiveNetwork());

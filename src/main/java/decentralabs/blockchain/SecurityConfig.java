@@ -9,9 +9,12 @@ import org.springframework.http.HttpMethod;
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 import org.springframework.web.cors.CorsConfigurationSource;
+
+import decentralabs.blockchain.security.InternalTokenAuthenticationFilter;
 
 @Configuration
 @EnableMethodSecurity
@@ -56,6 +59,15 @@ public class SecurityConfig {
     @Value("${auth.base-path:/auth}")
     private String authBasePath;
 
+    @Value("${security.internal-token.required:true}")
+    private boolean internalTokenRequired;
+
+    private final InternalTokenAuthenticationFilter internalTokenAuthenticationFilter;
+
+    public SecurityConfig(InternalTokenAuthenticationFilter internalTokenAuthenticationFilter) {
+        this.internalTokenAuthenticationFilter = internalTokenAuthenticationFilter;
+    }
+
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
         http
@@ -81,30 +93,36 @@ public class SecurityConfig {
                     "/onboarding/**"
                 )
             )
-            .authorizeHttpRequests(authorize -> authorize
-                .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
-                .requestMatchers(authBasePath + "/.well-known/*").permitAll()
-                .requestMatchers(jwksEndpoint).permitAll()
-                .requestMatchers(messageEndpoint).permitAll()
-                .requestMatchers(walletAuthEndpoint).permitAll()
-                .requestMatchers(walletAuth2Endpoint).permitAll()
-                .requestMatchers(samlAuthEndpoint).permitAll()
-                .requestMatchers(samlAuth2Endpoint).permitAll()
-                .requestMatchers(healthEndpoint).permitAll()
-                .requestMatchers("/actuator/health/**").permitAll()
-                .requestMatchers("/actuator/info").permitAll()
-                .requestMatchers("/actuator/metrics/**").permitAll()
-                .requestMatchers("/actuator/prometheus").permitAll()
-                .requestMatchers("/webauthn/**").permitAll()
-                .requestMatchers("/onboarding/**").permitAll()
-                .requestMatchers(intentsEndpoint + "/**").permitAll()
+            .authorizeHttpRequests(authorize -> {
+                authorize.requestMatchers(HttpMethod.OPTIONS, "/**").permitAll();
+                authorize.requestMatchers(authBasePath + "/.well-known/*").permitAll();
+                authorize.requestMatchers(jwksEndpoint).permitAll();
+                authorize.requestMatchers(messageEndpoint).permitAll();
+                authorize.requestMatchers(walletAuthEndpoint).permitAll();
+                authorize.requestMatchers(walletAuth2Endpoint).permitAll();
+                authorize.requestMatchers(samlAuthEndpoint).permitAll();
+                authorize.requestMatchers(samlAuth2Endpoint).permitAll();
+                authorize.requestMatchers(healthEndpoint).permitAll();
+                authorize.requestMatchers("/actuator/health/**").permitAll();
+                authorize.requestMatchers("/actuator/info").permitAll();
+                authorize.requestMatchers("/actuator/metrics/**").permitAll();
+                authorize.requestMatchers("/actuator/prometheus").permitAll();
+                authorize.requestMatchers("/webauthn/**").permitAll();
+                authorize.requestMatchers("/onboarding/**").permitAll();
+                authorize.requestMatchers(intentsEndpoint + "/**").permitAll();
                 // Wallet dashboard static resources (HTML/CSS/JS)
-                .requestMatchers("/wallet-dashboard/**").permitAll()
+                authorize.requestMatchers("/wallet-dashboard/**").permitAll();
                 // ALL wallet endpoints - restricted by CORS to localhost
-                .requestMatchers(walletEndpoint + "/**").permitAll()
-                .requestMatchers(treasuryEndpoint + "/**").permitAll()
-                .anyRequest().denyAll()
-            );
+                authorize.requestMatchers(walletEndpoint + "/**").permitAll();
+                if (internalTokenRequired) {
+                    authorize.requestMatchers(treasuryEndpoint + "/admin/**").hasRole("INTERNAL");
+                } else {
+                    authorize.requestMatchers(treasuryEndpoint + "/admin/**").permitAll();
+                }
+                authorize.requestMatchers(treasuryEndpoint + "/**").permitAll();
+                authorize.anyRequest().denyAll();
+            })
+            .addFilterBefore(internalTokenAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
 
         return http.build();
     }
