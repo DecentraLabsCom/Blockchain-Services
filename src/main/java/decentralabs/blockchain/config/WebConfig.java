@@ -14,6 +14,9 @@ public class WebConfig implements WebMvcConfigurer {
 
     @Override
     public void addViewControllers(@NonNull ViewControllerRegistry registry) {
+        // Default root to the wallet dashboard UI in standalone mode.
+        registry.addViewController("/")
+                .setViewName("redirect:/wallet-dashboard/");
         // Redirect to include trailing slash so relative assets resolve correctly.
         registry.addViewController("/wallet-dashboard")
                 .setViewName("redirect:/wallet-dashboard/");

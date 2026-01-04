@@ -95,6 +95,7 @@ public class SecurityConfig {
             )
             .authorizeHttpRequests(authorize -> {
                 authorize.requestMatchers(HttpMethod.OPTIONS, "/**").permitAll();
+                authorize.requestMatchers("/").permitAll();
                 authorize.requestMatchers(authBasePath + "/.well-known/*").permitAll();
                 authorize.requestMatchers(jwksEndpoint).permitAll();
                 authorize.requestMatchers(messageEndpoint).permitAll();
