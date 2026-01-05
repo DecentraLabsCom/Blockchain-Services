@@ -24,7 +24,7 @@ public class ProviderConfigurationPersistenceService {
 
     private static final String CONFIG_FILE = "config/provider.properties";
 
-    @Value("${spring.config.location:}")
+    @Value("${provider.config.path:}")
     private String configLocation;
 
     /**
