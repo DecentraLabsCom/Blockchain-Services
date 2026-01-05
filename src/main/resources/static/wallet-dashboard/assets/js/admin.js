@@ -379,8 +379,8 @@ async function applyProvisioningToken() {
         // Detect token type by decoding JWT payload
         const tokenType = detectTokenType(token);
         const endpoint = tokenType === 'consumer' 
-            ? '/provider-config/apply-consumer-token'
-            : '/provider-config/apply-provider-token';
+            ? '/institution-config/apply-consumer-token'
+            : '/institution-config/apply-provider-token';
         
         const response = await fetch(endpoint, {
             method: 'POST',

@@ -27,7 +27,7 @@ import java.util.Properties;
  * Controller for provider configuration and registration UI
  */
 @Controller
-@RequestMapping("/provider-config")
+@RequestMapping("/institution-config")
 @RequiredArgsConstructor
 @Slf4j
 public class ProviderConfigurationController {
@@ -67,7 +67,7 @@ public class ProviderConfigurationController {
      */
     @GetMapping
     public String getConfigurationPage() {
-        return "forward:/provider-config/index.html";
+        return "forward:/institution-config/index.html";
     }
 
     /**

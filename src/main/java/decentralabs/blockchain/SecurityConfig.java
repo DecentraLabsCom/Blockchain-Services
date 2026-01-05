@@ -90,7 +90,8 @@ public class SecurityConfig {
                     treasuryEndpoint + "/**",
                     "/webauthn/**",
                     intentsEndpoint + "/**",
-                    "/onboarding/**"
+                    "/onboarding/**",
+                    "/institution-config/**"
                 )
             )
             .authorizeHttpRequests(authorize -> {
@@ -110,6 +111,7 @@ public class SecurityConfig {
                 authorize.requestMatchers("/actuator/prometheus").permitAll();
                 authorize.requestMatchers("/webauthn/**").permitAll();
                 authorize.requestMatchers("/onboarding/**").permitAll();
+                authorize.requestMatchers("/institution-config/**").permitAll();
                 authorize.requestMatchers(intentsEndpoint + "/**").permitAll();
                 // Wallet dashboard static resources (HTML/CSS/JS)
                 authorize.requestMatchers("/wallet-dashboard/**").permitAll();

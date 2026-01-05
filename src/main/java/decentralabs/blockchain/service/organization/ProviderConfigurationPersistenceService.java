@@ -77,7 +77,8 @@ public class ProviderConfigurationPersistenceService {
         // Consumer-only configuration (no publicBaseUrl, no provider fields)
         properties.setProperty("marketplace.base-url", payload.getMarketplaceBaseUrl());
         properties.setProperty("consumer.name", payload.getConsumerName());
-        properties.setProperty("provider.organization", payload.getConsumerOrganization()); // schacHomeOrganization
+        // Consumer-only flow reuses provider.organization to persist schacHomeOrganization used on-chain.
+        properties.setProperty("provider.organization", payload.getConsumerOrganization());
         properties.setProperty("provisioning.source", "consumer-token");
 
         // Save to file

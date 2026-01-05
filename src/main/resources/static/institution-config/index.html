@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
@@ -393,7 +393,7 @@
         // Check configuration status on load
         async function loadConfigurationStatus() {
             try {
-                const response = await fetch('/provider-config/status');
+                const response = await fetch('/institution-config/status');
                 const data = await response.json();
 
                 // Populate form with existing values
@@ -468,7 +468,7 @@
             };
 
             try {
-                const response = await fetch('/provider-config/save-and-register', {
+                const response = await fetch('/institution-config/save-and-register', {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json'
@@ -480,7 +480,7 @@
 
                 if (result.success) {
                     if (result.registered) {
-                        showSuccess('✓ Configuration saved and provider registered successfully!');
+                        showSuccess('Configuration saved and provider registered successfully!');
                         document.getElementById('continueToDashboardBtn').style.display = 'block';
                         
                         // Update status badge
@@ -523,7 +523,7 @@
                     return;
                 }
 
-                const response = await fetch('/provider-config/retry-registration', {
+                const response = await fetch('/institution-config/retry-registration', {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json'
@@ -534,7 +534,7 @@
                 const result = await response.json();
 
                 if (result.success && result.registered) {
-                    showSuccess('✓ Provider registration completed successfully!');
+                    showSuccess('Provider registration completed successfully!');
                     document.getElementById('continueToDashboardBtn').style.display = 'block';
                     
                     // Update status badge
@@ -592,3 +592,6 @@
     </script>
 </body>
 </html>
+
+
+
