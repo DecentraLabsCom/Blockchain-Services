@@ -91,6 +91,17 @@ public class LocalhostOnlyFilter extends OncePerRequestFilter {
             return true;
         }
 
+        // Check if request comes from a trusted proxy (private network) forwarding localhost.
+        // This allows nginx to set X-Real-IP/X-Forwarded-For to 127.0.0.1 for internal paths.
+        if (isPrivateAddress(normalized)) {
+            String forwardedIp = getFirstForwardedIp(request);
+            if (forwardedIp != null && LOCALHOST_ADDRESSES.contains(forwardedIp.trim())) {
+                log.debug("Trusting forwarded localhost from private proxy: remoteAddr={}, forwarded={}", 
+                    normalized, forwardedIp);
+                return true;
+            }
+        }
+
         // In standalone docker, requests often arrive from a bridge IP (172.x/10.x).
         // Only allow those when explicitly enabled and secured with an internal token.
         if (allowPrivateNetworks && (isPrivateAddress(normalized) || isForwardedPrivateAddress(request))) {
@@ -109,6 +120,21 @@ public class LocalhostOnlyFilter extends OncePerRequestFilter {
         }
 
         return false;
+    }
+
+    private String getFirstForwardedIp(HttpServletRequest request) {
+        String forwarded = request.getHeader("X-Forwarded-For");
+        if (forwarded != null && !forwarded.isBlank()) {
+            String[] parts = forwarded.split(",");
+            if (parts.length > 0 && parts[0] != null && !parts[0].isBlank()) {
+                return parts[0].trim();
+            }
+        }
+        String realIp = request.getHeader("X-Real-IP");
+        if (realIp != null && !realIp.isBlank()) {
+            return realIp.trim();
+        }
+        return null;
     }
 
     private boolean hasValidInternalToken(HttpServletRequest request) {
