@@ -93,7 +93,7 @@ public class LocalhostOnlyFilter extends OncePerRequestFilter {
 
         // In standalone docker, requests often arrive from a bridge IP (172.x/10.x).
         // Only allow those when explicitly enabled and secured with an internal token.
-        if (allowPrivateNetworks && isPrivateAddress(normalized)) {
+        if (allowPrivateNetworks && (isPrivateAddress(normalized) || isForwardedPrivateAddress(request))) {
             if (!internalTokenRequired) {
                 return true;
             }
@@ -144,5 +144,28 @@ public class LocalhostOnlyFilter extends OncePerRequestFilter {
         } catch (Exception e) {
             return false;
         }
+    }
+
+    private boolean isForwardedPrivateAddress(HttpServletRequest request) {
+        String forwarded = request.getHeader("X-Forwarded-For");
+        if (forwarded == null || forwarded.isBlank()) {
+            forwarded = request.getHeader("X-Real-IP");
+        }
+        if (forwarded == null || forwarded.isBlank()) {
+            return false;
+        }
+        for (String token : forwarded.split(",")) {
+            if (token == null) {
+                continue;
+            }
+            String candidate = token.trim();
+            if (candidate.isEmpty()) {
+                continue;
+            }
+            if (isPrivateAddress(candidate)) {
+                return true;
+            }
+        }
+        return false;
     }
 }
