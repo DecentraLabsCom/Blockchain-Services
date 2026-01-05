@@ -344,6 +344,18 @@ function hideProvisioningTokenModal() {
     }
 }
 
+async function readJsonResponse(response) {
+    const text = await response.text();
+    if (!text) {
+        return { data: null, text: '' };
+    }
+    try {
+        return { data: JSON.parse(text), text };
+    } catch (error) {
+        return { data: null, text, parseError: error };
+    }
+}
+
 async function applyProvisioningToken() {
     const tokenInput = document.getElementById('provisioningTokenInput');
     if (!tokenInput) {
@@ -376,7 +388,14 @@ async function applyProvisioningToken() {
             body: JSON.stringify({ token })
         });
 
-        const data = await response.json();
+        const result = await readJsonResponse(response);
+        if (result.parseError) {
+            throw new Error('Invalid response from server.');
+        }
+        if (!result.data) {
+            throw new Error('Empty response from server.');
+        }
+        const data = result.data;
         if (!response.ok) {
             throw new Error(data.error || 'Unable to apply provisioning token.');
         }
@@ -1253,7 +1272,11 @@ function setupButtonHandlers() {
                     body: JSON.stringify({ password })
                 });
                 
-                const data = await response.json();
+                const result = await readJsonResponse(response);
+                if (result.parseError || !result.data) {
+                    throw new Error('Invalid response from server.');
+                }
+                const data = result.data;
                 if (data.success && data.address) {
                     showToast('✓ Wallet created and configured successfully!', 'success');
                     
@@ -1348,7 +1371,11 @@ function setupButtonHandlers() {
                     body: JSON.stringify({ privateKey: normalizedKey, password })
                 });
                 
-                const data = await response.json();
+                const result = await readJsonResponse(response);
+                if (result.parseError || !result.data) {
+                    throw new Error('Invalid response from server.');
+                }
+                const data = result.data;
                 if (data.success && data.address) {
                     showToast('Wallet imported and configured successfully!', 'success');
                     
