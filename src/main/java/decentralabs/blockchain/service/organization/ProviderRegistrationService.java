@@ -2,11 +2,9 @@ package decentralabs.blockchain.service.organization;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import decentralabs.blockchain.service.wallet.InstitutionalWalletService;
-import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
@@ -26,7 +24,6 @@ import java.util.Map;
 @Service
 @RequiredArgsConstructor
 @Slf4j
-@ConditionalOnProperty(value = "features.auto-provider-registration.enabled", havingValue = "true", matchIfMissing = true)
 public class ProviderRegistrationService {
 
     private final InstitutionalWalletService institutionalWalletService;
