@@ -71,7 +71,10 @@ public class ProviderConfigurationPersistenceService {
             }
         } else {
             // Create directory if it doesn't exist
-            Files.createDirectories(configPath.getParent());
+            Path parentDir = configPath.getParent();
+            if (parentDir != null) {
+                Files.createDirectories(parentDir);
+            }
         }
 
         // Consumer-only configuration (no publicBaseUrl, no provider fields)
@@ -108,7 +111,10 @@ public class ProviderConfigurationPersistenceService {
             }
         } else {
             // Create directory if it doesn't exist
-            Files.createDirectories(configPath.getParent());
+            Path parentDir = configPath.getParent();
+            if (parentDir != null) {
+                Files.createDirectories(parentDir);
+            }
         }
 
         // Update properties
