@@ -38,9 +38,7 @@ services:
     # Mount volumes for keys, logs, and wallet data
     # SECURITY: Ensure key files have proper permissions (chmod 400 for private key)
     volumes:
-      # RW so entrypoint can generate keys if missing; use :ro in hardened setups.
-      - ./keys:/app/config/keys
-      # Configuration persistence (provider registration, etc.)
+      # Configuration directory (includes keys and provider.properties)
       - ./config:/app/config
       - ./logs:/app/logs
       # Persistent storage for encrypted wallets (survives container restart)
