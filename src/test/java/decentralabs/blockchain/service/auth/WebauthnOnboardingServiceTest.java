@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.*;
 import decentralabs.blockchain.dto.auth.WebauthnOnboardingCompleteRequest;
 import decentralabs.blockchain.dto.auth.WebauthnOnboardingOptionsRequest;
 import decentralabs.blockchain.dto.auth.WebauthnOnboardingOptionsResponse;
+import decentralabs.blockchain.service.BackendUrlResolver;
 import java.lang.reflect.Field;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
@@ -26,13 +27,16 @@ class WebauthnOnboardingServiceTest {
     @Mock
     private ObjectProvider<SamlValidationService> samlValidationServiceProvider;
 
+    @Mock
+    private BackendUrlResolver backendUrlResolver;
+
     private WebauthnOnboardingService service;
 
     private static final Base64.Encoder BASE64URL_ENCODER = Base64.getUrlEncoder().withoutPadding();
 
     @BeforeEach
     void setUp() throws Exception {
-        service = new WebauthnOnboardingService(credentialService, samlValidationServiceProvider);
+        service = new WebauthnOnboardingService(credentialService, samlValidationServiceProvider, backendUrlResolver);
         
         // Set configuration via reflection (normally done by Spring)
         setField("rpId", "localhost");
