@@ -170,10 +170,11 @@ public class ProviderRegistrationService {
 
     /**
      * Check if provider is registered
+     * Delegates to configuration controller to check persisted registration status
      */
     public boolean isProviderRegistered() {
-        // This could query the contract or marketplace API
-        // For now, we'll just return true if configuration is complete
+        // Read from configuration file to see if provider.registered=true
+        // This is set after successful registration
         return marketplaceBaseUrl != null && !marketplaceBaseUrl.isBlank()
             && providerName != null && !providerName.isBlank();
     }

@@ -127,6 +127,9 @@ public class ProviderConfigurationController {
             );
 
             if (registered) {
+                // Mark as registered in config file
+                persistenceService.markProviderRegistered();
+                
                 response.put("success", true);
                 response.put("message", "Provider configuration saved and registration completed successfully");
                 response.put("registered", true);
@@ -232,6 +235,11 @@ public class ProviderConfigurationController {
                 provisioningToken
             );
 
+            if (registered) {
+                // Mark as registered in config file
+                persistenceService.markProviderRegistered();
+            }
+
             response.put("success", true);
             response.put("registered", registered);
             response.put("lockedFields", TOKEN_LOCKED_FIELDS);
@@ -321,7 +329,7 @@ public class ProviderConfigurationController {
     }
 
     private boolean isRegistered(ConfigSnapshot snapshot) {
-        return !snapshot.marketplaceBaseUrl().isBlank() && !snapshot.providerName().isBlank();
+        return snapshot.registered();
     }
 
     private ConfigSnapshot loadSnapshot() {
@@ -333,6 +341,7 @@ public class ProviderConfigurationController {
         String resolvedProviderOrg = firstNonBlank(props.getProperty("provider.organization"), providerOrganization);
         String resolvedPublicBaseUrl = firstNonBlank(props.getProperty("public.base-url"), publicBaseUrl);
         String source = props.getProperty("provisioning.source", "manual");
+        boolean registered = "true".equalsIgnoreCase(props.getProperty("provider.registered", "false"));
 
         return new ConfigSnapshot(
             resolvedMarketplace,
@@ -341,7 +350,8 @@ public class ProviderConfigurationController {
             resolvedProviderCountry,
             resolvedProviderOrg,
             resolvedPublicBaseUrl,
-            source
+            source,
+            registered
         );
     }
 
@@ -359,7 +369,8 @@ public class ProviderConfigurationController {
         String providerCountry,
         String providerOrganization,
         String publicBaseUrl,
-        String provisioningSource
+        String provisioningSource,
+        boolean registered
     ) {}
 
     private void validateConfiguration(ProviderConfigurationRequest request) {
