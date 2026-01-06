@@ -40,6 +40,8 @@ services:
     volumes:
       # RW so entrypoint can generate keys if missing; use :ro in hardened setups.
       - ./keys:/app/config/keys
+      # Configuration persistence (provider registration, etc.)
+      - ./config:/app/config
       - ./logs:/app/logs
       # Persistent storage for encrypted wallets (survives container restart)
       - wallet-data:/app/data
