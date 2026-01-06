@@ -795,8 +795,11 @@ async function loadBalances() {
         const statusData = await API.getSystemStatus();
         const activeNetwork = statusData.activeNetwork || 'sepolia';
         
-        // Get all balances
-        const data = await API.getBalance();
+        // Get all balances and treasury info in parallel
+        const [data, treasuryData] = await Promise.all([
+            API.getBalance(),
+            API.getTreasuryInfo().catch(err => ({ success: false }))
+        ]);
         
         if (data.success && data.balances) {
             const balanceGrid = document.getElementById('balanceGrid');
@@ -842,15 +845,49 @@ async function loadBalances() {
                     const labBalance = balanceData.labBalance || '0';
                     balanceGrid.innerHTML += `
                         <div class="balance-item">
-                            <div class="balance-label">LAB Balance</div>
+                            <div class="balance-label">Free LAB</div>
                             <div class="balance-amount">${labBalance} LAB</div>
                         </div>
                     `;
                     
-                    // Show promotional message if LAB balance is 0 (in separate container)
+                    // Check if user is a registered provider from treasury data
+                    const isProvider = treasuryData.success && treasuryData.isProvider === true;
+                    const stakeInfo = treasuryData.stakeInfo || null;
+                    const treasuryBalance = treasuryData.treasuryBalanceFormatted || '0';
+                    
+                    // Display Treasury Balance if provider
+                    if (isProvider && parseFloat(treasuryBalance) > 0) {
+                        balanceGrid.innerHTML += `
+                            <div class="balance-item">
+                                <div class="balance-label">
+                                    <i class="fas fa-university" style="margin-right: 0.3rem; color: var(--neon-cyan);"></i>
+                                    Treasury
+                                </div>
+                                <div class="balance-amount" style="color: var(--neon-cyan);">${treasuryBalance} LAB</div>
+                            </div>
+                        `;
+                    }
+                    
+                    // Display Staked Amount if provider
+                    if (isProvider && stakeInfo && stakeInfo.stakedAmountFormatted) {
+                        const stakedAmount = stakeInfo.stakedAmountFormatted;
+                        if (parseFloat(stakedAmount) > 0) {
+                            balanceGrid.innerHTML += `
+                                <div class="balance-item">
+                                    <div class="balance-label">
+                                        <i class="fas fa-lock" style="margin-right: 0.3rem; color: var(--neon-purple);"></i>
+                                        Staked
+                                    </div>
+                                    <div class="balance-amount" style="color: var(--neon-purple);">${stakedAmount} LAB</div>
+                                </div>
+                            `;
+                        }
+                    }
+                    
+                    // Show promotional message only if NOT a provider and LAB balance is 0
                     const promoContainer = document.getElementById('labPromoMessage');
                     if (promoContainer) {
-                        if (parseFloat(labBalance) === 0) {
+                        if (!isProvider && parseFloat(labBalance) === 0) {
                             promoContainer.style.display = 'block';
                             promoContainer.innerHTML = `
                                 <div style="text-align: center; padding: 1.5rem; background: linear-gradient(135deg, rgba(0, 255, 157, 0.1), rgba(0, 229, 255, 0.1)); border-radius: 0.5rem; margin-top: 1rem; border: 1px solid rgba(0, 255, 157, 0.2);">

@@ -493,6 +493,107 @@ public class WalletService {
     }
 
     /**
+     * Checks if an address is registered as a lab provider
+     * @param address The address to check
+     * @return true if the address is a lab provider, false otherwise
+     */
+    public boolean isLabProvider(String address) {
+        if (address == null || address.isBlank()) {
+            return false;
+        }
+        try {
+            Web3j web3j = getWeb3jInstance();
+            
+            // Call isLabProvider(address) function on Diamond contract
+            Function function = new Function(
+                "isLabProvider",
+                Collections.singletonList(new Address(address)),
+                Collections.singletonList(new TypeReference<org.web3j.abi.datatypes.Bool>() {})
+            );
+            
+            String encodedFunction = FunctionEncoder.encode(function);
+            
+            EthCall response = web3j.ethCall(
+                Transaction.createEthCallTransaction(null, contractAddress, encodedFunction),
+                DefaultBlockParameterName.LATEST
+            ).send();
+            
+            if (response.hasError()) {
+                log.warn("Error calling isLabProvider()");
+                return false;
+            }
+            
+            @SuppressWarnings("rawtypes")
+            List<Type> decoded = FunctionReturnDecoder.decode(response.getValue(), function.getOutputParameters());
+            if (!decoded.isEmpty()) {
+                return (Boolean) decoded.get(0).getValue();
+            }
+            
+            return false;
+        } catch (Exception e) {
+            log.error("Error checking isLabProvider from Diamond contract", e);
+            return false;
+        }
+    }
+
+    /**
+     * Gets stake information for a provider from the Diamond contract
+     * @param providerAddress The provider address to query
+     * @return StakeInfo DTO with staked amount, slashed amount, timestamps, etc.
+     */
+    public StakeInfo getStakeInfo(String providerAddress) {
+        if (providerAddress == null || providerAddress.isBlank()) {
+            return StakeInfo.empty();
+        }
+        try {
+            Web3j web3j = getWeb3jInstance();
+            
+            // Call getStakeInfo(address) function on Diamond contract
+            // Returns: (stakedAmount, slashedAmount, lastReservationTimestamp, unlockTimestamp, canUnstake)
+            Function function = new Function(
+                "getStakeInfo",
+                Collections.singletonList(new Address(providerAddress)),
+                Arrays.asList(
+                    new TypeReference<Uint256>() {},  // stakedAmount
+                    new TypeReference<Uint256>() {},  // slashedAmount
+                    new TypeReference<Uint256>() {},  // lastReservationTimestamp
+                    new TypeReference<Uint256>() {},  // unlockTimestamp
+                    new TypeReference<org.web3j.abi.datatypes.Bool>() {}  // canUnstake
+                )
+            );
+            
+            String encodedFunction = FunctionEncoder.encode(function);
+            
+            EthCall response = web3j.ethCall(
+                Transaction.createEthCallTransaction(null, contractAddress, encodedFunction),
+                DefaultBlockParameterName.LATEST
+            ).send();
+            
+            if (response.hasError()) {
+                log.warn("Error calling getStakeInfo()");
+                return StakeInfo.empty();
+            }
+            
+            @SuppressWarnings("rawtypes")
+            List<Type> decoded = FunctionReturnDecoder.decode(response.getValue(), function.getOutputParameters());
+            if (decoded.size() >= 5) {
+                return StakeInfo.builder()
+                    .stakedAmount((BigInteger) decoded.get(0).getValue())
+                    .slashedAmount((BigInteger) decoded.get(1).getValue())
+                    .lastReservationTimestamp(((BigInteger) decoded.get(2).getValue()).longValue())
+                    .unlockTimestamp(((BigInteger) decoded.get(3).getValue()).longValue())
+                    .canUnstake((Boolean) decoded.get(4).getValue())
+                    .build();
+            }
+            
+            return StakeInfo.empty();
+        } catch (Exception e) {
+            log.error("Error getting stake info from Diamond contract", e);
+            return StakeInfo.empty();
+        }
+    }
+
+    /**
      * Returns per-user financial stats stored on-chain, if that user has interacted before.
      */
     public Optional<InstitutionalUserFinancialStats> getInstitutionalUserFinancialStats(String providerAddress, String puc) {

@@ -512,8 +512,35 @@ public class AdminDashboardController {
             java.math.BigInteger treasuryBalance = walletService.getInstitutionalTreasuryBalance(institutionalAddress);
             if (treasuryBalance != null) {
                 info.put("treasuryBalance", treasuryBalance.toString());
+                // Format treasury balance for display (divide by 1e6)
+                String formattedBalance = new java.math.BigDecimal(treasuryBalance)
+                    .divide(java.math.BigDecimal.valueOf(1_000_000))
+                    .stripTrailingZeros()
+                    .toPlainString();
+                info.put("treasuryBalanceFormatted", formattedBalance);
             } else {
                 info.put("treasuryBalance", "0");
+                info.put("treasuryBalanceFormatted", "0");
+            }
+
+            // Check if wallet is registered as provider
+            boolean isProvider = walletService.isLabProvider(institutionalAddress);
+            info.put("isProvider", isProvider);
+            
+            // Get stake info if provider
+            if (isProvider) {
+                var stakeInfo = walletService.getStakeInfo(institutionalAddress);
+                Map<String, Object> stakeData = new LinkedHashMap<>();
+                stakeData.put("stakedAmount", stakeInfo.getStakedAmount().toString());
+                stakeData.put("stakedAmountFormatted", stakeInfo.getStakedAmountFormatted());
+                stakeData.put("slashedAmount", stakeInfo.getSlashedAmount().toString());
+                stakeData.put("lastReservationTimestamp", stakeInfo.getLastReservationTimestamp());
+                stakeData.put("unlockTimestamp", stakeInfo.getUnlockTimestamp());
+                stakeData.put("canUnstake", stakeInfo.isCanUnstake());
+                info.put("stakeInfo", stakeData);
+                
+                // Remove the "not registered" note if we got here
+                info.remove("note");
             }
 
             return ResponseEntity.ok(info);
