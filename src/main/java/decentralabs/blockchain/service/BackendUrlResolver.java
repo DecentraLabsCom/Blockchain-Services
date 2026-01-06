@@ -19,6 +19,8 @@ import org.springframework.util.StringUtils;
 @Service
 public class BackendUrlResolver {
 
+    private static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(BackendUrlResolver.class);
+
     private final String configuredBaseDomain;
     private final String serverName;
     private final String httpsPort;
@@ -37,6 +39,8 @@ public class BackendUrlResolver {
         this.httpsPort = httpsPort;
         this.httpPort = httpPort;
         this.applicationPort = applicationPort;
+        log.info("BackendUrlResolver initialized: serverName='{}', httpsPort='{}', baseDomain='{}'", 
+                 serverName, httpsPort, configuredBaseDomain);
     }
 
     /**
