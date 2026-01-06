@@ -135,9 +135,12 @@ public class ProviderConfigurationPersistenceService {
     }
 
     /**
-     * Mark provider as registered
+     * Mark institution as registered for a specific role
+     * 
+     * @param role Institution role (PROVIDER or CONSUMER)
+     * @throws IOException if unable to write to configuration file
      */
-    public void markProviderRegistered() throws IOException {
+    public void markAsRegistered(InstitutionRole role) throws IOException {
         Properties properties = new Properties();
         Path configPath = getConfigFilePath();
         
@@ -147,36 +150,13 @@ public class ProviderConfigurationPersistenceService {
             }
         }
         
-        properties.setProperty("provider.registered", "true");
+        properties.setProperty(role.getRegisteredFlag(), "true");
         
         try (FileOutputStream fos = new FileOutputStream(configPath.toFile())) {
-            properties.store(fos, "Provider Configuration - Auto-saved by DecentraLabs Blockchain Services");
+            properties.store(fos, "Institution Configuration - Auto-saved by DecentraLabs Blockchain Services");
         }
         
-        log.info("Provider marked as registered in configuration");
-    }
-
-    /**
-     * Mark consumer as registered in configuration file
-     * Sets consumer.registered=true in provider.properties
-     */
-    public void markConsumerRegistered() throws IOException {
-        Path configPath = getConfigFilePath();
-        Properties properties = new Properties();
-        
-        if (Files.exists(configPath)) {
-            try (FileInputStream fis = new FileInputStream(configPath.toFile())) {
-                properties.load(fis);
-            }
-        }
-        
-        properties.setProperty("consumer.registered", "true");
-        
-        try (FileOutputStream fos = new FileOutputStream(configPath.toFile())) {
-            properties.store(fos, "Consumer Configuration - Auto-saved by DecentraLabs Blockchain Services");
-        }
-        
-        log.info("Consumer marked as registered in configuration");
+        log.info("{} marked as registered in configuration", role);
     }
 
     /**

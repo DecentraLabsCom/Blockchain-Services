@@ -5,9 +5,10 @@ import decentralabs.blockchain.dto.provider.ProviderConfigurationRequest;
 import decentralabs.blockchain.dto.provider.ProviderConfigurationResponse;
 import decentralabs.blockchain.dto.provider.ProvisioningTokenPayload;
 import decentralabs.blockchain.dto.provider.ProvisioningTokenRequest;
-import decentralabs.blockchain.service.organization.ConsumerRegistrationService;
+import decentralabs.blockchain.service.organization.InstitutionRegistrationRequest;
+import decentralabs.blockchain.service.organization.InstitutionRegistrationService;
+import decentralabs.blockchain.service.organization.InstitutionRole;
 import decentralabs.blockchain.service.organization.ProviderConfigurationPersistenceService;
-import decentralabs.blockchain.service.organization.ProviderRegistrationService;
 import decentralabs.blockchain.service.organization.ProvisioningTokenService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -39,8 +40,7 @@ public class ProviderConfigurationController {
         "providerOrganization"
     );
 
-    private final ProviderRegistrationService registrationService;
-    private final ConsumerRegistrationService consumerRegistrationService;
+    private final InstitutionRegistrationService registrationService;
     private final ProviderConfigurationPersistenceService persistenceService;
     private final ProvisioningTokenService provisioningTokenService;
 
@@ -115,20 +115,23 @@ public class ProviderConfigurationController {
 
             log.info("Configuration saved successfully. Attempting registration...");
 
-            // Trigger registration
-            boolean registered = registrationService.registerProvider(
-                request.getMarketplaceBaseUrl(),
-                request.getProviderName(),
-                request.getProviderEmail(),
-                request.getProviderCountry(),
-                request.getProviderOrganization(),
-                request.getPublicBaseUrl(),
-                provisioningToken
-            );
+            // Trigger registration using unified service
+            InstitutionRegistrationRequest registrationRequest = InstitutionRegistrationRequest.builder()
+                .role(InstitutionRole.PROVIDER)
+                .marketplaceUrl(request.getMarketplaceBaseUrl())
+                .provisioningToken(provisioningToken)
+                .organization(request.getProviderOrganization())
+                .name(request.getProviderName())
+                .email(request.getProviderEmail())
+                .country(request.getProviderCountry())
+                .publicBaseUrl(request.getPublicBaseUrl())
+                .build();
+
+            boolean registered = registrationService.register(registrationRequest);
 
             if (registered) {
                 // Mark as registered in config file
-                persistenceService.markProviderRegistered();
+                registrationService.markAsRegistered(InstitutionRole.PROVIDER);
                 
                 response.put("success", true);
                 response.put("message", "Provider configuration saved and registration completed successfully");
@@ -180,15 +183,18 @@ public class ProviderConfigurationController {
             }
             String trimmedToken = provisioningToken.trim();
 
-            boolean registered = registrationService.registerProvider(
-                snapshot.marketplaceBaseUrl(),
-                snapshot.providerName(),
-                snapshot.providerEmail(),
-                snapshot.providerCountry(),
-                snapshot.providerOrganization(),
-                snapshot.publicBaseUrl(),
-                trimmedToken
-            );
+            InstitutionRegistrationRequest registrationRequest = InstitutionRegistrationRequest.builder()
+                .role(InstitutionRole.PROVIDER)
+                .marketplaceUrl(snapshot.marketplaceBaseUrl())
+                .provisioningToken(trimmedToken)
+                .organization(snapshot.providerOrganization())
+                .name(snapshot.providerName())
+                .email(snapshot.providerEmail())
+                .country(snapshot.providerCountry())
+                .publicBaseUrl(snapshot.publicBaseUrl())
+                .build();
+
+            boolean registered = registrationService.register(registrationRequest);
 
             response.put("success", registered);
             response.put("registered", registered);
@@ -225,19 +231,22 @@ public class ProviderConfigurationController {
             // Persist configuration from token (source=token)
             persistenceService.saveConfigurationFromToken(payload);
 
-            boolean registered = registrationService.registerProvider(
-                payload.getMarketplaceBaseUrl(),
-                payload.getProviderName(),
-                payload.getProviderEmail(),
-                payload.getProviderCountry(),
-                payload.getProviderOrganization(),
-                payload.getPublicBaseUrl(),
-                provisioningToken
-            );
+            InstitutionRegistrationRequest registrationRequest = InstitutionRegistrationRequest.builder()
+                .role(InstitutionRole.PROVIDER)
+                .marketplaceUrl(payload.getMarketplaceBaseUrl())
+                .provisioningToken(provisioningToken)
+                .organization(payload.getProviderOrganization())
+                .name(payload.getProviderName())
+                .email(payload.getProviderEmail())
+                .country(payload.getProviderCountry())
+                .publicBaseUrl(payload.getPublicBaseUrl())
+                .build();
+
+            boolean registered = registrationService.register(registrationRequest);
 
             if (registered) {
                 // Mark as registered in config file
-                persistenceService.markProviderRegistered();
+                registrationService.markAsRegistered(InstitutionRole.PROVIDER);
             }
 
             response.put("success", true);
@@ -288,15 +297,18 @@ public class ProviderConfigurationController {
             // Persist minimal consumer configuration from token (source=consumer-token)
             persistenceService.saveConfigurationFromConsumerToken(payload);
 
-            boolean registered = consumerRegistrationService.registerConsumer(
-                payload.getMarketplaceBaseUrl(),
-                payload.getConsumerOrganization(),
-                provisioningToken
-            );
+            InstitutionRegistrationRequest registrationRequest = InstitutionRegistrationRequest.builder()
+                .role(InstitutionRole.CONSUMER)
+                .marketplaceUrl(payload.getMarketplaceBaseUrl())
+                .provisioningToken(provisioningToken)
+                .organization(payload.getConsumerOrganization())
+                .build();
+
+            boolean registered = registrationService.register(registrationRequest);
 
             // Mark as registered in config file if successful
             if (registered) {
-                persistenceService.markConsumerRegistered();
+                registrationService.markAsRegistered(InstitutionRole.CONSUMER);
             }
 
             response.put("success", true);

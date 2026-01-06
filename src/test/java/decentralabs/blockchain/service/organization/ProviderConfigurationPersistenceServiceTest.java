@@ -79,7 +79,7 @@ class ProviderConfigurationPersistenceServiceTest {
         assertNotEquals("true", propsBeforeReg.getProperty("provider.registered"));
 
         // Mark as registered
-        service.markProviderRegistered();
+        service.markAsRegistered(InstitutionRole.PROVIDER);
 
         // Verify registered flag is set
         Properties propsAfterReg = service.loadConfigurationSafe();
@@ -98,7 +98,7 @@ class ProviderConfigurationPersistenceServiceTest {
         assertFalse(Files.exists(configPath));
 
         // Mark as registered
-        service.markProviderRegistered();
+        service.markAsRegistered(InstitutionRole.PROVIDER);
 
         // Verify file was created with registered flag
         assertTrue(Files.exists(configPath));
@@ -121,8 +121,8 @@ class ProviderConfigurationPersistenceServiceTest {
         service.saveConfiguration(request);
 
         // Mark as registered multiple times
-        service.markProviderRegistered();
-        service.markProviderRegistered();
+        service.markAsRegistered(InstitutionRole.PROVIDER);
+        service.markAsRegistered(InstitutionRole.PROVIDER);
 
         // Verify all properties still intact
         Properties props = service.loadConfigurationSafe();
@@ -186,7 +186,7 @@ class ProviderConfigurationPersistenceServiceTest {
         assertNotEquals("true", props1.getProperty("provider.registered"));
 
         // Mark as registered
-        service.markProviderRegistered();
+        service.markAsRegistered(InstitutionRole.PROVIDER);
         
         Properties props2 = service.loadConfigurationSafe();
         assertEquals("true", props2.getProperty("provider.registered"));
@@ -218,7 +218,7 @@ class ProviderConfigurationPersistenceServiceTest {
         }
         
         // Act
-        service.markConsumerRegistered();
+        service.markAsRegistered(InstitutionRole.CONSUMER);
         
         // Assert
         Properties props = new Properties();
@@ -241,7 +241,7 @@ class ProviderConfigurationPersistenceServiceTest {
         assertFalse(Files.exists(configPath));
         
         // Act
-        service.markConsumerRegistered();
+        service.markAsRegistered(InstitutionRole.CONSUMER);
         
         // Assert
         assertTrue(Files.exists(configPath));

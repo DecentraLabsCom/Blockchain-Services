@@ -32,7 +32,8 @@ import org.web3j.protocol.core.methods.response.Web3ClientVersion;
 
 import decentralabs.blockchain.service.auth.MarketplaceKeyService;
 import decentralabs.blockchain.service.auth.SamlValidationService;
-import decentralabs.blockchain.service.organization.ProviderRegistrationService;
+import decentralabs.blockchain.service.organization.InstitutionRegistrationService;
+import decentralabs.blockchain.service.organization.InstitutionRole;
 import decentralabs.blockchain.service.wallet.InstitutionalWalletService;
 import decentralabs.blockchain.service.wallet.WalletService;
 
@@ -52,7 +53,7 @@ class HealthControllerTest {
     private InstitutionalWalletService institutionalWalletService;
 
     @Mock
-    private ProviderRegistrationService providerRegistrationService;
+    private InstitutionRegistrationService institutionRegistrationService;
 
     @Mock
     private ObjectProvider<JdbcTemplate> jdbcTemplateProvider;
@@ -76,7 +77,7 @@ class HealthControllerTest {
             walletService,
             samlValidationService,
             institutionalWalletService,
-            providerRegistrationService,
+            institutionRegistrationService,
             jdbcTemplateProvider
         );
 
@@ -338,7 +339,7 @@ class HealthControllerTest {
         @DisplayName("Should return DEGRADED when provider not registered")
         void shouldReturnDegradedWhenProviderNotRegistered() throws Exception {
             setupHealthyEnvironment();
-            when(providerRegistrationService.isProviderRegistered()).thenReturn(false);
+            when(institutionRegistrationService.isRegistered(InstitutionRole.PROVIDER)).thenReturn(false);
 
             mockMvc.perform(get("/health"))
                 .andExpect(status().isServiceUnavailable())
@@ -351,7 +352,7 @@ class HealthControllerTest {
         lenient().when(marketplaceKeyService.ensureKey(anyBoolean())).thenReturn(true);
         lenient().when(samlValidationService.isConfigured()).thenReturn(true);
         lenient().when(institutionalWalletService.isConfigured()).thenReturn(true);
-        lenient().when(providerRegistrationService.isProviderRegistered()).thenReturn(true);
+        lenient().when(institutionRegistrationService.isRegistered(InstitutionRole.PROVIDER)).thenReturn(true);
         lenient().when(jdbcTemplateProvider.getIfAvailable()).thenReturn(jdbcTemplate);
         lenient().when(jdbcTemplate.queryForObject(anyString(), eq(Integer.class))).thenReturn(1);
 

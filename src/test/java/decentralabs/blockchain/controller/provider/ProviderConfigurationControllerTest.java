@@ -3,9 +3,8 @@ package decentralabs.blockchain.controller.provider;
 import decentralabs.blockchain.dto.provider.ProviderConfigurationRequest;
 import decentralabs.blockchain.dto.provider.ProviderConfigurationResponse;
 import decentralabs.blockchain.dto.provider.ProvisioningTokenRequest;
-import decentralabs.blockchain.service.organization.ConsumerRegistrationService;
+import decentralabs.blockchain.service.organization.InstitutionRegistrationService;
 import decentralabs.blockchain.service.organization.ProviderConfigurationPersistenceService;
-import decentralabs.blockchain.service.organization.ProviderRegistrationService;
 import decentralabs.blockchain.service.organization.ProvisioningTokenService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -30,10 +29,7 @@ import static org.mockito.Mockito.*;
 class ProviderConfigurationControllerTest {
 
     @Mock
-    private ProviderRegistrationService registrationService;
-
-    @Mock
-    private ConsumerRegistrationService consumerRegistrationService;
+    private InstitutionRegistrationService registrationService;
 
     @Mock
     private ProviderConfigurationPersistenceService persistenceService;
@@ -131,9 +127,7 @@ class ProviderConfigurationControllerTest {
         request.setProvisioningToken("valid-token-123");
 
         // Mock successful registration
-        when(registrationService.registerProvider(
-            anyString(), anyString(), anyString(), anyString(), anyString(), anyString(), anyString()
-        )).thenReturn(true);
+        when(registrationService.register(any())).thenReturn(true);
 
         // Execute
         ResponseEntity<Map<String, Object>> response = controller.saveAndRegister(request);
@@ -146,16 +140,8 @@ class ProviderConfigurationControllerTest {
 
         // Verify persistence was called
         verify(persistenceService).saveConfiguration(request);
-        verify(persistenceService).markProviderRegistered();
-        verify(registrationService).registerProvider(
-            "https://marketplace.example.com",
-            "Test University",
-            "test@university.edu",
-            "US",
-            "university.edu",
-            "https://gateway.university.edu",
-            "valid-token-123"
-        );
+        verify(registrationService).markAsRegistered(any());
+        verify(registrationService).register(any());
     }
 
     @Test
@@ -172,9 +158,7 @@ class ProviderConfigurationControllerTest {
         request.setProvisioningToken("valid-token-123");
 
         // Mock failed registration
-        when(registrationService.registerProvider(
-            anyString(), anyString(), anyString(), anyString(), anyString(), anyString(), anyString()
-        )).thenReturn(false);
+        when(registrationService.register(any())).thenReturn(false);
 
         // Execute
         ResponseEntity<Map<String, Object>> response = controller.saveAndRegister(request);
@@ -187,7 +171,7 @@ class ProviderConfigurationControllerTest {
 
         // Verify persistence was called but NOT marked as registered
         verify(persistenceService).saveConfiguration(request);
-        verify(persistenceService, never()).markProviderRegistered();
+        verify(registrationService, never()).markAsRegistered(any());
     }
 
     @Test
@@ -214,9 +198,8 @@ class ProviderConfigurationControllerTest {
 
         // Verify no persistence or registration was attempted
         verify(persistenceService, never()).saveConfiguration(any());
-        verify(persistenceService, never()).markProviderRegistered();
-        verify(registrationService, never()).registerProvider(anyString(), anyString(), anyString(), 
-            anyString(), anyString(), anyString(), anyString());
+        verify(registrationService, never()).markAsRegistered(any());
+        verify(registrationService, never()).register(any());
     }
 
     @Test
@@ -241,9 +224,7 @@ class ProviderConfigurationControllerTest {
         when(persistenceService.loadConfigurationSafe()).thenReturn(emptyProps);
         when(provisioningTokenService.validateAndExtract(anyString(), anyString(), anyString()))
             .thenReturn(payload);
-        when(registrationService.registerProvider(
-            anyString(), anyString(), anyString(), anyString(), anyString(), anyString(), anyString()
-        )).thenReturn(true);
+        when(registrationService.register(any())).thenReturn(true);
 
         // Execute
         ResponseEntity<Map<String, Object>> response = controller.applyProvisioningToken(tokenRequest);
@@ -256,7 +237,7 @@ class ProviderConfigurationControllerTest {
 
         // Verify marked as registered
         verify(persistenceService).saveConfigurationFromToken(payload);
-        verify(persistenceService).markProviderRegistered();
+        verify(registrationService).markAsRegistered(any());
     }
 
     @Test
