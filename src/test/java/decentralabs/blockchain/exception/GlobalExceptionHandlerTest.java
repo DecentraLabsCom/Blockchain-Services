@@ -26,6 +26,9 @@ class GlobalExceptionHandlerTest {
     void setUp() {
         handler = new GlobalExceptionHandler();
         request = mock(HttpServletRequest.class);
+        // Configure request to be recognized as API request
+        when(request.getHeader("Accept")).thenReturn("application/json");
+        when(request.getRequestURI()).thenReturn("/api/test");
     }
 
     @Nested
