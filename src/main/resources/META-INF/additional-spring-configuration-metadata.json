@@ -627,5 +627,60 @@
     "name": "webauthn.base-url",
     "type": "java.lang.String",
     "description": "A description for 'webauthn.base-url'"
+  },
+  {
+    "name": "features.providers.registration.enabled",
+    "type": "java.lang.Boolean",
+    "description": "Enable or disable provider registration feature"
+  },
+  {
+    "name": "marketplace.base-url",
+    "type": "java.lang.String",
+    "description": "Base URL of the DecentraLabs marketplace"
+  },
+  {
+    "name": "provider.name",
+    "type": "java.lang.String",
+    "description": "Name of the lab provider"
+  },
+  {
+    "name": "provider.email",
+    "type": "java.lang.String",
+    "description": "Contact email of the lab provider"
+  },
+  {
+    "name": "provider.country",
+    "type": "java.lang.String",
+    "description": "Country code of the lab provider (ISO 3166-1 alpha-2)"
+  },
+  {
+    "name": "provider.organization",
+    "type": "java.lang.String",
+    "description": "Organization name of the lab provider"
+  },
+  {
+    "name": "public.base-url",
+    "type": "java.lang.String",
+    "description": "Public base URL where this gateway is accessible"
+  },
+  {
+    "name": "treasury.admin.domain.name",
+    "type": "java.lang.String",
+    "description": "EIP-712 domain name for treasury admin signatures"
+  },
+  {
+    "name": "treasury.admin.domain.version",
+    "type": "java.lang.String",
+    "description": "EIP-712 domain version for treasury admin signatures"
+  },
+  {
+    "name": "treasury.admin.domain.chain-id",
+    "type": "java.lang.Integer",
+    "description": "Chain ID for treasury admin EIP-712 domain"
+  },
+  {
+    "name": "treasury.admin.domain.verifying-contract",
+    "type": "java.lang.String",
+    "description": "Verifying contract address for treasury admin EIP-712 domain"
   }
 ]}

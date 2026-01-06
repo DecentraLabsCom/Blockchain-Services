@@ -7,7 +7,6 @@ import decentralabs.blockchain.dto.provider.ProvisioningTokenPayload;
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.JwtParser;
 import io.jsonwebtoken.Jwts;
-import io.jsonwebtoken.SignatureAlgorithm;
 import io.jsonwebtoken.io.Decoders;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -19,7 +18,6 @@ import java.math.BigInteger;
 import java.net.URI;
 import java.security.KeyFactory;
 import java.security.PublicKey;
-import java.security.interfaces.RSAPublicKey;
 import java.security.spec.RSAPublicKeySpec;
 import java.time.Instant;
 import java.util.Base64;
@@ -62,13 +60,13 @@ public class ProvisioningTokenService {
             PublicKey publicKey = selectRsaPublicKey(jwkSet, kid);
 
             JwtParser parser = Jwts.parser()
-                .setSigningKey(publicKey)
+                .verifyWith(publicKey)
                 .requireIssuer(marketplaceBaseUrl)
                 .requireAudience(expectedAudience)
-                .setAllowedClockSkewSeconds(60)
+                .clockSkewSeconds(600)
                 .build();
 
-            Claims claims = parser.parseClaimsJws(token).getBody();
+            Claims claims = parser.parseSignedClaims(token).getPayload();
 
             enforceReplayProtection(claims.getId(), claims.getExpiration().toInstant());
 
@@ -122,13 +120,13 @@ public class ProvisioningTokenService {
             PublicKey publicKey = selectRsaPublicKey(jwkSet, kid);
 
             JwtParser parser = Jwts.parser()
-                .setSigningKey(publicKey)
+                .verifyWith(publicKey)
                 .requireIssuer(marketplaceBaseUrl)
                 .requireAudience(expectedAudience)
-                .setAllowedClockSkewSeconds(60)
+                .clockSkewSeconds(600)
                 .build();
 
-            Claims claims = parser.parseClaimsJws(token).getBody();
+            Claims claims = parser.parseSignedClaims(token).getPayload();
 
             enforceReplayProtection(claims.getId(), claims.getExpiration().toInstant());
 

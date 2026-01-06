@@ -9,7 +9,6 @@ import decentralabs.blockchain.service.wallet.WalletService;
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.Jws;
 import io.jsonwebtoken.Jwts;
-import java.math.BigInteger;
 import java.nio.charset.StandardCharsets;
 import java.security.PublicKey;
 import java.util.List;

@@ -72,7 +72,7 @@ public class IntentAuthService {
                 .verifyWith(marketplacePublicKey)
                 .requireIssuer(issuer)
                 .requireAudience(audience)
-                .setAllowedClockSkewSeconds(clockSkewSeconds)
+                .clockSkewSeconds(clockSkewSeconds)
                 .build();
             Jws<Claims> jws = parser.parseSignedClaims(token);
             return jws.getPayload();

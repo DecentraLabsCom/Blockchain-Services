@@ -1,8 +1,6 @@
 package decentralabs.blockchain.config;
 
 import jakarta.servlet.*;
-import jakarta.servlet.http.HttpServletRequest;
-import jakarta.servlet.http.HttpServletResponse;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 
@@ -36,21 +34,5 @@ public class ProviderConfigurationFilter implements Filter {
     public void doFilter(ServletRequest request, ServletResponse response, FilterChain chain)
             throws IOException, ServletException {
         chain.doFilter(request, response);
-    }
-
-    /**
-     * Check if all required provider configuration is present
-     */
-    private boolean isProviderConfigured() {
-        return !isBlank(marketplaceBaseUrl)
-            && !isBlank(providerName)
-            && !isBlank(providerEmail)
-            && !isBlank(providerCountry)
-            && !isBlank(providerOrganization)
-            && !isBlank(publicBaseUrl);
-    }
-
-    private boolean isBlank(String value) {
-        return value == null || value.trim().isEmpty();
     }
 }

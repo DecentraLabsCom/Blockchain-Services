@@ -6,6 +6,7 @@ import static org.mockito.Mockito.*;
 import java.util.Map;
 
 import org.junit.jupiter.api.BeforeEach;
+import jakarta.servlet.http.HttpServletRequest;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -19,10 +20,12 @@ import org.springframework.web.bind.MethodArgumentNotValidException;
 class GlobalExceptionHandlerTest {
 
     private GlobalExceptionHandler handler;
+    private HttpServletRequest request;
 
     @BeforeEach
     void setUp() {
         handler = new GlobalExceptionHandler();
+        request = mock(HttpServletRequest.class);
     }
 
     @Nested
@@ -211,7 +214,8 @@ class GlobalExceptionHandlerTest {
         void shouldReturn500ForUnexpectedError() {
             Exception ex = new RuntimeException("Something went wrong");
 
-            ResponseEntity<Map<String, Object>> response = handler.handleGenericException(ex);
+            @SuppressWarnings("unchecked")
+            ResponseEntity<Map<String, Object>> response = (ResponseEntity<Map<String, Object>>) handler.handleGenericException(ex, request);
 
             assertEquals(HttpStatus.INTERNAL_SERVER_ERROR, response.getStatusCode());
             assertNotNull(response.getBody());
@@ -226,7 +230,8 @@ class GlobalExceptionHandlerTest {
         void shouldNotExposeStackTrace() {
             Exception ex = new NullPointerException("Internal NPE");
 
-            ResponseEntity<Map<String, Object>> response = handler.handleGenericException(ex);
+            @SuppressWarnings("unchecked")
+            ResponseEntity<Map<String, Object>> response = (ResponseEntity<Map<String, Object>>) handler.handleGenericException(ex, request);
 
             assertFalse(response.getBody().toString().contains("NullPointerException"));
             assertFalse(response.getBody().toString().contains("Internal NPE"));
@@ -238,7 +243,8 @@ class GlobalExceptionHandlerTest {
             Exception cause = new IllegalStateException("Root cause");
             Exception ex = new RuntimeException("Wrapper exception", cause);
 
-            ResponseEntity<Map<String, Object>> response = handler.handleGenericException(ex);
+            @SuppressWarnings("unchecked")
+            ResponseEntity<Map<String, Object>> response = (ResponseEntity<Map<String, Object>>) handler.handleGenericException(ex, request);
 
             assertEquals(HttpStatus.INTERNAL_SERVER_ERROR, response.getStatusCode());
             assertEquals("An unexpected error occurred", response.getBody().get("message"));

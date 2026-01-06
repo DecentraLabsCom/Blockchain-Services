@@ -1,6 +1,5 @@
 package decentralabs.blockchain.service.organization;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import decentralabs.blockchain.service.wallet.InstitutionalWalletService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -28,7 +27,6 @@ public class ProviderRegistrationService {
 
     private final InstitutionalWalletService institutionalWalletService;
     private final RestTemplate restTemplate = new RestTemplate();
-    private final ObjectMapper objectMapper = new ObjectMapper();
 
     @Value("${marketplace.base-url:}")
     private String marketplaceBaseUrl;
