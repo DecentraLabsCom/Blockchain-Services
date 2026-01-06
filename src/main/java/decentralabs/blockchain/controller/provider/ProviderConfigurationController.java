@@ -294,6 +294,11 @@ public class ProviderConfigurationController {
                 provisioningToken
             );
 
+            // Mark as registered in config file if successful
+            if (registered) {
+                persistenceService.markConsumerRegistered();
+            }
+
             response.put("success", true);
             response.put("registered", registered);
             response.put("consumerMode", true);

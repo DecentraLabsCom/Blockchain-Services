@@ -26,6 +26,7 @@ import java.util.Map;
 public class ProviderRegistrationService {
 
     private final InstitutionalWalletService institutionalWalletService;
+    private final ProviderConfigurationPersistenceService configPersistenceService;
     private final RestTemplate restTemplate = new RestTemplate();
 
     @Value("${marketplace.base-url:}")
@@ -170,13 +171,16 @@ public class ProviderRegistrationService {
 
     /**
      * Check if provider is registered
-     * Delegates to configuration controller to check persisted registration status
+     * Reads from configuration file to check if provider.registered=true
      */
     public boolean isProviderRegistered() {
-        // Read from configuration file to see if provider.registered=true
-        // This is set after successful registration
-        return marketplaceBaseUrl != null && !marketplaceBaseUrl.isBlank()
-            && providerName != null && !providerName.isBlank();
+        try {
+            var props = configPersistenceService.loadConfigurationSafe();
+            return "true".equalsIgnoreCase(props.getProperty("provider.registered", "false"));
+        } catch (Exception e) {
+            log.warn("Unable to check provider registration status: {}", e.getMessage());
+            return false;
+        }
     }
 
     private String normalizeBackendUrl(String authURI) {

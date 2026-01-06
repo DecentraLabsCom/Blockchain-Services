@@ -157,6 +157,29 @@ public class ProviderConfigurationPersistenceService {
     }
 
     /**
+     * Mark consumer as registered in configuration file
+     * Sets consumer.registered=true in provider.properties
+     */
+    public void markConsumerRegistered() throws IOException {
+        Path configPath = getConfigFilePath();
+        Properties properties = new Properties();
+        
+        if (Files.exists(configPath)) {
+            try (FileInputStream fis = new FileInputStream(configPath.toFile())) {
+                properties.load(fis);
+            }
+        }
+        
+        properties.setProperty("consumer.registered", "true");
+        
+        try (FileOutputStream fos = new FileOutputStream(configPath.toFile())) {
+            properties.store(fos, "Consumer Configuration - Auto-saved by DecentraLabs Blockchain Services");
+        }
+        
+        log.info("Consumer marked as registered in configuration");
+    }
+
+    /**
      * Get the path to the configuration file
      */
     private Path getConfigFilePath() {

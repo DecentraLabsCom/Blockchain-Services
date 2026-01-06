@@ -27,6 +27,7 @@ import java.util.Map;
 public class ConsumerRegistrationService {
 
     private final InstitutionalWalletService institutionalWalletService;
+    private final ProviderConfigurationPersistenceService configPersistenceService;
     private final RestTemplate restTemplate = new RestTemplate();
 
     @Value("${public.base-url:}")
@@ -134,11 +135,16 @@ public class ConsumerRegistrationService {
 
     /**
      * Check if consumer is registered
+     * Reads from configuration file to check if consumer.registered=true
      */
     public boolean isConsumerRegistered() {
-        // Could query the contract or marketplace API
-        // For now, return false to allow manual check
-        return false;
+        try {
+            var props = configPersistenceService.loadConfigurationSafe();
+            return "true".equalsIgnoreCase(props.getProperty("consumer.registered", "false"));
+        } catch (Exception e) {
+            log.warn("Unable to check consumer registration status: {}", e.getMessage());
+            return false;
+        }
     }
 
     private String normalizeBackendUrl(String baseUrl) {

@@ -260,8 +260,9 @@
                 <div id="successAlert" class="alert alert-success"></div>
                 <div id="errorAlert" class="alert alert-error"></div>
                 <div id="infoAlert" class="alert alert-info"></div>
+                <div id="registrationProgress" style="display: none;"></div>
 
-                <form id="providerConfigForm">
+                <form id="providerConfigForm"
                     <!-- Marketplace Configuration -->
                     <div class="form-section">
                         <div class="form-section-title">
@@ -471,9 +472,10 @@
 
             // Show loading state
             btn.disabled = true;
-            btnText.textContent = 'Saving...';
+            btnText.textContent = 'Registering...';
             btnSpinner.style.display = 'inline-block';
             hideAlerts();
+            hideRegistrationProgress();
 
             const formData = {
                 marketplaceBaseUrl: document.getElementById('marketplaceBaseUrl').value.trim(),
@@ -485,7 +487,15 @@
                 provisioningToken: document.getElementById('provisioningToken').value.trim()
             };
 
+            // Show progress messages
+            showRegistrationProgress('Validating configuration...');
+            await new Promise(resolve => setTimeout(resolve, 500));
+            
+            updateRegistrationProgress('Contacting marketplace...');
+            await new Promise(resolve => setTimeout(resolve, 500));
+
             try {
+                updateRegistrationProgress('Verifying credentials with marketplace...');
                 const response = await fetch('/institution-config/save-and-register', {
                     method: 'POST',
                     headers: {
@@ -494,7 +504,16 @@
                     body: JSON.stringify(formData)
                 });
 
+                updateRegistrationProgress('Processing registration on-chain...');
                 const result = await response.json();
+                
+                updateRegistrationProgress('Waiting for blockchain confirmation...');
+                await new Promise(resolve => setTimeout(resolve, 800));
+                
+                updateRegistrationProgress('Finalizing registration...');
+                await new Promise(resolve => setTimeout(resolve, 500));
+
+                hideRegistrationProgress();
 
                 if (result.success) {
                     if (result.registered) {
@@ -519,6 +538,7 @@
 
             } catch (error) {
                 console.error('Error:', error);
+                hideRegistrationProgress();
                 showError('Failed to save configuration. Please try again.');
             } finally {
                 btn.disabled = false;
@@ -533,14 +553,20 @@
             btn.disabled = true;
             btn.innerHTML = '<i class="fas fa-redo fa-spin"></i> Retrying...';
             hideAlerts();
+            hideRegistrationProgress();
+            
+            showRegistrationProgress('Contacting marketplace...');
+            await new Promise(resolve => setTimeout(resolve, 500));
 
             try {
                 const provisioningToken = document.getElementById('provisioningToken').value.trim();
                 if (!provisioningToken) {
+                    hideRegistrationProgress();
                     showError('Provisioning token is required to register.');
                     return;
                 }
 
+                updateRegistrationProgress('Processing registration...');
                 const response = await fetch('/institution-config/retry-registration', {
                     method: 'POST',
                     headers: {
@@ -549,7 +575,11 @@
                     body: JSON.stringify({ provisioningToken })
                 });
 
+                updateRegistrationProgress('Finalizing registration...');
                 const result = await response.json();
+                await new Promise(resolve => setTimeout(resolve, 500));
+                
+                hideRegistrationProgress();
 
                 if (result.success && result.registered) {
                     showSuccess('Provider registration completed successfully!');
@@ -569,6 +599,7 @@
 
             } catch (error) {
                 console.error('Error:', error);
+                hideRegistrationProgress();
                 showError('Failed to retry registration. Please try again.');
             } finally {
                 btn.disabled = false;
@@ -597,6 +628,36 @@
             const alert = document.getElementById('infoAlert');
             alert.textContent = message;
             alert.style.display = 'block';
+        }
+
+        function showRegistrationProgress(message) {
+            const progressDiv = document.getElementById('registrationProgress');
+            if (!progressDiv) return;
+            
+            progressDiv.innerHTML = `
+                <div class="provisioning-progress">
+                    <div class="spinner-container">
+                        <div class="spinner"></div>
+                    </div>
+                    <div class="progress-message">${message}</div>
+                </div>
+            `;
+            progressDiv.style.display = 'block';
+        }
+
+        function updateRegistrationProgress(message) {
+            const messageEl = document.querySelector('#registrationProgress .progress-message');
+            if (messageEl) {
+                messageEl.textContent = message;
+            }
+        }
+
+        function hideRegistrationProgress() {
+            const progressDiv = document.getElementById('registrationProgress');
+            if (progressDiv) {
+                progressDiv.style.display = 'none';
+                progressDiv.innerHTML = '';
+            }
         }
 
         function hideAlerts() {
