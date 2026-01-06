@@ -152,8 +152,8 @@ public class SecurityConfig {
         source.registerCorsConfiguration(healthEndpoint, publicConfiguration);
         source.registerCorsConfiguration(intentsEndpoint + "/**", publicConfiguration);
         source.registerCorsConfiguration("/webauthn/**", publicConfiguration);
-        // WebAuthn onboarding: browser comes from SP/marketplace, needs public origins
-        source.registerCorsConfiguration("/onboarding/webauthn/**", publicConfiguration);
+        // Note: /onboarding/webauthn/** CORS is handled by OpenResty proxy layer
+        // Do NOT register it here to avoid duplicate Access-Control-Allow-Origin headers
         
         // ALL wallet endpoints - localhost only, except institutional reservation
         source.registerCorsConfiguration(walletEndpoint + "/**", walletConfiguration);
