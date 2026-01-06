@@ -17,20 +17,20 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 /**
- * Populates ROLE_INTERNAL when a valid internal token is provided.
+ * Populates ROLE_INTERNAL when a valid access token is provided.
  * Used to secure administrative treasury endpoints in standalone mode.
  */
 @Component
-public class InternalTokenAuthenticationFilter extends OncePerRequestFilter {
+public class AccessTokenAuthenticationFilter extends OncePerRequestFilter {
 
-    @Value("${security.internal-token:}")
-    private String internalToken;
+    @Value("${security.access-token:}")
+    private String accessToken;
 
-    @Value("${security.internal-token-header:X-Internal-Token}")
-    private String internalTokenHeader;
+    @Value("${security.access-token-header:X-Access-Token}")
+    private String accessTokenHeader;
 
-    @Value("${security.internal-token-cookie:internal_token}")
-    private String internalTokenCookie;
+    @Value("${security.access-token-cookie:access_token}")
+    private String accessTokenCookie;
 
     @Override
     protected boolean shouldNotFilter(@NonNull HttpServletRequest request) {
@@ -44,18 +44,18 @@ public class InternalTokenAuthenticationFilter extends OncePerRequestFilter {
         @NonNull HttpServletResponse response,
         @NonNull FilterChain filterChain
     ) throws ServletException, IOException {
-        if (internalToken == null || internalToken.isBlank()) {
+        if (accessToken == null || accessToken.isBlank()) {
             filterChain.doFilter(request, response);
             return;
         }
 
-        String provided = request.getHeader(internalTokenHeader);
+        String provided = request.getHeader(accessTokenHeader);
         if (provided == null || provided.isBlank()) {
             provided = readTokenFromCookies(request.getCookies());
         }
 
         if (provided != null && !provided.isBlank()) {
-            if (!internalToken.equals(provided.trim())) {
+            if (!accessToken.equals(provided.trim())) {
                 response.sendError(HttpServletResponse.SC_UNAUTHORIZED, "Unauthorized");
                 return;
             }
@@ -74,11 +74,11 @@ public class InternalTokenAuthenticationFilter extends OncePerRequestFilter {
     }
 
     private String readTokenFromCookies(Cookie[] cookies) {
-        if (cookies == null || internalTokenCookie == null || internalTokenCookie.isBlank()) {
+        if (cookies == null || accessTokenCookie == null || accessTokenCookie.isBlank()) {
             return null;
         }
         for (Cookie cookie : cookies) {
-            if (internalTokenCookie.equals(cookie.getName())) {
+            if (accessTokenCookie.equals(cookie.getName())) {
                 return cookie.getValue();
             }
         }

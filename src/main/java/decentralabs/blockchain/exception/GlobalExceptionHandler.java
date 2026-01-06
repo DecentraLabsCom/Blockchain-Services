@@ -1,5 +1,6 @@
 package decentralabs.blockchain.exception;
 
+import jakarta.servlet.http.HttpServletRequest;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -8,6 +9,7 @@ import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ControllerAdvice;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.ResponseStatus;
+import org.springframework.web.servlet.ModelAndView;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -19,6 +21,31 @@ import java.util.Map;
 @ControllerAdvice
 @Slf4j
 public class GlobalExceptionHandler {
+
+    /**
+     * Determine if request expects JSON response (API request)
+     */
+    private boolean isApiRequest(HttpServletRequest request) {
+        String accept = request.getHeader("Accept");
+        String contentType = request.getContentType();
+        String path = request.getRequestURI();
+        
+        // API endpoints or explicit JSON requests
+        if (path != null && (path.startsWith("/api/") || path.contains("/status"))) {
+            return true;
+        }
+        if (accept != null && accept.contains("application/json")) {
+            return true;
+        }
+        if (contentType != null && contentType.contains("application/json")) {
+            return true;
+        }
+        // XHR requests typically expect JSON
+        if ("XMLHttpRequest".equals(request.getHeader("X-Requested-With"))) {
+            return true;
+        }
+        return false;
+    }
 
     /**
      * Handles validation errors from @Valid annotations
@@ -115,15 +142,25 @@ public class GlobalExceptionHandler {
      */
     @ExceptionHandler(Exception.class)
     @ResponseStatus(HttpStatus.INTERNAL_SERVER_ERROR)
-    public ResponseEntity<Map<String, Object>> handleGenericException(
-            Exception ex) {
+    public Object handleGenericException(
+            Exception ex, HttpServletRequest request) {
         
+        log.error("Unexpected error at {}: {}", request.getRequestURI(), ex.getMessage(), ex);
+
+        // For non-API requests (HTML pages), rethrow to let Spring handle error page
+        if (!isApiRequest(request)) {
+            // Return error view or rethrow for default error handling
+            ModelAndView mav = new ModelAndView("error");
+            mav.addObject("error", "An unexpected error occurred");
+            mav.addObject("status", 500);
+            mav.setStatus(HttpStatus.INTERNAL_SERVER_ERROR);
+            return mav;
+        }
+
         Map<String, Object> response = new HashMap<>();
         response.put("success", false);
         response.put("message", "An unexpected error occurred");
 
-        // Log full stack trace for debugging but don't expose to client
-        log.error("Unexpected error", ex);
         return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(response);
     }
 }

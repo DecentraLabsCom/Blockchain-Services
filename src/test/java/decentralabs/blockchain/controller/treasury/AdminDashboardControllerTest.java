@@ -232,15 +232,15 @@ class AdminDashboardControllerTest {
             ReflectionTestUtils.setField(adminDashboardController, "adminDashboardLocalOnly", true);
             ReflectionTestUtils.setField(adminDashboardController, "adminDashboardAllowPrivate", true);
             ReflectionTestUtils.setField(adminDashboardController, "allowPrivateNetworks", true);
-            ReflectionTestUtils.setField(adminDashboardController, "internalToken", "test-token");
-            ReflectionTestUtils.setField(adminDashboardController, "internalTokenHeader", "X-Internal-Token");
-            ReflectionTestUtils.setField(adminDashboardController, "internalTokenCookie", "internal_token");
-            ReflectionTestUtils.setField(adminDashboardController, "internalTokenRequired", true);
+            ReflectionTestUtils.setField(adminDashboardController, "accessToken", "test-token");
+            ReflectionTestUtils.setField(adminDashboardController, "accessTokenHeader", "X-Access-Token");
+            ReflectionTestUtils.setField(adminDashboardController, "accessTokenCookie", "access_token");
+            ReflectionTestUtils.setField(adminDashboardController, "accessTokenRequired", true);
             mockMvc = MockMvcBuilders.standaloneSetup(adminDashboardController).build();
         }
 
         @Test
-        @DisplayName("Should reject private network without internal token")
+        @DisplayName("Should reject private network without access token")
         void shouldRejectPrivateNetworkWithoutToken() throws Exception {
             mockMvc.perform(get("/treasury/admin/status")
                     .with(req -> { req.setRemoteAddr("10.0.0.5"); return req; }))
@@ -249,19 +249,19 @@ class AdminDashboardControllerTest {
         }
 
         @Test
-        @DisplayName("Should allow private network with valid internal token")
+        @DisplayName("Should allow private network with valid access token")
         void shouldAllowPrivateNetworkWithToken() throws Exception {
             when(walletService.getAvailableNetworks()).thenReturn(createNetworkResponse());
 
             mockMvc.perform(get("/treasury/admin/status")
-                    .header("X-Internal-Token", "test-token")
+                    .header("X-Access-Token", "test-token")
                     .with(req -> { req.setRemoteAddr("10.0.0.5"); return req; }))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.success").value(true));
         }
 
         @Test
-        @DisplayName("Should allow IPv6-mapped loopback without internal token")
+        @DisplayName("Should allow IPv6-mapped loopback without access token")
         void shouldAllowIpv6MappedLoopback() throws Exception {
             when(walletService.getAvailableNetworks()).thenReturn(createNetworkResponse());
 

@@ -23,5 +23,11 @@ public class WebConfig implements WebMvcConfigurer {
         // Forward /wallet-dashboard/ to /wallet-dashboard/index.html
         registry.addViewController("/wallet-dashboard/")
                 .setViewName("forward:/wallet-dashboard/index.html");
+        // Redirect /institution-config to include trailing slash
+        registry.addViewController("/institution-config")
+                .setViewName("redirect:/institution-config/");
+        // Forward /institution-config/ to static HTML
+        registry.addViewController("/institution-config/")
+                .setViewName("forward:/institution-config/index.html");
     }
 }

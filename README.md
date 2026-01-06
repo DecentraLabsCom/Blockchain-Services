@@ -139,7 +139,7 @@ Together, they offer a bridge between institutional access control systems (like
 | `/treasury/admin/execute` | POST | Execute treasury admin operations |
 
 > 🔒 Wallet and Treasury endpoints are protected by `LocalhostOnlyFilter` and only accept requests from `127.0.0.1` / `::1`
-> `/treasury/admin/**` also requires a valid internal token when `SECURITY_INTERNAL_TOKEN_REQUIRED=true` (default).
+> `/treasury/admin/**` also requires a valid access token when `SECURITY_ACCESS_TOKEN_REQUIRED=true` (default).
 
 ## 🛠️ Quick Start
 
@@ -290,22 +290,22 @@ This project uses a **security-first deployment approach**:
 | `PRIVATE_KEY_PATH` | Path to JWT private key | `config/keys/private_key.pem` |
 | `PUBLIC_KEY_PATH` | Path to JWT public key | `config/keys/public_key.pem` |
 | `ADMIN_DASHBOARD_LOCAL_ONLY` | `true` blocks `/treasury/admin/**` unless request is localhost/private and internally authenticated | `true` |
-| `ADMIN_DASHBOARD_ALLOW_PRIVATE` | Allow private network access for admin endpoints (requires internal token) | `false` |
-| `SECURITY_ALLOW_PRIVATE_NETWORKS` | Allow private networks for internal endpoints (requires internal token) | `false` |
-| `SECURITY_INTERNAL_TOKEN` | Shared secret for internal endpoints (`/wallet`, `/treasury`, `/wallet-dashboard`) | - |
-| `SECURITY_INTERNAL_TOKEN_HEADER` | Header name for internal token | `X-Internal-Token` |
-| `SECURITY_INTERNAL_TOKEN_COOKIE` | Cookie name for internal token | `internal_token` |
-| `SECURITY_INTERNAL_TOKEN_REQUIRED` | Require internal token for private networks | `true` |
+| `ADMIN_DASHBOARD_ALLOW_PRIVATE` | Allow private network access for admin endpoints (requires access token) | `false` |
+| `SECURITY_ALLOW_PRIVATE_NETWORKS` | Allow private networks for internal endpoints (requires access token) | `false` |
+| `SECURITY_ACCESS_TOKEN` | Shared secret for internal endpoints (`/wallet`, `/treasury`, `/wallet-dashboard`) | - |
+| `SECURITY_ACCESS_TOKEN_HEADER` | Header name for access token | `X-Access-Token` |
+| `SECURITY_ACCESS_TOKEN_COOKIE` | Cookie name for access token | `access_token` |
+| `SECURITY_ACCESS_TOKEN_REQUIRED` | Require access token for private networks | `true` |
 | `TREASURY_ADMIN_DOMAIN_NAME` | EIP-712 domain name for `/treasury/admin/execute` | `DecentraLabsTreasuryAdmin` |
 | `TREASURY_ADMIN_DOMAIN_VERSION` | EIP-712 domain version for `/treasury/admin/execute` | `1` |
 | `TREASURY_ADMIN_DOMAIN_CHAIN_ID` | EIP-712 chain ID for `/treasury/admin/execute` | `11155111` |
 | `TREASURY_ADMIN_DOMAIN_VERIFYING_CONTRACT` | EIP-712 verifying contract for `/treasury/admin/execute` | `CONTRACT_ADDRESS` |
 | `SAML_IDP_TRUST_MODE` | `whitelist` or `any` for IdP trust | `any` |
 | `SAML_METADATA_ALLOW_HTTP` | Allow HTTP metadata URLs (not recommended) | `false` |
-> When deploying behind a reverse proxy, set `SECURITY_ALLOW_PRIVATE_NETWORKS=true` and a strong `SECURITY_INTERNAL_TOKEN`.
-> Configure the proxy to send `X-Internal-Token` (or the `internal_token` cookie) when calling `/wallet`, `/treasury`, and `/wallet-dashboard`.
+> When deploying behind a reverse proxy, set `SECURITY_ALLOW_PRIVATE_NETWORKS=true` and a strong `SECURITY_ACCESS_TOKEN`.
+> Configure the proxy to send `X-Access-Token` (or the `access_token` cookie) when calling `/wallet`, `/treasury`, and `/wallet-dashboard`.
 > `/treasury/admin/execute` additionally requires an EIP-712 signature from the institutional wallet (timestamped).
-> For local dev, set `SECURITY_INTERNAL_TOKEN_REQUIRED=false` to skip the token check.
+> For local dev, set `SECURITY_ACCESS_TOKEN_REQUIRED=false` to skip the token check.
 
 ### Docker Compose `.env` variables (standalone)
 
@@ -321,10 +321,10 @@ They are mapped to the standard Spring variables inside the container.
 | `BCHAIN_ADMIN_DASHBOARD_LOCAL_ONLY` | Maps to `ADMIN_DASHBOARD_LOCAL_ONLY` | `true` |
 | `BCHAIN_ADMIN_DASHBOARD_ALLOW_PRIVATE` | Maps to `ADMIN_DASHBOARD_ALLOW_PRIVATE` | `true` |
 | `BCHAIN_SECURITY_ALLOW_PRIVATE_NETWORKS` | Maps to `SECURITY_ALLOW_PRIVATE_NETWORKS` | `true` |
-| `BCHAIN_SECURITY_INTERNAL_TOKEN` | Maps to `SECURITY_INTERNAL_TOKEN` | - |
-| `BCHAIN_SECURITY_INTERNAL_TOKEN_HEADER` | Maps to `SECURITY_INTERNAL_TOKEN_HEADER` | `X-Internal-Token` |
-| `BCHAIN_SECURITY_INTERNAL_TOKEN_COOKIE` | Maps to `SECURITY_INTERNAL_TOKEN_COOKIE` | `internal_token` |
-| `BCHAIN_SECURITY_INTERNAL_TOKEN_REQUIRED` | Maps to `SECURITY_INTERNAL_TOKEN_REQUIRED` | `false` |
+| `BCHAIN_SECURITY_ACCESS_TOKEN` | Maps to `SECURITY_ACCESS_TOKEN` | - |
+| `BCHAIN_SECURITY_ACCESS_TOKEN_HEADER` | Maps to `SECURITY_ACCESS_TOKEN_HEADER` | `X-Access-Token` |
+| `BCHAIN_SECURITY_ACCESS_TOKEN_COOKIE` | Maps to `SECURITY_ACCESS_TOKEN_COOKIE` | `access_token` |
+| `BCHAIN_SECURITY_ACCESS_TOKEN_REQUIRED` | Maps to `SECURITY_ACCESS_TOKEN_REQUIRED` | `false` |
 
 
 ### WebAuthn Onboarding Configuration
@@ -397,7 +397,7 @@ docker run -p 8080:8080 \
 - ✅ RSA keys mounted with proper permissions (`chmod 400`)
 - ✅ RPC URLs configured with authenticated endpoints
 - ✅ Localhost-only filters enabled for sensitive operations
-- ✅ Internal token required when allowing private network access
+- ✅ Access token required when allowing private network access
 - ✅ CORS origins restricted to trusted domains
 
 ## Reservation Notifications (email + ICS)

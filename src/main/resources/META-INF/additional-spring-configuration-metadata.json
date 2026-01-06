@@ -337,26 +337,26 @@
     "defaultValue": true
   },
   {
-    "name": "security.internal-token",
+    "name": "security.access-token",
     "type": "java.lang.String",
     "description": "Shared secret token required for internal endpoints."
   },
   {
-    "name": "security.internal-token-header",
+    "name": "security.access-token-header",
     "type": "java.lang.String",
-    "description": "Header name for the internal token.",
-    "defaultValue": "X-Internal-Token"
+    "description": "Header name for the access token.",
+    "defaultValue": "X-Access-Token"
   },
   {
-    "name": "security.internal-token-cookie",
+    "name": "security.access-token-cookie",
     "type": "java.lang.String",
-    "description": "Cookie name for the internal token.",
-    "defaultValue": "internal_token"
+    "description": "Cookie name for the access token.",
+    "defaultValue": "access_token"
   },
   {
-    "name": "security.internal-token.required",
+    "name": "security.access-token.required",
     "type": "java.lang.Boolean",
-    "description": "Require internal token for private network access.",
+    "description": "Require access token for private network access.",
     "defaultValue": true
   },
   {

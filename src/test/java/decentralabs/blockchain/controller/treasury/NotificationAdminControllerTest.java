@@ -243,15 +243,15 @@ class NotificationAdminControllerTest {
             ReflectionTestUtils.setField(notificationAdminController, "adminDashboardLocalOnly", true);
             ReflectionTestUtils.setField(notificationAdminController, "adminDashboardAllowPrivate", true);
             ReflectionTestUtils.setField(notificationAdminController, "allowPrivateNetworks", true);
-            ReflectionTestUtils.setField(notificationAdminController, "internalToken", "test-token");
-            ReflectionTestUtils.setField(notificationAdminController, "internalTokenHeader", "X-Internal-Token");
-            ReflectionTestUtils.setField(notificationAdminController, "internalTokenCookie", "internal_token");
-            ReflectionTestUtils.setField(notificationAdminController, "internalTokenRequired", true);
+            ReflectionTestUtils.setField(notificationAdminController, "accessToken", "test-token");
+            ReflectionTestUtils.setField(notificationAdminController, "accessTokenHeader", "X-Access-Token");
+            ReflectionTestUtils.setField(notificationAdminController, "accessTokenCookie", "access_token");
+            ReflectionTestUtils.setField(notificationAdminController, "accessTokenRequired", true);
             mockMvc = MockMvcBuilders.standaloneSetup(notificationAdminController).build();
         }
 
         @Test
-        @DisplayName("Should reject private network without internal token")
+        @DisplayName("Should reject private network without access token")
         void shouldRejectPrivateNetworkWithoutToken() throws Exception {
             mockMvc.perform(get("/treasury/admin/notifications")
                     .with(req -> { req.setRemoteAddr("10.0.0.5"); return req; }))
@@ -260,12 +260,12 @@ class NotificationAdminControllerTest {
         }
 
         @Test
-        @DisplayName("Should allow private network with valid internal token")
+        @DisplayName("Should allow private network with valid access token")
         void shouldAllowPrivateNetworkWithToken() throws Exception {
             when(notificationConfigService.getPublicConfig()).thenReturn(Map.of("enabled", false));
 
             mockMvc.perform(get("/treasury/admin/notifications")
-                    .header("X-Internal-Token", "test-token")
+                    .header("X-Access-Token", "test-token")
                     .with(req -> { req.setRemoteAddr("10.0.0.5"); return req; }))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.success").value(true));

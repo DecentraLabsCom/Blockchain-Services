@@ -14,7 +14,7 @@ import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 import org.springframework.web.cors.CorsConfigurationSource;
 
-import decentralabs.blockchain.security.InternalTokenAuthenticationFilter;
+import decentralabs.blockchain.security.AccessTokenAuthenticationFilter;
 
 @Configuration
 @EnableMethodSecurity
@@ -59,13 +59,13 @@ public class SecurityConfig {
     @Value("${auth.base-path:/auth}")
     private String authBasePath;
 
-    @Value("${security.internal-token.required:true}")
-    private boolean internalTokenRequired;
+    @Value("${security.access-token.required:true}")
+    private boolean accessTokenRequired;
 
-    private final InternalTokenAuthenticationFilter internalTokenAuthenticationFilter;
+    private final AccessTokenAuthenticationFilter accessTokenAuthenticationFilter;
 
-    public SecurityConfig(InternalTokenAuthenticationFilter internalTokenAuthenticationFilter) {
-        this.internalTokenAuthenticationFilter = internalTokenAuthenticationFilter;
+    public SecurityConfig(AccessTokenAuthenticationFilter accessTokenAuthenticationFilter) {
+        this.accessTokenAuthenticationFilter = accessTokenAuthenticationFilter;
     }
 
     @Bean
@@ -117,7 +117,7 @@ public class SecurityConfig {
                 authorize.requestMatchers("/wallet-dashboard/**").permitAll();
                 // ALL wallet endpoints - restricted by CORS to localhost
                 authorize.requestMatchers(walletEndpoint + "/**").permitAll();
-                if (internalTokenRequired) {
+                if (accessTokenRequired) {
                     authorize.requestMatchers(treasuryEndpoint + "/admin/**").hasRole("INTERNAL");
                 } else {
                     authorize.requestMatchers(treasuryEndpoint + "/admin/**").permitAll();
@@ -125,7 +125,7 @@ public class SecurityConfig {
                 authorize.requestMatchers(treasuryEndpoint + "/**").permitAll();
                 authorize.anyRequest().denyAll();
             })
-            .addFilterBefore(internalTokenAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
+            .addFilterBefore(accessTokenAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
 
         return http.build();
     }

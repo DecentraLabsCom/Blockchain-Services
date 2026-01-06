@@ -20,10 +20,10 @@ class LocalhostOnlyFilterTest {
     void setUp() {
         filter = new LocalhostOnlyFilter();
         ReflectionTestUtils.setField(filter, "allowPrivateNetworks", false);
-        ReflectionTestUtils.setField(filter, "internalToken", "test-token");
-        ReflectionTestUtils.setField(filter, "internalTokenHeader", "X-Internal-Token");
-        ReflectionTestUtils.setField(filter, "internalTokenCookie", "internal_token");
-        ReflectionTestUtils.setField(filter, "internalTokenRequired", true);
+        ReflectionTestUtils.setField(filter, "accessToken", "test-token");
+        ReflectionTestUtils.setField(filter, "accessTokenHeader", "X-Access-Token");
+        ReflectionTestUtils.setField(filter, "accessTokenCookie", "access_token");
+        ReflectionTestUtils.setField(filter, "accessTokenRequired", true);
         mockMvc = MockMvcBuilders
             .standaloneSetup(new LocalhostFilterTestController())
             .addFilters(filter)
@@ -63,7 +63,7 @@ class LocalhostOnlyFilterTest {
             .build();
 
         mockMvc.perform(post("/wallet/test")
-                .header("X-Internal-Token", "test-token")
+                .header("X-Access-Token", "test-token")
                 .with(req -> { req.setRemoteAddr("172.17.0.1"); return req; }))
             .andExpect(status().isOk());
     }
@@ -91,7 +91,7 @@ class LocalhostOnlyFilterTest {
             .build();
 
         mockMvc.perform(post("/wallet/test")
-                .cookie(new Cookie("internal_token", "test-token"))
+                .cookie(new Cookie("access_token", "test-token"))
                 .with(req -> { req.setRemoteAddr("172.17.0.1"); return req; }))
             .andExpect(status().isOk());
     }
@@ -111,7 +111,7 @@ class LocalhostOnlyFilterTest {
     @Test
     void allowsPrivateNetworkWhenTokenNotRequired() throws Exception {
         ReflectionTestUtils.setField(filter, "allowPrivateNetworks", true);
-        ReflectionTestUtils.setField(filter, "internalTokenRequired", false);
+        ReflectionTestUtils.setField(filter, "accessTokenRequired", false);
         mockMvc = MockMvcBuilders
             .standaloneSetup(new LocalhostFilterTestController())
             .addFilters(filter)

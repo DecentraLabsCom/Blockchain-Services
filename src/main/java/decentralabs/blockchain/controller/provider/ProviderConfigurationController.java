@@ -62,13 +62,8 @@ public class ProviderConfigurationController {
     @Value("${public.base-url:}")
     private String publicBaseUrl;
 
-    /**
-     * Serve the provider configuration page
-     */
-    @GetMapping
-    public String getConfigurationPage() {
-        return "forward:/institution-config/index.html";
-    }
+    // Note: GET /institution-config and /institution-config/ are handled by WebConfig
+    // to serve static HTML without controller interference
 
     /**
      * Get current provider configuration status

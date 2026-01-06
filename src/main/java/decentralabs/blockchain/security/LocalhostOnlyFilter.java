@@ -26,17 +26,17 @@ public class LocalhostOnlyFilter extends OncePerRequestFilter {
     @Value("${security.allow-private-networks:false}")
     private boolean allowPrivateNetworks;
 
-    @Value("${security.internal-token:}")
-    private String internalToken;
+    @Value("${security.access-token:}")
+    private String accessToken;
 
-    @Value("${security.internal-token-header:X-Internal-Token}")
-    private String internalTokenHeader;
+    @Value("${security.access-token-header:X-Access-Token}")
+    private String accessTokenHeader;
 
-    @Value("${security.internal-token-cookie:internal_token}")
-    private String internalTokenCookie;
+    @Value("${security.access-token-cookie:access_token}")
+    private String accessTokenCookie;
 
-    @Value("${security.internal-token.required:true}")
-    private boolean internalTokenRequired;
+    @Value("${security.access-token.required:true}")
+    private boolean accessTokenRequired;
 
     private static final List<String> LOCALHOST_ADDRESSES = List.of(
         "127.0.0.1",
@@ -103,19 +103,19 @@ public class LocalhostOnlyFilter extends OncePerRequestFilter {
         }
 
         // In standalone docker, requests often arrive from a bridge IP (172.x/10.x).
-        // Only allow those when explicitly enabled and secured with an internal token.
+        // Only allow those when explicitly enabled and secured with an access token.
         if (allowPrivateNetworks && (isPrivateAddress(normalized) || isForwardedPrivateAddress(request))) {
-            if (!internalTokenRequired) {
+            if (!accessTokenRequired) {
                 return true;
             }
-            if (internalToken == null || internalToken.isBlank()) {
-                log.warn("Private network access is enabled but no internal token is configured.");
+            if (accessToken == null || accessToken.isBlank()) {
+                log.warn("Private network access is enabled but no access token is configured.");
                 return false;
             }
-            if (hasValidInternalToken(request)) {
+            if (hasValidAccessToken(request)) {
                 return true;
             }
-            log.warn("Missing or invalid internal token for private network access.");
+            log.warn("Missing or invalid access token for private network access.");
             return false;
         }
 
@@ -137,26 +137,26 @@ public class LocalhostOnlyFilter extends OncePerRequestFilter {
         return null;
     }
 
-    private boolean hasValidInternalToken(HttpServletRequest request) {
-        if (internalToken == null || internalToken.isBlank()) {
+    private boolean hasValidAccessToken(HttpServletRequest request) {
+        if (accessToken == null || accessToken.isBlank()) {
             return false;
         }
-        String headerToken = request.getHeader(internalTokenHeader);
+        String headerToken = request.getHeader(accessTokenHeader);
         if (headerToken != null && !headerToken.isBlank()) {
-            return internalToken.equals(headerToken.trim());
+            return accessToken.equals(headerToken.trim());
         }
         String authorization = request.getHeader("Authorization");
         if (authorization != null) {
             String lower = authorization.toLowerCase();
             if (lower.startsWith("bearer ")) {
                 String bearer = authorization.substring("bearer ".length()).trim();
-                return internalToken.equals(bearer);
+                return accessToken.equals(bearer);
             }
         }
-        if (internalTokenCookie != null && request.getCookies() != null) {
+        if (accessTokenCookie != null && request.getCookies() != null) {
             for (var cookie : request.getCookies()) {
-                if (internalTokenCookie.equals(cookie.getName())) {
-                    return internalToken.equals(cookie.getValue());
+                if (accessTokenCookie.equals(cookie.getName())) {
+                    return accessToken.equals(cookie.getValue());
                 }
             }
         }

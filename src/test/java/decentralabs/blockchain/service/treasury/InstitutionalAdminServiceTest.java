@@ -147,16 +147,16 @@ class InstitutionalAdminServiceTest {
         }
 
         @Test
-        @DisplayName("Should allow private network with valid internal token when enabled")
+        @DisplayName("Should allow private network with valid access token when enabled")
         void shouldAllowPrivateNetworkWithTokenWhenEnabled() {
             ReflectionTestUtils.setField(adminService, "adminDashboardAllowPrivate", true);
             ReflectionTestUtils.setField(adminService, "allowPrivateNetworks", true);
-            ReflectionTestUtils.setField(adminService, "internalToken", "test-token");
-            ReflectionTestUtils.setField(adminService, "internalTokenHeader", "X-Internal-Token");
-            ReflectionTestUtils.setField(adminService, "internalTokenRequired", true);
+            ReflectionTestUtils.setField(adminService, "accessToken", "test-token");
+            ReflectionTestUtils.setField(adminService, "accessTokenHeader", "X-Access-Token");
+            ReflectionTestUtils.setField(adminService, "accessTokenRequired", true);
 
             when(httpServletRequest.getRemoteAddr()).thenReturn("10.0.0.5");
-            when(httpServletRequest.getHeader("X-Internal-Token")).thenReturn("test-token");
+            when(httpServletRequest.getHeader("X-Access-Token")).thenReturn("test-token");
             when(institutionalWalletService.getInstitutionalWalletAddress()).thenReturn("0xABCDEF");
 
             InstitutionalAdminRequest request = buildRequest("0x123", AdminOperation.AUTHORIZE_BACKEND, null, null, null, null, null);
@@ -170,7 +170,7 @@ class InstitutionalAdminServiceTest {
         void shouldAllowPrivateNetworkWhenTokenNotRequired() {
             ReflectionTestUtils.setField(adminService, "adminDashboardAllowPrivate", true);
             ReflectionTestUtils.setField(adminService, "allowPrivateNetworks", true);
-            ReflectionTestUtils.setField(adminService, "internalTokenRequired", false);
+            ReflectionTestUtils.setField(adminService, "accessTokenRequired", false);
 
             when(httpServletRequest.getRemoteAddr()).thenReturn("10.0.0.5");
             when(institutionalWalletService.getInstitutionalWalletAddress()).thenReturn("0xABCDEF");

@@ -37,17 +37,17 @@ public class NotificationAdminController {
     @Value("${security.allow-private-networks:false}")
     private boolean allowPrivateNetworks;
 
-    @Value("${security.internal-token:}")
-    private String internalToken;
+    @Value("${security.access-token:}")
+    private String accessToken;
 
-    @Value("${security.internal-token-header:X-Internal-Token}")
-    private String internalTokenHeader;
+    @Value("${security.access-token-header:X-Access-Token}")
+    private String accessTokenHeader;
 
-    @Value("${security.internal-token-cookie:internal_token}")
-    private String internalTokenCookie;
+    @Value("${security.access-token-cookie:access_token}")
+    private String accessTokenCookie;
 
-    @Value("${security.internal-token.required:true}")
-    private boolean internalTokenRequired;
+    @Value("${security.access-token.required:true}")
+    private boolean accessTokenRequired;
 
     @GetMapping
     public ResponseEntity<?> getConfig(HttpServletRequest request) {
@@ -145,7 +145,7 @@ public class NotificationAdminController {
             || (adminDashboardAllowPrivate
                 && allowPrivateNetworks
                 && isPrivateAddress(candidate)
-                && (!internalTokenRequired || hasValidInternalToken(request)));
+                && (!accessTokenRequired || hasValidAccessToken(request)));
 
         if (!allowed) {
             log.warn("Blocked administrative notification access from non-local address.");
@@ -186,26 +186,26 @@ public class NotificationAdminController {
             || address.equals("::1");
     }
 
-    private boolean hasValidInternalToken(HttpServletRequest request) {
-        if (internalToken == null || internalToken.isBlank()) {
+    private boolean hasValidAccessToken(HttpServletRequest request) {
+        if (accessToken == null || accessToken.isBlank()) {
             return false;
         }
-        String headerToken = request.getHeader(internalTokenHeader);
+        String headerToken = request.getHeader(accessTokenHeader);
         if (headerToken != null && !headerToken.isBlank()) {
-            return internalToken.equals(headerToken.trim());
+            return accessToken.equals(headerToken.trim());
         }
         String authorization = request.getHeader("Authorization");
         if (authorization != null) {
             String lower = authorization.toLowerCase();
             if (lower.startsWith("bearer ")) {
                 String bearer = authorization.substring("bearer ".length()).trim();
-                return internalToken.equals(bearer);
+                return accessToken.equals(bearer);
             }
         }
         if (request.getCookies() != null) {
             for (var cookie : request.getCookies()) {
-                if (internalTokenCookie.equals(cookie.getName())) {
-                    return internalToken.equals(cookie.getValue());
+                if (accessTokenCookie.equals(cookie.getName())) {
+                    return accessToken.equals(cookie.getValue());
                 }
             }
         }
