@@ -17,6 +17,7 @@ import decentralabs.blockchain.dto.auth.WebauthnOnboardingOptionsResponse.PubKey
 import decentralabs.blockchain.dto.auth.WebauthnOnboardingOptionsResponse.RelyingParty;
 import decentralabs.blockchain.dto.auth.WebauthnOnboardingOptionsResponse.User;
 import decentralabs.blockchain.dto.auth.WebauthnOnboardingStatusResponse;
+import decentralabs.blockchain.service.BackendUrlResolver;
 import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
 import java.io.ByteArrayInputStream;
@@ -91,9 +92,10 @@ public class WebauthnOnboardingService {
 
     private final WebauthnCredentialService credentialService;
     private final SamlValidationService samlValidationService; // May be null
+    private final BackendUrlResolver backendUrlResolver;
     private final RestTemplate restTemplate;
 
-    @Value("${webauthn.rp.id:${base.domain:localhost}}")
+    @Value("${webauthn.rp.id:}")
     private String rpId;
 
     @Value("${webauthn.rp.name:DecentraLabs Gateway}")
@@ -134,9 +136,11 @@ public class WebauthnOnboardingService {
 
     public WebauthnOnboardingService(
             WebauthnCredentialService credentialService,
-            ObjectProvider<SamlValidationService> samlValidationServiceProvider) {
+            ObjectProvider<SamlValidationService> samlValidationServiceProvider,
+            BackendUrlResolver backendUrlResolver) {
         this.credentialService = credentialService;
         this.samlValidationService = samlValidationServiceProvider.getIfAvailable();
+        this.backendUrlResolver = backendUrlResolver;
         this.restTemplate = new RestTemplate();
         if (this.samlValidationService == null) {
             log.warn("SamlValidationService not available. SAML assertion validation will be skipped.");
@@ -157,7 +161,27 @@ public class WebauthnOnboardingService {
             cleanupIntervalSeconds,
             TimeUnit.SECONDS
         );
-        log.info("WebAuthn Onboarding Service initialized. RP ID: {}, Session TTL: {}s", rpId, sessionTtlSeconds);
+        log.info("WebAuthn Onboarding Service initialized. RP ID: {}, Session TTL: {}s", getEffectiveRpId(), sessionTtlSeconds);
+    }
+
+    /**
+     * Returns the effective Relying Party ID.
+     * Falls back to extracting hostname from BackendUrlResolver if not explicitly configured.
+     */
+    private String getEffectiveRpId() {
+        if (rpId != null && !rpId.isBlank()) {
+            return rpId;
+        }
+        // Extract hostname from the resolved base domain (e.g., "https://sarlab.dia.uned.es" -> "sarlab.dia.uned.es")
+        String baseDomain = backendUrlResolver.resolveBaseDomain();
+        try {
+            java.net.URI uri = new java.net.URI(baseDomain);
+            String host = uri.getHost();
+            return (host != null && !host.isBlank()) ? host : "localhost";
+        } catch (Exception e) {
+            log.warn("Failed to extract host from base domain '{}', using 'localhost'", baseDomain);
+            return "localhost";
+        }
     }
 
     @PreDestroy
@@ -242,7 +266,7 @@ public class WebauthnOnboardingService {
             .onboardingUrl(onboardingUrl)
             .challenge(challenge)
             .rp(RelyingParty.builder()
-                .id(rpId)
+                .id(getEffectiveRpId())
                 .name(rpName)
                 .build())
             .user(User.builder()
@@ -313,7 +337,7 @@ public class WebauthnOnboardingService {
                 .institutionId(session.getInstitutionId())
                 .credentialId(credentialId)
                 .publicKey(publicKeyBase64)
-                .rpId(rpId)
+                .rpId(getEffectiveRpId())
                 .aaguid(aaguid)
                 .message("Credential registered successfully")
                 .timestamp(Instant.now().getEpochSecond())
@@ -326,7 +350,7 @@ public class WebauthnOnboardingService {
                 session.getInstitutionId(),
                 credentialId,
                 publicKeyBase64,
-                rpId,
+                getEffectiveRpId(),
                 null,
                 Instant.now()
             );
@@ -427,8 +451,8 @@ public class WebauthnOnboardingService {
     private String buildOnboardingUrl(String sessionId) {
         String effectiveBaseUrl = baseUrl;
         if (effectiveBaseUrl == null || effectiveBaseUrl.isBlank()) {
-            // Fallback: construct from rpId (assumes HTTPS)
-            effectiveBaseUrl = "https://" + rpId;
+            // Use BackendUrlResolver which resolves from SERVER_NAME/BASE_DOMAIN
+            effectiveBaseUrl = backendUrlResolver.resolveBaseDomain();
         }
         // Remove trailing slash if present
         if (effectiveBaseUrl.endsWith("/")) {
@@ -457,7 +481,7 @@ public class WebauthnOnboardingService {
             .sessionId(sessionId)
             .challenge(session.getChallenge())
             .rp(RelyingParty.builder()
-                .id(rpId)
+                .id(getEffectiveRpId())
                 .name(rpName)
                 .build())
             .user(User.builder()
@@ -635,7 +659,7 @@ public class WebauthnOnboardingService {
     private void verifyRpIdHash(byte[] rpIdHash) throws ResponseStatusException {
         try {
             MessageDigest sha256 = MessageDigest.getInstance("SHA-256");
-            byte[] expectedHash = sha256.digest(rpId.getBytes(StandardCharsets.UTF_8));
+            byte[] expectedHash = sha256.digest(getEffectiveRpId().getBytes(StandardCharsets.UTF_8));
             if (!MessageDigest.isEqual(rpIdHash, expectedHash)) {
                 throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "RP ID hash mismatch");
             }

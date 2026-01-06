@@ -329,9 +329,12 @@ They are mapped to the standard Spring variables inside the container.
 
 ### WebAuthn Onboarding Configuration
 
+**Automatic URL Resolution:** The `WEBAUTHN_RP_ID` and `WEBAUTHN_BASE_URL` are automatically derived from `SERVER_NAME` (Lab Gateway) or `BASE_DOMAIN` (stand-alone). You only need to set them manually if you want to override the auto-detected values.
+
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `WEBAUTHN_RP_ID` | Relying Party ID (domain users see in browser) | `${BASE_DOMAIN}` or `localhost` |
+| `WEBAUTHN_RP_ID` | Relying Party ID (domain users see in browser) | Auto-derived from `SERVER_NAME`/`BASE_DOMAIN` |
+| `WEBAUTHN_BASE_URL` | Base URL for onboarding ceremony URLs | Auto-derived from `SERVER_NAME`/`BASE_DOMAIN` |
 | `WEBAUTHN_RP_NAME` | Display name for the RP | `DecentraLabs Gateway` |
 | `WEBAUTHN_RP_ORIGINS` | Allowed origins for attestation (comma-separated) | `https://localhost,https://localhost:443` |
 | `WEBAUTHN_TIMEOUT_MS` | Ceremony timeout in milliseconds | `120000` |
@@ -341,9 +344,8 @@ They are mapped to the standard Spring variables inside the container.
 | `WEBAUTHN_RESIDENT_KEY` | `required`, `preferred`, or `discouraged` | `preferred` |
 | `WEBAUTHN_USER_VERIFICATION` | `required`, `preferred`, or `discouraged` | `preferred` |
 
-> **Important for Lab Gateway:** When deploying behind the Lab Gateway, set `WEBAUTHN_RP_ID` to the gateway's
-> public domain (e.g., `lab.institution.edu`) and ensure `WEBAUTHN_RP_ORIGINS` includes all HTTPS variants
-> of the gateway URL. The `BASE_DOMAIN` env var, if set, is used as the default RP ID.
+> **Example:** If you set `SERVER_NAME=sarlab.dia.uned.es`, the service automatically uses
+> `rpId=sarlab.dia.uned.es` and `baseUrl=https://sarlab.dia.uned.es`. No additional WebAuthn config needed.
 
 ### Configuration Files
 
