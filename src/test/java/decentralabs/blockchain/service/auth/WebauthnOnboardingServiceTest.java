@@ -38,7 +38,8 @@ class WebauthnOnboardingServiceTest {
     @BeforeEach
     void setUp() throws Exception {
         // Configure BackendUrlResolver mock to return a valid base URL
-        when(backendUrlResolver.resolveBaseDomain()).thenReturn("https://localhost");
+        // Use lenient() because not all tests use this mock
+        lenient().when(backendUrlResolver.resolveBaseDomain()).thenReturn("https://localhost");
         
         service = new WebauthnOnboardingService(credentialService, samlValidationServiceProvider, backendUrlResolver);
         
