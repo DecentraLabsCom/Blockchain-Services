@@ -1,6 +1,7 @@
 package decentralabs.blockchain.service.auth;
 
 import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.Mockito.*;
 
 import decentralabs.blockchain.dto.auth.WebauthnOnboardingCompleteRequest;
 import decentralabs.blockchain.dto.auth.WebauthnOnboardingOptionsRequest;
@@ -36,6 +37,9 @@ class WebauthnOnboardingServiceTest {
 
     @BeforeEach
     void setUp() throws Exception {
+        // Configure BackendUrlResolver mock to return a valid base URL
+        when(backendUrlResolver.getBackendBaseUrl()).thenReturn("https://localhost");
+        
         service = new WebauthnOnboardingService(credentialService, samlValidationServiceProvider, backendUrlResolver);
         
         // Set configuration via reflection (normally done by Spring)
