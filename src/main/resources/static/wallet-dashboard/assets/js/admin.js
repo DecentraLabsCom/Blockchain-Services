@@ -373,8 +373,15 @@ async function applyProvisioningToken() {
         return;
     }
 
+    const resultDiv = document.getElementById('provisioningResult');
+    const applyBtn = document.getElementById('applyProvisioningBtn');
+    
+    // Disable button during processing
+    if (applyBtn) applyBtn.disabled = true;
+
     try {
-        showToast('Applying provisioning token...', 'info');
+        // Show progress spinner with initial message
+        showProvisioningProgress('Validating token format...');
         
         // Detect token type by decoding JWT payload
         const tokenType = detectTokenType(token);
@@ -382,11 +389,23 @@ async function applyProvisioningToken() {
             ? '/institution-config/apply-consumer-token'
             : '/institution-config/apply-provider-token';
         
+        // Update progress message
+        updateProvisioningProgress('Contacting marketplace...');
+        
+        // Add artificial delay to show the "contacting marketplace" message
+        await new Promise(resolve => setTimeout(resolve, 800));
+        
+        // Update progress message
+        updateProvisioningProgress('Verifying credentials with marketplace...');
+        
         const response = await fetch(endpoint, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ token })
         });
+
+        // Update progress message
+        updateProvisioningProgress('Processing registration on-chain...');
 
         const result = await readJsonResponse(response);
         if (result.parseError) {
@@ -399,6 +418,15 @@ async function applyProvisioningToken() {
         if (!response.ok) {
             throw new Error(data.error || 'Unable to apply provisioning token.');
         }
+
+        // Update progress message
+        updateProvisioningProgress('Waiting for blockchain confirmation...');
+        
+        // Add artificial delay to show the blockchain confirmation message
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        
+        // Update progress message
+        updateProvisioningProgress('Finalizing registration...');
 
         renderProvisioningResult(data, tokenType);
         
@@ -424,6 +452,32 @@ async function applyProvisioningToken() {
         console.error('Failed to apply provisioning token:', error);
         showToast(error.message || 'Failed to apply provisioning token', 'error');
         renderProvisioningResult({ error: error.message }, 'unknown');
+    } finally {
+        // Re-enable button
+        if (applyBtn) applyBtn.disabled = false;
+    }
+}
+
+// Show provisioning progress spinner
+function showProvisioningProgress(message) {
+    const resultDiv = document.getElementById('provisioningResult');
+    if (!resultDiv) return;
+    
+    resultDiv.innerHTML = `
+        <div class="provisioning-progress">
+            <div class="spinner-container">
+                <div class="spinner"></div>
+            </div>
+            <div class="progress-message">${message}</div>
+        </div>
+    `;
+}
+
+// Update provisioning progress message
+function updateProvisioningProgress(message) {
+    const messageEl = document.querySelector('#provisioningResult .progress-message');
+    if (messageEl) {
+        messageEl.textContent = message;
     }
 }
 
