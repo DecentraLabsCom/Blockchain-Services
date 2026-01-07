@@ -252,11 +252,11 @@
                     <jdkToolchain>
                         <version>21</version>
                     </jdkToolchain>
-                    <!-- Increase heap space to prevent OutOfMemoryError -->
-                    <argLine>-Xmx1024m -XX:MaxMetaspaceSize=256m</argLine>
-                    <!-- Reuse forks to reduce memory overhead -->
-                    <reuseForks>true</reuseForks>
+                    <!-- Increase heap size for tests to prevent OutOfMemoryError -->
+                    <argLine>-Xmx3072m -Xms1024m -XX:MaxMetaspaceSize=512m</argLine>
+                    <!-- Run tests in parallel to reduce total execution time while managing memory -->
                     <forkCount>1</forkCount>
+                    <reuseForks>true</reuseForks>
                 </configuration>
             </plugin>
             

@@ -141,6 +141,12 @@ class WebauthnOnboardingServiceTest {
 
     @Test
     void completeOnboarding_invalidClientDataType_throwsException() throws Exception {
+        // Mock credential service to return no existing credential
+        WebauthnCredentialService.KeyStatus noCredential = new WebauthnCredentialService.KeyStatus(
+            false, 0, false, 0L
+        );
+        when(credentialService.getKeyStatus(anyString())).thenReturn(noCredential);
+
         // First generate options
         WebauthnOnboardingOptionsRequest optionsRequest = new WebauthnOnboardingOptionsRequest();
         optionsRequest.setStableUserId("user@institution.edu");
@@ -161,11 +167,18 @@ class WebauthnOnboardingServiceTest {
 
         ResponseStatusException ex = assertThrows(ResponseStatusException.class, 
             () -> service.completeOnboarding(request));
-        assertTrue(ex.getReason().contains("Invalid client data type"));
+        String message = ex.getReason() != null ? ex.getReason() : ex.getMessage();
+        assertTrue(message.contains("Invalid client data type"));
     }
 
     @Test
     void completeOnboarding_challengeMismatch_throwsException() throws Exception {
+        // Mock credential service to return no existing credential
+        WebauthnCredentialService.KeyStatus noCredential = new WebauthnCredentialService.KeyStatus(
+            false, 0, false, 0L
+        );
+        when(credentialService.getKeyStatus(anyString())).thenReturn(noCredential);
+
         // First generate options
         WebauthnOnboardingOptionsRequest optionsRequest = new WebauthnOnboardingOptionsRequest();
         optionsRequest.setStableUserId("user@institution.edu");
@@ -187,11 +200,18 @@ class WebauthnOnboardingServiceTest {
 
         ResponseStatusException ex = assertThrows(ResponseStatusException.class, 
             () -> service.completeOnboarding(request));
-        assertTrue(ex.getReason().contains("Challenge mismatch"));
+        String message = ex.getReason() != null ? ex.getReason() : ex.getMessage();
+        assertTrue(message.contains("Challenge mismatch"));
     }
 
     @Test
     void completeOnboarding_invalidOrigin_throwsException() throws Exception {
+        // Mock credential service to return no existing credential
+        WebauthnCredentialService.KeyStatus noCredential = new WebauthnCredentialService.KeyStatus(
+            false, 0, false, 0L
+        );
+        when(credentialService.getKeyStatus(anyString())).thenReturn(noCredential);
+
         // First generate options
         WebauthnOnboardingOptionsRequest optionsRequest = new WebauthnOnboardingOptionsRequest();
         optionsRequest.setStableUserId("user@institution.edu");
@@ -212,11 +232,18 @@ class WebauthnOnboardingServiceTest {
 
         ResponseStatusException ex = assertThrows(ResponseStatusException.class, 
             () -> service.completeOnboarding(request));
-        assertTrue(ex.getReason().contains("Origin not allowed"));
+        String message = ex.getReason() != null ? ex.getReason() : ex.getMessage();
+        assertTrue(message.contains("Origin not allowed"));
     }
 
     @Test
     void completeOnboarding_sessionCanOnlyBeUsedOnce() throws Exception {
+        // Mock credential service to return no existing credential
+        WebauthnCredentialService.KeyStatus noCredential = new WebauthnCredentialService.KeyStatus(
+            false, 0, false, 0L
+        );
+        when(credentialService.getKeyStatus(anyString())).thenReturn(noCredential);
+
         // First generate options
         WebauthnOnboardingOptionsRequest optionsRequest = new WebauthnOnboardingOptionsRequest();
         optionsRequest.setStableUserId("user@institution.edu");
@@ -240,7 +267,8 @@ class WebauthnOnboardingServiceTest {
         // Second attempt should fail with invalid session
         ResponseStatusException ex = assertThrows(ResponseStatusException.class, 
             () -> service.completeOnboarding(request));
-        assertTrue(ex.getReason().contains("Invalid or expired session"));
+        String message = ex.getReason() != null ? ex.getReason() : ex.getMessage();
+        assertTrue(message.contains("Invalid or expired session"));
     }
 
     /**
