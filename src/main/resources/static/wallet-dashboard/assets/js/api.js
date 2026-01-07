@@ -109,6 +109,14 @@ const API = {
     },
 
     /**
+     * GET /institution-config/status
+     * Check provider configuration/registration state
+     */
+    async getProviderConfigStatus() {
+        return await this.request('/institution-config/status');
+    },
+
+    /**
      * GET /treasury/admin/balance?chainId=X
      * Get institutional wallet balance
      * @param {number|null} chainId - Optional chain ID, null for all networks

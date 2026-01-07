@@ -571,8 +571,17 @@ async function loadSystemStatus() {
     console.log('[loadSystemStatus] Starting...');
     try {
         console.log('[loadSystemStatus] Calling API.getSystemStatus()...');
-        const data = await API.getSystemStatus();
+        const [data, providerConfig] = await Promise.all([
+            API.getSystemStatus(),
+            API.getProviderConfigStatus().catch(error => {
+                console.warn('[loadSystemStatus] provider config status unavailable', error);
+                return null;
+            })
+        ]);
         console.log('[loadSystemStatus] Received data:', data);
+        if (providerConfig) {
+            console.log('[loadSystemStatus] Provider config status:', providerConfig);
+        }
         
         if (data.success) {
             const walletConfigured = data.walletConfigured;
@@ -585,7 +594,20 @@ async function loadSystemStatus() {
             }
             
             if (DashboardState.walletAddress) {
-                DashboardState.inviteTokenApplied = loadInviteTokenState(DashboardState.walletAddress);
+                const storedInviteApplied = loadInviteTokenState(DashboardState.walletAddress);
+                const providerApplied = providerConfig && (
+                    providerConfig.isRegistered
+                    || providerConfig.fromProvisioningToken
+                    || providerConfig.isConfigured
+                );
+
+                DashboardState.inviteTokenApplied = storedInviteApplied || providerApplied;
+
+                // Persist server-known provisioning so it stays hidden across browsers
+                if (providerApplied) {
+                    persistInviteTokenState(DashboardState.walletAddress, true);
+                    DashboardState.invitePromptedWallet = DashboardState.walletAddress;
+                }
             } else {
                 DashboardState.inviteTokenApplied = false;
                 DashboardState.invitePromptedWallet = null;
