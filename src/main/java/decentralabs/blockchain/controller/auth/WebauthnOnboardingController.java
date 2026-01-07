@@ -333,13 +333,10 @@ public class WebauthnOnboardingController {
                 
                 const attestationResponse = {
                     sessionId: options.sessionId,
-                    id: credential.id,
-                    rawId: arrayBufferToBase64Url(credential.rawId),
-                    type: credential.type,
-                    response: {
-                        clientDataJSON: arrayBufferToBase64Url(credential.response.clientDataJSON),
-                        attestationObject: arrayBufferToBase64Url(credential.response.attestationObject)
-                    }
+                    credentialId: credential.id,
+                    clientDataJSON: arrayBufferToBase64Url(credential.response.clientDataJSON),
+                    attestationObject: arrayBufferToBase64Url(credential.response.attestationObject),
+                    transports: credential.response.getTransports ? credential.response.getTransports() : []
                 };
                 
                 const response = await fetch('/onboarding/webauthn/complete', {
