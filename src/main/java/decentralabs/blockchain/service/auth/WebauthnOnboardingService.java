@@ -101,8 +101,14 @@ public class WebauthnOnboardingService {
     @Value("${webauthn.rp.name:DecentraLabs Gateway}")
     private String rpName;
 
-    @Value("${webauthn.rp.origins:https://localhost,https://localhost:443,https://localhost:8443}")
+    @Value("${webauthn.rp.origins:#{null}}")
     private String allowedOriginsConfig;
+
+    @Value("${SERVER_NAME:localhost}")
+    private String serverName;
+
+    @Value("${HTTPS_PORT:443}")
+    private String httpsPort;
 
     @Value("${webauthn.timeout.ms:120000}")
     private long timeoutMs;
@@ -675,7 +681,17 @@ public class WebauthnOnboardingService {
         if (origin == null || origin.isEmpty()) {
             return false;
         }
-        List<String> allowedOrigins = Arrays.asList(allowedOriginsConfig.split(","));
+        
+        // If no explicit configuration, use SERVER_NAME to build the allowed origin
+        String originsToCheck = allowedOriginsConfig;
+        if (originsToCheck == null || originsToCheck.trim().isEmpty()) {
+            // Build origin from SERVER_NAME and HTTPS_PORT
+            String portSegment = "443".equals(httpsPort) ? "" : ":" + httpsPort;
+            originsToCheck = "https://" + serverName + portSegment;
+            log.debug("No explicit webauthn.rp.origins configured, using SERVER_NAME: {}", originsToCheck);
+        }
+        
+        List<String> allowedOrigins = Arrays.asList(originsToCheck.split(","));
         return allowedOrigins.stream()
             .map(String::trim)
             .anyMatch(allowed -> allowed.equalsIgnoreCase(origin));
