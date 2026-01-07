@@ -315,6 +315,15 @@ public class WebauthnOnboardingService {
         }
 
         try {
+            // Check if user already has an active credential - prevent duplicates
+            WebauthnCredentialService.KeyStatus existingStatus = credentialService.getKeyStatus(session.getStableUserId());
+            if (existingStatus.isHasCredential() && existingStatus.getCredentialCount() > 0) {
+                log.warn("User {} already has {} active credential(s). Rejecting duplicate registration attempt.", 
+                    session.getStableUserId(), existingStatus.getCredentialCount());
+                throw new ResponseStatusException(HttpStatus.CONFLICT, 
+                    "User already has an active credential. Only one credential is allowed per user.");
+            }
+
             // Decode client data JSON and verify
             byte[] clientDataJson = BASE64URL_DECODER.decode(request.getClientDataJSON());
             verifyClientData(clientDataJson, session.getChallengeBytes());
