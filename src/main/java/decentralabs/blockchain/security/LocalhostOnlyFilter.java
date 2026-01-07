@@ -38,6 +38,12 @@ public class LocalhostOnlyFilter extends OncePerRequestFilter {
     @Value("${security.access-token.required:true}")
     private boolean accessTokenRequired;
 
+    @Value("${lab.manager.token:}")
+    private String labManagerToken;
+
+    @Value("${lab.manager.token-header:X-Lab-Manager-Token}")
+    private String labManagerTokenHeader;
+
     private static final List<String> LOCALHOST_ADDRESSES = List.of(
         "127.0.0.1",
         "0:0:0:0:0:0:0:1",
@@ -138,6 +144,18 @@ public class LocalhostOnlyFilter extends OncePerRequestFilter {
     }
 
     private boolean hasValidAccessToken(HttpServletRequest request) {
+        // Check lab manager token first
+        if (labManagerToken != null && !labManagerToken.isBlank()) {
+            // Check lab manager header
+            String labManagerHeaderToken = request.getHeader(labManagerTokenHeader);
+            if (labManagerHeaderToken != null && !labManagerHeaderToken.isBlank()) {
+                if (labManagerToken.equals(labManagerHeaderToken.trim())) {
+                    return true;
+                }
+            }
+        }
+        
+        // Check access token
         if (accessToken == null || accessToken.isBlank()) {
             return false;
         }
