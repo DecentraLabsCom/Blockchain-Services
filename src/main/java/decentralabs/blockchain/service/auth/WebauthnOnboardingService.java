@@ -172,7 +172,7 @@ public class WebauthnOnboardingService {
         if (rpId != null && !rpId.isBlank()) {
             return rpId;
         }
-        // Extract hostname from the resolved base domain (e.g., "https://sarlab.dia.uned.es" -> "sarlab.dia.uned.es")
+        // Extract hostname from the resolved base domain (e.g., "https://your.gateway.example" -> "your.gateway.example")
         String baseDomain = backendUrlResolver.resolveBaseDomain();
         try {
             java.net.URI uri = new java.net.URI(baseDomain);

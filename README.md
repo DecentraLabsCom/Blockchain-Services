@@ -344,8 +344,7 @@ They are mapped to the standard Spring variables inside the container.
 | `WEBAUTHN_RESIDENT_KEY` | `required`, `preferred`, or `discouraged` | `preferred` |
 | `WEBAUTHN_USER_VERIFICATION` | `required`, `preferred`, or `discouraged` | `preferred` |
 
-> **Example:** If you set `SERVER_NAME=sarlab.dia.uned.es`, the service automatically uses
-> `rpId=sarlab.dia.uned.es` and `baseUrl=https://sarlab.dia.uned.es`. No additional WebAuthn config needed.
+> **Example:** If you set `SERVER_NAME=your.gateway.example`, the service automatically derives `WEBAUTHN_RP_ID=your.gateway.example` and `WEBAUTHN_BASE_URL=https://your.gateway.example`. No additional WebAuthn config needed.
 
 ### Configuration Files
 
