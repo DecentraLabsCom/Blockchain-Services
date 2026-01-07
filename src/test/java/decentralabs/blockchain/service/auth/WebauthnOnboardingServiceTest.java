@@ -316,3 +316,4 @@ class WebauthnOnboardingServiceTest {
         assertEquals(409, exception.getStatusCode().value());
         assertTrue(exception.getReason().contains("already has an active credential"));
     }
+}
