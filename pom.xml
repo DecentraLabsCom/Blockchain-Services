@@ -252,6 +252,8 @@
                     <jdkToolchain>
                         <version>21</version>
                     </jdkToolchain>
+                    <!-- Increase heap size for tests to prevent OutOfMemoryError -->
+                    <argLine>-Xmx2048m -Xms512m</argLine>
                 </configuration>
             </plugin>
             
