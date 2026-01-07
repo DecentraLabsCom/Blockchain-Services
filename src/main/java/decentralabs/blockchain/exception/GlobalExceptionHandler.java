@@ -9,6 +9,7 @@ import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ControllerAdvice;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.ResponseStatus;
+import org.springframework.web.server.ResponseStatusException;
 import org.springframework.web.servlet.ModelAndView;
 
 import java.util.HashMap;
@@ -34,6 +35,18 @@ public class GlobalExceptionHandler {
         if (path != null && (path.startsWith("/api/") || path.contains("/status"))) {
             return true;
         }
+        // WebAuthn onboarding endpoints (except ceremony HTML page) expect JSON
+        if (path != null && path.startsWith("/onboarding/webauthn/") && !path.contains("/ceremony/")) {
+            return true;
+        }
+        // Intent endpoints expect JSON
+        if (path != null && path.startsWith("/intents")) {
+            return true;
+        }
+        // Wallet endpoints expect JSON
+        if (path != null && path.startsWith("/wallet/")) {
+            return true;
+        }
         if (accept != null && accept.contains("application/json")) {
             return true;
         }
@@ -45,6 +58,24 @@ public class GlobalExceptionHandler {
             return true;
         }
         return false;
+    }
+
+    /**
+     * Handles ResponseStatusException (thrown by controllers/services)
+     * This ensures JSON responses instead of HTML error pages for API endpoints.
+     */
+    @ExceptionHandler(ResponseStatusException.class)
+    public ResponseEntity<Map<String, Object>> handleResponseStatusException(
+            ResponseStatusException ex, HttpServletRequest request) {
+        
+        Map<String, Object> response = new HashMap<>();
+        response.put("success", false);
+        response.put("message", ex.getReason() != null ? ex.getReason() : ex.getStatusCode().toString());
+        response.put("status", ex.getStatusCode().value());
+
+        log.warn("ResponseStatusException at {}: {} - {}", 
+            request.getRequestURI(), ex.getStatusCode(), ex.getReason());
+        return ResponseEntity.status(ex.getStatusCode()).body(response);
     }
 
     /**
