@@ -252,6 +252,11 @@
                     <jdkToolchain>
                         <version>21</version>
                     </jdkToolchain>
+                    <!-- Increase heap space to prevent OutOfMemoryError -->
+                    <argLine>-Xmx1024m -XX:MaxMetaspaceSize=256m</argLine>
+                    <!-- Reuse forks to reduce memory overhead -->
+                    <reuseForks>true</reuseForks>
+                    <forkCount>1</forkCount>
                 </configuration>
             </plugin>
             

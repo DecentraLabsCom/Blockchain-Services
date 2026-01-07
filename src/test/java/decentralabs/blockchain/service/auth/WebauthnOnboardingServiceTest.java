@@ -11,6 +11,7 @@ import java.lang.reflect.Field;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.util.Base64;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -59,6 +60,14 @@ class WebauthnOnboardingServiceTest {
         
         // Initialize the service (starts cleanup scheduler)
         service.init();
+    }
+
+    @AfterEach
+    void tearDown() {
+        // Shutdown the service to stop the cleanup scheduler and prevent memory leaks
+        if (service != null) {
+            service.shutdown();
+        }
     }
 
     private void setField(String fieldName, Object value) throws Exception {
