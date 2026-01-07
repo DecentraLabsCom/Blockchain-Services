@@ -272,12 +272,12 @@ class WebauthnOnboardingServiceTest {
         // Wrap in CBOR map: {"fmt": "none", "authData": <bytes>, "attStmt": {}}
         // This is a simplified manual CBOR encoding
         // Real implementation would use a CBOR library
-        return new byte[] {
-            (byte) 0xA3, // map of 3 items
-            0x63, 'f', 'm', 't', // text string "fmt"
-            0x64, 'n', 'o', 'n', 'e', // text string "none"
-            0x67, 'a', 'u', 't', 'h', 'D', 'a', 't', 'a', // text string "authData"
-            0x58, (byte) authData.length, // byte string with 1-byte length prefix
-        };
+        
+        // For simplicity, return a minimal byte array that will trigger parsing
+        // This won't be a valid attestation but is sufficient for testing error paths
+        byte[] result = new byte[1 + authData.length];
+        result[0] = (byte) 0xA1; // CBOR map with 1 item
+        System.arraycopy(authData, 0, result, 1, authData.length);
+        return result;
     }
 }
