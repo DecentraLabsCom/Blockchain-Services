@@ -697,15 +697,15 @@ public class WebauthnOnboardingService {
     }
 
     private List<String> buildAllowedOrigins() {
-        // If explicitly configured, honor it.
+        Set<String> origins = new HashSet<>();
+
+        // 0) Include explicitly configured values (even if they are the defaults)
         if (allowedOriginsConfig != null && !allowedOriginsConfig.trim().isEmpty()) {
-            return Arrays.stream(allowedOriginsConfig.split(","))
+            origins.addAll(Arrays.stream(allowedOriginsConfig.split(","))
                 .map(String::trim)
                 .filter(s -> !s.isEmpty())
-                .toList();
+                .toList());
         }
-
-        Set<String> origins = new HashSet<>();
 
         // 1) Derive from effective RP ID + HTTPS port
         String rpHost = getEffectiveRpId();
@@ -744,7 +744,7 @@ public class WebauthnOnboardingService {
         }
 
         List<String> result = new ArrayList<>(origins);
-        log.info("WebAuthn allowed origins (auto): {}", result);
+        log.info("WebAuthn allowed origins (auto+merged): {}", result);
         return result;
     }
 
