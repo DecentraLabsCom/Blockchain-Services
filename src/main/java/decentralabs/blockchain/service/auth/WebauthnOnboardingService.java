@@ -26,10 +26,13 @@ import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.security.SecureRandom;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Base64;
+import java.util.HashSet;
 import java.util.HexFormat;
 import java.util.List;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
@@ -681,26 +684,68 @@ public class WebauthnOnboardingService {
         if (origin == null || origin.isEmpty()) {
             return false;
         }
-        
-        // If no explicit configuration, use SERVER_NAME to build the allowed origin
-        String originsToCheck = allowedOriginsConfig;
-        if (originsToCheck == null || originsToCheck.trim().isEmpty()) {
-            // Build origin from SERVER_NAME and HTTPS_PORT
-            String portSegment = "443".equals(httpsPort) ? "" : ":" + httpsPort;
-            originsToCheck = "https://" + serverName + portSegment;
-            log.info("WebAuthn origin auto-config: {} (from SERVER_NAME={}, HTTPS_PORT={})", originsToCheck, serverName, httpsPort);
-        }
-        
-        List<String> allowedOrigins = Arrays.asList(originsToCheck.split(","));
+
+        List<String> allowedOrigins = buildAllowedOrigins();
         boolean allowed = allowedOrigins.stream()
-            .map(String::trim)
             .anyMatch(candidate -> candidate.equalsIgnoreCase(origin));
-        
+
         if (!allowed) {
             log.warn("Origin {} not in allowed list: {}", origin, allowedOrigins);
         }
-        
+
         return allowed;
+    }
+
+    private List<String> buildAllowedOrigins() {
+        // If explicitly configured, honor it.
+        if (allowedOriginsConfig != null && !allowedOriginsConfig.trim().isEmpty()) {
+            return Arrays.stream(allowedOriginsConfig.split(","))
+                .map(String::trim)
+                .filter(s -> !s.isEmpty())
+                .toList();
+        }
+
+        Set<String> origins = new HashSet<>();
+
+        // 1) Derive from effective RP ID + HTTPS port
+        String rpHost = getEffectiveRpId();
+        if (rpHost != null && !rpHost.isBlank()) {
+            String portSegment = "443".equals(httpsPort) ? "" : ":" + httpsPort;
+            origins.add("https://" + rpHost + portSegment);
+        }
+
+        // 2) Derive from SERVER_NAME if present
+        if (serverName != null && !serverName.isBlank()) {
+            String portSegment = "443".equals(httpsPort) ? "" : ":" + httpsPort;
+            origins.add("https://" + serverName + portSegment);
+        }
+
+        // 3) Derive from backend base domain (may include scheme)
+        String baseDomain = backendUrlResolver.resolveBaseDomain();
+        if (baseDomain != null && !baseDomain.isBlank()) {
+            try {
+                java.net.URI uri = new java.net.URI(baseDomain);
+                if (uri.getScheme() != null && uri.getHost() != null) {
+                    String portSegment = uri.getPort() > 0 && uri.getPort() != 443 ? ":" + uri.getPort() : "";
+                    origins.add(uri.getScheme() + "://" + uri.getHost() + portSegment);
+                } else {
+                    // If no scheme, assume https
+                    origins.add("https://" + baseDomain);
+                }
+            } catch (Exception e) {
+                log.warn("Failed to parse base domain for WebAuthn origins: {}", baseDomain);
+            }
+        }
+
+        // Fallback to localhost if nothing else is available
+        if (origins.isEmpty()) {
+            origins.add("https://localhost");
+            origins.add("https://localhost:443");
+        }
+
+        List<String> result = new ArrayList<>(origins);
+        log.info("WebAuthn allowed origins (auto): {}", result);
+        return result;
     }
 
     private AuthenticatorSelection buildAuthenticatorSelection() {
