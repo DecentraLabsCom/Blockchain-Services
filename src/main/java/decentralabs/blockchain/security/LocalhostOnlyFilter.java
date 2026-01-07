@@ -141,10 +141,20 @@ public class LocalhostOnlyFilter extends OncePerRequestFilter {
         if (accessToken == null || accessToken.isBlank()) {
             return false;
         }
+        
+        // Check query parameter first (for URLs like /wallet-dashboard/?token=xxx)
+        String queryToken = request.getParameter("token");
+        if (queryToken != null && !queryToken.isBlank()) {
+            return accessToken.equals(queryToken.trim());
+        }
+        
+        // Check header
         String headerToken = request.getHeader(accessTokenHeader);
         if (headerToken != null && !headerToken.isBlank()) {
             return accessToken.equals(headerToken.trim());
         }
+        
+        // Check Authorization Bearer
         String authorization = request.getHeader("Authorization");
         if (authorization != null) {
             String lower = authorization.toLowerCase();
@@ -153,6 +163,8 @@ public class LocalhostOnlyFilter extends OncePerRequestFilter {
                 return accessToken.equals(bearer);
             }
         }
+        
+        // Check cookie
         if (accessTokenCookie != null && request.getCookies() != null) {
             for (var cookie : request.getCookies()) {
                 if (accessTokenCookie.equals(cookie.getName())) {

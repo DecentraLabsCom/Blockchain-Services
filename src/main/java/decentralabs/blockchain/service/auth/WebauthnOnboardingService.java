@@ -688,13 +688,19 @@ public class WebauthnOnboardingService {
             // Build origin from SERVER_NAME and HTTPS_PORT
             String portSegment = "443".equals(httpsPort) ? "" : ":" + httpsPort;
             originsToCheck = "https://" + serverName + portSegment;
-            log.debug("No explicit webauthn.rp.origins configured, using SERVER_NAME: {}", originsToCheck);
+            log.info("WebAuthn origin auto-config: {} (from SERVER_NAME={}, HTTPS_PORT={})", originsToCheck, serverName, httpsPort);
         }
         
         List<String> allowedOrigins = Arrays.asList(originsToCheck.split(","));
-        return allowedOrigins.stream()
+        boolean allowed = allowedOrigins.stream()
             .map(String::trim)
-            .anyMatch(allowed -> allowed.equalsIgnoreCase(origin));
+            .anyMatch(candidate -> candidate.equalsIgnoreCase(origin));
+        
+        if (!allowed) {
+            log.warn("Origin {} not in allowed list: {}", origin, allowedOrigins);
+        }
+        
+        return allowed;
     }
 
     private AuthenticatorSelection buildAuthenticatorSelection() {
