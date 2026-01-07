@@ -273,49 +273,68 @@ class WebauthnOnboardingServiceTest {
 
     /**
      * Create a minimal CBOR-encoded attestation object for testing.
-     * This is not a valid attestation, just enough to trigger parsing code paths.
+     * Creates a properly formatted (but not valid) CBOR map to avoid memory leaks in the decoder.
+     * 
+     * Structure: {
+     *   "fmt": "none",
+     *   "authData": <37 bytes minimum>,
+     *   "attStmt": {}
+     * }
      */
     private byte[] createMinimalAttestationObject() throws Exception {
-        // Create a minimal CBOR map with authData
-        // The authData needs:
-        // - 32 bytes rpIdHash
-        // - 1 byte flags (0x41 = UP + AT flags set)
-        // - 4 bytes signCount
-        // - 16 bytes aaguid
-        // - 2 bytes credIdLen
-        // - credId bytes
-        // - public key CBOR
-
+        // Use a simple ByteArrayOutputStream to build valid CBOR manually
+        // to avoid memory leaks from malformed CBOR that causes infinite loops
+        
+        // Create minimal authData (37 bytes minimum without attestedCredentialData)
         MessageDigest sha256 = MessageDigest.getInstance("SHA-256");
         byte[] rpIdHash = sha256.digest("localhost".getBytes(StandardCharsets.UTF_8));
         
-        // Build authData manually
-        byte[] authData = new byte[37 + 16 + 2 + 4 + 10]; // minimum size
-        System.arraycopy(rpIdHash, 0, authData, 0, 32); // rpIdHash
-        authData[32] = 0x41; // flags: UP + AT
-        // signCount = 0 (bytes 33-36)
-        // aaguid = zeros (bytes 37-52)
-        // credIdLen = 4 (bytes 53-54)
-        authData[53] = 0;
-        authData[54] = 4;
-        // credId = "test" (bytes 55-58)
-        authData[55] = 't';
-        authData[56] = 'e';
-        authData[57] = 's';
-        authData[58] = 't';
-        // minimal public key CBOR (will fail validation but triggers parsing)
-        authData[59] = (byte) 0xA0; // empty CBOR map
-
-        // Wrap in CBOR map: {"fmt": "none", "authData": <bytes>, "attStmt": {}}
-        // This is a simplified manual CBOR encoding
-        // Real implementation would use a CBOR library
+        byte[] authData = new byte[37];
+        System.arraycopy(rpIdHash, 0, authData, 0, 32); // rpIdHash (32 bytes)
+        authData[32] = 0x01; // flags: only UP (User Present), no AT flag
+        // signCount = 0 (bytes 33-36, already zero from array initialization)
         
-        // For simplicity, return a minimal byte array that will trigger parsing
-        // This won't be a valid attestation but is sufficient for testing error paths
-        byte[] result = new byte[1 + authData.length];
-        result[0] = (byte) 0xA1; // CBOR map with 1 item
-        System.arraycopy(authData, 0, result, 1, authData.length);
-        return result;
+        // Build a valid CBOR map manually:
+        // Map with 3 entries: fmt, authData, attStmt
+        byte[] fmt = "none".getBytes(StandardCharsets.UTF_8);
+        
+        // Calculate total size
+        // CBOR map header (1) + 
+        // "fmt" key (1 + 3) + "none" value (1 + 4) +
+        // "authData" key (1 + 8) + authData value (1 + 1 + 37) +
+        // "attStmt" key (1 + 7) + empty map value (1)
+        
+        // Create a minimal valid CBOR structure
+        byte[] result = new byte[128]; // Fixed size buffer
+        int pos = 0;
+        
+        result[pos++] = (byte) 0xA3; // CBOR map with 3 items
+        
+        // Item 1: "fmt": "none"
+        result[pos++] = 0x63; // text string of length 3
+        result[pos++] = 'f'; result[pos++] = 'm'; result[pos++] = 't';
+        result[pos++] = 0x64; // text string of length 4
+        result[pos++] = 'n'; result[pos++] = 'o'; result[pos++] = 'n'; result[pos++] = 'e';
+        
+        // Item 2: "authData": <bytes>
+        result[pos++] = 0x68; // text string of length 8
+        result[pos++] = 'a'; result[pos++] = 'u'; result[pos++] = 't'; result[pos++] = 'h';
+        result[pos++] = 'D'; result[pos++] = 'a'; result[pos++] = 't'; result[pos++] = 'a';
+        result[pos++] = 0x58; // byte string, 1-byte length follows
+        result[pos++] = (byte) authData.length;
+        System.arraycopy(authData, 0, result, pos, authData.length);
+        pos += authData.length;
+        
+        // Item 3: "attStmt": {}
+        result[pos++] = 0x67; // text string of length 7
+        result[pos++] = 'a'; result[pos++] = 't'; result[pos++] = 't'; result[pos++] = 'S';
+        result[pos++] = 't'; result[pos++] = 'm'; result[pos++] = 't';
+        result[pos++] = (byte) 0xA0; // empty CBOR map
+        
+        // Return only the used portion
+        byte[] finalResult = new byte[pos];
+        System.arraycopy(result, 0, finalResult, 0, pos);
+        return finalResult;
     }
 
     @Test
