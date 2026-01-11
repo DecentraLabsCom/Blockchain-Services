@@ -253,6 +253,10 @@ public class IntentService {
         if (meta.getExecutor() == null || meta.getExecutor().isBlank()) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Missing executor");
         }
+        // Ensure signer and executor are the same (executor must be the signer), otherwise reject
+        if (!meta.getSigner().equalsIgnoreCase(meta.getExecutor())) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "executor mismatch");
+        }
         if (meta.getAction() == null) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Missing action id");
         }
