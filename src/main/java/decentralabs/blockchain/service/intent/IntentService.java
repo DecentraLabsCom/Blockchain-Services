@@ -268,10 +268,6 @@ public class IntentService {
         if (meta.getPayloadHash() == null || meta.getPayloadHash().isBlank()) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Missing payloadHash");
         }
-        if (!meta.getExecutor().equalsIgnoreCase(meta.getSigner())) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "executor_must_equal_signer");
-        }
-
         if (action.usesReservationPayload()) {
             if (reservationPayload == null) {
                 throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Missing reservation payload");
