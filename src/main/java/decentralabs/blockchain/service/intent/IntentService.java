@@ -279,7 +279,7 @@ public class IntentService {
                 throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Missing reservation window");
             }
             if (!meta.getExecutor().equalsIgnoreCase(reservationPayload.getExecutor())) {
-                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Executor mismatch");
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "executor mismatch");
             }
             if (isBlank(reservationPayload.getPuc())) {
                 throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Missing puc");
@@ -298,7 +298,7 @@ public class IntentService {
                 throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Missing labId");
             }
             if (!meta.getExecutor().equalsIgnoreCase(actionPayload.getExecutor())) {
-                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Executor mismatch");
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "executor mismatch");
             }
             if (action != IntentAction.REQUEST_FUNDS && isBlank(actionPayload.getPuc())) {
                 throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Missing puc");
