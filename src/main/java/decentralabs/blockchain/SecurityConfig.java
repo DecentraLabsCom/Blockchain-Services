@@ -1,6 +1,10 @@
 package decentralabs.blockchain;
 
+import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Set;
 
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
@@ -15,6 +19,7 @@ import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 import org.springframework.web.cors.CorsConfigurationSource;
 
 import decentralabs.blockchain.security.AccessTokenAuthenticationFilter;
+import decentralabs.blockchain.service.BackendUrlResolver;
 
 @Configuration
 @EnableMethodSecurity
@@ -63,9 +68,14 @@ public class SecurityConfig {
     private boolean accessTokenRequired;
 
     private final AccessTokenAuthenticationFilter accessTokenAuthenticationFilter;
+    private final BackendUrlResolver backendUrlResolver;
 
-    public SecurityConfig(AccessTokenAuthenticationFilter accessTokenAuthenticationFilter) {
+    public SecurityConfig(
+        AccessTokenAuthenticationFilter accessTokenAuthenticationFilter,
+        BackendUrlResolver backendUrlResolver
+    ) {
         this.accessTokenAuthenticationFilter = accessTokenAuthenticationFilter;
+        this.backendUrlResolver = backendUrlResolver;
     }
 
     @Bean
@@ -133,7 +143,7 @@ public class SecurityConfig {
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration publicConfiguration = new CorsConfiguration();
-        publicConfiguration.setAllowedOrigins(Arrays.asList(allowedOrigins));
+        publicConfiguration.setAllowedOrigins(buildPublicAllowedOrigins());
         publicConfiguration.setAllowedMethods(Arrays.asList("GET", "POST"));
         publicConfiguration.addAllowedHeader("*");
 
@@ -162,5 +172,38 @@ public class SecurityConfig {
         source.registerCorsConfiguration("/onboarding/token/**", walletConfiguration);
 
         return source;
+    }
+
+    private List<String> buildPublicAllowedOrigins() {
+        Set<String> origins = new LinkedHashSet<>();
+        if (allowedOrigins != null) {
+            for (String origin : allowedOrigins) {
+                String normalized = normalizeOrigin(origin);
+                if (normalized != null) {
+                    origins.add(normalized);
+                }
+            }
+        }
+
+        String gatewayOrigin = normalizeOrigin(backendUrlResolver.resolveBaseDomain());
+        if (gatewayOrigin != null) {
+            origins.add(gatewayOrigin);
+        }
+
+        return new ArrayList<>(origins);
+    }
+
+    private String normalizeOrigin(String origin) {
+        if (origin == null) {
+            return null;
+        }
+        String trimmed = origin.trim();
+        if (trimmed.isEmpty()) {
+            return null;
+        }
+        while (trimmed.endsWith("/")) {
+            trimmed = trimmed.substring(0, trimmed.length() - 1);
+        }
+        return trimmed.isEmpty() ? null : trimmed;
     }
 }
