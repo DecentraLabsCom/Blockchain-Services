@@ -143,8 +143,8 @@ class IntentServiceTest {
         }
 
         @Test
-        @DisplayName("Should reject when executor doesn't match signer")
-        void shouldRejectExecutorSignerMismatch() {
+        @DisplayName("Should allow executor to differ from signer (SAML missing check)")
+        void shouldAllowExecutorDifferentFromSigner() {
             IntentMeta meta = createValidMeta();
             meta.setExecutor("0xdifferentaddress1234567890abcdef12345678");
             
@@ -156,9 +156,10 @@ class IntentServiceTest {
             submission.setActionPayload(payload);
             submission.setWebauthnCredentialId("cred123");
 
+            // Service should not reject due to executor != signer; it will fail later due to missing SAML
             ResponseStatusException ex = assertThrows(ResponseStatusException.class,
                 () -> service.processIntent(submission));
-            assertTrue(ex.getReason().contains("executor"));
+            assertTrue(ex.getReason().toLowerCase().contains("saml"));
         }
 
         @Test
