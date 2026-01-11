@@ -107,10 +107,10 @@ public class WebauthnOnboardingService {
     @Value("${webauthn.rp.origins:#{null}}")
     private String allowedOriginsConfig;
 
-    @Value("${SERVER_NAME:localhost}")
+    @Value("${gateway.server.name:localhost}")
     private String serverName;
 
-    @Value("${HTTPS_PORT:443}")
+    @Value("${gateway.server.https-port:443}")
     private String httpsPort;
 
     @Value("${webauthn.timeout.ms:120000}")

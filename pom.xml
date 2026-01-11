@@ -189,6 +189,13 @@
             <artifactId>lombok</artifactId>
         </dependency>
 
+        <!-- Generate metadata for custom configuration properties so IDEs can validate them -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-configuration-processor</artifactId>
+            <optional>true</optional>
+        </dependency>
+
         <!-- CBOR decoder for WebAuthn attestation parsing -->
         <dependency>
             <groupId>co.nstant.in</groupId>
@@ -239,6 +246,11 @@
                             <groupId>org.projectlombok</groupId>
                             <artifactId>lombok</artifactId>
                             <version>1.18.42</version>
+                        </path>
+                        <path>
+                            <groupId>org.springframework.boot</groupId>
+                            <artifactId>spring-boot-configuration-processor</artifactId>
+                            <version>3.5.9</version>
                         </path>
                     </annotationProcessorPaths>
                 </configuration>

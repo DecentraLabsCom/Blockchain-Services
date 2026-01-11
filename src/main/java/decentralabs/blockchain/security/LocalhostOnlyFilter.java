@@ -38,10 +38,10 @@ public class LocalhostOnlyFilter extends OncePerRequestFilter {
     @Value("${security.access-token.required:true}")
     private boolean accessTokenRequired;
 
-    @Value("${lab.manager.token:}")
+    @Value("${gateway.lab-manager.token:}")
     private String labManagerToken;
 
-    @Value("${lab.manager.token-header:X-Lab-Manager-Token}")
+    @Value("${gateway.lab-manager.token-header:X-Lab-Manager-Token}")
     private String labManagerTokenHeader;
 
     private static final List<String> LOCALHOST_ADDRESSES = List.of(

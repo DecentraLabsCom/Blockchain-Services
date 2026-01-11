@@ -296,7 +296,6 @@ class WebauthnOnboardingServiceTest {
         
         // Build a valid CBOR map manually:
         // Map with 3 entries: fmt, authData, attStmt
-        byte[] fmt = "none".getBytes(StandardCharsets.UTF_8);
         
         // Calculate total size
         // CBOR map header (1) + 

@@ -29,9 +29,9 @@ public class BackendUrlResolver {
 
     public BackendUrlResolver(
         @Value("${base.domain:}") String configuredBaseDomain,
-        @Value("${SERVER_NAME:}") String serverName,
-        @Value("${HTTPS_PORT:}") String httpsPort,
-        @Value("${HTTP_PORT:}") String httpPort,
+        @Value("${gateway.server.name:}") String serverName,
+        @Value("${gateway.server.https-port:}") String httpsPort,
+        @Value("${gateway.server.http-port:}") String httpPort,
         @Value("${server.port:8080}") String applicationPort
     ) {
         this.configuredBaseDomain = configuredBaseDomain;
