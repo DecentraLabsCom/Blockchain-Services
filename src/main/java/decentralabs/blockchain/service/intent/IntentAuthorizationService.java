@@ -29,6 +29,7 @@ import decentralabs.blockchain.dto.intent.IntentAuthorizationStatusResponse;
 import decentralabs.blockchain.dto.intent.IntentMeta;
 import decentralabs.blockchain.dto.intent.IntentSubmission;
 import decentralabs.blockchain.dto.intent.ReservationIntentPayload;
+import decentralabs.blockchain.service.BackendUrlResolver;
 import decentralabs.blockchain.service.auth.WebauthnCredentialService;
 import decentralabs.blockchain.service.auth.WebauthnCredentialService.WebauthnCredential;
 
@@ -40,6 +41,7 @@ public class IntentAuthorizationService {
 
     private final IntentService intentService;
     private final WebauthnCredentialService webauthnCredentialService;
+    private final BackendUrlResolver backendUrlResolver;
 
     @Value("${webauthn.rp.id:${base.domain:localhost}}")
     private String rpId;
@@ -59,10 +61,12 @@ public class IntentAuthorizationService {
 
     public IntentAuthorizationService(
         IntentService intentService,
-        WebauthnCredentialService webauthnCredentialService
+        WebauthnCredentialService webauthnCredentialService,
+        BackendUrlResolver backendUrlResolver
     ) {
         this.intentService = intentService;
         this.webauthnCredentialService = webauthnCredentialService;
+        this.backendUrlResolver = backendUrlResolver;
     }
 
     @PostConstruct
@@ -185,13 +189,13 @@ public class IntentAuthorizationService {
     }
 
     public String getRelyingPartyId() {
-        return rpId;
+        return getEffectiveRpId();
     }
 
     public String buildCeremonyUrl(String sessionId) {
         String effectiveBaseUrl = baseUrl;
         if (effectiveBaseUrl == null || effectiveBaseUrl.isBlank()) {
-            effectiveBaseUrl = "https://" + rpId;
+            effectiveBaseUrl = backendUrlResolver.resolveBaseDomain();
         }
         if (effectiveBaseUrl.endsWith("/")) {
             effectiveBaseUrl = effectiveBaseUrl.substring(0, effectiveBaseUrl.length() - 1);
@@ -226,6 +230,87 @@ public class IntentAuthorizationService {
         if (actionPayload != null) {
             return actionPayload.getPuc();
         }
+        return null;
+    }
+
+    private String getEffectiveRpId() {
+        if (rpId != null && !rpId.isBlank()) {
+            return rpId.trim();
+        }
+
+        String candidate = baseUrl;
+        if (candidate == null || candidate.isBlank()) {
+            candidate = backendUrlResolver.resolveBaseDomain();
+        }
+
+        String host = extractHost(candidate);
+        if (host != null && !host.isBlank()) {
+            return host;
+        }
+
+        return "localhost";
+    }
+
+    private String extractHost(String value) {
+        if (value == null || value.isBlank()) {
+            return null;
+        }
+        String trimmed = value.trim();
+        while (trimmed.endsWith("/")) {
+            trimmed = trimmed.substring(0, trimmed.length() - 1);
+        }
+
+        String host = parseHost(trimmed);
+        if (host != null && !host.isBlank()) {
+            return host;
+        }
+
+        String noScheme = trimmed;
+        int schemeIndex = trimmed.indexOf("://");
+        if (schemeIndex >= 0) {
+            noScheme = trimmed.substring(schemeIndex + 3);
+        }
+
+        int slashIndex = noScheme.indexOf('/');
+        if (slashIndex >= 0) {
+            noScheme = noScheme.substring(0, slashIndex);
+        }
+
+        if (noScheme.startsWith("[")) {
+            int end = noScheme.indexOf(']');
+            if (end > 1) {
+                return noScheme.substring(1, end);
+            }
+        }
+
+        int colonIndex = noScheme.lastIndexOf(':');
+        if (colonIndex > 0) {
+            return noScheme.substring(0, colonIndex);
+        }
+        return noScheme;
+    }
+
+    private String parseHost(String value) {
+        try {
+            java.net.URI uri = new java.net.URI(value);
+            if (uri.getHost() != null && !uri.getHost().isBlank()) {
+                return uri.getHost();
+            }
+        } catch (Exception e) {
+            // Ignore parsing failures and fall back to string heuristics.
+        }
+
+        if (!value.contains("://")) {
+            try {
+                java.net.URI uri = new java.net.URI("https://" + value);
+                if (uri.getHost() != null && !uri.getHost().isBlank()) {
+                    return uri.getHost();
+                }
+            } catch (Exception e) {
+                // Ignore parsing failures and fall back to string heuristics.
+            }
+        }
+
         return null;
     }
 
