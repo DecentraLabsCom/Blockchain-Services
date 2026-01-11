@@ -29,6 +29,9 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.security.PublicKey;
+import java.security.interfaces.ECPublicKey;
+import java.security.interfaces.RSAPublicKey;
 
 /**
  * Service for validating SAML assertions with automatic IdP discovery
@@ -60,8 +63,8 @@ public class SamlValidationService {
         }
     }
     
-    // Cache for IdP certificates (issuer -> certificate)
-    private final Map<String, X509Certificate> certificateCache = new ConcurrentHashMap<>();
+    // Cache for IdP certificates (issuer -> certificates)
+    private final Map<String, List<X509Certificate>> certificateCache = new ConcurrentHashMap<>();
     
     /**
      * Validates SAML assertion with signature verification and extracts attributes
@@ -113,13 +116,13 @@ public class SamlValidationService {
         }
         
         // Get or retrieve certificate
-        X509Certificate cert = getIdpCertificate(issuer, metadataUrl);
-        if (cert == null) {
+        List<X509Certificate> certs = getIdpCertificates(issuer, metadataUrl);
+        if (certs.isEmpty()) {
             throw new SecurityException("Could not retrieve certificate for IdP: " + issuer);
         }
         
         // Verify signature
-        boolean signatureValid = verifySignature(doc, cert);
+        boolean signatureValid = verifySignature(doc, certs);
         if (!signatureValid) {
             throw new SecurityException("SAML assertion signature is INVALID");
         }
@@ -234,7 +237,7 @@ public class SamlValidationService {
     /**
      * Gets IdP certificate from cache or retrieves from metadata endpoint
      */
-    private X509Certificate getIdpCertificate(String issuer, String metadataUrl) {
+    private List<X509Certificate> getIdpCertificates(String issuer, String metadataUrl) {
         // Check cache first
         if (certificateCache.containsKey(issuer)) {
             logger.debug("Using cached certificate for IdP: {}", issuer);
@@ -243,24 +246,24 @@ public class SamlValidationService {
         
         // Try to retrieve from metadata URL
         try {
-            X509Certificate cert = retrieveCertificateFromMetadata(metadataUrl);
-            if (cert != null) {
-                certificateCache.put(issuer, cert);
+            List<X509Certificate> certs = retrieveCertificatesFromMetadata(metadataUrl);
+            if (!certs.isEmpty()) {
+                certificateCache.put(issuer, certs);
                 logger.info("Retrieved and cached certificate from metadata for IdP: {}", issuer);
-                return cert;
+                return certs;
             }
         } catch (Exception e) {
             logger.warn("Could not retrieve certificate from metadata URL: {}", metadataUrl, e);
         }
         
-        return null;
+        return Collections.emptyList();
     }
     
     /**
      * Retrieves certificate from IdP metadata endpoint
      * Security: Validates URL to prevent SSRF attacks
      */
-    private X509Certificate retrieveCertificateFromMetadata(String metadataUrl) throws Exception {
+    private List<X509Certificate> retrieveCertificatesFromMetadata(String metadataUrl) throws Exception {
         logger.debug("Retrieving certificate from metadata: {}", metadataUrl);
         
         // Validate URL to prevent SSRF attacks
@@ -274,10 +277,11 @@ public class SamlValidationService {
         NodeList certNodes = metadataDoc.getElementsByTagNameNS("*", "X509Certificate");
         if (certNodes.getLength() == 0) {
             logger.warn("No X509Certificate found in metadata");
-            return null;
+            return Collections.emptyList();
         }
         
-        // Get first signing certificate
+        List<X509Certificate> signingCerts = new ArrayList<>();
+        List<X509Certificate> allCerts = new ArrayList<>();
         for (int i = 0; i < certNodes.getLength(); i++) {
             Node certNode = certNodes.item(i);
             
@@ -288,14 +292,18 @@ public class SamlValidationService {
                 String use = keyDesc.getAttribute("use");
                 if (use.isEmpty() || "signing".equals(use)) {
                     String certData = certNode.getTextContent().trim();
-                    return parseCertificate(certData);
+                    X509Certificate cert = parseCertificate(certData);
+                    signingCerts.add(cert);
                 }
             }
+            String certData = certNode.getTextContent().trim();
+            allCerts.add(parseCertificate(certData));
         }
         
-        // If no signing cert found, use first cert
-        String certData = certNodes.item(0).getTextContent().trim();
-        return parseCertificate(certData);
+        if (!signingCerts.isEmpty()) {
+            return signingCerts;
+        }
+        return allCerts;
     }
     
     /**
@@ -313,7 +321,31 @@ public class SamlValidationService {
     /**
      * Verifies XML signature using certificate
      */
-    private boolean verifySignature(Document doc, X509Certificate cert) throws Exception {
+    private boolean verifySignature(Document doc, List<X509Certificate> certs) throws Exception {
+        if (certs == null || certs.isEmpty()) {
+            logger.warn("No certificates provided for SAML signature validation");
+            return false;
+        }
+
+        Exception lastError = null;
+        for (X509Certificate cert : certs) {
+            try {
+                if (verifySignatureWithCert(doc, cert)) {
+                    return true;
+                }
+            } catch (Exception ex) {
+                lastError = ex;
+                logger.debug("SAML signature verification failed for cert {}: {}", describeCert(cert), ex.getMessage());
+            }
+        }
+
+        if (lastError != null) {
+            logger.warn("SAML signature verification failed for all certificates. Last error: {}", lastError.getMessage());
+        }
+        return false;
+    }
+
+    private boolean verifySignatureWithCert(Document doc, X509Certificate cert) throws Exception {
         NodeList signatureNodes = doc.getElementsByTagNameNS(XMLSignature.XMLNS, "Signature");
         if (signatureNodes.getLength() == 0) {
             logger.warn("No signature found in SAML assertion");
@@ -334,10 +366,24 @@ public class SamlValidationService {
         if (valid) {
             logger.info("SAML assertion signature is VALID");
         } else {
-            logger.warn("SAML assertion signature is INVALID");
+            logger.warn("SAML assertion signature is INVALID for cert {}", describeCert(cert));
         }
         
         return valid;
+    }
+
+    private String describeCert(X509Certificate cert) {
+        if (cert == null) {
+            return "unknown";
+        }
+        PublicKey key = cert.getPublicKey();
+        if (key instanceof RSAPublicKey rsaKey) {
+            return "RSA-" + rsaKey.getModulus().bitLength();
+        }
+        if (key instanceof ECPublicKey ecKey) {
+            return "EC-" + ecKey.getParams().getCurve().getField().getFieldSize();
+        }
+        return key.getAlgorithm();
     }
     
     /**
