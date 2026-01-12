@@ -104,6 +104,7 @@ public class SamlValidationService {
         
         // Parse XML
         Document doc = parseXML(xmlContent);
+        markIdAttributes(doc);
         
         // Extract IdP issuer from assertion
         String issuer = extractIssuer(doc);
@@ -483,6 +484,19 @@ public class SamlValidationService {
         
         DocumentBuilder builder = factory.newDocumentBuilder();
         return builder.parse(is);
+    }
+
+    private void markIdAttributes(Document doc) {
+        NodeList elements = doc.getElementsByTagName("*");
+        for (int i = 0; i < elements.getLength(); i++) {
+            Element element = (Element) elements.item(i);
+            if (element.hasAttribute("ID")) {
+                element.setIdAttribute("ID", true);
+            }
+            if (element.hasAttribute("AssertionID")) {
+                element.setIdAttribute("AssertionID", true);
+            }
+        }
     }
     
     /**
