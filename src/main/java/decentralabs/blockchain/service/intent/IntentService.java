@@ -1,5 +1,12 @@
 package decentralabs.blockchain.service.intent;
 
+import co.nstant.in.cbor.CborDecoder;
+import co.nstant.in.cbor.CborException;
+import co.nstant.in.cbor.model.ByteString;
+import co.nstant.in.cbor.model.DataItem;
+import co.nstant.in.cbor.model.NegativeInteger;
+import co.nstant.in.cbor.model.UnsignedInteger;
+import java.io.ByteArrayInputStream;
 import java.math.BigInteger;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
@@ -35,9 +42,19 @@ import decentralabs.blockchain.service.auth.WebauthnCredentialService;
 import decentralabs.blockchain.service.auth.WebauthnCredentialService.WebauthnCredential;
 import decentralabs.blockchain.util.LogSanitizer;
 import lombok.extern.slf4j.Slf4j;
+import java.security.AlgorithmParameters;
+import java.security.KeyFactory;
 import java.security.MessageDigest;
 import java.security.PublicKey;
 import java.security.Signature;
+import java.security.interfaces.ECPublicKey;
+import java.security.interfaces.RSAPublicKey;
+import java.security.spec.ECGenParameterSpec;
+import java.security.spec.ECParameterSpec;
+import java.security.spec.ECPoint;
+import java.security.spec.ECPublicKeySpec;
+import java.security.spec.RSAPublicKeySpec;
+import java.security.spec.X509EncodedKeySpec;
 import java.io.IOException;
 import java.security.KeyFactory;
 import java.security.spec.X509EncodedKeySpec;
@@ -576,7 +593,8 @@ public class IntentService {
             byte[] signed = concat(authenticatorData, clientHash);
 
             PublicKey publicKey = decodePublicKey(cred.getPublicKey());
-            Signature sig = Signature.getInstance("SHA256withECDSA");
+            String signatureAlgorithm = resolveSignatureAlgorithm(publicKey);
+            Signature sig = Signature.getInstance(signatureAlgorithm);
             sig.initVerify(publicKey);
             sig.update(signed);
             if (!sig.verify(signature)) {
@@ -585,6 +603,7 @@ public class IntentService {
         } catch (ResponseStatusException ex) {
             throw ex;
         } catch (Exception ex) {
+            log.warn("WebAuthn assertion validation failed: {}", ex.getMessage());
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "webauthn_validation_error");
         }
     }
@@ -628,10 +647,147 @@ public class IntentService {
     }
 
     private PublicKey decodePublicKey(String publicKeyBase64) throws Exception {
-        byte[] keyBytes = Base64.getDecoder().decode(publicKeyBase64);
+        byte[] keyBytes = decodeBase64Flexible(publicKeyBase64);
+        PublicKey coseKey = decodeCosePublicKey(keyBytes);
+        if (coseKey != null) {
+            return coseKey;
+        }
+        return decodeX509PublicKey(keyBytes);
+    }
+
+    private byte[] decodeBase64Flexible(String value) {
+        String normalized = value == null ? "" : value.trim();
+        String padded = padBase64(normalized);
+        try {
+            return Base64.getUrlDecoder().decode(padded);
+        } catch (IllegalArgumentException ex) {
+            return Base64.getDecoder().decode(padded);
+        }
+    }
+
+    private String padBase64(String value) {
+        int mod = value.length() % 4;
+        if (mod == 2) {
+            return value + "==";
+        }
+        if (mod == 3) {
+            return value + "=";
+        }
+        return value;
+    }
+
+    private PublicKey decodeCosePublicKey(byte[] keyBytes) throws Exception {
+        try {
+            List<DataItem> items = new CborDecoder(new ByteArrayInputStream(keyBytes)).decode();
+            if (items.isEmpty() || !(items.get(0) instanceof co.nstant.in.cbor.model.Map)) {
+                return null;
+            }
+            co.nstant.in.cbor.model.Map coseKey = (co.nstant.in.cbor.model.Map) items.get(0);
+            Long keyType = getCoseLong(coseKey, 1);
+            if (keyType == null) {
+                return null;
+            }
+            if (keyType == 2L) { // EC2
+                return decodeCoseEcKey(coseKey);
+            }
+            if (keyType == 3L) { // RSA
+                return decodeCoseRsaKey(coseKey);
+            }
+            return null;
+        } catch (CborException ex) {
+            return null;
+        }
+    }
+
+    private PublicKey decodeCoseEcKey(co.nstant.in.cbor.model.Map coseKey) throws Exception {
+        byte[] x = getCoseBytes(coseKey, -2);
+        byte[] y = getCoseBytes(coseKey, -3);
+        if (x == null || y == null) {
+            throw new IllegalArgumentException("Missing COSE EC coordinates");
+        }
+        ECParameterSpec params = resolveEcParameters(getCoseLong(coseKey, -1));
+        ECPoint w = new ECPoint(new BigInteger(1, x), new BigInteger(1, y));
+        ECPublicKeySpec spec = new ECPublicKeySpec(w, params);
+        return KeyFactory.getInstance("EC").generatePublic(spec);
+    }
+
+    private PublicKey decodeCoseRsaKey(co.nstant.in.cbor.model.Map coseKey) throws Exception {
+        byte[] n = getCoseBytes(coseKey, -1);
+        byte[] e = getCoseBytes(coseKey, -2);
+        if (n == null || e == null) {
+            throw new IllegalArgumentException("Missing COSE RSA parameters");
+        }
+        RSAPublicKeySpec spec = new RSAPublicKeySpec(new BigInteger(1, n), new BigInteger(1, e));
+        return KeyFactory.getInstance("RSA").generatePublic(spec);
+    }
+
+    private ECParameterSpec resolveEcParameters(Long curve) throws Exception {
+        String curveName;
+        if (curve == null || curve == 1L) {
+            curveName = "secp256r1";
+        } else if (curve == 2L) {
+            curveName = "secp384r1";
+        } else if (curve == 3L) {
+            curveName = "secp521r1";
+        } else {
+            throw new IllegalArgumentException("Unsupported COSE curve: " + curve);
+        }
+        AlgorithmParameters parameters = AlgorithmParameters.getInstance("EC");
+        parameters.init(new ECGenParameterSpec(curveName));
+        return parameters.getParameterSpec(ECParameterSpec.class);
+    }
+
+    private Long getCoseLong(co.nstant.in.cbor.model.Map coseKey, long key) {
+        DataItem item = getCoseItem(coseKey, key);
+        if (item instanceof UnsignedInteger unsignedInt) {
+            return unsignedInt.getValue().longValue();
+        }
+        if (item instanceof NegativeInteger negativeInt) {
+            return negativeInt.getValue().longValue();
+        }
+        return null;
+    }
+
+    private byte[] getCoseBytes(co.nstant.in.cbor.model.Map coseKey, long key) {
+        DataItem item = getCoseItem(coseKey, key);
+        if (item instanceof ByteString byteString) {
+            return byteString.getBytes();
+        }
+        return null;
+    }
+
+    private DataItem getCoseItem(co.nstant.in.cbor.model.Map coseKey, long key) {
+        DataItem keyItem = key >= 0 ? new UnsignedInteger(key) : new NegativeInteger(key);
+        return coseKey.get(keyItem);
+    }
+
+    private PublicKey decodeX509PublicKey(byte[] keyBytes) throws Exception {
         X509EncodedKeySpec spec = new X509EncodedKeySpec(keyBytes);
-        KeyFactory kf = KeyFactory.getInstance("EC");
-        return kf.generatePublic(spec);
+        try {
+            return KeyFactory.getInstance("EC").generatePublic(spec);
+        } catch (Exception ex) {
+            // Fall through and try other key types.
+        }
+        try {
+            return KeyFactory.getInstance("RSA").generatePublic(spec);
+        } catch (Exception ex) {
+            // Fall through to last attempt.
+        }
+        return KeyFactory.getInstance("Ed25519").generatePublic(spec);
+    }
+
+    private String resolveSignatureAlgorithm(PublicKey publicKey) {
+        if (publicKey instanceof ECPublicKey) {
+            return "SHA256withECDSA";
+        }
+        if (publicKey instanceof RSAPublicKey) {
+            return "SHA256withRSA";
+        }
+        String algorithm = publicKey.getAlgorithm();
+        if ("Ed25519".equalsIgnoreCase(algorithm) || "EdDSA".equalsIgnoreCase(algorithm)) {
+            return "Ed25519";
+        }
+        throw new IllegalArgumentException("Unsupported WebAuthn public key algorithm: " + algorithm);
     }
 
     private String resolvePuc(ActionIntentPayload actionPayload, ReservationIntentPayload reservationPayload) {
