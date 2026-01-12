@@ -46,6 +46,55 @@ import java.security.interfaces.RSAPublicKey;
 public class SamlValidationService {
     
     private static final Logger logger = LoggerFactory.getLogger(SamlValidationService.class);
+
+    private static final String[] USERID_ATTRIBUTE_ALIASES = new String[] {
+        "userid",
+        "uid",
+        "eppn",
+        "edupersonprincipalname",
+        "schacpersonaluniquecode",
+        "subject-id",
+        "urn:oasis:names:tc:saml:attribute:subject-id",
+        "urn:mace:dir:attribute-def:uid",
+        "urn:mace:dir:attribute-def:edupersonprincipalname",
+        "urn:mace:dir:attribute-def:schacpersonaluniquecode",
+        "urn:oid:0.9.2342.19200300.100.1.1",
+        "urn:oid:1.3.6.1.4.1.5923.1.1.1.6",
+        "urn:oid:1.3.6.1.4.1.25178.1.2.19"
+    };
+
+    private static final String[] AFFILIATION_ATTRIBUTE_ALIASES = new String[] {
+        "affiliation",
+        "edupersonaffiliation",
+        "edupersonscopedaffiliation",
+        "urn:mace:dir:attribute-def:edupersonaffiliation",
+        "urn:mace:dir:attribute-def:edupersonscopedaffiliation",
+        "urn:oid:1.3.6.1.4.1.5923.1.1.1.1",
+        "urn:oid:1.3.6.1.4.1.5923.1.1.1.9"
+    };
+
+    private static final String[] EMAIL_ATTRIBUTE_ALIASES = new String[] {
+        "mail",
+        "email",
+        "urn:mace:dir:attribute-def:mail",
+        "urn:oid:0.9.2342.19200300.100.1.3"
+    };
+
+    private static final String[] DISPLAY_NAME_ATTRIBUTE_ALIASES = new String[] {
+        "displayname",
+        "cn",
+        "commonname",
+        "urn:mace:dir:attribute-def:displayname",
+        "urn:mace:dir:attribute-def:cn",
+        "urn:oid:2.16.840.1.113730.3.1.241",
+        "urn:oid:2.5.4.3"
+    };
+
+    private static final String[] SCHAC_HOME_ORG_ATTRIBUTE_ALIASES = new String[] {
+        "schachomeorganization",
+        "urn:mace:dir:attribute-def:schachomeorganization",
+        "urn:oid:1.3.6.1.4.1.25178.1.2.9"
+    };
     
     @Value("${saml.idp.trust-mode:whitelist}")
     private String trustMode;
@@ -139,17 +188,11 @@ public class SamlValidationService {
         }
         
         // Extract attributes after signature validation
-        String userid = extractSAMLAttribute(doc, "userid");
-        String affiliation = extractSAMLAttribute(doc, "affiliation");
-        String email = firstNonEmpty(
-            extractSAMLAttribute(doc, "mail"),
-            extractSAMLAttribute(doc, "email")
-        );
-        String displayName = firstNonEmpty(
-            extractSAMLAttribute(doc, "displayName"),
-            extractSAMLAttribute(doc, "cn")
-        );
-        List<String> schacHomeOrganizations = extractSAMLAttributeValues(doc, "schacHomeOrganization");
+        String userid = extractSamlAttributeValueByAliases(doc, USERID_ATTRIBUTE_ALIASES);
+        String affiliation = extractSamlAttributeValueByAliases(doc, AFFILIATION_ATTRIBUTE_ALIASES);
+        String email = extractSamlAttributeValueByAliases(doc, EMAIL_ATTRIBUTE_ALIASES);
+        String displayName = extractSamlAttributeValueByAliases(doc, DISPLAY_NAME_ATTRIBUTE_ALIASES);
+        List<String> schacHomeOrganizations = extractSamlAttributeValuesByAliases(doc, SCHAC_HOME_ORG_ATTRIBUTE_ALIASES);
         
         if (userid == null || userid.isEmpty()) {
             throw new SecurityException("SAML assertion missing 'userid' attribute");
@@ -159,7 +202,7 @@ public class SamlValidationService {
         }
         
         if (schacHomeOrganizations.isEmpty()) {
-            String scopedAffiliation = extractSAMLAttribute(doc, "schacHomeOrganization");
+            String scopedAffiliation = extractSamlAttributeValueByAliases(doc, SCHAC_HOME_ORG_ATTRIBUTE_ALIASES);
             if (scopedAffiliation != null && !scopedAffiliation.isBlank()) {
                 schacHomeOrganizations = List.of(scopedAffiliation.trim().toLowerCase());
             }
@@ -561,6 +604,76 @@ public class SamlValidationService {
             return two;
         }
         return null;
+    }
+
+    private String extractSamlAttributeValueByAliases(Document doc, String... aliases) {
+        List<String> values = extractSamlAttributeValuesByAliases(doc, aliases);
+        if (values.isEmpty()) {
+            return null;
+        }
+        return values.get(0);
+    }
+
+    private List<String> extractSamlAttributeValuesByAliases(Document doc, String... aliases) {
+        if (aliases == null || aliases.length == 0) {
+            return Collections.emptyList();
+        }
+        List<String> values = new ArrayList<>();
+        List<String> normalizedAliases = new ArrayList<>();
+        for (String alias : aliases) {
+            String normalized = normalizeAttributeName(alias);
+            if (!normalized.isEmpty()) {
+                normalizedAliases.add(normalized);
+            }
+        }
+        NodeList attributes = doc.getElementsByTagNameNS("*", "Attribute");
+        for (int i = 0; i < attributes.getLength(); i++) {
+            Element attribute = (Element) attributes.item(i);
+            String name = normalizeAttributeName(attribute.getAttribute("Name"));
+            String friendly = normalizeAttributeName(attribute.getAttribute("FriendlyName"));
+            if (!matchesAlias(name, friendly, normalizedAliases)) {
+                continue;
+            }
+            NodeList items = attribute.getElementsByTagNameNS("*", "AttributeValue");
+            for (int j = 0; j < items.getLength(); j++) {
+                String value = items.item(j).getTextContent();
+                if (value != null && !value.isBlank()) {
+                    values.add(value.trim());
+                }
+            }
+        }
+        return values;
+    }
+
+    private boolean matchesAlias(String name, String friendly, List<String> aliases) {
+        String nameTail = extractAttributeTail(name);
+        String friendlyTail = extractAttributeTail(friendly);
+        for (String alias : aliases) {
+            if (alias.equals(name) || alias.equals(friendly) || alias.equals(nameTail) || alias.equals(friendlyTail)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private String extractAttributeTail(String value) {
+        if (value == null || value.isBlank()) {
+            return "";
+        }
+        int colon = value.lastIndexOf(':');
+        int slash = value.lastIndexOf('/');
+        int split = Math.max(colon, slash);
+        if (split >= 0 && split + 1 < value.length()) {
+            return value.substring(split + 1);
+        }
+        return value;
+    }
+
+    private String normalizeAttributeName(String name) {
+        if (name == null) {
+            return "";
+        }
+        return name.trim().toLowerCase();
     }
     
     /**
