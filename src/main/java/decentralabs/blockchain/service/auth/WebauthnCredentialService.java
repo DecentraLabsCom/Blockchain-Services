@@ -1,6 +1,7 @@
 package decentralabs.blockchain.service.auth;
 
 import java.time.Instant;
+import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
@@ -13,6 +14,7 @@ import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.dao.DataAccessException;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
 /**
@@ -29,6 +31,9 @@ public class WebauthnCredentialService {
 
     @Value("${webauthn.credentials.table:webauthn_credentials}")
     private String credentialsTable;
+
+    @Value("${webauthn.credentials.max-age-days:365}")
+    private long credentialsMaxAgeDays;
 
     private final JdbcTemplate jdbcTemplate; // May be null if no datasource
 
@@ -130,6 +135,51 @@ public class WebauthnCredentialService {
         } catch (DataAccessException ex) {
             log.warn("webAuthn DB revoke failed: {}", ex.getMessage());
             // Don't throw - credential is still revoked in memory
+        }
+    }
+
+    @Scheduled(fixedDelayString = "${webauthn.credentials.revoke.interval.ms:86400000}")
+    public synchronized void revokeExpiredCredentials() {
+        if (credentialsMaxAgeDays <= 0) {
+            return;
+        }
+
+        Instant now = Instant.now();
+        long cutoffEpoch = now.minus(credentialsMaxAgeDays, ChronoUnit.DAYS).getEpochSecond();
+        long nowEpoch = now.getEpochSecond();
+
+        int memoryRevoked = 0;
+        for (WebauthnCredential credential : inMemoryCredentials.values()) {
+            if (!credential.isActive()) {
+                continue;
+            }
+            Long createdAt = credential.getCreatedAt();
+            if (createdAt != null && createdAt > 0 && createdAt <= cutoffEpoch) {
+                credential.setActive(false);
+                credential.setRevokedAt(nowEpoch);
+                credential.setUpdatedAt(nowEpoch);
+                memoryRevoked++;
+            }
+        }
+
+        if (jdbcTemplate == null) {
+            if (memoryRevoked > 0) {
+                log.info("Revoked {} expired WebAuthn credential(s) from memory", memoryRevoked);
+            }
+            return;
+        }
+
+        try {
+            String sql = "UPDATE " + credentialsTable + " " +
+                "SET active=FALSE, revoked_at=FROM_UNIXTIME(?), updated_at=FROM_UNIXTIME(?) " +
+                "WHERE active=TRUE AND created_at < FROM_UNIXTIME(?)";
+            int dbRevoked = jdbcTemplate.update(sql, nowEpoch, nowEpoch, cutoffEpoch);
+            if (dbRevoked > 0 || memoryRevoked > 0) {
+                log.info("Revoked {} expired WebAuthn credential(s) (db={}, memory={})",
+                    dbRevoked + memoryRevoked, dbRevoked, memoryRevoked);
+            }
+        } catch (DataAccessException ex) {
+            log.warn("webAuthn DB revoke-expired failed: {}", ex.getMessage());
         }
     }
 

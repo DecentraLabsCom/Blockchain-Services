@@ -175,6 +175,18 @@
     "defaultValue": "webauthn_credentials"
   },
   {
+    "name": "webauthn.credentials.max-age-days",
+    "type": "java.lang.Long",
+    "description": "Maximum age (in days) before a WebAuthn credential is revoked.",
+    "defaultValue": 365
+  },
+  {
+    "name": "webauthn.credentials.revoke.interval.ms",
+    "type": "java.lang.Long",
+    "description": "Interval (in milliseconds) to scan for expired WebAuthn credentials.",
+    "defaultValue": 86400000
+  },
+  {
     "name": "webauthn.rp.id",
     "type": "java.lang.String",
     "description": "WebAuthn Relying Party ID. Must match the domain users see in browser.",
