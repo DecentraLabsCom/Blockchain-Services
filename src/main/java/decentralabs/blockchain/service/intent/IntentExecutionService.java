@@ -49,7 +49,11 @@ public class IntentExecutionService {
                 } else {
                     log.warn("Intent {} failed on-chain: reason={} txHash={} blockNumber={}",
                         record.getRequestId(), result.reason(), result.txHash(), result.blockNumber());
-                    intentService.markFailed(record, result.reason(), result.txHash(), result.blockNumber());
+                    if (result.txHash() == null && result.blockNumber() == null) {
+                        intentService.markFailed(record, result.reason());
+                    } else {
+                        intentService.markFailed(record, result.reason(), result.txHash(), result.blockNumber());
+                    }
                 }
             } catch (Exception ex) {
                 log.warn("Intent {} failed during execution: {}", record.getRequestId(), ex.getMessage(), ex);
