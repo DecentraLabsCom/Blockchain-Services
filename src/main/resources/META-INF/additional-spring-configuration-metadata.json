@@ -613,6 +613,11 @@
     "description": "URL to SAML IdP metadata."
   },
   {
+    "name": "saml.idp.metadata.override",
+    "type": "java.lang.String",
+    "description": "JSON map of issuer to SAML IdP metadata URL overrides."
+  },
+  {
     "name": "saml.idp.certificate.path",
     "type": "java.lang.String",
     "description": "Path to SAML IdP certificate PEM file."

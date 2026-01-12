@@ -52,14 +52,25 @@ public class SamlValidationService {
 
     @Value("${saml.metadata.allow-http:false}")
     private boolean allowHttpMetadata;
+
+    @Value("${saml.idp.metadata.url:}")
+    private String metadataUrlOverride;
     
     // Optional: only used in whitelist mode
     private Map<String, String> trustedIdps = Collections.emptyMap();
+    private Map<String, String> metadataOverrides = Collections.emptyMap();
     
     @Autowired(required = false)
     public void setTrustedIdps(@Value("#{${saml.trusted.idp:{}}}") Map<String, String> trustedIdps) {
         if (trustedIdps != null) {
             this.trustedIdps = trustedIdps;
+        }
+    }
+
+    @Autowired(required = false)
+    public void setMetadataOverrides(@Value("#{${saml.idp.metadata.override:{}}}") Map<String, String> metadataOverrides) {
+        if (metadataOverrides != null) {
+            this.metadataOverrides = metadataOverrides;
         }
     }
     
@@ -107,8 +118,7 @@ public class SamlValidationService {
             }
         }
         
-        // Try to get metadata URL from assertion (SAML2 extension)
-        String metadataUrl = extractMetadataUrl(doc);
+        String metadataUrl = resolveMetadataUrl(doc, issuer);
         if (metadataUrl == null) {
             // Fallback: construct standard metadata URL from issuer
             metadataUrl = issuer + (issuer.endsWith("/") ? "" : "/") + "metadata";
@@ -221,6 +231,19 @@ public class SamlValidationService {
         }
         
         return null;
+    }
+
+    private String resolveMetadataUrl(Document doc, String issuer) {
+        String override = metadataOverrides.get(issuer);
+        if (override != null && !override.isBlank()) {
+            logger.info("Using metadata URL override for issuer {}", issuer);
+            return override.trim();
+        }
+        if (metadataUrlOverride != null && !metadataUrlOverride.isBlank()) {
+            logger.info("Using global metadata URL override for issuer {}", issuer);
+            return metadataUrlOverride.trim();
+        }
+        return extractMetadataUrl(doc);
     }
     
     /**
