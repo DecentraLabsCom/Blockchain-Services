@@ -826,9 +826,19 @@ public class IntentService {
     }
 
     public void markFailed(IntentRecord record, String reason) {
+        markFailed(record, reason, null, null);
+    }
+
+    public void markFailed(IntentRecord record, String reason, String txHash, Long blockNumber) {
         record.setStatus(IntentStatus.FAILED);
         record.setReason(reason);
         record.setError(reason);
+        if (txHash != null && !txHash.isBlank()) {
+            record.setTxHash(txHash);
+        }
+        if (blockNumber != null) {
+            record.setBlockNumber(blockNumber);
+        }
         persistenceService.upsert(record);
         webhookService.notify(record);
     }

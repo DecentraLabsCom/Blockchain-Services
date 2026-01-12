@@ -96,11 +96,15 @@ public class IntentOnChainExecutor {
             return new ExecutionResult(false, null, null, null, null, tx.getError() != null ? tx.getError().getMessage() : "tx_hash_missing");
         }
 
-        TransactionReceipt receipt = waitForReceipt(web3j, txHash);
-
-        Long blockNumber = receipt.getBlockNumber() != null ? receipt.getBlockNumber().longValue() : null;
-        return new ExecutionResult(receipt.isStatusOK(), txHash, blockNumber, null, null,
-            receipt.isStatusOK() ? null : receipt.getStatus());
+        try {
+            TransactionReceipt receipt = waitForReceipt(web3j, txHash);
+            Long blockNumber = receipt.getBlockNumber() != null ? receipt.getBlockNumber().longValue() : null;
+            return new ExecutionResult(receipt.isStatusOK(), txHash, blockNumber, null, null,
+                receipt.isStatusOK() ? null : receipt.getStatus());
+        } catch (Exception ex) {
+            log.warn("Failed to get tx receipt for {}: {}", txHash, ex.getMessage());
+            return new ExecutionResult(false, txHash, null, null, null, "receipt_error: " + ex.getMessage());
+        }
     }
 
     private TransactionReceipt waitForReceipt(Web3j web3j, String txHash) {

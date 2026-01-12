@@ -47,7 +47,9 @@ public class IntentExecutionService {
                 if (result.success()) {
                     intentService.markExecuted(record, result.txHash(), result.blockNumber(), result.labId(), result.reservationKey());
                 } else {
-                    intentService.markFailed(record, result.reason());
+                    log.warn("Intent {} failed on-chain: reason={} txHash={} blockNumber={}",
+                        record.getRequestId(), result.reason(), result.txHash(), result.blockNumber());
+                    intentService.markFailed(record, result.reason(), result.txHash(), result.blockNumber());
                 }
             } catch (Exception ex) {
                 log.warn("Intent {} failed during execution: {}", record.getRequestId(), ex.getMessage(), ex);
