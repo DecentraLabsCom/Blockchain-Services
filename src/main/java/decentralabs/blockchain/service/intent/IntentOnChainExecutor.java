@@ -42,6 +42,8 @@ public class IntentOnChainExecutor {
     private final String contractAddress;
     private final BigInteger gasLimit;
     private final BigInteger gasPriceWei;
+    @Value("${blockchain.network.active:sepolia}")
+    private String executionNetwork;
     public IntentOnChainExecutor(
         WalletService walletService,
         InstitutionalWalletService institutionalWalletService,
@@ -83,7 +85,7 @@ public class IntentOnChainExecutor {
             return new ExecutionResult(false, null, null, null, null, "missing_parameters");
         }
         Function function = functionOpt.get();
-        Web3j web3j = walletService.getWeb3jInstance();
+        Web3j web3j = resolveWeb3j();
         long chainId = getChainId(web3j);
         TransactionManager txManager = new FastRawTransactionManager(web3j, credentials, chainId);
         String encoded = FunctionEncoder.encode(function);
@@ -288,7 +290,7 @@ public class IntentOnChainExecutor {
 
     public Optional<BigInteger> fetchNextIntentNonce(String signer) {
         try {
-            Web3j web3j = walletService.getWeb3jInstance();
+            Web3j web3j = resolveWeb3j();
             Function fn = new Function(
                 "nextIntentNonce",
                 List.of(new org.web3j.abi.datatypes.Address(signer)),
@@ -317,6 +319,10 @@ public class IntentOnChainExecutor {
             return BigInteger.ZERO;
         }
         return org.web3j.utils.Convert.toWei(gwei.toString(), org.web3j.utils.Convert.Unit.GWEI).toBigInteger();
+    }
+
+    private Web3j resolveWeb3j() {
+        return walletService.getWeb3jInstanceForNetwork(executionNetwork);
     }
 
     private BigInteger bigIntVal(Object value) {

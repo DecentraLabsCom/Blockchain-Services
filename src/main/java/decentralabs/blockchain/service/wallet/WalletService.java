@@ -785,6 +785,16 @@ public class WalletService {
     public Web3j getWeb3jInstance() {
         return getWeb3jInstanceWithFallback(activeNetwork);
     }
+
+    public Web3j getWeb3jInstanceForNetwork(String network) {
+        if (network == null || network.isBlank()) {
+            return getWeb3jInstance();
+        }
+        if (!networkRpcUrls.containsKey(network)) {
+            return getWeb3jInstance();
+        }
+        return getWeb3jInstanceWithFallback(network);
+    }
     
     /**
      * Gets Web3j instance with automatic RPC fallback

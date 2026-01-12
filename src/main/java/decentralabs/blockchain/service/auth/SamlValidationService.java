@@ -542,52 +542,9 @@ public class SamlValidationService {
         }
     }
     
-    /**
-     * Extracts a SAML attribute value from the XML document
-     */
-    private String extractSAMLAttribute(Document doc, String attributeName) {
-        try {
-            NodeList attributes = doc.getElementsByTagNameNS("*", "Attribute");
-            for (int i = 0; i < attributes.getLength(); i++) {
-                Element attribute = (Element) attributes.item(i);
-                String name = attribute.getAttribute("Name");
-                
-                if (name != null && name.equals(attributeName)) {
-                    NodeList values = attribute.getElementsByTagNameNS("*", "AttributeValue");
-                    if (values.getLength() > 0) {
-                        return values.item(0).getTextContent();
-                    }
-                }
-            }
-            return null;
-        } catch (Exception e) {
-            logger.error("Error extracting SAML attribute '" + attributeName + "'", e);
-            return null;
-        }
-    }
 
-    private List<String> extractSAMLAttributeValues(Document doc, String attributeName) {
-        List<String> values = new ArrayList<>();
-        try {
-            NodeList attributes = doc.getElementsByTagNameNS("*", "Attribute");
-            for (int i = 0; i < attributes.getLength(); i++) {
-                Element attribute = (Element) attributes.item(i);
-                String name = attribute.getAttribute("Name");
-                if (name != null && name.equals(attributeName)) {
-                    NodeList items = attribute.getElementsByTagNameNS("*", "AttributeValue");
-                    for (int j = 0; j < items.getLength(); j++) {
-                        String value = items.item(j).getTextContent();
-                        if (value != null && !value.isBlank()) {
-                            values.add(value.trim().toLowerCase());
-                        }
-                    }
-                }
-            }
-        } catch (Exception e) {
-            logger.error("Error extracting SAML attribute values for '" + attributeName + "'", e);
-        }
-        return values;
-    }
+
+
 
     private void putAttribute(Map<String, List<String>> attributes, String key, String value) {
         if (value == null || value.isBlank()) {
@@ -596,15 +553,7 @@ public class SamlValidationService {
         attributes.put(key, List.of(value));
     }
 
-    private String firstNonEmpty(String one, String two) {
-        if (one != null && !one.isBlank()) {
-            return one;
-        }
-        if (two != null && !two.isBlank()) {
-            return two;
-        }
-        return null;
-    }
+
 
     private String extractSamlAttributeValueByAliases(Document doc, String... aliases) {
         List<String> values = extractSamlAttributeValuesByAliases(doc, aliases);
