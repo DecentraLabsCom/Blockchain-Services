@@ -220,8 +220,6 @@ class IntentOnChainExecutorTest {
         @Test
         @DisplayName("Should build addAndList Function with correct struct")
         void shouldBuildAddAndListFunction() throws Exception {
-            when(institutionalWalletService.getInstitutionalCredentials()).thenReturn(testCredentials);
-
             IntentRecord record = new IntentRecord("req-abc", "LAB_ADD_AND_LIST", "0xprovider");
             ActionIntentPayload payload = new ActionIntentPayload();
             payload.setExecutor("0x1111111111111111111111111111111111111111");
@@ -486,15 +484,15 @@ class IntentOnChainExecutorTest {
         @Test
         @DisplayName("buildAdd builds addLabWithIntent function")
         void buildAddBuildsAddLab() throws Exception {
-            when(institutionalWalletService.getInstitutionalCredentials()).thenReturn(testCredentials);
             IntentRecord record = new IntentRecord("req-add", "LAB_ADD", "0xprovider");
             ActionIntentPayload payload = new ActionIntentPayload();
             payload.setExecutor("0x1111111111111111111111111111111111111111");
             payload.setUri("ipfs://add");
             payload.setPrice(BigInteger.valueOf(50));
+            payload.setLabId(BigInteger.ZERO);
             record.setActionPayload(payload);
 
-            java.lang.reflect.Method m = IntentOnChainExecutor.class.getDeclaredMethod("buildAdd", IntentRecord.class);
+            java.lang.reflect.Method m = IntentOnChainExecutor.class.getDeclaredMethod("buildAddLab", IntentRecord.class);
             m.setAccessible(true);
             @SuppressWarnings("unchecked")
             java.util.Optional<org.web3j.abi.datatypes.Function> maybe = (java.util.Optional<org.web3j.abi.datatypes.Function>) m.invoke(executor, record);
@@ -512,7 +510,6 @@ class IntentOnChainExecutorTest {
         @Test
         @DisplayName("buildUpdate builds updateLabWithIntent function")
         void buildUpdateBuildsUpdateLab() throws Exception {
-            when(institutionalWalletService.getInstitutionalCredentials()).thenReturn(testCredentials);
             IntentRecord record = new IntentRecord("req-upd", "LAB_UPDATE", "0xprovider");
             ActionIntentPayload payload = new ActionIntentPayload();
             payload.setExecutor("0x2222222222222222222222222222222222222222");
@@ -539,7 +536,6 @@ class IntentOnChainExecutorTest {
         @Test
         @DisplayName("buildSimple builds list/unlist/delete functions")
         void buildSimpleBuildsListUnlistDelete() throws Exception {
-            when(institutionalWalletService.getInstitutionalCredentials()).thenReturn(testCredentials);
             IntentRecord record = new IntentRecord("req-simple", "LAB_LIST", "0xprovider");
             ActionIntentPayload payload = new ActionIntentPayload();
             payload.setExecutor("0x3333333333333333333333333333333333333333");
@@ -572,7 +568,6 @@ class IntentOnChainExecutorTest {
         @Test
         @DisplayName("buildSetTokenURI builds setTokenURIWithIntent")
         void buildSetTokenURI() throws Exception {
-            when(institutionalWalletService.getInstitutionalCredentials()).thenReturn(testCredentials);
             IntentRecord record = new IntentRecord("req-token", "LAB_SET_URI", "0xprovider");
             ActionIntentPayload payload = new ActionIntentPayload();
             payload.setExecutor("0x4444444444444444444444444444444444444444");
@@ -596,7 +591,6 @@ class IntentOnChainExecutorTest {
         @Test
         @DisplayName("buildRequestFunds builds requestFundsWithIntent with maxBatch")
         void buildRequestFunds() throws Exception {
-            when(institutionalWalletService.getInstitutionalCredentials()).thenReturn(testCredentials);
             IntentRecord record = new IntentRecord("req-funds", "REQUEST_FUNDS", "0xprovider");
             ActionIntentPayload payload = new ActionIntentPayload();
             payload.setExecutor("0x5555555555555555555555555555555555555555");
@@ -621,7 +615,6 @@ class IntentOnChainExecutorTest {
         @Test
         @DisplayName("buildReservationRequest builds institutionalReservationRequestWithIntent")
         void buildReservationRequest() throws Exception {
-            when(institutionalWalletService.getInstitutionalCredentials()).thenReturn(testCredentials);
             IntentRecord record = new IntentRecord("req-res", "RESERVATION_REQUEST", "0xprovider");
             ReservationIntentPayload payload = new ReservationIntentPayload();
             payload.setExecutor("0x6666666666666666666666666666666666666666");
@@ -650,7 +643,6 @@ class IntentOnChainExecutorTest {
         @Test
         @DisplayName("buildCancelReservation builds cancelInstitutionalReservationRequestWithIntent")
         void buildCancelReservation() throws Exception {
-            when(institutionalWalletService.getInstitutionalCredentials()).thenReturn(testCredentials);
             IntentRecord record = new IntentRecord("req-cancel-res", "CANCEL_RESERVATION_REQUEST", "0xprovider");
             ReservationIntentPayload payload = new ReservationIntentPayload();
             payload.setExecutor("0x7777777777777777777777777777777777777777");
@@ -660,6 +652,7 @@ class IntentOnChainExecutorTest {
             payload.setPrice(BigInteger.valueOf(20));
             payload.setReservationKey("0x0000000000000000000000000000000000000000000000000000000000000000");
             record.setReservationPayload(payload);
+            record.setReservationKey("0x0000000000000000000000000000000000000000000000000000000000000000");
 
             java.lang.reflect.Method m = IntentOnChainExecutor.class.getDeclaredMethod("buildCancelReservation", IntentRecord.class);
             m.setAccessible(true);
@@ -673,7 +666,6 @@ class IntentOnChainExecutorTest {
         @Test
         @DisplayName("buildCancelBooking builds cancelInstitutionalBookingWithIntent")
         void buildCancelBooking() throws Exception {
-            when(institutionalWalletService.getInstitutionalCredentials()).thenReturn(testCredentials);
             IntentRecord record = new IntentRecord("req-cancel-book", "CANCEL_BOOKING", "0xprovider");
             ActionIntentPayload payload = new ActionIntentPayload();
             payload.setExecutor("0x8888888888888888888888888888888888888888");
@@ -681,6 +673,7 @@ class IntentOnChainExecutorTest {
             payload.setReservationKey("0x0000000000000000000000000000000000000000000000000000000000000000");
             payload.setPrice(BigInteger.valueOf(5));
             record.setActionPayload(payload);
+            record.setReservationKey("0x0000000000000000000000000000000000000000000000000000000000000000");
 
             java.lang.reflect.Method m = IntentOnChainExecutor.class.getDeclaredMethod("buildCancelBooking", IntentRecord.class);
             m.setAccessible(true);
