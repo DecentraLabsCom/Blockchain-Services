@@ -170,16 +170,94 @@ class IntentOnChainExecutorTest {
     class LabAddAndListActionTests {
 
         @Test
-        @DisplayName("Should return unsupported_action for LAB_ADD_AND_LIST")
-        void shouldReturnUnsupportedActionWhenLabAddAndList() throws Exception {
+        @DisplayName("Should return missing_parameters when payload is null")
+        void shouldReturnMissingParametersWhenPayloadIsNull() throws Exception {
             when(institutionalWalletService.getInstitutionalCredentials()).thenReturn(testCredentials);
 
             IntentRecord record = new IntentRecord("req-123", "LAB_ADD_AND_LIST", "0xprovider");
+            // No action payload set
 
             ExecutionResult result = executor.execute(record);
 
             assertThat(result.success()).isFalse();
-            assertThat(result.reason()).isEqualTo("unsupported_action");
+            assertThat(result.reason()).isEqualTo("missing_parameters");
+        }
+
+        @Test
+        @DisplayName("Should return missing_parameters when URI is null")
+        void shouldReturnMissingParametersWhenUriIsNull() throws Exception {
+            when(institutionalWalletService.getInstitutionalCredentials()).thenReturn(testCredentials);
+
+            IntentRecord record = new IntentRecord("req-123", "LAB_ADD_AND_LIST", "0xprovider");
+            ActionIntentPayload payload = new ActionIntentPayload();
+            payload.setPrice(BigInteger.valueOf(100));
+            // URI is null
+            record.setActionPayload(payload);
+
+            ExecutionResult result = executor.execute(record);
+
+            assertThat(result.success()).isFalse();
+            assertThat(result.reason()).isEqualTo("missing_parameters");
+        }
+
+        @Test
+        @DisplayName("Should return missing_parameters when price is null")
+        void shouldReturnMissingParametersWhenPriceIsNull() throws Exception {
+            when(institutionalWalletService.getInstitutionalCredentials()).thenReturn(testCredentials);
+
+            IntentRecord record = new IntentRecord("req-123", "LAB_ADD_AND_LIST", "0xprovider");
+            ActionIntentPayload payload = new ActionIntentPayload();
+            payload.setUri("ipfs://test");
+            // Price is null
+            record.setActionPayload(payload);
+
+            ExecutionResult result = executor.execute(record);
+
+            assertThat(result.success()).isFalse();
+            assertThat(result.reason()).isEqualTo("missing_parameters");
+        }
+
+        @Test
+        @DisplayName("Should build addAndList Function with correct struct")
+        void shouldBuildAddAndListFunction() throws Exception {
+            when(institutionalWalletService.getInstitutionalCredentials()).thenReturn(testCredentials);
+
+            IntentRecord record = new IntentRecord("req-abc", "LAB_ADD_AND_LIST", "0xprovider");
+            ActionIntentPayload payload = new ActionIntentPayload();
+            payload.setExecutor("0x1111111111111111111111111111111111111111");
+            payload.setSchacHomeOrganization("org-example");
+            payload.setPuc("puc-value");
+            payload.setAssertionHash("0x0000000000000000000000000000000000000000000000000000000000000000");
+            payload.setLabId(BigInteger.ZERO);
+            payload.setReservationKey("0x0000000000000000000000000000000000000000000000000000000000000000");
+            payload.setUri("ipfs://test");
+            payload.setPrice(BigInteger.valueOf(100));
+            payload.setMaxBatch(BigInteger.ONE);
+            payload.setAccessURI("access://");
+            payload.setAccessKey("key");
+            payload.setTokenURI("token://");
+            record.setActionPayload(payload);
+
+            java.lang.reflect.Method m = IntentOnChainExecutor.class.getDeclaredMethod("buildAddAndList", IntentRecord.class);
+            m.setAccessible(true);
+            @SuppressWarnings("unchecked")
+            java.util.Optional<org.web3j.abi.datatypes.Function> maybe = (java.util.Optional<org.web3j.abi.datatypes.Function>) m.invoke(executor, record);
+            assertThat(maybe).isPresent();
+            org.web3j.abi.datatypes.Function f = maybe.get();
+            assertThat(f.getName()).isEqualTo("addAndListLabWithIntent");
+            assertThat(f.getInputParameters()).hasSize(2);
+
+            org.web3j.abi.datatypes.DynamicStruct ds = (org.web3j.abi.datatypes.DynamicStruct) f.getInputParameters().get(1);
+            java.util.List<org.web3j.abi.datatypes.Type> values = ds.getValue();
+            // executor
+            org.web3j.abi.datatypes.Address addr = (org.web3j.abi.datatypes.Address) values.get(0);
+            assertThat(addr.toString()).isEqualTo(payload.getExecutor());
+            // uri
+            org.web3j.abi.datatypes.Utf8String uri = (org.web3j.abi.datatypes.Utf8String) values.get(6);
+            assertThat(uri.getValue()).isEqualTo(payload.getUri());
+            // price
+            org.web3j.abi.datatypes.generated.Uint96 price = (org.web3j.abi.datatypes.generated.Uint96) values.get(7);
+            assertThat(price.getValue()).isEqualTo(payload.getPrice());
         }
     }
 
@@ -398,6 +476,219 @@ class IntentOnChainExecutorTest {
 
             assertThat(result.success()).isFalse();
             assertThat(result.reason()).isEqualTo("missing_parameters");
+        }
+    }
+
+    @Nested
+    @DisplayName("Builders Positive Tests")
+    class BuildersPositiveTests {
+
+        @Test
+        @DisplayName("buildAdd builds addLabWithIntent function")
+        void buildAddBuildsAddLab() throws Exception {
+            when(institutionalWalletService.getInstitutionalCredentials()).thenReturn(testCredentials);
+            IntentRecord record = new IntentRecord("req-add", "LAB_ADD", "0xprovider");
+            ActionIntentPayload payload = new ActionIntentPayload();
+            payload.setExecutor("0x1111111111111111111111111111111111111111");
+            payload.setUri("ipfs://add");
+            payload.setPrice(BigInteger.valueOf(50));
+            record.setActionPayload(payload);
+
+            java.lang.reflect.Method m = IntentOnChainExecutor.class.getDeclaredMethod("buildAdd", IntentRecord.class);
+            m.setAccessible(true);
+            @SuppressWarnings("unchecked")
+            java.util.Optional<org.web3j.abi.datatypes.Function> maybe = (java.util.Optional<org.web3j.abi.datatypes.Function>) m.invoke(executor, record);
+            assertThat(maybe).isPresent();
+            org.web3j.abi.datatypes.Function f = maybe.get();
+            assertThat(f.getName()).isEqualTo("addLabWithIntent");
+            org.web3j.abi.datatypes.DynamicStruct ds = (org.web3j.abi.datatypes.DynamicStruct) f.getInputParameters().get(1);
+            java.util.List<org.web3j.abi.datatypes.Type> values = ds.getValue();
+            org.web3j.abi.datatypes.Utf8String uri = (org.web3j.abi.datatypes.Utf8String) values.get(6);
+            org.web3j.abi.datatypes.generated.Uint96 price = (org.web3j.abi.datatypes.generated.Uint96) values.get(7);
+            assertThat(uri.getValue()).isEqualTo(payload.getUri());
+            assertThat(price.getValue()).isEqualTo(payload.getPrice());
+        }
+
+        @Test
+        @DisplayName("buildUpdate builds updateLabWithIntent function")
+        void buildUpdateBuildsUpdateLab() throws Exception {
+            when(institutionalWalletService.getInstitutionalCredentials()).thenReturn(testCredentials);
+            IntentRecord record = new IntentRecord("req-upd", "LAB_UPDATE", "0xprovider");
+            ActionIntentPayload payload = new ActionIntentPayload();
+            payload.setExecutor("0x2222222222222222222222222222222222222222");
+            payload.setLabId(BigInteger.valueOf(42));
+            payload.setUri("ipfs://upd");
+            payload.setPrice(BigInteger.valueOf(75));
+            record.setActionPayload(payload);
+
+            java.lang.reflect.Method m = IntentOnChainExecutor.class.getDeclaredMethod("buildUpdateLab", IntentRecord.class);
+            m.setAccessible(true);
+            @SuppressWarnings("unchecked")
+            java.util.Optional<org.web3j.abi.datatypes.Function> maybe = (java.util.Optional<org.web3j.abi.datatypes.Function>) m.invoke(executor, record);
+            assertThat(maybe).isPresent();
+            org.web3j.abi.datatypes.Function f = maybe.get();
+            assertThat(f.getName()).isEqualTo("updateLabWithIntent");
+            org.web3j.abi.datatypes.DynamicStruct ds = (org.web3j.abi.datatypes.DynamicStruct) f.getInputParameters().get(1);
+            java.util.List<org.web3j.abi.datatypes.Type> values = ds.getValue();
+            org.web3j.abi.datatypes.generated.Uint256 labId = (org.web3j.abi.datatypes.generated.Uint256) values.get(4);
+            org.web3j.abi.datatypes.Utf8String uri = (org.web3j.abi.datatypes.Utf8String) values.get(6);
+            assertThat(labId.getValue()).isEqualTo(payload.getLabId());
+            assertThat(uri.getValue()).isEqualTo(payload.getUri());
+        }
+
+        @Test
+        @DisplayName("buildSimple builds list/unlist/delete functions")
+        void buildSimpleBuildsListUnlistDelete() throws Exception {
+            when(institutionalWalletService.getInstitutionalCredentials()).thenReturn(testCredentials);
+            IntentRecord record = new IntentRecord("req-simple", "LAB_LIST", "0xprovider");
+            ActionIntentPayload payload = new ActionIntentPayload();
+            payload.setExecutor("0x3333333333333333333333333333333333333333");
+            payload.setLabId(BigInteger.valueOf(7));
+            record.setActionPayload(payload);
+
+            Class<?> fnClass = Class.forName("decentralabs.blockchain.service.intent.IntentOnChainExecutor$FunctionName").asSubclass(Enum.class);
+            Object listConst = java.lang.Enum.valueOf((Class) fnClass, "LIST_TOKEN");
+            java.lang.reflect.Method m = IntentOnChainExecutor.class.getDeclaredMethod("buildSimple", fnClass, IntentRecord.class);
+            m.setAccessible(true);
+            @SuppressWarnings("unchecked")
+            java.util.Optional<org.web3j.abi.datatypes.Function> maybe = (java.util.Optional<org.web3j.abi.datatypes.Function>) m.invoke(executor, listConst, record);
+            assertThat(maybe).isPresent();
+            org.web3j.abi.datatypes.Function f = maybe.get();
+            assertThat(f.getName()).isEqualTo("listLabWithIntent");
+
+            Object unlistConst = java.lang.Enum.valueOf((Class) fnClass, "UNLIST_TOKEN");
+            @SuppressWarnings("unchecked")
+            java.util.Optional<org.web3j.abi.datatypes.Function> maybe2 = (java.util.Optional<org.web3j.abi.datatypes.Function>) m.invoke(executor, unlistConst, record);
+            assertThat(maybe2).isPresent();
+            assertThat(maybe2.get().getName()).isEqualTo("unlistLabWithIntent");
+
+            Object deleteConst = java.lang.Enum.valueOf((Class) fnClass, "DELETE_LAB");
+            @SuppressWarnings("unchecked")
+            java.util.Optional<org.web3j.abi.datatypes.Function> maybe3 = (java.util.Optional<org.web3j.abi.datatypes.Function>) m.invoke(executor, deleteConst, record);
+            assertThat(maybe3).isPresent();
+            assertThat(maybe3.get().getName()).isEqualTo("deleteLabWithIntent");
+        }
+
+        @Test
+        @DisplayName("buildSetTokenURI builds setTokenURIWithIntent")
+        void buildSetTokenURI() throws Exception {
+            when(institutionalWalletService.getInstitutionalCredentials()).thenReturn(testCredentials);
+            IntentRecord record = new IntentRecord("req-token", "LAB_SET_URI", "0xprovider");
+            ActionIntentPayload payload = new ActionIntentPayload();
+            payload.setExecutor("0x4444444444444444444444444444444444444444");
+            payload.setLabId(BigInteger.valueOf(9));
+            payload.setTokenURI("token://1");
+            record.setActionPayload(payload);
+
+            java.lang.reflect.Method m = IntentOnChainExecutor.class.getDeclaredMethod("buildSetTokenURI", IntentRecord.class);
+            m.setAccessible(true);
+            @SuppressWarnings("unchecked")
+            java.util.Optional<org.web3j.abi.datatypes.Function> maybe = (java.util.Optional<org.web3j.abi.datatypes.Function>) m.invoke(executor, record);
+            assertThat(maybe).isPresent();
+            org.web3j.abi.datatypes.Function f = maybe.get();
+            assertThat(f.getName()).isEqualTo("setTokenURIWithIntent");
+            org.web3j.abi.datatypes.DynamicStruct ds = (org.web3j.abi.datatypes.DynamicStruct) f.getInputParameters().get(1);
+            java.util.List<org.web3j.abi.datatypes.Type> values = ds.getValue();
+            org.web3j.abi.datatypes.Utf8String tokenUri = (org.web3j.abi.datatypes.Utf8String) values.get(11);
+            assertThat(tokenUri.getValue()).isEqualTo(payload.getTokenURI());
+        }
+
+        @Test
+        @DisplayName("buildRequestFunds builds requestFundsWithIntent with maxBatch")
+        void buildRequestFunds() throws Exception {
+            when(institutionalWalletService.getInstitutionalCredentials()).thenReturn(testCredentials);
+            IntentRecord record = new IntentRecord("req-funds", "REQUEST_FUNDS", "0xprovider");
+            ActionIntentPayload payload = new ActionIntentPayload();
+            payload.setExecutor("0x5555555555555555555555555555555555555555");
+            payload.setLabId(BigInteger.valueOf(11));
+            payload.setMaxBatch(BigInteger.valueOf(5));
+            payload.setPrice(BigInteger.valueOf(0));
+            record.setActionPayload(payload);
+
+            java.lang.reflect.Method m = IntentOnChainExecutor.class.getDeclaredMethod("buildRequestFunds", IntentRecord.class);
+            m.setAccessible(true);
+            @SuppressWarnings("unchecked")
+            java.util.Optional<org.web3j.abi.datatypes.Function> maybe = (java.util.Optional<org.web3j.abi.datatypes.Function>) m.invoke(executor, record);
+            assertThat(maybe).isPresent();
+            org.web3j.abi.datatypes.Function f = maybe.get();
+            assertThat(f.getName()).isEqualTo("requestFundsWithIntent");
+            org.web3j.abi.datatypes.DynamicStruct ds = (org.web3j.abi.datatypes.DynamicStruct) f.getInputParameters().get(1);
+            java.util.List<org.web3j.abi.datatypes.Type> values = ds.getValue();
+            org.web3j.abi.datatypes.generated.Uint96 maxBatch = (org.web3j.abi.datatypes.generated.Uint96) values.get(8);
+            assertThat(maxBatch.getValue()).isEqualTo(payload.getMaxBatch());
+        }
+
+        @Test
+        @DisplayName("buildReservationRequest builds institutionalReservationRequestWithIntent")
+        void buildReservationRequest() throws Exception {
+            when(institutionalWalletService.getInstitutionalCredentials()).thenReturn(testCredentials);
+            IntentRecord record = new IntentRecord("req-res", "RESERVATION_REQUEST", "0xprovider");
+            ReservationIntentPayload payload = new ReservationIntentPayload();
+            payload.setExecutor("0x6666666666666666666666666666666666666666");
+            payload.setLabId(BigInteger.valueOf(13));
+            payload.setStart(1000L);
+            payload.setEnd(2000L);
+            payload.setPrice(BigInteger.valueOf(10));
+            payload.setReservationKey("0x0000000000000000000000000000000000000000000000000000000000000000");
+            record.setReservationPayload(payload);
+
+            java.lang.reflect.Method m = IntentOnChainExecutor.class.getDeclaredMethod("buildReservationRequest", IntentRecord.class);
+            m.setAccessible(true);
+            @SuppressWarnings("unchecked")
+            java.util.Optional<org.web3j.abi.datatypes.Function> maybe = (java.util.Optional<org.web3j.abi.datatypes.Function>) m.invoke(executor, record);
+            assertThat(maybe).isPresent();
+            org.web3j.abi.datatypes.Function f = maybe.get();
+            assertThat(f.getName()).isEqualTo("institutionalReservationRequestWithIntent");
+            org.web3j.abi.datatypes.DynamicStruct ds = (org.web3j.abi.datatypes.DynamicStruct) f.getInputParameters().get(1);
+            java.util.List<org.web3j.abi.datatypes.Type> values = ds.getValue();
+            org.web3j.abi.datatypes.generated.Uint32 start = (org.web3j.abi.datatypes.generated.Uint32) values.get(5);
+            org.web3j.abi.datatypes.generated.Uint32 end = (org.web3j.abi.datatypes.generated.Uint32) values.get(6);
+            assertThat(start.getValue().longValue()).isEqualTo(1000L);
+            assertThat(end.getValue().longValue()).isEqualTo(2000L);
+        }
+
+        @Test
+        @DisplayName("buildCancelReservation builds cancelInstitutionalReservationRequestWithIntent")
+        void buildCancelReservation() throws Exception {
+            when(institutionalWalletService.getInstitutionalCredentials()).thenReturn(testCredentials);
+            IntentRecord record = new IntentRecord("req-cancel-res", "CANCEL_RESERVATION_REQUEST", "0xprovider");
+            ReservationIntentPayload payload = new ReservationIntentPayload();
+            payload.setExecutor("0x7777777777777777777777777777777777777777");
+            payload.setLabId(BigInteger.valueOf(15));
+            payload.setStart(3000L);
+            payload.setEnd(4000L);
+            payload.setPrice(BigInteger.valueOf(20));
+            payload.setReservationKey("0x0000000000000000000000000000000000000000000000000000000000000000");
+            record.setReservationPayload(payload);
+
+            java.lang.reflect.Method m = IntentOnChainExecutor.class.getDeclaredMethod("buildCancelReservation", IntentRecord.class);
+            m.setAccessible(true);
+            @SuppressWarnings("unchecked")
+            java.util.Optional<org.web3j.abi.datatypes.Function> maybe = (java.util.Optional<org.web3j.abi.datatypes.Function>) m.invoke(executor, record);
+            assertThat(maybe).isPresent();
+            org.web3j.abi.datatypes.Function f = maybe.get();
+            assertThat(f.getName()).isEqualTo("cancelInstitutionalReservationRequestWithIntent");
+        }
+
+        @Test
+        @DisplayName("buildCancelBooking builds cancelInstitutionalBookingWithIntent")
+        void buildCancelBooking() throws Exception {
+            when(institutionalWalletService.getInstitutionalCredentials()).thenReturn(testCredentials);
+            IntentRecord record = new IntentRecord("req-cancel-book", "CANCEL_BOOKING", "0xprovider");
+            ActionIntentPayload payload = new ActionIntentPayload();
+            payload.setExecutor("0x8888888888888888888888888888888888888888");
+            payload.setLabId(BigInteger.valueOf(17));
+            payload.setReservationKey("0x0000000000000000000000000000000000000000000000000000000000000000");
+            payload.setPrice(BigInteger.valueOf(5));
+            record.setActionPayload(payload);
+
+            java.lang.reflect.Method m = IntentOnChainExecutor.class.getDeclaredMethod("buildCancelBooking", IntentRecord.class);
+            m.setAccessible(true);
+            @SuppressWarnings("unchecked")
+            java.util.Optional<org.web3j.abi.datatypes.Function> maybe = (java.util.Optional<org.web3j.abi.datatypes.Function>) m.invoke(executor, record);
+            assertThat(maybe).isPresent();
+            org.web3j.abi.datatypes.Function f = maybe.get();
+            assertThat(f.getName()).isEqualTo("cancelInstitutionalBookingWithIntent");
         }
     }
 

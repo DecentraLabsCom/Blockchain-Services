@@ -69,6 +69,7 @@ public class IntentOnChainExecutor {
 
         return switch (action) {
             case "LAB_ADD" -> send(buildAddLab(record), credentials);
+            case "LAB_ADD_AND_LIST" -> send(buildAddAndList(record), credentials);
             case "LAB_UPDATE" -> send(buildUpdateLab(record), credentials);
             case "LAB_LIST" -> send(buildSimple(FunctionName.LIST_TOKEN, record), credentials);
             case "LAB_UNLIST" -> send(buildSimple(FunctionName.UNLIST_TOKEN, record), credentials);
@@ -164,6 +165,40 @@ public class IntentOnChainExecutor {
 
         return Optional.of(new Function(
             "addLabWithIntent",
+            List.of(new Bytes32(requestId), struct),
+            List.of()
+        ));
+    }
+
+    private Optional<Function> buildAddAndList(IntentRecord record) {
+        ActionIntentPayload payload = record.getActionPayload();
+        if (payload == null) {
+            return Optional.empty();
+        }
+        if (payload.getExecutor() == null || payload.getExecutor().isBlank()) {
+            return Optional.empty();
+        }
+        byte[] requestId = toBytes32(record.getRequestId());
+        Bytes32 assertion = new Bytes32(toBytes32(payload.getAssertionHash()));
+        Bytes32 reservationKey = new Bytes32(toBytes32(payload.getReservationKey()));
+
+        DynamicStruct struct = new DynamicStruct(
+            new Address(payload.getExecutor()),
+            new Utf8String(payload.getSchacHomeOrganization() != null ? payload.getSchacHomeOrganization() : ""),
+            new Utf8String(payload.getPuc() != null ? payload.getPuc() : ""),
+            assertion,
+            new Uint256(payload.getLabId()),
+            reservationKey,
+            new Utf8String(payload.getUri() != null ? payload.getUri() : ""),
+            new Uint96(payload.getPrice() != null ? payload.getPrice() : BigInteger.ZERO),
+            new Uint96(payload.getMaxBatch() != null ? payload.getMaxBatch() : BigInteger.ZERO),
+            new Utf8String(payload.getAccessURI() != null ? payload.getAccessURI() : ""),
+            new Utf8String(payload.getAccessKey() != null ? payload.getAccessKey() : ""),
+            new Utf8String(payload.getTokenURI() != null ? payload.getTokenURI() : "")
+        );
+
+        return Optional.of(new Function(
+            "addAndListLabWithIntent",
             List.of(new Bytes32(requestId), struct),
             List.of()
         ));
