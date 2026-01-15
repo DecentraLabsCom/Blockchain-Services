@@ -10,11 +10,13 @@ import org.springframework.stereotype.Service;
 import org.web3j.abi.FunctionEncoder;
 import org.web3j.abi.datatypes.Function;
 import org.web3j.abi.datatypes.Utf8String;
+import org.web3j.abi.datatypes.DynamicStruct;
+import org.web3j.abi.datatypes.Address;
 import org.web3j.abi.datatypes.generated.Bytes32;
 import org.web3j.abi.datatypes.generated.Uint32;
 import org.web3j.abi.datatypes.generated.Uint96;
 import org.web3j.abi.datatypes.generated.Uint256;
-import org.web3j.abi.TypeReference;
+import org.web3j.abi.TypeReference; 
 import org.web3j.abi.FunctionReturnDecoder;
 import org.web3j.crypto.Credentials;
 import org.web3j.protocol.Web3j;
@@ -138,17 +140,31 @@ public class IntentOnChainExecutor {
         if (payload == null) {
             return Optional.empty();
         }
-        byte[] requestId = toBytes32(record.getRequestId());
-        String uri = payload.getUri();
-        BigInteger price = payload.getPrice();
-        String accessURI = payload.getAccessURI();
-        String accessKey = payload.getAccessKey();
-        if (uri == null || price == null) {
+        if (payload.getExecutor() == null || payload.getExecutor().isBlank()) {
             return Optional.empty();
         }
+        byte[] requestId = toBytes32(record.getRequestId());
+        Bytes32 assertion = new Bytes32(toBytes32(payload.getAssertionHash()));
+        Bytes32 reservationKey = new Bytes32(toBytes32(payload.getReservationKey()));
+
+        DynamicStruct struct = new DynamicStruct(
+            new Address(payload.getExecutor()),
+            new Utf8String(payload.getSchacHomeOrganization() != null ? payload.getSchacHomeOrganization() : ""),
+            new Utf8String(payload.getPuc() != null ? payload.getPuc() : ""),
+            assertion,
+            new Uint256(payload.getLabId()),
+            reservationKey,
+            new Utf8String(payload.getUri() != null ? payload.getUri() : ""),
+            new Uint96(payload.getPrice() != null ? payload.getPrice() : BigInteger.ZERO),
+            new Uint96(payload.getMaxBatch() != null ? payload.getMaxBatch() : BigInteger.ZERO),
+            new Utf8String(payload.getAccessURI() != null ? payload.getAccessURI() : ""),
+            new Utf8String(payload.getAccessKey() != null ? payload.getAccessKey() : ""),
+            new Utf8String(payload.getTokenURI() != null ? payload.getTokenURI() : "")
+        );
+
         return Optional.of(new Function(
             "addLabWithIntent",
-            List.of(new Bytes32(requestId), new Utf8String(uri), new Uint96(price), new Utf8String(accessURI), new Utf8String(accessKey)),
+            List.of(new Bytes32(requestId), struct),
             List.of()
         ));
     }
@@ -161,49 +177,99 @@ public class IntentOnChainExecutor {
         if (keyBytes.length != 32) {
             return Optional.empty();
         }
+        ActionIntentPayload payload = record.getActionPayload();
+        if (payload == null) {
+            return Optional.empty();
+        }
+        if (payload.getExecutor() == null || payload.getExecutor().isBlank()) {
+            return Optional.empty();
+        }
         byte[] requestId = toBytes32(record.getRequestId());
+
+        DynamicStruct struct = new DynamicStruct(
+            new Address(payload.getExecutor()),
+            new Utf8String(payload.getSchacHomeOrganization() != null ? payload.getSchacHomeOrganization() : ""),
+            new Utf8String(payload.getPuc() != null ? payload.getPuc() : ""),
+            new Bytes32(toBytes32(payload.getAssertionHash())),
+            new Uint256(payload.getLabId()),
+            new Bytes32(toBytes32(payload.getReservationKey())),
+            new Utf8String(payload.getUri() != null ? payload.getUri() : ""),
+            new Uint96(payload.getPrice() != null ? payload.getPrice() : BigInteger.ZERO),
+            new Uint96(payload.getMaxBatch() != null ? payload.getMaxBatch() : BigInteger.ZERO),
+            new Utf8String(payload.getAccessURI() != null ? payload.getAccessURI() : ""),
+            new Utf8String(payload.getAccessKey() != null ? payload.getAccessKey() : ""),
+            new Utf8String(payload.getTokenURI() != null ? payload.getTokenURI() : "")
+        );
+
         return Optional.of(new Function(
             "cancelInstitutionalBookingWithIntent",
-            List.of(
-                new Bytes32(requestId),
-                new org.web3j.abi.datatypes.Address(record.getProvider()),
-                new Bytes32(keyBytes)
-            ),
+            List.of(new Bytes32(requestId), struct),
             List.of()
         ));
     }
 
     private Optional<Function> buildUpdateLab(IntentRecord record) {
-        ActionIntentPayload data = record.getActionPayload();
-        if (data == null) {
-            return Optional.empty();
-        }
-        BigInteger labId = bigIntVal(record.getLabId());
-        if (labId == null) {
+        ActionIntentPayload payload = record.getActionPayload();
+        if (payload == null) {
             return Optional.empty();
         }
         byte[] requestId = toBytes32(record.getRequestId());
-        String uri = data.getUri();
-        BigInteger price = data.getPrice();
-        String accessURI = data.getAccessURI();
-        String accessKey = data.getAccessKey();
+        if (payload.getExecutor() == null || payload.getExecutor().isBlank()) {
+            return Optional.empty();
+        }
+        Bytes32 assertion = new Bytes32(toBytes32(payload.getAssertionHash()));
+        Bytes32 reservationKey = new Bytes32(toBytes32(payload.getReservationKey()));
+
+        DynamicStruct struct = new DynamicStruct(
+            new Address(payload.getExecutor()),
+            new Utf8String(payload.getSchacHomeOrganization() != null ? payload.getSchacHomeOrganization() : ""),
+            new Utf8String(payload.getPuc() != null ? payload.getPuc() : ""),
+            assertion,
+            new Uint256(payload.getLabId()),
+            reservationKey,
+            new Utf8String(payload.getUri() != null ? payload.getUri() : ""),
+            new Uint96(payload.getPrice() != null ? payload.getPrice() : BigInteger.ZERO),
+            new Uint96(payload.getMaxBatch() != null ? payload.getMaxBatch() : BigInteger.ZERO),
+            new Utf8String(payload.getAccessURI() != null ? payload.getAccessURI() : ""),
+            new Utf8String(payload.getAccessKey() != null ? payload.getAccessKey() : ""),
+            new Utf8String(payload.getTokenURI() != null ? payload.getTokenURI() : "")
+        );
+
         return Optional.of(new Function(
             "updateLabWithIntent",
-            List.of(new Bytes32(requestId), new Uint256(labId), new Utf8String(uri != null ? uri : ""), new Uint96(price != null ? price : BigInteger.ZERO),
-                new Utf8String(accessURI != null ? accessURI : ""), new Utf8String(accessKey != null ? accessKey : "")),
+            List.of(new Bytes32(requestId), struct),
             List.of()
         ));
     }
 
     private Optional<Function> buildSimple(FunctionName fn, IntentRecord record) {
-        BigInteger labId = bigIntVal(record.getLabId());
-        if (labId == null) {
+        ActionIntentPayload payload = record.getActionPayload();
+        if (payload == null || payload.getLabId() == null) {
+            return Optional.empty();
+        }
+        if (payload.getExecutor() == null || payload.getExecutor().isBlank()) {
             return Optional.empty();
         }
         byte[] requestId = toBytes32(record.getRequestId());
+
+        DynamicStruct struct = new DynamicStruct(
+            new Address(payload.getExecutor()),
+            new Utf8String(payload.getSchacHomeOrganization() != null ? payload.getSchacHomeOrganization() : ""),
+            new Utf8String(payload.getPuc() != null ? payload.getPuc() : ""),
+            new Bytes32(toBytes32(payload.getAssertionHash())),
+            new Uint256(payload.getLabId()),
+            new Bytes32(toBytes32(payload.getReservationKey())),
+            new Utf8String(payload.getUri() != null ? payload.getUri() : ""),
+            new Uint96(payload.getPrice() != null ? payload.getPrice() : BigInteger.ZERO),
+            new Uint96(payload.getMaxBatch() != null ? payload.getMaxBatch() : BigInteger.ZERO),
+            new Utf8String(payload.getAccessURI() != null ? payload.getAccessURI() : ""),
+            new Utf8String(payload.getAccessKey() != null ? payload.getAccessKey() : ""),
+            new Utf8String(payload.getTokenURI() != null ? payload.getTokenURI() : "")
+        );
+
         return Optional.of(new Function(
             fn.methodWithIntent,
-            List.of(new Bytes32(requestId), new Uint256(labId)),
+            List.of(new Bytes32(requestId), struct),
             List.of()
         ));
     }
@@ -216,78 +282,136 @@ public class IntentOnChainExecutor {
         if (keyBytes.length != 32) {
             return Optional.empty();
         }
+        ReservationIntentPayload payload = record.getReservationPayload();
+        if (payload == null) {
+            return Optional.empty();
+        }
+        if (payload.getExecutor() == null || payload.getExecutor().isBlank()) {
+            return Optional.empty();
+        }
         byte[] requestId = toBytes32(record.getRequestId());
+
+        DynamicStruct struct = new DynamicStruct(
+            new Address(payload.getExecutor()),
+            new Utf8String(payload.getSchacHomeOrganization() != null ? payload.getSchacHomeOrganization() : ""),
+            new Utf8String(payload.getPuc() != null ? payload.getPuc() : ""),
+            new Bytes32(toBytes32(payload.getAssertionHash())),
+            new Uint256(payload.getLabId()),
+            new Uint32(BigInteger.valueOf(payload.getStart())),
+            new Uint32(BigInteger.valueOf(payload.getEnd())),
+            new Uint96(payload.getPrice()),
+            new Bytes32(toBytes32(payload.getReservationKey()))
+        );
+
         return Optional.of(new Function(
             "cancelInstitutionalReservationRequestWithIntent",
-            List.of(new Bytes32(requestId), new org.web3j.abi.datatypes.Address(record.getProvider()), new Utf8String(record.getPuc() != null ? record.getPuc() : ""), new Bytes32(keyBytes)),
+            List.of(new Bytes32(requestId), struct),
             List.of()
         ));
     }
 
     private Optional<Function> buildRequestFunds(IntentRecord record) {
-        BigInteger labId = bigIntVal(record.getLabId());
         ActionIntentPayload payload = record.getActionPayload();
-        if (labId == null || payload == null) {
+        if (payload == null || payload.getLabId() == null) {
             return Optional.empty();
         }
         BigInteger maxBatch = bigIntVal(payload.getMaxBatch());
         if (maxBatch == null || maxBatch.compareTo(BigInteger.ONE) < 0 || maxBatch.compareTo(BigInteger.valueOf(100)) > 0) {
             return Optional.empty();
         }
+        if (payload.getExecutor() == null || payload.getExecutor().isBlank()) {
+            return Optional.empty();
+        }
         byte[] requestId = toBytes32(record.getRequestId());
+
+        DynamicStruct struct = new DynamicStruct(
+            new Address(payload.getExecutor()),
+            new Utf8String(payload.getSchacHomeOrganization() != null ? payload.getSchacHomeOrganization() : ""),
+            new Utf8String(payload.getPuc() != null ? payload.getPuc() : ""),
+            new Bytes32(toBytes32(payload.getAssertionHash())),
+            new Uint256(payload.getLabId()),
+            new Bytes32(toBytes32(payload.getReservationKey())),
+            new Utf8String(payload.getUri() != null ? payload.getUri() : ""),
+            new Uint96(payload.getPrice() != null ? payload.getPrice() : BigInteger.ZERO),
+            new Uint96(payload.getMaxBatch() != null ? payload.getMaxBatch() : BigInteger.ZERO),
+            new Utf8String(payload.getAccessURI() != null ? payload.getAccessURI() : ""),
+            new Utf8String(payload.getAccessKey() != null ? payload.getAccessKey() : ""),
+            new Utf8String(payload.getTokenURI() != null ? payload.getTokenURI() : "")
+        );
+
         return Optional.of(new Function(
             "requestFundsWithIntent",
-            List.of(new Bytes32(requestId), new Uint256(labId), new Uint256(maxBatch)),
+            List.of(new Bytes32(requestId), struct),
             List.of()
         ));
     }
 
     private Optional<Function> buildReservationRequest(IntentRecord record) {
-        BigInteger labId = bigIntVal(record.getLabId());
-        if (labId == null) {
+        ReservationIntentPayload payload = record.getReservationPayload();
+        if (payload == null) {
             return Optional.empty();
         }
-        ReservationIntentPayload reservationPayload = record.getReservationPayload();
-        if (reservationPayload == null) {
-            return Optional.empty();
-        }
-        BigInteger start = bigIntVal(reservationPayload.getStart());
-        BigInteger end = bigIntVal(reservationPayload.getEnd());
+        BigInteger start = bigIntVal(payload.getStart());
+        BigInteger end = bigIntVal(payload.getEnd());
         if (start == null || end == null) {
             return Optional.empty();
         }
+        if (payload.getExecutor() == null || payload.getExecutor().isBlank()) {
+            return Optional.empty();
+        }
         byte[] requestId = toBytes32(record.getRequestId());
+
+        DynamicStruct struct = new DynamicStruct(
+            new Address(payload.getExecutor()),
+            new Utf8String(payload.getSchacHomeOrganization() != null ? payload.getSchacHomeOrganization() : ""),
+            new Utf8String(payload.getPuc() != null ? payload.getPuc() : ""),
+            new Bytes32(toBytes32(payload.getAssertionHash())),
+            new Uint256(payload.getLabId()),
+            new Uint32(BigInteger.valueOf(payload.getStart())),
+            new Uint32(BigInteger.valueOf(payload.getEnd())),
+            new Uint96(payload.getPrice()),
+            new Bytes32(toBytes32(payload.getReservationKey()))
+        );
+
         return Optional.of(new Function(
             "institutionalReservationRequestWithIntent",
-            List.of(
-                new Bytes32(requestId),
-                new org.web3j.abi.datatypes.Address(record.getProvider()),
-                new Utf8String(record.getPuc() != null ? record.getPuc() : ""),
-                new Uint256(labId),
-                new Uint32(start),
-                new Uint32(end)
-            ),
+            List.of(new Bytes32(requestId), struct),
             List.of()
         ));
     }
 
     private Optional<Function> buildSetTokenURI(IntentRecord record) {
-        BigInteger labId = bigIntVal(record.getLabId());
-        if (labId == null) {
+        ActionIntentPayload payload = record.getActionPayload();
+        if (payload == null || payload.getLabId() == null) {
             return Optional.empty();
         }
-        ActionIntentPayload data = record.getActionPayload();
-        if (data == null) {
-            return Optional.empty();
-        }
-        String uri = data.getTokenURI();
+        String uri = payload.getTokenURI();
         if (uri == null || uri.isBlank()) {
             return Optional.empty();
         }
+        if (payload.getExecutor() == null || payload.getExecutor().isBlank()) {
+            return Optional.empty();
+        }
         byte[] requestId = toBytes32(record.getRequestId());
+
+        DynamicStruct struct = new DynamicStruct(
+            new Address(payload.getExecutor()),
+            new Utf8String(payload.getSchacHomeOrganization() != null ? payload.getSchacHomeOrganization() : ""),
+            new Utf8String(payload.getPuc() != null ? payload.getPuc() : ""),
+            new Bytes32(toBytes32(payload.getAssertionHash())),
+            new Uint256(payload.getLabId()),
+            new Bytes32(toBytes32(payload.getReservationKey())),
+            new Utf8String(payload.getUri() != null ? payload.getUri() : ""),
+            new Uint96(payload.getPrice() != null ? payload.getPrice() : BigInteger.ZERO),
+            new Uint96(payload.getMaxBatch() != null ? payload.getMaxBatch() : BigInteger.ZERO),
+            new Utf8String(payload.getAccessURI() != null ? payload.getAccessURI() : ""),
+            new Utf8String(payload.getAccessKey() != null ? payload.getAccessKey() : ""),
+            new Utf8String(payload.getTokenURI() != null ? payload.getTokenURI() : "")
+        );
+
         return Optional.of(new Function(
             "setTokenURIWithIntent",
-            List.of(new Bytes32(requestId), new Uint256(labId), new Utf8String(uri)),
+            List.of(new Bytes32(requestId), struct),
             List.of()
         ));
     }
