@@ -198,6 +198,8 @@ public class IntentAuthorizationController {
       }
     }
 
+    let authorizationNotified = false;
+
     function notifyParent(status, message) {
       try {
         if (window.opener && !window.opener.closed) {
@@ -217,10 +219,16 @@ public class IntentAuthorizationController {
             }
           }
           window.opener.postMessage(payload, targetOrigin);
+          authorizationNotified = true;
         }
       } catch (err) {
         // ignore postMessage errors
       }
+    }
+
+    function notifyCancelledOnClose() {
+      if (authorizationNotified) return;
+      notifyParent('CANCELLED', 'Authorization window closed');
     }
 
     async function startCeremony() {
@@ -283,6 +291,9 @@ public class IntentAuthorizationController {
       const metaText = document.getElementById('metaText');
       metaText.textContent = 'Request ID: ' + options.requestId;
     }
+
+    window.addEventListener('beforeunload', notifyCancelledOnClose);
+    window.addEventListener('pagehide', notifyCancelledOnClose);
 
     startCeremony();
   </script>
