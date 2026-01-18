@@ -53,7 +53,7 @@ class IntentServiceTest {
     void setUp() {
         service = new IntentService(
             "15s",
-            300000L,
+            60000L,
             verifier,
             persistenceService,
             webhookService,

@@ -77,7 +77,7 @@ public class IntentService {
 
     public IntentService(
         @Value("${intent.default-eta:15s}") String defaultEta,
-        @Value("${intent.saml.replay-ttl-ms:300000}") long samlReplayTtlMs,
+        @Value("${intent.saml.replay-ttl-ms:60000}") long samlReplayTtlMs,
         Eip712IntentVerifier verifier,
         IntentPersistenceService persistenceService,
         IntentWebhookService webhookService,
