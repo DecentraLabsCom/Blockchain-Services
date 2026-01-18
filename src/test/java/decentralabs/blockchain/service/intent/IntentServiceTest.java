@@ -62,6 +62,45 @@ class IntentServiceTest {
         );
     }
 
+    @Test
+    @DisplayName("Assertion replay TTL expires as expected")
+    void assertionReplayTtlExpires() throws Exception {
+        // Use a short TTL to make the test fast
+        IntentService shortTtlService = new IntentService(
+            "15s",
+            100L,
+            verifier,
+            persistenceService,
+            webhookService,
+            samlValidationService,
+            webauthnCredentialService
+        );
+
+        String hash = "0x" + "f".repeat(64);
+        // Use reflection to invoke private methods
+        var markMethod = IntentService.class.getDeclaredMethod("markAssertionUsed", String.class);
+        var checkMethod = IntentService.class.getDeclaredMethod("checkAssertionReplay", String.class);
+        markMethod.setAccessible(true);
+        checkMethod.setAccessible(true);
+
+        // Mark used and expect a replay immediately
+        markMethod.invoke(shortTtlService, hash);
+        ResponseStatusException ex = assertThrows(ResponseStatusException.class, () -> {
+            try {
+                checkMethod.invoke(shortTtlService, hash);
+            } catch (Exception e) {
+                // unwrap reflection exception
+                throw e.getCause();
+            }
+        });
+        assertTrue(ex.getReason().equalsIgnoreCase("assertion_replay"));
+
+        // Wait for TTL to expire and then expect no exception
+        Thread.sleep(200);
+        // should not throw
+        checkMethod.invoke(shortTtlService, hash);
+    }
+
     private IntentMeta createValidMeta() {
         IntentMeta meta = new IntentMeta();
         meta.setRequestId("req-" + System.nanoTime());
