@@ -198,6 +198,31 @@ public class IntentAuthorizationController {
       }
     }
 
+    function notifyParent(status, message) {
+      try {
+        if (window.opener && !window.opener.closed) {
+          const payload = {
+            type: 'intent-authorization',
+            status,
+            requestId: options.requestId || null,
+            sessionId: options.sessionId || null,
+            error: message || null,
+          };
+          let targetOrigin = '*';
+          if (options.returnUrl) {
+            try {
+              targetOrigin = new URL(options.returnUrl).origin;
+            } catch {
+              targetOrigin = '*';
+            }
+          }
+          window.opener.postMessage(payload, targetOrigin);
+        }
+      } catch (err) {
+        // ignore postMessage errors
+      }
+    }
+
     async function startCeremony() {
       showStatus('pending');
 
@@ -229,6 +254,7 @@ public class IntentAuthorizationController {
 
         if (response.ok) {
           showStatus('success');
+          notifyParent('SUCCESS');
           if (options.returnUrl) {
             setTimeout(() => { window.location.href = options.returnUrl; }, 700);
           } else {
@@ -236,13 +262,19 @@ public class IntentAuthorizationController {
           }
         } else {
           const error = await response.json().catch(() => ({}));
-          showStatus('error', error.message || error.error || 'Authorization failed');
+          const message = error.message || error.error || 'Authorization failed';
+          showStatus('error', message);
+          notifyParent('FAILED', message);
         }
       } catch (err) {
         if (err && err.name === 'NotAllowedError') {
-          showStatus('error', 'You cancelled the request or it timed out');
+          const message = 'You cancelled the request or it timed out';
+          showStatus('error', message);
+          notifyParent('CANCELLED', message);
         } else {
-          showStatus('error', err?.message || 'Authorization failed');
+          const message = err?.message || 'Authorization failed';
+          showStatus('error', message);
+          notifyParent('FAILED', message);
         }
       }
     }
