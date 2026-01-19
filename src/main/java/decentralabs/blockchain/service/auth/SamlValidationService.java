@@ -52,14 +52,22 @@ public class SamlValidationService {
         "uid",
         "eppn",
         "edupersonprincipalname",
+        "edupersonuniqueid",
+        "edupersontargetedid",
         "schacpersonaluniquecode",
+        "persistent-id",
+        "pairwise-id",
         "subject-id",
         "urn:oasis:names:tc:saml:attribute:subject-id",
         "urn:mace:dir:attribute-def:uid",
         "urn:mace:dir:attribute-def:edupersonprincipalname",
+        "urn:mace:dir:attribute-def:edupersonuniqueid",
+        "urn:mace:dir:attribute-def:edupersontargetedid",
         "urn:mace:dir:attribute-def:schacpersonaluniquecode",
         "urn:oid:0.9.2342.19200300.100.1.1",
         "urn:oid:1.3.6.1.4.1.5923.1.1.1.6",
+        "urn:oid:1.3.6.1.4.1.5923.1.1.1.13",
+        "urn:oid:1.3.6.1.4.1.5923.1.1.1.10",
         "urn:oid:1.3.6.1.4.1.25178.1.2.19"
     };
 
@@ -67,26 +75,38 @@ public class SamlValidationService {
         "affiliation",
         "edupersonaffiliation",
         "edupersonscopedaffiliation",
+        "edupersonprimaryaffiliation",
         "urn:mace:dir:attribute-def:edupersonaffiliation",
         "urn:mace:dir:attribute-def:edupersonscopedaffiliation",
+        "urn:mace:dir:attribute-def:edupersonprimaryaffiliation",
         "urn:oid:1.3.6.1.4.1.5923.1.1.1.1",
+        "urn:oid:1.3.6.1.4.1.5923.1.1.1.5",
         "urn:oid:1.3.6.1.4.1.5923.1.1.1.9"
     };
 
     private static final String[] EMAIL_ATTRIBUTE_ALIASES = new String[] {
         "mail",
         "email",
+        "emailaddress",
+        "mailprimaryaddress",
+        "mailalternateaddress",
         "urn:mace:dir:attribute-def:mail",
+        "urn:oid:1.2.840.113549.1.9.1",
         "urn:oid:0.9.2342.19200300.100.1.3"
     };
 
     private static final String[] DISPLAY_NAME_ATTRIBUTE_ALIASES = new String[] {
         "displayname",
+        "display-name",
         "cn",
         "commonname",
+        "givenname",
+        "sn",
         "urn:mace:dir:attribute-def:displayname",
         "urn:mace:dir:attribute-def:cn",
         "urn:oid:2.16.840.1.113730.3.1.241",
+        "urn:oid:2.5.4.42",
+        "urn:oid:2.5.4.4",
         "urn:oid:2.5.4.3"
     };
 
@@ -193,18 +213,32 @@ public class SamlValidationService {
         String email = extractSamlAttributeValueByAliases(doc, EMAIL_ATTRIBUTE_ALIASES);
         String displayName = extractSamlAttributeValueByAliases(doc, DISPLAY_NAME_ATTRIBUTE_ALIASES);
         List<String> schacHomeOrganizations = extractSamlAttributeValuesByAliases(doc, SCHAC_HOME_ORG_ATTRIBUTE_ALIASES);
+
+        if (userid == null || userid.isBlank()) {
+            String nameId = extractNameId(doc);
+            if (nameId != null && !nameId.isBlank()) {
+                userid = nameId;
+                if (email == null && looksLikeEmail(nameId)) {
+                    email = nameId;
+                }
+            }
+        }
         
         if (userid == null || userid.isEmpty()) {
             throw new SecurityException("SAML assertion missing 'userid' attribute");
         }
-        if (affiliation == null || affiliation.isEmpty()) {
-            throw new SecurityException("SAML assertion missing 'affiliation' attribute");
-        }
-        
         if (schacHomeOrganizations.isEmpty()) {
             String scopedAffiliation = extractSamlAttributeValueByAliases(doc, SCHAC_HOME_ORG_ATTRIBUTE_ALIASES);
             if (scopedAffiliation != null && !scopedAffiliation.isBlank()) {
                 schacHomeOrganizations = List.of(scopedAffiliation.trim().toLowerCase());
+            }
+        }
+
+        if (affiliation == null || affiliation.isBlank()) {
+            if (!schacHomeOrganizations.isEmpty()) {
+                affiliation = schacHomeOrganizations.get(0);
+            } else {
+                throw new SecurityException("SAML assertion missing 'affiliation' attribute");
             }
         }
 
@@ -228,6 +262,22 @@ public class SamlValidationService {
             schacHomeOrganizations,
             capturedAttributes
         );
+    }
+
+    private String extractNameId(Document doc) {
+        NodeList nameIds = doc.getElementsByTagNameNS("*", "NameID");
+        if (nameIds.getLength() > 0) {
+            return nameIds.item(0).getTextContent().trim();
+        }
+        NodeList legacyNameIds = doc.getElementsByTagNameNS("*", "NameIdentifier");
+        if (legacyNameIds.getLength() > 0) {
+            return legacyNameIds.item(0).getTextContent().trim();
+        }
+        return null;
+    }
+
+    private boolean looksLikeEmail(String value) {
+        return value != null && value.contains("@");
     }
     
     /**
