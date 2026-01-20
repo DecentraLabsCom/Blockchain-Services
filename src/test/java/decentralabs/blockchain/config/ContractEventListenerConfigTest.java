@@ -146,6 +146,9 @@ class ContractEventListenerConfigTest {
         );
         when(reservationCall.send()).thenReturn(reservation);
         when(diamond.getReservation(any(byte[].class))).thenReturn(reservationCall);
+        stubReservationPucHash(diamond, "0x" + "00".repeat(32));
+        stubReservationPucHash(diamond, "0x" + "00".repeat(32));
+        stubReservationPucHash(diamond, "0x" + "00".repeat(32));
         ReflectionTestUtils.setField(config, "cachedDiamond", diamond);
 
         Map<String, Event> supported = getSupportedEvents();
@@ -212,6 +215,7 @@ class ContractEventListenerConfigTest {
         );
         when(reservationCall.send()).thenReturn(reservation);
         when(diamond.getReservation(any(byte[].class))).thenReturn(reservationCall);
+        stubReservationPucHash(diamond, "0x" + "00".repeat(32));
         ReflectionTestUtils.setField(config, "cachedDiamond", diamond);
 
         Map<String, Event> supported = getSupportedEvents();
@@ -367,6 +371,13 @@ class ContractEventListenerConfigTest {
         return Numeric.toHexStringNoPrefixZeroPadded(value, 64);
     }
 
+    private void stubReservationPucHash(decentralabs.blockchain.contract.Diamond diamond, String hashHex) throws Exception {
+        @SuppressWarnings("unchecked")
+        var pucHashCall = (org.web3j.protocol.core.RemoteFunctionCall<byte[]>) mock(org.web3j.protocol.core.RemoteFunctionCall.class);
+        when(pucHashCall.send()).thenReturn(Numeric.hexStringToByteArray(hashHex));
+        when(diamond.getReservationPucHash(any(byte[].class))).thenReturn(pucHashCall);
+    }
+
     @Test
     void shouldPersistReservationCanceledAndSendNotification() {
         Map<String, Event> supported = getSupportedEvents();
@@ -426,6 +437,7 @@ class ContractEventListenerConfigTest {
         );
         when(reservationCall.send()).thenReturn(reservation);
         when(diamond.getReservation(any(byte[].class))).thenReturn(reservationCall);
+        stubReservationPucHash(diamond, "0x" + "00".repeat(32));
         ReflectionTestUtils.setField(config, "cachedDiamond", diamond);
 
         Map<String, Event> supported = getSupportedEvents();

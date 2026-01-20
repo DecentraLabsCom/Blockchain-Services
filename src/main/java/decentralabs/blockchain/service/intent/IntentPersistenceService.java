@@ -106,6 +106,26 @@ public class IntentPersistenceService {
         }
     }
 
+    public Optional<IntentRecord> findByReservationKey(String reservationKey) {
+        if (jdbcTemplate == null) {
+            return Optional.empty();
+        }
+        try {
+            return jdbcTemplate.query(
+                "SELECT * FROM intents WHERE reservation_key = ? ORDER BY updated_at DESC LIMIT 1",
+                this::mapRow,
+                reservationKey
+            ).stream().findFirst();
+        } catch (Exception e) {
+            log.warn(
+                "Intent lookup by reservationKey skipped for {}: {}",
+                LogSanitizer.sanitize(reservationKey),
+                LogSanitizer.sanitize(e.getMessage())
+            );
+            return Optional.empty();
+        }
+    }
+
     private IntentRecord mapRow(ResultSet rs, int rowNum) throws SQLException {
         IntentRecord record = new IntentRecord(
             rs.getString("request_id"),

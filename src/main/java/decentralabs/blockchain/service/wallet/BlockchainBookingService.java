@@ -5,6 +5,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
+import org.web3j.crypto.Hash;
 import org.web3j.protocol.Web3j;
 import org.web3j.tx.ReadonlyTransactionManager;
 import org.web3j.tx.gas.StaticGasProvider;
@@ -12,6 +13,7 @@ import org.web3j.tx.gas.StaticGasProvider;
 import decentralabs.blockchain.contract.Diamond;
 
 import java.math.BigInteger;
+import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.Map;
@@ -136,8 +138,9 @@ public class BlockchainBookingService {
         BigInteger status = reservation.status;
         String authURI = resolveProviderAuthURI(diamond, reservation.labProvider);
         if (expectedPuc != null && !expectedPuc.isBlank()) {
-            String reservationPuc = reservation.puc;
-            if (reservationPuc == null || !reservationPuc.equals(expectedPuc)) {
+            byte[] expectedHash = computePucHash(expectedPuc);
+            byte[] reservationHash = diamond.getReservationPucHash(reservationKeyBytes).send();
+            if (!Arrays.equals(expectedHash, reservationHash)) {
                 throw new SecurityException("Reservation key does not belong to the provided institutional user");
             }
         }
@@ -178,6 +181,7 @@ public class BlockchainBookingService {
         
         byte[] reservationKeyBytes = resolveActiveReservationKey(diamond, labId, wallet, puc);
         BigInteger currentTime = BigInteger.valueOf(System.currentTimeMillis() / 1000);
+        byte[] expectedPucHash = (puc == null || puc.isBlank()) ? null : computePucHash(puc);
         
         if (!isValidReservationKey(reservationKeyBytes)) {
             // Iterate through user's reservations to find active one for this labId (fallback)
@@ -186,9 +190,15 @@ public class BlockchainBookingService {
                 Diamond.Reservation res = diamond.getReservation(key).send();
                 
                 // Check if this reservation matches our labId and is currently active
+                boolean pucMatches = expectedPucHash == null;
+                if (!pucMatches) {
+                    byte[] reservationHash = diamond.getReservationPucHash(key).send();
+                    pucMatches = Arrays.equals(expectedPucHash, reservationHash);
+                }
+
                 if (res.labId.equals(labId) && 
                     (STATUS_CONFIRMED.equals(res.status) || STATUS_IN_USE.equals(res.status)) &&
-                    (puc == null || puc.isEmpty() || (res.puc != null && res.puc.equals(puc))) &&
+                    pucMatches &&
                     currentTime.compareTo(res.start) >= 0 &&
                     currentTime.compareTo(res.end) <= 0) {
                     
@@ -344,6 +354,13 @@ public class BlockchainBookingService {
             sb.append(String.format("%02x", b));
         }
         return sb.toString();
+    }
+
+    private byte[] computePucHash(String puc) {
+        if (puc == null || puc.isBlank()) {
+            return null;
+        }
+        return Hash.sha3(puc.getBytes(StandardCharsets.UTF_8));
     }
     
     private byte[] resolveActiveReservationKey(Diamond diamond, BigInteger labId, String wallet, String puc) {

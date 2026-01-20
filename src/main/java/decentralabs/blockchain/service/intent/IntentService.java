@@ -806,6 +806,33 @@ public class IntentService {
         return intents;
     }
 
+    public Optional<String> findPucByReservationKey(String reservationKey) {
+        String normalized = normalizeBytes32(reservationKey);
+        if (normalized == null) {
+            return Optional.empty();
+        }
+
+        IntentRecord record = intents.values().stream()
+            .filter(intent -> normalized.equalsIgnoreCase(intent.getReservationKey()))
+            .findFirst()
+            .orElse(null);
+
+        if (record == null) {
+            record = persistenceService.findByReservationKey(normalized).orElse(null);
+            if (record != null && record.getRequestId() != null) {
+                intents.put(record.getRequestId(), record);
+                if (record.getSigner() != null && record.getNonce() != null) {
+                    nonceIndex.put(buildNonceKey(record.getSigner(), record.getNonce()), record.getRequestId());
+                }
+            }
+        }
+
+        if (record == null || isBlank(record.getPuc())) {
+            return Optional.empty();
+        }
+        return Optional.of(record.getPuc());
+    }
+
     public void markInProgress(IntentRecord record) {
         record.setStatus(IntentStatus.IN_PROGRESS);
         persistenceService.upsert(record);

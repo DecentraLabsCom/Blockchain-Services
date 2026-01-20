@@ -245,6 +245,21 @@ public class Diamond extends Contract {
                     );
                 });
     }
+
+    /**
+     * Get reservation PUC hash by key (bytes32).
+     */
+    @SuppressWarnings("rawtypes")
+    public RemoteFunctionCall<byte[]> getReservationPucHash(byte[] reservationKey) {
+        final Function function = new Function("getReservationPucHash",
+                Arrays.asList(new Bytes32(reservationKey)),
+                Arrays.asList(new TypeReference<Bytes32>() {}));
+        return new RemoteFunctionCall<>(function,
+                () -> {
+                    Type result = executeCallSingleValueReturn(function);
+                    return (byte[]) result.getValue();
+                });
+    }
     
     /**
      * Check if user has active booking by token
@@ -316,12 +331,44 @@ public class Diamond extends Contract {
     }
 
     /**
+     * Confirm an institutional reservation request with PUC.
+     */
+    public RemoteFunctionCall<TransactionReceipt> confirmInstitutionalReservationRequestWithPuc(
+        String institutionalProvider,
+        byte[] reservationKey,
+        String puc
+    ) {
+        final Function function = new Function(
+            "confirmInstitutionalReservationRequestWithPuc",
+            Arrays.asList(new Address(institutionalProvider), new Bytes32(reservationKey), new Utf8String(puc)),
+            List.of()
+        );
+        return executeRemoteCallTransaction(function);
+    }
+
+    /**
      * Confirm a pending reservation request.
      */
     public RemoteFunctionCall<TransactionReceipt> confirmReservationRequest(byte[] reservationKey) {
         final Function function = new Function(
             "confirmReservationRequest",
             Arrays.asList(new Bytes32(reservationKey)),
+            List.of()
+        );
+        return executeRemoteCallTransaction(function);
+    }
+
+    /**
+     * Cancel an institutional booking with PUC.
+     */
+    public RemoteFunctionCall<TransactionReceipt> cancelInstitutionalBookingWithPuc(
+        String institutionalProvider,
+        byte[] reservationKey,
+        String puc
+    ) {
+        final Function function = new Function(
+            "cancelInstitutionalBookingWithPuc",
+            Arrays.asList(new Address(institutionalProvider), new Bytes32(reservationKey), new Utf8String(puc)),
             List.of()
         );
         return executeRemoteCallTransaction(function);

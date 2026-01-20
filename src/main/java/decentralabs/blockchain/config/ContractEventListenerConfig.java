@@ -12,6 +12,7 @@ import decentralabs.blockchain.service.wallet.InstitutionalWalletService;
 import decentralabs.blockchain.service.wallet.WalletService;
 import java.math.BigDecimal;
 import java.math.BigInteger;
+import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.Arrays;
 import java.util.List;
@@ -36,6 +37,7 @@ import org.web3j.abi.datatypes.generated.Bytes32;
 import org.web3j.abi.datatypes.generated.Uint256;
 import org.web3j.abi.datatypes.Utf8String;
 import org.web3j.crypto.Credentials;
+import org.web3j.crypto.Hash;
 import org.web3j.protocol.Web3j;
 import org.web3j.protocol.core.methods.response.Log;
 import org.web3j.protocol.core.methods.response.TransactionReceipt;
@@ -536,9 +538,9 @@ public class ContractEventListenerConfig {
         Optional<BigInteger> end = details.map(ReservationDetails::end).or(() -> endFromEvent);
         Optional<BigInteger> status = details.map(ReservationDetails::status);
 
-        Optional<String> puc = details
-            .map(ReservationDetails::puc)
-            .flatMap(this::normalizeNonEmptyString);
+        Optional<String> pucHash = details
+            .map(ReservationDetails::pucHash)
+            .flatMap(this::normalizeBytes32);
 
         Optional<String> payerInstitution = details
             .map(ReservationDetails::payerInstitution)
@@ -555,7 +557,7 @@ public class ContractEventListenerConfig {
             start,
             end,
             status,
-            puc,
+            pucHash,
             payerInstitution,
             collectorInstitution,
             eventLog
@@ -617,13 +619,15 @@ public class ContractEventListenerConfig {
 
     private void processReservationRequest(ReservationEventPayload payload) {
         log.info(
-            "Evaluating reservation request for key={} labId={} renter={} payerInstitution={} puc={}",
+            "Evaluating reservation request for key={} labId={} renter={} payerInstitution={} pucHash={}",
             payload.reservationKey(),
             payload.labId(),
             payload.renter().orElse("unknown"),
             payload.payerInstitution().orElse("n/a"),
-            payload.puc().orElse("n/a")
+            payload.pucHash().orElse("n/a")
         );
+
+        boolean institutional = payload.payerInstitution().isPresent() || payload.pucHash().isPresent();
 
         if (!isPending(payload)) {
             log.info("Reservation {} already processed on-chain. Skipping.", payload.reservationKey());
@@ -640,8 +644,13 @@ public class ContractEventListenerConfig {
                 .orElseThrow(() -> new IllegalStateException("Missing reservation end time"));
 
             labMetadataService.validateAvailability(metadata, start, end, DEFAULT_RESERVATION_USER_COUNT);
-            confirmReservationOnChain(payload.reservationKey());
-            log.info("Reservation {} auto-approved for lab {}", payload.reservationKey(), payload.labId());
+            if (institutional) {
+                confirmInstitutionalReservationOnChain(payload);
+                log.info("Institutional reservation {} auto-approved for lab {}", payload.reservationKey(), payload.labId());
+            } else {
+                confirmReservationOnChain(payload.reservationKey());
+                log.info("Reservation {} auto-approved for lab {}", payload.reservationKey(), payload.labId());
+            }
         } catch (Exception ex) {
             log.warn(
                 "Auto-approval failed for reservation {} on lab {}: {}",
@@ -778,6 +787,30 @@ public class ContractEventListenerConfig {
         log.info("Reservation {} confirmed on-chain (tx={})", reservationKey, receipt.getTransactionHash());
     }
 
+    private void confirmInstitutionalReservationOnChain(ReservationEventPayload payload) throws Exception {
+        String reservationKey = payload.reservationKey();
+        String payerInstitution = payload.payerInstitution()
+            .orElseThrow(() -> new IllegalStateException("Missing payer institution for " + reservationKey));
+        String onchainHash = payload.pucHash()
+            .orElseThrow(() -> new IllegalStateException("Missing on-chain PUC hash for " + reservationKey));
+
+        String puc = intentService.findPucByReservationKey(reservationKey)
+            .orElseThrow(() -> new IllegalStateException("Missing PUC for reservation " + reservationKey));
+        String computedHash = normalizeBytes32(computePucHash(puc))
+            .orElseThrow(() -> new IllegalStateException("Invalid PUC hash for reservation " + reservationKey));
+
+        if (!computedHash.equalsIgnoreCase(onchainHash)) {
+            throw new IllegalStateException("PUC hash mismatch for reservation " + reservationKey);
+        }
+
+        Diamond contract = getWritableDiamondContract();
+        byte[] keyBytes = reservationKeyToBytes(reservationKey);
+        TransactionReceipt receipt = contract
+            .confirmInstitutionalReservationRequestWithPuc(payerInstitution, keyBytes, puc)
+            .send();
+        log.info("Institutional reservation {} confirmed on-chain (tx={})", reservationKey, receipt.getTransactionHash());
+    }
+
     private void denyReservationOnChain(String reservationKey, String reason) {
         try {
             Diamond contract = getWritableDiamondContract();
@@ -871,6 +904,19 @@ public class ContractEventListenerConfig {
         return trimmed.isEmpty() ? Optional.empty() : Optional.of(trimmed);
     }
 
+    private Optional<String> normalizeBytes32(String value) {
+        Optional<String> normalized = normalizeNonEmptyString(value);
+        if (normalized.isEmpty()) {
+            return normalized;
+        }
+        return isZeroBytes32(normalized.get()) ? Optional.empty() : normalized;
+    }
+
+    private String computePucHash(String puc) {
+        byte[] digest = Hash.sha3(puc.getBytes(StandardCharsets.UTF_8));
+        return Numeric.toHexString(digest);
+    }
+
     private Optional<String> normalizeAddress(String address) {
         return normalizeNonEmptyString(address)
             .map(val -> val.toLowerCase(Locale.ROOT))
@@ -885,6 +931,23 @@ public class ContractEventListenerConfig {
         return normalized.equals("0x0")
             || normalized.equals("0x")
             || normalized.equals("0x0000000000000000000000000000000000000000");
+    }
+
+    private boolean isZeroBytes32(String value) {
+        if (value == null || value.isBlank()) {
+            return true;
+        }
+        String normalized = value.trim().toLowerCase(Locale.ROOT);
+        if (!normalized.startsWith("0x")) {
+            return false;
+        }
+        String hex = normalized.substring(2);
+        for (int i = 0; i < hex.length(); i++) {
+            if (hex.charAt(i) != '0') {
+                return false;
+            }
+        }
+        return true;
     }
 
     private Diamond getDiamondContract() {
@@ -916,14 +979,16 @@ public class ContractEventListenerConfig {
                 return Optional.empty();
             }
             Diamond.Reservation reservation = contract.getReservation(keyBytes).send();
-            return Optional.of(mapReservation(reservation));
+            byte[] reservationPucHash = contract.getReservationPucHash(keyBytes).send();
+            String pucHashHex = Numeric.toHexString(reservationPucHash);
+            return Optional.of(mapReservation(reservation, pucHashHex));
         } catch (Exception ex) {
             log.debug("Unable to load reservation {}: {}", reservationKey, ex.getMessage());
             return Optional.empty();
         }
     }
 
-    private ReservationDetails mapReservation(Diamond.Reservation reservation) {
+    private ReservationDetails mapReservation(Diamond.Reservation reservation, String pucHash) {
         return new ReservationDetails(
             reservation.labId,
             reservation.renter,
@@ -932,7 +997,7 @@ public class ContractEventListenerConfig {
             reservation.status,
             reservation.start,
             reservation.end,
-            reservation.puc,
+            pucHash,
             reservation.requestPeriodStart,
             reservation.requestPeriodDuration,
             reservation.payerInstitution,
@@ -948,7 +1013,7 @@ public class ContractEventListenerConfig {
         BigInteger status,
         BigInteger start,
         BigInteger end,
-        String puc,
+        String pucHash,
         BigInteger requestPeriodStart,
         BigInteger requestPeriodDuration,
         String payerInstitution,
@@ -962,7 +1027,7 @@ public class ContractEventListenerConfig {
         Optional<BigInteger> startEpoch,
         Optional<BigInteger> endEpoch,
         Optional<BigInteger> status,
-        Optional<String> puc,
+        Optional<String> pucHash,
         Optional<String> payerInstitution,
         Optional<String> collectorInstitution,
         Log rawLog

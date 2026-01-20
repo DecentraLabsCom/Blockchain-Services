@@ -165,7 +165,7 @@ public class SecurityConfig {
         // Note: /onboarding/webauthn/** CORS is handled by OpenResty proxy layer
         // Do NOT register it here to avoid duplicate Access-Control-Allow-Origin headers
         
-        // ALL wallet endpoints - localhost only, except institutional reservation
+        // ALL wallet endpoints - localhost only
         source.registerCorsConfiguration(walletEndpoint + "/**", walletConfiguration);
         source.registerCorsConfiguration(treasuryEndpoint + "/**", walletConfiguration);
         // Token-based onboarding (invite tokens) - localhost only

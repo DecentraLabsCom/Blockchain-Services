@@ -5,12 +5,7 @@ import decentralabs.blockchain.controller.TestSecurityConfig;
 import decentralabs.blockchain.dto.treasury.InstitutionalAdminRequest;
 import decentralabs.blockchain.dto.treasury.InstitutionalAdminRequest.AdminOperation;
 import decentralabs.blockchain.dto.treasury.InstitutionalAdminResponse;
-import decentralabs.blockchain.dto.treasury.InstitutionalReservationRequest;
 import decentralabs.blockchain.service.treasury.InstitutionalAdminService;
-import decentralabs.blockchain.service.treasury.InstitutionalReservationService;
-import java.math.BigInteger;
-import java.time.LocalDateTime;
-import java.util.Map;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
@@ -39,62 +34,7 @@ class InstitutionalTreasuryControllerTest {
     private ObjectMapper objectMapper;
 
     @MockitoBean
-    private InstitutionalReservationService reservationService;
-
-    @MockitoBean
     private InstitutionalAdminService adminService;
-
-    @Test
-    void createInstitutionalReservationReturnsSuccessPayload() throws Exception {
-        Map<String, Object> response = Map.of("success", true, "transactionHash", "0x123");
-        when(reservationService.processReservation(any(InstitutionalReservationRequest.class))).thenReturn(response);
-
-        InstitutionalReservationRequest request = InstitutionalReservationRequest.builder()
-            .marketplaceToken("token")
-            .samlAssertion("saml")
-            .userId("user")
-            .institutionId("inst")
-            .labId(BigInteger.ONE)
-            .startTime(LocalDateTime.now())
-            .endTime(LocalDateTime.now().plusHours(1))
-            .userCount(1)
-            .timestamp(System.currentTimeMillis())
-            .build();
-
-        mockMvc.perform(post("/treasury/reservations")
-                .with(csrf())
-                .contentType(MediaType.APPLICATION_JSON)
-                .content(objectMapper.writeValueAsString(request)))
-            .andExpect(status().isOk())
-            .andExpect(jsonPath("$.success").value(true))
-            .andExpect(jsonPath("$.transactionHash").value("0x123"));
-    }
-
-    @Test
-    void createInstitutionalReservationReturnsBadRequestOnFailure() throws Exception {
-        when(reservationService.processReservation(any(InstitutionalReservationRequest.class)))
-            .thenThrow(new IllegalStateException("failure"));
-
-        InstitutionalReservationRequest request = InstitutionalReservationRequest.builder()
-            .marketplaceToken("token")
-            .samlAssertion("saml")
-            .userId("user")
-            .institutionId("inst")
-            .labId(BigInteger.ONE)
-            .startTime(LocalDateTime.now())
-            .endTime(LocalDateTime.now().plusHours(1))
-            .userCount(1)
-            .timestamp(System.currentTimeMillis())
-            .build();
-
-        mockMvc.perform(post("/treasury/reservations")
-                .with(csrf())
-                .contentType(MediaType.APPLICATION_JSON)
-                .content(objectMapper.writeValueAsString(request)))
-            .andExpect(status().isBadRequest())
-            .andExpect(jsonPath("$.success").value(false))
-            .andExpect(jsonPath("$.error").value("failure"));
-    }
 
     @Test
     void executeAdminOperationPropagatesServiceResponses() throws Exception {

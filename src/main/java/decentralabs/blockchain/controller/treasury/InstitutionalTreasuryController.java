@@ -2,9 +2,7 @@ package decentralabs.blockchain.controller.treasury;
 
 import decentralabs.blockchain.dto.treasury.InstitutionalAdminRequest;
 import decentralabs.blockchain.dto.treasury.InstitutionalAdminResponse;
-import decentralabs.blockchain.dto.treasury.InstitutionalReservationRequest;
 import decentralabs.blockchain.service.treasury.InstitutionalAdminService;
-import decentralabs.blockchain.service.treasury.InstitutionalReservationService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
@@ -23,25 +21,7 @@ import org.springframework.web.bind.annotation.RestController;
 @Slf4j
 public class InstitutionalTreasuryController {
 
-    private final InstitutionalReservationService reservationService;
     private final InstitutionalAdminService adminService;
-
-    /**
-     * POST /treasury/reservations
-     * Processes an institutional reservation request with 3-layer auth.
-     */
-    @PostMapping("/reservations")
-    public ResponseEntity<?> createInstitutionalReservation(
-        @RequestBody InstitutionalReservationRequest request
-    ) {
-        try {
-            return ResponseEntity.ok(reservationService.processReservation(request));
-        } catch (Exception e) {
-            log.error("Institutional reservation failed: {}", e.getMessage(), e);
-            return ResponseEntity.badRequest()
-                .body(java.util.Map.of("success", false, "error", e.getMessage()));
-        }
-    }
 
     /**
      * POST /treasury/admin/execute
