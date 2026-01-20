@@ -139,8 +139,8 @@ public class BlockchainBookingService {
         String authURI = resolveProviderAuthURI(diamond, reservation.labProvider);
         if (expectedPuc != null && !expectedPuc.isBlank()) {
             byte[] expectedHash = computePucHash(expectedPuc);
-            byte[] reservationHash = diamond.getReservationPucHash(reservationKeyBytes).send();
-            if (!Arrays.equals(expectedHash, reservationHash)) {
+            byte[] reservationHash = fetchReservationPucHash(diamond, reservationKeyBytes);
+            if (reservationHash == null || !Arrays.equals(expectedHash, reservationHash)) {
                 throw new SecurityException("Reservation key does not belong to the provided institutional user");
             }
         }
@@ -192,8 +192,8 @@ public class BlockchainBookingService {
                 // Check if this reservation matches our labId and is currently active
                 boolean pucMatches = expectedPucHash == null;
                 if (!pucMatches) {
-                    byte[] reservationHash = diamond.getReservationPucHash(key).send();
-                    pucMatches = Arrays.equals(expectedPucHash, reservationHash);
+                    byte[] reservationHash = fetchReservationPucHash(diamond, key);
+                    pucMatches = reservationHash != null && Arrays.equals(expectedPucHash, reservationHash);
                 }
 
                 if (res.labId.equals(labId) && 
@@ -380,6 +380,19 @@ public class BlockchainBookingService {
 
     private boolean isValidReservationKey(byte[] key) {
         return key != null && key.length == 32 && !Arrays.equals(key, new byte[32]);
+    }
+
+    private byte[] fetchReservationPucHash(Diamond diamond, byte[] reservationKeyBytes) {
+        try {
+            var call = diamond.getReservationPucHash(reservationKeyBytes);
+            if (call == null) {
+                return null;
+            }
+            return call.send();
+        } catch (Exception e) {
+            log.warn("Unable to fetch reservation PUC hash: {}", e.getMessage());
+            return null;
+        }
     }
 
     private String resolveProviderAuthURI(Diamond diamond, String providerAddress) {

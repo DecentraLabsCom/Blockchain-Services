@@ -147,8 +147,6 @@ class ContractEventListenerConfigTest {
         when(reservationCall.send()).thenReturn(reservation);
         when(diamond.getReservation(any(byte[].class))).thenReturn(reservationCall);
         stubReservationPucHash(diamond, "0x" + "00".repeat(32));
-        stubReservationPucHash(diamond, "0x" + "00".repeat(32));
-        stubReservationPucHash(diamond, "0x" + "00".repeat(32));
         ReflectionTestUtils.setField(config, "cachedDiamond", diamond);
 
         Map<String, Event> supported = getSupportedEvents();
