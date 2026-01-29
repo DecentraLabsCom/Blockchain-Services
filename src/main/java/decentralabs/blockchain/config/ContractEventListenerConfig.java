@@ -866,6 +866,10 @@ public class ContractEventListenerConfig {
     }
 
     private Diamond getWritableDiamondContractFresh() {
+        Diamond preset = writableDiamond;
+        if (preset != null) {
+            return preset;
+        }
         Web3j web3j = walletService.getWeb3jInstance();
         long chainId = resolveChainId(web3j);
         var receiptProcessor = new PollingTransactionReceiptProcessor(web3j, 1500, 40);
