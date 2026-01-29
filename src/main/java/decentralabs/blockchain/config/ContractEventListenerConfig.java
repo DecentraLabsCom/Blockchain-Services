@@ -689,9 +689,6 @@ public class ContractEventListenerConfig {
             );
             return;
         }
-        if (!shouldAttemptReservationProcessing(payload.reservationKey())) {
-            return;
-        }
         log.info(
             "Auto-denying reservation {} for lab {}: {}",
             payload.reservationKey(),

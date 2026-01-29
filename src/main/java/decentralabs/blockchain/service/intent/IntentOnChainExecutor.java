@@ -4,6 +4,9 @@ import java.math.BigInteger;
 import java.util.List;
 import java.util.Locale;
 import java.util.Optional;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ThreadFactory;
 
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
@@ -29,6 +32,7 @@ import org.web3j.tx.FastRawTransactionManager;
 import org.web3j.tx.TransactionManager;
 import org.web3j.utils.Numeric;
 
+import jakarta.annotation.PreDestroy;
 import decentralabs.blockchain.dto.intent.ActionIntentPayload;
 import decentralabs.blockchain.dto.intent.ReservationIntentPayload;
 import decentralabs.blockchain.service.wallet.InstitutionalWalletService;
@@ -39,11 +43,16 @@ import lombok.extern.slf4j.Slf4j;
 @Slf4j
 public class IntentOnChainExecutor {
 
+    private static final BigInteger MAX_RESERVATIONS_PER_LAB_USER = BigInteger.TEN;
+    private static final BigInteger PRE_RELEASE_THRESHOLD = BigInteger.valueOf(2);
+    private static final BigInteger PRE_RELEASE_BATCH = BigInteger.TEN;
+
     private final WalletService walletService;
     private final InstitutionalWalletService institutionalWalletService;
     private final String contractAddress;
     private final BigInteger gasLimit;
     private final BigInteger gasPriceWei;
+    private final ExecutorService cleanupExecutor;
     @Value("${blockchain.network.active:sepolia}")
     private String executionNetwork;
     public IntentOnChainExecutor(
@@ -58,6 +67,14 @@ public class IntentOnChainExecutor {
         this.contractAddress = contractAddress;
         this.gasLimit = gasLimit;
         this.gasPriceWei = toWei(gasPriceGwei);
+        this.cleanupExecutor = Executors.newSingleThreadExecutor(new ThreadFactory() {
+            @Override
+            public Thread newThread(Runnable r) {
+                Thread t = new Thread(r, "inst-expired-release");
+                t.setDaemon(true);
+                return t;
+            }
+        });
     }
 
     public record ExecutionResult(boolean success, String txHash, Long blockNumber, String labId, String reservationKey, String reason) { }
@@ -76,7 +93,11 @@ public class IntentOnChainExecutor {
             case "LAB_DELETE" -> send(buildSimple(FunctionName.DELETE_LAB, record), credentials);
             case "LAB_SET_URI" -> send(buildSetTokenURI(record), credentials);
             case "CANCEL_RESERVATION_REQUEST" -> send(buildCancelReservation(record), credentials);
-            case "RESERVATION_REQUEST" -> send(buildReservationRequest(record), credentials);
+            case "RESERVATION_REQUEST" -> {
+                ExecutionResult result = send(buildReservationRequest(record), credentials);
+                postflightReleaseExpiredInstitutionalReservations(record, credentials);
+                yield result;
+            }
             case "CANCEL_BOOKING" -> send(buildCancelBooking(record), credentials);
             case "REQUEST_FUNDS" -> send(buildRequestFunds(record), credentials);
             default -> new ExecutionResult(false, null, null, null, null, "unsupported_action");
@@ -111,15 +132,18 @@ public class IntentOnChainExecutor {
     }
 
     private TransactionReceipt waitForReceipt(Web3j web3j, String txHash) {
+        return waitForReceipt(web3j, txHash, 40, 3000);
+    }
+
+    private TransactionReceipt waitForReceipt(Web3j web3j, String txHash, int maxAttempts, long sleepMs) {
         try {
             int attempts = 0;
-            int maxAttempts = 40;
             while (attempts < maxAttempts) {
                 var response = web3j.ethGetTransactionReceipt(txHash).send();
                 if (response.getTransactionReceipt().isPresent()) {
                     return response.getTransactionReceipt().get();
                 }
-                Thread.sleep(3000);
+                Thread.sleep(sleepMs);
                 attempts++;
             }
             throw new RuntimeException("Transaction receipt not found after " + maxAttempts + " attempts");
@@ -474,6 +498,113 @@ public class IntentOnChainExecutor {
         } catch (Exception ex) {
             log.warn("Unable to fetch next intent nonce for {}: {}", signer, ex.getMessage());
             return Optional.empty();
+        }
+    }
+
+    private void postflightReleaseExpiredInstitutionalReservations(IntentRecord record, Credentials credentials) {
+        ReservationIntentPayload payload = record.getReservationPayload();
+        if (payload == null) {
+            return;
+        }
+        if (payload.getExecutor() == null || payload.getExecutor().isBlank()) {
+            return;
+        }
+        if (payload.getPuc() == null || payload.getPuc().isBlank()) {
+            return;
+        }
+        if (payload.getLabId() == null) {
+            return;
+        }
+
+        cleanupExecutor.submit(() -> {
+            try {
+                Optional<BigInteger> activeCountOpt = fetchInstitutionalUserActiveCount(
+                    credentials.getAddress(),
+                    payload.getExecutor(),
+                    payload.getPuc(),
+                    payload.getLabId()
+                );
+                if (activeCountOpt.isEmpty()) {
+                    return;
+                }
+                BigInteger activeCount = activeCountOpt.get();
+                BigInteger threshold = MAX_RESERVATIONS_PER_LAB_USER.subtract(PRE_RELEASE_THRESHOLD);
+                if (activeCount.compareTo(threshold) < 0) {
+                    return;
+                }
+
+                Function function = new Function(
+                    "releaseInstitutionalExpiredReservations",
+                    List.of(
+                        new Address(payload.getExecutor()),
+                        new Utf8String(payload.getPuc()),
+                        new Uint256(payload.getLabId()),
+                        new Uint256(PRE_RELEASE_BATCH)
+                    ),
+                    List.of()
+                );
+
+                sendPreflight(function, credentials, "releaseInstitutionalExpiredReservations");
+            } catch (Exception ex) {
+                log.warn("Postflight release failed for provider {} labId {}: {}", payload.getExecutor(), payload.getLabId(), ex.getMessage());
+            }
+        });
+    }
+
+    @PreDestroy
+    private void shutdownCleanupExecutor() {
+        cleanupExecutor.shutdown();
+    }
+
+    private Optional<BigInteger> fetchInstitutionalUserActiveCount(
+        String fromAddress,
+        String provider,
+        String puc,
+        BigInteger labId
+    ) {
+        try {
+            Web3j web3j = resolveWeb3j();
+            Function fn = new Function(
+                "getInstitutionalUserActiveCount",
+                List.of(new Address(provider), new Utf8String(puc), new Uint256(labId)),
+                List.of(new TypeReference<Uint256>() {})
+            );
+            String encoded = FunctionEncoder.encode(fn);
+            var response = web3j.ethCall(
+                Transaction.createEthCallTransaction(fromAddress, contractAddress, encoded),
+                DefaultBlockParameterName.LATEST
+            ).send();
+            if (response == null || response.hasError()) {
+                return Optional.empty();
+            }
+            return FunctionReturnDecoder.decode(response.getValue(), fn.getOutputParameters())
+                .stream()
+                .findFirst()
+                .map(type -> ((Uint256) type).getValue());
+        } catch (Exception ex) {
+            log.warn("Unable to fetch institutional active count for provider {}: {}", provider, ex.getMessage());
+            return Optional.empty();
+        }
+    }
+
+    private void sendPreflight(Function function, Credentials credentials, String label) throws Exception {
+        Web3j web3j = resolveWeb3j();
+        long chainId = getChainId(web3j);
+        TransactionManager txManager = new FastRawTransactionManager(web3j, credentials, chainId);
+        String encoded = FunctionEncoder.encode(function);
+
+        EthSendTransaction tx = txManager.sendTransaction(gasPriceWei, gasLimit, contractAddress, encoded, BigInteger.ZERO);
+        String txHash = tx.getTransactionHash();
+        if (txHash == null) {
+            log.warn("Preflight {} tx hash missing: {}", label, tx.getError() != null ? tx.getError().getMessage() : "unknown");
+            return;
+        }
+
+        TransactionReceipt receipt = waitForReceipt(web3j, txHash, 10, 2000);
+        if (!receipt.isStatusOK()) {
+            log.warn("Preflight {} failed with status {}", label, receipt.getStatus());
+        } else {
+            log.info("Preflight {} mined: {}", label, txHash);
         }
     }
 
