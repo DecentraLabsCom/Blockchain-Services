@@ -45,6 +45,7 @@ import org.web3j.protocol.core.methods.response.TransactionReceipt;
 import org.web3j.tx.Contract;
 import org.web3j.tx.FastRawTransactionManager;
 import org.web3j.tx.ReadonlyTransactionManager;
+import org.web3j.tx.response.PollingTransactionReceiptProcessor;
 import org.web3j.tx.gas.StaticGasProvider;
 import org.web3j.utils.Numeric;
 
@@ -783,7 +784,7 @@ public class ContractEventListenerConfig {
     }
 
     private void confirmReservationOnChain(String reservationKey) throws Exception {
-        Diamond contract = getWritableDiamondContract();
+        Diamond contract = getWritableDiamondContractFresh();
         byte[] keyBytes = reservationKeyToBytes(reservationKey);
         TransactionReceipt receipt = contract.confirmReservationRequest(keyBytes).send();
         log.info("Reservation {} confirmed on-chain (tx={})", reservationKey, receipt.getTransactionHash());
@@ -805,7 +806,7 @@ public class ContractEventListenerConfig {
             throw new IllegalStateException("PUC hash mismatch for reservation " + reservationKey);
         }
 
-        Diamond contract = getWritableDiamondContract();
+        Diamond contract = getWritableDiamondContractFresh();
         byte[] keyBytes = reservationKeyToBytes(reservationKey);
         TransactionReceipt receipt = contract
             .confirmInstitutionalReservationRequestWithPuc(payerInstitution, keyBytes, puc)
@@ -815,7 +816,7 @@ public class ContractEventListenerConfig {
 
     private void denyReservationOnChain(String reservationKey, String reason) {
         try {
-            Diamond contract = getWritableDiamondContract();
+            Diamond contract = getWritableDiamondContractFresh();
             byte[] keyBytes = reservationKeyToBytes(reservationKey);
             TransactionReceipt receipt = contract.denyReservationRequest(keyBytes).send();
             log.info(
@@ -862,6 +863,21 @@ public class ContractEventListenerConfig {
             }
         }
         return local;
+    }
+
+    private Diamond getWritableDiamondContractFresh() {
+        Web3j web3j = walletService.getWeb3jInstance();
+        long chainId = resolveChainId(web3j);
+        var receiptProcessor = new PollingTransactionReceiptProcessor(web3j, 1500, 40);
+        FastRawTransactionManager txManager = chainId > 0
+            ? new FastRawTransactionManager(web3j, getProviderCredentials(), chainId, receiptProcessor)
+            : new FastRawTransactionManager(web3j, getProviderCredentials(), receiptProcessor);
+        return Diamond.load(
+            diamondContractAddress,
+            web3j,
+            txManager,
+            new StaticGasProvider(resolveGasPriceWei(), contractGasLimit)
+        );
     }
 
     private Credentials getProviderCredentials() {
