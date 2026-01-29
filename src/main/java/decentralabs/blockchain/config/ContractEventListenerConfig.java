@@ -20,6 +20,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -66,6 +67,10 @@ public class ContractEventListenerConfig {
     private static final String PROVIDER_ADDED = "ProviderAdded";
     private static final String LAB_INTENT_PROCESSED = "LabIntentProcessed";
     private static final String RESERVATION_INTENT_PROCESSED = "ReservationIntentProcessed";
+    private static final int MAX_RESERVATION_PROCESSING_ATTEMPTS = 3;
+    private static final long RESERVATION_RETRY_BACKOFF_MS = 120_000L;
+
+    private final ConcurrentHashMap<String, ReservationProcessingState> reservationProcessingGuard = new ConcurrentHashMap<>();
 
     private final EventPollingFallbackService eventPollingFallbackService;
 
@@ -637,6 +642,10 @@ public class ContractEventListenerConfig {
             return;
         }
 
+        if (!shouldAttemptReservationProcessing(payload.reservationKey())) {
+            return;
+        }
+
         try {
             LabMetadata metadata = loadLabMetadata(payload.labId())
                 .orElseThrow(() -> new IllegalStateException("Missing metadata for lab " + payload.labId()));
@@ -654,6 +663,7 @@ public class ContractEventListenerConfig {
                 confirmReservationOnChain(payload.reservationKey());
                 log.info("Reservation {} auto-approved for lab {}", payload.reservationKey(), payload.labId());
             }
+            markReservationProcessed(payload.reservationKey());
         } catch (Exception ex) {
             log.warn(
                 "Auto-approval failed for reservation {} on lab {}: {}",
@@ -661,6 +671,7 @@ public class ContractEventListenerConfig {
                 payload.labId(),
                 ex.getMessage()
             );
+            recordReservationFailure(payload.reservationKey(), ex.getMessage());
             autoDenyReservation(payload, ex.getMessage());
         }
     }
@@ -676,6 +687,9 @@ public class ContractEventListenerConfig {
                 payload.reservationKey(),
                 reason
             );
+            return;
+        }
+        if (!shouldAttemptReservationProcessing(payload.reservationKey())) {
             return;
         }
         log.info(
@@ -825,9 +839,77 @@ public class ContractEventListenerConfig {
                 receipt.getTransactionHash(),
                 reason
             );
+            markReservationProcessed(reservationKey);
         } catch (Exception ex) {
             log.error("Failed to deny reservation {}: {}", reservationKey, ex.getMessage(), ex);
+            recordReservationFailure(reservationKey, ex.getMessage());
         }
+    }
+
+    private boolean shouldAttemptReservationProcessing(String reservationKey) {
+        if (reservationKey == null || reservationKey.isBlank()) {
+            return false;
+        }
+        ReservationProcessingState state = reservationProcessingGuard.computeIfAbsent(
+            reservationKey,
+            key -> new ReservationProcessingState()
+        );
+        if (state.completed) {
+            log.debug("Reservation {} already marked as processed. Skipping retry.", reservationKey);
+            return false;
+        }
+        long now = System.currentTimeMillis();
+        if (now < state.nextAllowedAtMs) {
+            log.info(
+                "Skipping reservation {} auto-processing until {} (attempts={}, lastError={})",
+                reservationKey,
+                Instant.ofEpochMilli(state.nextAllowedAtMs),
+                state.attempts.get(),
+                state.lastError
+            );
+            return false;
+        }
+        int attempt = state.attempts.incrementAndGet();
+        if (attempt > MAX_RESERVATION_PROCESSING_ATTEMPTS) {
+            state.completed = true;
+            log.warn(
+                "Reservation {} reached max auto-processing attempts ({}). Skipping further retries.",
+                reservationKey,
+                MAX_RESERVATION_PROCESSING_ATTEMPTS
+            );
+            return false;
+        }
+        return true;
+    }
+
+    private void recordReservationFailure(String reservationKey, String reason) {
+        if (reservationKey == null || reservationKey.isBlank()) {
+            return;
+        }
+        ReservationProcessingState state = reservationProcessingGuard.computeIfAbsent(
+            reservationKey,
+            key -> new ReservationProcessingState()
+        );
+        state.lastError = reason;
+        state.nextAllowedAtMs = System.currentTimeMillis() + RESERVATION_RETRY_BACKOFF_MS;
+    }
+
+    private void markReservationProcessed(String reservationKey) {
+        if (reservationKey == null || reservationKey.isBlank()) {
+            return;
+        }
+        ReservationProcessingState state = reservationProcessingGuard.computeIfAbsent(
+            reservationKey,
+            key -> new ReservationProcessingState()
+        );
+        state.completed = true;
+    }
+
+    private static final class ReservationProcessingState {
+        private final AtomicInteger attempts = new AtomicInteger(0);
+        private volatile boolean completed = false;
+        private volatile long nextAllowedAtMs = 0;
+        private volatile String lastError = null;
     }
 
     private byte[] reservationKeyToBytes(String reservationKey) {
