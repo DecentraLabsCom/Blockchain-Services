@@ -39,9 +39,11 @@ import org.web3j.abi.datatypes.Utf8String;
 import org.web3j.crypto.Credentials;
 import org.web3j.crypto.Hash;
 import org.web3j.protocol.Web3j;
+import org.web3j.protocol.core.methods.response.EthChainId;
 import org.web3j.protocol.core.methods.response.Log;
 import org.web3j.protocol.core.methods.response.TransactionReceipt;
 import org.web3j.tx.Contract;
+import org.web3j.tx.FastRawTransactionManager;
 import org.web3j.tx.ReadonlyTransactionManager;
 import org.web3j.tx.gas.StaticGasProvider;
 import org.web3j.utils.Numeric;
@@ -845,10 +847,14 @@ public class ContractEventListenerConfig {
                 local = writableDiamond;
                 if (local == null) {
                     Web3j web3j = walletService.getWeb3jInstance();
+                    long chainId = resolveChainId(web3j);
+                    FastRawTransactionManager txManager = chainId > 0
+                        ? new FastRawTransactionManager(web3j, getProviderCredentials(), chainId)
+                        : new FastRawTransactionManager(web3j, getProviderCredentials());
                     local = Diamond.load(
                         diamondContractAddress,
                         web3j,
-                        getProviderCredentials(),
+                        txManager,
                         new StaticGasProvider(resolveGasPriceWei(), contractGasLimit)
                     );
                     writableDiamond = local;
@@ -867,6 +873,18 @@ public class ContractEventListenerConfig {
             ? BigDecimal.ONE
             : defaultGasPriceGwei;
         return org.web3j.utils.Convert.toWei(gwei, org.web3j.utils.Convert.Unit.GWEI).toBigInteger();
+    }
+
+    private long resolveChainId(Web3j web3j) {
+        try {
+            EthChainId id = web3j.ethChainId().send();
+            if (id != null && id.getChainId() != null) {
+                return id.getChainId().longValue();
+            }
+        } catch (Exception ex) {
+            log.warn("Unable to fetch chainId; falling back to default tx manager: {}", ex.getMessage());
+        }
+        return 0L;
     }
 
     private String describeStatus(BigInteger status) {
