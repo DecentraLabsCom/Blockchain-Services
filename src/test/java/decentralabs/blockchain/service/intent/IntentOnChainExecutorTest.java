@@ -3,6 +3,7 @@ package decentralabs.blockchain.service.intent;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.*;
 
+import java.math.BigDecimal;
 import java.math.BigInteger;
 
 import org.junit.jupiter.api.BeforeEach;
@@ -21,6 +22,7 @@ import org.web3j.protocol.core.methods.response.EthChainId;
 import decentralabs.blockchain.dto.intent.ActionIntentPayload;
 import decentralabs.blockchain.dto.intent.ReservationIntentPayload;
 import decentralabs.blockchain.service.intent.IntentOnChainExecutor.ExecutionResult;
+import decentralabs.blockchain.service.wallet.InstitutionalTxManagerProvider;
 import decentralabs.blockchain.service.wallet.InstitutionalWalletService;
 import decentralabs.blockchain.service.wallet.WalletService;
 
@@ -35,6 +37,9 @@ class IntentOnChainExecutorTest {
     private InstitutionalWalletService institutionalWalletService;
 
     @Mock
+    private InstitutionalTxManagerProvider txManagerProvider;
+
+    @Mock
     private Web3j web3j;
 
     @Mock
@@ -45,6 +50,8 @@ class IntentOnChainExecutorTest {
     private static final String CONTRACT_ADDRESS = "0x1234567890123456789012345678901234567890";
     private static final BigInteger GAS_LIMIT = BigInteger.valueOf(300000);
     private static final BigInteger GAS_PRICE_GWEI = BigInteger.ONE;
+    private static final BigDecimal GAS_PRICE_MULTIPLIER = new BigDecimal("1.2");
+    private static final BigDecimal GAS_PRICE_MIN_GWEI = BigDecimal.ONE;
 
     // Test credentials - generated from a known private key for testing
     private static final String TEST_PRIVATE_KEY = "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef";
@@ -57,7 +64,10 @@ class IntentOnChainExecutorTest {
             institutionalWalletService,
             CONTRACT_ADDRESS,
             GAS_LIMIT,
-            GAS_PRICE_GWEI
+            GAS_PRICE_GWEI,
+            GAS_PRICE_MULTIPLIER,
+            GAS_PRICE_MIN_GWEI,
+            txManagerProvider
         );
 
         // Create test credentials

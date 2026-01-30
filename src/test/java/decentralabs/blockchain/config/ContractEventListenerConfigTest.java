@@ -5,6 +5,7 @@ import decentralabs.blockchain.notification.ReservationNotificationService;
 import decentralabs.blockchain.service.health.LabMetadataService;
 import decentralabs.blockchain.service.intent.IntentService;
 import decentralabs.blockchain.service.persistence.ReservationPersistenceService;
+import decentralabs.blockchain.service.wallet.InstitutionalTxManagerProvider;
 import decentralabs.blockchain.service.wallet.InstitutionalWalletService;
 import decentralabs.blockchain.service.wallet.WalletService;
 import java.math.BigInteger;
@@ -51,6 +52,9 @@ class ContractEventListenerConfigTest {
     private InstitutionalWalletService institutionalWalletService;
 
     @Mock
+    private InstitutionalTxManagerProvider txManagerProvider;
+
+    @Mock
     private ReservationNotificationService reservationNotificationService;
 
     @Mock
@@ -68,6 +72,7 @@ class ContractEventListenerConfigTest {
     void setUp() {
         config = new ContractEventListenerConfig(
             eventPollingFallbackService,
+            txManagerProvider,
             walletService,
             labMetadataService,
             institutionalWalletService,
