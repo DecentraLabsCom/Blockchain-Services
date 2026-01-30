@@ -1,5 +1,6 @@
 package decentralabs.blockchain.service.intent;
 
+import java.math.BigDecimal;
 import java.math.BigInteger;
 import java.util.List;
 import java.util.Locale;
@@ -25,10 +26,8 @@ import org.web3j.crypto.Credentials;
 import org.web3j.protocol.Web3j;
 import org.web3j.protocol.core.DefaultBlockParameterName;
 import org.web3j.protocol.core.methods.request.Transaction;
-import org.web3j.protocol.core.methods.response.EthChainId;
 import org.web3j.protocol.core.methods.response.EthSendTransaction;
 import org.web3j.protocol.core.methods.response.TransactionReceipt;
-import org.web3j.tx.FastRawTransactionManager;
 import org.web3j.tx.TransactionManager;
 import org.web3j.utils.Numeric;
 
@@ -36,6 +35,7 @@ import jakarta.annotation.PreDestroy;
 import decentralabs.blockchain.dto.intent.ActionIntentPayload;
 import decentralabs.blockchain.dto.intent.ReservationIntentPayload;
 import decentralabs.blockchain.service.wallet.InstitutionalWalletService;
+import decentralabs.blockchain.service.wallet.InstitutionalTxManagerProvider;
 import decentralabs.blockchain.service.wallet.WalletService;
 import lombok.extern.slf4j.Slf4j;
 
@@ -51,8 +51,11 @@ public class IntentOnChainExecutor {
     private final InstitutionalWalletService institutionalWalletService;
     private final String contractAddress;
     private final BigInteger gasLimit;
-    private final BigInteger gasPriceWei;
+    private final BigInteger defaultGasPriceGwei;
+    private final BigDecimal gasPriceMultiplier;
+    private final BigDecimal gasPriceMinGwei;
     private final ExecutorService cleanupExecutor;
+    private final InstitutionalTxManagerProvider txManagerProvider;
     @Value("${blockchain.network.active:sepolia}")
     private String executionNetwork;
     public IntentOnChainExecutor(
@@ -60,13 +63,19 @@ public class IntentOnChainExecutor {
         InstitutionalWalletService institutionalWalletService,
         @Value("${contract.address}") String contractAddress,
         @Value("${ethereum.gas.limit.contract:300000}") BigInteger gasLimit,
-        @Value("${ethereum.gas.price.default:1}") BigInteger gasPriceGwei
+        @Value("${ethereum.gas.price.default:1}") BigInteger gasPriceGwei,
+        @Value("${ethereum.gas.price.multiplier:1.2}") BigDecimal gasPriceMultiplier,
+        @Value("${ethereum.gas.price.min-gwei:1}") BigDecimal gasPriceMinGwei,
+        InstitutionalTxManagerProvider txManagerProvider
     ) {
         this.walletService = walletService;
         this.institutionalWalletService = institutionalWalletService;
         this.contractAddress = contractAddress;
         this.gasLimit = gasLimit;
-        this.gasPriceWei = toWei(gasPriceGwei);
+        this.defaultGasPriceGwei = gasPriceGwei;
+        this.gasPriceMultiplier = gasPriceMultiplier;
+        this.gasPriceMinGwei = gasPriceMinGwei;
+        this.txManagerProvider = txManagerProvider;
         this.cleanupExecutor = Executors.newSingleThreadExecutor(new ThreadFactory() {
             @Override
             public Thread newThread(Runnable r) {
@@ -95,7 +104,9 @@ public class IntentOnChainExecutor {
             case "CANCEL_RESERVATION_REQUEST" -> send(buildCancelReservation(record), credentials);
             case "RESERVATION_REQUEST" -> {
                 ExecutionResult result = send(buildReservationRequest(record), credentials);
-                postflightReleaseExpiredInstitutionalReservations(record, credentials);
+                if (result.success()) {
+                    postflightReleaseExpiredInstitutionalReservations(record, credentials);
+                }
                 yield result;
             }
             case "CANCEL_BOOKING" -> send(buildCancelBooking(record), credentials);
@@ -110,14 +121,28 @@ public class IntentOnChainExecutor {
         }
         Function function = functionOpt.get();
         Web3j web3j = resolveWeb3j();
-        long chainId = getChainId(web3j);
-        TransactionManager txManager = new FastRawTransactionManager(web3j, credentials, chainId);
+        TransactionManager txManager = txManagerProvider.get(web3j);
         String encoded = FunctionEncoder.encode(function);
+        BigInteger gasPriceWei = resolveGasPriceWei(web3j);
 
         EthSendTransaction tx = txManager.sendTransaction(gasPriceWei, gasLimit, contractAddress, encoded, BigInteger.ZERO);
         String txHash = tx.getTransactionHash();
         if (txHash == null) {
-            return new ExecutionResult(false, null, null, null, null, tx.getError() != null ? tx.getError().getMessage() : "tx_hash_missing");
+            String error = tx.getError() != null ? tx.getError().getMessage() : "tx_hash_missing";
+            if (shouldRetryWithHigherGas(error)) {
+                BigInteger bumpedGasPrice = bumpGasPrice(gasPriceWei);
+                EthSendTransaction retry = txManager.sendTransaction(
+                    bumpedGasPrice, gasLimit, contractAddress, encoded, BigInteger.ZERO
+                );
+                String retryHash = retry.getTransactionHash();
+                if (retryHash != null) {
+                    TransactionReceipt receipt = waitForReceipt(web3j, retryHash);
+                    Long blockNumber = receipt.getBlockNumber() != null ? receipt.getBlockNumber().longValue() : null;
+                    return new ExecutionResult(receipt.isStatusOK(), retryHash, blockNumber, null, null,
+                        receipt.isStatusOK() ? null : receipt.getStatus());
+                }
+            }
+            return new ExecutionResult(false, null, null, null, null, error);
         }
 
         try {
@@ -150,14 +175,6 @@ public class IntentOnChainExecutor {
         } catch (Exception e) {
             throw new RuntimeException("Failed to get tx receipt: " + e.getMessage(), e);
         }
-    }
-
-    private long getChainId(Web3j web3j) throws Exception {
-        EthChainId id = web3j.ethChainId().send();
-        if (id == null || id.getChainId() == null) {
-            return 0L;
-        }
-        return id.getChainId().longValue();
     }
 
     private Optional<Function> buildAddLab(IntentRecord record) {
@@ -589,9 +606,9 @@ public class IntentOnChainExecutor {
 
     private void sendPreflight(Function function, Credentials credentials, String label) throws Exception {
         Web3j web3j = resolveWeb3j();
-        long chainId = getChainId(web3j);
-        TransactionManager txManager = new FastRawTransactionManager(web3j, credentials, chainId);
+        TransactionManager txManager = txManagerProvider.get(web3j);
         String encoded = FunctionEncoder.encode(function);
+        BigInteger gasPriceWei = resolveGasPriceWei(web3j);
 
         EthSendTransaction tx = txManager.sendTransaction(gasPriceWei, gasLimit, contractAddress, encoded, BigInteger.ZERO);
         String txHash = tx.getTransactionHash();
@@ -613,6 +630,44 @@ public class IntentOnChainExecutor {
             return BigInteger.ZERO;
         }
         return org.web3j.utils.Convert.toWei(gwei.toString(), org.web3j.utils.Convert.Unit.GWEI).toBigInteger();
+    }
+
+    private BigInteger resolveGasPriceWei(Web3j web3j) {
+        BigInteger fallback = toWei(defaultGasPriceGwei);
+        BigInteger minWei = org.web3j.utils.Convert.toWei(
+            gasPriceMinGwei != null ? gasPriceMinGwei : BigDecimal.ONE,
+            org.web3j.utils.Convert.Unit.GWEI
+        ).toBigInteger();
+        try {
+            var response = web3j.ethGasPrice().send();
+            if (response != null && response.getGasPrice() != null) {
+                BigDecimal baseWei = new BigDecimal(response.getGasPrice());
+                BigDecimal multiplier = gasPriceMultiplier != null ? gasPriceMultiplier : BigDecimal.ONE;
+                BigInteger dynamicWei = baseWei.multiply(multiplier).toBigInteger();
+                BigInteger candidate = dynamicWei.max(fallback).max(minWei);
+                return candidate;
+            }
+        } catch (Exception ex) {
+            log.warn("Unable to fetch gas price; using default: {}", ex.getMessage());
+        }
+        return fallback.max(minWei);
+    }
+
+    private boolean shouldRetryWithHigherGas(String error) {
+        if (error == null) {
+            return false;
+        }
+        String lowered = error.toLowerCase(Locale.ROOT);
+        return lowered.contains("underpriced")
+            || lowered.contains("replacement transaction")
+            || lowered.contains("nonce too low");
+    }
+
+    private BigInteger bumpGasPrice(BigInteger gasPriceWei) {
+        if (gasPriceWei == null) {
+            return BigInteger.ZERO;
+        }
+        return gasPriceWei.multiply(BigInteger.valueOf(12)).divide(BigInteger.TEN);
     }
 
     private Web3j resolveWeb3j() {

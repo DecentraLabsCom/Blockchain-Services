@@ -8,6 +8,7 @@ import decentralabs.blockchain.notification.ReservationNotificationService;
 import decentralabs.blockchain.service.health.LabMetadataService;
 import decentralabs.blockchain.service.persistence.ReservationPersistenceService;
 import decentralabs.blockchain.service.intent.IntentService;
+import decentralabs.blockchain.service.wallet.InstitutionalTxManagerProvider;
 import decentralabs.blockchain.service.wallet.InstitutionalWalletService;
 import decentralabs.blockchain.service.wallet.WalletService;
 import java.math.BigDecimal;
@@ -44,9 +45,8 @@ import org.web3j.protocol.core.methods.response.EthChainId;
 import org.web3j.protocol.core.methods.response.Log;
 import org.web3j.protocol.core.methods.response.TransactionReceipt;
 import org.web3j.tx.Contract;
-import org.web3j.tx.FastRawTransactionManager;
 import org.web3j.tx.ReadonlyTransactionManager;
-import org.web3j.tx.response.PollingTransactionReceiptProcessor;
+import org.web3j.tx.TransactionManager;
 import org.web3j.tx.gas.StaticGasProvider;
 import org.web3j.utils.Numeric;
 
@@ -73,6 +73,7 @@ public class ContractEventListenerConfig {
     private final ConcurrentHashMap<String, ReservationProcessingState> reservationProcessingGuard = new ConcurrentHashMap<>();
 
     private final EventPollingFallbackService eventPollingFallbackService;
+    private final InstitutionalTxManagerProvider txManagerProvider;
 
     private static final Event RESERVATION_REQUESTED_EVENT = new Event(
         RESERVATION_REQUESTED,
@@ -192,6 +193,10 @@ public class ContractEventListenerConfig {
 
     @Value("${ethereum.gas.price.default:1}")
     private BigDecimal defaultGasPriceGwei;
+    @Value("${ethereum.gas.price.multiplier:1.2}")
+    private BigDecimal gasPriceMultiplier;
+    @Value("${ethereum.gas.price.min-gwei:1}")
+    private BigDecimal gasPriceMinGwei;
 
     @Value("${ethereum.gas.limit.contract:300000}")
     private BigInteger contractGasLimit;
@@ -795,9 +800,11 @@ public class ContractEventListenerConfig {
     }
 
     private void confirmReservationOnChain(String reservationKey) throws Exception {
-        Diamond contract = getWritableDiamondContractFresh();
         byte[] keyBytes = reservationKeyToBytes(reservationKey);
-        TransactionReceipt receipt = contract.confirmReservationRequest(keyBytes).send();
+        TransactionReceipt receipt = executeWithGasRetry(
+            "confirmReservationRequest",
+            contract -> contract.confirmReservationRequest(keyBytes).send()
+        );
         log.info("Reservation {} confirmed on-chain (tx={})", reservationKey, receipt.getTransactionHash());
     }
 
@@ -817,19 +824,21 @@ public class ContractEventListenerConfig {
             throw new IllegalStateException("PUC hash mismatch for reservation " + reservationKey);
         }
 
-        Diamond contract = getWritableDiamondContractFresh();
         byte[] keyBytes = reservationKeyToBytes(reservationKey);
-        TransactionReceipt receipt = contract
-            .confirmInstitutionalReservationRequestWithPuc(payerInstitution, keyBytes, puc)
-            .send();
+        TransactionReceipt receipt = executeWithGasRetry(
+            "confirmInstitutionalReservationRequestWithPuc",
+            contract -> contract.confirmInstitutionalReservationRequestWithPuc(payerInstitution, keyBytes, puc).send()
+        );
         log.info("Institutional reservation {} confirmed on-chain (tx={})", reservationKey, receipt.getTransactionHash());
     }
 
     private void denyReservationOnChain(String reservationKey, String reason) {
         try {
-            Diamond contract = getWritableDiamondContractFresh();
             byte[] keyBytes = reservationKeyToBytes(reservationKey);
-            TransactionReceipt receipt = contract.denyReservationRequest(keyBytes).send();
+            TransactionReceipt receipt = executeWithGasRetry(
+                "denyReservationRequest",
+                contract -> contract.denyReservationRequest(keyBytes).send()
+            );
             log.info(
                 "Reservation {} denied on-chain (tx={}). Reason: {}",
                 reservationKey,
@@ -841,6 +850,43 @@ public class ContractEventListenerConfig {
             log.error("Failed to deny reservation {}: {}", reservationKey, ex.getMessage(), ex);
             recordReservationFailure(reservationKey, ex.getMessage());
         }
+    }
+
+    @FunctionalInterface
+    private interface DiamondCall {
+        TransactionReceipt call(Diamond contract) throws Exception;
+    }
+
+    private TransactionReceipt executeWithGasRetry(String label, DiamondCall call) throws Exception {
+        Web3j web3j = walletService.getWeb3jInstance();
+        BigInteger gasPriceWei = resolveGasPriceWei(web3j);
+        try {
+            return call.call(getWritableDiamondContractWithGasPrice(web3j, gasPriceWei));
+        } catch (Exception ex) {
+            if (shouldRetryWithHigherGas(ex)) {
+                BigInteger bumpedGasPrice = bumpGasPrice(gasPriceWei);
+                log.warn("{} retry with higher gas price: {}", label, bumpedGasPrice);
+                return call.call(getWritableDiamondContractWithGasPrice(web3j, bumpedGasPrice));
+            }
+            throw ex;
+        }
+    }
+
+    private boolean shouldRetryWithHigherGas(Exception ex) {
+        if (ex == null || ex.getMessage() == null) {
+            return false;
+        }
+        String lowered = ex.getMessage().toLowerCase(Locale.ROOT);
+        return lowered.contains("underpriced")
+            || lowered.contains("replacement transaction")
+            || lowered.contains("nonce too low");
+    }
+
+    private BigInteger bumpGasPrice(BigInteger gasPriceWei) {
+        if (gasPriceWei == null) {
+            return BigInteger.ZERO;
+        }
+        return gasPriceWei.multiply(BigInteger.valueOf(12)).divide(BigInteger.TEN);
     }
 
     private boolean shouldAttemptReservationProcessing(String reservationKey) {
@@ -927,15 +973,12 @@ public class ContractEventListenerConfig {
                 local = writableDiamond;
                 if (local == null) {
                     Web3j web3j = walletService.getWeb3jInstance();
-                    long chainId = resolveChainId(web3j);
-                    FastRawTransactionManager txManager = chainId > 0
-                        ? new FastRawTransactionManager(web3j, getProviderCredentials(), chainId)
-                        : new FastRawTransactionManager(web3j, getProviderCredentials());
+                    TransactionManager txManager = txManagerProvider.get(web3j);
                     local = Diamond.load(
                         diamondContractAddress,
                         web3j,
                         txManager,
-                        new StaticGasProvider(resolveGasPriceWei(), contractGasLimit)
+                        new StaticGasProvider(resolveGasPriceWei(web3j), contractGasLimit)
                     );
                     writableDiamond = local;
                 }
@@ -944,22 +987,13 @@ public class ContractEventListenerConfig {
         return local;
     }
 
-    private Diamond getWritableDiamondContractFresh() {
-        Diamond preset = writableDiamond;
-        if (preset != null) {
-            return preset;
-        }
-        Web3j web3j = walletService.getWeb3jInstance();
-        long chainId = resolveChainId(web3j);
-        var receiptProcessor = new PollingTransactionReceiptProcessor(web3j, 1500, 40);
-        FastRawTransactionManager txManager = chainId > 0
-            ? new FastRawTransactionManager(web3j, getProviderCredentials(), chainId, receiptProcessor)
-            : new FastRawTransactionManager(web3j, getProviderCredentials(), receiptProcessor);
+    private Diamond getWritableDiamondContractWithGasPrice(Web3j web3j, BigInteger gasPriceWei) {
+        TransactionManager txManager = txManagerProvider.get(web3j);
         return Diamond.load(
             diamondContractAddress,
             web3j,
             txManager,
-            new StaticGasProvider(resolveGasPriceWei(), contractGasLimit)
+            new StaticGasProvider(gasPriceWei, contractGasLimit)
         );
     }
 
@@ -967,11 +1001,27 @@ public class ContractEventListenerConfig {
         return institutionalWalletService.getInstitutionalCredentials();
     }
 
-    private BigInteger resolveGasPriceWei() {
+    private BigInteger resolveGasPriceWei(Web3j web3j) {
         BigDecimal gwei = (defaultGasPriceGwei == null || defaultGasPriceGwei.signum() <= 0)
             ? BigDecimal.ONE
             : defaultGasPriceGwei;
-        return org.web3j.utils.Convert.toWei(gwei, org.web3j.utils.Convert.Unit.GWEI).toBigInteger();
+        BigInteger fallback = org.web3j.utils.Convert.toWei(gwei, org.web3j.utils.Convert.Unit.GWEI).toBigInteger();
+        BigInteger minWei = org.web3j.utils.Convert.toWei(
+            gasPriceMinGwei != null ? gasPriceMinGwei : BigDecimal.ONE,
+            org.web3j.utils.Convert.Unit.GWEI
+        ).toBigInteger();
+        try {
+            var response = web3j.ethGasPrice().send();
+            if (response != null && response.getGasPrice() != null) {
+                BigDecimal baseWei = new BigDecimal(response.getGasPrice());
+                BigDecimal multiplier = gasPriceMultiplier != null ? gasPriceMultiplier : BigDecimal.ONE;
+                BigInteger dynamicWei = baseWei.multiply(multiplier).toBigInteger();
+                return dynamicWei.max(fallback).max(minWei);
+            }
+        } catch (Exception ex) {
+            log.warn("Unable to fetch gas price; using default: {}", ex.getMessage());
+        }
+        return fallback.max(minWei);
     }
 
     private long resolveChainId(Web3j web3j) {
