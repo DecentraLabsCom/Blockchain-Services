@@ -179,6 +179,7 @@ public class ContractEventListenerConfig {
 
     private volatile Diamond cachedDiamond;
     private volatile Diamond writableDiamond;
+    private volatile BigInteger writableDiamondGasPriceWei;
 
     private final Map<BigInteger, String> labMetadataUriCache = new ConcurrentHashMap<>();
 
@@ -974,13 +975,15 @@ public class ContractEventListenerConfig {
                 if (local == null) {
                     Web3j web3j = walletService.getWeb3jInstance();
                     TransactionManager txManager = txManagerProvider.get(web3j);
+                    BigInteger gasPriceWei = resolveGasPriceWei(web3j);
                     local = Diamond.load(
                         diamondContractAddress,
                         web3j,
                         txManager,
-                        new StaticGasProvider(resolveGasPriceWei(web3j), contractGasLimit)
+                        new StaticGasProvider(gasPriceWei, contractGasLimit)
                     );
                     writableDiamond = local;
+                    writableDiamondGasPriceWei = gasPriceWei;
                 }
             }
         }
@@ -988,13 +991,20 @@ public class ContractEventListenerConfig {
     }
 
     private Diamond getWritableDiamondContractWithGasPrice(Web3j web3j, BigInteger gasPriceWei) {
+        Diamond local = writableDiamond;
+        if (local != null && (writableDiamondGasPriceWei == null || writableDiamondGasPriceWei.equals(gasPriceWei))) {
+            return local;
+        }
         TransactionManager txManager = txManagerProvider.get(web3j);
-        return Diamond.load(
+        Diamond loaded = Diamond.load(
             diamondContractAddress,
             web3j,
             txManager,
             new StaticGasProvider(gasPriceWei, contractGasLimit)
         );
+        writableDiamond = loaded;
+        writableDiamondGasPriceWei = gasPriceWei;
+        return loaded;
     }
 
     private Credentials getProviderCredentials() {
