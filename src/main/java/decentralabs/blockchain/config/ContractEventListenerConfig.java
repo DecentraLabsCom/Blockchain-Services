@@ -7,15 +7,16 @@ import decentralabs.blockchain.notification.ReservationNotificationData;
 import decentralabs.blockchain.notification.ReservationNotificationService;
 import decentralabs.blockchain.service.health.LabMetadataService;
 import decentralabs.blockchain.service.persistence.ReservationPersistenceService;
+import decentralabs.blockchain.service.intent.IntentPersistenceService;
 import decentralabs.blockchain.service.intent.IntentService;
 import decentralabs.blockchain.service.wallet.InstitutionalTxManagerProvider;
-import decentralabs.blockchain.service.wallet.InstitutionalWalletService;
 import decentralabs.blockchain.service.wallet.WalletService;
 import java.math.BigDecimal;
 import java.math.BigInteger;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.Arrays;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -29,6 +30,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.context.event.EventListener;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 import org.web3j.abi.EventEncoder;
 import org.web3j.abi.EventValues;
@@ -39,10 +41,8 @@ import org.web3j.abi.datatypes.generated.Bytes32;
 import org.web3j.abi.datatypes.generated.Uint256;
 import org.web3j.abi.datatypes.generated.Uint8;
 import org.web3j.abi.datatypes.Utf8String;
-import org.web3j.crypto.Credentials;
 import org.web3j.crypto.Hash;
 import org.web3j.protocol.Web3j;
-import org.web3j.protocol.core.methods.response.EthChainId;
 import org.web3j.protocol.core.methods.response.Log;
 import org.web3j.protocol.core.methods.response.TransactionReceipt;
 import org.web3j.tx.Contract;
@@ -171,9 +171,9 @@ public class ContractEventListenerConfig {
 
     private final WalletService walletService;
     private final LabMetadataService labMetadataService;
-    private final InstitutionalWalletService institutionalWalletService;
     private final ReservationNotificationService reservationNotificationService;
     private final ReservationPersistenceService reservationPersistenceService;
+    private final IntentPersistenceService intentPersistenceService;
     private final IntentService intentService;
 
     @Value("${contract.address}")
@@ -203,6 +203,15 @@ public class ContractEventListenerConfig {
 
     @Value("${ethereum.gas.limit.contract:300000}")
     private BigInteger contractGasLimit;
+
+    @Value("${contract.reservation.reconcile.enabled:true}")
+    private boolean reservationReconcileEnabled;
+
+    @Value("${contract.reservation.reconcile.min-age.seconds:120}")
+    private int reservationReconcileMinAgeSeconds;
+
+    @Value("${contract.reservation.reconcile.batch-size:50}")
+    private int reservationReconcileBatchSize;
 
     /**
      * Configure event listeners for Diamond contract on application startup.
@@ -269,6 +278,50 @@ public class ContractEventListenerConfig {
         eventPollingFallbackService.resetForNetworkSwitch(web3j, diamondContractAddress);
         
         log.info("Contract event listeners reconfigured for network: {}", event.getNewNetwork());
+    }
+
+    @Scheduled(fixedDelayString = "${contract.reservation.reconcile.interval.ms:120000}")
+    public void reconcilePendingReservations() {
+        if (!reservationReconcileEnabled) {
+            return;
+        }
+        if (reservationReconcileBatchSize <= 0) {
+            return;
+        }
+
+        Instant olderThan = Instant.now().minusSeconds(Math.max(0, reservationReconcileMinAgeSeconds));
+        LinkedHashSet<String> reservationKeys = new LinkedHashSet<>();
+
+        reservationKeys.addAll(
+            reservationPersistenceService.findPendingReservationKeys(olderThan, reservationReconcileBatchSize)
+        );
+
+        int remaining = reservationReconcileBatchSize - reservationKeys.size();
+        if (remaining > 0) {
+            reservationKeys.addAll(
+                intentPersistenceService.findExecutedReservationRequestKeys(olderThan, remaining)
+            );
+        }
+
+        if (reservationKeys.isEmpty()) {
+            log.debug("Reservation reconciliation: no pending reservations found");
+            return;
+        }
+
+        log.info("Reservation reconciliation: evaluating {} reservation(s)", reservationKeys.size());
+        for (String reservationKey : reservationKeys) {
+            try {
+                Optional<ReservationEventPayload> payload = buildPayloadFromChain(reservationKey);
+                if (payload.isEmpty()) {
+                    log.debug("Reservation reconciliation skipped {}: not found on-chain", reservationKey);
+                    continue;
+                }
+                processReservationRequest(payload.get());
+            } catch (Exception ex) {
+                log.warn("Reservation reconciliation failed for {}: {}", reservationKey, ex.getMessage());
+                recordReservationFailure(reservationKey, ex.getMessage());
+            }
+        }
     }
 
     /**
@@ -585,6 +638,42 @@ public class ContractEventListenerConfig {
             payerInstitution,
             collectorInstitution,
             eventLog
+        );
+    }
+
+    private Optional<ReservationEventPayload> buildPayloadFromChain(String reservationKey) {
+        Optional<String> normalizedKey = normalizeNonEmptyString(reservationKey);
+        if (normalizedKey.isEmpty()) {
+            return Optional.empty();
+        }
+
+        Optional<ReservationDetails> details = fetchReservationDetails(normalizedKey.get());
+        if (details.isEmpty()) {
+            return Optional.empty();
+        }
+
+        ReservationDetails reservation = details.get();
+        Optional<String> renter = Optional.ofNullable(reservation.renter()).flatMap(this::normalizeNonEmptyString);
+        Optional<BigInteger> start = Optional.ofNullable(reservation.start());
+        Optional<BigInteger> end = Optional.ofNullable(reservation.end());
+        Optional<BigInteger> status = Optional.ofNullable(reservation.status());
+        Optional<String> pucHash = Optional.ofNullable(reservation.pucHash()).flatMap(this::normalizeBytes32);
+        Optional<String> payerInstitution = Optional.ofNullable(reservation.payerInstitution()).flatMap(this::normalizeAddress);
+        Optional<String> collectorInstitution = Optional.ofNullable(reservation.collectorInstitution()).flatMap(this::normalizeAddress);
+
+        return Optional.of(
+            new ReservationEventPayload(
+                normalizedKey.get(),
+                reservation.labId(),
+                renter,
+                start,
+                end,
+                status,
+                pucHash,
+                payerInstitution,
+                collectorInstitution,
+                null
+            )
         );
     }
 
@@ -977,28 +1066,6 @@ public class ContractEventListenerConfig {
         return keyBytes;
     }
 
-    private Diamond getWritableDiamondContract() {
-        Diamond local = writableDiamond;
-        if (local == null) {
-            synchronized (this) {
-                local = writableDiamond;
-                if (local == null) {
-                    Web3j web3j = walletService.getWeb3jInstance();
-                    TransactionManager txManager = txManagerProvider.get(web3j);
-                    BigInteger gasPriceWei = resolveGasPriceWei(web3j);
-                    local = Diamond.load(
-                        diamondContractAddress,
-                        web3j,
-                        txManager,
-                        new StaticGasProvider(gasPriceWei, contractGasLimit)
-                    );
-                    writableDiamond = local;
-                    writableDiamondGasPriceWei = gasPriceWei;
-                }
-            }
-        }
-        return local;
-    }
 
     private Diamond getWritableDiamondContractWithGasPrice(Web3j web3j, BigInteger gasPriceWei) {
         Diamond local = writableDiamond;
@@ -1015,10 +1082,6 @@ public class ContractEventListenerConfig {
         writableDiamond = loaded;
         writableDiamondGasPriceWei = gasPriceWei;
         return loaded;
-    }
-
-    private Credentials getProviderCredentials() {
-        return institutionalWalletService.getInstitutionalCredentials();
     }
 
     private BigInteger resolveGasPriceWei(Web3j web3j) {
@@ -1042,18 +1105,6 @@ public class ContractEventListenerConfig {
             log.warn("Unable to fetch gas price; using default: {}", ex.getMessage());
         }
         return fallback.max(minWei);
-    }
-
-    private long resolveChainId(Web3j web3j) {
-        try {
-            EthChainId id = web3j.ethChainId().send();
-            if (id != null && id.getChainId() != null) {
-                return id.getChainId().longValue();
-            }
-        } catch (Exception ex) {
-            log.warn("Unable to fetch chainId; falling back to default tx manager: {}", ex.getMessage());
-        }
-        return 0L;
     }
 
     private String describeStatus(BigInteger status) {

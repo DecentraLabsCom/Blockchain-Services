@@ -14,6 +14,7 @@ import org.springframework.security.config.annotation.method.configuration.Enabl
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
+import org.springframework.lang.NonNull;
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 import org.springframework.web.cors.CorsConfigurationSource;
@@ -25,44 +26,44 @@ import decentralabs.blockchain.service.BackendUrlResolver;
 @EnableMethodSecurity
 public class SecurityConfig {
 
-    @Value("${allowed-origins}")
+    @Value("${allowed-origins:}")
     private String[] allowedOrigins;
 
-    @Value("${wallet.allowed-origins}")
+    @Value("${wallet.allowed-origins:}")
     private String[] walletAllowedOrigins;
     
-    @Value("${endpoint.wallet-auth}")
-    private String walletAuthEndpoint;
+    @Value("${endpoint.wallet-auth:/auth/wallet-auth}")
+    private @NonNull String walletAuthEndpoint = "/auth/wallet-auth";
     
-    @Value("${endpoint.wallet-auth2}")
-    private String walletAuth2Endpoint;
+    @Value("${endpoint.wallet-auth2:/auth/wallet-auth2}")
+    private @NonNull String walletAuth2Endpoint = "/auth/wallet-auth2";
     
-    @Value("${endpoint.jwks}")
-    private String jwksEndpoint;
+    @Value("${endpoint.jwks:/auth/jwks}")
+    private @NonNull String jwksEndpoint = "/auth/jwks";
     
-    @Value("${endpoint.message}")
-    private String messageEndpoint;
+    @Value("${endpoint.message:/auth/message}")
+    private @NonNull String messageEndpoint = "/auth/message";
     
-    @Value("${endpoint.saml-auth}")
-    private String samlAuthEndpoint;
+    @Value("${endpoint.saml-auth:/auth/saml-auth}")
+    private @NonNull String samlAuthEndpoint = "/auth/saml-auth";
     
-    @Value("${endpoint.saml-auth2}")
-    private String samlAuth2Endpoint;
+    @Value("${endpoint.saml-auth2:/auth/saml-auth2}")
+    private @NonNull String samlAuth2Endpoint = "/auth/saml-auth2";
     
-    @Value("${endpoint.health}")
-    private String healthEndpoint;
+    @Value("${endpoint.health:/health}")
+    private @NonNull String healthEndpoint = "/health";
     
-    @Value("${endpoint.wallet}")
-    private String walletEndpoint;
+    @Value("${endpoint.wallet:/wallet}")
+    private @NonNull String walletEndpoint = "/wallet";
     
-    @Value("${endpoint.treasury}")
-    private String treasuryEndpoint;
+    @Value("${endpoint.treasury:/treasury}")
+    private @NonNull String treasuryEndpoint = "/treasury";
     
     @Value("${endpoint.intents:/intents}")
-    private String intentsEndpoint;
+    private @NonNull String intentsEndpoint = "/intents";
 
     @Value("${auth.base-path:/auth}")
-    private String authBasePath;
+    private @NonNull String authBasePath = "/auth";
 
     @Value("${security.access-token.required:true}")
     private boolean accessTokenRequired;
@@ -148,7 +149,8 @@ public class SecurityConfig {
         publicConfiguration.addAllowedHeader("*");
 
         CorsConfiguration walletConfiguration = new CorsConfiguration();
-        walletConfiguration.setAllowedOrigins(Arrays.asList(walletAllowedOrigins));
+        String[] walletOrigins = walletAllowedOrigins != null ? walletAllowedOrigins : new String[0];
+        walletConfiguration.setAllowedOrigins(Arrays.asList(walletOrigins));
         walletConfiguration.setAllowedMethods(Arrays.asList("GET", "POST"));
         walletConfiguration.addAllowedHeader("*");
 

@@ -176,7 +176,7 @@ public class ProviderConfigurationController {
                 response.put("error", "Provider configuration is incomplete");
                 return ResponseEntity.badRequest().body(response);
             }
-            if (isBlank(provisioningToken)) {
+            if (provisioningToken == null || provisioningToken.isBlank()) {
                 response.put("success", false);
                 response.put("error", "Provisioning token is required to register");
                 return ResponseEntity.badRequest().body(response);
@@ -221,6 +221,9 @@ public class ProviderConfigurationController {
         Map<String, Object> response = new HashMap<>();
         try {
             ConfigSnapshot snapshot = loadSnapshot();
+            if (request.getToken() == null || request.getToken().isBlank()) {
+                throw new IllegalArgumentException("Provisioning token is required");
+            }
             String provisioningToken = request.getToken().trim();
             ProvisioningTokenPayload payload = provisioningTokenService.validateAndExtract(
                 provisioningToken,
@@ -287,6 +290,9 @@ public class ProviderConfigurationController {
         Map<String, Object> response = new HashMap<>();
         try {
             ConfigSnapshot snapshot = loadSnapshot();
+            if (request.getToken() == null || request.getToken().isBlank()) {
+                throw new IllegalArgumentException("Provisioning token is required");
+            }
             String provisioningToken = request.getToken().trim();
             ConsumerProvisioningTokenPayload payload = provisioningTokenService.validateAndExtractConsumer(
                 provisioningToken,

@@ -3,6 +3,7 @@ package decentralabs.blockchain.service.intent;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Timestamp;
+import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 
@@ -102,6 +103,36 @@ public class IntentPersistenceService {
             );
         } catch (Exception e) {
             log.warn("Intent pending lookup skipped: {}", LogSanitizer.sanitize(e.getMessage()));
+            return List.of();
+        }
+    }
+
+    public List<String> findExecutedReservationRequestKeys(Instant olderThan, int limit) {
+        if (jdbcTemplate == null) {
+            return List.of();
+        }
+        if (olderThan == null || limit <= 0) {
+            return List.of();
+        }
+        try {
+            return jdbcTemplate.queryForList(
+                """
+                SELECT reservation_key
+                FROM intents
+                WHERE status = 'executed'
+                  AND action = 'RESERVATION_REQUEST'
+                  AND reservation_key IS NOT NULL
+                  AND reservation_key <> ''
+                  AND updated_at <= ?
+                ORDER BY updated_at ASC
+                LIMIT ?
+                """,
+                String.class,
+                Timestamp.from(olderThan),
+                limit
+            );
+        } catch (Exception e) {
+            log.warn("Executed reservation intents lookup skipped: {}", LogSanitizer.sanitize(e.getMessage()));
             return List.of();
         }
     }

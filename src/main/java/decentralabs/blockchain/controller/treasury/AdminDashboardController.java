@@ -223,7 +223,6 @@ public class AdminDashboardController {
             var networksResponse = walletService.getAvailableNetworks();
             info.put("networks", networksResponse.getNetworks());
             info.put("activeNetwork", networksResponse.getActiveNetwork());
-            // TODO: Add contract version, deployed block, etc.
 
             return ResponseEntity.ok(info);
         } catch (Exception e) {

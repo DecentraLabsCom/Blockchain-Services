@@ -153,6 +153,12 @@
     "defaultValue": 10000
   },
   {
+    "name": "intent.saml.replay-ttl-ms",
+    "type": "java.lang.Long",
+    "description": "SAML intent replay window in milliseconds.",
+    "defaultValue": 60000
+  },
+  {
     "name": "intent.webhook.url",
     "type": "java.lang.String",
     "description": "Webhook URL for intent notifications."
@@ -504,6 +510,30 @@
     "type": "java.lang.Integer",
     "description": "Initial lookback blocks when starting.",
     "defaultValue": 100
+  },
+  {
+    "name": "contract.reservation.reconcile.enabled",
+    "type": "java.lang.Boolean",
+    "description": "Enable reservation reconciliation job.",
+    "defaultValue": true
+  },
+  {
+    "name": "contract.reservation.reconcile.interval.ms",
+    "type": "java.lang.Long",
+    "description": "Interval for reservation reconciliation in milliseconds.",
+    "defaultValue": 120000
+  },
+  {
+    "name": "contract.reservation.reconcile.min-age.seconds",
+    "type": "java.lang.Integer",
+    "description": "Minimum age (seconds) before a pending reservation is reconciled.",
+    "defaultValue": 120
+  },
+  {
+    "name": "contract.reservation.reconcile.batch-size",
+    "type": "java.lang.Integer",
+    "description": "Maximum number of reservations to reconcile per run.",
+    "defaultValue": 50
   },
   {
     "name": "notifications.mail.enabled",

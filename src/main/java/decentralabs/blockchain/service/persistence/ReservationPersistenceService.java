@@ -2,6 +2,7 @@ package decentralabs.blockchain.service.persistence;
 
 import java.sql.Timestamp;
 import java.time.Instant;
+import java.util.List;
 import java.util.concurrent.atomic.AtomicBoolean;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.ObjectProvider;
@@ -101,6 +102,41 @@ public class ReservationPersistenceService {
                 log.warn("auth_users/lab_reservations tables not available; skipping persistence: {}", ex.getMessage());
             }
             return null;
+        }
+    }
+
+    /**
+     * Find pending reservation keys older than the provided timestamp.
+     */
+    public List<String> findPendingReservationKeys(Instant olderThan, int limit) {
+        if (jdbcTemplate == null) {
+            return List.of();
+        }
+        if (olderThan == null || limit <= 0) {
+            return List.of();
+        }
+        try {
+            return jdbcTemplate.queryForList(
+                """
+                SELECT transaction_hash
+                FROM lab_reservations
+                WHERE status = 'PENDING'
+                  AND updated_at <= ?
+                ORDER BY updated_at ASC
+                LIMIT ?
+                """,
+                String.class,
+                Timestamp.from(olderThan),
+                limit
+            );
+        } catch (DataAccessException ex) {
+            if (tableMissing.compareAndSet(false, true)) {
+                log.warn("lab_reservations lookup skipped (table or schema missing): {}", ex.getMessage());
+            }
+            return List.of();
+        } catch (Exception ex) {
+            log.warn("Pending reservation lookup failed: {}", ex.getMessage());
+            return List.of();
         }
     }
 }

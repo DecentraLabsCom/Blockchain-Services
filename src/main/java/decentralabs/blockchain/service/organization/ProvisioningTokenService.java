@@ -10,6 +10,7 @@ import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.io.Decoders;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.lang.NonNull;
 import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestTemplate;
@@ -206,7 +207,9 @@ public class ProvisioningTokenService {
     }
 
     private JsonNode fetchJwkSet(String jwksUrl) throws Exception {
-        ResponseEntity<String> response = restTemplate.getForEntity(URI.create(jwksUrl), String.class);
+        String normalized = requireNonBlank(jwksUrl, "jwksUrl");
+        URI jwksUri = Objects.requireNonNull(URI.create(normalized), "jwksUri");
+        ResponseEntity<String> response = restTemplate.getForEntity(jwksUri, String.class);
         if (!response.getStatusCode().is2xxSuccessful() || response.getBody() == null) {
             throw new IllegalArgumentException("Unable to fetch JWK set");
         }
@@ -272,10 +275,10 @@ public class ProvisioningTokenService {
         return value;
     }
 
-    private String requireNonBlank(String value, String label) {
+    private @NonNull String requireNonBlank(String value, String label) {
         if (value == null || value.isBlank()) {
             throw new IllegalArgumentException("Missing " + label);
         }
-        return value.trim();
+        return Objects.requireNonNull(value.trim(), "trimmed value");
     }
 }

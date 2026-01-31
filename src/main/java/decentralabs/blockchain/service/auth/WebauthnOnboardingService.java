@@ -524,6 +524,9 @@ public class WebauthnOnboardingService {
      */
     private void sendCallbackToSp(String callbackUrl, WebauthnOnboardingCompleteResponse successResponse, String errorMessage) {
         try {
+            if (callbackUrl == null || callbackUrl.isBlank()) {
+                return;
+            }
             java.util.Map<String, Object> payload = new java.util.HashMap<>();
             if (successResponse != null) {
                 payload.put("status", "SUCCESS");

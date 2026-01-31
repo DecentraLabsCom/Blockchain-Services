@@ -15,6 +15,7 @@ import org.springframework.web.client.RestTemplate;
 import java.io.IOException;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Properties;
 
 /**
@@ -237,10 +238,17 @@ public class InstitutionRegistrationService {
      * Send registration request to marketplace
      */
     private void sendRegistrationRequest(String url, String provisioningToken, Map<String, String> requestBody, String roleLabel) {
+        if (provisioningToken == null || provisioningToken.isBlank()) {
+            throw new IllegalArgumentException("Provisioning token is required");
+        }
+        if (url == null || url.isBlank()) {
+            throw new IllegalArgumentException("Marketplace URL is required");
+        }
         // Build headers with provisioning token
         HttpHeaders headers = new HttpHeaders();
         headers.setContentType(MediaType.APPLICATION_JSON);
-        headers.setBearerAuth(provisioningToken.trim());
+        String trimmedToken = Objects.requireNonNull(provisioningToken.trim(), "provisioningToken");
+        headers.setBearerAuth(trimmedToken);
 
         HttpEntity<Map<String, String>> request = new HttpEntity<>(requestBody, headers);
 
@@ -278,6 +286,9 @@ public class InstitutionRegistrationService {
      * Build marketplace URL with endpoint
      */
     private String buildMarketplaceUrl(String marketplaceUrl, String endpoint) {
+        if (marketplaceUrl == null || marketplaceUrl.isBlank()) {
+            throw new IllegalArgumentException("Marketplace URL is required");
+        }
         String url = marketplaceUrl.trim();
         if (url.endsWith("/")) {
             url = url.substring(0, url.length() - 1);

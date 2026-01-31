@@ -3,6 +3,7 @@ package decentralabs.blockchain.config;
 import decentralabs.blockchain.dto.health.LabMetadata;
 import decentralabs.blockchain.notification.ReservationNotificationService;
 import decentralabs.blockchain.service.health.LabMetadataService;
+import decentralabs.blockchain.service.intent.IntentPersistenceService;
 import decentralabs.blockchain.service.intent.IntentService;
 import decentralabs.blockchain.service.persistence.ReservationPersistenceService;
 import decentralabs.blockchain.service.wallet.InstitutionalTxManagerProvider;
@@ -61,6 +62,9 @@ class ContractEventListenerConfigTest {
     private ReservationPersistenceService reservationPersistenceService;
 
     @Mock
+    private IntentPersistenceService intentPersistenceService;
+
+    @Mock
     private IntentService intentService;
 
     @Mock
@@ -69,15 +73,16 @@ class ContractEventListenerConfigTest {
     private ContractEventListenerConfig config;
 
     @BeforeEach
+    @SuppressWarnings("null")
     void setUp() {
         config = new ContractEventListenerConfig(
             eventPollingFallbackService,
             txManagerProvider,
             walletService,
             labMetadataService,
-            institutionalWalletService,
             reservationNotificationService,
             reservationPersistenceService,
+            intentPersistenceService,
             intentService
         );
         ReflectionTestUtils.setField(config, "diamondContractAddress", "0x1234567890abcdef");
@@ -85,6 +90,7 @@ class ContractEventListenerConfigTest {
     }
 
     @Test
+    @SuppressWarnings("null")
     void shouldConfigureEventListenersForSupportedEvents() {
         ReflectionTestUtils.setField(config, "eventsToListen", "ReservationRequested,ReservationConfirmed");
         ReflectionTestUtils.setField(config, "eventListeningEnabled", true);
@@ -99,6 +105,7 @@ class ContractEventListenerConfigTest {
     }
 
     @Test
+    @SuppressWarnings("null")
     void shouldSkipConfigurationWhenDisabled() {
         ReflectionTestUtils.setField(config, "eventsToListen", "ReservationRequested");
         ReflectionTestUtils.setField(config, "eventListeningEnabled", false);
@@ -109,6 +116,7 @@ class ContractEventListenerConfigTest {
     }
 
     @Test
+    @SuppressWarnings("null")
     void shouldFilterUnsupportedEventsDuringParsing() {
         ReflectionTestUtils.setField(config, "eventsToListen", "ReservationRequested, UnknownEvent ,ReservationConfirmed");
 
@@ -118,6 +126,7 @@ class ContractEventListenerConfigTest {
     }
 
     @Test
+    @SuppressWarnings("null")
     void shouldRejectReservationKeysWithWrongLength() {
         assertThatThrownBy(() ->
             ReflectionTestUtils.invokeMethod(config, "reservationKeyToBytes", "0x1234")
@@ -125,6 +134,7 @@ class ContractEventListenerConfigTest {
     }
 
     @Test
+    @SuppressWarnings("null")
     void shouldPersistRequestedReservationUsingIndexedKey() throws Exception {
         ReflectionTestUtils.setField(config, "eventListeningEnabled", true);
 
@@ -192,6 +202,7 @@ class ContractEventListenerConfigTest {
     }
 
     @Test
+    @SuppressWarnings("null")
     void shouldPersistConfirmedReservationLifecycle() throws Exception {
         ReflectionTestUtils.setField(config, "eventListeningEnabled", true);
 
@@ -250,6 +261,7 @@ class ContractEventListenerConfigTest {
     }
 
     @Test
+    @SuppressWarnings("null")
     void shouldPersistCanceledBooking() {
         Map<String, Event> supported = getSupportedEvents();
         Event eventDefinition = supported.get("BookingCanceled");
@@ -279,6 +291,7 @@ class ContractEventListenerConfigTest {
     }
 
     @Test
+    @SuppressWarnings("null")
     void shouldAutoDenyReservationWhenMetadataMissing() throws Exception {
         ReflectionTestUtils.setField(config, "eventListeningEnabled", true);
 
@@ -382,6 +395,7 @@ class ContractEventListenerConfigTest {
     }
 
     @Test
+    @SuppressWarnings("null")
     void shouldPersistReservationCanceledAndSendNotification() {
         Map<String, Event> supported = getSupportedEvents();
         Event eventDefinition = supported.get("ReservationRequestCanceled");
@@ -414,6 +428,7 @@ class ContractEventListenerConfigTest {
     }
 
     @Test
+    @SuppressWarnings("null")
     void shouldSendNotificationOnReservationConfirmed() throws Exception {
         ReflectionTestUtils.setField(config, "eventListeningEnabled", true);
 
@@ -472,6 +487,7 @@ class ContractEventListenerConfigTest {
     }
 
     @Test
+    @SuppressWarnings("null")
     void shouldAutoApproveReservationWhenValidateAvailabilityPasses() throws Exception {
         ReflectionTestUtils.setField(config, "eventListeningEnabled", true);
 

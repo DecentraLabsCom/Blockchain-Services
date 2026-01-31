@@ -17,7 +17,7 @@ import org.springframework.web.client.RestTemplate;
 @Slf4j
 public class MarketplaceKeyService {
 
-    @Value("${marketplace.public-key-url}")
+    @Value("${marketplace.public-key-url:}")
     private String marketplacePublicKeyUrl;
 
     @Value("${marketplace.key.cache-ms:3600000}")
@@ -76,9 +76,13 @@ public class MarketplaceKeyService {
     }
 
     private String fetchPublicKeyFromUrl() throws Exception {
+        String publicKeyUrl = marketplacePublicKeyUrl;
         try {
+            if (publicKeyUrl == null || publicKeyUrl.isBlank()) {
+                throw new Exception("Marketplace public key URL is not configured");
+            }
             ResponseEntity<String> response =
-                restTemplate.getForEntity(marketplacePublicKeyUrl, String.class);
+                restTemplate.getForEntity(publicKeyUrl, String.class);
 
             if (response.getStatusCode().is2xxSuccessful() && response.getBody() != null) {
                 return response.getBody();
@@ -86,7 +90,7 @@ public class MarketplaceKeyService {
             throw new Exception("Failed to fetch public key. Status: " + response.getStatusCode());
         } catch (Exception e) {
             log.error("Error fetching marketplace public key from {}: {}",
-                marketplacePublicKeyUrl, e.getMessage(), e);
+                publicKeyUrl, e.getMessage(), e);
             throw new Exception("Could not fetch marketplace public key: " + e.getMessage(), e);
         }
     }

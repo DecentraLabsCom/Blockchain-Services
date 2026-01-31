@@ -1,6 +1,7 @@
 package decentralabs.blockchain.notification;
 
 import java.nio.charset.StandardCharsets;
+import java.util.Objects;
 import java.util.Properties;
 import jakarta.mail.internet.MimeMessage;
 import lombok.extern.slf4j.Slf4j;
@@ -16,7 +17,11 @@ public class SmtpMailSenderAdapter implements MailSenderAdapter {
 
     public SmtpMailSenderAdapter(NotificationProperties.Mail mailProps) {
         this.mailProps = mailProps;
-        this.mailSender = buildMailSender(mailProps.getSmtp());
+        NotificationProperties.Smtp smtp = mailProps.getSmtp();
+        if (smtp == null) {
+            smtp = new NotificationProperties.Smtp();
+        }
+        this.mailSender = buildMailSender(smtp);
     }
 
     @Override
@@ -26,7 +31,8 @@ public class SmtpMailSenderAdapter implements MailSenderAdapter {
             log.warn("SMTP host not configured. Skipping email notification.");
             return;
         }
-        if (mailProps.getFrom() == null || mailProps.getFrom().isBlank()) {
+        String from = mailProps.getFrom();
+        if (from == null || from.isBlank()) {
             log.warn("SMTP sender (notifications.mail.from) not configured. Skipping email notification.");
             return;
         }
@@ -40,26 +46,39 @@ public class SmtpMailSenderAdapter implements MailSenderAdapter {
             MimeMessage mimeMessage = mailSender.createMimeMessage();
             MimeMessageHelper helper = new MimeMessageHelper(mimeMessage, true, StandardCharsets.UTF_8.name());
 
-            if (mailProps.getFromName() != null && !mailProps.getFromName().isBlank()) {
-                helper.setFrom(mailProps.getFrom(), mailProps.getFromName());
+            String fromName = mailProps.getFromName();
+            if (fromName != null && !fromName.isBlank()) {
+                helper.setFrom(from, fromName);
             } else {
-                helper.setFrom(mailProps.getFrom());
+                helper.setFrom(from);
             }
 
-            helper.setTo(message.recipients().toArray(new String[0]));
-            helper.setSubject(message.subject());
-            String textBody = message.textBody() != null ? message.textBody() : "";
+            String[] recipients = message.recipients().stream()
+                .filter(Objects::nonNull)
+                .toArray(String[]::new);
+            if (recipients.length == 0) {
+                log.warn("No recipients provided. Skipping email notification.");
+                return;
+            }
+            helper.setTo(recipients);
+            String subject = Objects.requireNonNullElse(message.subject(), "");
+            helper.setSubject(Objects.requireNonNull(subject, "subject"));
+            String textBody = Objects.requireNonNullElse(message.textBody(), "");
+            String nonNullTextBody = Objects.requireNonNull(textBody, "textBody");
             String htmlBody = message.htmlBody();
             if (htmlBody == null || htmlBody.isBlank()) {
-                helper.setText(textBody, false);
+                helper.setText(nonNullTextBody, false);
             } else {
-                helper.setText(textBody, htmlBody);
+                String nonNullHtmlBody = Objects.requireNonNull(htmlBody, "htmlBody");
+                helper.setText(nonNullTextBody, nonNullHtmlBody);
             }
 
-            if (message.icsContent() != null && !message.icsContent().isBlank()) {
-                ByteArrayResource ics = new ByteArrayResource(message.icsContent().getBytes(StandardCharsets.UTF_8));
+            String icsContent = message.icsContent();
+            if (icsContent != null && !icsContent.isBlank()) {
+                byte[] icsBytes = Objects.requireNonNull(icsContent.getBytes(StandardCharsets.UTF_8), "icsBytes");
+                ByteArrayResource ics = new ByteArrayResource(icsBytes);
                 String contentType = "text/calendar; charset=UTF-8; method=REQUEST";
-                String fileName = message.icsFileName() != null ? message.icsFileName() : "reservation.ics";
+                String fileName = Objects.requireNonNull(Objects.requireNonNullElse(message.icsFileName(), "reservation.ics"), "fileName");
                 helper.addAttachment(fileName, ics, contentType);
                 helper.addInline("invite", ics, contentType);
             }
@@ -73,10 +92,13 @@ public class SmtpMailSenderAdapter implements MailSenderAdapter {
 
     private JavaMailSenderImpl buildMailSender(NotificationProperties.Smtp smtp) {
         JavaMailSenderImpl sender = new JavaMailSenderImpl();
-        sender.setHost(smtp.getHost());
+        String host = smtp.getHost() != null ? smtp.getHost() : "";
+        sender.setHost(host);
         sender.setPort(smtp.getPort());
-        sender.setUsername(smtp.getUsername());
-        sender.setPassword(smtp.getPassword());
+        String username = smtp.getUsername() != null ? smtp.getUsername() : "";
+        String password = smtp.getPassword() != null ? smtp.getPassword() : "";
+        sender.setUsername(username);
+        sender.setPassword(password);
         sender.setDefaultEncoding(StandardCharsets.UTF_8.name());
 
         Properties props = sender.getJavaMailProperties();
