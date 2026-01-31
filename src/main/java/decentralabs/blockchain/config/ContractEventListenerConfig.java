@@ -37,6 +37,7 @@ import org.web3j.abi.datatypes.Address;
 import org.web3j.abi.datatypes.Event;
 import org.web3j.abi.datatypes.generated.Bytes32;
 import org.web3j.abi.datatypes.generated.Uint256;
+import org.web3j.abi.datatypes.generated.Uint8;
 import org.web3j.abi.datatypes.Utf8String;
 import org.web3j.crypto.Credentials;
 import org.web3j.crypto.Hash;
@@ -98,7 +99,8 @@ public class ContractEventListenerConfig {
         RESERVATION_DENIED,
         Arrays.<TypeReference<?>>asList(
             new TypeReference<Bytes32>(true) {},
-            new TypeReference<Uint256>(true) {}
+            new TypeReference<Uint256>(true) {},
+            new TypeReference<Uint8>() {}
         )
     );
 
@@ -426,6 +428,10 @@ public class ContractEventListenerConfig {
     private void handleReservationDenied(EventValues eventValues, Log eventLog) {
         String reservationKey = toHex((Bytes32) eventValues.getIndexedValues().get(0));
         BigInteger labId = ((Uint256) eventValues.getIndexedValues().get(1)).getValue();
+        BigInteger reason = null;
+        if (eventValues.getNonIndexedValues() != null && !eventValues.getNonIndexedValues().isEmpty()) {
+            reason = ((Uint8) eventValues.getNonIndexedValues().get(0)).getValue();
+        }
 
         ReservationEventPayload payload = buildPayload(
             reservationKey,
@@ -436,6 +442,10 @@ public class ContractEventListenerConfig {
             eventLog
         );
 
+        if (reason != null) {
+            log.info("Reservation denied reason={} (key={} labId={} tx={})", reason, reservationKey, labId,
+                eventLog.getTransactionHash());
+        }
         dispatchReservationLifecycleEvent("denied", payload);
         persistLifecycle(payload, "CANCELLED");
     }
