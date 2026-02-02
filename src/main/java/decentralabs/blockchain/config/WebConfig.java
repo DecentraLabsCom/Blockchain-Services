@@ -2,7 +2,7 @@ package decentralabs.blockchain.config;
 
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.lang.NonNull;
+import jakarta.annotation.Nonnull;
 import org.springframework.web.client.RestTemplate;
 import org.springframework.web.servlet.config.annotation.ViewControllerRegistry;
 import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
@@ -23,8 +23,22 @@ public class WebConfig implements WebMvcConfigurer {
         return new RestTemplate();
     }
 
+    // Provide a default ObjectMapper and a lightweight JSON HttpMessageConverter for test contexts
+    // Only created when no other ObjectMapper/Converter bean is present to avoid interfering with auto-configuration
+    @Bean
+    @org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean
+    public com.fasterxml.jackson.databind.ObjectMapper objectMapper() {
+        return new com.fasterxml.jackson.databind.ObjectMapper();
+    }
+
+    @Bean
+    @org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean
+    public JacksonHttpMessageConverter jacksonHttpMessageConverter(com.fasterxml.jackson.databind.ObjectMapper om) {
+        return new JacksonHttpMessageConverter(om);
+    }
+
     @Override
-    public void addViewControllers(@NonNull ViewControllerRegistry registry) {
+    public void addViewControllers(@Nonnull ViewControllerRegistry registry) {
         // Default root to the wallet dashboard UI in standalone mode.
         registry.addViewController("/")
                 .setViewName("redirect:/wallet-dashboard/");

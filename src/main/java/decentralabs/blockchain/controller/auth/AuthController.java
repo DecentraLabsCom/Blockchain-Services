@@ -68,7 +68,9 @@ public class AuthController {
         config.put("authorization_endpoint", baseDomain + walletAuth2Endpoint);
 
         config.put("jwks_uri", baseDomain + jwksEndpoint);
-        return ResponseEntity.ok(config);
+        return ResponseEntity.ok()
+            .contentType(org.springframework.http.MediaType.APPLICATION_JSON)
+            .body(config);
     }
 
     private String fallbackBaseDomain() {
@@ -87,7 +89,7 @@ public class AuthController {
      * 
      * @return JWKS with RSA public key
      */
-    @GetMapping("${endpoint.jwks}")
+    @GetMapping("${endpoint.jwks:/auth/jwks}")
     public ResponseEntity<Map<String, Object>> getJWKS() {
         try {
             RSAPublicKey publicKey = keyService.getPublicKey();
@@ -111,7 +113,9 @@ public class AuthController {
             Map<String, Object> response = new HashMap<>();
             response.put("keys", Collections.singletonList(key));
 
-            return ResponseEntity.ok(response);
+            return ResponseEntity.ok()
+                .contentType(org.springframework.http.MediaType.APPLICATION_JSON)
+                .body(response);
         } catch (Exception e) {
             log.error("JWKS generation error: {}", e.getMessage(), e);
             return ResponseEntity.status(500)

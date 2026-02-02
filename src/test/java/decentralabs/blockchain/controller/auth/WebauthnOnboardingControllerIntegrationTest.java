@@ -9,13 +9,15 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
-import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
+import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.MediaType;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
+import org.junit.jupiter.api.BeforeEach;
+import org.springframework.web.context.WebApplicationContext;
+import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+
 
 import decentralabs.blockchain.dto.auth.WebauthnOnboardingCompleteRequest;
 import decentralabs.blockchain.dto.auth.WebauthnOnboardingCompleteResponse;
@@ -24,15 +26,25 @@ import decentralabs.blockchain.dto.auth.WebauthnOnboardingOptionsResponse;
 import decentralabs.blockchain.service.auth.WebauthnCredentialService;
 import decentralabs.blockchain.service.auth.WebauthnOnboardingService;
 
-@WebMvcTest(controllers = WebauthnOnboardingController.class)
-@AutoConfigureMockMvc(addFilters = false)
+@SpringBootTest(classes = WebauthnOnboardingController.class)
 class WebauthnOnboardingControllerIntegrationTest {
 
     @Autowired
+    private WebApplicationContext wac;
+
     private MockMvc mockMvc;
 
-    @Autowired
-    private ObjectMapper objectMapper;
+    @BeforeEach
+    public void setup() {
+        WebauthnOnboardingController controller = this.wac.getBean(WebauthnOnboardingController.class);
+        this.mockMvc = MockMvcBuilders.standaloneSetup(controller)
+            .setMessageConverters(new decentralabs.blockchain.config.JacksonHttpMessageConverter(objectMapper))
+            .setControllerAdvice(new decentralabs.blockchain.exception.GlobalExceptionHandler())
+            .defaultRequest(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get("/").accept(org.springframework.http.MediaType.APPLICATION_JSON))
+            .build();
+    }
+
+    private com.fasterxml.jackson.databind.ObjectMapper objectMapper = new com.fasterxml.jackson.databind.ObjectMapper().registerModule(new com.fasterxml.jackson.datatype.jsr310.JavaTimeModule());
 
     @MockitoBean
     private WebauthnOnboardingService webauthnOnboardingService;

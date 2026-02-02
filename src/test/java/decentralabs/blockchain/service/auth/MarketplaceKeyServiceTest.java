@@ -100,7 +100,7 @@ class MarketplaceKeyServiceTest {
         @DisplayName("Should throw exception when fetch fails")
         void shouldThrowExceptionWhenFetchFails() {
             when(restTemplate.getForEntity(anyString(), eq(String.class)))
-                .thenReturn(new ResponseEntity<>(HttpStatus.INTERNAL_SERVER_ERROR));
+                .thenReturn(ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build());
 
             assertThatThrownBy(() -> keyService.getPublicKey(false))
                 .isInstanceOf(Exception.class)
@@ -111,7 +111,7 @@ class MarketplaceKeyServiceTest {
         @DisplayName("Should throw exception when response body is null")
         void shouldThrowExceptionWhenResponseBodyIsNull() {
             when(restTemplate.getForEntity(anyString(), eq(String.class)))
-                .thenReturn(new ResponseEntity<>(null, HttpStatus.OK));
+                .thenReturn(ResponseEntity.ok(null));
 
             assertThatThrownBy(() -> keyService.getPublicKey(false))
                 .isInstanceOf(Exception.class);
@@ -121,7 +121,7 @@ class MarketplaceKeyServiceTest {
         @DisplayName("Should throw exception for invalid PEM format")
         void shouldThrowExceptionForInvalidPemFormat() {
             when(restTemplate.getForEntity(anyString(), eq(String.class)))
-                .thenReturn(new ResponseEntity<>("invalid-key-data", HttpStatus.OK));
+                .thenReturn(new ResponseEntity<String>("invalid-key-data", HttpStatus.OK));
 
             assertThatThrownBy(() -> keyService.getPublicKey(false))
                 .isInstanceOf(Exception.class);
@@ -270,7 +270,7 @@ class MarketplaceKeyServiceTest {
             String pemWithSpaces = "-----BEGIN PUBLIC KEY-----\n  " + base64Key + "  \n-----END PUBLIC KEY-----";
 
             when(restTemplate.getForEntity(anyString(), eq(String.class)))
-                .thenReturn(new ResponseEntity<>(pemWithSpaces, HttpStatus.OK));
+                .thenReturn(new ResponseEntity<String>(pemWithSpaces, HttpStatus.OK));
 
             PublicKey result = keyService.getPublicKey(false);
 

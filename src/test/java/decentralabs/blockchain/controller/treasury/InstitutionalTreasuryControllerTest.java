@@ -1,6 +1,6 @@
 package decentralabs.blockchain.controller.treasury;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+
 import decentralabs.blockchain.controller.TestSecurityConfig;
 import decentralabs.blockchain.dto.treasury.InstitutionalAdminRequest;
 import decentralabs.blockchain.dto.treasury.InstitutionalAdminRequest.AdminOperation;
@@ -8,30 +8,44 @@ import decentralabs.blockchain.dto.treasury.InstitutionalAdminResponse;
 import decentralabs.blockchain.service.treasury.InstitutionalAdminService;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
+import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.annotation.Import;
 import org.springframework.http.MediaType;
 import org.springframework.security.test.context.support.WithMockUser;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
+import org.junit.jupiter.api.BeforeEach;
+import org.springframework.web.context.WebApplicationContext;
+import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
-import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.any; 
 import static org.mockito.Mockito.when;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-@WebMvcTest(controllers = InstitutionalTreasuryController.class)
+@SpringBootTest(classes = InstitutionalTreasuryController.class)
 @Import(TestSecurityConfig.class)
 @WithMockUser
 class InstitutionalTreasuryControllerTest {
 
     @Autowired
+    private WebApplicationContext wac;
+
     private MockMvc mockMvc;
 
-    @Autowired
-    private ObjectMapper objectMapper;
+    @BeforeEach
+    public void setup() {
+        InstitutionalTreasuryController controller = this.wac.getBean(InstitutionalTreasuryController.class);
+        this.mockMvc = MockMvcBuilders.standaloneSetup(controller)
+            .setMessageConverters(new decentralabs.blockchain.config.JacksonHttpMessageConverter(objectMapper))
+            .setControllerAdvice(new decentralabs.blockchain.exception.GlobalExceptionHandler())
+            .defaultRequest(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get("/").accept(org.springframework.http.MediaType.APPLICATION_JSON))
+            .build();
+    }
+
+    private com.fasterxml.jackson.databind.ObjectMapper objectMapper = new com.fasterxml.jackson.databind.ObjectMapper();
 
     @MockitoBean
     private InstitutionalAdminService adminService;
