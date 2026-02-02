@@ -16,14 +16,17 @@ import decentralabs.blockchain.service.wallet.InstitutionalWalletService;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.web.WebMvcTest;
+import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.annotation.Import;
 import org.springframework.http.MediaType;
 import org.springframework.security.test.context.support.WithMockUser;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
+import org.junit.jupiter.api.BeforeEach;
+import org.springframework.web.context.WebApplicationContext;
+import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
-import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.any; 
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -35,7 +38,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-@WebMvcTest(controllers = WalletController.class)
+@SpringBootTest(classes = WalletController.class)
 @Import(TestSecurityConfig.class)
 @WithMockUser
 class WalletControllerOperationsIntegrationTest {
@@ -43,10 +46,22 @@ class WalletControllerOperationsIntegrationTest {
     private static final String VALID_ADDRESS = "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 
     @Autowired
+    private WebApplicationContext wac;
+
     private MockMvc mockMvc;
 
-    @Autowired
-    private ObjectMapper objectMapper;
+    @BeforeEach
+    public void setup() {
+        this.objectMapper = new ObjectMapper();
+        this.mockMvc = MockMvcBuilders.standaloneSetup(this.wac.getBean(WalletController.class))
+            // register the security filter from the test context so CSRF and security work
+            .addFilters(this.wac.getBean("springSecurityFilterChain", jakarta.servlet.Filter.class))
+            .setMessageConverters(new decentralabs.blockchain.config.JacksonHttpMessageConverter(this.objectMapper))
+            .setControllerAdvice(new decentralabs.blockchain.exception.GlobalExceptionHandler())
+            .build();
+    }
+
+    private ObjectMapper objectMapper = new ObjectMapper();
 
     @MockitoBean
     private WalletService walletService;

@@ -26,6 +26,7 @@ import decentralabs.blockchain.service.wallet.WalletService;
 
 @ExtendWith(MockitoExtension.class)
 @DisplayName("IntentOnChainExecutor Tests")
+@SuppressWarnings({"rawtypes","unchecked"})
 class IntentOnChainExecutorTest {
 
     @Mock
@@ -238,7 +239,6 @@ class IntentOnChainExecutorTest {
 
             java.lang.reflect.Method m = IntentOnChainExecutor.class.getDeclaredMethod("buildAddAndList", IntentRecord.class);
             m.setAccessible(true);
-            @SuppressWarnings("unchecked")
             java.util.Optional<org.web3j.abi.datatypes.Function> maybe = (java.util.Optional<org.web3j.abi.datatypes.Function>) m.invoke(executor, record);
             assertThat(maybe).isPresent();
             org.web3j.abi.datatypes.Function f = maybe.get();
@@ -494,7 +494,6 @@ class IntentOnChainExecutorTest {
 
             java.lang.reflect.Method m = IntentOnChainExecutor.class.getDeclaredMethod("buildAddLab", IntentRecord.class);
             m.setAccessible(true);
-            @SuppressWarnings("unchecked")
             java.util.Optional<org.web3j.abi.datatypes.Function> maybe = (java.util.Optional<org.web3j.abi.datatypes.Function>) m.invoke(executor, record);
             assertThat(maybe).isPresent();
             org.web3j.abi.datatypes.Function f = maybe.get();
@@ -520,7 +519,6 @@ class IntentOnChainExecutorTest {
 
             java.lang.reflect.Method m = IntentOnChainExecutor.class.getDeclaredMethod("buildUpdateLab", IntentRecord.class);
             m.setAccessible(true);
-            @SuppressWarnings("unchecked")
             java.util.Optional<org.web3j.abi.datatypes.Function> maybe = (java.util.Optional<org.web3j.abi.datatypes.Function>) m.invoke(executor, record);
             assertThat(maybe).isPresent();
             org.web3j.abi.datatypes.Function f = maybe.get();
@@ -546,20 +544,17 @@ class IntentOnChainExecutorTest {
             Object listConst = java.lang.Enum.valueOf((Class) fnClass, "LIST_TOKEN");
             java.lang.reflect.Method m = IntentOnChainExecutor.class.getDeclaredMethod("buildSimple", fnClass, IntentRecord.class);
             m.setAccessible(true);
-            @SuppressWarnings("unchecked")
             java.util.Optional<org.web3j.abi.datatypes.Function> maybe = (java.util.Optional<org.web3j.abi.datatypes.Function>) m.invoke(executor, listConst, record);
             assertThat(maybe).isPresent();
             org.web3j.abi.datatypes.Function f = maybe.get();
             assertThat(f.getName()).isEqualTo("listLabWithIntent");
 
             Object unlistConst = java.lang.Enum.valueOf((Class) fnClass, "UNLIST_TOKEN");
-            @SuppressWarnings("unchecked")
             java.util.Optional<org.web3j.abi.datatypes.Function> maybe2 = (java.util.Optional<org.web3j.abi.datatypes.Function>) m.invoke(executor, unlistConst, record);
             assertThat(maybe2).isPresent();
             assertThat(maybe2.get().getName()).isEqualTo("unlistLabWithIntent");
 
             Object deleteConst = java.lang.Enum.valueOf((Class) fnClass, "DELETE_LAB");
-            @SuppressWarnings("unchecked")
             java.util.Optional<org.web3j.abi.datatypes.Function> maybe3 = (java.util.Optional<org.web3j.abi.datatypes.Function>) m.invoke(executor, deleteConst, record);
             assertThat(maybe3).isPresent();
             assertThat(maybe3.get().getName()).isEqualTo("deleteLabWithIntent");
@@ -577,7 +572,6 @@ class IntentOnChainExecutorTest {
 
             java.lang.reflect.Method m = IntentOnChainExecutor.class.getDeclaredMethod("buildSetTokenURI", IntentRecord.class);
             m.setAccessible(true);
-            @SuppressWarnings("unchecked")
             java.util.Optional<org.web3j.abi.datatypes.Function> maybe = (java.util.Optional<org.web3j.abi.datatypes.Function>) m.invoke(executor, record);
             assertThat(maybe).isPresent();
             org.web3j.abi.datatypes.Function f = maybe.get();
@@ -601,7 +595,6 @@ class IntentOnChainExecutorTest {
 
             java.lang.reflect.Method m = IntentOnChainExecutor.class.getDeclaredMethod("buildRequestFunds", IntentRecord.class);
             m.setAccessible(true);
-            @SuppressWarnings("unchecked")
             java.util.Optional<org.web3j.abi.datatypes.Function> maybe = (java.util.Optional<org.web3j.abi.datatypes.Function>) m.invoke(executor, record);
             assertThat(maybe).isPresent();
             org.web3j.abi.datatypes.Function f = maybe.get();
@@ -627,7 +620,6 @@ class IntentOnChainExecutorTest {
 
             java.lang.reflect.Method m = IntentOnChainExecutor.class.getDeclaredMethod("buildReservationRequest", IntentRecord.class);
             m.setAccessible(true);
-            @SuppressWarnings("unchecked")
             java.util.Optional<org.web3j.abi.datatypes.Function> maybe = (java.util.Optional<org.web3j.abi.datatypes.Function>) m.invoke(executor, record);
             assertThat(maybe).isPresent();
             org.web3j.abi.datatypes.Function f = maybe.get();
@@ -656,7 +648,6 @@ class IntentOnChainExecutorTest {
 
             java.lang.reflect.Method m = IntentOnChainExecutor.class.getDeclaredMethod("buildCancelReservation", IntentRecord.class);
             m.setAccessible(true);
-            @SuppressWarnings("unchecked")
             java.util.Optional<org.web3j.abi.datatypes.Function> maybe = (java.util.Optional<org.web3j.abi.datatypes.Function>) m.invoke(executor, record);
             assertThat(maybe).isPresent();
             org.web3j.abi.datatypes.Function f = maybe.get();
@@ -677,7 +668,6 @@ class IntentOnChainExecutorTest {
 
             java.lang.reflect.Method m = IntentOnChainExecutor.class.getDeclaredMethod("buildCancelBooking", IntentRecord.class);
             m.setAccessible(true);
-            @SuppressWarnings("unchecked")
             java.util.Optional<org.web3j.abi.datatypes.Function> maybe = (java.util.Optional<org.web3j.abi.datatypes.Function>) m.invoke(executor, record);
             assertThat(maybe).isPresent();
             org.web3j.abi.datatypes.Function f = maybe.get();

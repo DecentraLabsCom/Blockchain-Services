@@ -8,7 +8,7 @@ import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;
 import java.util.List;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.lang.NonNull;
+import jakarta.annotation.Nonnull;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
@@ -33,16 +33,16 @@ public class AccessTokenAuthenticationFilter extends OncePerRequestFilter {
     private String accessTokenCookie;
 
     @Override
-    protected boolean shouldNotFilter(@NonNull HttpServletRequest request) {
+    protected boolean shouldNotFilter(@Nonnull HttpServletRequest request) {
         String path = request.getRequestURI();
         return path == null || !path.startsWith("/treasury/admin");
     }
 
     @Override
     protected void doFilterInternal(
-        @NonNull HttpServletRequest request,
-        @NonNull HttpServletResponse response,
-        @NonNull FilterChain filterChain
+        @Nonnull HttpServletRequest request,
+        @Nonnull HttpServletResponse response,
+        @Nonnull FilterChain filterChain
     ) throws ServletException, IOException {
         if (accessToken == null || accessToken.isBlank()) {
             filterChain.doFilter(request, response);

@@ -169,7 +169,10 @@ public class ProviderConfigurationController {
 
         try {
             ConfigSnapshot snapshot = loadSnapshot();
-            String provisioningToken = request == null ? null : request.get("provisioningToken");
+            String provisioningToken = request == null ? "" : request.get("provisioningToken");
+            if (provisioningToken == null) {
+                provisioningToken = "";
+            }
 
             if (!isFullyConfigured(snapshot)) {
                 response.put("success", false);

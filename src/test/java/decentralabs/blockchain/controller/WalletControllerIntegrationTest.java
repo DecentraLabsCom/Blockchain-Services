@@ -9,11 +9,13 @@ import decentralabs.blockchain.service.wallet.InstitutionalWalletService;
 import decentralabs.blockchain.service.wallet.WalletService;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.web.AutoConfigureMockMvc;
-import org.springframework.boot.test.autoconfigure.web.WebMvcTest;
+import org.junit.jupiter.api.BeforeEach;
+import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.MediaType;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.web.context.WebApplicationContext;
+import org.springframework.test.web.servlet.setup.MockMvcBuilders; 
 import org.springframework.test.web.servlet.MvcResult;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -22,15 +24,25 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-@WebMvcTest(WalletController.class)
-@AutoConfigureMockMvc(addFilters = false)
-public class WalletControllerIntegrationTest {
+@SpringBootTest(classes = WalletController.class)
+class WalletControllerIntegrationTest {
 
     @Autowired
+    private WebApplicationContext wac;
+
+    @BeforeEach
+    public void setup() {
+        this.objectMapper = new ObjectMapper();
+        // Use standalone setup with the controller bean and register JSON message converter
+        this.mockMvc = MockMvcBuilders.standaloneSetup(this.wac.getBean(WalletController.class))
+            .setMessageConverters(new decentralabs.blockchain.config.JacksonHttpMessageConverter(this.objectMapper))
+            .setControllerAdvice(new decentralabs.blockchain.exception.GlobalExceptionHandler())
+            .build();
+    } 
+
     private MockMvc mockMvc;
 
-    @Autowired
-    private ObjectMapper objectMapper;
+    private ObjectMapper objectMapper = new ObjectMapper();
 
     @MockitoBean
     private WalletService walletService;

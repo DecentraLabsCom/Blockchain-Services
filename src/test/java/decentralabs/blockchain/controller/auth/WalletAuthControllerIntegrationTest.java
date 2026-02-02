@@ -10,13 +10,15 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.web.AutoConfigureMockMvc;
-import org.springframework.boot.test.autoconfigure.web.WebMvcTest;
+import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.MediaType;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
+import org.junit.jupiter.api.BeforeEach;
+import org.springframework.web.context.WebApplicationContext;
+import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+
 
 import decentralabs.blockchain.dto.auth.AuthResponse;
 import decentralabs.blockchain.dto.auth.CheckInRequest;
@@ -26,15 +28,25 @@ import decentralabs.blockchain.service.auth.CheckInOnChainService;
 import decentralabs.blockchain.service.auth.WalletAuthService;
 import decentralabs.blockchain.service.wallet.BlockchainBookingService;
 
-@WebMvcTest(controllers = WalletAuthController.class)
-@AutoConfigureMockMvc(addFilters = false)
+@SpringBootTest(classes = WalletAuthController.class)
 class WalletAuthControllerIntegrationTest {
 
     @Autowired
+    private WebApplicationContext wac;
+
     private MockMvc mockMvc;
 
-    @Autowired
-    private ObjectMapper objectMapper;
+    @BeforeEach
+    public void setup() {
+        WalletAuthController controller = this.wac.getBean(WalletAuthController.class);
+        this.mockMvc = MockMvcBuilders.standaloneSetup(controller)
+            .setMessageConverters(new org.springframework.http.converter.StringHttpMessageConverter(), new decentralabs.blockchain.config.JacksonHttpMessageConverter(objectMapper))
+            .setControllerAdvice(new decentralabs.blockchain.exception.GlobalExceptionHandler())
+            .defaultRequest(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get("/").accept(org.springframework.http.MediaType.APPLICATION_JSON))
+            .build();
+    }
+
+    private com.fasterxml.jackson.databind.ObjectMapper objectMapper = new com.fasterxml.jackson.databind.ObjectMapper();
 
     @MockitoBean
     private WalletAuthService walletAuthService;

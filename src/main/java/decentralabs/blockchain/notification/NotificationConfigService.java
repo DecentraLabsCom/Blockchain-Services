@@ -142,12 +142,12 @@ public class NotificationConfigService {
         if (loaded.getSmtp() != null) {
             NotificationProperties.Smtp smtp = mail.getSmtp();
             Optional.ofNullable(loaded.getSmtp().getHost()).ifPresent(smtp::setHost);
-            Optional.ofNullable(loaded.getSmtp().getPort()).ifPresent(smtp::setPort);
+            smtp.setPort(loaded.getSmtp().getPort());
             Optional.ofNullable(loaded.getSmtp().getUsername()).ifPresent(smtp::setUsername);
             Optional.ofNullable(loaded.getSmtp().getPassword()).ifPresent(smtp::setPassword);
             smtp.setAuth(loaded.getSmtp().isAuth());
             smtp.setStartTls(loaded.getSmtp().isStartTls());
-            Optional.ofNullable(loaded.getSmtp().getTimeoutMs()).ifPresent(smtp::setTimeoutMs);
+            smtp.setTimeoutMs(loaded.getSmtp().getTimeoutMs());
         }
         if (loaded.getGraph() != null) {
             NotificationProperties.Graph graph = mail.getGraph();
