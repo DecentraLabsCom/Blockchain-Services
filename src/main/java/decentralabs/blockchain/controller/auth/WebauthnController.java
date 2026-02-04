@@ -27,7 +27,10 @@ public class WebauthnController {
             request.getCredentialId(),
             request.getPublicKey(),
             request.getAaguid(),
-            request.getSignCount()
+            request.getSignCount(),
+            request.getAuthenticatorAttachment(),
+            request.getResidentKey(),
+            request.getTransports()
         );
         return ResponseEntity.ok().build();
     }

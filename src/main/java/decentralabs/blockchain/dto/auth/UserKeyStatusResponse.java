@@ -45,4 +45,19 @@ public class UserKeyStatusResponse {
      * Whether the user has any revoked credentials (for audit purposes).
      */
     private boolean hasRevokedCredentials;
+
+    /**
+     * Whether the user has a platform credential (e.g. Windows Hello/Touch ID).
+     */
+    private boolean hasPlatformCredential;
+
+    /**
+     * Whether the user has a cross-platform credential (e.g. security key).
+     */
+    private boolean hasCrossPlatformCredential;
+
+    /**
+     * Whether any credential is resident (discoverable).
+     */
+    private boolean hasResidentCredential;
 }

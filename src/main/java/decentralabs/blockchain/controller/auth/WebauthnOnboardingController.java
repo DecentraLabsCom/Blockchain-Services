@@ -79,6 +79,9 @@ public class WebauthnOnboardingController {
                 ? Instant.ofEpochSecond(keyStatus.getLastRegisteredEpoch()) 
                 : null)
             .hasRevokedCredentials(keyStatus.isHasRevokedCredentials())
+            .hasPlatformCredential(keyStatus.isHasPlatformCredential())
+            .hasCrossPlatformCredential(keyStatus.isHasCrossPlatformCredential())
+            .hasResidentCredential(keyStatus.isHasResidentCredential())
             .build();
         
         return ResponseEntity.ok(response);

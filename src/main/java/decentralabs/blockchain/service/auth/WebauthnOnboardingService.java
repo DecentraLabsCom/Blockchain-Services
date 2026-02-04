@@ -315,15 +315,6 @@ public class WebauthnOnboardingService {
         }
 
         try {
-            // Check if user already has an active credential - prevent duplicates
-            WebauthnCredentialService.KeyStatus existingStatus = credentialService.getKeyStatus(session.getStableUserId());
-            if (existingStatus.isHasCredential() && existingStatus.getCredentialCount() > 0) {
-                log.warn("User {} already has {} active credential(s). Rejecting duplicate registration attempt.", 
-                    session.getStableUserId(), existingStatus.getCredentialCount());
-                throw new ResponseStatusException(HttpStatus.CONFLICT, 
-                    "User already has an active credential. Only one credential is allowed per user.");
-            }
-
             // Decode client data JSON and verify
             byte[] clientDataJson = BASE64URL_DECODER.decode(request.getClientDataJSON());
             verifyClientData(clientDataJson, session.getChallengeBytes());
@@ -337,13 +328,19 @@ public class WebauthnOnboardingService {
             String aaguid = HexFormat.of().formatHex(attestationData.aaguid);
             String credentialId = request.getCredentialId();
 
+            String transports = normalizeTransports(request.getTransports());
+            String attachment = inferAuthenticatorAttachment(request.getTransports());
+
             // Store the credential binding using existing service
             credentialService.register(
                 session.getStableUserId(),
                 credentialId,
                 publicKeyBase64,
                 aaguid,
-                attestationData.signCount
+                attestationData.signCount,
+                attachment,
+                attestationData.residentKey,
+                transports
             );
 
             log.info("WebAuthn credential registered. StableUserId: {}, CredentialId: {}", 
@@ -671,7 +668,9 @@ public class WebauthnOnboardingService {
         // Rest is the COSE public key
         byte[] publicKeyCose = Arrays.copyOfRange(authData, offset, authData.length);
 
-        return new AttestationData(aaguid, publicKeyCose, signCount);
+        boolean residentKey = (flags & 0x20) != 0;
+
+        return new AttestationData(aaguid, publicKeyCose, signCount, flags, residentKey);
     }
 
     /**
@@ -767,6 +766,31 @@ public class WebauthnOnboardingService {
             .requireResidentKey("required".equals(residentKey))
             .userVerification(userVerification)
             .build();
+    }
+
+    private String normalizeTransports(String[] transports) {
+        if (transports == null || transports.length == 0) return null;
+        return Arrays.stream(transports)
+            .filter(t -> t != null && !t.trim().isEmpty())
+            .map(t -> t.trim().toLowerCase())
+            .distinct()
+            .reduce((a, b) -> a + "," + b)
+            .orElse(null);
+    }
+
+    private String inferAuthenticatorAttachment(String[] transports) {
+        if (transports == null || transports.length == 0) return null;
+        List<String> normalized = Arrays.stream(transports)
+            .filter(t -> t != null && !t.trim().isEmpty())
+            .map(t -> t.trim().toLowerCase())
+            .distinct()
+            .toList();
+        if (normalized.isEmpty()) return null;
+        boolean hasInternal = normalized.contains("internal");
+        boolean hasExternal = normalized.stream().anyMatch(t -> !"internal".equals(t));
+        if (hasInternal && hasExternal) return "mixed";
+        if (hasInternal) return "platform";
+        return "cross-platform";
     }
 
     private void cleanupExpiredSessions() {
@@ -875,5 +899,7 @@ public class WebauthnOnboardingService {
         private byte[] aaguid;
         private byte[] publicKeyCose;
         private long signCount;
+        private byte flags;
+        private boolean residentKey;
     }
 }

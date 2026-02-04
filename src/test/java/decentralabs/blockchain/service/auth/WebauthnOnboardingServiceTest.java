@@ -141,12 +141,6 @@ class WebauthnOnboardingServiceTest {
 
     @Test
     void completeOnboarding_invalidClientDataType_throwsException() throws Exception {
-        // Mock credential service to return no existing credential
-        WebauthnCredentialService.KeyStatus noCredential = new WebauthnCredentialService.KeyStatus(
-            false, 0, false, 0L
-        );
-        when(credentialService.getKeyStatus(anyString())).thenReturn(noCredential);
-
         // First generate options
         WebauthnOnboardingOptionsRequest optionsRequest = new WebauthnOnboardingOptionsRequest();
         optionsRequest.setStableUserId("user@institution.edu");
@@ -173,12 +167,6 @@ class WebauthnOnboardingServiceTest {
 
     @Test
     void completeOnboarding_challengeMismatch_throwsException() throws Exception {
-        // Mock credential service to return no existing credential
-        WebauthnCredentialService.KeyStatus noCredential = new WebauthnCredentialService.KeyStatus(
-            false, 0, false, 0L
-        );
-        when(credentialService.getKeyStatus(anyString())).thenReturn(noCredential);
-
         // First generate options
         WebauthnOnboardingOptionsRequest optionsRequest = new WebauthnOnboardingOptionsRequest();
         optionsRequest.setStableUserId("user@institution.edu");
@@ -206,12 +194,6 @@ class WebauthnOnboardingServiceTest {
 
     @Test
     void completeOnboarding_invalidOrigin_throwsException() throws Exception {
-        // Mock credential service to return no existing credential
-        WebauthnCredentialService.KeyStatus noCredential = new WebauthnCredentialService.KeyStatus(
-            false, 0, false, 0L
-        );
-        when(credentialService.getKeyStatus(anyString())).thenReturn(noCredential);
-
         // First generate options
         WebauthnOnboardingOptionsRequest optionsRequest = new WebauthnOnboardingOptionsRequest();
         optionsRequest.setStableUserId("user@institution.edu");
@@ -238,12 +220,6 @@ class WebauthnOnboardingServiceTest {
 
     @Test
     void completeOnboarding_sessionCanOnlyBeUsedOnce() throws Exception {
-        // Mock credential service to return no existing credential
-        WebauthnCredentialService.KeyStatus noCredential = new WebauthnCredentialService.KeyStatus(
-            false, 0, false, 0L
-        );
-        when(credentialService.getKeyStatus(anyString())).thenReturn(noCredential);
-
         // First generate options
         WebauthnOnboardingOptionsRequest optionsRequest = new WebauthnOnboardingOptionsRequest();
         optionsRequest.setStableUserId("user@institution.edu");
@@ -336,39 +312,4 @@ class WebauthnOnboardingServiceTest {
         return finalResult;
     }
 
-    @Test
-    void completeOnboarding_duplicateCredential_throwsConflict() {
-        // Setup: User already has a credential
-        WebauthnCredentialService.KeyStatus existingStatus = new WebauthnCredentialService.KeyStatus(
-            true,  // hasCredential
-            1,     // credentialCount
-            false, // hasRevokedCredentials
-            System.currentTimeMillis() / 1000  // lastRegisteredEpoch
-        );
-        when(credentialService.getKeyStatus("user@institution.edu")).thenReturn(existingStatus);
-
-        // Generate options first to create a session
-        WebauthnOnboardingOptionsRequest optionsRequest = new WebauthnOnboardingOptionsRequest();
-        optionsRequest.setStableUserId("user@institution.edu");
-        optionsRequest.setInstitutionId("institution.edu");
-        optionsRequest.setDisplayName("Test User");
-        
-        WebauthnOnboardingOptionsResponse options = service.generateOptions(optionsRequest);
-
-        // Try to complete onboarding with a duplicate credential
-        WebauthnOnboardingCompleteRequest completeRequest = new WebauthnOnboardingCompleteRequest();
-        completeRequest.setSessionId(options.getSessionId());
-        completeRequest.setCredentialId("new-credential-id");
-        completeRequest.setClientDataJSON(BASE64URL_ENCODER.encodeToString("{}".getBytes()));
-        completeRequest.setAttestationObject(BASE64URL_ENCODER.encodeToString(new byte[0]));
-
-        // Should throw CONFLICT (409) exception
-        ResponseStatusException exception = assertThrows(
-            ResponseStatusException.class,
-            () -> service.completeOnboarding(completeRequest)
-        );
-        
-        assertEquals(409, exception.getStatusCode().value());
-        assertTrue(exception.getReason().contains("already has an active credential"));
-    }
 }

@@ -241,7 +241,7 @@ class WebauthnOnboardingControllerTest {
     @WithMockUser
     void getKeyStatus_userWithCredentials_returnsHasCredential() throws Exception {
         WebauthnCredentialService.KeyStatus keyStatus = new WebauthnCredentialService.KeyStatus(
-            true, 2, false, 1702400000L
+            true, 2, false, 1702400000L, true, false, true
         );
         
         when(credentialService.getKeyStatus(eq("user@institution.edu"))).thenReturn(keyStatus);
@@ -259,7 +259,7 @@ class WebauthnOnboardingControllerTest {
     @WithMockUser
     void getKeyStatus_userWithoutCredentials_returnsNoCredential() throws Exception {
         WebauthnCredentialService.KeyStatus keyStatus = new WebauthnCredentialService.KeyStatus(
-            false, 0, false, null
+            false, 0, false, null, false, false, false
         );
         
         when(credentialService.getKeyStatus(eq("newuser@institution.edu"))).thenReturn(keyStatus);
@@ -277,7 +277,7 @@ class WebauthnOnboardingControllerTest {
     @WithMockUser
     void getKeyStatus_withInstitutionId_includesInstitutionInResponse() throws Exception {
         WebauthnCredentialService.KeyStatus keyStatus = new WebauthnCredentialService.KeyStatus(
-            true, 1, true, 1702400000L
+            true, 1, true, 1702400000L, true, true, false
         );
         
         when(credentialService.getKeyStatus(eq("user@institution.edu"))).thenReturn(keyStatus);
@@ -294,7 +294,7 @@ class WebauthnOnboardingControllerTest {
     @Test
     void getKeyStatus_withoutAuth_stillAccessible() throws Exception {
         WebauthnCredentialService.KeyStatus keyStatus = new WebauthnCredentialService.KeyStatus(
-            true, 1, false, 1702400000L
+            true, 1, false, 1702400000L, false, true, false
         );
         
         when(credentialService.getKeyStatus(any())).thenReturn(keyStatus);

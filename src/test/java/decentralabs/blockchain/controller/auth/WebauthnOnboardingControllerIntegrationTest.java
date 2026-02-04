@@ -142,7 +142,7 @@ class WebauthnOnboardingControllerIntegrationTest {
     @Test
     void shouldCheckCredentialStatus() throws Exception {
         when(webauthnCredentialService.getKeyStatus("user123@university.edu"))
-            .thenReturn(new WebauthnCredentialService.KeyStatus(true, 1, false, 1234567890L));
+            .thenReturn(new WebauthnCredentialService.KeyStatus(true, 1, false, 1234567890L, true, false, false));
 
         mockMvc.perform(get("/onboarding/webauthn/key-status/user123@university.edu"))
             .andExpect(status().isOk())
@@ -154,7 +154,7 @@ class WebauthnOnboardingControllerIntegrationTest {
     @Test
     void shouldHandleNonexistentUser() throws Exception {
         when(webauthnCredentialService.getKeyStatus("nonexistent@university.edu"))
-            .thenReturn(new WebauthnCredentialService.KeyStatus(false, 0, false, null));
+            .thenReturn(new WebauthnCredentialService.KeyStatus(false, 0, false, null, false, false, false));
 
         mockMvc.perform(get("/onboarding/webauthn/key-status/nonexistent@university.edu"))
             .andExpect(status().isOk())

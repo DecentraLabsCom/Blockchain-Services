@@ -3,6 +3,7 @@ package decentralabs.blockchain.service.auth;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
@@ -57,17 +58,23 @@ public class WebauthnCredentialService {
         return jdbcTemplate != null;
     }
 
-    public synchronized void register(String puc, String credentialId, String publicKey, String aaguid, Long signCount) {
+    public synchronized void register(String puc, String credentialId, String publicKey, String aaguid, Long signCount,
+                                      String authenticatorAttachment, Boolean residentKey, String transports) {
         String normalizedPuc = normalize(puc);
         String normalizedCred = normalize(credentialId);
         long now = Instant.now().getEpochSecond();
+        String normalizedAttachment = normalize(authenticatorAttachment);
+        String normalizedTransports = normalize(transports);
 
         // Always store in memory (for immediate lookup)
         String key = normalizedPuc + ":" + normalizedCred;
         WebauthnCredential credential = new WebauthnCredential(
             normalizedCred, publicKey, aaguid, 
             signCount != null ? signCount : 0L, 
-            true, now, now, null
+            true, now, now, null,
+            normalizedAttachment.isEmpty() ? null : normalizedAttachment,
+            residentKey,
+            normalizedTransports.isEmpty() ? null : normalizedTransports
         );
         inMemoryCredentials.put(key, credential);
 
@@ -78,14 +85,18 @@ public class WebauthnCredentialService {
         }
 
         try {
-            String sql = "INSERT INTO " + credentialsTable + " (puc, credential_id, public_key, aaguid, sign_count, active, created_at, updated_at) " +
-                "VALUES (?, ?, ?, ?, ?, TRUE, FROM_UNIXTIME(?), FROM_UNIXTIME(?)) " +
+            String sql = "INSERT INTO " + credentialsTable + " (puc, credential_id, public_key, aaguid, sign_count, active, " +
+                "created_at, updated_at, authenticator_attachment, resident_key, transports) " +
+                "VALUES (?, ?, ?, ?, ?, TRUE, FROM_UNIXTIME(?), FROM_UNIXTIME(?), ?, ?, ?) " +
                 "ON DUPLICATE KEY UPDATE " +
                 "public_key=VALUES(public_key), " +
                 "aaguid=VALUES(aaguid), " +
                 "sign_count=VALUES(sign_count), " +
                 "active=TRUE, " +
                 "revoked_at=NULL, " +
+                "authenticator_attachment=VALUES(authenticator_attachment), " +
+                "resident_key=VALUES(resident_key), " +
+                "transports=VALUES(transports), " +
                 "updated_at=VALUES(updated_at)";
             jdbcTemplate.update(sql,
                 normalizedPuc,
@@ -94,7 +105,10 @@ public class WebauthnCredentialService {
                 aaguid,
                 signCount != null ? signCount : 0L,
                 now,
-                now
+                now,
+                normalizedAttachment.isEmpty() ? null : normalizedAttachment,
+                residentKey,
+                normalizedTransports.isEmpty() ? null : normalizedTransports
             );
         } catch (DataAccessException ex) {
             log.warn("webAuthn DB persistence failed (credential still in memory): {}", ex.getMessage());
@@ -205,7 +219,8 @@ public class WebauthnCredentialService {
 
         try {
             String sql = "SELECT credential_id, public_key, aaguid, sign_count, active, " +
-                "UNIX_TIMESTAMP(created_at), UNIX_TIMESTAMP(updated_at), UNIX_TIMESTAMP(revoked_at) " +
+                "UNIX_TIMESTAMP(created_at), UNIX_TIMESTAMP(updated_at), UNIX_TIMESTAMP(revoked_at), " +
+                "authenticator_attachment, resident_key, transports " +
                 "FROM " + credentialsTable + " " +
                 "WHERE puc = ? AND credential_id = ? " +
                 "LIMIT 1";
@@ -223,7 +238,10 @@ public class WebauthnCredentialService {
                         rs.getBoolean(5),
                         rs.getLong(6),
                         rs.getLong(7),
-                        rs.getObject(8) != null ? rs.getLong(8) : null
+                        rs.getObject(8) != null ? rs.getLong(8) : null,
+                        rs.getString(9),
+                        rs.getObject(10) != null ? rs.getBoolean(10) : null,
+                        rs.getString(11)
                     ))
                     : Optional.empty()
             );
@@ -253,7 +271,8 @@ public class WebauthnCredentialService {
         // Merge with database results (database may have credentials from previous sessions)
         try {
             String sql = "SELECT credential_id, public_key, aaguid, sign_count, active, " +
-                "UNIX_TIMESTAMP(created_at), UNIX_TIMESTAMP(updated_at), UNIX_TIMESTAMP(revoked_at) " +
+                "UNIX_TIMESTAMP(created_at), UNIX_TIMESTAMP(updated_at), UNIX_TIMESTAMP(revoked_at), " +
+                "authenticator_attachment, resident_key, transports " +
                 "FROM " + credentialsTable + " " +
                 "WHERE puc = ?";
             List<WebauthnCredential> dbCredentials = jdbcTemplate.query(sql,
@@ -266,7 +285,10 @@ public class WebauthnCredentialService {
                     rs.getBoolean(5),
                     rs.getLong(6),
                     rs.getLong(7),
-                    rs.getObject(8) != null ? rs.getLong(8) : null
+                    rs.getObject(8) != null ? rs.getLong(8) : null,
+                    rs.getString(9),
+                    rs.getObject(10) != null ? rs.getBoolean(10) : null,
+                    rs.getString(11)
                 )
             );
             
@@ -302,6 +324,9 @@ public class WebauthnCredentialService {
         int activeCount = 0;
         int revokedCount = 0;
         Long mostRecentRegistration = null;
+        boolean hasPlatformCredential = false;
+        boolean hasCrossPlatformCredential = false;
+        boolean hasResidentCredential = false;
         
         for (WebauthnCredential cred : credentials) {
             if (cred.isActive()) {
@@ -309,6 +334,15 @@ public class WebauthnCredentialService {
                 if (mostRecentRegistration == null || 
                     (cred.getCreatedAt() != null && cred.getCreatedAt() > mostRecentRegistration)) {
                     mostRecentRegistration = cred.getCreatedAt();
+                }
+                if (isPlatformCredential(cred)) {
+                    hasPlatformCredential = true;
+                }
+                if (isCrossPlatformCredential(cred)) {
+                    hasCrossPlatformCredential = true;
+                }
+                if (Boolean.TRUE.equals(cred.getResidentKey())) {
+                    hasResidentCredential = true;
                 }
             } else {
                 revokedCount++;
@@ -319,8 +353,45 @@ public class WebauthnCredentialService {
             activeCount > 0,
             activeCount,
             revokedCount > 0,
-            mostRecentRegistration
+            mostRecentRegistration,
+            hasPlatformCredential,
+            hasCrossPlatformCredential,
+            hasResidentCredential
         );
+    }
+
+    private boolean isPlatformCredential(WebauthnCredential credential) {
+        if (credential == null) return false;
+        String transports = normalize(credential.getTransports());
+        if (!transports.isEmpty()) {
+            List<String> transportList = Arrays.stream(transports.split(","))
+                .map(String::trim)
+                .map(String::toLowerCase)
+                .filter(s -> !s.isEmpty())
+                .toList();
+            return transportList.contains("internal");
+        }
+        String attachment = normalize(credential.getAuthenticatorAttachment());
+        if (attachment.equalsIgnoreCase("platform")) return true;
+        if (attachment.equalsIgnoreCase("mixed")) return true;
+        return false;
+    }
+
+    private boolean isCrossPlatformCredential(WebauthnCredential credential) {
+        if (credential == null) return false;
+        String transports = normalize(credential.getTransports());
+        if (!transports.isEmpty()) {
+            List<String> transportList = Arrays.stream(transports.split(","))
+                .map(String::trim)
+                .map(String::toLowerCase)
+                .filter(s -> !s.isEmpty())
+                .toList();
+            return transportList.stream().anyMatch(t -> !"internal".equals(t));
+        }
+        String attachment = normalize(credential.getAuthenticatorAttachment());
+        if (attachment.equalsIgnoreCase("cross-platform")) return true;
+        if (attachment.equalsIgnoreCase("mixed")) return true;
+        return false;
     }
 
     @Data
@@ -331,6 +402,9 @@ public class WebauthnCredentialService {
         private int credentialCount;
         private boolean hasRevokedCredentials;
         private Long lastRegisteredEpoch;
+        private boolean hasPlatformCredential;
+        private boolean hasCrossPlatformCredential;
+        private boolean hasResidentCredential;
     }
 
     @Data
@@ -345,5 +419,8 @@ public class WebauthnCredentialService {
         private Long createdAt;
         private Long updatedAt;
         private Long revokedAt;
+        private String authenticatorAttachment;
+        private Boolean residentKey;
+        private String transports;
     }
 }
