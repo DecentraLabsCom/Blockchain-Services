@@ -59,7 +59,10 @@ class WebauthnControllerTest {
                 request.getCredentialId(),
                 request.getPublicKey(),
                 request.getAaguid(),
-                request.getSignCount()
+                request.getSignCount(),
+                request.getAuthenticatorAttachment(),
+                request.getResidentKey(),
+                request.getTransports()
             );
 
             mockMvc.perform(post("/webauthn/register")
@@ -72,7 +75,10 @@ class WebauthnControllerTest {
                 request.getCredentialId(),
                 request.getPublicKey(),
                 request.getAaguid(),
-                request.getSignCount()
+                request.getSignCount(),
+                request.getAuthenticatorAttachment(),
+                request.getResidentKey(),
+                request.getTransports()
             );
         }
 
@@ -135,7 +141,10 @@ class WebauthnControllerTest {
                 request.getCredentialId(),
                 request.getPublicKey(),
                 null,
-                request.getSignCount()
+                request.getSignCount(),
+                request.getAuthenticatorAttachment(),
+                request.getResidentKey(),
+                request.getTransports()
             );
 
             mockMvc.perform(post("/webauthn/register")
@@ -155,7 +164,10 @@ class WebauthnControllerTest {
                 request.getCredentialId(),
                 request.getPublicKey(),
                 request.getAaguid(),
-                null
+                null,
+                request.getAuthenticatorAttachment(),
+                request.getResidentKey(),
+                request.getTransports()
             );
 
             mockMvc.perform(post("/webauthn/register")

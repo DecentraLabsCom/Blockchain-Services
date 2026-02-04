@@ -70,7 +70,10 @@ class WebauthnCredentialServiceTest {
                 TEST_CREDENTIAL_ID,
                 TEST_PUBLIC_KEY,
                 TEST_AAGUID,
-                0L
+                0L,
+                null,
+                null,
+                null
             );
 
             ArgumentCaptor<String> sqlCaptor = ArgumentCaptor.forClass(String.class);
@@ -82,7 +85,10 @@ class WebauthnCredentialServiceTest {
                 eq(TEST_AAGUID),
                 eq(0L),
                 any(Long.class),
-                any(Long.class)
+                any(Long.class),
+                eq(null),
+                eq(null),
+                eq(null)
             );
 
             String sql = sqlCaptor.getValue();
@@ -98,7 +104,10 @@ class WebauthnCredentialServiceTest {
                 "  " + TEST_CREDENTIAL_ID + "  ",
                 TEST_PUBLIC_KEY,
                 TEST_AAGUID,
-                5L
+                5L,
+                null,
+                null,
+                null
             );
 
             verify(jdbcTemplate).update(
@@ -109,7 +118,10 @@ class WebauthnCredentialServiceTest {
                 eq(TEST_AAGUID),
                 eq(5L),
                 any(Long.class),
-                any(Long.class)
+                any(Long.class),
+                eq(null),
+                eq(null),
+                eq(null)
             );
         }
 
@@ -121,7 +133,10 @@ class WebauthnCredentialServiceTest {
                 TEST_CREDENTIAL_ID,
                 TEST_PUBLIC_KEY,
                 TEST_AAGUID,
-                null  // null sign count
+                null,  // null sign count
+                null,
+                null,
+                null
             );
 
             verify(jdbcTemplate).update(
@@ -132,7 +147,10 @@ class WebauthnCredentialServiceTest {
                 eq(TEST_AAGUID),
                 eq(0L),  // should default to 0
                 any(Long.class),
-                any(Long.class)
+                any(Long.class),
+                eq(null),
+                eq(null),
+                eq(null)
             );
         }
 
@@ -140,12 +158,12 @@ class WebauthnCredentialServiceTest {
         @DisplayName("Should store in memory even when database fails during registration")
         void shouldStoreInMemoryEvenWhenDatabaseFails() {
             DataAccessException dbError = new DataAccessResourceFailureException("Connection failed");
-            when(jdbcTemplate.update(anyString(), any(), any(), any(), any(), any(), any(), any()))
+            when(jdbcTemplate.update(anyString(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any()))
                 .thenThrow(dbError);
 
             // Should not throw - stores in memory first, then logs DB error
             webauthnCredentialService.register(
-                TEST_PUC, TEST_CREDENTIAL_ID, TEST_PUBLIC_KEY, TEST_AAGUID, 0L
+                TEST_PUC, TEST_CREDENTIAL_ID, TEST_PUBLIC_KEY, TEST_AAGUID, 0L, null, null, null
             );
             
             // Verify credential is still findable from in-memory storage
@@ -201,7 +219,7 @@ class WebauthnCredentialServiceTest {
         void shouldUpdateInMemoryEvenWhenDatabaseFails() {
             // First register a credential
             webauthnCredentialService.register(
-                TEST_PUC, TEST_CREDENTIAL_ID, TEST_PUBLIC_KEY, TEST_AAGUID, 0L
+                TEST_PUC, TEST_CREDENTIAL_ID, TEST_PUBLIC_KEY, TEST_AAGUID, 0L, null, null, null
             );
             
             // Now make DB throw on update (revocation)
@@ -235,6 +253,9 @@ class WebauthnCredentialServiceTest {
                 true,
                 Instant.now().getEpochSecond(),
                 Instant.now().getEpochSecond(),
+                null,
+                null,
+                null,
                 null
             );
 
@@ -271,7 +292,7 @@ class WebauthnCredentialServiceTest {
         @SuppressWarnings("unchecked")
         void shouldCheckIfCredentialIsActive() {
             WebauthnCredential activeCred = new WebauthnCredential(
-                TEST_CREDENTIAL_ID, TEST_PUBLIC_KEY, TEST_AAGUID, 0L, true, 0L, 0L, null
+                TEST_CREDENTIAL_ID, TEST_PUBLIC_KEY, TEST_AAGUID, 0L, true, 0L, 0L, null, null, null, null
             );
             when(jdbcTemplate.query(
                 anyString(),
@@ -289,7 +310,7 @@ class WebauthnCredentialServiceTest {
         @SuppressWarnings("unchecked")
         void shouldReturnFalseForRevokedCredential() {
             WebauthnCredential revokedCred = new WebauthnCredential(
-                TEST_CREDENTIAL_ID, TEST_PUBLIC_KEY, TEST_AAGUID, 0L, false, 0L, 0L, Instant.now().getEpochSecond()
+                TEST_CREDENTIAL_ID, TEST_PUBLIC_KEY, TEST_AAGUID, 0L, false, 0L, 0L, Instant.now().getEpochSecond(), null, null, null
             );
             when(jdbcTemplate.query(
                 anyString(),
@@ -322,7 +343,7 @@ class WebauthnCredentialServiceTest {
         void shouldReturnFromMemoryWhenDatabaseFails() {
             // First register a credential (this stores in memory)
             webauthnCredentialService.register(
-                TEST_PUC, TEST_CREDENTIAL_ID, TEST_PUBLIC_KEY, TEST_AAGUID, 10L
+                TEST_PUC, TEST_CREDENTIAL_ID, TEST_PUBLIC_KEY, TEST_AAGUID, 10L, null, null, null
             );
             
             // Verify credential is findable from in-memory storage (DB query not needed)
@@ -342,9 +363,9 @@ class WebauthnCredentialServiceTest {
         @SuppressWarnings("unchecked")
         void shouldReturnAllCredentialsForPuc() {
             List<WebauthnCredential> expected = List.of(
-                new WebauthnCredential("cred1", TEST_PUBLIC_KEY, TEST_AAGUID, 0L, true, 0L, 0L, null),
-                new WebauthnCredential("cred2", TEST_PUBLIC_KEY, TEST_AAGUID, 5L, true, 0L, 0L, null),
-                new WebauthnCredential("cred3", TEST_PUBLIC_KEY, TEST_AAGUID, 0L, false, 0L, 0L, 0L)
+                new WebauthnCredential("cred1", TEST_PUBLIC_KEY, TEST_AAGUID, 0L, true, 0L, 0L, null, null, null, null),
+                new WebauthnCredential("cred2", TEST_PUBLIC_KEY, TEST_AAGUID, 5L, true, 0L, 0L, null, null, null, null),
+                new WebauthnCredential("cred3", TEST_PUBLIC_KEY, TEST_AAGUID, 0L, false, 0L, 0L, 0L, null, null, null)
             );
 
             when(jdbcTemplate.query(
@@ -433,7 +454,10 @@ class WebauthnCredentialServiceTest {
                 TEST_CREDENTIAL_ID,
                 TEST_PUBLIC_KEY,
                 TEST_AAGUID,
-                0L
+                0L,
+                null,
+                null,
+                null
             );
 
             // Verify credential can be found
@@ -454,7 +478,10 @@ class WebauthnCredentialServiceTest {
                 TEST_CREDENTIAL_ID,
                 TEST_PUBLIC_KEY,
                 TEST_AAGUID,
-                0L
+                0L,
+                null,
+                null,
+                null
             );
 
             // Revoke
@@ -480,9 +507,9 @@ class WebauthnCredentialServiceTest {
         @DisplayName("Should list all credentials for PUC from memory")
         void shouldListAllCredentialsFromMemory() {
             // Register multiple credentials
-            inMemoryOnlyService.register(TEST_PUC, "cred1", TEST_PUBLIC_KEY, TEST_AAGUID, 0L);
-            inMemoryOnlyService.register(TEST_PUC, "cred2", TEST_PUBLIC_KEY, TEST_AAGUID, 5L);
-            inMemoryOnlyService.register("other@uned.es", "cred3", TEST_PUBLIC_KEY, TEST_AAGUID, 0L);
+            inMemoryOnlyService.register(TEST_PUC, "cred1", TEST_PUBLIC_KEY, TEST_AAGUID, 0L, null, null, null);
+            inMemoryOnlyService.register(TEST_PUC, "cred2", TEST_PUBLIC_KEY, TEST_AAGUID, 5L, null, null, null);
+            inMemoryOnlyService.register("other@uned.es", "cred3", TEST_PUBLIC_KEY, TEST_AAGUID, 0L, null, null, null);
 
             List<WebauthnCredential> result = inMemoryOnlyService.getCredentials(TEST_PUC);
             
@@ -494,7 +521,7 @@ class WebauthnCredentialServiceTest {
         @Test
         @DisplayName("Should check credential active status correctly in memory")
         void shouldCheckCredentialActiveStatusInMemory() {
-            inMemoryOnlyService.register(TEST_PUC, TEST_CREDENTIAL_ID, TEST_PUBLIC_KEY, TEST_AAGUID, 0L);
+            inMemoryOnlyService.register(TEST_PUC, TEST_CREDENTIAL_ID, TEST_PUBLIC_KEY, TEST_AAGUID, 0L, null, null, null);
             
             assertThat(inMemoryOnlyService.isCredentialActive(TEST_PUC, TEST_CREDENTIAL_ID)).isTrue();
             
@@ -512,7 +539,7 @@ class WebauthnCredentialServiceTest {
         @Test
         @DisplayName("Should not call database when in memory-only mode")
         void shouldNotCallDatabaseInMemoryOnlyMode() {
-            inMemoryOnlyService.register(TEST_PUC, TEST_CREDENTIAL_ID, TEST_PUBLIC_KEY, TEST_AAGUID, 0L);
+            inMemoryOnlyService.register(TEST_PUC, TEST_CREDENTIAL_ID, TEST_PUBLIC_KEY, TEST_AAGUID, 0L, null, null, null);
             inMemoryOnlyService.findCredential(TEST_PUC, TEST_CREDENTIAL_ID);
             inMemoryOnlyService.getCredentials(TEST_PUC);
             inMemoryOnlyService.revoke(TEST_PUC, TEST_CREDENTIAL_ID);
