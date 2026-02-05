@@ -488,6 +488,12 @@
     "defaultValue": "latest"
   },
   {
+    "name": "contract.event.websocket.enabled",
+    "type": "java.lang.Boolean",
+    "description": "Enable WebSocket subscriptions for contract events.",
+    "defaultValue": true
+  },
+  {
     "name": "contract.event.polling.enabled",
     "type": "java.lang.Boolean",
     "description": "Enable polling fallback for unreliable RPC nodes.",

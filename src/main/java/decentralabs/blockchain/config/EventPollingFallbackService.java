@@ -43,6 +43,9 @@ public class EventPollingFallbackService {
     @Value("${contract.event.polling.enabled:true}")
     private boolean pollingEnabled;
 
+    @Value("${contract.event.websocket.enabled:true}")
+    private boolean websocketEnabled;
+
     @Value("${contract.event.polling.interval.seconds:60}")
     private int pollingIntervalSeconds;
 
@@ -122,7 +125,11 @@ public class EventPollingFallbackService {
         started = true;
 
         // Start WebSocket subscriptions for real-time events
-        startWebSocketSubscriptions();
+        if (websocketEnabled) {
+            startWebSocketSubscriptions();
+        } else {
+            log.info("WebSocket contract event subscriptions are disabled");
+        }
 
         // Start polling fallback
         if (pollingEnabled) {
@@ -179,6 +186,9 @@ public class EventPollingFallbackService {
     }
 
     private void startWebSocketSubscriptions() {
+        if (!websocketEnabled) {
+            return;
+        }
         for (EventRegistration reg : registeredEvents.values()) {
             setupWebSocketSubscription(reg);
         }
@@ -215,7 +225,7 @@ public class EventPollingFallbackService {
     }
 
     private void scheduleReconnection(EventRegistration registration) {
-        if (!started) {
+        if (!started || !websocketEnabled) {
             return;
         }
         scheduler.schedule(() -> {
