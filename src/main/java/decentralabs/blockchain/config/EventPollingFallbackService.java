@@ -126,6 +126,8 @@ public class EventPollingFallbackService {
 
         // Start polling fallback
         if (pollingEnabled) {
+            int effectiveRange = Math.max(1, maxBlockRange);
+            int effectiveLookback = Math.max(0, lookbackBlocks);
             scheduler.scheduleWithFixedDelay(
                 this::pollForMissedEvents,
                 pollingIntervalSeconds, // initial delay
@@ -133,7 +135,7 @@ public class EventPollingFallbackService {
                 TimeUnit.SECONDS
             );
             log.info("Event polling fallback started (interval={}s, range={} blocks, lookback={} blocks)",
-                pollingIntervalSeconds, maxBlockRange, lookbackBlocks);
+                pollingIntervalSeconds, effectiveRange, effectiveLookback);
         } else {
             log.info("Event polling fallback is disabled");
         }
@@ -242,12 +244,14 @@ public class EventPollingFallbackService {
 
     private void pollEventsForRegistration(EventRegistration registration, BigInteger currentBlock) {
         try {
+            int effectiveLookback = Math.max(0, lookbackBlocks);
+            int effectiveRange = Math.max(1, maxBlockRange);
             BigInteger lastBlock = lastProcessedBlock.get(registration.signature);
             BigInteger fromBlock;
 
             if (lastBlock == null) {
                 // First poll - look back a reasonable amount
-                fromBlock = currentBlock.subtract(BigInteger.valueOf(lookbackBlocks));
+                fromBlock = currentBlock.subtract(BigInteger.valueOf(effectiveLookback));
                 if (fromBlock.compareTo(BigInteger.ZERO) < 0) {
                     fromBlock = BigInteger.ZERO;
                 }
@@ -261,10 +265,17 @@ public class EventPollingFallbackService {
                 return;
             }
 
-            // Limit range to avoid timeout on large ranges
-            BigInteger toBlock = fromBlock.add(BigInteger.valueOf(maxBlockRange));
+            // Limit range to avoid timeout on large ranges (range is inclusive)
+            BigInteger toBlock = fromBlock.add(BigInteger.valueOf(effectiveRange - 1L));
             if (toBlock.compareTo(currentBlock) > 0) {
                 toBlock = currentBlock;
+            }
+
+            // Guard against invalid ranges after clamping
+            if (fromBlock.compareTo(toBlock) > 0) {
+                log.debug("Skipping poll for '{}' due to invalid range {}-{} (current={})",
+                    registration.eventName, fromBlock, toBlock, currentBlock);
+                return;
             }
 
             EthFilter filter = new EthFilter(
@@ -277,7 +288,13 @@ public class EventPollingFallbackService {
             EthLog ethLog = web3j.ethGetLogs(filter).send();
             
             if (ethLog.hasError()) {
-                log.warn("Error polling logs for '{}': {}", registration.eventName, ethLog.getError().getMessage());
+                log.warn("Error polling logs for '{}': {} (range {}-{}, current={})",
+                    registration.eventName,
+                    ethLog.getError().getMessage(),
+                    fromBlock,
+                    toBlock,
+                    currentBlock
+                );
                 return;
             }
 

@@ -502,7 +502,7 @@
   {
     "name": "contract.event.polling.block.range",
     "type": "java.lang.Integer",
-    "description": "Maximum block range per poll.",
+    "description": "Maximum number of blocks per poll (inclusive).",
     "defaultValue": 1000
   },
   {
