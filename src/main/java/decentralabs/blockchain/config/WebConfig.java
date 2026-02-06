@@ -1,5 +1,8 @@
 package decentralabs.blockchain.config;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.SerializationFeature;
+import com.fasterxml.jackson.databind.json.JsonMapper;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import jakarta.annotation.Nonnull;
@@ -27,13 +30,17 @@ public class WebConfig implements WebMvcConfigurer {
     // Only created when no other ObjectMapper/Converter bean is present to avoid interfering with auto-configuration
     @Bean
     @org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean
-    public com.fasterxml.jackson.databind.ObjectMapper objectMapper() {
-        return new com.fasterxml.jackson.databind.ObjectMapper();
+    public ObjectMapper objectMapper() {
+        // Register Java time and other standard modules when available.
+        return JsonMapper.builder()
+            .findAndAddModules()
+            .disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS)
+            .build();
     }
 
     @Bean
     @org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean
-    public JacksonHttpMessageConverter jacksonHttpMessageConverter(com.fasterxml.jackson.databind.ObjectMapper om) {
+    public JacksonHttpMessageConverter jacksonHttpMessageConverter(ObjectMapper om) {
         return new JacksonHttpMessageConverter(om);
     }
 
