@@ -465,30 +465,29 @@ public class SamlValidationService {
             return executeMetadataRequest(buildMetadataHttpClient(MetadataTlsMode.MODERN), request);
         } catch (IOException firstAttemptError) {
             if (!isTlsHandshakeFailure(firstAttemptError)) {
-                throw firstAttemptError;
+                logger.warn("Primary metadata fetch failed for URL {}. Retrying with compatibility TLS profile.", metadataUrl);
+            } else {
+                logger.warn("Primary TLS handshake failed for metadata URL {}. Retrying with compatibility TLS profile.", metadataUrl);
             }
-            logger.warn("Primary TLS handshake failed for metadata URL {}. Retrying with compatibility TLS profile.", metadataUrl);
         }
 
         try {
             return executeMetadataRequest(buildMetadataHttpClient(MetadataTlsMode.COMPAT), request);
         } catch (IOException compatibilityError) {
             if (!isTlsHandshakeFailure(compatibilityError)) {
-                throw compatibilityError;
+                logger.warn("Compatibility metadata fetch failed for URL {}. Retrying with legacy RSA TLS profile.", metadataUrl);
+            } else {
+                logger.warn("Compatibility TLS handshake failed for metadata URL {}. Retrying with legacy RSA TLS profile.", metadataUrl);
             }
-            logger.warn("Compatibility TLS handshake failed for metadata URL {}. Retrying with legacy RSA TLS profile.", metadataUrl);
         }
 
         try {
             return executeMetadataRequest(buildMetadataHttpClient(MetadataTlsMode.LEGACY_RSA), request);
         } catch (IOException legacyError) {
-            if (!isTlsHandshakeFailure(legacyError)) {
-                throw legacyError;
-            }
             if (!metadataHttpCurlFallbackEnabled) {
                 throw legacyError;
             }
-            logger.warn("Legacy RSA TLS handshake failed for metadata URL {}. Retrying via curl fallback.", metadataUrl);
+            logger.warn("Legacy RSA metadata fetch failed for URL {}. Retrying via curl fallback.", metadataUrl);
             return executeMetadataWithCurl(metadataUrl);
         }
     }
