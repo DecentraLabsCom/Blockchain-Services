@@ -1,5 +1,11 @@
 package decentralabs.blockchain.service.auth;
 
+import okhttp3.ConnectionSpec;
+import okhttp3.Dns;
+import okhttp3.OkHttpClient;
+import okhttp3.Request;
+import okhttp3.Response;
+import okhttp3.ResponseBody;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -16,19 +22,22 @@ import javax.xml.crypto.dsig.dom.DOMValidateContext;
 import javax.xml.parsers.DocumentBuilder;
 import javax.xml.parsers.DocumentBuilderFactory;
 import java.io.ByteArrayInputStream;
+import java.io.IOException;
 import java.io.InputStream;
 import java.net.InetAddress;
+import java.net.Inet6Address;
 import java.net.URI;
-import java.net.URL;
 import java.security.cert.CertificateFactory;
 import java.security.cert.X509Certificate;
 import java.util.ArrayList;
 import java.util.Base64;
+import java.util.Comparator;
 import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.TimeUnit;
 import java.security.PublicKey;
 import java.security.interfaces.ECPublicKey;
 import java.security.interfaces.RSAPublicKey;
@@ -124,6 +133,18 @@ public class SamlValidationService {
 
     @Value("${saml.idp.metadata.url:}")
     private String metadataUrlOverride;
+
+    @Value("${saml.metadata.http.connect-timeout-ms:5000}")
+    private int metadataHttpConnectTimeoutMs;
+
+    @Value("${saml.metadata.http.read-timeout-ms:10000}")
+    private int metadataHttpReadTimeoutMs;
+
+    @Value("${saml.metadata.http.call-timeout-ms:15000}")
+    private int metadataHttpCallTimeoutMs;
+
+    @Value("${saml.metadata.http.prefer-ipv4:true}")
+    private boolean metadataHttpPreferIpv4;
     
     // Optional: only used in whitelist mode
     private Map<String, String> trustedIdps = Collections.emptyMap();
@@ -386,9 +407,8 @@ public class SamlValidationService {
         // Validate URL to prevent SSRF attacks
         validateMetadataUrl(metadataUrl);
         
-        URI uri = URI.create(metadataUrl);
-        URL url = uri.toURL();
-        Document metadataDoc = parseXML(url.openStream());
+        String metadataXml = downloadMetadataXml(metadataUrl);
+        Document metadataDoc = parseXML(metadataXml);
         
         // Find X509Certificate element in metadata
         NodeList certNodes = metadataDoc.getElementsByTagNameNS("*", "X509Certificate");
@@ -421,6 +441,80 @@ public class SamlValidationService {
             return signingCerts;
         }
         return allCerts;
+    }
+
+    private String downloadMetadataXml(String metadataUrl) throws Exception {
+        Request request = new Request.Builder()
+            .url(metadataUrl)
+            .get()
+            .header("Accept", "application/samlmetadata+xml, application/xml, text/xml;q=0.9,*/*;q=0.8")
+            .header("User-Agent", "DecentraLabs-Blockchain-Services/1.0")
+            .build();
+
+        try {
+            return executeMetadataRequest(buildMetadataHttpClient(false), request);
+        } catch (IOException firstAttemptError) {
+            if (!isTlsHandshakeFailure(firstAttemptError)) {
+                throw firstAttemptError;
+            }
+            logger.warn("Primary TLS handshake failed for metadata URL {}. Retrying with compatibility TLS profile.", metadataUrl);
+            return executeMetadataRequest(buildMetadataHttpClient(true), request);
+        }
+    }
+
+    private String executeMetadataRequest(OkHttpClient client, Request request) throws IOException {
+        try (Response response = client.newCall(request).execute()) {
+            if (!response.isSuccessful()) {
+                throw new IOException("Metadata request failed with HTTP " + response.code());
+            }
+            ResponseBody body = response.body();
+            if (body == null) {
+                throw new IOException("Metadata request failed with empty body");
+            }
+            String xml = body.string();
+            if (xml.isBlank()) {
+                throw new IOException("Metadata request returned blank body");
+            }
+            return xml;
+        }
+    }
+
+    private OkHttpClient buildMetadataHttpClient(boolean compatibilityMode) {
+        List<ConnectionSpec> specs = compatibilityMode
+            ? List.of(ConnectionSpec.COMPATIBLE_TLS)
+            : List.of(ConnectionSpec.MODERN_TLS, ConnectionSpec.COMPATIBLE_TLS);
+
+        OkHttpClient.Builder builder = new OkHttpClient.Builder()
+            .connectTimeout(metadataHttpConnectTimeoutMs, TimeUnit.MILLISECONDS)
+            .readTimeout(metadataHttpReadTimeoutMs, TimeUnit.MILLISECONDS)
+            .callTimeout(metadataHttpCallTimeoutMs, TimeUnit.MILLISECONDS)
+            .followRedirects(true)
+            .followSslRedirects(true)
+            .connectionSpecs(specs);
+
+        if (metadataHttpPreferIpv4) {
+            builder.dns(hostname -> resolveDnsWithIpv4Preference(hostname));
+        }
+
+        return builder.build();
+    }
+
+    private List<InetAddress> resolveDnsWithIpv4Preference(String hostname) throws java.net.UnknownHostException {
+        List<InetAddress> addresses = new ArrayList<>(Dns.SYSTEM.lookup(hostname));
+        addresses.sort(Comparator.comparing(address -> address instanceof Inet6Address));
+        return addresses;
+    }
+
+    private boolean isTlsHandshakeFailure(Throwable error) {
+        Throwable current = error;
+        while (current != null) {
+            if (current instanceof javax.net.ssl.SSLHandshakeException
+                || current instanceof javax.net.ssl.SSLProtocolException) {
+                return true;
+            }
+            current = current.getCause();
+        }
+        return false;
     }
     
     /**

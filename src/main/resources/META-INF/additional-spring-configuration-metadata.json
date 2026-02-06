@@ -325,6 +325,30 @@
     "defaultValue": false
   },
   {
+    "name": "saml.metadata.http.connect-timeout-ms",
+    "type": "java.lang.Integer",
+    "description": "Timeout in milliseconds for opening HTTP connections when downloading IdP metadata.",
+    "defaultValue": 5000
+  },
+  {
+    "name": "saml.metadata.http.read-timeout-ms",
+    "type": "java.lang.Integer",
+    "description": "Read timeout in milliseconds for IdP metadata HTTP responses.",
+    "defaultValue": 10000
+  },
+  {
+    "name": "saml.metadata.http.call-timeout-ms",
+    "type": "java.lang.Integer",
+    "description": "Total call timeout in milliseconds for IdP metadata download.",
+    "defaultValue": 15000
+  },
+  {
+    "name": "saml.metadata.http.prefer-ipv4",
+    "type": "java.lang.Boolean",
+    "description": "Prefer IPv4 resolution for IdP metadata HTTP requests.",
+    "defaultValue": true
+  },
+  {
     "name": "private.key.path",
     "type": "java.lang.String",
     "description": "Path to private key PEM file for JWT signing.",
