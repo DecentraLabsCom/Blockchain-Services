@@ -899,6 +899,7 @@ public class WebauthnOnboardingService {
         private byte[] aaguid;
         private byte[] publicKeyCose;
         private long signCount;
+        @SuppressWarnings("unused")
         private byte flags;
         private boolean residentKey;
     }

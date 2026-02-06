@@ -10,7 +10,7 @@ import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.io.Decoders;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.lang.NonNull;
+import jakarta.annotation.Nonnull;
 import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestTemplate;
@@ -275,7 +275,7 @@ public class ProvisioningTokenService {
         return value;
     }
 
-    private @NonNull String requireNonBlank(String value, String label) {
+    private @Nonnull String requireNonBlank(String value, String label) {
         if (value == null || value.isBlank()) {
             throw new IllegalArgumentException("Missing " + label);
         }

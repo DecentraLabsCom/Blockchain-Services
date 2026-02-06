@@ -535,6 +535,7 @@ public class SamlValidationService {
         return builder.build();
     }
 
+    @SuppressWarnings("deprecation")
     private ConnectionSpec buildLegacyRsaSpec() {
         return new ConnectionSpec.Builder(true)
             .tlsVersions(TlsVersion.TLS_1_2)

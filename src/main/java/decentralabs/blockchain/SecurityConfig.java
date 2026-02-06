@@ -14,7 +14,7 @@ import org.springframework.security.config.annotation.method.configuration.Enabl
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
-import org.springframework.lang.NonNull;
+import jakarta.annotation.Nonnull;
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 import org.springframework.web.cors.CorsConfigurationSource;
@@ -33,37 +33,37 @@ public class SecurityConfig {
     private String[] walletAllowedOrigins;
     
     @Value("${endpoint.wallet-auth:/auth/wallet-auth}")
-    private @NonNull String walletAuthEndpoint = "/auth/wallet-auth";
+    private @Nonnull String walletAuthEndpoint = "/auth/wallet-auth";
     
     @Value("${endpoint.wallet-auth2:/auth/wallet-auth2}")
-    private @NonNull String walletAuth2Endpoint = "/auth/wallet-auth2";
+    private @Nonnull String walletAuth2Endpoint = "/auth/wallet-auth2";
     
     @Value("${endpoint.jwks:/auth/jwks}")
-    private @NonNull String jwksEndpoint = "/auth/jwks";
+    private @Nonnull String jwksEndpoint = "/auth/jwks";
     
     @Value("${endpoint.message:/auth/message}")
-    private @NonNull String messageEndpoint = "/auth/message";
+    private @Nonnull String messageEndpoint = "/auth/message";
     
     @Value("${endpoint.saml-auth:/auth/saml-auth}")
-    private @NonNull String samlAuthEndpoint = "/auth/saml-auth";
+    private @Nonnull String samlAuthEndpoint = "/auth/saml-auth";
     
     @Value("${endpoint.saml-auth2:/auth/saml-auth2}")
-    private @NonNull String samlAuth2Endpoint = "/auth/saml-auth2";
+    private @Nonnull String samlAuth2Endpoint = "/auth/saml-auth2";
     
     @Value("${endpoint.health:/health}")
-    private @NonNull String healthEndpoint = "/health";
+    private @Nonnull String healthEndpoint = "/health";
     
     @Value("${endpoint.wallet:/wallet}")
-    private @NonNull String walletEndpoint = "/wallet";
+    private @Nonnull String walletEndpoint = "/wallet";
     
     @Value("${endpoint.treasury:/treasury}")
-    private @NonNull String treasuryEndpoint = "/treasury";
+    private @Nonnull String treasuryEndpoint = "/treasury";
     
     @Value("${endpoint.intents:/intents}")
-    private @NonNull String intentsEndpoint = "/intents";
+    private @Nonnull String intentsEndpoint = "/intents";
 
     @Value("${auth.base-path:/auth}")
-    private @NonNull String authBasePath = "/auth";
+    private @Nonnull String authBasePath = "/auth";
 
     @Value("${security.access-token.required:true}")
     private boolean accessTokenRequired;
