@@ -2,10 +2,13 @@ package decentralabs.blockchain.service.auth;
 
 import okhttp3.ConnectionSpec;
 import okhttp3.Dns;
+import okhttp3.CipherSuite;
 import okhttp3.OkHttpClient;
+import okhttp3.Protocol;
 import okhttp3.Request;
 import okhttp3.Response;
 import okhttp3.ResponseBody;
+import okhttp3.TlsVersion;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -27,6 +30,7 @@ import java.io.InputStream;
 import java.net.InetAddress;
 import java.net.Inet6Address;
 import java.net.URI;
+import java.nio.charset.StandardCharsets;
 import java.security.cert.CertificateFactory;
 import java.security.cert.X509Certificate;
 import java.util.ArrayList;
@@ -145,6 +149,12 @@ public class SamlValidationService {
 
     @Value("${saml.metadata.http.prefer-ipv4:true}")
     private boolean metadataHttpPreferIpv4;
+
+    @Value("${saml.metadata.http.curl-fallback.enabled:true}")
+    private boolean metadataHttpCurlFallbackEnabled;
+
+    @Value("${saml.metadata.http.curl-path:curl}")
+    private String metadataHttpCurlPath;
     
     // Optional: only used in whitelist mode
     private Map<String, String> trustedIdps = Collections.emptyMap();
@@ -452,13 +462,34 @@ public class SamlValidationService {
             .build();
 
         try {
-            return executeMetadataRequest(buildMetadataHttpClient(false), request);
+            return executeMetadataRequest(buildMetadataHttpClient(MetadataTlsMode.MODERN), request);
         } catch (IOException firstAttemptError) {
             if (!isTlsHandshakeFailure(firstAttemptError)) {
                 throw firstAttemptError;
             }
             logger.warn("Primary TLS handshake failed for metadata URL {}. Retrying with compatibility TLS profile.", metadataUrl);
-            return executeMetadataRequest(buildMetadataHttpClient(true), request);
+        }
+
+        try {
+            return executeMetadataRequest(buildMetadataHttpClient(MetadataTlsMode.COMPAT), request);
+        } catch (IOException compatibilityError) {
+            if (!isTlsHandshakeFailure(compatibilityError)) {
+                throw compatibilityError;
+            }
+            logger.warn("Compatibility TLS handshake failed for metadata URL {}. Retrying with legacy RSA TLS profile.", metadataUrl);
+        }
+
+        try {
+            return executeMetadataRequest(buildMetadataHttpClient(MetadataTlsMode.LEGACY_RSA), request);
+        } catch (IOException legacyError) {
+            if (!isTlsHandshakeFailure(legacyError)) {
+                throw legacyError;
+            }
+            if (!metadataHttpCurlFallbackEnabled) {
+                throw legacyError;
+            }
+            logger.warn("Legacy RSA TLS handshake failed for metadata URL {}. Retrying via curl fallback.", metadataUrl);
+            return executeMetadataWithCurl(metadataUrl);
         }
     }
 
@@ -479,10 +510,12 @@ public class SamlValidationService {
         }
     }
 
-    private OkHttpClient buildMetadataHttpClient(boolean compatibilityMode) {
-        List<ConnectionSpec> specs = compatibilityMode
-            ? List.of(ConnectionSpec.COMPATIBLE_TLS)
-            : List.of(ConnectionSpec.MODERN_TLS, ConnectionSpec.COMPATIBLE_TLS);
+    private OkHttpClient buildMetadataHttpClient(MetadataTlsMode mode) {
+        List<ConnectionSpec> specs = switch (mode) {
+            case MODERN -> List.of(ConnectionSpec.MODERN_TLS, ConnectionSpec.COMPATIBLE_TLS);
+            case COMPAT -> List.of(ConnectionSpec.COMPATIBLE_TLS);
+            case LEGACY_RSA -> List.of(buildLegacyRsaSpec());
+        };
 
         OkHttpClient.Builder builder = new OkHttpClient.Builder()
             .connectTimeout(metadataHttpConnectTimeoutMs, TimeUnit.MILLISECONDS)
@@ -492,11 +525,61 @@ public class SamlValidationService {
             .followSslRedirects(true)
             .connectionSpecs(specs);
 
+        if (mode == MetadataTlsMode.LEGACY_RSA) {
+            builder.protocols(List.of(Protocol.HTTP_1_1));
+        }
+
         if (metadataHttpPreferIpv4) {
             builder.dns(hostname -> resolveDnsWithIpv4Preference(hostname));
         }
 
         return builder.build();
+    }
+
+    private ConnectionSpec buildLegacyRsaSpec() {
+        return new ConnectionSpec.Builder(true)
+            .tlsVersions(TlsVersion.TLS_1_2)
+            .cipherSuites(
+                CipherSuite.TLS_RSA_WITH_AES_256_CBC_SHA256,
+                CipherSuite.TLS_RSA_WITH_AES_128_CBC_SHA256,
+                CipherSuite.TLS_RSA_WITH_AES_256_CBC_SHA,
+                CipherSuite.TLS_RSA_WITH_AES_128_CBC_SHA
+            )
+            .supportsTlsExtensions(true)
+            .build();
+    }
+
+    private String executeMetadataWithCurl(String metadataUrl) throws IOException {
+        int connectTimeoutSeconds = Math.max(1, (metadataHttpConnectTimeoutMs + 999) / 1000);
+        int callTimeoutSeconds = Math.max(connectTimeoutSeconds, (metadataHttpCallTimeoutMs + 999) / 1000);
+        ProcessBuilder processBuilder = new ProcessBuilder(
+            metadataHttpCurlPath,
+            "--fail",
+            "--silent",
+            "--show-error",
+            "--location",
+            "--connect-timeout", String.valueOf(connectTimeoutSeconds),
+            "--max-time", String.valueOf(callTimeoutSeconds),
+            metadataUrl
+        );
+        try {
+            Process process = processBuilder.start();
+            byte[] stdout = process.getInputStream().readAllBytes();
+            byte[] stderr = process.getErrorStream().readAllBytes();
+            int exitCode = process.waitFor();
+            if (exitCode != 0) {
+                String errorText = new String(stderr, StandardCharsets.UTF_8).trim();
+                throw new IOException("curl metadata fetch failed (exit " + exitCode + "): " + errorText);
+            }
+            String xml = new String(stdout, StandardCharsets.UTF_8);
+            if (xml.isBlank()) {
+                throw new IOException("curl metadata fetch returned blank body");
+            }
+            return xml;
+        } catch (InterruptedException ex) {
+            Thread.currentThread().interrupt();
+            throw new IOException("curl metadata fetch interrupted", ex);
+        }
     }
 
     private List<InetAddress> resolveDnsWithIpv4Preference(String hostname) throws java.net.UnknownHostException {
@@ -515,6 +598,12 @@ public class SamlValidationService {
             current = current.getCause();
         }
         return false;
+    }
+
+    private enum MetadataTlsMode {
+        MODERN,
+        COMPAT,
+        LEGACY_RSA
     }
     
     /**

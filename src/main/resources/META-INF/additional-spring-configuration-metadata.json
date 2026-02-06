@@ -349,6 +349,18 @@
     "defaultValue": true
   },
   {
+    "name": "saml.metadata.http.curl-fallback.enabled",
+    "type": "java.lang.Boolean",
+    "description": "Enable curl-based fallback for IdP metadata retrieval when JVM TLS handshake fails.",
+    "defaultValue": true
+  },
+  {
+    "name": "saml.metadata.http.curl-path",
+    "type": "java.lang.String",
+    "description": "Path to curl binary used by SAML metadata fallback retrieval.",
+    "defaultValue": "curl"
+  },
+  {
     "name": "private.key.path",
     "type": "java.lang.String",
     "description": "Path to private key PEM file for JWT signing.",
