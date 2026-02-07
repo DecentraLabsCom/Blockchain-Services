@@ -9,6 +9,7 @@ import okhttp3.Request;
 import okhttp3.Response;
 import okhttp3.ResponseBody;
 import okhttp3.TlsVersion;
+import okhttp3.logging.HttpLoggingInterceptor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -155,6 +156,9 @@ public class SamlValidationService {
 
     @Value("${saml.metadata.http.curl-path:curl}")
     private String metadataHttpCurlPath;
+
+    @Value("${saml.metadata.http.logging.enabled:false}")
+    private boolean metadataHttpLoggingEnabled;
     
     // Optional: only used in whitelist mode
     private Map<String, String> trustedIdps = Collections.emptyMap();
@@ -530,6 +534,11 @@ public class SamlValidationService {
 
         if (metadataHttpPreferIpv4) {
             builder.dns(hostname -> resolveDnsWithIpv4Preference(hostname));
+        }
+
+        if (metadataHttpLoggingEnabled) {
+            // Add basic HTTP logging for metadata requests when enabled (useful for debugging)
+            builder.addInterceptor(new HttpLoggingInterceptor().setLevel(HttpLoggingInterceptor.Level.BASIC));
         }
 
         return builder.build();
