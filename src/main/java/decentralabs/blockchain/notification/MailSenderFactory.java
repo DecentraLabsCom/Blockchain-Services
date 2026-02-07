@@ -4,6 +4,8 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import okhttp3.OkHttpClient;
+import okhttp3.logging.HttpLoggingInterceptor;
+import java.time.Duration;
 import org.springframework.stereotype.Component;
 
 @Slf4j
@@ -14,7 +16,13 @@ public class MailSenderFactory {
     private final NotificationConfigService notificationConfigService;
     private final ObjectMapper objectMapper;
 
-    private final OkHttpClient okHttpClient = new OkHttpClient();
+    private final OkHttpClient okHttpClient = new OkHttpClient.Builder()
+        .connectTimeout(Duration.ofSeconds(10))
+        .readTimeout(Duration.ofSeconds(30))
+        .writeTimeout(Duration.ofSeconds(30))
+        .callTimeout(Duration.ofSeconds(30))
+        .addInterceptor(new HttpLoggingInterceptor().setLevel(HttpLoggingInterceptor.Level.BASIC))
+        .build();
 
     public MailSenderAdapter resolve() {
         NotificationProperties.Mail mail = notificationConfigService.getMailConfig();

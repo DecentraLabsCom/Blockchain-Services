@@ -23,6 +23,7 @@ public class IntentWebhookService {
 
     private final OkHttpClient client = new OkHttpClient();
     private final ObjectMapper mapper = new ObjectMapper();
+    private static final MediaType JSON_MEDIA_TYPE = MediaType.get("application/json; charset=utf-8");
     private final String webhookUrl;
     private final String webhookSecret;
 
@@ -40,14 +41,15 @@ public class IntentWebhookService {
         }
         try {
             String payload = mapper.writeValueAsString(WebhookPayload.from(record));
-            RequestBody body = RequestBody.create(payload, MediaType.parse("application/json"));
+            RequestBody body = RequestBody.create(payload, JSON_MEDIA_TYPE);
             Request.Builder builder = new Request.Builder().url(webhookUrl).post(body);
             if (webhookSecret != null && !webhookSecret.isBlank()) {
                 builder.addHeader("X-Signature", sign(payload, webhookSecret));
             }
-            Response response = client.newCall(builder.build()).execute();
-            if (!response.isSuccessful()) {
-                log.warn("Webhook for intent {} responded with {}", record.getRequestId(), response.code());
+            try (Response response = client.newCall(builder.build()).execute()) {
+                if (!response.isSuccessful()) {
+                    log.warn("Webhook for intent {} responded with {}", record.getRequestId(), response.code());
+                }
             }
         } catch (Exception e) {
             log.warn("Unable to send webhook for {}: {}", record.getRequestId(), e.getMessage());
