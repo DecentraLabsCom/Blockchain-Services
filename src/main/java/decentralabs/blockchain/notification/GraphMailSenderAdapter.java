@@ -21,6 +21,7 @@ import okhttp3.OkHttpClient;
 import okhttp3.Request;
 import okhttp3.RequestBody;
 import okhttp3.Response;
+import okhttp3.logging.HttpLoggingInterceptor;
 
 @Slf4j
 public class GraphMailSenderAdapter implements MailSenderAdapter {
@@ -39,7 +40,7 @@ public class GraphMailSenderAdapter implements MailSenderAdapter {
         ObjectMapper objectMapper
     ) {
         this.mailProps = mailProps;
-        this.httpClient = httpClient != null ? httpClient : new OkHttpClient();
+        this.httpClient = httpClient != null ? httpClient : defaultClient();
         this.objectMapper = objectMapper;
         NotificationProperties.Graph graph = mailProps.getGraph();
         this.credential = new ClientSecretCredentialBuilder()
@@ -153,5 +154,20 @@ public class GraphMailSenderAdapter implements MailSenderAdapter {
             return null;
         }
         return URLEncoder.encode(from, StandardCharsets.UTF_8);
+    }
+
+    private static OkHttpClient defaultClient() {
+        OkHttpClient.Builder builder = new OkHttpClient.Builder()
+            .connectTimeout(Duration.ofSeconds(10))
+            .readTimeout(Duration.ofSeconds(30))
+            .writeTimeout(Duration.ofSeconds(30))
+            .callTimeout(Duration.ofSeconds(30));
+        String prop = System.getProperty("okhttp.http.logging.enabled");
+        String env = System.getenv("OKHTTP_HTTP_LOGGING_ENABLED");
+        boolean enabled = "true".equalsIgnoreCase(prop) || "true".equalsIgnoreCase(env);
+        if (enabled) {
+            builder.addInterceptor(new HttpLoggingInterceptor().setLevel(HttpLoggingInterceptor.Level.BASIC));
+        }
+        return builder.build();
     }
 }
