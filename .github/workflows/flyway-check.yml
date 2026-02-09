@@ -34,6 +34,7 @@ jobs:
 
       - name: Flyway migrate + validate
         run: |
+          mvn -DskipTests -Dflyway.url=jdbc:mysql://127.0.0.1:3306/blockchain_services -Dflyway.user=root -Dflyway.password=rootpw -B flyway:migrate
           mvn -DskipTests -Dflyway.url=jdbc:mysql://127.0.0.1:3306/blockchain_services -Dflyway.user=root -Dflyway.password=rootpw -B verify
 
       - name: Show Flyway info
