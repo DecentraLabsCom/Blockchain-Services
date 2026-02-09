@@ -20,7 +20,7 @@
     <properties>
         <java.version>21</java.version>
         <jackson.version>2.18.3</jackson.version>
-        <netty.version>4.2.9.Final</netty.version>
+        <netty.version>4.2.10.Final</netty.version>
         <flyway.version>11.20.2</flyway.version>
     </properties>
 
