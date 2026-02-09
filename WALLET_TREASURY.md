@@ -26,27 +26,6 @@ POST /wallet/create
 }
 ```
 
-## Treasury reservations (`/treasury/reservations`)
-- Request fields (`InstitutionalReservationRequest`):
-  - `marketplaceToken` (JWT signed by marketplace)
-  - `samlAssertion` (Base64 SAML, must be signed)
-  - `userId`, `institutionId`, `labId`, `startTime`, `endTime`
-  - Optional: `userCount`, `budgetCode`, `metadata`, `timestamp`
-- Validation: same 3 layers as `/auth/saml-auth*` (marketplace JWT -> SAML signature/issuer -> cross-check `userid`/`affiliation`).
-- On success it signs `institutionalReservationRequest` on the Diamond contract with the institutional wallet and returns:
-```json
-{
-  "success": true,
-  "transactionHash": "0x...",
-  "institutionId": "<affiliation>",
-  "userId": "<userid>",
-  "labId": "42",
-  "startTime": "2025-11-20T10:00",
-  "endTime": "2025-11-20T11:00"
-}
-```
-Errors are returned with `success:false` and an `error` message.
-
 ## Treasury admin (`/treasury/admin/execute`)
 - Requires loopback client **and** `adminWalletAddress` matching the configured institutional wallet.
 - `operation` is one of:
