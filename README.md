@@ -50,7 +50,7 @@ Together, they offer a bridge between institutional access control systems (like
 ## 🛠️ Technology Stack
 
 ### Core Framework
-- **Spring Boot** - Application framework with embedded Tomcat
+- **Spring Boot 4.x** - Application framework with embedded Tomcat
 - **Java** - LTS version with modern language features
 - **Maven** - Build automation and dependency management
 
@@ -101,6 +101,8 @@ Together, they offer a bridge between institutional access control systems (like
 | `/auth/wallet-auth2` | POST | Wallet authentication + authorization |
 | `/auth/saml-auth` | POST | SAML2 authentication |
 | `/auth/saml-auth2` | POST | SAML2 authentication + authorization |
+| `/auth/checkin` | POST | Verify and submit wallet-based check-in |
+| `/auth/checkin-institutional` | POST | Verify and submit institutional (SAML) check-in |
 
 ### WebAuthn Onboarding Endpoints (`/onboarding/webauthn`)
 | Endpoint | Method | Description |
@@ -135,8 +137,26 @@ Together, they offer a bridge between institutional access control systems (like
 ### Treasury Endpoints (`/treasury`) 🔒 *localhost only*
 | Endpoint | Method | Description |
 |----------|--------|-------------|
-| `/treasury/reservations` | POST | Create reservation (auto-approved/denied) |
 | `/treasury/admin/execute` | POST | Execute treasury admin operations |
+
+### Intent Endpoints (`/intents`)
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/intents` | POST | Submit signed action/reservation intent |
+| `/intents/{requestId}` | GET | Query intent status by requestId |
+| `/intents/authorize` | POST | Start WebAuthn authorization ceremony |
+| `/intents/authorize/status/{sessionId}` | GET | Poll authorization ceremony status |
+| `/intents/authorize/ceremony/{sessionId}` | GET | Render ceremony page (HTML) |
+| `/intents/authorize/complete` | POST | Complete WebAuthn authorization |
+
+### Institution Configuration Endpoints (`/institution-config`)
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/institution-config/status` | GET | Get current provisioning/configuration status |
+| `/institution-config/save-and-register` | POST | Save configuration and run registration |
+| `/institution-config/retry-registration` | POST | Retry on-chain provider registration |
+| `/institution-config/apply-provider-token` | POST | Apply provider provisioning token |
+| `/institution-config/apply-consumer-token` | POST | Apply consumer provisioning token |
 
 > 🔒 Wallet and Treasury endpoints are protected by `LocalhostOnlyFilter` and only accept requests from `127.0.0.1` / `::1`
 > `/treasury/admin/**` also requires a valid access token when `SECURITY_ACCESS_TOKEN_REQUIRED=true` (default).
@@ -158,7 +178,7 @@ Together, they offer a bridge between institutional access control systems (like
 
 2. **Run locally:**
    ```bash
-   java -jar target/auth-1.0-SNAPSHOT.war
+   java -jar target/blockchain-services-1.0-SNAPSHOT.war
    ```
 
 3. **Access the service:**
