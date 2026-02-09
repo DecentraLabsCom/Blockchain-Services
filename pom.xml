@@ -275,6 +275,23 @@
                     </annotationProcessorPaths>
                 </configuration>
             </plugin>
+
+            <!-- Flyway Maven plugin to validate migrations during 'verify' -->
+            <plugin>
+                <groupId>org.flywaydb</groupId>
+                <artifactId>flyway-maven-plugin</artifactId>
+                <version>${flyway.version}</version>
+                <executions>
+                    <execution>
+                        <id>validate</id>
+                        <phase>verify</phase>
+                        <goals>
+                            <goal>validate</goal>
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>
+
             <!-- Maven Surefire plugin to ensure tests run with Java 21 -->
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>

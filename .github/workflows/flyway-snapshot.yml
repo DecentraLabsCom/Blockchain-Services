@@ -1,0 +1,39 @@
+name: Flyway Snapshot (release)
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch: {}
+
+jobs:
+  snapshot:
+    runs-on: ubuntu-latest
+    services:
+      mysql:
+        image: mysql:8
+        env:
+          MYSQL_ROOT_PASSWORD: rootpw
+          MYSQL_DATABASE: blockchain_services
+        ports: ['3306:3306']
+        options: >-
+          --health-cmd='mysqladmin ping --silent' --health-interval=10s --health-retries=10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Wait for MySQL
+        run: |
+          for i in {1..30}; do mysql -h 127.0.0.1 -uroot -prootpw -e 'select 1' && break || sleep 2; done
+
+      - name: Generate Flyway snapshot (Docker)
+        run: |
+          docker run --rm --network host -v ${{ github.workspace }}:/flyway flyway/flyway:12.0.0 snapshot \
+            -url=jdbc:mysql://127.0.0.1:3306/blockchain_services \
+            -user=root -password=rootpw \
+            -locations=filesystem:/flyway/src/main/resources/db/migration \
+            -output=/tmp/flyway_snapshot.json || true
+
+      - name: Upload snapshot artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: flyway-snapshot
+          path: /tmp/flyway_snapshot.json

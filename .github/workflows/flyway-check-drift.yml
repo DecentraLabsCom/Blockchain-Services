@@ -1,0 +1,48 @@
+name: Flyway check -drift
+
+on:
+  workflow_dispatch:
+    inputs:
+      snapshot_artifact_name:
+        description: 'Artifact name to download (optional), default: flyway-snapshot'
+        required: false
+        default: 'flyway-snapshot'
+
+jobs:
+  check-drift:
+    runs-on: ubuntu-latest
+    services:
+      mysql:
+        image: mysql:8
+        env:
+          MYSQL_ROOT_PASSWORD: rootpw
+          MYSQL_DATABASE: blockchain_services
+        ports: ['3306:3306']
+        options: >-
+          --health-cmd='mysqladmin ping --silent' --health-interval=10s --health-retries=10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download snapshot artifact (if available)
+        if: ${{ inputs.snapshot_artifact_name != '' }}
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ inputs.snapshot_artifact_name }}
+          path: ./snapshot || true
+
+      - name: Wait for MySQL
+        run: |
+          for i in {1..30}; do mysql -h 127.0.0.1 -uroot -prootpw -e 'select 1' && break || sleep 2; done
+
+      - name: Run Flyway check -drift (Docker)
+        run: |
+          # If a snapshot file exists, pass it to flyway check -drift; else run check -drift without snapshot
+          if [ -f ./snapshot/flyway_snapshot.json ]; then
+            docker run --rm --network host -v ${{ github.workspace }}:/flyway flyway/flyway:12.0.0 check -drift \
+              -url=jdbc:mysql://127.0.0.1:3306/blockchain_services -user=root -password=rootpw \
+              -snapshot=file:./snapshot/flyway_snapshot.json || exit 1
+          else
+            docker run --rm --network host -v ${{ github.workspace }}:/flyway flyway/flyway:12.0.0 check -drift \
+              -url=jdbc:mysql://127.0.0.1:3306/blockchain_services -user=root -password=rootpw || exit 1
+          fi

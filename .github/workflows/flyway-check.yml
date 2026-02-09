@@ -1,0 +1,41 @@
+name: Flyway DB checks
+
+on:
+  push:
+  pull_request:
+
+env:
+  FLYWAY_VERSION: '12.0.0'
+
+jobs:
+  flyway-check:
+    runs-on: ubuntu-latest
+    services:
+      mysql:
+        image: mysql:8
+        env:
+          MYSQL_ROOT_PASSWORD: rootpw
+          MYSQL_DATABASE: blockchain_services
+        ports: ['3306:3306']
+        options: >-
+          --health-cmd='mysqladmin ping --silent' --health-interval=10s --health-retries=10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Build (skip tests)
+        run: mvn -DskipTests package -B -V
+
+      - name: Flyway migrate + validate
+        run: |
+          mvn -DskipTests -Dflyway.url=jdbc:mysql://mysql:3306/blockchain_services -Dflyway.user=root -Dflyway.password=rootpw -B verify
+
+      - name: Show Flyway info
+        run: mvn -Dflyway.url=jdbc:mysql://mysql:3306/blockchain_services -Dflyway.user=root -Dflyway.password=rootpw org.flywaydb:flyway-maven-plugin:${{ env.FLYWAY_VERSION }}:info -Dflyway.outputType=json
+        continue-on-error: true

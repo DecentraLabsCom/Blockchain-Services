@@ -218,6 +218,7 @@ This project uses a **security-first deployment approach**:
 |----------|---------|--------|---------|
 | **Build & Test** | Validates code quality | Test results | Every PR/push |
 | **Security Scan** | Detects vulnerabilities | Security alerts | Weekly + PR |
+| **Flyway DB checks** | Validate & apply DB migrations; detect drift | Flyway logs, artifacts | PR/push + release (snapshot) |
 | **Release** | Creates versioned artifacts | WAR + checksums | Git tag `v*.*.*` |
 | **Docker Image** | Builds container | Docker image | Manual dispatch |
 
