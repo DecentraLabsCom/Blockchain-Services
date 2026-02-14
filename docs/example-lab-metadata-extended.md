@@ -1,3 +1,4 @@
+```json
 {
   "name": "Basic Electronics Lab",
   "description": "Design circuits with an easy-to-use schematic editor. Test Ohm's law and power dissipation concepts through guided experiments.",
@@ -88,3 +89,4 @@
     }
   ]
 }
+```

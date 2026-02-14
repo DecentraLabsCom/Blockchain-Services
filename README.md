@@ -25,7 +25,7 @@ This service provides four main components:
 
 Together, they bridge institutional access control systems (such as **Lab Gateway**) with blockchain smart contracts in one backend.
 
-## Key Features
+## ✨ Key Features
 
 ### Authentication and Authorization Service
 - **Wallet Challenges**: Web3 signature-based authentication with wallet verification.
@@ -88,14 +88,7 @@ Together, they bridge institutional access control systems (such as **Lab Gatewa
                         +------------------------+
 ```
 
-## Current Defaults
-
-- Java 21, Spring Boot 4.0.2
-- `features.providers.enabled=false` in repository defaults
-  - This means `/auth/*` provider endpoints are disabled unless you enable providers.
-- Wallet/treasury/admin UI routes are restricted by localhost/private-network controls.
-
-## API Overview
+## 🔌 API Overview
 
 ### Auth and identity
 
@@ -146,7 +139,7 @@ Together, they bridge institutional access control systems (such as **Lab Gatewa
 - `POST /institution-config/apply-provider-token`
 - `POST /institution-config/apply-consumer-token`
 
-## Quick Start (Local)
+## 🚀 Quick Start (Local)
 
 1. Build:
 
@@ -165,7 +158,7 @@ java -jar target/blockchain-services-1.0-SNAPSHOT.war
 - `http://localhost:8080/health`
 - `http://localhost:8080/wallet-dashboard`
 
-## Quick Start (Docker)
+## 🐳 Quick Start (Docker)
 
 1. Copy template env:
 
@@ -183,7 +176,7 @@ docker compose up -d
 
 4. Open `http://localhost:8080/wallet-dashboard` to create/import the institutional wallet.
 
-## Configuration Files
+## ⚙️ Configuration Files
 
 **Repository structure:**
 ```
@@ -214,14 +207,14 @@ src/main/resources/
 > 💡 Configuration priority: Environment variables > `.env` (local file) > application.properties.
 > For the institutional wallet specifically: env vars / secrets manager > `wallet-config.properties` (auto-generated `institutional.wallet.address` + encrypted password) > persisted wallet metadata.
 
-## Security Essentials
+## 🔒 Security Essentials
 
 - Never commit secrets or private keys.
 - Keep wallet/treasury routes behind trusted network/proxy boundaries.
 - If private-network access is enabled, enforce `SECURITY_ACCESS_TOKEN`.
 - Keep SAML trust mode on whitelist for production.
 
-## Reservation Notifications (email + ICS)
+## 🔔 Reservation Notifications (email + ICS)
 
 - Enable with `NOTIFICATIONS_MAIL_ENABLED=true` and choose driver `NOTIFICATIONS_MAIL_DRIVER=smtp|graph|noop` (default: noop).
 - Common settings: `NOTIFICATIONS_MAIL_FROM`, `NOTIFICATIONS_MAIL_DEFAULT_TO` (comma-separated), and `NOTIFICATIONS_MAIL_TIMEZONE` (IANA zone, e.g., `Europe/Madrid`).
