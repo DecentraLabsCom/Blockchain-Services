@@ -6,4 +6,4 @@
 * [Intents & Provisioning Services](docs/services/INTENTS_PROVISIONING.md)
 * [Security Configuration Guide](docs/SECURITY.md)
 * [SAML Auto-Discovery](docs/SAML_AUTO_DISCOVERY.md)
-* [Example Lab Metadata (Extended)](docs/example-lab-metadata-extended.md)
+* [Example Lab Metadata (Extended)](docs/example-lab-metadata.md)
