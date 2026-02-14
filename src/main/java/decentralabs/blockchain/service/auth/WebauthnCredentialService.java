@@ -7,6 +7,7 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
+import io.micrometer.observation.annotation.Observed;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
@@ -152,6 +153,7 @@ public class WebauthnCredentialService {
         }
     }
 
+    @Observed(name = "webauthn.credentials.revoke", contextualName = "revoke-expired-webauthn-credentials")
     @Scheduled(fixedDelayString = "${webauthn.credentials.revoke.interval.ms:86400000}")
     public synchronized void revokeExpiredCredentials() {
         if (credentialsMaxAgeDays <= 0) {

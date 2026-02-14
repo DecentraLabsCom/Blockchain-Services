@@ -20,6 +20,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 import jakarta.annotation.PostConstruct;
+import io.micrometer.observation.annotation.Observed;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -226,6 +227,7 @@ public class IntentService {
         return response;
     }
 
+    @Observed(name = "intent.reconciliation", contextualName = "reconcile-intents")
     @Scheduled(fixedDelayString = "${intent.reconciliation-interval-ms:10000}")
     public void reconcile() {
         long now = Instant.now().getEpochSecond();

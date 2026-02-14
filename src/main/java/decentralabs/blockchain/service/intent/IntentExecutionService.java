@@ -6,6 +6,7 @@ import java.util.Map;
 import java.util.stream.Collectors;
 
 import org.springframework.beans.factory.annotation.Value;
+import io.micrometer.observation.annotation.Observed;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
@@ -24,6 +25,7 @@ public class IntentExecutionService {
     @Value("${intent.execution-interval-ms:5000}")
     private long executionIntervalMs;
 
+    @Observed(name = "intent.execution", contextualName = "process-queued-intents")
     @Scheduled(fixedDelayString = "${intent.execution-interval-ms:5000}")
     public void processQueuedIntents() {
         Map<String, IntentRecord> current = intentService.getQueuedIntents();
