@@ -211,7 +211,7 @@ src/main/resources/
 
 - Never commit secrets or private keys.
 - Keep wallet/treasury routes behind trusted network/proxy boundaries.
-- If private-network access is enabled, enforce `SECURITY_ACCESS_TOKEN`.
+- If private-network access is enabled, enforce `TREASURY_TOKEN`.
 - Keep SAML trust mode on whitelist for production.
 
 ## 🔔 Reservation Notifications (email + ICS)
