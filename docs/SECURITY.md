@@ -12,6 +12,7 @@ Minimum actions to keep `blockchain-services` safe in production.
 - Wallets are encrypted with AES-256-GCM + PBKDF2 (65,536 iterations) and stored in `./data/wallets.json`.
 - The wallet password in `wallet-config.properties` is encrypted with `wallet.config.encryption-key`; the service can auto-generate and persist the key to `/app/data/.wallet-encryption-key` if none is provided. Persist `/app/data` in Docker so restarts can decrypt the wallet.
 - Sensitive endpoints are behind `LocalhostOnlyFilter`: `/wallet`, `/treasury`, `/treasury/admin/notifications`, `/wallet-dashboard`, `/institution-config`, and `/onboarding/token`.
+- `/onboarding/token/**` is currently reserved in security filters/CORS; there is no public controller endpoint in this repository version.
 - Keep `security.allow-private-networks=false` unless you run behind a trusted private network and enforce a strong `security.access-token`.
 - `/wallet/reveal` exists for break-glass scenarios; leave it reachable only from loopback.
 - `/treasury/admin/**` requires a valid access token when `security.access-token.required=true` (default).
