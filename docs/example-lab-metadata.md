@@ -5,11 +5,11 @@
   "image": "https://sarlab.dia.uned.es/labs/imgs/lab1-1.png",
   "attributes": [
     {
-      "trait_type": "Category",
-      "value": "Electronics"
+      "trait_type": "category",
+      "value": "electronics"
     },
     {
-      "trait_type": "Keywords",
+      "trait_type": "keywords",
       "value": [
         "Ohm's Law",
         "Power Dissipation",
@@ -18,36 +18,36 @@
       ]
     },
     {
-      "trait_type": "Documentation",
+      "trait_type": "docs",
       "value": [
         "https://sarlab.dia.uned.es/labs/docs/lab1-1.pdf",
         "https://sarlab.dia.uned.es/labs/docs/lab1-2.pdf"
       ]
     },
     {
-      "trait_type": "Additional Images",
+      "trait_type": "additionalImages",
       "value": [
         "https://sarlab.dia.uned.es/labs/imgs/lab1-2.png",
         "https://sarlab.dia.uned.es/labs/imgs/lab1-3.png"
       ]
     },
     {
-      "trait_type": "Available Time Slots (minutes)",
+      "trait_type": "timeSlots",
       "value": [
         30,
         60
       ]
     },
     {
-      "trait_type": "Opens",
-      "value": "06/15/2025"
+      "trait_type": "opens",
+      "value": 1749945600
     },
     {
-      "trait_type": "Closes",
-      "value": "12/31/2025"
+      "trait_type": "closes",
+      "value": 1767139200
     },
     {
-      "trait_type": "Available Days",
+      "trait_type": "availableDays",
       "value": [
         "MONDAY",
         "TUESDAY",
@@ -57,32 +57,36 @@
       ]
     },
     {
-      "trait_type": "Available Hours",
+      "trait_type": "availableHours",
       "value": {
         "start": "08:00",
         "end": "18:00"
       }
     },
     {
-      "trait_type": "Max Concurrent Users",
+      "trait_type": "timezone",
+      "value": "Europe/Madrid"
+    },
+    {
+      "trait_type": "maxConcurrentUsers",
       "value": 5
     },
     {
-      "trait_type": "Unavailable Windows",
+      "trait_type": "unavailableWindows",
       "value": [
         {
-          "start": "2025-07-04T00:00:00Z",
-          "end": "2025-07-06T23:59:59Z",
+          "startUnix": 1751587200,
+          "endUnix": 1751846399,
           "reason": "Independence Day festivity"
         },
         {
-          "start": "2025-08-15T08:00:00Z",
-          "end": "2025-08-15T12:00:00Z",
+          "startUnix": 1755244800,
+          "endUnix": 1755259200,
           "reason": "Calibration window"
         },
         {
-          "start": "2025-12-24T12:00:00Z",
-          "end": "2025-12-26T12:00:00Z",
+          "startUnix": 1766577600,
+          "endUnix": 1766750400,
           "reason": "Holiday freeze"
         }
       ]
