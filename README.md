@@ -5,20 +5,45 @@ description: >-
 
 # Blockchain Services
 
-[![Build & Test](https://github.com/DecentraLabsCom/blockchain-services/actions/workflows/tests.yml/badge.svg)](https://github.com/DecentraLabsCom/blockchain-services/actions/workflows/tests.yml)
-[![Security Scan](https://github.com/DecentraLabsCom/blockchain-services/actions/workflows/security.yml/badge.svg)](https://github.com/DecentraLabsCom/blockchain-services/actions/workflows/security.yml)
-[![Release](https://github.com/DecentraLabsCom/blockchain-services/actions/workflows/release.yml/badge.svg)](https://github.com/DecentraLabsCom/blockchain-services/actions/workflows/release.yml)
+Spring Boot service for DecentraLabs that provides:
 
-Comprehensive Spring Boot service for the DecentraLabs ecosystem that combines authentication, authorization, and institutional treasury management with full Ethereum wallet capabilities. While it is designed so that it can be deployed as an independent container (use case for lab institutional consumers), but it is also included in the Lab Gateway (use case for lab institutional providers). 
+- Authentication and authorization (`wallet`, `SAML`, `WebAuthn` onboarding)
+- Institutional wallet and treasury operations
+- Intent submission and authorization flows
+- Provider/consumer institutional provisioning
+
+While it is designed so that it can be deployed as an independent container (use case for lab institutional consumers), it is also included in the Lab Gateway (use case for lab institutional providers). 
 
 <figure><img src=".gitbook/assets/DecentraLabs - Lab Access.png" alt=""><figcaption></figcaption></figure>
 
-This service provides two main components:
+This service provides four main components:
 
-1. **Authentication & Authorization Service**: Web3-based JWT authentication with wallet challenges and SAML2 SSO integration
-2. **Institutional Wallet & Treasury**: Complete Ethereum wallet management and treasury operations for institutional lab providers and consumers
+1. **Authentication and Authorization Service**: Web3-based JWT authentication with wallet challenges, SAML2 SSO integration, and WebAuthn support.
+2. **Institutional Wallet and Treasury**: Ethereum wallet management and treasury operations for institutional lab providers and consumers.
+3. **Intent Authorization and Execution**: signed intent intake, WebAuthn ceremony, and on-chain execution/status tracking.
+4. **Institution Provisioning**: provider/consumer token application and Marketplace registration flows.
 
-Together, they offer a bridge between institutional access control systems (like the **Lab Gateway** in the figure above) and blockchain-based smart contracts.
+Together, they bridge institutional access control systems (such as **Lab Gateway**) with blockchain smart contracts in one backend.
+
+## Key Features
+
+### Authentication and Authorization Service
+- **Wallet Challenges**: Web3 signature-based authentication with wallet verification.
+- **SAML2 Integration**: dual-path SSO flows (`/auth/saml-auth` and `/auth/saml-auth2`).
+- **JWT Management**: OIDC/JWKS discovery, JWT issuance, and claim/scope-based access checks.
+- **Smart Contract Validation**: direct on-chain reservation/booking queries for booking-aware flows.
+
+### Institutional Wallet and Treasury
+- **Wallet Management**: create/import/reveal institutional wallets encrypted at rest (AES-256-GCM + PBKDF2).
+- **Multi-Network Support**: Mainnet/Sepolia operations with active-network switching and RPC fallback.
+- **Treasury Operations**: deposits, withdrawals, spending limits/periods, and institutional financial stats.
+- **Reservation Engine**: metadata-driven auto-approval/denial hooks for reservation requests.
+- **Event Monitoring**: contract event listener status and resilient event processing.
+
+### Intents and Provisioning
+- **Intent Authorization**: signed intent intake with JWT scope checks, SAML/WebAuthn validation, and EIP-712 verification.
+- **WebAuthn Ceremony**: authorize/status/complete flow for intent execution.
+- **Institution Provisioning**: provider/consumer token application, Marketplace JWKS validation, and registration flows.
 
 ## 🏗️ Architecture Overview
 
@@ -42,332 +67,123 @@ Together, they offer a bridge between institutional access control systems (like
                                    |
                                    v
                         +------------------------+
+                        | Intents                |
+                        | - Intent intake        |
+                        | - WebAuthn ceremony    |
+                        | - Status and execution |
+                        +------------------------+
+                                   |
+                                   v
+                        +------------------------+
+                        | Institution Config     |
+                        | - Provider token apply |
+                        | - Consumer token apply |
+                        | - Registration flows   |
+                        +------------------------+
+                                   |
+                                   v
+                        +------------------------+
                         | Lab Gateway            |
                         | (Provider Access)      |
                         +------------------------+
 ```
 
-## 🛠️ Technology Stack
+## Current Defaults
 
-### Core Framework
-- **Spring Boot 4.x** - Application framework with embedded Tomcat
-- **Java** - LTS version with modern language features
-- **Maven** - Build automation and dependency management
+- Java 21, Spring Boot 4.0.2
+- `features.providers.enabled=false` in repository defaults
+  - This means `/auth/*` provider endpoints are disabled unless you enable providers.
+- Wallet/treasury/admin UI routes are restricted by localhost/private-network controls.
 
-### Security & Authentication
-- **Spring Security** - Authentication and authorization
-- **JJWT** - JWT generation and validation
-- **Bouncy Castle** - Cryptographic operations (AES-256-GCM, PBKDF2)
+## API Overview
 
-### Blockchain Integration
-- **Web3j** - Ethereum client library for smart contract interactions
-- **Netty** - Async I/O for RPC communication
-- **OkHttp** - HTTP client with connection pooling
+### Auth and identity
 
-### Data Processing
-- **Jackson** - JSON serialization/deserialization
-- **Lombok** - Boilerplate code reduction
-- **Bucket4j** - Rate limiting for API endpoints
+- `GET /.well-known/openid-configuration`
+- `GET /auth/jwks`
+- `GET /auth/message`
+- `POST /auth/wallet-auth`
+- `POST /auth/wallet-auth2`
+- `POST /auth/saml-auth`
+- `POST /auth/saml-auth2`
+- `POST /auth/checkin`
+- `POST /auth/checkin-institutional`
+- `POST /webauthn/register`
+- `POST /webauthn/revoke`
+- `POST /onboarding/webauthn/options`
+- `POST /onboarding/webauthn/complete`
 
-### Deployment & Operations
-- **Docker** - Containerized deployment with multi-stage builds
-- **Tomcat Embedded** - Servlet container (via Spring Boot)
-- **GitHub Actions** - CI/CD for build, test, security scanning, and releases
+### Wallet and treasury
 
-## 🚀 Key Features
+- `POST /wallet/create`
+- `POST /wallet/import`
+- `POST /wallet/reveal`
+- `GET /wallet/{address}/balance`
+- `GET /wallet/{address}/transactions`
+- `GET /wallet/listen-events`
+- `GET /wallet/networks`
+- `POST /wallet/switch-network`
+- `POST /treasury/admin/execute`
+- `GET /treasury/admin/status`
+- `GET /treasury/admin/balance`
+- `GET /treasury/admin/transactions`
+- `GET /treasury/admin/contract-info`
+- `GET /treasury/admin/treasury-info`
+- `GET /treasury/admin/top-spenders`
+- `GET|POST /treasury/admin/notifications`
 
-### Authentication & Authorization Service
-- **Wallet Challenges**: Web3 signature-based authentication with blockchain verification
-- **SAML2 Integration**: Dual-path SSO (auth-only and booking-aware flows)
-- **JWT Management**: JWKS discovery, dynamic key rotation, and claim-based authorization
-- **Smart Contract Validation**: Direct on-chain reservation and booking queries
+### Intents and provisioning
 
-### Institutional Wallet & Treasury
-- **Wallet Management**: Create/import encrypted institutional wallets (AES-256-GCM + PBKDF2)
-- **Multi-Network Support**: Mainnet/Sepolia/Goerli with automatic RPC failover
-- **Treasury Operations**: Deposits, withdrawals, spending limits, and user financial stats
-- **Reservation Engine**: Metadata-driven auto-approval/denial based on lab availability
-- **Event Monitoring**: Real-time blockchain event listening and status reporting
+- `POST /intents`
+- `GET /intents/{requestId}`
+- `POST /intents/authorize`
+- `GET /intents/authorize/status/{sessionId}`
+- `GET /intents/authorize/ceremony/{sessionId}`
+- `POST /intents/authorize/complete`
+- `GET /institution-config/status`
+- `POST /institution-config/save-and-register`
+- `POST /institution-config/retry-registration`
+- `POST /institution-config/apply-provider-token`
+- `POST /institution-config/apply-consumer-token`
 
-## 🔧 API Overview
+## Quick Start (Local)
 
-### Authentication Endpoints (`/auth`)
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/.well-known/openid-configuration` | GET | OIDC discovery metadata |
-| `/auth/jwks` | GET | JSON Web Keys for token validation |
-| `/auth/message` | GET | Get wallet challenge message |
-| `/auth/wallet-auth` | POST | Wallet authentication (no booking) |
-| `/auth/wallet-auth2` | POST | Wallet authentication + authorization |
-| `/auth/saml-auth` | POST | SAML2 authentication |
-| `/auth/saml-auth2` | POST | SAML2 authentication + authorization |
-| `/auth/checkin` | POST | Verify and submit wallet-based check-in |
-| `/auth/checkin-institutional` | POST | Verify and submit institutional (SAML) check-in |
+1. Build:
 
-### WebAuthn Onboarding Endpoints (`/onboarding/webauthn`)
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/onboarding/webauthn/key-status/{stableUserId}` | GET | Check if user has registered credentials |
-| `/onboarding/webauthn/options` | POST | Get credential creation options (challenge) |
-| `/onboarding/webauthn/complete` | POST | Complete registration with attestation |
-| `/onboarding/webauthn/status/{sessionId}` | GET | Poll for onboarding session result |
+```bash
+./mvnw clean package -DskipTests
+```
 
-> These endpoints implement the dedicated onboarding endpoint from the Federated SSO Architecture spec.
-> The browser talks directly to the WIB for WebAuthn credential registration, ensuring the SP never sees
-> the challenge or user signature.
+2. Run:
 
-### WebAuthn Credential Management (`/webauthn`)
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/webauthn/register` | POST | Register pre-authenticated credential (legacy) |
-| `/webauthn/revoke` | POST | Revoke a user's credential |
+```bash
+java -jar target/blockchain-services-1.0-SNAPSHOT.war
+```
 
-### Wallet Endpoints (`/wallet`) 🔒 *localhost only*
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/wallet/create` | POST | Create new encrypted wallet |
-| `/wallet/import` | POST | Import existing wallet |
-| `/wallet/{address}/balance` | GET | Get ETH and LAB token balance |
-| `/wallet/{address}/transactions` | GET | Get transaction history |
-| `/wallet/listen-events` | GET | Event listener status |
-| `/wallet/networks` | GET | List available networks |
-| `/wallet/switch-network` | POST | Switch active network |
-| `/wallet/reveal` | POST | Reveal institutional private key (localhost + password) |
+3. Verify:
 
-### Treasury Endpoints (`/treasury`) 🔒 *localhost only*
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/treasury/admin/execute` | POST | Execute treasury admin operations |
+- `http://localhost:8080/health`
+- `http://localhost:8080/wallet-dashboard`
 
-### Intent Endpoints (`/intents`)
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/intents` | POST | Submit signed action/reservation intent |
-| `/intents/{requestId}` | GET | Query intent status by requestId |
-| `/intents/authorize` | POST | Start WebAuthn authorization ceremony |
-| `/intents/authorize/status/{sessionId}` | GET | Poll authorization ceremony status |
-| `/intents/authorize/ceremony/{sessionId}` | GET | Render ceremony page (HTML) |
-| `/intents/authorize/complete` | POST | Complete WebAuthn authorization |
+## Quick Start (Docker)
 
-### Institution Configuration Endpoints (`/institution-config`)
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/institution-config/status` | GET | Get current provisioning/configuration status |
-| `/institution-config/save-and-register` | POST | Save configuration and run registration |
-| `/institution-config/retry-registration` | POST | Retry on-chain provider registration |
-| `/institution-config/apply-provider-token` | POST | Apply provider provisioning token |
-| `/institution-config/apply-consumer-token` | POST | Apply consumer provisioning token |
+1. Copy template env:
 
-> 🔒 Wallet and Treasury endpoints are protected by `LocalhostOnlyFilter` and only accept requests from `127.0.0.1` / `::1`
-> `/treasury/admin/**` also requires a valid access token when `SECURITY_ACCESS_TOKEN_REQUIRED=true` (default).
+```bash
+cp .env.example .env
+```
 
-## 🛠️ Quick Start
+2. Provide JWT keys in `./config/keys` (or adjust `PRIVATE_KEY_PATH` / `PUBLIC_KEY_PATH`).
 
-### Prerequisites
+3. Start:
 
-* Java 21+
-* Maven 3.6+
-* Docker (optional, for containerized deployment)
+```bash
+docker compose up -d
+```
 
-### Local Development
+4. Open `http://localhost:8080/wallet-dashboard` to create/import the institutional wallet.
 
-1. **Build the project:**
-   ```bash
-   mvn clean package -DskipTests
-   ```
-
-2. **Run locally:**
-   ```bash
-   java -jar target/blockchain-services-1.0-SNAPSHOT.war
-   ```
-
-3. **Access the service:**
-   - Health check: http://localhost:8080/health
-   - OIDC discovery: http://localhost:8080/.well-known/openid-configuration
-   - JWKS endpoint: http://localhost:8080/auth/jwks
-
-### Docker Deployment (Development)
-
-> ⚠️ **IMPORTANT**: Docker deployment requires RSA keys and wallet configuration that are NOT included in the repository.
-
-1. **Generate RSA keys for JWT signing (or let the container create them):**
-   ```bash
-   mkdir -p keys
-   openssl genrsa -out keys/private_key.pem 2048
-   openssl rsa -in keys/private_key.pem -pubout -out keys/public_key.pem
-   chmod 400 keys/*.pem
-   ```
-   If you skip this step, the container will generate the keys on first start as long as `./keys` is writable.
-
-2. **Start services (dev; `docker-compose.override.yml` is auto-loaded to expose port 8080):**
-   ```bash
-   docker compose up -d
-   ```
-
-   This compose file starts a MySQL container and wires `SPRING_DATASOURCE_*` from `BCHAIN_MYSQL_*` in your `.env`.
-
-   **Production (no port exposure):**
-   ```bash
-   docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
-   ```
-
-   **Database migrations:** When `SPRING_DATASOURCE_URL` is configured, Flyway automatically creates the
-   auth, WebAuthn, and intents tables on startup. This is how Lab Gateway keeps the schema in sync.
-
-3. **Configure institutional wallet:**
-   
-   Open http://localhost:8080/wallet-dashboard in your browser
-   
-   - **Create new wallet:** Click "Create Wallet" → Set password → Save credentials
-   - **Import existing:** Click "Import Wallet" → Provide private key + password
-   - The backend automatically encrypts the private key into `/app/data/wallets.json`, stores the address and an AES-GCM–encrypted password in `/app/data/wallet-config.properties` (`institutional.wallet.password.encrypted`), and hot-reloads the institutional wallet.
-   
-   > 💡 Nothing else to configure unless you want to override the wallet via environment variables (see below).
-
-> 💡 **Testing APIs:** For manual testing, use `test-wallet-local.sh` / `test-wallet-local.ps1`
-
-> 💡 **Reverse Proxy:** When this project is consumed as a submodule behind OpenResty, use `docker-compose.yml` + `docker-compose.prod.yml` so the container stays on the internal network without publishing `8080`.
-
-### 📦 CI/CD & Production Deployment
-
-This project uses a **security-first deployment approach**:
-
-#### GitHub Actions Workflows
-
-| Pipeline | Purpose | Output | Trigger |
-|----------|---------|--------|---------|
-| **Build & Test** | Validates code quality | Test results | Every PR/push |
-| **Security Scan** | Detects vulnerabilities | Security alerts | Weekly + PR |
-| **Flyway DB checks** | Validate & apply DB migrations; detect drift | Flyway logs, artifacts | PR/push + release (snapshot) |
-| **Release** | Creates versioned artifacts | WAR + checksums | Git tag `v*.*.*` |
-| **Docker Image** | Builds container | Docker image | Manual dispatch |
-
-#### Secrets Management
-
-- ✅ `.env.example` tracked (public template). Copy it to `.env` locally (gitignored) before running anything.
-- 🔐 `keys/*.pem` gitignored (generate per environment)
-- 🔐 Wallet address/password captured through `/wallet-dashboard` → private key encrypted into `/app/data/wallets.json`, password stored as `institutional.wallet.password.encrypted` inside `wallet-config.properties`. Persist `wallet.config.encryption-key` separately (env/secrets manager) or let the service auto-generate it into `/app/data/.wallet-encryption-key` (configurable via `wallet.config.encryption-key-file`). Just ensure that `/app/data` is a persistent volume so restarts can decrypt the password; provide env overrides only if you need full external secret management.
-
-#### Production Deployment Steps
-
-1. **Download release artifacts:**
-   ```bash
-   # Get latest release WAR
-   wget https://github.com/DecentraLabsCom/blockchain-services/releases/latest/download/blockchain-services-X.Y.Z.war
-   
-   # Verify integrity
-   sha256sum -c blockchain-services-X.Y.Z.war.sha256
-   ```
-
-2. **Prepare environment:**
-   ```bash
-   # Generate RSA keys
-   mkdir -p keys
-   openssl genrsa -out keys/private_key.pem 2048
-   openssl rsa -in keys/private_key.pem -pubout -out keys/public_key.pem
-   chmod 400 keys/*.pem
-
-   # Copy .env file and edit it in case you need it
-   cp .env.example .env
-   
-   # For improved security, configure production secrets in AWS/Azure secret manager
-   # INSTITUTIONAL_WALLET_PASSWORD
-   # RPC URLs with API keys
-   ```
-
-3. **Deploy:**
-   ```bash
-   docker-compose up -d
-   ```
-
-4. **Configure institutional wallet:**
-   
-   Access http://your-domain/wallet-dashboard and create/import the wallet.
-
-> ⚠️ **CRITICAL:** Never commit secrets. Use AWS Secrets Manager / Azure Key Vault for production.
-
-## ⚙️ Configuration
-
-### Critical Environment Variables
-
-| Variable | Required | Description | Default |
-|----------|----------|-------------|---------|
-| `CONTRACT_ADDRESS` | 🔴 Yes | DecentraLabs contract address | - |
-| `WALLET_ADDRESS` | 🔴 Yes | Institutional wallet address | - |
-| `BLOCKCHAIN_NETWORK_ACTIVE` | 🟡 Recommended | Initial network (`mainnet`/`sepolia`) | `sepolia` |
-| `ETHEREUM_MAINNET_RPC_URL` | 🟡 Recommended | Mainnet RPC endpoints (comma-separated) | Public RPCs |
-| `ETHEREUM_SEPOLIA_RPC_URL` | 🟡 Recommended | Sepolia RPC endpoints (comma-separated) | Public RPCs |
-
-### Optional Environment Variables
-
-| Variable | Description | Default |
-|----------|-------------|---------|
-| `SPRING_PROFILES_ACTIVE` | Active Spring profile | `default` |
-| `JAVA_OPTS` | JVM options | - |
-| `SPRING_DATASOURCE_URL` | JDBC URL for MySQL (enables persistence + migrations) | - |
-| `SPRING_DATASOURCE_USERNAME` | MySQL username | - |
-| `SPRING_DATASOURCE_PASSWORD` | MySQL password | - |
-| `ALLOWED_ORIGINS` | CORS allowed origins | - |
-| `PRIVATE_KEY_PATH` | Path to JWT private key | `config/keys/private_key.pem` |
-| `PUBLIC_KEY_PATH` | Path to JWT public key | `config/keys/public_key.pem` |
-| `ADMIN_DASHBOARD_LOCAL_ONLY` | `true` blocks `/treasury/admin/**` unless request is localhost/private and internally authenticated | `true` |
-| `ADMIN_DASHBOARD_ALLOW_PRIVATE` | Allow private network access for admin endpoints (requires access token) | `false` |
-| `SECURITY_ALLOW_PRIVATE_NETWORKS` | Allow private networks for internal endpoints (requires access token) | `false` |
-| `SECURITY_ACCESS_TOKEN` | Shared secret for internal endpoints (`/wallet`, `/treasury`, `/wallet-dashboard`) | - |
-| `SECURITY_ACCESS_TOKEN_HEADER` | Header name for access token | `X-Access-Token` |
-| `SECURITY_ACCESS_TOKEN_COOKIE` | Cookie name for access token | `access_token` |
-| `SECURITY_ACCESS_TOKEN_REQUIRED` | Require access token for private networks | `true` |
-| `TREASURY_ADMIN_DOMAIN_NAME` | EIP-712 domain name for `/treasury/admin/execute` | `DecentraLabsTreasuryAdmin` |
-| `TREASURY_ADMIN_DOMAIN_VERSION` | EIP-712 domain version for `/treasury/admin/execute` | `1` |
-| `TREASURY_ADMIN_DOMAIN_CHAIN_ID` | EIP-712 chain ID for `/treasury/admin/execute` | `11155111` |
-| `TREASURY_ADMIN_DOMAIN_VERIFYING_CONTRACT` | EIP-712 verifying contract for `/treasury/admin/execute` | `CONTRACT_ADDRESS` |
-| `SAML_IDP_TRUST_MODE` | `whitelist` or `any` for IdP trust | `any` |
-| `SAML_METADATA_ALLOW_HTTP` | Allow HTTP metadata URLs (not recommended) | `false` |
-> When deploying behind a reverse proxy, set `SECURITY_ALLOW_PRIVATE_NETWORKS=true` and a strong `SECURITY_ACCESS_TOKEN`.
-> Configure the proxy to send `X-Access-Token` (or the `access_token` cookie) when calling `/wallet`, `/treasury`, and `/wallet-dashboard`.
-> `/treasury/admin/execute` additionally requires an EIP-712 signature from the institutional wallet (timestamped).
-> For local dev, set `SECURITY_ACCESS_TOKEN_REQUIRED=false` to skip the token check.
-
-### Docker Compose `.env` variables (standalone)
-
-The compose files in this repo use prefixed variables to avoid collisions with Lab Gateway settings.
-They are mapped to the standard Spring variables inside the container.
-
-| Variable | Description | Default |
-|----------|-------------|---------|
-| `BCHAIN_MYSQL_ROOT_PASSWORD` | MySQL root password for the local container | `change-me` |
-| `BCHAIN_MYSQL_DATABASE` | MySQL schema for blockchain-services | `blockchain_services` |
-| `BCHAIN_MYSQL_USER` | MySQL app user | `blockchain` |
-| `BCHAIN_MYSQL_PASSWORD` | MySQL app password | `blockchain` |
-| `BCHAIN_ADMIN_DASHBOARD_LOCAL_ONLY` | Maps to `ADMIN_DASHBOARD_LOCAL_ONLY` | `true` |
-| `BCHAIN_ADMIN_DASHBOARD_ALLOW_PRIVATE` | Maps to `ADMIN_DASHBOARD_ALLOW_PRIVATE` | `true` |
-| `BCHAIN_SECURITY_ALLOW_PRIVATE_NETWORKS` | Maps to `SECURITY_ALLOW_PRIVATE_NETWORKS` | `true` |
-| `BCHAIN_SECURITY_ACCESS_TOKEN` | Maps to `SECURITY_ACCESS_TOKEN` | - |
-| `BCHAIN_SECURITY_ACCESS_TOKEN_HEADER` | Maps to `SECURITY_ACCESS_TOKEN_HEADER` | `X-Access-Token` |
-| `BCHAIN_SECURITY_ACCESS_TOKEN_COOKIE` | Maps to `SECURITY_ACCESS_TOKEN_COOKIE` | `access_token` |
-| `BCHAIN_SECURITY_ACCESS_TOKEN_REQUIRED` | Maps to `SECURITY_ACCESS_TOKEN_REQUIRED` | `false` |
-
-
-### WebAuthn Onboarding Configuration
-
-**Automatic URL Resolution:** The `WEBAUTHN_RP_ID` and `WEBAUTHN_BASE_URL` are automatically derived from `SERVER_NAME` (Lab Gateway) or `BASE_DOMAIN` (stand-alone). You only need to set them manually if you want to override the auto-detected values.
-
-| Variable | Description | Default |
-|----------|-------------|---------|
-| `WEBAUTHN_RP_ID` | Relying Party ID (domain users see in browser) | Auto-derived from `SERVER_NAME`/`BASE_DOMAIN` |
-| `WEBAUTHN_BASE_URL` | Base URL for onboarding ceremony URLs | Auto-derived from `SERVER_NAME`/`BASE_DOMAIN` |
-| `WEBAUTHN_RP_NAME` | Display name for the RP | `DecentraLabs Gateway` |
-| `WEBAUTHN_RP_ORIGINS` | Allowed origins for attestation (comma-separated) | `https://localhost,https://localhost:443` |
-| `WEBAUTHN_TIMEOUT_MS` | Ceremony timeout in milliseconds | `120000` |
-| `WEBAUTHN_SESSION_TTL_SECONDS` | Challenge expiration time | `300` |
-| `WEBAUTHN_ATTESTATION_CONVEYANCE` | `none`, `indirect`, or `direct` | `none` |
-| `WEBAUTHN_AUTHENTICATOR_ATTACHMENT` | `platform`, `cross-platform`, or empty | (empty) |
-| `WEBAUTHN_RESIDENT_KEY` | `required`, `preferred`, or `discouraged` | `preferred` |
-| `WEBAUTHN_USER_VERIFICATION` | `required`, `preferred`, or `discouraged` | `preferred` |
-
-> **Example:** If you set `SERVER_NAME=your.gateway.example`, the service automatically derives `WEBAUTHN_RP_ID=your.gateway.example` and `WEBAUTHN_BASE_URL=https://your.gateway.example`. No additional WebAuthn config needed.
-
-### Configuration Files
+## Configuration Files
 
 **Repository structure:**
 ```
@@ -398,29 +214,12 @@ src/main/resources/
 > 💡 Configuration priority: Environment variables > `.env` (local file) > application.properties.
 > For the institutional wallet specifically: env vars / secrets manager > `wallet-config.properties` (auto-generated `institutional.wallet.address` + encrypted password) > persisted wallet metadata.
 
-### Example Docker Run
+## Security Essentials
 
-```bash
-docker run -p 8080:8080 \
-  -e CONTRACT_ADDRESS=0xYourContractAddress \
-  -e WALLET_ADDRESS=0xYourWalletAddress \
-  -e ETHEREUM_SEPOLIA_RPC_URL=https://your-rpc-endpoint \
-  -v /secure/keys:/app/config/keys:ro \
-  blockchain-services:latest
-```
-
-## 🔐 Security
-
-**CRITICAL**: This service handles sensitive cryptographic keys and blockchain transactions.
-
-### Security Checklist
-
-- ✅ Private keys provided via environment variables (never hardcoded)
-- ✅ RSA keys mounted with proper permissions (`chmod 400`)
-- ✅ RPC URLs configured with authenticated endpoints
-- ✅ Localhost-only filters enabled for sensitive operations
-- ✅ Access token required when allowing private network access
-- ✅ CORS origins restricted to trusted domains
+- Never commit secrets or private keys.
+- Keep wallet/treasury routes behind trusted network/proxy boundaries.
+- If private-network access is enabled, enforce `SECURITY_ACCESS_TOKEN`.
+- Keep SAML trust mode on whitelist for production.
 
 ## Reservation Notifications (email + ICS)
 

@@ -21,7 +21,7 @@
 7) Cache the certificate per issuer (ConcurrentHashMap). Cache is in-memory for the process lifetime; `clearCertificateCache()` is available for tests/refresh.
 8) Verify `<ds:Signature>` with the discovered certificate; reject missing or invalid signatures.
 9) Extract attributes (after signature verification): `userid` (fallback to `NameID`), `affiliation` (required; fallback from `schacHomeOrganization`), `email` or `mail`, `displayName`/`cn`, and `schacHomeOrganization` (multi-value list).
-10) Return attributes plus `issuer` for downstream services (SAML auth, institutional reservations).
+10) Return attributes plus `issuer` for downstream services (SAML auth, institutional check-in, intents).
 
 ## Configuration
 ```properties
