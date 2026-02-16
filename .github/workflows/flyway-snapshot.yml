@@ -33,7 +33,7 @@ jobs:
             -output=/tmp/flyway_snapshot.json || true
 
       - name: Upload snapshot artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: flyway-snapshot
           path: /tmp/flyway_snapshot.json
