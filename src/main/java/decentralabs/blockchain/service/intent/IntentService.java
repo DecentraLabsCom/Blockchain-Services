@@ -511,7 +511,8 @@ public class IntentService {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "webauthn_credential_revoked");
         }
 
-        String expectedChallenge = buildWebauthnChallenge(puc, credentialId, meta);
+        String expectedChallenge = buildWebauthnChallenge(puc, meta);
+        String legacyExpectedChallenge = buildLegacyWebauthnChallenge(puc, credentialId, meta);
         
         // WebAuthn assertion verification requires user-provided data by design.
         // This is NOT a security bypass because:
@@ -526,7 +527,8 @@ public class IntentService {
             validateWebauthnField(submission.getWebauthnClientDataJSON(), "clientDataJSON"),
             validateWebauthnField(submission.getWebauthnAuthenticatorData(), "authenticatorData"),
             validateWebauthnField(submission.getWebauthnSignature(), "signature"),
-            expectedChallenge
+            expectedChallenge,
+            legacyExpectedChallenge
         );
     }
     
@@ -551,7 +553,19 @@ public class IntentService {
         return value;
     }
 
-    private String buildWebauthnChallenge(String puc, String credentialId, IntentMeta meta) {
+    private String buildWebauthnChallenge(String puc, IntentMeta meta) {
+        return String.join("|",
+            puc.toLowerCase(Locale.ROOT),
+            meta.getRequestId(),
+            meta.getPayloadHash(),
+            String.valueOf(meta.getNonce()),
+            String.valueOf(meta.getRequestedAt()),
+            String.valueOf(meta.getExpiresAt()),
+            String.valueOf(meta.getAction())
+        );
+    }
+
+    private String buildLegacyWebauthnChallenge(String puc, String credentialId, IntentMeta meta) {
         return String.join("|",
             puc.toLowerCase(Locale.ROOT),
             credentialId,
@@ -576,7 +590,8 @@ public class IntentService {
         String clientDataJSONb64,
         String authenticatorDatab64,
         String signatureB64,
-        String expectedChallenge
+        String expectedChallenge,
+        String legacyExpectedChallenge
     ) {
         try {
             byte[] clientData = Base64.getUrlDecoder().decode(clientDataJSONb64);
@@ -585,7 +600,11 @@ public class IntentService {
 
             String challengeFromClient = extractChallengeFromClientData(clientData);
             String expectedChallengeB64 = Base64.getUrlEncoder().withoutPadding().encodeToString(expectedChallenge.getBytes(StandardCharsets.UTF_8));
-            if (!expectedChallengeB64.equals(challengeFromClient)) {
+            String legacyExpectedChallengeB64 = legacyExpectedChallenge == null ? null
+                : Base64.getUrlEncoder().withoutPadding().encodeToString(legacyExpectedChallenge.getBytes(StandardCharsets.UTF_8));
+            boolean matchesCurrent = expectedChallengeB64.equals(challengeFromClient);
+            boolean matchesLegacy = legacyExpectedChallengeB64 != null && legacyExpectedChallengeB64.equals(challengeFromClient);
+            if (!matchesCurrent && !matchesLegacy) {
                 throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "webauthn_challenge_mismatch");
             }
 

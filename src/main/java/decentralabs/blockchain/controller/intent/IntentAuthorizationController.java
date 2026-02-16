@@ -78,7 +78,7 @@ public class IntentAuthorizationController {
         Map<String, Object> options = new HashMap<>();
         options.put("sessionId", session.getSessionId());
         options.put("challenge", session.getChallenge());
-        options.put("credentialId", session.getCredentialId());
+        options.put("allowCredentials", session.getCredentialIds());
         options.put("rpId", authorizationService.getRelyingPartyId());
         options.put("timeout", DEFAULT_TIMEOUT_MS);
         options.put("userVerification", "required");
@@ -231,19 +231,26 @@ public class IntentAuthorizationController {
       notifyParent('CANCELLED', 'Authorization window closed');
     }
 
-    async function startCeremony() {
-      showStatus('pending');
+        async function startCeremony() {
+          showStatus('pending');
 
-      try {
-        const publicKey = {
-          challenge: base64UrlToArrayBuffer(options.challenge),
-          rpId: options.rpId,
-          allowCredentials: [
-            { id: base64UrlToArrayBuffer(options.credentialId), type: 'public-key' },
-          ],
-          userVerification: options.userVerification || 'required',
-          timeout: options.timeout || 90000,
-        };
+          try {
+            const allowCredentialIds = Array.isArray(options.allowCredentials)
+              ? options.allowCredentials
+              : [];
+            if (!allowCredentialIds.length) {
+              throw new Error('No credential available for this authorization session');
+            }
+            const publicKey = {
+              challenge: base64UrlToArrayBuffer(options.challenge),
+              rpId: options.rpId,
+              allowCredentials: allowCredentialIds.map((credentialId) => ({
+                id: base64UrlToArrayBuffer(credentialId),
+                type: 'public-key',
+              })),
+              userVerification: options.userVerification || 'required',
+              timeout: options.timeout || 90000,
+            };
 
         const assertion = await navigator.credentials.get({ publicKey });
         const payload = {

@@ -99,8 +99,16 @@ public class IntentAuthorizationService {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "missing_puc_for_webauthn");
         }
 
-        WebauthnCredential credential = selectCredential(puc);
-        String challengeString = buildWebauthnChallenge(puc, credential.getCredentialId(), meta);
+        List<String> credentialIds = selectCredentials(puc).stream()
+            .map(WebauthnCredential::getCredentialId)
+            .filter(id -> id != null && !id.isBlank())
+            .distinct()
+            .toList();
+        if (credentialIds.isEmpty()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "webauthn_credential_not_registered");
+        }
+
+        String challengeString = buildWebauthnChallenge(puc, meta);
         String challengeB64 = java.util.Base64.getUrlEncoder().withoutPadding()
             .encodeToString(challengeString.getBytes(StandardCharsets.UTF_8));
 
@@ -110,7 +118,7 @@ public class IntentAuthorizationService {
         AuthorizationSession session = new AuthorizationSession(
             sessionId,
             submission,
-            credential.getCredentialId(),
+            credentialIds,
             challengeB64,
             request.getReturnUrl(),
             expiresAt
@@ -165,6 +173,15 @@ public class IntentAuthorizationService {
         if (session.isExpired()) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Session expired");
         }
+        if (request.getCredentialId() == null || request.getCredentialId().isBlank()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "missing_webauthn_credential");
+        }
+        if (session.getCredentialIds() == null || session.getCredentialIds().isEmpty()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "webauthn_credential_not_registered");
+        }
+        if (!session.getCredentialIds().contains(request.getCredentialId())) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "webauthn_credential_not_allowed");
+        }
 
         IntentSubmission submission = session.getSubmission();
         submission.setWebauthnCredentialId(request.getCredentialId());
@@ -213,12 +230,16 @@ public class IntentAuthorizationService {
         return submission;
     }
 
-    private WebauthnCredential selectCredential(String puc) {
+    private List<WebauthnCredential> selectCredentials(String puc) {
         List<WebauthnCredential> credentials = webauthnCredentialService.getCredentials(puc);
-        return credentials.stream()
+        List<WebauthnCredential> activeCredentials = credentials.stream()
             .filter(WebauthnCredential::isActive)
-            .max(Comparator.comparing(WebauthnCredential::getCreatedAt, Comparator.nullsLast(Long::compareTo)))
-            .orElseThrow(() -> new ResponseStatusException(HttpStatus.BAD_REQUEST, "webauthn_credential_not_registered"));
+            .sorted(Comparator.comparing(WebauthnCredential::getCreatedAt, Comparator.nullsLast(Long::compareTo)).reversed())
+            .toList();
+        if (activeCredentials.isEmpty()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "webauthn_credential_not_registered");
+        }
+        return activeCredentials;
     }
 
     private String resolvePuc(IntentSubmission submission) {
@@ -314,10 +335,9 @@ public class IntentAuthorizationService {
         return null;
     }
 
-    private String buildWebauthnChallenge(String puc, String credentialId, IntentMeta meta) {
+    private String buildWebauthnChallenge(String puc, IntentMeta meta) {
         return String.join("|",
             puc.toLowerCase(Locale.ROOT),
-            credentialId,
             meta.getRequestId(),
             meta.getPayloadHash(),
             String.valueOf(meta.getNonce()),
@@ -353,7 +373,7 @@ public class IntentAuthorizationService {
     public static class AuthorizationSession {
         private String sessionId;
         private IntentSubmission submission;
-        private String credentialId;
+        private List<String> credentialIds;
         private String challenge;
         private String returnUrl;
         private Instant expiresAt;
