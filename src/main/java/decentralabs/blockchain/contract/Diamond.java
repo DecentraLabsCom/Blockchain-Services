@@ -455,61 +455,141 @@ public class Diamond extends Contract {
                     ).send();
                     
                     String hex = response.getValue();
-                    if (hex.startsWith("0x")) hex = hex.substring(2);
-                    
-                    // ABI encoding for tuple with dynamic fields:
-                    // Word 0: offset to actual tuple data
-                    // Word offset+0: labId (uint256)
-                    // Word offset+1: offset to LabBase (relative to tuple start)
-                    // ... LabBase fields follow
-                    
-                    // Word 0: offset to tuple (usually 0x20 = 32 bytes)
-                    int tupleOffset = new BigInteger(hex.substring(0, 64), 16).intValue() * 2;
-                    
-                    // Read from actual tuple start
-                    int pos = tupleOffset;
-                    BigInteger labId = new BigInteger(hex.substring(pos, pos + 64), 16);
-                    pos += 64;
-                    
-                    // Next word: offset to LabBase (relative to current position)
-                    int labBaseOffsetRelative = new BigInteger(hex.substring(pos, pos + 64), 16).intValue() * 2;
-                    pos += 64;
-                    
-                    // LabBase absolute position
-                    int labBaseStart = tupleOffset + labBaseOffsetRelative;
-                    
-                    // Read LabBase tuple fields
-                    // LabBase structure: (string uri, uint96 price, string accessURI, string accessKey, uint32 createdAt)
-                    // Word 0: offset to uri (relative to LabBase start)
-                    // Word 1: price (uint96, right-aligned in 32 bytes)
-                    // Word 2: offset to accessURI
-                    // Word 3: offset to accessKey
-                    // Word 4: createdAt (uint32, right-aligned in 32 bytes)
-                    // Word 5+: actual string data
-                    
-                    int uriOffsetRel = new BigInteger(hex.substring(labBaseStart, labBaseStart + 64), 16).intValue() * 2;
-                    BigInteger price = new BigInteger(hex.substring(labBaseStart + 64, labBaseStart + 128), 16);
-                    int accessURIOffsetRel = new BigInteger(hex.substring(labBaseStart + 128, labBaseStart + 192), 16).intValue() * 2;
-                    int accessKeyOffsetRel = new BigInteger(hex.substring(labBaseStart + 192, labBaseStart + 256), 16).intValue() * 2;
-                    BigInteger createdAt = new BigInteger(hex.substring(labBaseStart + 256, labBaseStart + 320), 16);
-                    
-                    // Decode strings (offsets are relative to LabBase start)
-                    String uri = decodeString(hex, labBaseStart + uriOffsetRel);
-                    String accessURI = decodeString(hex, labBaseStart + accessURIOffsetRel);
-                    String accessKey = decodeString(hex, labBaseStart + accessKeyOffsetRel);
-                    
-                    LabBase base = new LabBase(uri, price, accessURI, accessKey, createdAt);
-                    return new Lab(labId, base);
+                    if (hex == null || hex.isBlank() || "0x".equalsIgnoreCase(hex)) {
+                        throw new IllegalStateException("Empty response decoding getLab(" + tokenId + ")");
+                    }
+                    if (hex.startsWith("0x") || hex.startsWith("0X")) {
+                        hex = hex.substring(2);
+                    }
+
+                    // Some providers encode single tuple returns with an initial offset, others return tuple head directly.
+                    // Try the offset form first, then fallback to direct tuple decoding.
+                    int candidateTupleOffset = 0;
+                    try {
+                        candidateTupleOffset = parseOffsetWordChars(hex, 0, "tuple offset");
+                    } catch (IllegalArgumentException ignored) {
+                        candidateTupleOffset = 0;
+                    }
+
+                    IllegalArgumentException firstFailure = null;
+                    int[] attempts = candidateTupleOffset == 0 ? new int[] {0} : new int[] {candidateTupleOffset, 0};
+                    for (int tupleOffset : attempts) {
+                        try {
+                            return decodeLabAtOffset(hex, tupleOffset, tokenId);
+                        } catch (IllegalArgumentException ex) {
+                            if (firstFailure == null) {
+                                firstFailure = ex;
+                            } else {
+                                firstFailure.addSuppressed(ex);
+                            }
+                        }
+                    }
+
+                    throw new IllegalStateException("Unable to decode getLab(" + tokenId + ") response", firstFailure);
                 });
     }
     
-    private String decodeString(String hex, int offset) {
-        int length = new BigInteger(hex.substring(offset, offset + 64), 16).intValue();
-        if (length == 0) return "";
-        
-        String hexData = hex.substring(offset + 64, offset + 64 + (length * 2));
+    private Lab decodeLabAtOffset(String hex, int tupleOffset, BigInteger expectedLabId) {
+        if (tupleOffset < 0 || tupleOffset % 64 != 0) {
+            throw new IllegalArgumentException("Invalid tuple offset (chars): " + tupleOffset);
+        }
+        if (tupleOffset + 128 > hex.length()) {
+            throw new IllegalArgumentException("Tuple header out of bounds at offset " + tupleOffset);
+        }
+
+        BigInteger labId = parseWordAsBigInteger(hex, tupleOffset, "labId");
+        int labBaseOffsetRelative = parseOffsetWordChars(hex, tupleOffset + 64, "labBase offset");
+        int labBaseStart;
+        try {
+            labBaseStart = Math.addExact(tupleOffset, labBaseOffsetRelative);
+        } catch (ArithmeticException ex) {
+            throw new IllegalArgumentException("labBase absolute offset overflow", ex);
+        }
+
+        if (labBaseStart < 0 || labBaseStart + 320 > hex.length()) {
+            throw new IllegalArgumentException("LabBase header out of bounds at offset " + labBaseStart);
+        }
+
+        int uriOffsetRel = parseOffsetWordChars(hex, labBaseStart, "uri offset");
+        BigInteger price = parseWordAsBigInteger(hex, labBaseStart + 64, "price");
+        int accessURIOffsetRel = parseOffsetWordChars(hex, labBaseStart + 128, "accessURI offset");
+        int accessKeyOffsetRel = parseOffsetWordChars(hex, labBaseStart + 192, "accessKey offset");
+        BigInteger createdAt = parseWordAsBigInteger(hex, labBaseStart + 256, "createdAt");
+
+        String uri = decodeString(hex, addChecked(labBaseStart, uriOffsetRel), "uri");
+        String accessURI = decodeString(hex, addChecked(labBaseStart, accessURIOffsetRel), "accessURI");
+        String accessKey = decodeString(hex, addChecked(labBaseStart, accessKeyOffsetRel), "accessKey");
+
+        if (expectedLabId != null && !expectedLabId.equals(labId)) {
+            throw new IllegalArgumentException(
+                "Decoded labId " + labId + " does not match expected " + expectedLabId
+            );
+        }
+
+        LabBase base = new LabBase(uri, price, accessURI, accessKey, createdAt);
+        return new Lab(labId, base);
+    }
+
+    private String decodeString(String hex, int offset, String fieldName) {
+        int length = parseWordAsInt(hex, offset, fieldName + " length");
+        if (length == 0) {
+            return "";
+        }
+
+        int dataStart = addChecked(offset, 64);
+        long dataEndLong = (long) dataStart + ((long) length * 2L);
+        if (dataEndLong > hex.length()) {
+            throw new IllegalArgumentException(fieldName + " data out of bounds");
+        }
+        String hexData = hex.substring(dataStart, (int) dataEndLong);
         byte[] bytes = org.web3j.utils.Numeric.hexStringToByteArray(hexData);
         return new String(bytes, java.nio.charset.StandardCharsets.UTF_8);
+    }
+
+    private int parseOffsetWordChars(String hex, int wordOffsetChars, String label) {
+        BigInteger byteOffset = parseWordAsBigInteger(hex, wordOffsetChars, label);
+        if (byteOffset.signum() < 0) {
+            throw new IllegalArgumentException(label + " cannot be negative");
+        }
+        BigInteger charOffset = byteOffset.multiply(BigInteger.TWO);
+        if (charOffset.compareTo(BigInteger.valueOf(Integer.MAX_VALUE)) > 0) {
+            throw new IllegalArgumentException(label + " is too large: " + byteOffset);
+        }
+        return charOffset.intValue();
+    }
+
+    private int parseWordAsInt(String hex, int wordOffsetChars, String label) {
+        BigInteger value = parseWordAsBigInteger(hex, wordOffsetChars, label);
+        if (value.signum() < 0 || value.compareTo(BigInteger.valueOf(Integer.MAX_VALUE)) > 0) {
+            throw new IllegalArgumentException(label + " is out of int range: " + value);
+        }
+        return value.intValue();
+    }
+
+    private BigInteger parseWordAsBigInteger(String hex, int wordOffsetChars, String label) {
+        String word = sliceWord(hex, wordOffsetChars, label);
+        return new BigInteger(word, 16);
+    }
+
+    private String sliceWord(String hex, int wordOffsetChars, String label) {
+        int end;
+        try {
+            end = Math.addExact(wordOffsetChars, 64);
+        } catch (ArithmeticException ex) {
+            throw new IllegalArgumentException(label + " offset overflow", ex);
+        }
+        if (wordOffsetChars < 0 || end > hex.length()) {
+            throw new IllegalArgumentException(label + " word out of bounds at offset " + wordOffsetChars);
+        }
+        return hex.substring(wordOffsetChars, end);
+    }
+
+    private int addChecked(int a, int b) {
+        try {
+            return Math.addExact(a, b);
+        } catch (ArithmeticException ex) {
+            throw new IllegalArgumentException("Offset overflow: " + a + " + " + b, ex);
+        }
     }
     
     /**

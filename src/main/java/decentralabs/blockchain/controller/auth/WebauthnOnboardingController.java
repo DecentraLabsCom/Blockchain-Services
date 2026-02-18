@@ -9,6 +9,7 @@ import decentralabs.blockchain.dto.auth.WebauthnOnboardingStatusResponse;
 import decentralabs.blockchain.service.auth.WebauthnCredentialService;
 import decentralabs.blockchain.service.auth.WebauthnOnboardingService;
 import jakarta.validation.Valid;
+import java.net.URI;
 import java.time.Instant;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -154,14 +155,16 @@ public class WebauthnOnboardingController {
      * @return HTML page that performs the WebAuthn ceremony
      */
     @GetMapping(value = "/ceremony/{sessionId}", produces = "text/html")
-    public ResponseEntity<String> getCeremonyPage(@PathVariable String sessionId) {
+    public ResponseEntity<String> getCeremonyPage(
+            @PathVariable String sessionId,
+            @RequestParam(value = "parentOrigin", required = false) String parentOrigin) {
         log.debug("WebAuthn ceremony page requested for session: {}", sessionId);
         
         // Validate session exists and is not expired
         WebauthnOnboardingOptionsResponse options = onboardingService.getSessionOptions(sessionId);
         
         // Generate the HTML page with embedded options
-        String html = generateCeremonyHtml(options);
+        String html = generateCeremonyHtml(options, normalizeOrigin(parentOrigin));
         return ResponseEntity.ok(html);
     }
 
@@ -169,7 +172,7 @@ public class WebauthnOnboardingController {
      * Generate the HTML page for the WebAuthn ceremony.
      * This page includes all necessary JavaScript to perform the credential creation.
      */
-    private String generateCeremonyHtml(WebauthnOnboardingOptionsResponse options) {
+    private String generateCeremonyHtml(WebauthnOnboardingOptionsResponse options, String parentOrigin) {
         return """
 <!DOCTYPE html>
 <html lang="en">
@@ -275,6 +278,7 @@ public class WebauthnOnboardingController {
 
     <script>
         const options = %s;
+        const parentOrigin = %s;
         
         function base64UrlToArrayBuffer(base64url) {
             const base64 = base64url.replace(/-/g, '+').replace(/_/g, '/');
@@ -312,8 +316,44 @@ public class WebauthnOnboardingController {
                 document.getElementById('retryBtn').classList.remove('hidden');
             }
         }
+
+        let onboardingResolved = false;
+
+        function notifyParent(status, message) {
+            try {
+                if (!window.opener || window.opener.closed) {
+                    return;
+                }
+                const payload = {
+                    type: 'institutional-onboarding',
+                    status: status || 'UNKNOWN',
+                    sessionId: options.sessionId || null,
+                    error: message || null,
+                };
+                window.opener.postMessage(payload, parentOrigin || '*');
+                if (status === 'SUCCESS' || status === 'FAILED' || status === 'CANCELLED') {
+                    onboardingResolved = true;
+                }
+            } catch (err) {
+                // ignore postMessage errors
+            }
+        }
+
+        function notifyCancelledOnClose() {
+            if (onboardingResolved) return;
+            notifyParent('CANCELLED', 'Registration window closed');
+        }
+
+        function closePopupOnSuccess() {
+            notifyParent('SUCCESS');
+            if (window.opener && !window.opener.closed) {
+                // Browser will only allow this for script-opened windows.
+                setTimeout(() => { window.close(); }, 800);
+            }
+        }
         
         async function startCeremony() {
+            onboardingResolved = false;
             showStatus('pending');
             
             try {
@@ -352,31 +392,67 @@ public class WebauthnOnboardingController {
                 
                 if (response.ok) {
                     showStatus('success');
+                    closePopupOnSuccess();
                 } else {
                     const error = await response.json();
-                    showStatus('error', error.message || 'Server rejected the credential');
+                    const message = error.message || 'Server rejected the credential';
+                    showStatus('error', message);
+                    notifyParent('FAILED', message);
                 }
             } catch (err) {
                 console.error('WebAuthn error:', err);
                 if (err.name === 'NotAllowedError') {
-                    showStatus('error', 'You cancelled the request or it timed out');
+                    const message = 'You cancelled the request or it timed out';
+                    showStatus('error', message);
+                    notifyParent('CANCELLED', message);
                 } else if (err.name === 'InvalidStateError') {
-                    showStatus('error', 'A credential already exists for this account');
+                    const message = 'A credential already exists for this account';
+                    showStatus('error', message);
+                    notifyParent('FAILED', message);
                 } else {
-                    showStatus('error', err.message || 'Unknown error occurred');
+                    const message = err.message || 'Unknown error occurred';
+                    showStatus('error', message);
+                    notifyParent('FAILED', message);
                 }
             }
         }
         
         // Auto-start the ceremony
+        window.addEventListener('beforeunload', notifyCancelledOnClose);
+        window.addEventListener('pagehide', notifyCancelledOnClose);
         startCeremony();
     </script>
 </body>
 </html>
 """.formatted(
             escapeHtml(options.getUser().getDisplayName()),
-            serializeOptionsToJson(options)
+            serializeOptionsToJson(options),
+            serializeStringLiteral(parentOrigin)
         );
+    }
+
+    private String normalizeOrigin(String candidate) {
+        if (candidate == null || candidate.isBlank()) {
+            return null;
+        }
+        try {
+            URI uri = URI.create(candidate.trim());
+            String scheme = uri.getScheme();
+            String host = uri.getHost();
+            if (scheme == null || host == null) {
+                return null;
+            }
+            if (!"http".equalsIgnoreCase(scheme) && !"https".equalsIgnoreCase(scheme)) {
+                return null;
+            }
+            int port = uri.getPort();
+            if (port > 0) {
+                return scheme + "://" + host + ":" + port;
+            }
+            return scheme + "://" + host;
+        } catch (Exception ex) {
+            return null;
+        }
     }
 
     private String escapeHtml(String input) {
@@ -396,6 +472,19 @@ public class WebauthnOnboardingController {
         } catch (Exception e) {
             log.error("Failed to serialize options to JSON", e);
             throw new RuntimeException("Failed to serialize options", e);
+        }
+    }
+
+    private String serializeStringLiteral(String value) {
+        if (value == null) {
+            return "null";
+        }
+        try {
+            com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+            return mapper.writeValueAsString(value);
+        } catch (Exception e) {
+            log.warn("Failed to serialize string literal; using null fallback", e);
+            return "null";
         }
     }
 }

@@ -231,6 +231,19 @@ public class IntentAuthorizationController {
       notifyParent('CANCELLED', 'Authorization window closed');
     }
 
+    function closeOrFallbackAfterSuccess() {
+      if (window.opener && !window.opener.closed) {
+        // Browser will only allow this for script-opened windows.
+        setTimeout(() => { window.close(); }, 700);
+        return;
+      }
+      if (options.returnUrl) {
+        setTimeout(() => { window.location.href = options.returnUrl; }, 700);
+      } else {
+        setTimeout(() => { window.close(); }, 800);
+      }
+    }
+
         async function startCeremony() {
           showStatus('pending');
 
@@ -270,11 +283,7 @@ public class IntentAuthorizationController {
         if (response.ok) {
           showStatus('success');
           notifyParent('SUCCESS');
-          if (options.returnUrl) {
-            setTimeout(() => { window.location.href = options.returnUrl; }, 700);
-          } else {
-            setTimeout(() => { window.close(); }, 800);
-          }
+          closeOrFallbackAfterSuccess();
         } else {
           const error = await response.json().catch(() => ({}));
           const message = error.message || error.error || 'Authorization failed';
