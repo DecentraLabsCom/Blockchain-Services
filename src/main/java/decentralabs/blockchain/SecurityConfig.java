@@ -37,6 +37,9 @@ public class SecurityConfig {
     
     @Value("${endpoint.wallet-auth2:/auth/wallet-auth2}")
     private @Nonnull String walletAuth2Endpoint = "/auth/wallet-auth2";
+
+    @Value("${endpoint.checkin:/auth/checkin}")
+    private @Nonnull String checkinEndpoint = "/auth/checkin";
     
     @Value("${endpoint.jwks:/auth/jwks}")
     private @Nonnull String jwksEndpoint = "/auth/jwks";
@@ -93,6 +96,7 @@ public class SecurityConfig {
                     messageEndpoint,
                     walletAuthEndpoint,
                     walletAuth2Endpoint,
+                    checkinEndpoint,
                     samlAuthEndpoint,
                     samlAuth2Endpoint,
                     checkinInstitutionalEndpoint,
@@ -117,6 +121,7 @@ public class SecurityConfig {
                 authorize.requestMatchers(messageEndpoint).permitAll();
                 authorize.requestMatchers(walletAuthEndpoint).permitAll();
                 authorize.requestMatchers(walletAuth2Endpoint).permitAll();
+                authorize.requestMatchers(checkinEndpoint).permitAll();
                 authorize.requestMatchers(samlAuthEndpoint).permitAll();
                 authorize.requestMatchers(samlAuth2Endpoint).permitAll();
                 authorize.requestMatchers(checkinInstitutionalEndpoint).permitAll();
@@ -164,6 +169,7 @@ public class SecurityConfig {
         source.registerCorsConfiguration(messageEndpoint, publicConfiguration);
         source.registerCorsConfiguration(walletAuthEndpoint, publicConfiguration);
         source.registerCorsConfiguration(walletAuth2Endpoint, publicConfiguration);
+        source.registerCorsConfiguration(checkinEndpoint, publicConfiguration);
         source.registerCorsConfiguration(samlAuthEndpoint, publicConfiguration);
         source.registerCorsConfiguration(samlAuth2Endpoint, publicConfiguration);
         source.registerCorsConfiguration(checkinInstitutionalEndpoint, publicConfiguration);

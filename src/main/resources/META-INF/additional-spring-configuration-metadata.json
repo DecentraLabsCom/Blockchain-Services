@@ -29,6 +29,12 @@
     "defaultValue": "/auth/wallet-auth2"
   },
   {
+    "name": "endpoint.checkin",
+    "type": "java.lang.String",
+    "description": "Wallet check-in endpoint path.",
+    "defaultValue": "/auth/checkin"
+  },
+  {
     "name": "endpoint.saml-auth",
     "type": "java.lang.String",
     "description": "SAML auth endpoint path.",
