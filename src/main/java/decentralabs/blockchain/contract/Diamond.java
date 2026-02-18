@@ -43,6 +43,8 @@ public class Diamond extends Contract {
     }
     
     // Reservation struct - Simple POJO
+    // NOTE: The on-chain Reservation struct does not contain the "puc" string field.
+    // PUC verification is performed via getReservationPucHash(bytes32) which returns a keccak256 hash.
     public static class Reservation {
         public BigInteger labId;               // uint256 - lab token ID
         public String renter;                  // address
@@ -51,7 +53,6 @@ public class Diamond extends Contract {
         public BigInteger status;              // uint8 - reservation status
         public BigInteger start;               // uint32 - start timestamp
         public BigInteger end;                 // uint32 - end timestamp
-        public String puc;                     // string - institutional identifier (empty for wallet)
         public BigInteger requestPeriodStart;  // uint64 - institutional request window start
         public BigInteger requestPeriodDuration; // uint64 - institutional request window duration
         public String payerInstitution;        // address - institution paying for reservation
@@ -69,7 +70,6 @@ public class Diamond extends Contract {
             BigInteger status,
             BigInteger start,
             BigInteger end,
-            String puc,
             BigInteger requestPeriodStart,
             BigInteger requestPeriodDuration,
             String payerInstitution,
@@ -86,7 +86,6 @@ public class Diamond extends Contract {
             this.status = status;
             this.start = start;
             this.end = end;
-            this.puc = puc;
             this.requestPeriodStart = requestPeriodStart;
             this.requestPeriodDuration = requestPeriodDuration;
             this.payerInstitution = payerInstitution;
@@ -212,7 +211,6 @@ public class Diamond extends Contract {
                     new TypeReference<Uint8>() {},
                     new TypeReference<Uint32>() {},
                     new TypeReference<Uint32>() {},
-                    new TypeReference<Utf8String>() {},
                     new TypeReference<Uint64>() {},
                     new TypeReference<Uint64>() {},
                     new TypeReference<Address>() {},
@@ -233,15 +231,14 @@ public class Diamond extends Contract {
                         ((Uint8) results.get(4)).getValue(),
                         ((Uint32) results.get(5)).getValue(),
                         ((Uint32) results.get(6)).getValue(),
-                        ((Utf8String) results.get(7)).getValue(),
+                        ((Uint64) results.get(7)).getValue(),
                         ((Uint64) results.get(8)).getValue(),
-                        ((Uint64) results.get(9)).getValue(),
+                        ((Address) results.get(9)).getValue(),
                         ((Address) results.get(10)).getValue(),
-                        ((Address) results.get(11)).getValue(),
+                        ((Uint96) results.get(11)).getValue(),
                         ((Uint96) results.get(12)).getValue(),
                         ((Uint96) results.get(13)).getValue(),
-                        ((Uint96) results.get(14)).getValue(),
-                        ((Uint96) results.get(15)).getValue()
+                        ((Uint96) results.get(14)).getValue()
                     );
                 });
     }

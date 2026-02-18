@@ -66,8 +66,7 @@ class BlockchainBookingServiceTest {
                 BigInteger.valueOf(1000),
                 getCurrentTimestamp().subtract(BigInteger.valueOf(3600)),
                 getCurrentTimestamp().add(BigInteger.valueOf(3600)),
-                BigInteger.ONE, // CONFIRMED
-                ""
+                BigInteger.ONE // CONFIRMED
         );
 
         // Setup mock lab
@@ -108,8 +107,7 @@ class BlockchainBookingServiceTest {
                 BigInteger.valueOf(1000),
                 getCurrentTimestamp().subtract(BigInteger.valueOf(3600)),
                 getCurrentTimestamp().add(BigInteger.valueOf(3600)),
-                BigInteger.ONE,
-                ""
+                BigInteger.ONE
         );
 
         try (MockedStatic<Diamond> diamondMock = mockStatic(Diamond.class)) {
@@ -132,8 +130,7 @@ class BlockchainBookingServiceTest {
                 BigInteger.valueOf(1000),
                 getCurrentTimestamp().subtract(BigInteger.valueOf(3600)),
                 getCurrentTimestamp().add(BigInteger.valueOf(3600)),
-                BigInteger.valueOf(5), // CANCELLED
-                ""
+                BigInteger.valueOf(5) // CANCELLED
         );
 
         try (MockedStatic<Diamond> diamondMock = mockStatic(Diamond.class)) {
@@ -156,8 +153,7 @@ class BlockchainBookingServiceTest {
                 BigInteger.valueOf(1000),
                 getCurrentTimestamp().subtract(BigInteger.valueOf(7200)),
                 getCurrentTimestamp().subtract(BigInteger.valueOf(3600)), // Ended 1 hour ago
-                BigInteger.ONE,
-                ""
+                BigInteger.ONE
         );
 
         try (MockedStatic<Diamond> diamondMock = mockStatic(Diamond.class)) {
@@ -180,8 +176,7 @@ class BlockchainBookingServiceTest {
                 BigInteger.valueOf(1000),
                 getCurrentTimestamp().add(BigInteger.valueOf(3600)), // Starts in 1 hour
                 getCurrentTimestamp().add(BigInteger.valueOf(7200)),
-                BigInteger.ONE,
-                ""
+                BigInteger.ONE
         );
 
         try (MockedStatic<Diamond> diamondMock = mockStatic(Diamond.class)) {
@@ -204,8 +199,7 @@ class BlockchainBookingServiceTest {
                 BigInteger.valueOf(1000),
                 getCurrentTimestamp().subtract(BigInteger.valueOf(3600)),
                 getCurrentTimestamp().add(BigInteger.valueOf(3600)),
-                BigInteger.valueOf(2), // IN_USE
-                ""
+                BigInteger.valueOf(2) // IN_USE
         );
 
         Diamond.Lab lab = createMockLab(
@@ -237,15 +231,18 @@ class BlockchainBookingServiceTest {
                 BigInteger.valueOf(1000),
                 getCurrentTimestamp().subtract(BigInteger.valueOf(3600)),
                 getCurrentTimestamp().add(BigInteger.valueOf(3600)),
-                BigInteger.ONE,
-                "user123@uned.es" // Reservation has different PUC
+                BigInteger.ONE
         );
+
+        // Hash of "user123@uned.es" — the PUC stored on-chain for this reservation
+        byte[] pucHash = org.web3j.crypto.Hash.sha3("user123@uned.es".getBytes(java.nio.charset.StandardCharsets.UTF_8));
 
         try (MockedStatic<Diamond> diamondMock = mockStatic(Diamond.class)) {
             diamondMock.when(() -> Diamond.load(anyString(), any(Web3j.class), any(ReadonlyTransactionManager.class), any(ContractGasProvider.class)))
                     .thenReturn(diamond);
 
             when(diamond.getReservation(any(byte[].class))).thenReturn(mockRemoteCall(reservation));
+            when(diamond.getReservationPucHash(any(byte[].class))).thenReturn(mockRemoteCall(pucHash));
 
             assertThatThrownBy(() -> service.getBookingInfo(TEST_WALLET, TEST_RESERVATION_KEY, null, "different@uned.es"))
                     .isInstanceOf(SecurityException.class)
@@ -261,7 +258,7 @@ class BlockchainBookingServiceTest {
 
     private Diamond.Reservation createMockReservation(
             BigInteger labId, String renter, BigInteger price,
-            BigInteger start, BigInteger end, BigInteger status, String puc) {
+            BigInteger start, BigInteger end, BigInteger status) {
         return new Diamond.Reservation(
                 labId,
                 renter,
@@ -270,7 +267,6 @@ class BlockchainBookingServiceTest {
                 status,
                 start,
                 end,
-                puc,
                 BigInteger.ZERO, // requestPeriodStart
                 BigInteger.ZERO, // requestPeriodDuration
                 "0x0000000000000000000000000000000000000000", // payerInstitution
