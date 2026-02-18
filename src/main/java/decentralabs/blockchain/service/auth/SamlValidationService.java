@@ -272,12 +272,19 @@ public class SamlValidationService {
             }
         }
 
-        if (affiliation == null || affiliation.isBlank()) {
-            if (!schacHomeOrganizations.isEmpty()) {
-                affiliation = schacHomeOrganizations.get(0);
-            } else {
-                throw new SecurityException("SAML assertion missing 'affiliation' attribute");
+        // Prioritize schacHomeOrganization (domain) over eduPersonScopedAffiliation (role@domain)
+        if (!schacHomeOrganizations.isEmpty()) {
+            affiliation = schacHomeOrganizations.get(0);
+        } else if (affiliation != null && !affiliation.isBlank()) {
+            // Normalize scoped affiliation: extract domain from "role@domain" format
+            if (affiliation.contains("@")) {
+                String[] parts = affiliation.split("@");
+                if (parts.length == 2) {
+                    affiliation = parts[1].trim().toLowerCase();
+                }
             }
+        } else {
+            throw new SecurityException("SAML assertion missing 'affiliation' attribute");
         }
 
         logger.info("✅ SAML assertion validated WITH SIGNATURE for user: {}", userid);

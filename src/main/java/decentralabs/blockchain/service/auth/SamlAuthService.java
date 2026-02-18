@@ -88,7 +88,12 @@ public class SamlAuthService {
         if (normalizedJwtUserId == null || !normalizedJwtUserId.equals(normalizedSamlUserId)) {
             throw new SecurityException("JWT and SAML userid mismatch");
         }
-        if (jwtAffiliation == null || !jwtAffiliation.equals(samlAffiliation)) {
+        
+        // Normalize affiliation values (extract domain from scoped affiliation if present)
+        String normalizedJwtAffiliation = normalizeAffiliation(jwtAffiliation);
+        String normalizedSamlAffiliation = normalizeAffiliation(samlAffiliation);
+        
+        if (normalizedJwtAffiliation == null || !normalizedJwtAffiliation.equals(normalizedSamlAffiliation)) {
             throw new SecurityException("JWT and SAML affiliation mismatch");
         }
         
@@ -224,5 +229,24 @@ public class SamlAuthService {
                 .anyMatch(token -> token.equals(requiredBookingScope));
         }
         return false;
+    }
+    
+    /**
+     * Normalize affiliation value by extracting domain from scoped affiliation format.
+     * Handles formats like "student@uned.es" -> "uned.es" or "uned.es" -> "uned.es"
+     */
+    private String normalizeAffiliation(String affiliation) {
+        if (affiliation == null || affiliation.isBlank()) {
+            return null;
+        }
+        String normalized = affiliation.trim().toLowerCase();
+        // Extract domain from scoped affiliation (e.g., "student@uned.es" -> "uned.es")
+        if (normalized.contains("@")) {
+            String[] parts = normalized.split("@");
+            if (parts.length == 2) {
+                return parts[1];
+            }
+        }
+        return normalized;
     }
 }
