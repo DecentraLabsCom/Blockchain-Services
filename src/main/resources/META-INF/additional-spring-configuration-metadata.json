@@ -41,6 +41,12 @@
     "defaultValue": "/auth/saml-auth2"
   },
   {
+    "name": "endpoint.checkin-institutional",
+    "type": "java.lang.String",
+    "description": "Institutional check-in endpoint path.",
+    "defaultValue": "/auth/checkin-institutional"
+  },
+  {
     "name": "endpoint.jwks",
     "type": "java.lang.String",
     "description": "JWKS endpoint path.",
