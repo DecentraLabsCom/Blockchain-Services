@@ -105,20 +105,20 @@ public class WalletAuthController {
      * Endpoint for wallet authentication without booking information
      * 
      * @param request Wallet authentication request
-     * @return JWT token as JSON string
+     * @return JWT token
      */
     @PostMapping("/wallet-auth")
-    public ResponseEntity<String> walletAuth(@RequestBody WalletAuthRequest request) {
+    public ResponseEntity<?> walletAuth(@RequestBody WalletAuthRequest request) {
         try {
             AuthResponse response = walletAuthService.handleAuthentication(request, false);
-            return ResponseEntity.ok(response.toJson());
+            return ResponseEntity.ok(response);
         } catch (IllegalArgumentException e) {
-            return ResponseEntity.badRequest().body(AuthResponse.errorJson(e.getMessage()));
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
         } catch (SecurityException e) {
-            return ResponseEntity.status(401).body(AuthResponse.errorJson(e.getMessage()));
+            return ResponseEntity.status(401).body(Map.of("error", e.getMessage()));
         } catch (Exception e) {
             log.error("Wallet authentication error", e);
-            return ResponseEntity.status(500).body(AuthResponse.errorJson("Internal server error"));
+            return ResponseEntity.status(500).body(Map.of("error", "Internal server error"));
         }
     }
     
@@ -126,20 +126,20 @@ public class WalletAuthController {
      * Endpoint for wallet authentication with booking information
      * 
      * @param request Wallet authentication request (must include labId or reservationKey)
-     * @return JWT token with booking claims and lab URL as JSON string
+     * @return JWT token with booking claims and lab URL
      */
     @PostMapping("/wallet-auth2")
-    public ResponseEntity<String> walletAuth2(@RequestBody WalletAuthRequest request) {
+    public ResponseEntity<?> walletAuth2(@RequestBody WalletAuthRequest request) {
         try {
             AuthResponse response = walletAuthService.handleAuthentication(request, true);
-            return ResponseEntity.ok(response.toJson());
+            return ResponseEntity.ok(response);
         } catch (IllegalArgumentException e) {
-            return ResponseEntity.badRequest().body(AuthResponse.errorJson(e.getMessage()));
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
         } catch (SecurityException e) {
-            return ResponseEntity.status(401).body(AuthResponse.errorJson(e.getMessage()));
+            return ResponseEntity.status(401).body(Map.of("error", e.getMessage()));
         } catch (Exception e) {
             log.error("Wallet authentication error", e);
-            return ResponseEntity.status(500).body(AuthResponse.errorJson("Internal server error"));
+            return ResponseEntity.status(500).body(Map.of("error", "Internal server error"));
         }
     }
 
