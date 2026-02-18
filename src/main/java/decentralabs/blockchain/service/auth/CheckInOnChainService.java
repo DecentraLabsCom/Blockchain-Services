@@ -54,6 +54,10 @@ public class CheckInOnChainService {
     private String submitOnChain(CheckInRequest request, CheckInResponse response) {
         Credentials credentials = institutionalWalletService.getInstitutionalCredentials();
         Web3j web3j = walletService.getWeb3jInstance();
+        
+        // Check for pending transactions to prevent nonce collisions
+        checkForPendingTransactions(web3j, credentials.getAddress());
+        
         long chainId = getChainId(web3j);
         TransactionManager txManager = new FastRawTransactionManager(web3j, credentials, chainId);
 
@@ -98,6 +102,34 @@ public class CheckInOnChainService {
             throw new IllegalStateException("Check-in transaction failed: " + error);
         }
         return txHash;
+    }
+
+    private void checkForPendingTransactions(Web3j web3j, String address) {
+        try {
+            BigInteger pendingNonce = web3j.ethGetTransactionCount(
+                address,
+                org.web3j.protocol.core.DefaultBlockParameterName.PENDING
+            ).send().getTransactionCount();
+            
+            BigInteger confirmedNonce = web3j.ethGetTransactionCount(
+                address,
+                org.web3j.protocol.core.DefaultBlockParameterName.LATEST
+            ).send().getTransactionCount();
+            
+            if (pendingNonce.compareTo(confirmedNonce) > 0) {
+                long pendingCount = pendingNonce.subtract(confirmedNonce).longValue();
+                log.warn("Institutional wallet {} has {} pending transaction(s). Nonce: confirmed={}, pending={}",
+                    address, pendingCount, confirmedNonce, pendingNonce);
+                throw new IllegalStateException(
+                    "A previous check-in transaction is still pending confirmation. Please wait 30-60 seconds and try again."
+                );
+            }
+        } catch (IllegalStateException e) {
+            throw e; // Re-throw our own exception
+        } catch (Exception e) {
+            log.warn("Unable to check for pending transactions: {}", e.getMessage());
+            // Don't fail the check-in if we can't query nonces - network might be slow
+        }
     }
 
     private long getChainId(Web3j web3j) {
