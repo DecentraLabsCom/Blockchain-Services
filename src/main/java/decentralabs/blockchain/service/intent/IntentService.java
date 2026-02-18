@@ -41,6 +41,7 @@ import decentralabs.blockchain.dto.intent.ReservationIntentPayload;
 import decentralabs.blockchain.service.auth.SamlValidationService;
 import decentralabs.blockchain.service.auth.WebauthnCredentialService;
 import decentralabs.blockchain.service.auth.WebauthnCredentialService.WebauthnCredential;
+import decentralabs.blockchain.util.PucNormalizer;
 import decentralabs.blockchain.util.LogSanitizer;
 import lombok.extern.slf4j.Slf4j;
 import java.security.AlgorithmParameters;
@@ -440,7 +441,13 @@ public class IntentService {
                 throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "invalid_saml");
             }
             String puc = resolvePuc(actionPayload, reservationPayload);
-            if (puc != null && !puc.isBlank() && !puc.equals(samlUser)) {
+            String normalizedPuc = PucNormalizer.normalize(puc);
+            String normalizedSamlUser = PucNormalizer.normalize(samlUser);
+            if (normalizedPuc != null
+                && !normalizedPuc.isBlank()
+                && normalizedSamlUser != null
+                && !normalizedSamlUser.isBlank()
+                && !normalizedPuc.equals(normalizedSamlUser)) {
                 throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "puc_saml_mismatch");
             }
         } catch (ResponseStatusException ex) {

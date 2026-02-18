@@ -5,6 +5,7 @@ import decentralabs.blockchain.dto.auth.SamlAuthRequest;
 import decentralabs.blockchain.exception.*;
 import decentralabs.blockchain.service.wallet.BlockchainBookingService;
 import decentralabs.blockchain.util.LogSanitizer;
+import decentralabs.blockchain.util.PucNormalizer;
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.Jws;
 import io.jsonwebtoken.Jwts;
@@ -80,7 +81,11 @@ public class SamlAuthService {
         String samlUserId = samlAttributes.get("userid");
         String samlAffiliation = samlAttributes.get("affiliation");
         
-        if (jwtUserId == null || !jwtUserId.equals(samlUserId)) {
+        // Normalize both userid values for comparison (handles PUC formatting differences)
+        String normalizedJwtUserId = PucNormalizer.normalize(jwtUserId);
+        String normalizedSamlUserId = PucNormalizer.normalize(samlUserId);
+        
+        if (normalizedJwtUserId == null || !normalizedJwtUserId.equals(normalizedSamlUserId)) {
             throw new SecurityException("JWT and SAML userid mismatch");
         }
         if (jwtAffiliation == null || !jwtAffiliation.equals(samlAffiliation)) {

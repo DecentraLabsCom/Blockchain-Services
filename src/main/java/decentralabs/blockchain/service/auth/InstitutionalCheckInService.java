@@ -32,6 +32,7 @@ import org.web3j.protocol.Web3j;
 import org.web3j.protocol.core.DefaultBlockParameterName;
 import org.web3j.protocol.core.methods.request.Transaction;
 import org.web3j.utils.Numeric;
+import decentralabs.blockchain.util.PucNormalizer;
 
 @Service
 @RequiredArgsConstructor
@@ -59,7 +60,7 @@ public class InstitutionalCheckInService {
             validateMarketplaceToken(request.getMarketplaceToken(), saml);
         }
 
-        String puc = firstNonBlank(request.getPuc(), saml.userid());
+        String puc = PucNormalizer.normalize(firstNonBlank(request.getPuc(), saml.userid()));
         if (puc == null || puc.isBlank()) {
             throw new IllegalArgumentException("Missing institutional user identifier");
         }
@@ -139,7 +140,12 @@ public class InstitutionalCheckInService {
             if (claimUser == null || claimAffiliation == null) {
                 throw new IllegalArgumentException("Marketplace token missing required claims");
             }
-            if (saml.userid() != null && !claimUser.equals(saml.userid())) {
+            String normalizedClaimUser = PucNormalizer.normalize(claimUser);
+            String normalizedSamlUser = PucNormalizer.normalize(saml.userid());
+            if (normalizedSamlUser != null
+                && !normalizedSamlUser.isBlank()
+                && normalizedClaimUser != null
+                && !normalizedClaimUser.equals(normalizedSamlUser)) {
                 throw new SecurityException("Marketplace token userid mismatch");
             }
             if (saml.affiliation() != null && !claimAffiliation.equals(saml.affiliation())) {

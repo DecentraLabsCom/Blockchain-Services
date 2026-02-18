@@ -46,6 +46,7 @@ import java.util.concurrent.TimeUnit;
 import java.security.PublicKey;
 import java.security.interfaces.ECPublicKey;
 import java.security.interfaces.RSAPublicKey;
+import decentralabs.blockchain.util.PucNormalizer;
 
 /**
  * Service for validating SAML assertions with automatic IdP discovery
@@ -258,6 +259,8 @@ public class SamlValidationService {
                 }
             }
         }
+
+        userid = PucNormalizer.normalize(userid);
         
         if (userid == null || userid.isEmpty()) {
             throw new SecurityException("SAML assertion missing 'userid' attribute");
