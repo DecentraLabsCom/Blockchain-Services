@@ -239,7 +239,6 @@ public class WebauthnOnboardingController {
         button:hover { background: #4338ca; }
         button:disabled { background: #666; cursor: not-allowed; }
         .hidden { display: none; }
-        .close-msg { margin-top: 24px; font-size: 14px; color: #888; }
     </style>
 </head>
 <body>
@@ -260,12 +259,9 @@ public class WebauthnOnboardingController {
         
         <div id="statusSuccess" class="status success hidden">
             <div style="font-size: 32px; margin-bottom: 8px;">✓</div>
-            <div>Registration successful!</div>
-            <div style="margin-top:12px; font-size:14px;" id="returnMessage" class="hidden">
-                Redirecting you back to the marketplace...
-            </div>
+            <div>Registration complete.</div>
             <div style="margin-top:12px; font-size:14px;">
-                <a id="returnLink" href="#" style="color:#c3dafe; text-decoration:underline;">Return now</a>
+                You can close this window.
             </div>
         </div>
         
@@ -275,7 +271,6 @@ public class WebauthnOnboardingController {
         </div>
         
         <button id="retryBtn" class="hidden" onclick="startCeremony()">Try Again</button>
-        <p id="closeMsg" class="close-msg hidden">You can close this window.</p>
     </div>
 
     <script>
@@ -301,36 +296,16 @@ public class WebauthnOnboardingController {
             return btoa(binary).replace(/\\+/g, '-').replace(/\\//g, '_').replace(/=/g, '');
         }
         
-        const returnUrl = new URLSearchParams(window.location.search).get('returnUrl') || document.referrer || options.marketplaceUrl || '/';
-
         function showStatus(status, message) {
             document.getElementById('statusPending').classList.add('hidden');
             document.getElementById('statusSuccess').classList.add('hidden');
             document.getElementById('statusError').classList.add('hidden');
             document.getElementById('retryBtn').classList.add('hidden');
-            document.getElementById('closeMsg').classList.add('hidden');
-            document.getElementById('returnMessage').classList.add('hidden');
             
             if (status === 'pending') {
                 document.getElementById('statusPending').classList.remove('hidden');
             } else if (status === 'success') {
                 document.getElementById('statusSuccess').classList.remove('hidden');
-                document.getElementById('closeMsg').classList.remove('hidden');
-                document.getElementById('returnMessage').classList.remove('hidden');
-
-                const link = document.getElementById('returnLink');
-                if (link) {
-                    link.href = returnUrl;
-                    link.addEventListener('click', (e) => {
-                        e.preventDefault();
-                        window.location.href = returnUrl;
-                    }, { once: true });
-                }
-
-                // Auto-redirect after 4 seconds
-                setTimeout(() => {
-                    window.location.href = returnUrl;
-                }, 4000);
             } else if (status === 'error') {
                 document.getElementById('statusError').classList.remove('hidden');
                 document.getElementById('errorMessage').textContent = message || 'Registration failed';
@@ -384,7 +359,7 @@ public class WebauthnOnboardingController {
             } catch (err) {
                 console.error('WebAuthn error:', err);
                 if (err.name === 'NotAllowedError') {
-                    showStatus('error', 'You cancelled the operation or it timed out');
+                    showStatus('error', 'You cancelled the request or it timed out');
                 } else if (err.name === 'InvalidStateError') {
                     showStatus('error', 'A credential already exists for this account');
                 } else {
