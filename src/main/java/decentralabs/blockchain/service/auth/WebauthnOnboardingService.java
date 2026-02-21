@@ -524,6 +524,7 @@ public class WebauthnOnboardingService {
             if (callbackUrl == null || callbackUrl.isBlank()) {
                 return;
             }
+            final String callbackUrlForLog = sanitizeCallbackUrlForLog(callbackUrl);
             java.util.Map<String, Object> payload = new java.util.HashMap<>();
             if (successResponse != null) {
                 payload.put("status", "SUCCESS");
@@ -548,15 +549,48 @@ public class WebauthnOnboardingService {
             new Thread(() -> {
                 try {
                     restTemplate.postForEntity(callbackUrl, entity, String.class);
-                    log.info("Sent onboarding callback to SP: {} status={}", callbackUrl, 
+                    log.info("Sent onboarding callback to SP: {} status={}", callbackUrlForLog, 
                         successResponse != null ? "SUCCESS" : "FAILED");
                 } catch (Exception e) {
-                    log.warn("Failed to send onboarding callback to {}: {}", callbackUrl, e.getMessage());
+                    String safeMessage = e.getMessage();
+                    if (safeMessage != null && safeMessage.contains(callbackUrl)) {
+                        safeMessage = safeMessage.replace(callbackUrl, callbackUrlForLog);
+                    }
+                    log.warn("Failed to send onboarding callback to {}: {}", callbackUrlForLog, safeMessage);
                 }
             }).start();
         } catch (Exception e) {
             log.warn("Failed to prepare onboarding callback: {}", e.getMessage());
         }
+    }
+
+    /**
+     * Redact sensitive callback query params (e.g. cb_token) from logs.
+     * Keeps scheme/host/path for diagnostics without leaking tokens.
+     */
+    private String sanitizeCallbackUrlForLog(String callbackUrl) {
+        if (callbackUrl == null || callbackUrl.isBlank()) {
+            return callbackUrl;
+        }
+        try {
+            java.net.URI parsed = new java.net.URI(callbackUrl);
+            if (parsed.getScheme() != null && parsed.getHost() != null) {
+                java.net.URI sanitized = new java.net.URI(
+                    parsed.getScheme(),
+                    null,
+                    parsed.getHost(),
+                    parsed.getPort(),
+                    parsed.getPath(),
+                    null,
+                    null
+                );
+                return sanitized.toString();
+            }
+        } catch (Exception ignored) {
+            // Fallback below for malformed URLs.
+        }
+        int queryIndex = callbackUrl.indexOf('?');
+        return queryIndex >= 0 ? callbackUrl.substring(0, queryIndex) : callbackUrl;
     }
 
     /**
