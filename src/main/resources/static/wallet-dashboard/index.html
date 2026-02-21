@@ -22,7 +22,7 @@
                     <p>If you do not have one yet, request access for your institution.</p>
                 </div>
                 <div class="welcome-actions">
-                    <a id="marketplaceLink" href="https://marketplace-decentralabs.vercel.app/" target="_blank" class="btn-marketplace">
+                    <a id="marketplaceLink" href="https://marketplace-decentralabs.vercel.app/" target="_blank" rel="noopener noreferrer" class="btn-marketplace">
                         <i class="fas fa-store"></i>
                         Get Provisioning Token from Marketplace
                     </a>
@@ -71,11 +71,14 @@
                     </a>
                 </h1>
                 <div class="header-actions">
-                    <button id="applyProvisioningTokenHeaderBtn" class="btn btn-primary" style="display: none;">
+                    <button id="applyProvisioningTokenHeaderBtn" class="btn btn-primary hidden">
                         <i class="fas fa-ticket-alt"></i> 
                         Use Token
                     </button>
-                    <button id="revealPrivateKeyBtn" class="btn btn-secondary" style="display: none;">
+                    <button id="refreshBtn" class="btn btn-success btn-icon" type="button" title="Refresh dashboard">
+                        <i class="fas fa-rotate-right"></i>
+                    </button>
+                    <button id="revealPrivateKeyBtn" class="btn btn-secondary hidden">
                         <i class="fas fa-key"></i> 
                         Wallet Keys
                     </button>
@@ -101,7 +104,7 @@
                             <span class="info-label">Institutional Wallet</span>
                             <span class="info-value" id="walletAddress">Loading...</span>
                             <!-- Wallet Setup Dropdown (shown when not configured) -->
-                            <div class="wallet-setup-dropdown" id="walletSetupDropdown" style="display: none;">
+                            <div class="wallet-setup-dropdown hidden" id="walletSetupDropdown">
                                 <h3>Setup Institutional Wallet</h3>
                                 <p class="dropdown-description">Choose an option to configure the institutional wallet:</p>
                                 <div class="wallet-setup-options">
@@ -149,7 +152,7 @@
                         </div>
                     </div>
                     <!-- Promotional message container -->
-                    <div id="labPromoMessage" style="display: none;"></div>
+                    <div id="labPromoMessage" class="hidden"></div>
                     
                     <!-- Treasury Actions -->
                     <div class="treasury-actions-form">
@@ -325,7 +328,7 @@
         <div class="modal-content">
             <div class="modal-header">
                 <h2 id="inputModalTitle"><i class="fas fa-keyboard"></i> Input Required</h2>
-                <button class="modal-close" id="closeInputModal">
+                <button type="button" class="modal-close" id="closeInputModal" title="Close">
                     <i class="fas fa-times"></i>
                 </button>
             </div>
@@ -349,7 +352,7 @@
         <div class="modal-content">
             <div class="modal-header">
                 <h2 id="infoModalTitle"><i class="fas fa-check-circle"></i> Success</h2>
-                <button class="modal-close" id="closeInfoModal">
+                <button type="button" class="modal-close" id="closeInfoModal" title="Close">
                     <i class="fas fa-times"></i>
                 </button>
             </div>
@@ -369,7 +372,7 @@
         <div class="modal-content">
             <div class="modal-header">
                 <h2><i class="fas fa-trophy"></i> Top 10 Spenders - Current Period</h2>
-                <button class="modal-close" id="closeTopSpendersModal">
+                <button type="button" class="modal-close" id="closeTopSpendersModal" title="Close">
                     <i class="fas fa-times"></i>
                 </button>
             </div>

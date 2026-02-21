@@ -312,7 +312,7 @@ class AdminDashboardControllerTest {
             mockMvc.perform(get("/treasury/admin/lab-payout-status").param("labId", "3"))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.success").value(false))
-                .andExpect(jsonPath("$.error").value("Selected lab is not owned by this institutional provider"));
+                .andExpect(jsonPath("$.error").value("Selected lab is not associated with this institutional provider"));
         }
 
         @Test

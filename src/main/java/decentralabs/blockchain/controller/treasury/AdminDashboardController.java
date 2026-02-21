@@ -226,7 +226,7 @@ public class AdminDashboardController {
 
     /**
      * GET /treasury/admin/provider-labs
-     * List labs owned by the institutional provider wallet.
+     * List labs associated with the institutional provider wallet.
      */
     @GetMapping("/provider-labs")
     public ResponseEntity<?> getProviderLabs(HttpServletRequest request) {
@@ -253,12 +253,6 @@ public class AdminDashboardController {
 
             boolean isProvider = walletService.isLabProvider(providerAddress);
             result.put("isProvider", isProvider);
-            if (!isProvider) {
-                result.put("labs", List.of());
-                result.put("note", "Institutional wallet is not registered as provider");
-                return ResponseEntity.ok(result);
-            }
-
             List<Map<String, Object>> labs = new ArrayList<>();
             for (BigInteger labId : walletService.getLabsOwnedByProvider(providerAddress)) {
                 Map<String, Object> lab = new LinkedHashMap<>();
@@ -278,6 +272,9 @@ public class AdminDashboardController {
             }
 
             result.put("labs", labs);
+            if (!isProvider && labs.isEmpty()) {
+                result.put("note", "Institutional wallet is not registered as provider");
+            }
 
             return ResponseEntity.ok(result);
         } catch (Exception e) {
@@ -322,7 +319,7 @@ public class AdminDashboardController {
             if (!walletService.isLabOwnedByProvider(providerAddress, parsedLabId)) {
                 return ResponseEntity.badRequest().body(Map.of(
                     "success", false,
-                    "error", "Selected lab is not owned by this institutional provider"
+                    "error", "Selected lab is not associated with this institutional provider"
                 ));
             }
 

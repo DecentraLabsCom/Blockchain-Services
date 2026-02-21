@@ -19,6 +19,7 @@ import org.web3j.abi.FunctionEncoder;
 import org.web3j.abi.FunctionReturnDecoder;
 import org.web3j.abi.TypeReference;
 import org.web3j.abi.datatypes.Address;
+import org.web3j.abi.datatypes.DynamicArray;
 import org.web3j.abi.datatypes.Function;
 import org.web3j.abi.datatypes.Type;
 import org.web3j.abi.datatypes.Utf8String;
@@ -538,7 +539,11 @@ public class WalletService {
     }
 
     /**
-     * Lists up to MAX_PROVIDER_LABS_QUERY lab IDs owned by a provider.
+     * Lists up to MAX_PROVIDER_LABS_QUERY lab IDs associated with a provider.
+     *
+     * <p>Combines direct ERC721 ownership with provider authURI matching
+     * (for deployments where labs can be institution-associated without being
+     * owned by the institutional wallet or where owner-index enumeration is partial).
      */
     public List<BigInteger> getLabsOwnedByProvider(String providerAddress) {
         if (providerAddress == null || providerAddress.isBlank()) {
@@ -546,7 +551,51 @@ public class WalletService {
         }
         try {
             Web3j web3j = getWeb3jInstance();
+            Set<BigInteger> labs = new TreeSet<>(getDirectlyOwnedLabs(providerAddress, web3j));
 
+            getProviderAuthUri(providerAddress, web3j)
+                .ifPresent(authUri -> labs.addAll(getLabsByProviderAuthUri(authUri, web3j)));
+
+            return new ArrayList<>(labs);
+        } catch (Exception e) {
+            log.error("Error getting provider labs from Diamond contract", e);
+            return List.of();
+        }
+    }
+
+    /**
+     * Checks whether a given lab ID is associated with a provider.
+     *
+     * <p>Association is true when:
+     * 1) provider is current ERC721 owner of the lab, or
+     * 2) lab authURI matches provider authURI.
+     */
+    public boolean isLabOwnedByProvider(String providerAddress, BigInteger labId) {
+        if (providerAddress == null || providerAddress.isBlank() || labId == null || labId.compareTo(BigInteger.ZERO) <= 0) {
+            return false;
+        }
+        try {
+            Web3j web3j = getWeb3jInstance();
+            Optional<String> owner = getLabOwner(labId, web3j);
+            if (owner.isPresent() && owner.get().equalsIgnoreCase(providerAddress)) {
+                return true;
+            }
+
+            Optional<String> providerAuthUri = getProviderAuthUri(providerAddress, web3j);
+            if (providerAuthUri.isEmpty()) {
+                return false;
+            }
+
+            Optional<String> labAuthUri = getLabAuthUri(labId, web3j);
+            return labAuthUri.isPresent() && providerAuthUri.get().equals(labAuthUri.get());
+        } catch (Exception e) {
+            log.warn("Failed to resolve provider association for lab {}", labId, e);
+            return false;
+        }
+    }
+
+    private List<BigInteger> getDirectlyOwnedLabs(String providerAddress, Web3j web3j) {
+        try {
             Function balanceFunction = new Function(
                 "balanceOf",
                 Collections.singletonList(new Address(providerAddress)),
@@ -611,20 +660,64 @@ public class WalletService {
             labs.sort(Comparator.naturalOrder());
             return labs;
         } catch (Exception e) {
-            log.error("Error getting provider labs from Diamond contract", e);
+            log.warn("Failed to get directly owned labs for provider {}", LogSanitizer.maskIdentifier(providerAddress), e);
             return List.of();
         }
     }
 
-    /**
-     * Checks whether a given lab ID belongs to a provider.
-     */
-    public boolean isLabOwnedByProvider(String providerAddress, BigInteger labId) {
-        if (providerAddress == null || providerAddress.isBlank() || labId == null || labId.compareTo(BigInteger.ZERO) <= 0) {
-            return false;
+    private List<BigInteger> getLabsByProviderAuthUri(String providerAuthUri, Web3j web3j) {
+        String normalizedProviderAuthUri = normalizeUri(providerAuthUri);
+        if (normalizedProviderAuthUri.isEmpty()) {
+            return List.of();
         }
+
         try {
-            Web3j web3j = getWeb3jInstance();
+            Function function = new Function(
+                "getLabsPaginated",
+                Arrays.asList(new Uint256(BigInteger.ZERO), new Uint256(BigInteger.valueOf(MAX_PROVIDER_LABS_QUERY))),
+                Arrays.asList(
+                    new TypeReference<DynamicArray<Uint256>>() {},
+                    new TypeReference<Uint256>() {}
+                )
+            );
+            String encodedFunction = FunctionEncoder.encode(function);
+            EthCall response = web3j.ethCall(
+                Transaction.createEthCallTransaction(null, contractAddress, encodedFunction),
+                DefaultBlockParameterName.LATEST
+            ).send();
+            if (response.hasError()) {
+                return List.of();
+            }
+
+            @SuppressWarnings("rawtypes")
+            List<Type> decoded = FunctionReturnDecoder.decode(response.getValue(), function.getOutputParameters());
+            if (decoded.isEmpty()) {
+                return List.of();
+            }
+
+            @SuppressWarnings("unchecked")
+            DynamicArray<Uint256> ids = (DynamicArray<Uint256>) decoded.get(0);
+            if (ids.getValue() == null || ids.getValue().isEmpty()) {
+                return List.of();
+            }
+
+            Set<BigInteger> matched = new TreeSet<>();
+            for (Uint256 id : ids.getValue()) {
+                BigInteger labId = id.getValue();
+                Optional<String> labAuthUri = getLabAuthUri(labId, web3j);
+                if (labAuthUri.isPresent() && normalizedProviderAuthUri.equals(labAuthUri.get())) {
+                    matched.add(labId);
+                }
+            }
+            return new ArrayList<>(matched);
+        } catch (Exception e) {
+            log.warn("Failed to query labs by provider authURI", e);
+            return List.of();
+        }
+    }
+
+    private Optional<String> getLabOwner(BigInteger labId, Web3j web3j) {
+        try {
             Function function = new Function(
                 "ownerOf",
                 Collections.singletonList(new Uint256(labId)),
@@ -638,21 +731,90 @@ public class WalletService {
             ).send();
 
             if (response.hasError()) {
-                return false;
+                return Optional.empty();
             }
 
             @SuppressWarnings("rawtypes")
             List<Type> decoded = FunctionReturnDecoder.decode(response.getValue(), function.getOutputParameters());
             if (decoded.isEmpty()) {
-                return false;
+                return Optional.empty();
+            }
+            String owner = decoded.get(0).getValue().toString();
+            return owner == null || owner.isBlank() ? Optional.empty() : Optional.of(owner);
+        } catch (Exception e) {
+            return Optional.empty();
+        }
+    }
+
+    private Optional<String> getProviderAuthUri(String providerAddress, Web3j web3j) {
+        try {
+            Function function = new Function(
+                "getProviderAuthURI",
+                Collections.singletonList(new Address(providerAddress)),
+                Collections.singletonList(new TypeReference<Utf8String>() {})
+            );
+            String encodedFunction = FunctionEncoder.encode(function);
+            EthCall response = web3j.ethCall(
+                Transaction.createEthCallTransaction(null, contractAddress, encodedFunction),
+                DefaultBlockParameterName.LATEST
+            ).send();
+
+            if (response.hasError()) {
+                return Optional.empty();
             }
 
-            String owner = decoded.get(0).getValue().toString();
-            return owner != null && owner.equalsIgnoreCase(providerAddress);
+            @SuppressWarnings("rawtypes")
+            List<Type> decoded = FunctionReturnDecoder.decode(response.getValue(), function.getOutputParameters());
+            if (decoded.isEmpty()) {
+                return Optional.empty();
+            }
+
+            String normalized = normalizeUri(decoded.get(0).getValue().toString());
+            return normalized.isEmpty() ? Optional.empty() : Optional.of(normalized);
         } catch (Exception e) {
-            log.warn("Failed to resolve owner for lab {}", labId, e);
-            return false;
+            return Optional.empty();
         }
+    }
+
+    private Optional<String> getLabAuthUri(BigInteger labId, Web3j web3j) {
+        try {
+            Function function = new Function(
+                "getLabAuthURI",
+                Collections.singletonList(new Uint256(labId)),
+                Collections.singletonList(new TypeReference<Utf8String>() {})
+            );
+            String encodedFunction = FunctionEncoder.encode(function);
+            EthCall response = web3j.ethCall(
+                Transaction.createEthCallTransaction(null, contractAddress, encodedFunction),
+                DefaultBlockParameterName.LATEST
+            ).send();
+
+            if (response.hasError()) {
+                return Optional.empty();
+            }
+
+            @SuppressWarnings("rawtypes")
+            List<Type> decoded = FunctionReturnDecoder.decode(response.getValue(), function.getOutputParameters());
+            if (decoded.isEmpty()) {
+                return Optional.empty();
+            }
+
+            String normalized = normalizeUri(decoded.get(0).getValue().toString());
+            return normalized.isEmpty() ? Optional.empty() : Optional.of(normalized);
+        } catch (Exception e) {
+            return Optional.empty();
+        }
+    }
+
+    private String normalizeUri(String uri) {
+        if (uri == null) {
+            return "";
+        }
+        String normalized = uri.trim();
+        while (normalized.endsWith("/") && normalized.length() > 1) {
+            normalized = normalized.substring(0, normalized.length() - 1);
+        }
+        return normalized;
     }
 
     /**
