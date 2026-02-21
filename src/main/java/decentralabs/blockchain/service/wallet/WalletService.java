@@ -91,7 +91,7 @@ public class WalletService {
     private static final int GCM_TAG_LENGTH = 128; // 128 bits
     private static final int PBKDF2_ITERATIONS = 65536;
     private static final int AES_KEY_SIZE = 256;
-    private static final int MAX_PROVIDER_LABS_QUERY = 500;
+    private static final int MAX_PROVIDER_LABS_QUERY = 100;
 
     // Cache of Web3j connections per network (with fallback URLs)
     private final Map<String, Web3j> web3jInstances = new ConcurrentHashMap<>();
@@ -594,71 +594,61 @@ public class WalletService {
         }
     }
 
+    /**
+     * Returns lab IDs owned by a provider by paginating getLabsPaginated and
+     * filtering via ownerOf. The Diamond contract does not implement
+     * ERC721Enumerable (no tokenOfOwnerByIndex), so the correct approach is to
+     * enumerate all listed labs and check ERC721 ownership for each.
+     */
     private List<BigInteger> getDirectlyOwnedLabs(String providerAddress, Web3j web3j) {
         try {
-            Function balanceFunction = new Function(
-                "balanceOf",
-                Collections.singletonList(new Address(providerAddress)),
-                Collections.singletonList(new TypeReference<Uint256>() {})
+            // Step 1: fetch all listed lab IDs in one call
+            Function paginated = new Function(
+                "getLabsPaginated",
+                Arrays.asList(new Uint256(BigInteger.ZERO), new Uint256(BigInteger.valueOf(MAX_PROVIDER_LABS_QUERY))),
+                Arrays.asList(
+                    new TypeReference<DynamicArray<Uint256>>() {},
+                    new TypeReference<Uint256>() {}
+                )
             );
-            String encodedBalance = FunctionEncoder.encode(balanceFunction);
-            EthCall balanceResponse = web3j.ethCall(
-                Transaction.createEthCallTransaction(null, contractAddress, encodedBalance),
+            String encodedPaginated = FunctionEncoder.encode(paginated);
+            EthCall paginatedResponse = web3j.ethCall(
+                Transaction.createEthCallTransaction(null, contractAddress, encodedPaginated),
                 DefaultBlockParameterName.LATEST
             ).send();
 
-            if (balanceResponse.hasError()) {
-                log.warn("Error calling balanceOf() for provider labs query");
+            if (paginatedResponse.hasError()) {
+                log.warn("Error calling getLabsPaginated() for provider labs query");
                 return List.of();
             }
 
             @SuppressWarnings("rawtypes")
-            List<Type> decodedBalance = FunctionReturnDecoder.decode(
-                balanceResponse.getValue(),
-                balanceFunction.getOutputParameters()
+            List<Type> decodedPaginated = FunctionReturnDecoder.decode(
+                paginatedResponse.getValue(),
+                paginated.getOutputParameters()
             );
-            if (decodedBalance.isEmpty()) {
+            if (decodedPaginated.isEmpty()) {
                 return List.of();
             }
 
-            BigInteger owned = (BigInteger) decodedBalance.get(0).getValue();
-            if (owned.compareTo(BigInteger.ZERO) <= 0) {
+            @SuppressWarnings("unchecked")
+            DynamicArray<Uint256> allIds = (DynamicArray<Uint256>) decodedPaginated.get(0);
+            if (allIds.getValue() == null || allIds.getValue().isEmpty()) {
                 return List.of();
             }
 
-            int queryCount = owned.min(BigInteger.valueOf(MAX_PROVIDER_LABS_QUERY)).intValue();
-            List<BigInteger> labs = new ArrayList<>(queryCount);
-
-            for (int i = 0; i < queryCount; i++) {
-                Function tokenByIndex = new Function(
-                    "tokenOfOwnerByIndex",
-                    Arrays.asList(new Address(providerAddress), new Uint256(BigInteger.valueOf(i))),
-                    Collections.singletonList(new TypeReference<Uint256>() {})
-                );
-
-                String encodedTokenByIndex = FunctionEncoder.encode(tokenByIndex);
-                EthCall tokenResponse = web3j.ethCall(
-                    Transaction.createEthCallTransaction(null, contractAddress, encodedTokenByIndex),
-                    DefaultBlockParameterName.LATEST
-                ).send();
-
-                if (tokenResponse.hasError()) {
-                    log.warn("Error calling tokenOfOwnerByIndex() at index {} for provider", i);
-                    continue;
-                }
-
-                @SuppressWarnings("rawtypes")
-                List<Type> decodedToken = FunctionReturnDecoder.decode(
-                    tokenResponse.getValue(),
-                    tokenByIndex.getOutputParameters()
-                );
-                if (!decodedToken.isEmpty()) {
-                    labs.add((BigInteger) decodedToken.get(0).getValue());
+            // Step 2: for each lab ID, check ERC721 owner
+            List<BigInteger> owned = new ArrayList<>();
+            for (Uint256 idToken : allIds.getValue()) {
+                BigInteger labId = idToken.getValue();
+                Optional<String> owner = getLabOwner(labId, web3j);
+                if (owner.isPresent() && owner.get().equalsIgnoreCase(providerAddress)) {
+                    owned.add(labId);
                 }
             }
 
-            labs.sort(Comparator.naturalOrder());
-            return labs;
+            owned.sort(Comparator.naturalOrder());
+            return owned;
         } catch (Exception e) {
             log.warn("Failed to get directly owned labs for provider {}", LogSanitizer.maskIdentifier(providerAddress), e);
             return List.of();
