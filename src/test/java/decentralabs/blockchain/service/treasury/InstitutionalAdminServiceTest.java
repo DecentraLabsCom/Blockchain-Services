@@ -63,6 +63,7 @@ class InstitutionalAdminServiceTest {
             antiReplayService
         );
         ReflectionTestUtils.setField(adminService, "contractAddress", "0xABC");
+        ReflectionTestUtils.setField(adminService, "defaultCollectMaxBatch", 50);
         lenient().when(adminVerifier.verify(any(), any()))
             .thenReturn(new Eip712TreasuryAdminVerifier.VerificationResult(true, "0xabc", null));
         lenient().when(antiReplayService.isTimestampUsed(any(), anyLong())).thenReturn(false);
@@ -361,6 +362,99 @@ class InstitutionalAdminServiceTest {
             assertThat(response.isSuccess()).isTrue();
             assertThat(response.getTransactionHash()).isEqualTo("0xcollect");
             assertThat(response.getOperationType()).isEqualTo("COLLECT_LAB_PAYOUT");
+        }
+
+        @Test
+        @DisplayName("Should reject COLLECT_LAB_PAYOUT when labId is missing")
+        void collectLabPayoutRejectsMissingLabId() {
+            Credentials credentials = Credentials.create("0x1");
+            when(httpServletRequest.getRemoteAddr()).thenReturn("127.0.0.1");
+            when(institutionalWalletService.getInstitutionalWalletAddress()).thenReturn(credentials.getAddress());
+            when(institutionalWalletService.getInstitutionalCredentials()).thenReturn(credentials);
+
+            InstitutionalAdminRequest request = buildRequest(
+                credentials.getAddress(),
+                AdminOperation.COLLECT_LAB_PAYOUT,
+                null,
+                null,
+                null,
+                null,
+                null
+            );
+            request.setLabId(null);
+            request.setMaxBatch("50");
+
+            InstitutionalAdminResponse response = adminService.executeAdminOperation(request);
+
+            assertThat(response.isSuccess()).isFalse();
+            assertThat(response.getMessage()).contains("Lab ID required");
+        }
+
+        @Test
+        @DisplayName("Should reject COLLECT_LAB_PAYOUT when labId is invalid")
+        void collectLabPayoutRejectsInvalidLabId() {
+            Credentials credentials = Credentials.create("0x1");
+            when(httpServletRequest.getRemoteAddr()).thenReturn("127.0.0.1");
+            when(institutionalWalletService.getInstitutionalWalletAddress()).thenReturn(credentials.getAddress());
+            when(institutionalWalletService.getInstitutionalCredentials()).thenReturn(credentials);
+
+            InstitutionalAdminRequest request = buildRequest(
+                credentials.getAddress(),
+                AdminOperation.COLLECT_LAB_PAYOUT,
+                null,
+                null,
+                null,
+                null,
+                null
+            );
+            request.setLabId("-1");
+            request.setMaxBatch("50");
+
+            InstitutionalAdminResponse response = adminService.executeAdminOperation(request);
+
+            assertThat(response.isSuccess()).isFalse();
+            assertThat(response.getMessage()).contains("Lab ID must be greater than zero");
+        }
+
+        @Test
+        @DisplayName("Should reject COLLECT_LAB_PAYOUT when maxBatch is out of range")
+        void collectLabPayoutRejectsOutOfRangeBatch() {
+            Credentials credentials = Credentials.create("0x1");
+            when(httpServletRequest.getRemoteAddr()).thenReturn("127.0.0.1");
+            when(institutionalWalletService.getInstitutionalWalletAddress()).thenReturn(credentials.getAddress());
+            when(institutionalWalletService.getInstitutionalCredentials()).thenReturn(credentials);
+
+            InstitutionalAdminRequest zeroBatch = buildRequest(
+                credentials.getAddress(),
+                AdminOperation.COLLECT_LAB_PAYOUT,
+                null,
+                null,
+                null,
+                null,
+                null
+            );
+            zeroBatch.setLabId("3");
+            zeroBatch.setMaxBatch("0");
+
+            InstitutionalAdminResponse zeroBatchResponse = adminService.executeAdminOperation(zeroBatch);
+            assertThat(zeroBatchResponse.isSuccess()).isFalse();
+            assertThat(zeroBatchResponse.getMessage()).contains("maxBatch must be between 1 and 100");
+
+            InstitutionalAdminRequest overBatch = buildRequest(
+                credentials.getAddress(),
+                AdminOperation.COLLECT_LAB_PAYOUT,
+                null,
+                null,
+                null,
+                null,
+                null
+            );
+            overBatch.setLabId("3");
+            overBatch.setMaxBatch("101");
+
+            InstitutionalAdminResponse overBatchResponse = adminService.executeAdminOperation(overBatch);
+            assertThat(overBatchResponse.isSuccess()).isFalse();
+            assertThat(overBatchResponse.getMessage()).contains("maxBatch must be between 1 and 100");
         }
     }
 

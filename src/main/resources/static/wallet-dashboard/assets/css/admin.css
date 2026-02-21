@@ -1337,14 +1337,14 @@ body {
     background: var(--bg-secondary);
     border: 1px solid var(--border-color);
     border-radius: var(--radius-md);
-    padding: var(--spacing-md);
+    padding: var(--spacing-sm);
 }
 
 .collect-grid {
     display: grid;
     grid-template-columns: 2fr 1fr 1fr;
-    gap: var(--spacing-md);
-    align-items: end;
+    gap: var(--spacing-sm);
+    align-items: stretch;
 }
 
 .collect-select {
@@ -1374,7 +1374,7 @@ body {
     border: 1px solid var(--border-color);
     border-radius: var(--radius-sm);
     padding: var(--spacing-sm);
-    min-height: 78px;
+    height: 78px;
     display: flex;
     flex-direction: column;
     justify-content: center;
@@ -1398,6 +1398,9 @@ body {
     color: var(--text-primary);
     font-size: 0.95rem;
     font-weight: 600;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
 .collect-status-value.success {
@@ -1422,6 +1425,22 @@ body {
     margin-top: var(--spacing-sm);
     color: var(--text-muted);
     font-size: 0.9rem;
+}
+
+.collect-panel.compact .collect-grid {
+    grid-template-columns: 1fr;
+}
+
+.collect-panel.compact .collect-metric {
+    display: none;
+}
+
+.collect-panel.compact .collect-actions {
+    display: none;
+}
+
+.collect-panel.compact .collect-help {
+    display: none;
 }
 
 /* Responsive Design */

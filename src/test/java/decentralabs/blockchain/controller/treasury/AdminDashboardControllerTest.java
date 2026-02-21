@@ -7,8 +7,10 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import java.math.BigInteger;
 import java.util.Collections;
 import java.util.List;
+import java.util.Optional;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -24,6 +26,8 @@ import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
 import decentralabs.blockchain.dto.wallet.NetworkInfo;
 import decentralabs.blockchain.dto.wallet.NetworkResponse;
+import decentralabs.blockchain.dto.wallet.CollectSimulationResult;
+import decentralabs.blockchain.dto.wallet.LabPayoutStatus;
 import decentralabs.blockchain.service.treasury.InstitutionalAnalyticsService;
 import decentralabs.blockchain.service.wallet.InstitutionalWalletService;
 import decentralabs.blockchain.service.wallet.WalletService;
@@ -58,6 +62,7 @@ class AdminDashboardControllerTest {
         ReflectionTestUtils.setField(adminDashboardController, "adminDashboardAllowPrivate", true);
         ReflectionTestUtils.setField(adminDashboardController, "contractAddress", VALID_ADDRESS);
         ReflectionTestUtils.setField(adminDashboardController, "marketplaceUrl", "https://marketplace.example.com");
+        ReflectionTestUtils.setField(adminDashboardController, "collectMaxBatch", 50);
         mockMvc = MockMvcBuilders.standaloneSetup(adminDashboardController).build();
     }
 
@@ -269,6 +274,80 @@ class AdminDashboardControllerTest {
                     .with(req -> { req.setRemoteAddr("::ffff:127.0.0.1"); return req; }))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.success").value(true));
+        }
+    }
+
+    @Nested
+    @DisplayName("Collect Endpoints Tests")
+    class CollectEndpointsTests {
+
+        @Test
+        @DisplayName("Should list provider labs with payout info")
+        void shouldListProviderLabs() throws Exception {
+            when(institutionalWalletService.getInstitutionalWalletAddress()).thenReturn(VALID_ADDRESS);
+            when(walletService.isLabProvider(VALID_ADDRESS)).thenReturn(true);
+            when(walletService.getLabsOwnedByProvider(VALID_ADDRESS)).thenReturn(List.of(BigInteger.valueOf(3)));
+            when(walletService.getLabPayoutStatus(BigInteger.valueOf(3))).thenReturn(
+                Optional.of(new LabPayoutStatus(
+                    BigInteger.valueOf(1_000_000),
+                    BigInteger.ZERO,
+                    BigInteger.valueOf(1_000_000),
+                    BigInteger.ZERO
+                ))
+            );
+
+            mockMvc.perform(get("/treasury/admin/provider-labs"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true))
+                .andExpect(jsonPath("$.labs[0].labId").value("3"))
+                .andExpect(jsonPath("$.labs[0].totalPayoutLab").value("1"));
+        }
+
+        @Test
+        @DisplayName("Should reject lab payout status when lab is not owned")
+        void shouldRejectLabPayoutStatusWhenLabIsNotOwned() throws Exception {
+            when(institutionalWalletService.getInstitutionalWalletAddress()).thenReturn(VALID_ADDRESS);
+            when(walletService.isLabOwnedByProvider(VALID_ADDRESS, BigInteger.valueOf(3))).thenReturn(false);
+
+            mockMvc.perform(get("/treasury/admin/lab-payout-status").param("labId", "3"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.error").value("Selected lab is not owned by this institutional provider"));
+        }
+
+        @Test
+        @DisplayName("Should reject lab payout status with invalid labId")
+        void shouldRejectLabPayoutStatusWithInvalidLabId() throws Exception {
+            when(institutionalWalletService.getInstitutionalWalletAddress()).thenReturn(VALID_ADDRESS);
+
+            mockMvc.perform(get("/treasury/admin/lab-payout-status").param("labId", "-1"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.error").value("labId must be greater than zero"));
+        }
+
+        @Test
+        @DisplayName("Should return lab payout status when collect is available")
+        void shouldReturnLabPayoutStatus() throws Exception {
+            when(institutionalWalletService.getInstitutionalWalletAddress()).thenReturn(VALID_ADDRESS);
+            when(walletService.isLabOwnedByProvider(VALID_ADDRESS, BigInteger.valueOf(3))).thenReturn(true);
+            when(walletService.getLabPayoutStatus(BigInteger.valueOf(3))).thenReturn(
+                Optional.of(new LabPayoutStatus(
+                    BigInteger.valueOf(2_000_000),
+                    BigInteger.ZERO,
+                    BigInteger.valueOf(2_000_000),
+                    BigInteger.ZERO
+                ))
+            );
+            when(walletService.simulateCollectLabPayout(VALID_ADDRESS, BigInteger.valueOf(3), BigInteger.valueOf(50)))
+                .thenReturn(new CollectSimulationResult(true, null));
+
+            mockMvc.perform(get("/treasury/admin/lab-payout-status").param("labId", "3"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true))
+                .andExpect(jsonPath("$.labId").value("3"))
+                .andExpect(jsonPath("$.canCollect").value(true))
+                .andExpect(jsonPath("$.totalPayoutLab").value("2"));
         }
     }
 

@@ -102,11 +102,7 @@ public class AdminDashboardController {
 
             return ResponseEntity.ok(status);
         } catch (Exception e) {
-            log.error("Error getting system status: {}", e.getMessage(), e);
-            return ResponseEntity.internalServerError().body(Map.of(
-                "success", false,
-                "error", "Failed to retrieve system status: " + e.getMessage()
-            ));
+            return internalServerError("Failed to retrieve system status", e);
         }
     }
 
@@ -152,11 +148,7 @@ public class AdminDashboardController {
             return getBalanceOnNetwork(institutionalAddress, chainId);
 
         } catch (Exception e) {
-            log.error("Error getting institutional wallet balance: {}", e.getMessage(), e);
-            return ResponseEntity.internalServerError().body(Map.of(
-                "success", false,
-                "error", "Failed to retrieve balance: " + e.getMessage()
-            ));
+            return internalServerError("Failed to retrieve balance", e);
         }
     }
 
@@ -200,11 +192,7 @@ public class AdminDashboardController {
 
             return ResponseEntity.ok(result);
         } catch (Exception e) {
-            log.error("Error getting transactions: {}", e.getMessage(), e);
-            return ResponseEntity.internalServerError().body(Map.of(
-                "success", false,
-                "error", "Failed to retrieve transactions: " + e.getMessage()
-            ));
+            return internalServerError("Failed to retrieve transactions", e);
         }
     }
 
@@ -232,11 +220,7 @@ public class AdminDashboardController {
 
             return ResponseEntity.ok(info);
         } catch (Exception e) {
-            log.error("Error getting contract info: {}", e.getMessage(), e);
-            return ResponseEntity.internalServerError().body(Map.of(
-                "success", false,
-                "error", "Failed to retrieve contract info: " + e.getMessage()
-            ));
+            return internalServerError("Failed to retrieve contract info", e);
         }
     }
 
@@ -294,17 +278,10 @@ public class AdminDashboardController {
             }
 
             result.put("labs", labs);
-            if (labs.isEmpty()) {
-                result.put("note", "No labs found for this provider wallet");
-            }
 
             return ResponseEntity.ok(result);
         } catch (Exception e) {
-            log.error("Error listing provider labs: {}", e.getMessage(), e);
-            return ResponseEntity.internalServerError().body(Map.of(
-                "success", false,
-                "error", "Failed to retrieve provider labs: " + e.getMessage()
-            ));
+            return internalServerError("Failed to retrieve provider labs", e);
         }
     }
 
@@ -388,11 +365,7 @@ public class AdminDashboardController {
                 "error", ex.getMessage()
             ));
         } catch (Exception e) {
-            log.error("Error getting lab payout status: {}", e.getMessage(), e);
-            return ResponseEntity.internalServerError().body(Map.of(
-                "success", false,
-                "error", "Failed to retrieve lab payout status: " + e.getMessage()
-            ));
+            return internalServerError("Failed to retrieve lab payout status", e);
         }
     }
 
@@ -577,9 +550,14 @@ public class AdminDashboardController {
             
             return ResponseEntity.ok(result);
         } catch (Exception e) {
+            log.warn(
+                "Failed to get balance on chainId {}: {}",
+                chainId,
+                LogSanitizer.sanitize(e.getMessage())
+            );
             return ResponseEntity.badRequest().body(Map.of(
                 "success", false,
-                "error", "Failed to get balance on chainId " + chainId + ": " + e.getMessage()
+                "error", "Failed to get balance on requested chainId"
             ));
         }
     }
@@ -717,11 +695,7 @@ public class AdminDashboardController {
 
             return ResponseEntity.ok(info);
         } catch (Exception e) {
-            log.error("Error getting treasury info: {}", e.getMessage(), e);
-            return ResponseEntity.internalServerError().body(Map.of(
-                "success", false,
-                "error", "Failed to retrieve treasury info: " + e.getMessage()
-            ));
+            return internalServerError("Failed to retrieve treasury info", e);
         }
     }
 
@@ -792,11 +766,15 @@ public class AdminDashboardController {
 
             return ResponseEntity.ok(result);
         } catch (Exception e) {
-            log.error("Error getting top spenders: {}", e.getMessage(), e);
-            return ResponseEntity.internalServerError().body(Map.of(
-                "success", false,
-                "error", "Failed to retrieve top spenders: " + e.getMessage()
-            ));
+            return internalServerError("Failed to retrieve top spenders", e);
         }
+    }
+
+    private ResponseEntity<Map<String, Object>> internalServerError(String clientMessage, Exception e) {
+        log.error("{}: {}", clientMessage, LogSanitizer.sanitize(e.getMessage()), e);
+        return ResponseEntity.internalServerError().body(Map.of(
+            "success", false,
+            "error", clientMessage
+        ));
     }
 }

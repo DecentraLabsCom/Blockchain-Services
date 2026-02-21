@@ -7,7 +7,7 @@
 const DashboardState = {
     autoRefreshInterval: null,
     autoRefreshEnabled: true,
-    refreshIntervalMs: 30000, // 30 seconds
+    refreshIntervalMs: 300000, // 5 minutes
     lastUpdate: null,
     walletAddress: null,
     welcomeModalDismissed: false,
@@ -993,6 +993,12 @@ function setCollectHelpText(message) {
     helpEl.textContent = message || '';
 }
 
+function setCollectPanelCompact(isCompact) {
+    const panel = document.getElementById('collectPanel');
+    if (!panel) return;
+    panel.classList.toggle('compact', Boolean(isCompact));
+}
+
 function updateCollectButtonState() {
     const collectBtn = document.getElementById('collectLabBtn');
     if (!collectBtn) return;
@@ -1022,6 +1028,7 @@ async function loadCollectLabs() {
     updateCollectButtonState();
     setCollectStatusText('Loading labs...');
     setCollectHelpText('Loading provider labs...');
+    setCollectPanelCompact(false);
     pendingEl.textContent = '--';
     selectEl.disabled = true;
     selectEl.innerHTML = '<option value="">Loading labs...</option>';
@@ -1044,7 +1051,8 @@ async function loadCollectLabs() {
             selectEl.innerHTML = '<option value="">No labs available</option>';
             pendingEl.textContent = '0 LAB';
             setCollectStatusText('Not available', 'warning');
-            setCollectHelpText(data.note || 'No labs were found for this institutional wallet.');
+            setCollectHelpText('');
+            setCollectPanelCompact(true);
             return;
         }
 
@@ -1061,6 +1069,7 @@ async function loadCollectLabs() {
         }).join('');
         selectEl.value = DashboardState.selectedCollectLabId;
         selectEl.disabled = false;
+        setCollectPanelCompact(false);
 
         await loadCollectStatusForSelectedLab();
     } catch (error) {
@@ -1070,7 +1079,8 @@ async function loadCollectLabs() {
         selectEl.innerHTML = '<option value="">Failed to load labs</option>';
         pendingEl.textContent = '--';
         setCollectStatusText('Unavailable', 'error');
-        setCollectHelpText(error.message || 'Failed to load collect data');
+        setCollectHelpText('');
+        setCollectPanelCompact(true);
     } finally {
         DashboardState.collectLoadingStatus = false;
         updateCollectButtonState();

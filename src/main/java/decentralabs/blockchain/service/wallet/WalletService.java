@@ -738,6 +738,8 @@ public class WalletService {
             }
 
             String returnData = response.getValue();
+            // requestFunds(uint256,uint256) has no return values. For this call, any non-empty return
+            // payload indicates a revert payload encoded in the response body.
             if (returnData != null && !returnData.isBlank() && !"0x".equalsIgnoreCase(returnData)) {
                 String decodedReason = decodeRevertReason(returnData);
                 return new CollectSimulationResult(false, decodedReason != null ? decodedReason : "Collect is not available");
