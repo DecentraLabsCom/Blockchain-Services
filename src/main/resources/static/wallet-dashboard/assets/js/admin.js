@@ -18,10 +18,13 @@ const DashboardState = {
     collectCanExecute: false,
     collectLoadingStatus: false,
     collectSubmitting: false,
-    collectMaxBatch: 50
+    collectMaxBatch: 50,
+    collectLabsRetryTimeout: null,
+    collectLabsRetryAttempts: 0
 };
 
 const INVITE_TOKEN_STORAGE_PREFIX = 'dlabs_invite_token_applied:';
+const COLLECT_LABS_RETRY_DELAYS_MS = [1500, 3500, 7000];
 
 function getInviteTokenStorageKey(address) {
     return `${INVITE_TOKEN_STORAGE_PREFIX}${(address || '').toLowerCase()}`;
@@ -1057,10 +1060,58 @@ function setCollectStatusText(message, tone = null) {
     }
 }
 
-function setCollectHelpText(message) {
-    const helpEl = document.getElementById('collectHelpText');
-    if (!helpEl) return;
-    helpEl.textContent = message || '';
+function clearCollectLabsRetryTimer() {
+    if (DashboardState.collectLabsRetryTimeout) {
+        clearTimeout(DashboardState.collectLabsRetryTimeout);
+        DashboardState.collectLabsRetryTimeout = null;
+    }
+}
+
+function resetCollectLabsRetryState() {
+    clearCollectLabsRetryTimer();
+    DashboardState.collectLabsRetryAttempts = 0;
+}
+
+function isRetriableCollectLabsError(error) {
+    const message = String(error?.message || '').toLowerCase();
+    if (!message) {
+        return false;
+    }
+
+    return (
+        message.includes('failed to fetch') ||
+        message.includes('networkerror') ||
+        message.includes('load failed') ||
+        message.includes('http 5') ||
+        message.includes('timeout') ||
+        message.includes('unexpected token') ||
+        message.includes('invalid response') ||
+        message.includes('institutional wallet not configured') ||
+        message.includes('failed to retrieve provider labs')
+    );
+}
+
+function scheduleCollectLabsRetry(error) {
+    if (!isRetriableCollectLabsError(error)) {
+        return false;
+    }
+
+    if (DashboardState.collectLabsRetryAttempts >= COLLECT_LABS_RETRY_DELAYS_MS.length) {
+        return false;
+    }
+
+    clearCollectLabsRetryTimer();
+    const attemptIndex = DashboardState.collectLabsRetryAttempts;
+    const delayMs = COLLECT_LABS_RETRY_DELAYS_MS[attemptIndex];
+    DashboardState.collectLabsRetryAttempts += 1;
+
+    setCollectStatusText(`Retrying labs in ${Math.ceil(delayMs / 1000)}s...`, 'warning');
+    DashboardState.collectLabsRetryTimeout = setTimeout(() => {
+        DashboardState.collectLabsRetryTimeout = null;
+        loadCollectLabs();
+    }, delayMs);
+
+    return true;
 }
 
 function setCollectPendingClosuresText(value) {
@@ -1086,6 +1137,30 @@ function setCollectPanelCompact(isCompact) {
     panel.classList.toggle('compact', Boolean(isCompact));
 }
 
+function renderCollectLabOptions(selectEl, labs, preferredLabId = null) {
+    if (!selectEl) {
+        return null;
+    }
+    if (!Array.isArray(labs) || !labs.length) {
+        selectEl.innerHTML = '<option value="">No labs available</option>';
+        return null;
+    }
+
+    const availableIds = labs.map(item => String(item.labId));
+    const selectedLabId = availableIds.includes(String(preferredLabId))
+        ? String(preferredLabId)
+        : availableIds[0];
+
+    selectEl.innerHTML = labs.map(item => {
+        const labId = String(item.labId);
+        const label = item.name || item.label || `Lab #${labId}`;
+        return `<option value="${escapeHtml(labId)}">${escapeHtml(label)}</option>`;
+    }).join('');
+
+    selectEl.value = selectedLabId;
+    return selectedLabId;
+}
+
 function updateCollectButtonState() {
     const collectBtn = document.getElementById('collectLabBtn');
     if (!collectBtn) return;
@@ -1109,12 +1184,16 @@ async function loadCollectLabs() {
     if (!selectEl || !pendingEl) {
         return;
     }
+    clearCollectLabsRetryTimer();
+    const previousLabs = Array.isArray(DashboardState.collectLabs)
+        ? DashboardState.collectLabs.slice()
+        : [];
+    const previousSelection = DashboardState.selectedCollectLabId;
 
     DashboardState.collectLoadingStatus = true;
     DashboardState.collectCanExecute = false;
     updateCollectButtonState();
     setCollectStatusText('Loading labs...');
-    setCollectHelpText('Loading provider labs...');
     setCollectPanelCompact(false);
     pendingEl.textContent = '--';
     setCollectPendingClosuresText('--');
@@ -1124,7 +1203,6 @@ async function loadCollectLabs() {
     try {
         const data = await API.getProviderLabs();
         const labs = Array.isArray(data.labs) ? data.labs : [];
-        DashboardState.collectLabs = labs;
 
         if (Number.isFinite(Number(data.maxBatch)) && Number(data.maxBatch) > 0) {
             DashboardState.collectMaxBatch = Math.max(1, Math.min(100, Number(data.maxBatch)));
@@ -1135,33 +1213,63 @@ async function loadCollectLabs() {
         }
 
         if (!labs.length) {
+            const retryScheduled = scheduleCollectLabsRetry(new Error('Failed to retrieve provider labs'));
+
+            if (previousLabs.length) {
+                DashboardState.collectLabs = previousLabs;
+                DashboardState.selectedCollectLabId = renderCollectLabOptions(
+                    selectEl,
+                    previousLabs,
+                    previousSelection
+                );
+                selectEl.disabled = false;
+                setCollectPanelCompact(false);
+                await loadCollectStatusForSelectedLab();
+                return;
+            }
+
+            DashboardState.collectLabs = [];
             DashboardState.selectedCollectLabId = null;
             selectEl.innerHTML = '<option value="">No labs available</option>';
             pendingEl.textContent = '0 LAB';
             setCollectPendingClosuresText('0');
-            setCollectStatusText('Not available', 'warning');
-            setCollectHelpText('');
+            setCollectStatusText(retryScheduled ? 'Rechecking labs...' : 'Not available', 'warning');
             setCollectPanelCompact(true);
+            if (!retryScheduled) {
+                resetCollectLabsRetryState();
+            }
             return;
         }
 
-        const previousSelection = DashboardState.selectedCollectLabId;
-        const availableIds = labs.map(item => String(item.labId));
-        DashboardState.selectedCollectLabId = availableIds.includes(String(previousSelection))
-            ? String(previousSelection)
-            : availableIds[0];
-
-        selectEl.innerHTML = labs.map(item => {
-            const labId = String(item.labId);
-            const label = item.name || item.label || `Lab #${labId}`;
-            return `<option value="${escapeHtml(labId)}">${escapeHtml(label)}</option>`;
-        }).join('');
-        selectEl.value = DashboardState.selectedCollectLabId;
+        resetCollectLabsRetryState();
+        DashboardState.collectLabs = labs;
+        DashboardState.selectedCollectLabId = renderCollectLabOptions(
+            selectEl,
+            labs,
+            previousSelection
+        );
         selectEl.disabled = false;
         setCollectPanelCompact(false);
 
         await loadCollectStatusForSelectedLab();
     } catch (error) {
+        const retryScheduled = scheduleCollectLabsRetry(error);
+        if (previousLabs.length) {
+            DashboardState.collectLabs = previousLabs;
+            DashboardState.selectedCollectLabId = renderCollectLabOptions(
+                selectEl,
+                previousLabs,
+                previousSelection
+            );
+            selectEl.disabled = false;
+            setCollectPanelCompact(false);
+            await loadCollectStatusForSelectedLab();
+            if (!retryScheduled) {
+                setCollectStatusText('Using last known labs', 'warning');
+            }
+            return;
+        }
+
         DashboardState.collectLabs = [];
         DashboardState.selectedCollectLabId = null;
         DashboardState.collectCanExecute = false;
@@ -1169,8 +1277,10 @@ async function loadCollectLabs() {
         pendingEl.textContent = '--';
         setCollectPendingClosuresText('--');
         setCollectStatusText('Unavailable', 'error');
-        setCollectHelpText('');
         setCollectPanelCompact(true);
+        if (!retryScheduled) {
+            resetCollectLabsRetryState();
+        }
     } finally {
         DashboardState.collectLoadingStatus = false;
         updateCollectButtonState();
@@ -1191,7 +1301,6 @@ async function loadCollectStatusForSelectedLab() {
         pendingEl.textContent = '0 LAB';
         setCollectPendingClosuresText('0');
         setCollectStatusText('Select a lab', 'warning');
-        setCollectHelpText('Choose a lab to check collect availability.');
         updateCollectButtonState();
         return;
     }
@@ -1201,7 +1310,6 @@ async function loadCollectStatusForSelectedLab() {
     pendingEl.textContent = '--';
     setCollectPendingClosuresText('--');
     setCollectStatusText('Checking...');
-    setCollectHelpText('Validating on-chain collect availability...');
     updateCollectButtonState();
 
     try {
@@ -1225,16 +1333,11 @@ async function loadCollectStatusForSelectedLab() {
             setCollectStatusText('No collectable rewards', 'warning');
         }
 
-        const walletPart = data.walletPayoutLab || formatLabTokenRaw(data.walletPayoutRaw || '0');
-        setCollectHelpText(
-            `Pending closures: ${pendingClosures}. Wallet pending: ${walletPart} LAB. maxBatch: ${data.maxBatch || DashboardState.collectMaxBatch}.`
-        );
     } catch (error) {
         DashboardState.collectCanExecute = false;
         pendingEl.textContent = '--';
         setCollectPendingClosuresText('--');
         setCollectStatusText('Status unavailable', 'error');
-        setCollectHelpText(error.message || 'Could not verify collect status');
     } finally {
         DashboardState.collectLoadingStatus = false;
         updateCollectButtonState();
@@ -1376,8 +1479,8 @@ async function loadRecentTransactions() {
 // Refresh all data
 async function refreshAllData() {
     console.log('Refreshing dashboard data...');
+    await loadSystemStatus();
     await Promise.all([
-        loadSystemStatus(),
         loadBalances(),
         loadCollectLabs(),
         loadTreasuryAdminData(),
@@ -1926,6 +2029,7 @@ function stopAutoRefresh() {
         clearInterval(DashboardState.autoRefreshInterval);
         DashboardState.autoRefreshInterval = null;
     }
+    clearCollectLabsRetryTimer();
 }
 
 // Initialize dashboard

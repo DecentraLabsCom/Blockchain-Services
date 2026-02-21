@@ -1345,7 +1345,7 @@ body {
     background: var(--bg-secondary);
     border: 1px solid var(--border-color);
     border-radius: var(--radius-md);
-    padding: var(--spacing-sm);
+    padding: 0.65rem;
 }
 
 .collect-grid {
@@ -1382,7 +1382,7 @@ body {
     border: 1px solid var(--border-color);
     border-radius: var(--radius-sm);
     padding: var(--spacing-sm);
-    height: 78px;
+    height: 72px;
     display: flex;
     flex-direction: column;
     justify-content: center;
@@ -1400,12 +1400,17 @@ body {
     color: var(--neon-green);
     font-size: 1.25rem;
     font-weight: 700;
+    line-height: 1.5rem;
+    min-height: 1.5rem;
 }
 
 .collect-status-value {
     color: var(--text-primary);
     font-size: 0.95rem;
     font-weight: 600;
+    line-height: 1.5rem;
+    min-height: 1.5rem;
+    display: block;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -1424,15 +1429,9 @@ body {
 }
 
 .collect-actions {
-    margin-top: var(--spacing-md);
+    margin-top: var(--spacing-sm);
     display: flex;
     justify-content: flex-end;
-}
-
-.collect-help {
-    margin-top: var(--spacing-sm);
-    color: var(--text-muted);
-    font-size: 0.9rem;
 }
 
 .collect-panel.compact .collect-grid {
@@ -1444,10 +1443,6 @@ body {
 }
 
 .collect-panel.compact .collect-actions {
-    display: none;
-}
-
-.collect-panel.compact .collect-help {
     display: none;
 }
 
