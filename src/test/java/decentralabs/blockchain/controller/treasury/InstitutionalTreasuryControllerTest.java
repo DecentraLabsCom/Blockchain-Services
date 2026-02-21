@@ -124,4 +124,48 @@ class InstitutionalTreasuryControllerTest {
             .andExpect(jsonPath("$.success").value(false))
             .andExpect(jsonPath("$.message").value("Internal server error: boom"));
     }
+
+    @Test
+    void collectLabPayoutPropagatesServiceResponses() throws Exception {
+        InstitutionalAdminResponse success = InstitutionalAdminResponse.success("ok", "0xcollect", "COLLECT_LAB_PAYOUT");
+        when(adminService.collectLabPayoutWithConfiguredWallet("3", "50")).thenReturn(success);
+
+        InstitutionalAdminRequest request = new InstitutionalAdminRequest();
+        request.setLabId("3");
+        request.setMaxBatch("50");
+
+        mockMvc.perform(post("/treasury/admin/collect-lab-payout")
+                .with(csrf())
+                .with(request1 -> {
+                    request1.setRemoteAddr("127.0.0.1");
+                    return request1;
+                })
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(request)))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.success").value(true))
+            .andExpect(jsonPath("$.transactionHash").value("0xcollect"));
+    }
+
+    @Test
+    void collectLabPayoutReturnsBadRequestWhenServiceRejects() throws Exception {
+        InstitutionalAdminResponse failure = InstitutionalAdminResponse.error("collect failed");
+        when(adminService.collectLabPayoutWithConfiguredWallet("3", "50")).thenReturn(failure);
+
+        InstitutionalAdminRequest request = new InstitutionalAdminRequest();
+        request.setLabId("3");
+        request.setMaxBatch("50");
+
+        mockMvc.perform(post("/treasury/admin/collect-lab-payout")
+                .with(csrf())
+                .with(request1 -> {
+                    request1.setRemoteAddr("127.0.0.1");
+                    return request1;
+                })
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(request)))
+            .andExpect(status().isBadRequest())
+            .andExpect(jsonPath("$.success").value(false))
+            .andExpect(jsonPath("$.message").value("collect failed"));
+    }
 }

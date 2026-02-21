@@ -1,5 +1,6 @@
 package decentralabs.blockchain.service.wallet;
 
+import decentralabs.blockchain.contract.Diamond;
 import decentralabs.blockchain.event.NetworkSwitchEvent;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -30,6 +31,8 @@ import org.web3j.protocol.core.DefaultBlockParameterName;
 import org.web3j.protocol.core.methods.request.Transaction;
 import org.web3j.protocol.core.methods.response.*;
 import org.web3j.protocol.http.HttpService;
+import org.web3j.tx.ReadonlyTransactionManager;
+import org.web3j.tx.gas.StaticGasProvider;
 import org.web3j.utils.Convert;
 import org.web3j.utils.Numeric;
 
@@ -591,6 +594,80 @@ public class WalletService {
         } catch (Exception e) {
             log.warn("Failed to resolve provider association for lab {}", labId, e);
             return false;
+        }
+    }
+
+    /**
+     * Returns a metadata URI for a lab token.
+     * Tries ERC-721 tokenURI first and falls back to Lab.base.uri from getLab().
+     */
+    public Optional<String> getLabTokenUri(BigInteger labId) {
+        if (labId == null || labId.compareTo(BigInteger.ZERO) <= 0) {
+            return Optional.empty();
+        }
+        try {
+            Web3j web3j = getWeb3jInstance();
+            Function function = new Function(
+                "tokenURI",
+                Collections.singletonList(new Uint256(labId)),
+                Collections.singletonList(new TypeReference<Utf8String>() {})
+            );
+
+            String encodedFunction = FunctionEncoder.encode(function);
+            EthCall response = web3j.ethCall(
+                Transaction.createEthCallTransaction(null, contractAddress, encodedFunction),
+                DefaultBlockParameterName.LATEST
+            ).send();
+
+            if (response.hasError()) {
+                log.debug(
+                    "Error calling tokenURI() for lab {}: {}",
+                    labId,
+                    LogSanitizer.sanitize(response.getError().getMessage())
+                );
+                return getLabBaseUri(labId);
+            }
+
+            @SuppressWarnings("rawtypes")
+            List<Type> decoded = FunctionReturnDecoder.decode(response.getValue(), function.getOutputParameters());
+            if (decoded.isEmpty()) {
+                return getLabBaseUri(labId);
+            }
+
+            String uri = Objects.toString(decoded.get(0).getValue(), "").trim();
+            if (!uri.isEmpty()) {
+                return Optional.of(uri);
+            }
+            return getLabBaseUri(labId);
+        } catch (Exception e) {
+            log.debug("Failed to resolve tokenURI for lab {}: {}", labId, LogSanitizer.sanitize(e.getMessage()));
+            return getLabBaseUri(labId);
+        }
+    }
+
+    private Optional<String> getLabBaseUri(BigInteger labId) {
+        try {
+            Web3j web3j = getWeb3jInstance();
+            Diamond diamond = Diamond.load(
+                contractAddress,
+                web3j,
+                new ReadonlyTransactionManager(web3j, contractAddress),
+                new StaticGasProvider(BigInteger.ZERO, BigInteger.ZERO)
+            );
+
+            Diamond.Lab lab = diamond.getLab(labId).send();
+            if (lab == null || lab.base == null) {
+                return Optional.empty();
+            }
+            String uri = lab.base.uri;
+            if (uri == null) {
+                return Optional.empty();
+            }
+            String trimmed = uri.trim();
+            return trimmed.isEmpty() ? Optional.empty() : Optional.of(trimmed);
+        } catch (Exception e) {
+            log.debug("Failed to resolve Lab.base.uri for lab {}: {}", labId, LogSanitizer.sanitize(e.getMessage()));
+            return Optional.empty();
         }
     }
 

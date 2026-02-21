@@ -225,9 +225,12 @@ const API = {
      * @param {string|number} maxBatch - Max reservations to process in one tx
      */
     async collectLabPayout(labId, maxBatch) {
-        return await this.executeAdminOperation('COLLECT_LAB_PAYOUT', {
-            labId: String(labId),
-            maxBatch: String(maxBatch)
+        return await this.request('/treasury/admin/collect-lab-payout', {
+            method: 'POST',
+            body: JSON.stringify({
+                labId: String(labId),
+                maxBatch: String(maxBatch)
+            })
         });
     },
 

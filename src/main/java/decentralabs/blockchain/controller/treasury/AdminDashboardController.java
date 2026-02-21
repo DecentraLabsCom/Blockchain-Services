@@ -2,6 +2,7 @@ package decentralabs.blockchain.controller.treasury;
 
 import decentralabs.blockchain.dto.wallet.CollectSimulationResult;
 import decentralabs.blockchain.dto.wallet.LabPayoutStatus;
+import decentralabs.blockchain.service.health.LabMetadataService;
 import decentralabs.blockchain.service.treasury.InstitutionalAnalyticsService;
 import decentralabs.blockchain.service.wallet.InstitutionalWalletService;
 import decentralabs.blockchain.service.wallet.WalletService;
@@ -36,6 +37,7 @@ public class AdminDashboardController {
     private final InstitutionalWalletService institutionalWalletService;
     private final WalletService walletService;
     private final InstitutionalAnalyticsService institutionalAnalyticsService;
+    private final LabMetadataService labMetadataService;
 
     private static final int LAB_TOKEN_DECIMALS = 6;
 
@@ -257,7 +259,9 @@ public class AdminDashboardController {
             for (BigInteger labId : walletService.getLabsOwnedByProvider(providerAddress)) {
                 Map<String, Object> lab = new LinkedHashMap<>();
                 lab.put("labId", labId.toString());
-                lab.put("label", "Lab #" + labId);
+                String labName = resolveLabDisplayName(labId);
+                lab.put("name", labName);
+                lab.put("label", labName);
 
                 walletService.getLabPayoutStatus(labId).ifPresent(status -> {
                     lab.put("walletPayoutRaw", status.walletPayout().toString());
@@ -556,6 +560,35 @@ public class AdminDashboardController {
                 "success", false,
                 "error", "Failed to get balance on requested chainId"
             ));
+        }
+    }
+
+    private String resolveLabDisplayName(BigInteger labId) {
+        String fallback = "Lab #" + labId;
+        return walletService.getLabTokenUri(labId)
+            .flatMap(this::resolveLabNameFromMetadata)
+            .orElse(fallback);
+    }
+
+    private Optional<String> resolveLabNameFromMetadata(String metadataUri) {
+        if (metadataUri == null || metadataUri.isBlank()) {
+            return Optional.empty();
+        }
+
+        try {
+            var metadata = labMetadataService.getLabMetadata(metadataUri);
+            if (metadata == null || metadata.getName() == null) {
+                return Optional.empty();
+            }
+            String name = metadata.getName().trim();
+            return name.isEmpty() ? Optional.empty() : Optional.of(name);
+        } catch (RuntimeException ex) {
+            log.debug(
+                "Unable to resolve lab name from metadata {}: {}",
+                LogSanitizer.sanitize(metadataUri),
+                LogSanitizer.sanitize(ex.getMessage())
+            );
+            return Optional.empty();
         }
     }
 

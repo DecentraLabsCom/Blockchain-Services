@@ -48,4 +48,32 @@ public class InstitutionalTreasuryController {
             return ResponseEntity.internalServerError().body(errorResponse);
         }
     }
+
+    /**
+     * POST /treasury/admin/collect-lab-payout
+     * Executes collect payout server-side using the configured institutional wallet.
+     */
+    @PostMapping("/admin/collect-lab-payout")
+    public ResponseEntity<InstitutionalAdminResponse> collectLabPayout(
+        @RequestBody InstitutionalAdminRequest request
+    ) {
+        log.info("Received server-side collect payout request for lab {}", request.getLabId());
+        try {
+            InstitutionalAdminResponse response = adminService.collectLabPayoutWithConfiguredWallet(
+                request.getLabId(),
+                request.getMaxBatch()
+            );
+            if (response.isSuccess()) {
+                log.info("Server-side collect payout completed. Tx: {}", response.getTransactionHash());
+                return ResponseEntity.ok(response);
+            }
+            log.warn("Server-side collect payout failed: {}", response.getMessage());
+            return ResponseEntity.badRequest().body(response);
+        } catch (Exception e) {
+            log.error("Error processing collect payout request: {}", e.getMessage(), e);
+            InstitutionalAdminResponse errorResponse =
+                InstitutionalAdminResponse.error("Internal server error: " + e.getMessage());
+            return ResponseEntity.internalServerError().body(errorResponse);
+        }
+    }
 }

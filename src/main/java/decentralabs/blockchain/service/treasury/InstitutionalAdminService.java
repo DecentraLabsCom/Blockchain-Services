@@ -111,6 +111,34 @@ public class InstitutionalAdminService {
     }
 
     /**
+     * Executes collect payout using the institutional wallet configured on the server.
+     * This flow intentionally bypasses browser EIP-712 signing to avoid wallet popups.
+     */
+    public InstitutionalAdminResponse collectLabPayoutWithConfiguredWallet(String labId, String maxBatch) {
+        try {
+            if (!isLocalhostRequest()) {
+                return InstitutionalAdminResponse.error("Access denied: administrative operations only allowed from localhost");
+            }
+
+            String institutionalAddress = institutionalWalletService.getInstitutionalWalletAddress();
+            if (institutionalAddress == null || institutionalAddress.isBlank()) {
+                return InstitutionalAdminResponse.error("Institutional wallet not configured");
+            }
+
+            Credentials credentials = institutionalWalletService.getInstitutionalCredentials();
+            InstitutionalAdminRequest request = new InstitutionalAdminRequest();
+            request.setOperation(InstitutionalAdminRequest.AdminOperation.COLLECT_LAB_PAYOUT);
+            request.setLabId(labId);
+            request.setMaxBatch(maxBatch);
+
+            return collectLabPayout(credentials, request);
+        } catch (Exception e) {
+            log.error("Error executing server-side collect payout: {}", LogSanitizer.sanitize(e.getMessage()), e);
+            return InstitutionalAdminResponse.error("Collect operation failed: " + e.getMessage());
+        }
+    }
+
+    /**
      * Check if the request comes from localhost
      */
     private boolean isLocalhostRequest() {

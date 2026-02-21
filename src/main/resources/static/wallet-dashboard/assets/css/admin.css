@@ -1352,7 +1352,7 @@ body {
     display: grid;
     grid-template-columns: 2fr 1fr 1fr;
     gap: var(--spacing-sm);
-    align-items: stretch;
+    align-items: end;
 }
 
 .collect-select {
@@ -1555,6 +1555,16 @@ body {
 
 .modal-actions .btn {
     min-width: 120px;
+}
+
+.confirm-message {
+    margin: 0;
+    padding: var(--spacing-md);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-md);
+    background: rgba(0, 0, 0, 0.25);
+    color: var(--text-primary);
+    line-height: 1.5;
 }
 
 /* Info Modal Content */

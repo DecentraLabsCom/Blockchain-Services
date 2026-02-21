@@ -28,6 +28,7 @@ import decentralabs.blockchain.dto.wallet.NetworkInfo;
 import decentralabs.blockchain.dto.wallet.NetworkResponse;
 import decentralabs.blockchain.dto.wallet.CollectSimulationResult;
 import decentralabs.blockchain.dto.wallet.LabPayoutStatus;
+import decentralabs.blockchain.service.health.LabMetadataService;
 import decentralabs.blockchain.service.treasury.InstitutionalAnalyticsService;
 import decentralabs.blockchain.service.wallet.InstitutionalWalletService;
 import decentralabs.blockchain.service.wallet.WalletService;
@@ -47,6 +48,9 @@ class AdminDashboardControllerTest {
 
     @Mock
     private InstitutionalAnalyticsService institutionalAnalyticsService;
+
+    @Mock
+    private LabMetadataService labMetadataService;
 
     @InjectMocks
     private AdminDashboardController adminDashboardController;
@@ -287,6 +291,10 @@ class AdminDashboardControllerTest {
             when(institutionalWalletService.getInstitutionalWalletAddress()).thenReturn(VALID_ADDRESS);
             when(walletService.isLabProvider(VALID_ADDRESS)).thenReturn(true);
             when(walletService.getLabsOwnedByProvider(VALID_ADDRESS)).thenReturn(List.of(BigInteger.valueOf(3)));
+            when(walletService.getLabTokenUri(BigInteger.valueOf(3))).thenReturn(Optional.of("https://example.com/lab-3.json"));
+            when(labMetadataService.getLabMetadata("https://example.com/lab-3.json")).thenReturn(
+                decentralabs.blockchain.dto.health.LabMetadata.builder().name("Quantum Lab").build()
+            );
             when(walletService.getLabPayoutStatus(BigInteger.valueOf(3))).thenReturn(
                 Optional.of(new LabPayoutStatus(
                     BigInteger.valueOf(1_000_000),
@@ -300,6 +308,7 @@ class AdminDashboardControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.success").value(true))
                 .andExpect(jsonPath("$.labs[0].labId").value("3"))
+                .andExpect(jsonPath("$.labs[0].label").value("Quantum Lab"))
                 .andExpect(jsonPath("$.labs[0].totalPayoutLab").value("1"));
         }
 

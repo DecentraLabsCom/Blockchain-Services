@@ -230,6 +230,76 @@ function showInfoModal(title, content, isSuccess = true) {
     });
 }
 
+function showConfirmModal(title, message, options = {}) {
+    const {
+        icon = 'question-circle',
+        confirmText = 'Confirm',
+        cancelText = 'Cancel',
+        confirmButtonClass = 'btn-primary'
+    } = options;
+
+    return new Promise((resolve) => {
+        const modal = document.getElementById('confirmModal');
+        const titleEl = document.getElementById('confirmModalTitle');
+        const messageEl = document.getElementById('confirmModalMessage');
+        const confirmBtn = document.getElementById('confirmModalConfirm');
+        const cancelBtn = document.getElementById('confirmModalCancel');
+        const closeBtn = document.getElementById('closeConfirmModal');
+
+        if (!modal || !titleEl || !messageEl || !confirmBtn || !cancelBtn || !closeBtn) {
+            resolve(window.confirm(message || title || 'Confirm action?'));
+            return;
+        }
+
+        titleEl.innerHTML = `<i class="fas fa-${icon}"></i> ${title}`;
+        messageEl.textContent = message;
+        confirmBtn.className = `btn ${confirmButtonClass}`;
+        confirmBtn.innerHTML = `<i class="fas fa-check"></i> ${confirmText}`;
+        cancelBtn.innerHTML = `<i class="fas fa-times"></i> ${cancelText}`;
+
+        const cleanup = () => {
+            modal.classList.remove('show');
+            confirmBtn.removeEventListener('click', handleConfirm);
+            cancelBtn.removeEventListener('click', handleCancel);
+            closeBtn.removeEventListener('click', handleCancel);
+            modal.removeEventListener('click', handleBackdropClick);
+            document.removeEventListener('keydown', handleKeyDown);
+        };
+
+        const handleConfirm = () => {
+            cleanup();
+            resolve(true);
+        };
+
+        const handleCancel = () => {
+            cleanup();
+            resolve(false);
+        };
+
+        const handleBackdropClick = (event) => {
+            if (event.target === modal) {
+                handleCancel();
+            }
+        };
+
+        const handleKeyDown = (event) => {
+            if (event.key === 'Escape') {
+                handleCancel();
+            } else if (event.key === 'Enter') {
+                handleConfirm();
+            }
+        };
+
+        confirmBtn.addEventListener('click', handleConfirm);
+        cancelBtn.addEventListener('click', handleCancel);
+        closeBtn.addEventListener('click', handleCancel);
+        modal.addEventListener('click', handleBackdropClick);
+        document.addEventListener('keydown', handleKeyDown);
+        modal.classList.add('show');
+        confirmBtn.focus();
+    });
+}
+
 function buildPrivateKeyContent(privateKey, address = null, note = 'Keep this private key offline. Anyone with this value can control the institutional wallet.') {
     if (!privateKey) {
         return '';
@@ -1064,7 +1134,7 @@ async function loadCollectLabs() {
 
         selectEl.innerHTML = labs.map(item => {
             const labId = String(item.labId);
-            const label = item.label || `Lab #${labId}`;
+            const label = item.name || item.label || `Lab #${labId}`;
             return `<option value="${escapeHtml(labId)}">${escapeHtml(label)}</option>`;
         }).join('');
         selectEl.value = DashboardState.selectedCollectLabId;
@@ -1156,7 +1226,19 @@ async function handleCollectLabPayout() {
         return;
     }
 
-    if (!confirm(`Collect pending rewards for lab #${labId}?`)) {
+    const selectedLabText = document.getElementById('collectLabSelect')
+        ?.selectedOptions?.[0]?.textContent?.trim();
+    const collectTarget = selectedLabText || `lab #${labId}`;
+    const confirmed = await showConfirmModal(
+        'Collect Pending Rewards',
+        `Collect pending rewards for ${collectTarget}?`,
+        {
+            icon: 'coins',
+            confirmText: 'Collect',
+            confirmButtonClass: 'btn-primary'
+        }
+    );
+    if (!confirmed) {
         return;
     }
 
