@@ -1063,6 +1063,23 @@ function setCollectHelpText(message) {
     helpEl.textContent = message || '';
 }
 
+function setCollectPendingClosuresText(value) {
+    const closuresEl = document.getElementById('collectPendingClosures');
+    if (!closuresEl) return;
+    closuresEl.textContent = value ?? '--';
+}
+
+function formatPendingClosures(rawValue) {
+    if (rawValue === null || rawValue === undefined || rawValue === '') {
+        return '0';
+    }
+    try {
+        return BigInt(rawValue.toString()).toString();
+    } catch (error) {
+        return String(rawValue);
+    }
+}
+
 function setCollectPanelCompact(isCompact) {
     const panel = document.getElementById('collectPanel');
     if (!panel) return;
@@ -1100,6 +1117,7 @@ async function loadCollectLabs() {
     setCollectHelpText('Loading provider labs...');
     setCollectPanelCompact(false);
     pendingEl.textContent = '--';
+    setCollectPendingClosuresText('--');
     selectEl.disabled = true;
     selectEl.innerHTML = '<option value="">Loading labs...</option>';
 
@@ -1120,6 +1138,7 @@ async function loadCollectLabs() {
             DashboardState.selectedCollectLabId = null;
             selectEl.innerHTML = '<option value="">No labs available</option>';
             pendingEl.textContent = '0 LAB';
+            setCollectPendingClosuresText('0');
             setCollectStatusText('Not available', 'warning');
             setCollectHelpText('');
             setCollectPanelCompact(true);
@@ -1148,6 +1167,7 @@ async function loadCollectLabs() {
         DashboardState.collectCanExecute = false;
         selectEl.innerHTML = '<option value="">Failed to load labs</option>';
         pendingEl.textContent = '--';
+        setCollectPendingClosuresText('--');
         setCollectStatusText('Unavailable', 'error');
         setCollectHelpText('');
         setCollectPanelCompact(true);
@@ -1169,6 +1189,7 @@ async function loadCollectStatusForSelectedLab() {
     if (!selectedLabId) {
         DashboardState.collectCanExecute = false;
         pendingEl.textContent = '0 LAB';
+        setCollectPendingClosuresText('0');
         setCollectStatusText('Select a lab', 'warning');
         setCollectHelpText('Choose a lab to check collect availability.');
         updateCollectButtonState();
@@ -1178,6 +1199,7 @@ async function loadCollectStatusForSelectedLab() {
     DashboardState.collectLoadingStatus = true;
     DashboardState.collectCanExecute = false;
     pendingEl.textContent = '--';
+    setCollectPendingClosuresText('--');
     setCollectStatusText('Checking...');
     setCollectHelpText('Validating on-chain collect availability...');
     updateCollectButtonState();
@@ -1190,6 +1212,9 @@ async function loadCollectStatusForSelectedLab() {
 
         const totalLab = data.totalPayoutLab || formatLabTokenRaw(data.totalPayoutRaw);
         pendingEl.textContent = `${totalLab} LAB`;
+        const pendingClosuresRaw = data.pendingCompletedReservations ?? data.institutionalCollectorCount ?? '0';
+        const pendingClosures = formatPendingClosures(pendingClosuresRaw);
+        setCollectPendingClosuresText(pendingClosures);
 
         DashboardState.collectCanExecute = data.canCollect === true;
         if (DashboardState.collectCanExecute) {
@@ -1202,11 +1227,12 @@ async function loadCollectStatusForSelectedLab() {
 
         const walletPart = data.walletPayoutLab || formatLabTokenRaw(data.walletPayoutRaw || '0');
         setCollectHelpText(
-            `Wallet pending: ${walletPart} LAB. maxBatch: ${data.maxBatch || DashboardState.collectMaxBatch}.`
+            `Pending closures: ${pendingClosures}. Wallet pending: ${walletPart} LAB. maxBatch: ${data.maxBatch || DashboardState.collectMaxBatch}.`
         );
     } catch (error) {
         DashboardState.collectCanExecute = false;
         pendingEl.textContent = '--';
+        setCollectPendingClosuresText('--');
         setCollectStatusText('Status unavailable', 'error');
         setCollectHelpText(error.message || 'Could not verify collect status');
     } finally {

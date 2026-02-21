@@ -309,6 +309,7 @@ class AdminDashboardControllerTest {
                 .andExpect(jsonPath("$.success").value(true))
                 .andExpect(jsonPath("$.labs[0].labId").value("3"))
                 .andExpect(jsonPath("$.labs[0].label").value("Quantum Lab"))
+                .andExpect(jsonPath("$.labs[0].pendingCompletedReservations").value("0"))
                 .andExpect(jsonPath("$.labs[0].totalPayoutLab").value("1"));
         }
 
@@ -356,6 +357,7 @@ class AdminDashboardControllerTest {
                 .andExpect(jsonPath("$.success").value(true))
                 .andExpect(jsonPath("$.labId").value("3"))
                 .andExpect(jsonPath("$.canCollect").value(true))
+                .andExpect(jsonPath("$.pendingCompletedReservations").value("0"))
                 .andExpect(jsonPath("$.totalPayoutLab").value("2"));
         }
     }

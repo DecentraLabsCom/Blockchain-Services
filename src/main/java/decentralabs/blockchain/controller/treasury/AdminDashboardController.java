@@ -271,6 +271,7 @@ public class AdminDashboardController {
                     lab.put("totalPayoutRaw", status.totalPayout().toString());
                     lab.put("totalPayoutLab", formatLabTokens(status.totalPayout()));
                     lab.put("institutionalCollectorCount", status.institutionalCollectorCount().toString());
+                    lab.put("pendingCompletedReservations", status.institutionalCollectorCount().toString());
                 });
                 labs.add(lab);
             }
@@ -355,6 +356,7 @@ public class AdminDashboardController {
             result.put("totalPayoutRaw", payout.totalPayout().toString());
             result.put("totalPayoutLab", formatLabTokens(payout.totalPayout()));
             result.put("institutionalCollectorCount", payout.institutionalCollectorCount().toString());
+            result.put("pendingCompletedReservations", payout.institutionalCollectorCount().toString());
             result.put("hasPendingPayout", payout.totalPayout().compareTo(BigInteger.ZERO) > 0);
             result.put("canCollect", simulation.canCollect());
             result.put("collectReason", simulation.reason());
