@@ -1,8 +1,11 @@
 package decentralabs.blockchain.controller.treasury;
 
+import decentralabs.blockchain.dto.wallet.CollectSimulationResult;
+import decentralabs.blockchain.dto.wallet.LabPayoutStatus;
 import decentralabs.blockchain.service.treasury.InstitutionalAnalyticsService;
 import decentralabs.blockchain.service.wallet.InstitutionalWalletService;
 import decentralabs.blockchain.service.wallet.WalletService;
+import decentralabs.blockchain.util.EthereumAddressValidator;
 import decentralabs.blockchain.util.LogSanitizer;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
@@ -53,6 +56,9 @@ public class AdminDashboardController {
 
     @Value("${treasury.admin.domain.verifying-contract:${contract.address:0x0000000000000000000000000000000000000000}}")
     private String treasuryAdminDomainVerifyingContract;
+
+    @Value("${treasury.collect.max-batch:50}")
+    private int collectMaxBatch;
 
     /**
      * GET /treasury/admin/status
@@ -230,6 +236,162 @@ public class AdminDashboardController {
             return ResponseEntity.internalServerError().body(Map.of(
                 "success", false,
                 "error", "Failed to retrieve contract info: " + e.getMessage()
+            ));
+        }
+    }
+
+    /**
+     * GET /treasury/admin/provider-labs
+     * List labs owned by the institutional provider wallet.
+     */
+    @GetMapping("/provider-labs")
+    public ResponseEntity<?> getProviderLabs(HttpServletRequest request) {
+        if (!isLocalhostRequest(request)) {
+            return ResponseEntity.status(403).body(Map.of(
+                "success", false,
+                "error", "Access denied: administrative endpoints only accessible from localhost"
+            ));
+        }
+
+        try {
+            String providerAddress = institutionalWalletService.getInstitutionalWalletAddress();
+            if (providerAddress == null || providerAddress.isBlank()) {
+                return ResponseEntity.badRequest().body(Map.of(
+                    "success", false,
+                    "error", "Institutional wallet not configured"
+                ));
+            }
+
+            Map<String, Object> result = new LinkedHashMap<>();
+            result.put("success", true);
+            result.put("providerAddress", providerAddress);
+            result.put("maxBatch", resolveCollectBatch(null));
+
+            boolean isProvider = walletService.isLabProvider(providerAddress);
+            result.put("isProvider", isProvider);
+            if (!isProvider) {
+                result.put("labs", List.of());
+                result.put("note", "Institutional wallet is not registered as provider");
+                return ResponseEntity.ok(result);
+            }
+
+            List<Map<String, Object>> labs = new ArrayList<>();
+            for (BigInteger labId : walletService.getLabsOwnedByProvider(providerAddress)) {
+                Map<String, Object> lab = new LinkedHashMap<>();
+                lab.put("labId", labId.toString());
+                lab.put("label", "Lab #" + labId);
+
+                walletService.getLabPayoutStatus(labId).ifPresent(status -> {
+                    lab.put("walletPayoutRaw", status.walletPayout().toString());
+                    lab.put("walletPayoutLab", formatLabTokens(status.walletPayout()));
+                    lab.put("institutionalPayoutRaw", status.institutionalPayout().toString());
+                    lab.put("institutionalPayoutLab", formatLabTokens(status.institutionalPayout()));
+                    lab.put("totalPayoutRaw", status.totalPayout().toString());
+                    lab.put("totalPayoutLab", formatLabTokens(status.totalPayout()));
+                    lab.put("institutionalCollectorCount", status.institutionalCollectorCount().toString());
+                });
+                labs.add(lab);
+            }
+
+            result.put("labs", labs);
+            if (labs.isEmpty()) {
+                result.put("note", "No labs found for this provider wallet");
+            }
+
+            return ResponseEntity.ok(result);
+        } catch (Exception e) {
+            log.error("Error listing provider labs: {}", e.getMessage(), e);
+            return ResponseEntity.internalServerError().body(Map.of(
+                "success", false,
+                "error", "Failed to retrieve provider labs: " + e.getMessage()
+            ));
+        }
+    }
+
+    /**
+     * GET /treasury/admin/lab-payout-status?labId=3&maxBatch=50
+     * Returns pending payout and collect availability for a lab.
+     */
+    @GetMapping("/lab-payout-status")
+    public ResponseEntity<?> getLabPayoutStatus(
+        @RequestParam String labId,
+        @RequestParam(required = false) Integer maxBatch,
+        HttpServletRequest request
+    ) {
+        if (!isLocalhostRequest(request)) {
+            return ResponseEntity.status(403).body(Map.of(
+                "success", false,
+                "error", "Access denied: administrative endpoints only accessible from localhost"
+            ));
+        }
+
+        try {
+            String providerAddress = institutionalWalletService.getInstitutionalWalletAddress();
+            if (providerAddress == null || providerAddress.isBlank()) {
+                return ResponseEntity.badRequest().body(Map.of(
+                    "success", false,
+                    "error", "Institutional wallet not configured"
+                ));
+            }
+
+            BigInteger parsedLabId = EthereumAddressValidator.parseBigInteger(labId, "labId");
+            if (parsedLabId.compareTo(BigInteger.ZERO) <= 0) {
+                return ResponseEntity.badRequest().body(Map.of(
+                    "success", false,
+                    "error", "labId must be greater than zero"
+                ));
+            }
+
+            if (!walletService.isLabOwnedByProvider(providerAddress, parsedLabId)) {
+                return ResponseEntity.badRequest().body(Map.of(
+                    "success", false,
+                    "error", "Selected lab is not owned by this institutional provider"
+                ));
+            }
+
+            Optional<LabPayoutStatus> maybePayout = walletService.getLabPayoutStatus(parsedLabId);
+            if (maybePayout.isEmpty()) {
+                return ResponseEntity.internalServerError().body(Map.of(
+                    "success", false,
+                    "error", "Failed to read pending payout status from contract"
+                ));
+            }
+
+            int effectiveBatch = resolveCollectBatch(maxBatch);
+            LabPayoutStatus payout = maybePayout.get();
+            CollectSimulationResult simulation = walletService.simulateCollectLabPayout(
+                providerAddress,
+                parsedLabId,
+                BigInteger.valueOf(effectiveBatch)
+            );
+
+            Map<String, Object> result = new LinkedHashMap<>();
+            result.put("success", true);
+            result.put("providerAddress", providerAddress);
+            result.put("labId", parsedLabId.toString());
+            result.put("maxBatch", effectiveBatch);
+            result.put("walletPayoutRaw", payout.walletPayout().toString());
+            result.put("walletPayoutLab", formatLabTokens(payout.walletPayout()));
+            result.put("institutionalPayoutRaw", payout.institutionalPayout().toString());
+            result.put("institutionalPayoutLab", formatLabTokens(payout.institutionalPayout()));
+            result.put("totalPayoutRaw", payout.totalPayout().toString());
+            result.put("totalPayoutLab", formatLabTokens(payout.totalPayout()));
+            result.put("institutionalCollectorCount", payout.institutionalCollectorCount().toString());
+            result.put("hasPendingPayout", payout.totalPayout().compareTo(BigInteger.ZERO) > 0);
+            result.put("canCollect", simulation.canCollect());
+            result.put("collectReason", simulation.reason());
+
+            return ResponseEntity.ok(result);
+        } catch (IllegalArgumentException ex) {
+            return ResponseEntity.badRequest().body(Map.of(
+                "success", false,
+                "error", ex.getMessage()
+            ));
+        } catch (Exception e) {
+            log.error("Error getting lab payout status: {}", e.getMessage(), e);
+            return ResponseEntity.internalServerError().body(Map.of(
+                "success", false,
+                "error", "Failed to retrieve lab payout status: " + e.getMessage()
             ));
         }
     }
@@ -428,6 +590,17 @@ public class AdminDashboardController {
         }
         BigDecimal decimal = new BigDecimal(rawValue).movePointLeft(LAB_TOKEN_DECIMALS);
         return decimal.stripTrailingZeros().toPlainString();
+    }
+
+    private int resolveCollectBatch(Integer requestedBatch) {
+        int candidate = requestedBatch != null ? requestedBatch : collectMaxBatch;
+        if (candidate < 1) {
+            return 1;
+        }
+        if (candidate > 100) {
+            return 100;
+        }
+        return candidate;
     }
     
     /**

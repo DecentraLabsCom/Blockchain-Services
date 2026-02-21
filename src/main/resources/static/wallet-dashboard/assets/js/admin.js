@@ -12,7 +12,13 @@ const DashboardState = {
     walletAddress: null,
     welcomeModalDismissed: false,
     inviteTokenApplied: false,  // Track if invite token has been applied
-    invitePromptedWallet: null  // Track which wallet has been prompted this session
+    invitePromptedWallet: null,  // Track which wallet has been prompted this session
+    collectLabs: [],
+    selectedCollectLabId: null,
+    collectCanExecute: false,
+    collectLoadingStatus: false,
+    collectSubmitting: false,
+    collectMaxBatch: 50
 };
 
 const INVITE_TOKEN_STORAGE_PREFIX = 'dlabs_invite_token_applied:';
@@ -80,6 +86,38 @@ function formatAddress(address) {
 // Utility: Format timestamp
 function formatTimestamp(timestamp) {
     return new Date(timestamp).toLocaleString();
+}
+
+function formatLabTokenRaw(rawValue) {
+    if (rawValue === null || rawValue === undefined || rawValue === '') {
+        return '0';
+    }
+    try {
+        const base = 1000000n;
+        const value = BigInt(rawValue.toString());
+        const whole = value / base;
+        const fraction = value % base;
+        if (fraction === 0n) {
+            return whole.toString();
+        }
+        const fractionText = fraction.toString().padStart(6, '0').replace(/0+$/, '');
+        return `${whole.toString()}.${fractionText}`;
+    } catch (error) {
+        const fallback = Number(rawValue);
+        if (!Number.isFinite(fallback)) {
+            return '0';
+        }
+        return (fallback / 1e6).toFixed(6).replace(/\.?0+$/, '');
+    }
+}
+
+function escapeHtml(value) {
+    return String(value ?? '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
 }
 
 // Toast notification
@@ -939,6 +977,206 @@ async function loadBalances() {
     }
 }
 
+function setCollectStatusText(message, tone = null) {
+    const statusEl = document.getElementById('collectStatusText');
+    if (!statusEl) return;
+    statusEl.textContent = message || '--';
+    statusEl.className = 'collect-status-value';
+    if (tone) {
+        statusEl.classList.add(tone);
+    }
+}
+
+function setCollectHelpText(message) {
+    const helpEl = document.getElementById('collectHelpText');
+    if (!helpEl) return;
+    helpEl.textContent = message || '';
+}
+
+function updateCollectButtonState() {
+    const collectBtn = document.getElementById('collectLabBtn');
+    if (!collectBtn) return;
+
+    if (DashboardState.collectSubmitting) {
+        collectBtn.disabled = true;
+        collectBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Collecting...';
+        return;
+    }
+
+    collectBtn.innerHTML = '<i class="fas fa-coins"></i> Collect';
+    collectBtn.disabled =
+        DashboardState.collectLoadingStatus ||
+        !DashboardState.collectCanExecute ||
+        !DashboardState.selectedCollectLabId;
+}
+
+async function loadCollectLabs() {
+    const selectEl = document.getElementById('collectLabSelect');
+    const pendingEl = document.getElementById('collectPendingTotal');
+    if (!selectEl || !pendingEl) {
+        return;
+    }
+
+    DashboardState.collectLoadingStatus = true;
+    DashboardState.collectCanExecute = false;
+    updateCollectButtonState();
+    setCollectStatusText('Loading labs...');
+    setCollectHelpText('Loading provider labs...');
+    pendingEl.textContent = '--';
+    selectEl.disabled = true;
+    selectEl.innerHTML = '<option value="">Loading labs...</option>';
+
+    try {
+        const data = await API.getProviderLabs();
+        const labs = Array.isArray(data.labs) ? data.labs : [];
+        DashboardState.collectLabs = labs;
+
+        if (Number.isFinite(Number(data.maxBatch)) && Number(data.maxBatch) > 0) {
+            DashboardState.collectMaxBatch = Math.max(1, Math.min(100, Number(data.maxBatch)));
+        }
+
+        if (!data.success) {
+            throw new Error(data.error || 'Failed to load provider labs');
+        }
+
+        if (!labs.length) {
+            DashboardState.selectedCollectLabId = null;
+            selectEl.innerHTML = '<option value="">No labs available</option>';
+            pendingEl.textContent = '0 LAB';
+            setCollectStatusText('Not available', 'warning');
+            setCollectHelpText(data.note || 'No labs were found for this institutional wallet.');
+            return;
+        }
+
+        const previousSelection = DashboardState.selectedCollectLabId;
+        const availableIds = labs.map(item => String(item.labId));
+        DashboardState.selectedCollectLabId = availableIds.includes(String(previousSelection))
+            ? String(previousSelection)
+            : availableIds[0];
+
+        selectEl.innerHTML = labs.map(item => {
+            const labId = String(item.labId);
+            const label = item.label || `Lab #${labId}`;
+            return `<option value="${escapeHtml(labId)}">${escapeHtml(label)}</option>`;
+        }).join('');
+        selectEl.value = DashboardState.selectedCollectLabId;
+        selectEl.disabled = false;
+
+        await loadCollectStatusForSelectedLab();
+    } catch (error) {
+        DashboardState.collectLabs = [];
+        DashboardState.selectedCollectLabId = null;
+        DashboardState.collectCanExecute = false;
+        selectEl.innerHTML = '<option value="">Failed to load labs</option>';
+        pendingEl.textContent = '--';
+        setCollectStatusText('Unavailable', 'error');
+        setCollectHelpText(error.message || 'Failed to load collect data');
+    } finally {
+        DashboardState.collectLoadingStatus = false;
+        updateCollectButtonState();
+    }
+}
+
+async function loadCollectStatusForSelectedLab() {
+    const selectEl = document.getElementById('collectLabSelect');
+    const pendingEl = document.getElementById('collectPendingTotal');
+    if (!selectEl || !pendingEl) {
+        return;
+    }
+
+    const selectedLabId = selectEl.value || DashboardState.selectedCollectLabId;
+    DashboardState.selectedCollectLabId = selectedLabId || null;
+    if (!selectedLabId) {
+        DashboardState.collectCanExecute = false;
+        pendingEl.textContent = '0 LAB';
+        setCollectStatusText('Select a lab', 'warning');
+        setCollectHelpText('Choose a lab to check collect availability.');
+        updateCollectButtonState();
+        return;
+    }
+
+    DashboardState.collectLoadingStatus = true;
+    DashboardState.collectCanExecute = false;
+    pendingEl.textContent = '--';
+    setCollectStatusText('Checking...');
+    setCollectHelpText('Validating on-chain collect availability...');
+    updateCollectButtonState();
+
+    try {
+        const data = await API.getLabPayoutStatus(selectedLabId, DashboardState.collectMaxBatch);
+        if (!data.success) {
+            throw new Error(data.error || 'Failed to load payout status');
+        }
+
+        const totalLab = data.totalPayoutLab || formatLabTokenRaw(data.totalPayoutRaw);
+        pendingEl.textContent = `${totalLab} LAB`;
+
+        DashboardState.collectCanExecute = data.canCollect === true;
+        if (DashboardState.collectCanExecute) {
+            setCollectStatusText('Ready to collect', 'success');
+        } else if (data.collectReason) {
+            setCollectStatusText(data.collectReason, 'warning');
+        } else {
+            setCollectStatusText('No collectable rewards', 'warning');
+        }
+
+        const walletPart = data.walletPayoutLab || formatLabTokenRaw(data.walletPayoutRaw || '0');
+        setCollectHelpText(
+            `Wallet pending: ${walletPart} LAB. maxBatch: ${data.maxBatch || DashboardState.collectMaxBatch}.`
+        );
+    } catch (error) {
+        DashboardState.collectCanExecute = false;
+        pendingEl.textContent = '--';
+        setCollectStatusText('Status unavailable', 'error');
+        setCollectHelpText(error.message || 'Could not verify collect status');
+    } finally {
+        DashboardState.collectLoadingStatus = false;
+        updateCollectButtonState();
+    }
+}
+
+async function handleCollectLabPayout() {
+    const labId = DashboardState.selectedCollectLabId;
+    if (!labId) {
+        showToast('Select a lab first', 'error');
+        return;
+    }
+    if (!DashboardState.collectCanExecute) {
+        showToast('No collectable rewards for the selected lab', 'error');
+        return;
+    }
+
+    if (!confirm(`Collect pending rewards for lab #${labId}?`)) {
+        return;
+    }
+
+    DashboardState.collectSubmitting = true;
+    updateCollectButtonState();
+
+    try {
+        const result = await API.collectLabPayout(labId, DashboardState.collectMaxBatch);
+        if (result.success) {
+            showToast(`Collect submitted. Tx: ${formatAddress(result.transactionHash)}`, 'success');
+            setCollectStatusText('Collect submitted', 'success');
+            DashboardState.collectCanExecute = false;
+            updateCollectButtonState();
+
+            setTimeout(() => {
+                loadBalances();
+                loadRecentTransactions();
+                loadCollectStatusForSelectedLab();
+            }, 5000);
+        } else {
+            showToast('Collect failed: ' + (result.message || 'Unknown error'), 'error');
+        }
+    } catch (error) {
+        showToast('Collect failed: ' + error.message, 'error');
+    } finally {
+        DashboardState.collectSubmitting = false;
+        updateCollectButtonState();
+    }
+}
+
 // Load treasury administration data
 async function loadTreasuryAdminData() {
     try {
@@ -1023,6 +1261,7 @@ async function refreshAllData() {
     await Promise.all([
         loadSystemStatus(),
         loadBalances(),
+        loadCollectLabs(),
         loadTreasuryAdminData(),
         loadRecentTransactions()
     ]);
@@ -1293,6 +1532,19 @@ function setupButtonHandlers() {
     const refreshTxBtn = document.getElementById('refreshTxBtn');
     if (refreshTxBtn) {
         refreshTxBtn.addEventListener('click', loadRecentTransactions);
+    }
+
+    const collectLabSelect = document.getElementById('collectLabSelect');
+    if (collectLabSelect) {
+        collectLabSelect.addEventListener('change', async (event) => {
+            DashboardState.selectedCollectLabId = event.target.value || null;
+            await loadCollectStatusForSelectedLab();
+        });
+    }
+
+    const collectLabBtn = document.getElementById('collectLabBtn');
+    if (collectLabBtn) {
+        collectLabBtn.addEventListener('click', handleCollectLabPayout);
     }
 
     const revealPrivateKeyBtn = document.getElementById('revealPrivateKeyBtn');

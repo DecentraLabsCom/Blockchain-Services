@@ -90,6 +90,7 @@ public class WalletService {
     private static final int GCM_TAG_LENGTH = 128; // 128 bits
     private static final int PBKDF2_ITERATIONS = 65536;
     private static final int AES_KEY_SIZE = 256;
+    private static final int MAX_PROVIDER_LABS_QUERY = 500;
 
     // Cache of Web3j connections per network (with fallback URLs)
     private final Map<String, Web3j> web3jInstances = new ConcurrentHashMap<>();
@@ -537,6 +538,219 @@ public class WalletService {
     }
 
     /**
+     * Lists up to MAX_PROVIDER_LABS_QUERY lab IDs owned by a provider.
+     */
+    public List<BigInteger> getLabsOwnedByProvider(String providerAddress) {
+        if (providerAddress == null || providerAddress.isBlank()) {
+            return List.of();
+        }
+        try {
+            Web3j web3j = getWeb3jInstance();
+
+            Function balanceFunction = new Function(
+                "balanceOf",
+                Collections.singletonList(new Address(providerAddress)),
+                Collections.singletonList(new TypeReference<Uint256>() {})
+            );
+            String encodedBalance = FunctionEncoder.encode(balanceFunction);
+            EthCall balanceResponse = web3j.ethCall(
+                Transaction.createEthCallTransaction(null, contractAddress, encodedBalance),
+                DefaultBlockParameterName.LATEST
+            ).send();
+
+            if (balanceResponse.hasError()) {
+                log.warn("Error calling balanceOf() for provider labs query");
+                return List.of();
+            }
+
+            @SuppressWarnings("rawtypes")
+            List<Type> decodedBalance = FunctionReturnDecoder.decode(
+                balanceResponse.getValue(),
+                balanceFunction.getOutputParameters()
+            );
+            if (decodedBalance.isEmpty()) {
+                return List.of();
+            }
+
+            BigInteger owned = (BigInteger) decodedBalance.get(0).getValue();
+            if (owned.compareTo(BigInteger.ZERO) <= 0) {
+                return List.of();
+            }
+
+            int queryCount = owned.min(BigInteger.valueOf(MAX_PROVIDER_LABS_QUERY)).intValue();
+            List<BigInteger> labs = new ArrayList<>(queryCount);
+
+            for (int i = 0; i < queryCount; i++) {
+                Function tokenByIndex = new Function(
+                    "tokenOfOwnerByIndex",
+                    Arrays.asList(new Address(providerAddress), new Uint256(BigInteger.valueOf(i))),
+                    Collections.singletonList(new TypeReference<Uint256>() {})
+                );
+
+                String encodedTokenByIndex = FunctionEncoder.encode(tokenByIndex);
+                EthCall tokenResponse = web3j.ethCall(
+                    Transaction.createEthCallTransaction(null, contractAddress, encodedTokenByIndex),
+                    DefaultBlockParameterName.LATEST
+                ).send();
+
+                if (tokenResponse.hasError()) {
+                    log.warn("Error calling tokenOfOwnerByIndex() at index {} for provider", i);
+                    continue;
+                }
+
+                @SuppressWarnings("rawtypes")
+                List<Type> decodedToken = FunctionReturnDecoder.decode(
+                    tokenResponse.getValue(),
+                    tokenByIndex.getOutputParameters()
+                );
+                if (!decodedToken.isEmpty()) {
+                    labs.add((BigInteger) decodedToken.get(0).getValue());
+                }
+            }
+
+            labs.sort(Comparator.naturalOrder());
+            return labs;
+        } catch (Exception e) {
+            log.error("Error getting provider labs from Diamond contract", e);
+            return List.of();
+        }
+    }
+
+    /**
+     * Checks whether a given lab ID belongs to a provider.
+     */
+    public boolean isLabOwnedByProvider(String providerAddress, BigInteger labId) {
+        if (providerAddress == null || providerAddress.isBlank() || labId == null || labId.compareTo(BigInteger.ZERO) <= 0) {
+            return false;
+        }
+        try {
+            Web3j web3j = getWeb3jInstance();
+            Function function = new Function(
+                "ownerOf",
+                Collections.singletonList(new Uint256(labId)),
+                Collections.singletonList(new TypeReference<Address>() {})
+            );
+
+            String encodedFunction = FunctionEncoder.encode(function);
+            EthCall response = web3j.ethCall(
+                Transaction.createEthCallTransaction(null, contractAddress, encodedFunction),
+                DefaultBlockParameterName.LATEST
+            ).send();
+
+            if (response.hasError()) {
+                return false;
+            }
+
+            @SuppressWarnings("rawtypes")
+            List<Type> decoded = FunctionReturnDecoder.decode(response.getValue(), function.getOutputParameters());
+            if (decoded.isEmpty()) {
+                return false;
+            }
+
+            String owner = decoded.get(0).getValue().toString();
+            return owner != null && owner.equalsIgnoreCase(providerAddress);
+        } catch (Exception e) {
+            log.warn("Failed to resolve owner for lab {}", labId, e);
+            return false;
+        }
+    }
+
+    /**
+     * Returns pending payout buckets for a specific lab.
+     */
+    public Optional<LabPayoutStatus> getLabPayoutStatus(BigInteger labId) {
+        if (labId == null || labId.compareTo(BigInteger.ZERO) <= 0) {
+            return Optional.empty();
+        }
+        try {
+            Web3j web3j = getWeb3jInstance();
+            Function function = new Function(
+                "getPendingLabPayout",
+                Collections.singletonList(new Uint256(labId)),
+                Arrays.asList(
+                    new TypeReference<Uint256>() {},
+                    new TypeReference<Uint256>() {},
+                    new TypeReference<Uint256>() {},
+                    new TypeReference<Uint256>() {}
+                )
+            );
+
+            String encodedFunction = FunctionEncoder.encode(function);
+            EthCall response = web3j.ethCall(
+                Transaction.createEthCallTransaction(null, contractAddress, encodedFunction),
+                DefaultBlockParameterName.LATEST
+            ).send();
+
+            if (response.hasError()) {
+                log.warn("Error calling getPendingLabPayout() for lab {}", labId);
+                return Optional.empty();
+            }
+
+            @SuppressWarnings("rawtypes")
+            List<Type> decoded = FunctionReturnDecoder.decode(response.getValue(), function.getOutputParameters());
+            if (decoded.size() < 4) {
+                return Optional.empty();
+            }
+
+            return Optional.of(new LabPayoutStatus(
+                (BigInteger) decoded.get(0).getValue(),
+                (BigInteger) decoded.get(1).getValue(),
+                (BigInteger) decoded.get(2).getValue(),
+                (BigInteger) decoded.get(3).getValue()
+            ));
+        } catch (Exception e) {
+            log.error("Error getting pending payout status for lab {}", labId, e);
+            return Optional.empty();
+        }
+    }
+
+    /**
+     * Simulates requestFunds() via eth_call to determine if collect is currently executable.
+     */
+    public CollectSimulationResult simulateCollectLabPayout(String callerAddress, BigInteger labId, BigInteger maxBatch) {
+        if (callerAddress == null || callerAddress.isBlank()) {
+            return new CollectSimulationResult(false, "Institutional wallet is not configured");
+        }
+        if (labId == null || labId.compareTo(BigInteger.ZERO) <= 0) {
+            return new CollectSimulationResult(false, "Invalid lab ID");
+        }
+        if (maxBatch == null || maxBatch.compareTo(BigInteger.ONE) < 0 || maxBatch.compareTo(BigInteger.valueOf(100)) > 0) {
+            return new CollectSimulationResult(false, "maxBatch must be between 1 and 100");
+        }
+
+        try {
+            Web3j web3j = getWeb3jInstance();
+            Function function = new Function(
+                "requestFunds",
+                Arrays.asList(new Uint256(labId), new Uint256(maxBatch)),
+                Collections.emptyList()
+            );
+
+            String encodedFunction = FunctionEncoder.encode(function);
+            EthCall response = web3j.ethCall(
+                Transaction.createEthCallTransaction(callerAddress, contractAddress, encodedFunction),
+                DefaultBlockParameterName.LATEST
+            ).send();
+
+            if (response.hasError()) {
+                String message = response.getError() != null ? response.getError().getMessage() : "Collect call reverted";
+                return new CollectSimulationResult(false, sanitizeRpcMessage(message));
+            }
+
+            String returnData = response.getValue();
+            if (returnData != null && !returnData.isBlank() && !"0x".equalsIgnoreCase(returnData)) {
+                String decodedReason = decodeRevertReason(returnData);
+                return new CollectSimulationResult(false, decodedReason != null ? decodedReason : "Collect is not available");
+            }
+
+            return new CollectSimulationResult(true, null);
+        } catch (Exception e) {
+            log.warn("Failed to simulate collect for lab {}", labId, e);
+            return new CollectSimulationResult(false, "Unable to simulate collect right now");
+        }
+    }
+
+    /**
      * Gets stake information for a provider from the Diamond contract
      * @param providerAddress The provider address to query
      * @return StakeInfo DTO with staked amount, slashed amount, timestamps, etc.
@@ -694,6 +908,40 @@ public class WalletService {
             log.debug("ERC20 balance lookup failed (context omitted)", e);
             return BigInteger.ZERO;
         }
+    }
+
+    private String decodeRevertReason(String returnData) {
+        String clean = Numeric.cleanHexPrefix(returnData);
+        if (clean == null || clean.length() < 8) {
+            return null;
+        }
+        // Error(string)
+        if (!clean.startsWith("08c379a0") || clean.length() <= 8) {
+            return null;
+        }
+        String payload = "0x" + clean.substring(8);
+        Function errorFunction = new Function(
+            "Error",
+            Collections.emptyList(),
+            Collections.singletonList(new TypeReference<Utf8String>() {})
+        );
+        @SuppressWarnings("rawtypes")
+        List<Type> decoded = FunctionReturnDecoder.decode(
+            payload,
+            errorFunction.getOutputParameters()
+        );
+        if (decoded.isEmpty()) {
+            return null;
+        }
+        return decoded.get(0).getValue().toString();
+    }
+
+    private String sanitizeRpcMessage(String message) {
+        if (message == null || message.isBlank()) {
+            return "Collect call reverted";
+        }
+        String sanitized = message.replace("execution reverted:", "").trim();
+        return sanitized.isEmpty() ? "Collect call reverted" : sanitized;
     }
 
 

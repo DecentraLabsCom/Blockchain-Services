@@ -28,6 +28,8 @@ public class InstitutionalAdminRequest {
     private String spendingLimit;   // For limit setting operations
     private String spendingPeriod;  // For period setting operations
     private String amount;          // For deposit/withdraw operations
+    private String labId;           // For collect operations
+    private String maxBatch;        // For collect operations
 
     public enum AdminOperation {
         AUTHORIZE_BACKEND,
@@ -37,6 +39,7 @@ public class InstitutionalAdminRequest {
         SET_SPENDING_PERIOD,
         RESET_SPENDING_PERIOD,
         DEPOSIT_TREASURY,
-        WITHDRAW_TREASURY
+        WITHDRAW_TREASURY,
+        COLLECT_LAB_PAYOUT
     }
 }

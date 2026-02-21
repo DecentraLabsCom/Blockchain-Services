@@ -72,6 +72,9 @@ public class InstitutionalAdminService {
     @Value("${security.access-token.required:true}")
     private boolean accessTokenRequired;
 
+    @Value("${treasury.collect.max-batch:50}")
+    private int defaultCollectMaxBatch;
+
     /**
      * Execute administrative operation with localhost and wallet ownership validation
      */
@@ -255,6 +258,9 @@ public class InstitutionalAdminService {
 
             case WITHDRAW_TREASURY:
                 return withdrawTreasury(credentials, request);
+
+            case COLLECT_LAB_PAYOUT:
+                return collectLabPayout(credentials, request);
 
             default:
                 return InstitutionalAdminResponse.error("Unknown administrative operation");
@@ -474,6 +480,48 @@ public class InstitutionalAdminService {
         );
     }
 
+    private InstitutionalAdminResponse collectLabPayout(Credentials credentials, InstitutionalAdminRequest request) throws Exception {
+        if (request.getLabId() == null || request.getLabId().isBlank()) {
+            return InstitutionalAdminResponse.error("Lab ID required for collect operation");
+        }
+
+        BigInteger labId = EthereumAddressValidator.parseBigInteger(request.getLabId(), "labId");
+        if (labId.compareTo(BigInteger.ZERO) <= 0) {
+            return InstitutionalAdminResponse.error("Lab ID must be greater than zero");
+        }
+
+        BigInteger maxBatch;
+        if (request.getMaxBatch() == null || request.getMaxBatch().isBlank()) {
+            maxBatch = BigInteger.valueOf(sanitizeBatch(defaultCollectMaxBatch));
+        } else {
+            maxBatch = EthereumAddressValidator.parseBigInteger(request.getMaxBatch(), "maxBatch");
+        }
+
+        if (maxBatch.compareTo(BigInteger.ONE) < 0 || maxBatch.compareTo(BigInteger.valueOf(100)) > 0) {
+            return InstitutionalAdminResponse.error("maxBatch must be between 1 and 100");
+        }
+
+        Function function = new Function(
+            "requestFunds",
+            Arrays.asList(new Uint256(labId), new Uint256(maxBatch)),
+            Collections.emptyList()
+        );
+
+        String txHash = sendTransaction(credentials, function);
+        recordAdminTransaction(
+            credentials.getAddress(),
+            txHash,
+            "COLLECT_LAB_PAYOUT",
+            "Collect payout for lab #" + labId + " (maxBatch=" + maxBatch + ")",
+            null
+        );
+        return InstitutionalAdminResponse.success(
+            "Collect transaction submitted successfully",
+            txHash,
+            "COLLECT_LAB_PAYOUT"
+        );
+    }
+
     /**
      * Send a transaction to the blockchain
      */
@@ -558,5 +606,15 @@ public class InstitutionalAdminService {
         BigDecimal days = new BigDecimal(seconds)
             .divide(BigDecimal.valueOf(86_400), 2, RoundingMode.HALF_UP);
         return days.stripTrailingZeros().toPlainString() + " days";
+    }
+
+    private int sanitizeBatch(int configuredBatch) {
+        if (configuredBatch < 1) {
+            return 1;
+        }
+        if (configuredBatch > 100) {
+            return 100;
+        }
+        return configuredBatch;
     }
 }

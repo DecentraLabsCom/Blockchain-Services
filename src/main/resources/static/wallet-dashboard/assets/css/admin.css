@@ -1332,6 +1332,98 @@ body {
     min-width: 120px;
 }
 
+/* Lab Collect Panel */
+.collect-panel {
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-md);
+    padding: var(--spacing-md);
+}
+
+.collect-grid {
+    display: grid;
+    grid-template-columns: 2fr 1fr 1fr;
+    gap: var(--spacing-md);
+    align-items: end;
+}
+
+.collect-select {
+    width: 100%;
+    background: rgba(26, 27, 38, 0.8);
+    border: 1px solid var(--border-color);
+    color: var(--text-primary);
+    padding: var(--spacing-sm);
+    border-radius: var(--radius-sm);
+    font-size: 1rem;
+    transition: all 0.3s ease;
+}
+
+.collect-select:focus {
+    outline: none;
+    border-color: var(--neon-blue);
+    box-shadow: 0 0 10px rgba(0, 212, 255, 0.3);
+}
+
+.collect-select:disabled {
+    opacity: 0.65;
+    cursor: not-allowed;
+}
+
+.collect-metric {
+    background: rgba(10, 14, 39, 0.55);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-sm);
+    padding: var(--spacing-sm);
+    min-height: 78px;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: 0.35rem;
+}
+
+.collect-metric-label {
+    color: var(--text-secondary);
+    font-size: 0.82rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+
+.collect-metric-value {
+    color: var(--neon-green);
+    font-size: 1.25rem;
+    font-weight: 700;
+}
+
+.collect-status-value {
+    color: var(--text-primary);
+    font-size: 0.95rem;
+    font-weight: 600;
+}
+
+.collect-status-value.success {
+    color: var(--neon-green);
+}
+
+.collect-status-value.warning {
+    color: var(--neon-orange);
+}
+
+.collect-status-value.error {
+    color: var(--neon-red);
+}
+
+.collect-actions {
+    margin-top: var(--spacing-md);
+    display: flex;
+    justify-content: flex-end;
+}
+
+.collect-help {
+    margin-top: var(--spacing-sm);
+    color: var(--text-muted);
+    font-size: 0.9rem;
+}
+
 /* Responsive Design */
 @media (max-width: 768px) {
     .container {
@@ -1369,6 +1461,19 @@ body {
     
     .footer-logo {
         flex: 0 0 150px;
+    }
+
+    .collect-grid {
+        grid-template-columns: 1fr;
+        align-items: stretch;
+    }
+
+    .collect-actions {
+        justify-content: stretch;
+    }
+
+    .collect-actions .btn {
+        width: 100%;
     }
 }
 

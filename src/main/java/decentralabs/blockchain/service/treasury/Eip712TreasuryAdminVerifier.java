@@ -26,7 +26,7 @@ public class Eip712TreasuryAdminVerifier {
     private static final String EIP712_DOMAIN_TYPE =
         "EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)";
     private static final String TREASURY_ADMIN_TYPE =
-        "TreasuryAdminOperation(address signer,string operation,address providerAddress,address backendAddress,uint256 spendingLimit,uint256 spendingPeriod,uint256 amount,uint64 timestamp)";
+        "TreasuryAdminOperation(address signer,string operation,address providerAddress,address backendAddress,uint256 spendingLimit,uint256 spendingPeriod,uint256 amount,uint256 labId,uint256 maxBatch,uint64 timestamp)";
 
     private static final byte[] EIP712_DOMAIN_TYPEHASH = keccak256(EIP712_DOMAIN_TYPE);
     private static final byte[] TREASURY_ADMIN_TYPEHASH = keccak256(TREASURY_ADMIN_TYPE);
@@ -108,6 +108,8 @@ public class Eip712TreasuryAdminVerifier {
             new Uint256(parseOptionalBigInteger(request.getSpendingLimit())),
             new Uint256(parseOptionalBigInteger(request.getSpendingPeriod())),
             new Uint256(parseOptionalBigInteger(request.getAmount())),
+            new Uint256(parseOptionalBigInteger(request.getLabId())),
+            new Uint256(parseOptionalBigInteger(request.getMaxBatch())),
             new Uint64(BigInteger.valueOf(request.getTimestamp()))
         );
         return Hash.sha3(Numeric.hexStringToByteArray(encodedHex));

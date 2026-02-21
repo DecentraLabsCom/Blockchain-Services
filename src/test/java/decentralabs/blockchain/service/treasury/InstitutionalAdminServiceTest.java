@@ -321,6 +321,47 @@ class InstitutionalAdminServiceTest {
             assertThat(response.isSuccess()).isFalse();
             assertThat(response.getMessage()).containsIgnoringCase("rate limit");
         }
+
+        @Test
+        @SuppressWarnings({"unchecked", "rawtypes"})
+        @DisplayName("Should execute COLLECT_LAB_PAYOUT operation successfully")
+        void collectLabPayoutExecutesTransactionWhenValid() throws Exception {
+            Credentials credentials = Credentials.create("0x1");
+            when(httpServletRequest.getRemoteAddr()).thenReturn("127.0.0.1");
+            when(institutionalWalletService.getInstitutionalWalletAddress()).thenReturn(credentials.getAddress());
+            when(institutionalWalletService.getInstitutionalCredentials()).thenReturn(credentials);
+            when(rateLimitService.allowTransaction(credentials.getAddress())).thenReturn(true);
+
+            Request<?, EthGetTransactionCount> txCountRequest = (Request<?, EthGetTransactionCount>) mock(Request.class);
+            EthGetTransactionCount txCountResponse = new EthGetTransactionCount();
+            txCountResponse.setResult("0x1");
+            when(txCountRequest.send()).thenReturn(txCountResponse);
+            when(web3j.ethGetTransactionCount(eq(credentials.getAddress()), eq(DefaultBlockParameterName.LATEST))).thenReturn((Request) txCountRequest);
+
+            Request<?, EthSendTransaction> sendRequest = (Request<?, EthSendTransaction>) mock(Request.class);
+            EthSendTransaction sendResponse = new EthSendTransaction();
+            sendResponse.setResult("0xcollect");
+            when(sendRequest.send()).thenReturn(sendResponse);
+            when(web3j.ethSendRawTransaction(any())).thenReturn((Request) sendRequest);
+
+            InstitutionalAdminRequest request = buildRequest(
+                credentials.getAddress(),
+                AdminOperation.COLLECT_LAB_PAYOUT,
+                null,
+                null,
+                null,
+                null,
+                null
+            );
+            request.setLabId("3");
+            request.setMaxBatch("50");
+
+            InstitutionalAdminResponse response = adminService.executeAdminOperation(request);
+
+            assertThat(response.isSuccess()).isTrue();
+            assertThat(response.getTransactionHash()).isEqualTo("0xcollect");
+            assertThat(response.getOperationType()).isEqualTo("COLLECT_LAB_PAYOUT");
+        }
     }
 
     @Nested
@@ -358,6 +399,8 @@ class InstitutionalAdminServiceTest {
         request.setSpendingLimit(spendingLimit);
         request.setSpendingPeriod(spendingPeriod);
         request.setAmount(amount);
+        request.setLabId(null);
+        request.setMaxBatch(null);
         request.setTimestamp(System.currentTimeMillis());
         request.setSignature("0x" + "11".repeat(65));
         return request;

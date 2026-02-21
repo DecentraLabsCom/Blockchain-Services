@@ -165,6 +165,41 @@
                 </div>
             </section>
 
+            <!-- Lab Payout Collect Section -->
+            <section class="card">
+                <div class="card-header">
+                    <h2>Lab Payout Collect</h2>
+                </div>
+                <div class="card-body">
+                    <div class="collect-panel">
+                        <div class="collect-grid">
+                            <div class="form-group">
+                                <label for="collectLabSelect">Institution Lab</label>
+                                <select id="collectLabSelect" class="collect-select" disabled>
+                                    <option value="">Loading labs...</option>
+                                </select>
+                            </div>
+                            <div class="collect-metric">
+                                <span class="collect-metric-label">Pending Rewards</span>
+                                <span class="collect-metric-value" id="collectPendingTotal">--</span>
+                            </div>
+                            <div class="collect-metric">
+                                <span class="collect-metric-label">Collect Status</span>
+                                <span class="collect-status-value" id="collectStatusText">--</span>
+                            </div>
+                        </div>
+                        <div class="collect-actions">
+                            <button type="button" id="collectLabBtn" class="btn btn-primary" disabled>
+                                <i class="fas fa-coins"></i> Collect
+                            </button>
+                        </div>
+                        <p class="collect-help" id="collectHelpText">
+                            Select one of your labs to check pending rewards and run collect.
+                        </p>
+                    </div>
+                </div>
+            </section>
+
             <!-- Treasury Administration Section -->
             <section class="card">
                 <div class="card-header">

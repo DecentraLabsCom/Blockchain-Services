@@ -52,6 +52,8 @@ const API = {
             spendingLimit: payload.spendingLimit || '0',
             spendingPeriod: payload.spendingPeriod || '0',
             amount: payload.amount || '0',
+            labId: payload.labId || '0',
+            maxBatch: payload.maxBatch || '0',
             timestamp: payload.timestamp
         };
 
@@ -71,6 +73,8 @@ const API = {
                     { name: 'spendingLimit', type: 'uint256' },
                     { name: 'spendingPeriod', type: 'uint256' },
                     { name: 'amount', type: 'uint256' },
+                    { name: 'labId', type: 'uint256' },
+                    { name: 'maxBatch', type: 'uint256' },
                     { name: 'timestamp', type: 'uint64' }
                 ]
             },
@@ -216,6 +220,18 @@ const API = {
     },
 
     /**
+     * Collect lab payouts for a specific lab ID.
+     * @param {string|number} labId - Lab token ID
+     * @param {string|number} maxBatch - Max reservations to process in one tx
+     */
+    async collectLabPayout(labId, maxBatch) {
+        return await this.executeAdminOperation('COLLECT_LAB_PAYOUT', {
+            labId: String(labId),
+            maxBatch: String(maxBatch)
+        });
+    },
+
+    /**
      * Authorize backend address
      * @param {string} backendAddress - Ethereum address to authorize
      */
@@ -287,6 +303,27 @@ const API = {
      */
     async getTopSpenders(limit = 10) {
         return await this.request(`/treasury/admin/top-spenders?limit=${limit}`);
+    },
+
+    /**
+     * Get labs owned by the institutional provider wallet.
+     */
+    async getProviderLabs() {
+        return await this.request('/treasury/admin/provider-labs');
+    },
+
+    /**
+     * Get pending payout and collect readiness for a specific lab.
+     * @param {string|number} labId - Lab token ID
+     * @param {number|null} maxBatch - Batch size for collect simulation
+     */
+    async getLabPayoutStatus(labId, maxBatch = null) {
+        const params = new URLSearchParams();
+        params.set('labId', String(labId));
+        if (maxBatch !== null && maxBatch !== undefined) {
+            params.set('maxBatch', String(maxBatch));
+        }
+        return await this.request(`/treasury/admin/lab-payout-status?${params.toString()}`);
     }
 };
 
