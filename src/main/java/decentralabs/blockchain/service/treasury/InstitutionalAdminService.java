@@ -163,6 +163,25 @@ public class InstitutionalAdminService {
     }
 
     /**
+     * Executes payout heap prune internally (scheduler/automation path).
+     * Skips localhost checks because it is invoked from trusted in-process jobs.
+     */
+    public InstitutionalAdminResponse prunePayoutHeapInternal(BigInteger labId, BigInteger maxIterations) {
+        try {
+            String institutionalAddress = institutionalWalletService.getInstitutionalWalletAddress();
+            if (institutionalAddress == null || institutionalAddress.isBlank()) {
+                return InstitutionalAdminResponse.error("Institutional wallet not configured");
+            }
+
+            Credentials credentials = institutionalWalletService.getInstitutionalCredentials();
+            return prunePayoutHeap(credentials, labId, maxIterations);
+        } catch (Exception e) {
+            log.error("Error executing internal payout heap prune: {}", LogSanitizer.sanitize(e.getMessage()), e);
+            return InstitutionalAdminResponse.error("Prune operation failed: " + e.getMessage());
+        }
+    }
+
+    /**
      * Check if the request comes from localhost
      */
     private boolean isLocalhostRequest() {
@@ -574,10 +593,47 @@ public class InstitutionalAdminService {
         );
     }
 
+    private InstitutionalAdminResponse prunePayoutHeap(
+        Credentials credentials,
+        BigInteger labId,
+        BigInteger maxIterations
+    ) throws Exception {
+        if (labId == null || labId.compareTo(BigInteger.ZERO) <= 0) {
+            return InstitutionalAdminResponse.error("Lab ID must be greater than zero");
+        }
+        if (
+            maxIterations == null
+                || maxIterations.compareTo(BigInteger.ONE) < 0
+                || maxIterations.compareTo(BigInteger.valueOf(1000)) > 0
+        ) {
+            return InstitutionalAdminResponse.error("maxIterations must be between 1 and 1000");
+        }
+
+        Function function = new Function(
+            "prunePayoutHeap",
+            Arrays.asList(new Uint256(labId), new Uint256(maxIterations)),
+            Collections.emptyList()
+        );
+
+        String txHash = sendTransaction(credentials, function);
+        recordAdminTransaction(
+            credentials.getAddress(),
+            txHash,
+            "PRUNE_PAYOUT_HEAP",
+            "Prune payout heap for lab #" + labId + " (maxIterations=" + maxIterations + ")",
+            null
+        );
+        return InstitutionalAdminResponse.success(
+            "Prune payout heap transaction submitted successfully",
+            txHash,
+            "PRUNE_PAYOUT_HEAP"
+        );
+    }
+
     /**
      * Send a transaction to the blockchain
      */
-    private String sendTransaction(Credentials credentials, Function function) throws Exception {
+    private synchronized String sendTransaction(Credentials credentials, Function function) throws Exception {
         // Rate limiting check
         if (!rateLimitService.allowTransaction(credentials.getAddress())) {
             throw new RuntimeException("Rate limit exceeded. Too many transactions per hour.");

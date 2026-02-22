@@ -982,6 +982,61 @@ public class WalletService {
     }
 
     /**
+     * Simulates prunePayoutHeap() via eth_call and returns how many entries would be removed.
+     */
+    public Optional<BigInteger> simulatePrunePayoutHeap(
+        String callerAddress,
+        BigInteger labId,
+        BigInteger maxIterations
+    ) {
+        if (callerAddress == null || callerAddress.isBlank()) {
+            return Optional.empty();
+        }
+        if (labId == null || labId.compareTo(BigInteger.ZERO) <= 0) {
+            return Optional.empty();
+        }
+        if (
+            maxIterations == null
+                || maxIterations.compareTo(BigInteger.ONE) < 0
+                || maxIterations.compareTo(BigInteger.valueOf(1000)) > 0
+        ) {
+            return Optional.empty();
+        }
+
+        try {
+            Web3j web3j = getWeb3jInstance();
+            Function function = new Function(
+                "prunePayoutHeap",
+                Arrays.asList(new Uint256(labId), new Uint256(maxIterations)),
+                Collections.singletonList(new TypeReference<Uint256>() {})
+            );
+
+            String encodedFunction = FunctionEncoder.encode(function);
+            EthCall response = web3j.ethCall(
+                Transaction.createEthCallTransaction(callerAddress, contractAddress, encodedFunction),
+                DefaultBlockParameterName.LATEST
+            ).send();
+
+            if (response.hasError()) {
+                String message = response.getError() != null ? response.getError().getMessage() : "Prune simulation failed";
+                log.warn("Failed to simulate prune for lab {}: {}", labId, sanitizeRpcMessage(message));
+                return Optional.empty();
+            }
+
+            @SuppressWarnings("rawtypes")
+            List<Type> decoded = FunctionReturnDecoder.decode(response.getValue(), function.getOutputParameters());
+            if (decoded.isEmpty()) {
+                return Optional.empty();
+            }
+
+            return Optional.of((BigInteger) decoded.get(0).getValue());
+        } catch (Exception e) {
+            log.warn("Failed to simulate prune for lab {}", labId, e);
+            return Optional.empty();
+        }
+    }
+
+    /**
      * Gets stake information for a provider from the Diamond contract
      * @param providerAddress The provider address to query
      * @return StakeInfo DTO with staked amount, slashed amount, timestamps, etc.

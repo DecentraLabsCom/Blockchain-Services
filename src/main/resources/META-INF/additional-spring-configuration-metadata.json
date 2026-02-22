@@ -777,6 +777,60 @@
     "defaultValue": true
   },
   {
+    "name": "treasury.collect.auto.interval.ms",
+    "type": "java.lang.Long",
+    "description": "Delay in milliseconds between automatic lab payout collection runs.",
+    "defaultValue": 604800000
+  },
+  {
+    "name": "treasury.collect.auto.initial-delay.ms",
+    "type": "java.lang.Long",
+    "description": "Initial delay in milliseconds before the first automatic lab payout collection run.",
+    "defaultValue": 120000
+  },
+  {
+    "name": "treasury.collect.auto.max-batch",
+    "type": "java.lang.Integer",
+    "description": "Maximum reservations to process per collect transaction submitted by the auto-collect scheduler.",
+    "defaultValue": 50
+  },
+  {
+    "name": "treasury.collect.auto.max-rounds-per-lab",
+    "type": "java.lang.Integer",
+    "description": "Maximum collect transactions attempted per lab in each auto-collect scheduler run.",
+    "defaultValue": 4
+  },
+  {
+    "name": "treasury.prune.auto.enabled",
+    "type": "java.lang.Boolean",
+    "description": "Enable periodic automatic payout heap pruning for labs associated with the configured institutional wallet.",
+    "defaultValue": true
+  },
+  {
+    "name": "treasury.prune.auto.interval.ms",
+    "type": "java.lang.Long",
+    "description": "Delay in milliseconds between automatic payout heap pruning runs.",
+    "defaultValue": 1209600000
+  },
+  {
+    "name": "treasury.prune.auto.initial-delay.ms",
+    "type": "java.lang.Long",
+    "description": "Initial delay in milliseconds before the first automatic payout heap pruning run.",
+    "defaultValue": 300000
+  },
+  {
+    "name": "treasury.prune.auto.max-iterations",
+    "type": "java.lang.Integer",
+    "description": "Maximum heap entries to inspect per lab in each automatic prune transaction.",
+    "defaultValue": 100
+  },
+  {
+    "name": "treasury.prune.auto.max-labs-per-run",
+    "type": "java.lang.Integer",
+    "description": "Maximum number of provider labs processed in each automatic prune scheduler run.",
+    "defaultValue": 25
+  },
+  {
     "name": "treasury.admin.domain.name",
     "type": "java.lang.String",
     "description": "EIP-712 domain name for treasury admin signatures"
