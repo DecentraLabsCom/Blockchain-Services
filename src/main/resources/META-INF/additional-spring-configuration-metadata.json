@@ -590,6 +590,12 @@
     "defaultValue": 50
   },
   {
+    "name": "reservation.early-checkin-tolerance-seconds",
+    "type": "java.lang.Long",
+    "description": "Seconds allowed for early check-in before reservation start time.",
+    "defaultValue": 60
+  },
+  {
     "name": "notifications.mail.enabled",
     "type": "java.lang.Boolean",
     "description": "Enable email notifications.",
@@ -763,6 +769,12 @@
     "name": "public.base-url",
     "type": "java.lang.String",
     "description": "Public base URL where this gateway is accessible"
+  },
+  {
+    "name": "treasury.collect.auto.enabled",
+    "type": "java.lang.Boolean",
+    "description": "Enable periodic automatic lab payout collection with the configured institutional wallet.",
+    "defaultValue": true
   },
   {
     "name": "treasury.admin.domain.name",

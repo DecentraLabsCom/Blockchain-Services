@@ -139,6 +139,30 @@ public class InstitutionalAdminService {
     }
 
     /**
+     * Executes collect payout internally (scheduler/automation path).
+     * Skips localhost checks because it is invoked from trusted in-process jobs.
+     */
+    public InstitutionalAdminResponse collectLabPayoutInternal(BigInteger labId, BigInteger maxBatch) {
+        try {
+            String institutionalAddress = institutionalWalletService.getInstitutionalWalletAddress();
+            if (institutionalAddress == null || institutionalAddress.isBlank()) {
+                return InstitutionalAdminResponse.error("Institutional wallet not configured");
+            }
+
+            Credentials credentials = institutionalWalletService.getInstitutionalCredentials();
+            InstitutionalAdminRequest request = new InstitutionalAdminRequest();
+            request.setOperation(InstitutionalAdminRequest.AdminOperation.COLLECT_LAB_PAYOUT);
+            request.setLabId(labId != null ? labId.toString() : null);
+            request.setMaxBatch(maxBatch != null ? maxBatch.toString() : null);
+
+            return collectLabPayout(credentials, request);
+        } catch (Exception e) {
+            log.error("Error executing internal collect payout: {}", LogSanitizer.sanitize(e.getMessage()), e);
+            return InstitutionalAdminResponse.error("Collect operation failed: " + e.getMessage());
+        }
+    }
+
+    /**
      * Check if the request comes from localhost
      */
     private boolean isLocalhostRequest() {

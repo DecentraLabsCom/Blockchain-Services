@@ -2,6 +2,7 @@ package decentralabs.blockchain.service.intent;
 
 import java.math.BigDecimal;
 import java.math.BigInteger;
+import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Locale;
 import java.util.Optional;
@@ -23,6 +24,7 @@ import org.web3j.abi.datatypes.generated.Uint256;
 import org.web3j.abi.TypeReference; 
 import org.web3j.abi.FunctionReturnDecoder;
 import org.web3j.crypto.Credentials;
+import org.web3j.crypto.Hash;
 import org.web3j.protocol.Web3j;
 import org.web3j.protocol.core.DefaultBlockParameterName;
 import org.web3j.protocol.core.methods.request.Transaction;
@@ -535,10 +537,11 @@ public class IntentOnChainExecutor {
 
         cleanupExecutor.submit(() -> {
             try {
+                String pucHash = computePucHash(payload.getPuc());
                 Optional<BigInteger> activeCountOpt = fetchInstitutionalUserActiveCount(
                     credentials.getAddress(),
                     payload.getExecutor(),
-                    payload.getPuc(),
+                    pucHash,
                     payload.getLabId()
                 );
                 if (activeCountOpt.isEmpty()) {
@@ -554,7 +557,7 @@ public class IntentOnChainExecutor {
                     "releaseInstitutionalExpiredReservations",
                     List.of(
                         new Address(payload.getExecutor()),
-                        new Utf8String(payload.getPuc()),
+                        new Bytes32(toBytes32(pucHash)),
                         new Uint256(payload.getLabId()),
                         new Uint256(PRE_RELEASE_BATCH)
                     ),
@@ -576,14 +579,14 @@ public class IntentOnChainExecutor {
     private Optional<BigInteger> fetchInstitutionalUserActiveCount(
         String fromAddress,
         String provider,
-        String puc,
+        String pucHash,
         BigInteger labId
     ) {
         try {
             Web3j web3j = resolveWeb3j();
             Function fn = new Function(
-                "getInstitutionalUserActiveCount",
-                List.of(new Address(provider), new Utf8String(puc), new Uint256(labId)),
+                "getInstitutionalUserActiveCountByHash",
+                List.of(new Address(provider), new Bytes32(toBytes32(pucHash)), new Uint256(labId)),
                 List.of(new TypeReference<Uint256>() {})
             );
             String encoded = FunctionEncoder.encode(fn);
@@ -602,6 +605,14 @@ public class IntentOnChainExecutor {
             log.warn("Unable to fetch institutional active count for provider {}: {}", provider, ex.getMessage());
             return Optional.empty();
         }
+    }
+
+    private String computePucHash(String puc) {
+        if (puc == null || puc.isBlank()) {
+            return "0x" + "0".repeat(64);
+        }
+        byte[] hash = Hash.sha3(puc.getBytes(StandardCharsets.UTF_8));
+        return Numeric.toHexString(hash);
     }
 
     private void sendPreflight(Function function, Credentials credentials, String label) throws Exception {
