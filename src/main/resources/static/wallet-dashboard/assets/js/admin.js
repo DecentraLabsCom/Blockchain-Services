@@ -73,11 +73,53 @@ function maybePromptInviteToken(force = false) {
 }
 
 // Utility: Format wei to ETH
+const MAX_ETH_DECIMALS = 14;
+
+function formatEthDisplay(value) {
+    if (value === null || value === undefined) return '0';
+
+    let text = String(value).trim().replace(/,/g, '');
+    if (!text) return '0';
+
+    let sign = '';
+    if (text.startsWith('-')) {
+        sign = '-';
+        text = text.slice(1);
+    }
+
+    if (!/^\d+(\.\d+)?$/.test(text)) {
+        const numeric = Number(sign + text);
+        if (!Number.isFinite(numeric)) {
+            return '0';
+        }
+        text = Math.abs(numeric).toFixed(MAX_ETH_DECIMALS);
+    }
+
+    let [whole, fraction = ''] = text.split('.');
+    whole = whole.replace(/^0+(?=\d)/, '') || '0';
+    fraction = fraction.slice(0, MAX_ETH_DECIMALS).replace(/0+$/, '');
+
+    return sign + (fraction ? `${whole}.${fraction}` : whole);
+}
+
 function weiToEth(weiString) {
     if (!weiString) return '0';
-    const wei = BigInt(weiString);
-    const eth = Number(wei) / 1e18;
-    return eth.toFixed(6);
+    try {
+        const wei = BigInt(weiString);
+        const negative = wei < 0n;
+        const absWei = negative ? -wei : wei;
+        const base = 1000000000000000000n;
+        const whole = absWei / base;
+        const fractionRaw = (absWei % base).toString().padStart(18, '0');
+        const raw = negative ? `-${whole}.${fractionRaw}` : `${whole}.${fractionRaw}`;
+        return formatEthDisplay(raw);
+    } catch (error) {
+        const fallback = Number(weiString);
+        if (!Number.isFinite(fallback)) {
+            return '0';
+        }
+        return formatEthDisplay(fallback / 1e18);
+    }
 }
 
 // Utility: Format address
@@ -963,7 +1005,7 @@ async function loadBalances() {
                     </div>
                 `;
             } else {
-                const ethBalance = balanceData.balanceEth || weiToEth(balanceData.balanceWei);
+                const ethBalance = formatEthDisplay(balanceData.balanceEth ?? weiToEth(balanceData.balanceWei));
                 
                 // Display ETH balance
                 balanceGrid.innerHTML += `
@@ -975,7 +1017,7 @@ async function loadBalances() {
                 
                 // Display LAB token balance (always show, even if token not configured)
                 if (balanceData.labBalance !== undefined) {
-                    const labBalance = balanceData.labBalance || '0';
+                    const labBalance = formatEthDisplay(balanceData.labBalance || '0');
                     balanceGrid.innerHTML += `
                         <div class="balance-item">
                             <div class="balance-label">Free LAB</div>
@@ -986,7 +1028,7 @@ async function loadBalances() {
                     // Check if user is a registered provider from treasury data
                     const isProvider = treasuryData.success && treasuryData.isProvider === true;
                     const stakeInfo = treasuryData.stakeInfo || null;
-                    const treasuryBalance = treasuryData.treasuryBalanceFormatted || '0';
+                    const treasuryBalance = formatEthDisplay(treasuryData.treasuryBalanceFormatted || '0');
                     
                     // Display Treasury Balance if provider
                     if (isProvider && parseFloat(treasuryBalance) > 0) {
@@ -1003,7 +1045,7 @@ async function loadBalances() {
                     
                     // Display Staked Amount if provider
                     if (isProvider && stakeInfo && stakeInfo.stakedAmountFormatted) {
-                        const stakedAmount = stakeInfo.stakedAmountFormatted;
+                        const stakedAmount = formatEthDisplay(stakeInfo.stakedAmountFormatted);
                         if (parseFloat(stakedAmount) > 0) {
                             balanceGrid.innerHTML += `
                                 <div class="balance-item">
