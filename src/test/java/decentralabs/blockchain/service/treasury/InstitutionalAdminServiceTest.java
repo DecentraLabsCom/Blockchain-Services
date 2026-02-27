@@ -20,6 +20,7 @@ import org.web3j.protocol.Web3j;
 import org.web3j.protocol.core.DefaultBlockParameterName;
 import org.web3j.protocol.core.Request;
 import org.web3j.protocol.core.methods.response.EthChainId;
+import org.web3j.protocol.core.methods.response.EthEstimateGas;
 import org.web3j.protocol.core.methods.response.EthGetTransactionCount;
 import org.web3j.protocol.core.methods.response.EthSendTransaction;
 
@@ -65,6 +66,8 @@ class InstitutionalAdminServiceTest {
         );
         ReflectionTestUtils.setField(adminService, "contractAddress", "0xABC");
         ReflectionTestUtils.setField(adminService, "defaultCollectMaxBatch", 50);
+        ReflectionTestUtils.setField(adminService, "defaultGasPriceGwei", java.math.BigInteger.valueOf(20));
+        ReflectionTestUtils.setField(adminService, "defaultContractGasLimit", java.math.BigInteger.valueOf(300000));
         lenient().when(adminVerifier.verify(any(), any()))
             .thenReturn(new Eip712TreasuryAdminVerifier.VerificationResult(true, "0xabc", null));
         lenient().when(antiReplayService.isTimestampUsed(any(), anyLong())).thenReturn(false);
@@ -282,6 +285,13 @@ class InstitutionalAdminServiceTest {
             when(chainIdRequest.send()).thenReturn(chainIdResponse);
             when(web3j.ethChainId()).thenReturn((Request) chainIdRequest);
 
+            Request<?, EthEstimateGas> estimateRequest = (Request<?, EthEstimateGas>) mock(Request.class);
+            EthEstimateGas estimateResponse = new EthEstimateGas();
+            estimateResponse.setResult("0x5208");
+            when(estimateRequest.send()).thenReturn(estimateResponse);
+            when(web3j.ethEstimateGas(any(org.web3j.protocol.core.methods.request.Transaction.class)))
+                .thenReturn((Request) estimateRequest);
+
             Request<?, EthSendTransaction> sendRequest = (Request<?, EthSendTransaction>) mock(Request.class);
             EthSendTransaction sendResponse = new EthSendTransaction();
             sendResponse.setResult("0xabc");
@@ -351,6 +361,13 @@ class InstitutionalAdminServiceTest {
             chainIdResponse.setResult("0xaa36a7"); // Sepolia
             when(chainIdRequest.send()).thenReturn(chainIdResponse);
             when(web3j.ethChainId()).thenReturn((Request) chainIdRequest);
+
+            Request<?, EthEstimateGas> estimateRequest = (Request<?, EthEstimateGas>) mock(Request.class);
+            EthEstimateGas estimateResponse = new EthEstimateGas();
+            estimateResponse.setResult("0x5208");
+            when(estimateRequest.send()).thenReturn(estimateResponse);
+            when(web3j.ethEstimateGas(any(org.web3j.protocol.core.methods.request.Transaction.class)))
+                .thenReturn((Request) estimateRequest);
 
             Request<?, EthSendTransaction> sendRequest = (Request<?, EthSendTransaction>) mock(Request.class);
             EthSendTransaction sendResponse = new EthSendTransaction();
