@@ -19,6 +19,7 @@ import org.web3j.crypto.Credentials;
 import org.web3j.protocol.Web3j;
 import org.web3j.protocol.core.DefaultBlockParameterName;
 import org.web3j.protocol.core.Request;
+import org.web3j.protocol.core.methods.response.EthChainId;
 import org.web3j.protocol.core.methods.response.EthGetTransactionCount;
 import org.web3j.protocol.core.methods.response.EthSendTransaction;
 
@@ -275,6 +276,12 @@ class InstitutionalAdminServiceTest {
             when(txCountRequest.send()).thenReturn(txCountResponse);
             when(web3j.ethGetTransactionCount(eq(credentials.getAddress()), eq(DefaultBlockParameterName.LATEST))).thenReturn((Request) txCountRequest);
 
+            Request<?, EthChainId> chainIdRequest = (Request<?, EthChainId>) mock(Request.class);
+            EthChainId chainIdResponse = new EthChainId();
+            chainIdResponse.setResult("0xaa36a7"); // Sepolia
+            when(chainIdRequest.send()).thenReturn(chainIdResponse);
+            when(web3j.ethChainId()).thenReturn((Request) chainIdRequest);
+
             Request<?, EthSendTransaction> sendRequest = (Request<?, EthSendTransaction>) mock(Request.class);
             EthSendTransaction sendResponse = new EthSendTransaction();
             sendResponse.setResult("0xabc");
@@ -338,6 +345,12 @@ class InstitutionalAdminServiceTest {
             txCountResponse.setResult("0x1");
             when(txCountRequest.send()).thenReturn(txCountResponse);
             when(web3j.ethGetTransactionCount(eq(credentials.getAddress()), eq(DefaultBlockParameterName.LATEST))).thenReturn((Request) txCountRequest);
+
+            Request<?, EthChainId> chainIdRequest = (Request<?, EthChainId>) mock(Request.class);
+            EthChainId chainIdResponse = new EthChainId();
+            chainIdResponse.setResult("0xaa36a7"); // Sepolia
+            when(chainIdRequest.send()).thenReturn(chainIdResponse);
+            when(web3j.ethChainId()).thenReturn((Request) chainIdRequest);
 
             Request<?, EthSendTransaction> sendRequest = (Request<?, EthSendTransaction>) mock(Request.class);
             EthSendTransaction sendResponse = new EthSendTransaction();

@@ -26,6 +26,7 @@ import org.web3j.crypto.RawTransaction;
 import org.web3j.crypto.TransactionEncoder;
 import org.web3j.protocol.Web3j;
 import org.web3j.protocol.core.DefaultBlockParameterName;
+import org.web3j.protocol.core.methods.response.EthChainId;
 import org.web3j.protocol.core.methods.response.EthGetTransactionCount;
 import org.web3j.protocol.core.methods.response.EthSendTransaction;
 import org.web3j.utils.Convert;
@@ -659,8 +660,14 @@ public class InstitutionalAdminService {
             encodedFunction
         );
 
-        // Sign transaction
-        byte[] signedMessage = TransactionEncoder.signMessage(rawTransaction, credentials);
+        EthChainId ethChainId = web3j.ethChainId().send();
+        BigInteger chainId = ethChainId != null ? ethChainId.getChainId() : null;
+        if (chainId == null || chainId.compareTo(BigInteger.ZERO) <= 0) {
+            throw new RuntimeException("Unable to resolve blockchain chainId for EIP-155 signing.");
+        }
+
+        // Sign EIP-155 transaction with chainId (required by many RPC providers)
+        byte[] signedMessage = TransactionEncoder.signMessage(rawTransaction, chainId.longValueExact(), credentials);
         String hexValue = Numeric.toHexString(signedMessage);
 
         // Send transaction
