@@ -137,8 +137,8 @@ public class InstitutionalCheckInService {
             String claimUser = firstClaim(claims, "userid", "sub", "uid");
             String claimAffiliation = firstClaim(claims, "affiliation", "schacHomeOrganization");
 
-            if (claimUser == null || claimAffiliation == null) {
-                throw new IllegalArgumentException("Marketplace token missing required claims");
+            if (claimUser == null || claimUser.isBlank()) {
+                throw new IllegalArgumentException("Marketplace token missing required userid claim");
             }
             String normalizedClaimUser = PucNormalizer.normalize(claimUser);
             String normalizedSamlUser = PucNormalizer.normalize(saml.userid());
@@ -148,7 +148,11 @@ public class InstitutionalCheckInService {
                 && !normalizedClaimUser.equals(normalizedSamlUser)) {
                 throw new SecurityException("Marketplace token userid mismatch");
             }
-            if (saml.affiliation() != null && !claimAffiliation.equals(saml.affiliation())) {
+            if (saml.affiliation() != null
+                && !saml.affiliation().isBlank()
+                && claimAffiliation != null
+                && !claimAffiliation.isBlank()
+                && !claimAffiliation.equals(saml.affiliation())) {
                 throw new SecurityException("Marketplace token affiliation mismatch");
             }
         } catch (SecurityException ex) {

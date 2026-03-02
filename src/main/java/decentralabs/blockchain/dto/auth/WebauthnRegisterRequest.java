@@ -3,8 +3,8 @@ package decentralabs.blockchain.dto.auth;
 import jakarta.validation.constraints.NotBlank;
 
 public class WebauthnRegisterRequest {
-    @NotBlank
     private String puc;
+    private String userId;
 
     @NotBlank
     private String credentialId;
@@ -37,6 +37,25 @@ public class WebauthnRegisterRequest {
 
     public void setPuc(String puc) {
         this.puc = puc;
+    }
+
+    public String getUserId() {
+        return userId;
+    }
+
+    public void setUserId(String userId) {
+        this.userId = userId;
+    }
+
+    /**
+     * Returns the effective user identifier for credential binding.
+     * Supports both legacy `puc` and the newer `userId` field.
+     */
+    public String getEffectiveUserId() {
+        if (userId != null && !userId.isBlank()) {
+            return userId;
+        }
+        return puc;
     }
 
     public String getCredentialId() {

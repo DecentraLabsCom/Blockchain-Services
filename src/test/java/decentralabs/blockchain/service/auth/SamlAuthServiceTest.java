@@ -195,8 +195,8 @@ class SamlAuthServiceTest {
         }
 
         @Test
-        @DisplayName("Should throw exception when JWT affiliation is null")
-        void shouldThrowExceptionWhenJwtAffiliationIsNull() throws Exception {
+        @DisplayName("Should allow authentication when JWT affiliation is null")
+        void shouldAllowWhenJwtAffiliationIsNull() throws Exception {
             SamlAuthRequest request = createValidRequest();
             String jwtWithoutAffiliation = createJwtWithClaims(Map.of("userid", TEST_USER_ID));
             request.setMarketplaceToken(jwtWithoutAffiliation);
@@ -204,10 +204,12 @@ class SamlAuthServiceTest {
             when(marketplaceKeyService.getPublicKey(anyBoolean())).thenReturn(keyPair.getPublic());
             when(samlValidationService.validateSamlAssertionWithSignature(anyString()))
                 .thenReturn(Map.of("userid", TEST_USER_ID, "affiliation", TEST_AFFILIATION));
+            when(jwtService.generateToken(any(), eq(null))).thenReturn("generated-token");
 
-            assertThatThrownBy(() -> samlAuthService.handleAuthentication(request, false))
-                .isInstanceOf(SecurityException.class)
-                .hasMessageContaining("affiliation mismatch");
+            AuthResponse response = samlAuthService.handleAuthentication(request, false);
+
+            assertThat(response).isNotNull();
+            assertThat(response.getToken()).isEqualTo("generated-token");
         }
     }
 

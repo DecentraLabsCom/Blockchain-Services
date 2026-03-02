@@ -55,7 +55,7 @@ class WebauthnControllerTest {
             WebauthnRegisterRequest request = createValidRegisterRequest();
 
             doNothing().when(credentialService).register(
-                request.getPuc(),
+                request.getEffectiveUserId(),
                 request.getCredentialId(),
                 request.getPublicKey(),
                 request.getAaguid(),
@@ -71,7 +71,7 @@ class WebauthnControllerTest {
                 .andExpect(status().isOk());
 
             verify(credentialService).register(
-                request.getPuc(),
+                request.getEffectiveUserId(),
                 request.getCredentialId(),
                 request.getPublicKey(),
                 request.getAaguid(),
@@ -83,10 +83,46 @@ class WebauthnControllerTest {
         }
 
         @Test
-        @DisplayName("Should reject registration with missing puc")
-        void shouldRejectRegistrationWithMissingPuc() throws Exception {
+        @DisplayName("Should register credential when userId is provided (without puc)")
+        void shouldRegisterCredentialWithUserId() throws Exception {
             WebauthnRegisterRequest request = createValidRegisterRequest();
             request.setPuc(null);
+            request.setUserId("user@institution.edu");
+
+            doNothing().when(credentialService).register(
+                request.getEffectiveUserId(),
+                request.getCredentialId(),
+                request.getPublicKey(),
+                request.getAaguid(),
+                request.getSignCount(),
+                request.getAuthenticatorAttachment(),
+                request.getResidentKey(),
+                request.getTransports()
+            );
+
+            mockMvc.perform(post("/webauthn/register")
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isOk());
+
+            verify(credentialService).register(
+                request.getEffectiveUserId(),
+                request.getCredentialId(),
+                request.getPublicKey(),
+                request.getAaguid(),
+                request.getSignCount(),
+                request.getAuthenticatorAttachment(),
+                request.getResidentKey(),
+                request.getTransports()
+            );
+        }
+
+        @Test
+        @DisplayName("Should reject registration with missing user identifier")
+        void shouldRejectRegistrationWithMissingUserId() throws Exception {
+            WebauthnRegisterRequest request = createValidRegisterRequest();
+            request.setPuc(null);
+            request.setUserId(null);
 
             mockMvc.perform(post("/webauthn/register")
                     .contentType(MediaType.APPLICATION_JSON)
@@ -95,10 +131,11 @@ class WebauthnControllerTest {
         }
 
         @Test
-        @DisplayName("Should reject registration with empty puc")
-        void shouldRejectRegistrationWithEmptyPuc() throws Exception {
+        @DisplayName("Should reject registration with empty user identifier")
+        void shouldRejectRegistrationWithEmptyUserId() throws Exception {
             WebauthnRegisterRequest request = createValidRegisterRequest();
             request.setPuc("");
+            request.setUserId(" ");
 
             mockMvc.perform(post("/webauthn/register")
                     .contentType(MediaType.APPLICATION_JSON)
@@ -137,7 +174,7 @@ class WebauthnControllerTest {
             request.setAaguid(null);
 
             doNothing().when(credentialService).register(
-                request.getPuc(),
+                request.getEffectiveUserId(),
                 request.getCredentialId(),
                 request.getPublicKey(),
                 null,
@@ -160,7 +197,7 @@ class WebauthnControllerTest {
             request.setSignCount(null);
 
             doNothing().when(credentialService).register(
-                request.getPuc(),
+                request.getEffectiveUserId(),
                 request.getCredentialId(),
                 request.getPublicKey(),
                 request.getAaguid(),

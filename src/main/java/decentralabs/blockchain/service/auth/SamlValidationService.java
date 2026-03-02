@@ -38,9 +38,11 @@ import java.util.ArrayList;
 import java.util.Base64;
 import java.util.Comparator;
 import java.util.Collections;
+import java.util.LinkedHashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Locale;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
 import java.security.PublicKey;
@@ -62,7 +64,31 @@ public class SamlValidationService {
     
     private static final Logger logger = LoggerFactory.getLogger(SamlValidationService.class);
 
-    private static final String[] USERID_ATTRIBUTE_ALIASES = new String[] {
+    private static final String[] EDU_PERSON_TARGETED_ID_ATTRIBUTE_ALIASES = new String[] {
+        "edupersontargetedid",
+        "pairwise-id",
+        "persistent-id",
+        "urn:mace:dir:attribute-def:edupersontargetedid",
+        "urn:oid:1.3.6.1.4.1.5923.1.1.1.10"
+    };
+
+    private static final String[] EDU_PERSON_PRINCIPAL_NAME_ATTRIBUTE_ALIASES = new String[] {
+        "eppn",
+        "edupersonprincipalname",
+        "subject-id",
+        "urn:oasis:names:tc:saml:attribute:subject-id",
+        "urn:mace:dir:attribute-def:edupersonprincipalname",
+        "urn:oid:1.3.6.1.4.1.5923.1.1.1.6"
+    };
+
+    private static final String[] UID_ATTRIBUTE_ALIASES = new String[] {
+        "uid",
+        "userid",
+        "urn:mace:dir:attribute-def:uid",
+        "urn:oid:0.9.2342.19200300.100.1.1"
+    };
+
+    private static final String[] LEGACY_USERID_ATTRIBUTE_ALIASES = new String[] {
         "userid",
         "uid",
         "eppn",
@@ -86,16 +112,9 @@ public class SamlValidationService {
         "urn:oid:1.3.6.1.4.1.25178.1.2.19"
     };
 
-    private static final String[] AFFILIATION_ATTRIBUTE_ALIASES = new String[] {
-        "affiliation",
-        "edupersonaffiliation",
+    private static final String[] SCOPED_AFFILIATION_ATTRIBUTE_ALIASES = new String[] {
         "edupersonscopedaffiliation",
-        "edupersonprimaryaffiliation",
-        "urn:mace:dir:attribute-def:edupersonaffiliation",
         "urn:mace:dir:attribute-def:edupersonscopedaffiliation",
-        "urn:mace:dir:attribute-def:edupersonprimaryaffiliation",
-        "urn:oid:1.3.6.1.4.1.5923.1.1.1.1",
-        "urn:oid:1.3.6.1.4.1.5923.1.1.1.5",
         "urn:oid:1.3.6.1.4.1.5923.1.1.1.9"
     };
 
@@ -243,48 +262,45 @@ public class SamlValidationService {
             throw new SecurityException("SAML assertion signature is INVALID");
         }
         
-        // Extract attributes after signature validation
-        String userid = extractSamlAttributeValueByAliases(doc, USERID_ATTRIBUTE_ALIASES);
-        String affiliation = extractSamlAttributeValueByAliases(doc, AFFILIATION_ATTRIBUTE_ALIASES);
+        // Extract attributes after signature validation.
+        // Keep alignment with Marketplace stable-id resolution:
+        // eduPersonTargetedID > eduPersonPrincipalName > mail > uid/userid > legacy fallbacks.
+        String eduPersonTargetedId = extractSamlAttributeValueByAliases(doc, EDU_PERSON_TARGETED_ID_ATTRIBUTE_ALIASES);
+        String eduPersonPrincipalName = extractSamlAttributeValueByAliases(doc, EDU_PERSON_PRINCIPAL_NAME_ATTRIBUTE_ALIASES);
+        String uid = extractSamlAttributeValueByAliases(doc, UID_ATTRIBUTE_ALIASES);
+        String legacyUserId = extractSamlAttributeValueByAliases(doc, LEGACY_USERID_ATTRIBUTE_ALIASES);
         String email = extractSamlAttributeValueByAliases(doc, EMAIL_ATTRIBUTE_ALIASES);
         String displayName = extractSamlAttributeValueByAliases(doc, DISPLAY_NAME_ATTRIBUTE_ALIASES);
-        List<String> schacHomeOrganizations = extractSamlAttributeValuesByAliases(doc, SCHAC_HOME_ORG_ATTRIBUTE_ALIASES);
+        List<String> schacHomeOrganizations = normalizeOrganizationDomains(
+            extractSamlAttributeValuesByAliases(doc, SCHAC_HOME_ORG_ATTRIBUTE_ALIASES)
+        );
+        String scopedAffiliation = extractSamlAttributeValueByAliases(doc, SCOPED_AFFILIATION_ATTRIBUTE_ALIASES);
+        String nameId = extractNameId(doc);
+
+        if ((email == null || email.isBlank()) && looksLikeEmail(nameId)) {
+            email = nameId;
+        }
+
+        String userid = firstNonBlank(
+            normalizeIdentifier(eduPersonTargetedId),
+            normalizeIdentifier(eduPersonPrincipalName),
+            normalizeIdentifier(email),
+            normalizeIdentifier(uid),
+            normalizeIdentifier(legacyUserId),
+            normalizeIdentifier(nameId)
+        );
 
         if (userid == null || userid.isBlank()) {
-            String nameId = extractNameId(doc);
-            if (nameId != null && !nameId.isBlank()) {
-                userid = nameId;
-                if (email == null && looksLikeEmail(nameId)) {
-                    email = nameId;
-                }
-            }
-        }
-
-        userid = PucNormalizer.normalize(userid);
-        
-        if (userid == null || userid.isEmpty()) {
             throw new SecurityException("SAML assertion missing 'userid' attribute");
         }
-        if (schacHomeOrganizations.isEmpty()) {
-            String scopedAffiliation = extractSamlAttributeValueByAliases(doc, SCHAC_HOME_ORG_ATTRIBUTE_ALIASES);
-            if (scopedAffiliation != null && !scopedAffiliation.isBlank()) {
-                schacHomeOrganizations = List.of(scopedAffiliation.trim().toLowerCase());
-            }
-        }
 
-        // Prioritize schacHomeOrganization (domain) over eduPersonScopedAffiliation (role@domain)
-        if (!schacHomeOrganizations.isEmpty()) {
-            affiliation = schacHomeOrganizations.get(0);
-        } else if (affiliation != null && !affiliation.isBlank()) {
-            // Normalize scoped affiliation: extract domain from "role@domain" format
-            if (affiliation.contains("@")) {
-                String[] parts = affiliation.split("@");
-                if (parts.length == 2) {
-                    affiliation = parts[1].trim().toLowerCase();
-                }
-            }
-        } else {
-            throw new SecurityException("SAML assertion missing 'affiliation' attribute");
+        String affiliation = resolveInstitutionDomain(
+            firstOrNull(schacHomeOrganizations),
+            scopedAffiliation,
+            email
+        );
+        if (affiliation != null && !affiliation.isBlank() && schacHomeOrganizations.isEmpty()) {
+            schacHomeOrganizations = List.of(affiliation);
         }
 
         logger.info("✅ SAML assertion validated WITH SIGNATURE for user: {}", userid);
@@ -294,6 +310,9 @@ public class SamlValidationService {
         putAttribute(capturedAttributes, "affiliation", affiliation);
         putAttribute(capturedAttributes, "email", email);
         putAttribute(capturedAttributes, "displayName", displayName);
+        putAttribute(capturedAttributes, "eduPersonTargetedID", normalizeIdentifier(eduPersonTargetedId));
+        putAttribute(capturedAttributes, "eduPersonPrincipalName", normalizeIdentifier(eduPersonPrincipalName));
+        putAttribute(capturedAttributes, "uid", normalizeIdentifier(uid));
         if (!schacHomeOrganizations.isEmpty()) {
             capturedAttributes.put("schacHomeOrganization", schacHomeOrganizations);
         }
@@ -323,6 +342,91 @@ public class SamlValidationService {
 
     private boolean looksLikeEmail(String value) {
         return value != null && value.contains("@");
+    }
+
+    private String firstNonBlank(String... values) {
+        if (values == null) {
+            return null;
+        }
+        for (String value : values) {
+            if (value != null && !value.isBlank()) {
+                return value;
+            }
+        }
+        return null;
+    }
+
+    private String firstOrNull(List<String> values) {
+        if (values == null || values.isEmpty()) {
+            return null;
+        }
+        return values.get(0);
+    }
+
+    private String normalizeIdentifier(String value) {
+        String normalized = PucNormalizer.normalize(value);
+        if (normalized == null) {
+            return null;
+        }
+        String trimmed = normalized.trim();
+        return trimmed.isEmpty() ? null : trimmed;
+    }
+
+    private List<String> normalizeOrganizationDomains(List<String> candidates) {
+        if (candidates == null || candidates.isEmpty()) {
+            return Collections.emptyList();
+        }
+
+        LinkedHashSet<String> normalized = new LinkedHashSet<>();
+        for (String candidate : candidates) {
+            String domain = normalizeDomainCandidate(candidate);
+            if (domain != null) {
+                normalized.add(domain);
+            }
+        }
+        if (normalized.isEmpty()) {
+            return Collections.emptyList();
+        }
+        return List.copyOf(normalized);
+    }
+
+    private String resolveInstitutionDomain(String... candidates) {
+        if (candidates == null) {
+            return null;
+        }
+        for (String candidate : candidates) {
+            String domain = normalizeDomainCandidate(candidate);
+            if (domain != null) {
+                return domain;
+            }
+        }
+        return null;
+    }
+
+    private String normalizeDomainCandidate(String rawValue) {
+        if (rawValue == null) {
+            return null;
+        }
+
+        String trimmed = rawValue.trim().toLowerCase(Locale.ROOT);
+        if (trimmed.isEmpty()) {
+            return null;
+        }
+
+        String domain = trimmed;
+        if (domain.contains("@")) {
+            String[] parts = domain.split("@");
+            domain = parts[parts.length - 1];
+        }
+
+        domain = domain.replaceAll("^\\.+|\\.+$", "");
+        if (domain.isEmpty() || !domain.contains(".")) {
+            return null;
+        }
+        if (!domain.matches("^[a-z0-9.-]+$")) {
+            return null;
+        }
+        return domain;
     }
     
     /**

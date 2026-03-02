@@ -10,6 +10,7 @@ import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.Jws;
 import io.jsonwebtoken.Jwts;
 import java.security.PublicKey;
+import java.util.HashMap;
 import java.util.Collection;
 import java.util.Map;
 import java.util.Objects;
@@ -93,7 +94,10 @@ public class SamlAuthService {
         String normalizedJwtAffiliation = normalizeAffiliation(jwtAffiliation);
         String normalizedSamlAffiliation = normalizeAffiliation(samlAffiliation);
         
-        if (normalizedJwtAffiliation == null || !normalizedJwtAffiliation.equals(normalizedSamlAffiliation)) {
+        // Affiliation is optional in newer SAML mappings. Only enforce equality when both sides provide it.
+        if (normalizedJwtAffiliation != null
+            && normalizedSamlAffiliation != null
+            && !normalizedJwtAffiliation.equals(normalizedSamlAffiliation)) {
             throw new SecurityException("JWT and SAML affiliation mismatch");
         }
         
@@ -117,10 +121,11 @@ public class SamlAuthService {
             return new AuthResponse(token, labURL);
         } else {
             // Generate simple token with SAML claims
-            Map<String, Object> claims = Map.of(
-                "userid", jwtUserId,
-                "affiliation", jwtAffiliation
-            );
+            Map<String, Object> claims = new HashMap<>();
+            claims.put("userid", jwtUserId);
+            if (jwtAffiliation != null && !jwtAffiliation.isBlank()) {
+                claims.put("affiliation", jwtAffiliation);
+            }
             String token = jwtService.generateToken(claims, null);
             return new AuthResponse(token);
         }
