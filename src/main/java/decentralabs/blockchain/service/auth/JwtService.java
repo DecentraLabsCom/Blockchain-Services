@@ -53,6 +53,8 @@ public class JwtService {
         String sub = null;
         BigInteger nbf = null;
         BigInteger exp = null;
+        String resourceType = null;
+        String accessKey = null;
     
         if (bookingInfo != null) {
             labId = (BigInteger) bookingInfo.get("lab");
@@ -60,6 +62,8 @@ public class JwtService {
             sub = (String) bookingInfo.get("sub");
             nbf = (BigInteger) bookingInfo.get("nbf");
             exp = (BigInteger) bookingInfo.get("exp");
+            resourceType = (String) bookingInfo.get("resourceType");
+            accessKey = (String) bookingInfo.get("accessKey");
         }
     
         String kid = generateKid(keyService.getPublicKey().getModulus());
@@ -85,6 +89,12 @@ public class JwtService {
         }
         if (labId != null) {
             jwtBuilder.claim("labId", labId.intValue());
+        }
+        if (resourceType != null) {
+            jwtBuilder.claim("resourceType", resourceType);
+        }
+        if (accessKey != null) {
+            jwtBuilder.claim("accessKey", accessKey);
         }
     
         PrivateKey privateKey = keyService.loadPrivateKey();

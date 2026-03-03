@@ -104,14 +104,22 @@ public class Diamond extends Contract {
         public String accessURI;  // access URI
         public String accessKey;  // access key
         public BigInteger createdAt; // uint32
+        public BigInteger resourceType; // uint8: 0 = physical lab, 1 = FMU simulation
 
         public LabBase(String uri, BigInteger price, String accessURI,
-                      String accessKey, BigInteger createdAt) {
+                      String accessKey, BigInteger createdAt, BigInteger resourceType) {
             this.uri = uri;
             this.price = price;
             this.accessURI = accessURI;
             this.accessKey = accessKey;
             this.createdAt = createdAt;
+            this.resourceType = resourceType;
+        }
+
+        /** Backward-compatible constructor (defaults resourceType to 0) */
+        public LabBase(String uri, BigInteger price, String accessURI,
+                      String accessKey, BigInteger createdAt) {
+            this(uri, price, accessURI, accessKey, createdAt, BigInteger.ZERO);
         }
     }
     
@@ -430,7 +438,8 @@ public class Diamond extends Contract {
     
     /**
      * Get lab information (LabFacet)
-     * Manual ABI decoding for nested struct: Lab(uint256, LabBase(string, uint96, string, string, uint32))
+     * Manual ABI decoding for nested struct:
+     * Lab(uint256, LabBase(string, uint96, string, string, uint32, uint8))
      * 
      * Solidity ABI encoding for tuple with dynamic types:
      * - offset_0: labId (uint256) - 32 bytes
@@ -503,7 +512,7 @@ public class Diamond extends Contract {
             throw new IllegalArgumentException("labBase absolute offset overflow", ex);
         }
 
-        if (labBaseStart < 0 || labBaseStart + 320 > hex.length()) {
+        if (labBaseStart < 0 || labBaseStart + 384 > hex.length()) {
             throw new IllegalArgumentException("LabBase header out of bounds at offset " + labBaseStart);
         }
 
@@ -512,6 +521,7 @@ public class Diamond extends Contract {
         int accessURIOffsetRel = parseOffsetWordChars(hex, labBaseStart + 128, "accessURI offset");
         int accessKeyOffsetRel = parseOffsetWordChars(hex, labBaseStart + 192, "accessKey offset");
         BigInteger createdAt = parseWordAsBigInteger(hex, labBaseStart + 256, "createdAt");
+        BigInteger resourceType = parseWordAsBigInteger(hex, labBaseStart + 320, "resourceType");
 
         String uri = decodeString(hex, addChecked(labBaseStart, uriOffsetRel), "uri");
         String accessURI = decodeString(hex, addChecked(labBaseStart, accessURIOffsetRel), "accessURI");
@@ -523,7 +533,7 @@ public class Diamond extends Contract {
             );
         }
 
-        LabBase base = new LabBase(uri, price, accessURI, accessKey, createdAt);
+        LabBase base = new LabBase(uri, price, accessURI, accessKey, createdAt, resourceType);
         return new Lab(labId, base);
     }
 

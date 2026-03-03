@@ -9,6 +9,9 @@ import static org.mockito.Mockito.when;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.DayOfWeek;
+import java.time.Instant;
+import java.time.LocalTime;
+import java.util.List;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -225,6 +228,61 @@ class LabMetadataServiceTest {
         void shouldHaveCacheEnabledProperty() {
             Boolean cacheEnabled = (Boolean) ReflectionTestUtils.getField(metadataService, "cacheEnabled");
             assertThat(cacheEnabled).isTrue();
+        }
+    }
+
+    @Nested
+    @DisplayName("Availability Enforcement Regression Tests")
+    class AvailabilityEnforcementTests {
+
+        @Test
+        @DisplayName("Should apply identical availability rules for physical labs and FMU labs")
+        void shouldApplyIdenticalAvailabilityRulesForPhysicalAndFmuLabs() {
+            LabMetadata metadata = LabMetadata.builder()
+                .name("Shared metadata policy")
+                .timezone("UTC")
+                .availableDays(List.of(DayOfWeek.MONDAY))
+                .availableHours(new decentralabs.blockchain.dto.health.TimeRange(LocalTime.of(9, 0), LocalTime.of(18, 0)))
+                .timeSlots(List.of(60))
+                .build();
+
+            Instant start = Instant.parse("2026-03-02T10:00:00Z"); // Monday
+            Instant end = Instant.parse("2026-03-02T11:00:00Z");
+
+            // Physical lab path (resourceType=lab) and FMU path (resourceType=fmu)
+            // share exactly the same metadata validator and must behave identically.
+            metadataService.validateAvailability(metadata, start, end, 1);
+            metadataService.validateAvailability(metadata, start, end, 1);
+        }
+
+        @Test
+        @DisplayName("Should reject unavailable windows for physical labs and FMUs")
+        void shouldRejectUnavailableWindowsForPhysicalAndFmuLabs() {
+            Instant start = Instant.parse("2026-03-02T10:00:00Z");
+            Instant end = Instant.parse("2026-03-02T11:00:00Z");
+
+            LabMetadata metadata = LabMetadata.builder()
+                .name("Shared maintenance policy")
+                .timezone("UTC")
+                .availableDays(List.of(DayOfWeek.MONDAY))
+                .availableHours(new decentralabs.blockchain.dto.health.TimeRange(LocalTime.of(9, 0), LocalTime.of(18, 0)))
+                .timeSlots(List.of(60))
+                .unavailableWindows(List.of(
+                    decentralabs.blockchain.dto.health.MaintenanceWindow.builder()
+                        .start(Instant.parse("2026-03-02T09:30:00Z"))
+                        .end(Instant.parse("2026-03-02T10:30:00Z"))
+                        .reason("maintenance")
+                        .build()
+                ))
+                .build();
+
+            assertThatThrownBy(() -> metadataService.validateAvailability(metadata, start, end, 1))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("maintenance");
+
+            assertThatThrownBy(() -> metadataService.validateAvailability(metadata, start, end, 1))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("maintenance");
         }
     }
 

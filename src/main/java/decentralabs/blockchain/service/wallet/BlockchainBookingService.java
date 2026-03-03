@@ -161,7 +161,8 @@ public class BlockchainBookingService {
         return buildBookingInfo(
             labId, reservationKeyHex, price, labPrice, 
             start, end,
-            accessURI, accessKey, metadata, authURI
+            accessURI, accessKey, metadata, authURI,
+            base.resourceType
         );
     }
 
@@ -245,7 +246,8 @@ public class BlockchainBookingService {
         return buildBookingInfo(
             labId, reservationKeyHex, price, labPrice,
             start, end,
-            accessURI, accessKey, metadata, authURI
+            accessURI, accessKey, metadata, authURI,
+            base.resourceType
         );
     }
     
@@ -304,7 +306,8 @@ public class BlockchainBookingService {
             BigInteger labId, String reservationKeyHex,
             BigInteger price, BigInteger labPrice,
             BigInteger start, BigInteger end,
-            String accessURI, String accessKey, String metadata, String authURI) {
+            String accessURI, String accessKey, String metadata, String authURI,
+            BigInteger onChainResourceType) {
         
         Map<String, Object> bookingInfo = new HashMap<>();
         
@@ -321,6 +324,15 @@ public class BlockchainBookingService {
         bookingInfo.put("labPrice", labPrice);              // Lab base price
         bookingInfo.put("metadata", metadata);              // Lab metadata URI
         bookingInfo.put("authURI", authURI);                // This auth service
+        bookingInfo.put("accessKey", accessKey);            // Raw access key (FMU filename or Guacamole user)
+        
+        // Resource type: read from on-chain LabBase.resourceType (#27)
+        // 0 = physical lab, 1 = FMU simulation
+        if (onChainResourceType != null && onChainResourceType.intValue() == 1) {
+            bookingInfo.put("resourceType", "fmu");
+        } else {
+            bookingInfo.put("resourceType", "lab");
+        }
         
         // labURL for JSON response
         bookingInfo.put("labURL", accessURI);               // Complete URL to access lab

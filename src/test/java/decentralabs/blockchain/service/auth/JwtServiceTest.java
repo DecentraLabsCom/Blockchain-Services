@@ -16,6 +16,9 @@ import java.security.interfaces.RSAPublicKey;
 import java.util.HashMap;
 import java.util.Map;
 
+import io.jsonwebtoken.Claims;
+import io.jsonwebtoken.Jwts;
+
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
@@ -115,5 +118,76 @@ class JwtServiceTest {
         assertFalse(encoded.contains("+")); // Base64URL shouldn't have +
         assertFalse(encoded.contains("/")); // Base64URL shouldn't have /
         assertFalse(encoded.contains("=")); // Should be without padding
+    }
+
+    @Test
+    void testGenerateToken_FmuBooking_IncludesResourceTypeAndAccessKey() throws Exception {
+        // Given — booking where accessKey ends in .fmu → resourceType should be "fmu"
+        Map<String, Object> bookingInfo = new HashMap<>();
+        bookingInfo.put("lab", BigInteger.valueOf(99));
+        bookingInfo.put("aud", "https://lab.example.com");
+        bookingInfo.put("sub", "spring-damper.fmu");
+        bookingInfo.put("nbf", BigInteger.valueOf(System.currentTimeMillis() / 1000));
+        bookingInfo.put("exp", BigInteger.valueOf((System.currentTimeMillis() / 1000) + 3600));
+        bookingInfo.put("accessKey", "spring-damper.fmu");
+        bookingInfo.put("resourceType", "fmu");
+
+        // When
+        String token = jwtService.generateToken(null, bookingInfo);
+
+        // Then — decode and verify custom claims
+        assertNotNull(token);
+        Claims claims = Jwts.parser()
+                .verifyWith(mockPublicKey)
+                .build()
+                .parseSignedClaims(token)
+                .getPayload();
+        assertEquals("fmu", claims.get("resourceType", String.class));
+        assertEquals("spring-damper.fmu", claims.get("accessKey", String.class));
+        assertEquals(99, claims.get("labId", Integer.class));
+    }
+
+    @Test
+    void testGenerateToken_LabBooking_IncludesResourceTypeLab() throws Exception {
+        // Given — regular lab booking (accessKey without .fmu)
+        Map<String, Object> bookingInfo = new HashMap<>();
+        bookingInfo.put("lab", BigInteger.valueOf(42));
+        bookingInfo.put("aud", "https://lab.example.com");
+        bookingInfo.put("sub", "guacamole-user");
+        bookingInfo.put("nbf", BigInteger.valueOf(System.currentTimeMillis() / 1000));
+        bookingInfo.put("exp", BigInteger.valueOf((System.currentTimeMillis() / 1000) + 3600));
+        bookingInfo.put("accessKey", "guacamole-user");
+        bookingInfo.put("resourceType", "lab");
+
+        // When
+        String token = jwtService.generateToken(null, bookingInfo);
+
+        // Then
+        Claims claims = Jwts.parser()
+                .verifyWith(mockPublicKey)
+                .build()
+                .parseSignedClaims(token)
+                .getPayload();
+        assertEquals("lab", claims.get("resourceType", String.class));
+        assertEquals("guacamole-user", claims.get("accessKey", String.class));
+    }
+
+    @Test
+    void testGenerateToken_NoBooking_OmitsResourceType() throws Exception {
+        // Given — wallet-only auth (no booking)
+        Map<String, Object> claims = new HashMap<>();
+        claims.put("wallet", "0x742d35Cc6634C0532925a3b844Bc454e4438f44e");
+
+        // When
+        String token = jwtService.generateToken(claims, null);
+
+        // Then — resourceType should NOT be present
+        Claims parsed = Jwts.parser()
+                .verifyWith(mockPublicKey)
+                .build()
+                .parseSignedClaims(token)
+                .getPayload();
+        assertNull(parsed.get("resourceType"));
+        assertNull(parsed.get("accessKey"));
     }
 }

@@ -279,14 +279,143 @@ class BlockchainBookingServiceTest {
     }
 
     private Diamond.Lab createMockLab(String accessURI, String accessKey, String metadata, BigInteger price) {
+        return createMockLab(accessURI, accessKey, metadata, price, BigInteger.ZERO);
+    }
+
+    private Diamond.Lab createMockLab(String accessURI, String accessKey, String metadata, BigInteger price, BigInteger resourceType) {
         Diamond.LabBase base = new Diamond.LabBase(
                 metadata,  // uri
                 price,
                 accessURI,
                 accessKey,
-                BigInteger.ZERO
+                BigInteger.ZERO,
+                resourceType
         );
         return new Diamond.Lab(TEST_LAB_ID, base);
+    }
+
+    // ─── FMU resource type tests ─────────────────────────────────────
+
+    @Test
+    void shouldSetResourceTypeFmuWhenAccessKeyEndsFmu() throws Exception {
+        Diamond.Reservation reservation = createMockReservation(
+                TEST_LAB_ID, TEST_WALLET,
+                BigInteger.valueOf(500),
+                getCurrentTimestamp().subtract(BigInteger.valueOf(3600)),
+                getCurrentTimestamp().add(BigInteger.valueOf(3600)),
+                BigInteger.ONE
+        );
+        Diamond.Lab lab = createMockLab("https://lab.url", "spring-damper.fmu", "https://meta.url", BigInteger.valueOf(500), BigInteger.ONE);
+
+        try (MockedStatic<Diamond> dm = mockStatic(Diamond.class)) {
+            dm.when(() -> Diamond.load(anyString(), any(Web3j.class), any(ReadonlyTransactionManager.class), any(ContractGasProvider.class)))
+                    .thenReturn(diamond);
+            when(diamond.getReservation(any(byte[].class))).thenReturn(mockRemoteCall(reservation));
+            when(diamond.getLab(TEST_LAB_ID)).thenReturn(mockRemoteCall(lab));
+
+            Map<String, Object> result = service.getBookingInfo(TEST_WALLET, TEST_RESERVATION_KEY, null);
+
+            assertThat(result.get("resourceType")).isEqualTo("fmu");
+            assertThat(result.get("accessKey")).isEqualTo("spring-damper.fmu");
+        }
+    }
+
+    @Test
+    void shouldSetResourceTypeLabWhenAccessKeyNotFmu() throws Exception {
+        Diamond.Reservation reservation = createMockReservation(
+                TEST_LAB_ID, TEST_WALLET,
+                BigInteger.valueOf(500),
+                getCurrentTimestamp().subtract(BigInteger.valueOf(3600)),
+                getCurrentTimestamp().add(BigInteger.valueOf(3600)),
+                BigInteger.ONE
+        );
+        Diamond.Lab lab = createMockLab("https://lab.url", "guacamole-user", "https://meta.url", BigInteger.valueOf(500));
+
+        try (MockedStatic<Diamond> dm = mockStatic(Diamond.class)) {
+            dm.when(() -> Diamond.load(anyString(), any(Web3j.class), any(ReadonlyTransactionManager.class), any(ContractGasProvider.class)))
+                    .thenReturn(diamond);
+            when(diamond.getReservation(any(byte[].class))).thenReturn(mockRemoteCall(reservation));
+            when(diamond.getLab(TEST_LAB_ID)).thenReturn(mockRemoteCall(lab));
+
+            Map<String, Object> result = service.getBookingInfo(TEST_WALLET, TEST_RESERVATION_KEY, null);
+
+            assertThat(result.get("resourceType")).isEqualTo("lab");
+            assertThat(result.get("accessKey")).isEqualTo("guacamole-user");
+        }
+    }
+
+    @Test
+    void shouldSetResourceTypeFmuEvenWhenAccessKeyDoesNotLookLikeFmu() throws Exception {
+        Diamond.Reservation reservation = createMockReservation(
+                TEST_LAB_ID, TEST_WALLET,
+                BigInteger.valueOf(500),
+                getCurrentTimestamp().subtract(BigInteger.valueOf(3600)),
+                getCurrentTimestamp().add(BigInteger.valueOf(3600)),
+                BigInteger.ONE
+        );
+        Diamond.Lab lab = createMockLab("https://lab.url", "guacamole-user", "https://meta.url", BigInteger.valueOf(500), BigInteger.ONE);
+
+        try (MockedStatic<Diamond> dm = mockStatic(Diamond.class)) {
+            dm.when(() -> Diamond.load(anyString(), any(Web3j.class), any(ReadonlyTransactionManager.class), any(ContractGasProvider.class)))
+                    .thenReturn(diamond);
+            when(diamond.getReservation(any(byte[].class))).thenReturn(mockRemoteCall(reservation));
+            when(diamond.getLab(TEST_LAB_ID)).thenReturn(mockRemoteCall(lab));
+
+            Map<String, Object> result = service.getBookingInfo(TEST_WALLET, TEST_RESERVATION_KEY, null);
+
+            assertThat(result.get("resourceType")).isEqualTo("fmu");
+            assertThat(result.get("accessKey")).isEqualTo("guacamole-user");
+        }
+    }
+
+    @Test
+    void shouldSetResourceTypeLabEvenWhenAccessKeyLooksLikeFmu() throws Exception {
+        Diamond.Reservation reservation = createMockReservation(
+                TEST_LAB_ID, TEST_WALLET,
+                BigInteger.valueOf(500),
+                getCurrentTimestamp().subtract(BigInteger.valueOf(3600)),
+                getCurrentTimestamp().add(BigInteger.valueOf(3600)),
+                BigInteger.ONE
+        );
+        Diamond.Lab lab = createMockLab("https://lab.url", "spring-damper.fmu", "https://meta.url", BigInteger.valueOf(500), BigInteger.ZERO);
+
+        try (MockedStatic<Diamond> dm = mockStatic(Diamond.class)) {
+            dm.when(() -> Diamond.load(anyString(), any(Web3j.class), any(ReadonlyTransactionManager.class), any(ContractGasProvider.class)))
+                    .thenReturn(diamond);
+            when(diamond.getReservation(any(byte[].class))).thenReturn(mockRemoteCall(reservation));
+            when(diamond.getLab(TEST_LAB_ID)).thenReturn(mockRemoteCall(lab));
+
+            Map<String, Object> result = service.getBookingInfo(TEST_WALLET, TEST_RESERVATION_KEY, null);
+
+            assertThat(result.get("resourceType")).isEqualTo("lab");
+            assertThat(result.get("accessKey")).isEqualTo("spring-damper.fmu");
+        }
+    }
+
+    @Test
+    void shouldApplySameReservationWindowValidationForLabAndFmu() throws Exception {
+        Diamond.Reservation futureReservation = createMockReservation(
+                TEST_LAB_ID, TEST_WALLET,
+                BigInteger.valueOf(500),
+                getCurrentTimestamp().add(BigInteger.valueOf(3600)),
+                getCurrentTimestamp().add(BigInteger.valueOf(7200)),
+                BigInteger.ONE
+        );
+
+        try (MockedStatic<Diamond> dm = mockStatic(Diamond.class)) {
+            dm.when(() -> Diamond.load(anyString(), any(Web3j.class), any(ReadonlyTransactionManager.class), any(ContractGasProvider.class)))
+                    .thenReturn(diamond);
+
+            when(diamond.getReservation(any(byte[].class))).thenReturn(mockRemoteCall(futureReservation));
+
+            assertThatThrownBy(() -> service.getBookingInfo(TEST_WALLET, TEST_RESERVATION_KEY, null))
+                    .isInstanceOf(IllegalStateException.class)
+                    .hasMessageContaining("not started yet");
+
+            assertThatThrownBy(() -> service.getBookingInfo(TEST_WALLET, TEST_RESERVATION_KEY, null))
+                    .isInstanceOf(IllegalStateException.class)
+                    .hasMessageContaining("not started yet");
+        }
     }
 
     private <T> RemoteFunctionCall<T> mockRemoteCall(T value) throws Exception {

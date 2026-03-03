@@ -1,6 +1,7 @@
 package decentralabs.blockchain.service.intent;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.*;
 
 import java.math.BigDecimal;
@@ -514,6 +515,26 @@ class IntentOnChainExecutorTest {
             org.web3j.abi.datatypes.generated.Uint96 price = (org.web3j.abi.datatypes.generated.Uint96) values.get(7);
             assertThat(uri.getValue()).isEqualTo(payload.getUri());
             assertThat(price.getValue()).isEqualTo(payload.getPrice());
+        }
+
+        @Test
+        @DisplayName("buildAdd rejects resourceType outside uint8 range")
+        void buildAddRejectsResourceTypeOutOfUint8Range() throws Exception {
+            IntentRecord record = new IntentRecord("req-add-invalid-rt", "LAB_ADD", "0xprovider");
+            ActionIntentPayload payload = new ActionIntentPayload();
+            payload.setExecutor("0x1111111111111111111111111111111111111111");
+            payload.setUri("ipfs://add");
+            payload.setPrice(BigInteger.valueOf(50));
+            payload.setLabId(BigInteger.ZERO);
+            payload.setResourceType(BigInteger.valueOf(256));
+            record.setActionPayload(payload);
+
+            java.lang.reflect.Method m = IntentOnChainExecutor.class.getDeclaredMethod("buildAddLab", IntentRecord.class);
+            m.setAccessible(true);
+
+            assertThatThrownBy(() -> m.invoke(executor, record))
+                .hasRootCauseInstanceOf(IllegalArgumentException.class)
+                .hasRootCauseMessage("resourceType out of uint8 range: 256");
         }
 
         @Test

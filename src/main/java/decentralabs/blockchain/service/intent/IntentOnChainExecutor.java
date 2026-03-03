@@ -18,6 +18,7 @@ import org.web3j.abi.datatypes.Utf8String;
 import org.web3j.abi.datatypes.DynamicStruct;
 import org.web3j.abi.datatypes.Address;
 import org.web3j.abi.datatypes.generated.Bytes32;
+import org.web3j.abi.datatypes.generated.Uint8;
 import org.web3j.abi.datatypes.generated.Uint32;
 import org.web3j.abi.datatypes.generated.Uint96;
 import org.web3j.abi.datatypes.generated.Uint256;
@@ -203,7 +204,8 @@ public class IntentOnChainExecutor {
             new Uint96(payload.getMaxBatch() != null ? payload.getMaxBatch() : BigInteger.ZERO),
             new Utf8String(payload.getAccessURI() != null ? payload.getAccessURI() : ""),
             new Utf8String(payload.getAccessKey() != null ? payload.getAccessKey() : ""),
-            new Utf8String(payload.getTokenURI() != null ? payload.getTokenURI() : "")
+            new Utf8String(payload.getTokenURI() != null ? payload.getTokenURI() : ""),
+            new Uint8(toUint8Value(payload.getResourceType()))
         );
 
         return Optional.of(new Function(
@@ -237,7 +239,8 @@ public class IntentOnChainExecutor {
             new Uint96(payload.getMaxBatch() != null ? payload.getMaxBatch() : BigInteger.ZERO),
             new Utf8String(payload.getAccessURI() != null ? payload.getAccessURI() : ""),
             new Utf8String(payload.getAccessKey() != null ? payload.getAccessKey() : ""),
-            new Utf8String(payload.getTokenURI() != null ? payload.getTokenURI() : "")
+            new Utf8String(payload.getTokenURI() != null ? payload.getTokenURI() : ""),
+            new Uint8(toUint8Value(payload.getResourceType()))
         );
 
         return Optional.of(new Function(
@@ -276,7 +279,8 @@ public class IntentOnChainExecutor {
             new Uint96(payload.getMaxBatch() != null ? payload.getMaxBatch() : BigInteger.ZERO),
             new Utf8String(payload.getAccessURI() != null ? payload.getAccessURI() : ""),
             new Utf8String(payload.getAccessKey() != null ? payload.getAccessKey() : ""),
-            new Utf8String(payload.getTokenURI() != null ? payload.getTokenURI() : "")
+            new Utf8String(payload.getTokenURI() != null ? payload.getTokenURI() : ""),
+            new Uint8(toUint8Value(payload.getResourceType()))
         );
 
         return Optional.of(new Function(
@@ -310,7 +314,8 @@ public class IntentOnChainExecutor {
             new Uint96(payload.getMaxBatch() != null ? payload.getMaxBatch() : BigInteger.ZERO),
             new Utf8String(payload.getAccessURI() != null ? payload.getAccessURI() : ""),
             new Utf8String(payload.getAccessKey() != null ? payload.getAccessKey() : ""),
-            new Utf8String(payload.getTokenURI() != null ? payload.getTokenURI() : "")
+            new Utf8String(payload.getTokenURI() != null ? payload.getTokenURI() : ""),
+            new Uint8(toUint8Value(payload.getResourceType()))
         );
 
         return Optional.of(new Function(
@@ -342,7 +347,8 @@ public class IntentOnChainExecutor {
             new Uint96(payload.getMaxBatch() != null ? payload.getMaxBatch() : BigInteger.ZERO),
             new Utf8String(payload.getAccessURI() != null ? payload.getAccessURI() : ""),
             new Utf8String(payload.getAccessKey() != null ? payload.getAccessKey() : ""),
-            new Utf8String(payload.getTokenURI() != null ? payload.getTokenURI() : "")
+            new Utf8String(payload.getTokenURI() != null ? payload.getTokenURI() : ""),
+            new Uint8(toUint8Value(payload.getResourceType()))
         );
 
         return Optional.of(new Function(
@@ -414,7 +420,8 @@ public class IntentOnChainExecutor {
             new Uint96(payload.getMaxBatch() != null ? payload.getMaxBatch() : BigInteger.ZERO),
             new Utf8String(payload.getAccessURI() != null ? payload.getAccessURI() : ""),
             new Utf8String(payload.getAccessKey() != null ? payload.getAccessKey() : ""),
-            new Utf8String(payload.getTokenURI() != null ? payload.getTokenURI() : "")
+            new Utf8String(payload.getTokenURI() != null ? payload.getTokenURI() : ""),
+            new Uint8(toUint8Value(payload.getResourceType()))
         );
 
         return Optional.of(new Function(
@@ -484,7 +491,8 @@ public class IntentOnChainExecutor {
             new Uint96(payload.getMaxBatch() != null ? payload.getMaxBatch() : BigInteger.ZERO),
             new Utf8String(payload.getAccessURI() != null ? payload.getAccessURI() : ""),
             new Utf8String(payload.getAccessKey() != null ? payload.getAccessKey() : ""),
-            new Utf8String(payload.getTokenURI() != null ? payload.getTokenURI() : "")
+            new Utf8String(payload.getTokenURI() != null ? payload.getTokenURI() : ""),
+            new Uint8(toUint8Value(payload.getResourceType()))
         );
 
         return Optional.of(new Function(
@@ -700,6 +708,16 @@ public class IntentOnChainExecutor {
         } catch (NumberFormatException ex) {
             return null;
         }
+    }
+
+    private long toUint8Value(BigInteger value) {
+        if (value == null) {
+            return 0L;
+        }
+        if (value.signum() < 0 || value.compareTo(BigInteger.valueOf(255)) > 0) {
+            throw new IllegalArgumentException("resourceType out of uint8 range: " + value);
+        }
+        return value.longValue();
     }
 
     private byte[] toBytes32(String hex) {

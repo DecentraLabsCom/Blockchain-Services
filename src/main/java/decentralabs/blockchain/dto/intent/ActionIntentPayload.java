@@ -30,6 +30,7 @@ public class ActionIntentPayload {
     private String accessURI;
     private String accessKey;
     private String tokenURI;
+    private BigInteger resourceType; // uint8: 0 = physical lab, 1 = FMU simulation
 
     public String getExecutor() {
         return executor;
@@ -124,5 +125,13 @@ public class ActionIntentPayload {
 
     public void setTokenURI(String tokenURI) {
         this.tokenURI = tokenURI;
+    }
+
+    public BigInteger getResourceType() {
+        return resourceType;
+    }
+
+    public void setResourceType(BigInteger resourceType) {
+        this.resourceType = resourceType;
     }
 }

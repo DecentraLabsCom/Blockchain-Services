@@ -55,6 +55,12 @@ public class SecurityConfig {
 
     @Value("${endpoint.checkin-institutional:/auth/checkin-institutional}")
     private @Nonnull String checkinInstitutionalEndpoint = "/auth/checkin-institutional";
+
+    @Value("${endpoint.fmu-session-ticket-issue:/auth/fmu/session-ticket/issue}")
+    private @Nonnull String fmuSessionTicketIssueEndpoint = "/auth/fmu/session-ticket/issue";
+
+    @Value("${endpoint.fmu-session-ticket-redeem:/auth/fmu/session-ticket/redeem}")
+    private @Nonnull String fmuSessionTicketRedeemEndpoint = "/auth/fmu/session-ticket/redeem";
     
     @Value("${endpoint.health:/health}")
     private @Nonnull String healthEndpoint = "/health";
@@ -100,6 +106,8 @@ public class SecurityConfig {
                     samlAuthEndpoint,
                     samlAuth2Endpoint,
                     checkinInstitutionalEndpoint,
+                    fmuSessionTicketIssueEndpoint,
+                    fmuSessionTicketRedeemEndpoint,
                     healthEndpoint,
                     "/actuator/health/**",
                     "/actuator/info",
@@ -125,6 +133,8 @@ public class SecurityConfig {
                 authorize.requestMatchers(samlAuthEndpoint).permitAll();
                 authorize.requestMatchers(samlAuth2Endpoint).permitAll();
                 authorize.requestMatchers(checkinInstitutionalEndpoint).permitAll();
+                authorize.requestMatchers(fmuSessionTicketIssueEndpoint).permitAll();
+                authorize.requestMatchers(fmuSessionTicketRedeemEndpoint).permitAll();
                 authorize.requestMatchers(healthEndpoint).permitAll();
                 authorize.requestMatchers("/actuator/health/**").permitAll();
                 authorize.requestMatchers("/actuator/info").permitAll();
@@ -173,6 +183,8 @@ public class SecurityConfig {
         source.registerCorsConfiguration(samlAuthEndpoint, publicConfiguration);
         source.registerCorsConfiguration(samlAuth2Endpoint, publicConfiguration);
         source.registerCorsConfiguration(checkinInstitutionalEndpoint, publicConfiguration);
+        source.registerCorsConfiguration(fmuSessionTicketIssueEndpoint, publicConfiguration);
+        source.registerCorsConfiguration(fmuSessionTicketRedeemEndpoint, publicConfiguration);
         source.registerCorsConfiguration(healthEndpoint, publicConfiguration);
         source.registerCorsConfiguration(intentsEndpoint + "/**", publicConfiguration);
         source.registerCorsConfiguration("/webauthn/**", publicConfiguration);

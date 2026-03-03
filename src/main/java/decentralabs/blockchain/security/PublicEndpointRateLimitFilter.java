@@ -91,7 +91,8 @@ public class PublicEndpointRateLimitFilter extends OncePerRequestFilter {
     private boolean isAuthEndpoint(String path) {
         return path.startsWith("/auth/wallet-auth")
                 || path.startsWith("/auth/saml-auth")
-                || path.equals("/auth/message");
+                || path.equals("/auth/message")
+                || path.startsWith("/auth/fmu/session-ticket/");
     }
 
     private boolean isJwksEndpoint(String path) {
