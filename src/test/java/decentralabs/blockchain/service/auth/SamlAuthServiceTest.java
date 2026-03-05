@@ -201,6 +201,42 @@ class SamlAuthServiceTest {
                 .isInstanceOf(SecurityException.class)
                 .hasMessageContaining("affiliation mismatch");
         }
+
+        @Test
+        @DisplayName("Should accept composite userid when JWT and SAML both use ePPN plus targeted ID")
+        void shouldAcceptCompositeUserIdWhenBothSourcesMatch() throws Exception {
+            SamlAuthRequest request = createValidRequest();
+            String compositeUserId = "user@university.edu|targeted-user-1";
+            request.setMarketplaceToken("jwt-composite-userid");
+            when(marketplaceEndpointAuthService.enforceToken(eq("jwt-composite-userid"), eq(null)))
+                .thenReturn(Map.of("userid", compositeUserId, "affiliation", TEST_AFFILIATION));
+            when(samlValidationService.validateSamlAssertionWithSignature(anyString()))
+                .thenReturn(Map.of("userid", compositeUserId, "affiliation", TEST_AFFILIATION));
+            when(jwtService.generateToken(any(), eq(null))).thenReturn("generated-token");
+
+            AuthResponse response = samlAuthService.handleAuthentication(request, false);
+
+            assertThat(response).isNotNull();
+            assertThat(response.getToken()).isEqualTo("generated-token");
+        }
+
+        @Test
+        @DisplayName("Should accept ePPN-only userid when JWT and SAML both use ePPN")
+        void shouldAcceptEppnOnlyUserIdWhenBothSourcesMatch() throws Exception {
+            SamlAuthRequest request = createValidRequest();
+            String eppnOnlyUserId = "user@university.edu";
+            request.setMarketplaceToken("jwt-eppn-only-userid");
+            when(marketplaceEndpointAuthService.enforceToken(eq("jwt-eppn-only-userid"), eq(null)))
+                .thenReturn(Map.of("userid", eppnOnlyUserId, "affiliation", TEST_AFFILIATION));
+            when(samlValidationService.validateSamlAssertionWithSignature(anyString()))
+                .thenReturn(Map.of("userid", eppnOnlyUserId, "affiliation", TEST_AFFILIATION));
+            when(jwtService.generateToken(any(), eq(null))).thenReturn("generated-token");
+
+            AuthResponse response = samlAuthService.handleAuthentication(request, false);
+
+            assertThat(response).isNotNull();
+            assertThat(response.getToken()).isEqualTo("generated-token");
+        }
     }
 
     @Nested

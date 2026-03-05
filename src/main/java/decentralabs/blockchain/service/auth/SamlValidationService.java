@@ -264,7 +264,8 @@ public class SamlValidationService {
         
         // Extract attributes after signature validation.
         // Keep alignment with Marketplace stable-id resolution:
-        // eduPersonTargetedID > eduPersonPrincipalName > mail > uid/userid > legacy fallbacks.
+        // if both ePPN and eduPersonTargetedID exist, use "ePPN|targetedID";
+        // if only ePPN exists, use ePPN; otherwise fall back to legacy identifiers.
         String eduPersonTargetedId = extractSamlAttributeValueByAliases(doc, EDU_PERSON_TARGETED_ID_ATTRIBUTE_ALIASES);
         String eduPersonPrincipalName = extractSamlAttributeValueByAliases(doc, EDU_PERSON_PRINCIPAL_NAME_ATTRIBUTE_ALIASES);
         String uid = extractSamlAttributeValueByAliases(doc, UID_ATTRIBUTE_ALIASES);
@@ -281,13 +282,20 @@ public class SamlValidationService {
             email = nameId;
         }
 
-        String userid = firstNonBlank(
-            normalizeIdentifier(eduPersonTargetedId),
-            normalizeIdentifier(eduPersonPrincipalName),
-            normalizeIdentifier(email),
-            normalizeIdentifier(uid),
-            normalizeIdentifier(legacyUserId),
-            normalizeIdentifier(nameId)
+        String normalizedEduPersonTargetedId = normalizeIdentifier(eduPersonTargetedId);
+        String normalizedEduPersonPrincipalName = normalizeIdentifier(eduPersonPrincipalName);
+        String normalizedEmail = normalizeIdentifier(email);
+        String normalizedUid = normalizeIdentifier(uid);
+        String normalizedLegacyUserId = normalizeIdentifier(legacyUserId);
+        String normalizedNameId = normalizeIdentifier(nameId);
+
+        String userid = resolveStableUserId(
+            normalizedEduPersonPrincipalName,
+            normalizedEduPersonTargetedId,
+            normalizedEmail,
+            normalizedUid,
+            normalizedLegacyUserId,
+            normalizedNameId
         );
 
         if (userid == null || userid.isBlank()) {
@@ -310,9 +318,9 @@ public class SamlValidationService {
         putAttribute(capturedAttributes, "affiliation", affiliation);
         putAttribute(capturedAttributes, "email", email);
         putAttribute(capturedAttributes, "displayName", displayName);
-        putAttribute(capturedAttributes, "eduPersonTargetedID", normalizeIdentifier(eduPersonTargetedId));
-        putAttribute(capturedAttributes, "eduPersonPrincipalName", normalizeIdentifier(eduPersonPrincipalName));
-        putAttribute(capturedAttributes, "uid", normalizeIdentifier(uid));
+        putAttribute(capturedAttributes, "eduPersonTargetedID", normalizedEduPersonTargetedId);
+        putAttribute(capturedAttributes, "eduPersonPrincipalName", normalizedEduPersonPrincipalName);
+        putAttribute(capturedAttributes, "uid", normalizedUid);
         if (!schacHomeOrganizations.isEmpty()) {
             capturedAttributes.put("schacHomeOrganization", schacHomeOrganizations);
         }
@@ -370,6 +378,30 @@ public class SamlValidationService {
         }
         String trimmed = normalized.trim();
         return trimmed.isEmpty() ? null : trimmed;
+    }
+
+    String resolveStableUserId(
+        String eduPersonPrincipalName,
+        String eduPersonTargetedId,
+        String email,
+        String uid,
+        String legacyUserId,
+        String nameId
+    ) {
+        if (eduPersonPrincipalName != null && !eduPersonPrincipalName.isBlank()) {
+            if (eduPersonTargetedId != null && !eduPersonTargetedId.isBlank()) {
+                return eduPersonPrincipalName + "|" + eduPersonTargetedId;
+            }
+            return eduPersonPrincipalName;
+        }
+
+        return firstNonBlank(
+            eduPersonTargetedId,
+            email,
+            uid,
+            legacyUserId,
+            nameId
+        );
     }
 
     private List<String> normalizeOrganizationDomains(List<String> candidates) {
