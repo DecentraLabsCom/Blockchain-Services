@@ -1,10 +1,13 @@
 package decentralabs.blockchain.controller.auth;
 
 import static org.mockito.Mockito.doNothing;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import java.util.Collections;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -19,6 +22,7 @@ import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 
+import decentralabs.blockchain.service.auth.MarketplaceEndpointAuthService;
 import decentralabs.blockchain.dto.auth.WebauthnRegisterRequest;
 import decentralabs.blockchain.dto.auth.WebauthnRevokeRequest;
 import decentralabs.blockchain.service.auth.WebauthnCredentialService;
@@ -33,6 +37,9 @@ class WebauthnControllerTest {
     @Mock
     private WebauthnCredentialService credentialService;
 
+    @Mock
+    private MarketplaceEndpointAuthService marketplaceEndpointAuthService;
+
     @InjectMocks
     private WebauthnController webauthnController;
 
@@ -43,6 +50,8 @@ class WebauthnControllerTest {
     void setUp() {
         mockMvc = MockMvcBuilders.standaloneSetup(webauthnController).build();
         objectMapper = new ObjectMapper();
+        lenient().when(marketplaceEndpointAuthService.enforceAuthorization(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any()))
+            .thenReturn(Collections.emptyMap());
     }
 
     @Nested

@@ -16,6 +16,7 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.junit.jupiter.api.BeforeEach;
 import org.springframework.web.context.WebApplicationContext;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
+import java.util.Collections;
 
 
 
@@ -23,6 +24,7 @@ import decentralabs.blockchain.dto.auth.WebauthnOnboardingCompleteRequest;
 import decentralabs.blockchain.dto.auth.WebauthnOnboardingCompleteResponse;
 import decentralabs.blockchain.dto.auth.WebauthnOnboardingOptionsRequest;
 import decentralabs.blockchain.dto.auth.WebauthnOnboardingOptionsResponse;
+import decentralabs.blockchain.service.auth.MarketplaceEndpointAuthService;
 import decentralabs.blockchain.service.auth.WebauthnCredentialService;
 import decentralabs.blockchain.service.auth.WebauthnOnboardingService;
 
@@ -42,6 +44,7 @@ class WebauthnOnboardingControllerIntegrationTest {
             .setControllerAdvice(new decentralabs.blockchain.exception.GlobalExceptionHandler())
             .defaultRequest(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get("/").accept(org.springframework.http.MediaType.APPLICATION_JSON))
             .build();
+        when(marketplaceEndpointAuthService.enforceAuthorization(any(), any())).thenReturn(Collections.emptyMap());
     }
 
     private com.fasterxml.jackson.databind.ObjectMapper objectMapper = new com.fasterxml.jackson.databind.ObjectMapper().registerModule(new com.fasterxml.jackson.datatype.jsr310.JavaTimeModule());
@@ -51,6 +54,9 @@ class WebauthnOnboardingControllerIntegrationTest {
 
     @MockitoBean
     private WebauthnCredentialService webauthnCredentialService;
+
+    @MockitoBean
+    private MarketplaceEndpointAuthService marketplaceEndpointAuthService;
 
     @Test
     void shouldRequestCredentialCreationOptions() throws Exception {

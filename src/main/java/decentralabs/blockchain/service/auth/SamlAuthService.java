@@ -6,11 +6,6 @@ import decentralabs.blockchain.exception.*;
 import decentralabs.blockchain.service.wallet.BlockchainBookingService;
 import decentralabs.blockchain.util.LogSanitizer;
 import decentralabs.blockchain.util.PucNormalizer;
-import io.jsonwebtoken.Claims;
-import io.jsonwebtoken.Jws;
-import io.jsonwebtoken.Jwts;
-import java.security.PublicKey;
-import java.util.HashMap;
 import java.util.Collection;
 import java.util.Map;
 import java.util.Objects;
@@ -19,6 +14,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
+import org.springframework.web.server.ResponseStatusException;
 
 /**
  * Service for SAML-based authentication
@@ -34,7 +30,7 @@ public class SamlAuthService {
     private JwtService jwtService;
     
     @Autowired
-    private MarketplaceKeyService marketplaceKeyService;
+    private MarketplaceEndpointAuthService marketplaceEndpointAuthService;
     
     @Autowired
     private SamlValidationService samlValidationService;
@@ -94,10 +90,8 @@ public class SamlAuthService {
         String normalizedJwtAffiliation = normalizeAffiliation(jwtAffiliation);
         String normalizedSamlAffiliation = normalizeAffiliation(samlAffiliation);
         
-        // Affiliation is optional in newer SAML mappings. Only enforce equality when both sides provide it.
-        if (normalizedJwtAffiliation != null
-            && normalizedSamlAffiliation != null
-            && !normalizedJwtAffiliation.equals(normalizedSamlAffiliation)) {
+        // Strict mode: marketplaceToken and SAML must carry and match affiliation.
+        if (normalizedJwtAffiliation == null || !normalizedJwtAffiliation.equals(normalizedSamlAffiliation)) {
             throw new SecurityException("JWT and SAML affiliation mismatch");
         }
         
@@ -121,11 +115,10 @@ public class SamlAuthService {
             return new AuthResponse(token, labURL);
         } else {
             // Generate simple token with SAML claims
-            Map<String, Object> claims = new HashMap<>();
-            claims.put("userid", jwtUserId);
-            if (jwtAffiliation != null && !jwtAffiliation.isBlank()) {
-                claims.put("affiliation", jwtAffiliation);
-            }
+            Map<String, Object> claims = Map.of(
+                "userid", jwtUserId,
+                "affiliation", jwtAffiliation
+            );
             String token = jwtService.generateToken(claims, null);
             return new AuthResponse(token);
         }
@@ -138,16 +131,12 @@ public class SamlAuthService {
      * @return Parsed JWT claims
      * @throws Exception if validation fails
      */
-    private Map<String, Object> validateMarketplaceJWTBasic(String marketplaceToken) throws Exception {
-        PublicKey marketplacePublicKey = marketplaceKeyService.getPublicKey(false);
-        
+    private Map<String, Object> validateMarketplaceJWTBasic(String marketplaceToken) {
         try {
-            Jws<Claims> jws = Jwts.parser()
-                    .verifyWith(marketplacePublicKey)
-                    .build()
-                    .parseSignedClaims(marketplaceToken);
-            
-            return jws.getPayload();
+            return marketplaceEndpointAuthService.enforceToken(marketplaceToken, null);
+        } catch (ResponseStatusException e) {
+            log.error("Marketplace JWT validation failed: {}", LogSanitizer.sanitize(e.getReason()), e);
+            throw new SecurityException("Invalid marketplace token: " + e.getReason(), e);
         } catch (Exception e) {
             log.error("Marketplace JWT validation failed: {}", LogSanitizer.sanitize(e.getMessage()), e);
             throw new SecurityException("Invalid marketplace token: " + e.getMessage(), e);

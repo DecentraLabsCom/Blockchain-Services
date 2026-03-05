@@ -3,14 +3,11 @@ package decentralabs.blockchain.service.auth;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.when;
 
-import java.security.KeyPair;
-import java.security.KeyPairGenerator;
-import java.util.Date;
 import java.util.List;
 import java.util.Map;
 
@@ -22,12 +19,13 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.http.HttpStatus;
 import org.springframework.test.util.ReflectionTestUtils;
+import org.springframework.web.server.ResponseStatusException;
 
 import decentralabs.blockchain.dto.auth.AuthResponse;
 import decentralabs.blockchain.dto.auth.SamlAuthRequest;
 import decentralabs.blockchain.service.wallet.BlockchainBookingService;
-import io.jsonwebtoken.Jwts;
 
 @ExtendWith(MockitoExtension.class)
 class SamlAuthServiceTest {
@@ -39,7 +37,7 @@ class SamlAuthServiceTest {
     private JwtService jwtService;
 
     @Mock
-    private MarketplaceKeyService marketplaceKeyService;
+    private MarketplaceEndpointAuthService marketplaceEndpointAuthService;
 
     @Mock
     private SamlValidationService samlValidationService;
@@ -47,18 +45,15 @@ class SamlAuthServiceTest {
     @InjectMocks
     private SamlAuthService samlAuthService;
 
-    private KeyPair keyPair;
     private static final String TEST_USER_ID = "user123";
     private static final String TEST_AFFILIATION = "test-university";
 
     @BeforeEach
-    void setUp() throws Exception {
-        KeyPairGenerator keyGen = KeyPairGenerator.getInstance("RSA");
-        keyGen.initialize(2048);
-        keyPair = keyGen.generateKeyPair();
-
+    void setUp() {
         ReflectionTestUtils.setField(samlAuthService, "requireBookingScope", true);
         ReflectionTestUtils.setField(samlAuthService, "requiredBookingScope", "booking:read");
+        lenient().when(marketplaceEndpointAuthService.enforceToken(anyString(), eq(null)))
+            .thenReturn(Map.of("userid", TEST_USER_ID, "affiliation", TEST_AFFILIATION));
     }
 
     @Nested
@@ -122,8 +117,8 @@ class SamlAuthServiceTest {
         @DisplayName("Should throw exception when JWT validation fails")
         void shouldThrowExceptionWhenJwtValidationFails() throws Exception {
             SamlAuthRequest request = createValidRequest();
-            when(marketplaceKeyService.getPublicKey(anyBoolean()))
-                .thenReturn(keyPair.getPublic());
+            when(marketplaceEndpointAuthService.enforceToken(eq("test-marketplace-token"), eq(null)))
+                .thenThrow(new ResponseStatusException(HttpStatus.UNAUTHORIZED, "invalid_marketplace_token"));
 
             assertThatThrownBy(() -> samlAuthService.handleAuthentication(request, false))
                 .isInstanceOf(SecurityException.class)
@@ -134,11 +129,12 @@ class SamlAuthServiceTest {
         @DisplayName("Should throw exception when marketplace key unavailable")
         void shouldThrowExceptionWhenMarketplaceKeyUnavailable() throws Exception {
             SamlAuthRequest request = createValidRequest();
-            when(marketplaceKeyService.getPublicKey(anyBoolean()))
-                .thenThrow(new Exception("Key not available"));
+            when(marketplaceEndpointAuthService.enforceToken(eq("test-marketplace-token"), eq(null)))
+                .thenThrow(new RuntimeException("Key not available"));
 
             assertThatThrownBy(() -> samlAuthService.handleAuthentication(request, false))
-                .isInstanceOf(Exception.class);
+                .isInstanceOf(SecurityException.class)
+                .hasMessageContaining("Invalid marketplace token");
         }
     }
 
@@ -150,10 +146,9 @@ class SamlAuthServiceTest {
         @DisplayName("Should throw exception when JWT and SAML userid mismatch")
         void shouldThrowExceptionWhenUserIdMismatch() throws Exception {
             SamlAuthRequest request = createValidRequest();
-            String validJwt = createValidJwt(TEST_USER_ID, TEST_AFFILIATION);
-            request.setMarketplaceToken(validJwt);
-
-            when(marketplaceKeyService.getPublicKey(anyBoolean())).thenReturn(keyPair.getPublic());
+            request.setMarketplaceToken("jwt-user-mismatch");
+            when(marketplaceEndpointAuthService.enforceToken(eq("jwt-user-mismatch"), eq(null)))
+                .thenReturn(Map.of("userid", TEST_USER_ID, "affiliation", TEST_AFFILIATION));
             when(samlValidationService.validateSamlAssertionWithSignature(anyString()))
                 .thenReturn(Map.of("userid", "different-user", "affiliation", TEST_AFFILIATION));
 
@@ -166,10 +161,9 @@ class SamlAuthServiceTest {
         @DisplayName("Should throw exception when JWT and SAML affiliation mismatch")
         void shouldThrowExceptionWhenAffiliationMismatch() throws Exception {
             SamlAuthRequest request = createValidRequest();
-            String validJwt = createValidJwt(TEST_USER_ID, TEST_AFFILIATION);
-            request.setMarketplaceToken(validJwt);
-
-            when(marketplaceKeyService.getPublicKey(anyBoolean())).thenReturn(keyPair.getPublic());
+            request.setMarketplaceToken("jwt-affiliation-mismatch");
+            when(marketplaceEndpointAuthService.enforceToken(eq("jwt-affiliation-mismatch"), eq(null)))
+                .thenReturn(Map.of("userid", TEST_USER_ID, "affiliation", TEST_AFFILIATION));
             when(samlValidationService.validateSamlAssertionWithSignature(anyString()))
                 .thenReturn(Map.of("userid", TEST_USER_ID, "affiliation", "different-affiliation"));
 
@@ -182,10 +176,9 @@ class SamlAuthServiceTest {
         @DisplayName("Should throw exception when JWT userid is null")
         void shouldThrowExceptionWhenJwtUserIdIsNull() throws Exception {
             SamlAuthRequest request = createValidRequest();
-            String jwtWithoutUserId = createJwtWithClaims(Map.of("affiliation", TEST_AFFILIATION));
-            request.setMarketplaceToken(jwtWithoutUserId);
-
-            when(marketplaceKeyService.getPublicKey(anyBoolean())).thenReturn(keyPair.getPublic());
+            request.setMarketplaceToken("jwt-without-userid");
+            when(marketplaceEndpointAuthService.enforceToken(eq("jwt-without-userid"), eq(null)))
+                .thenReturn(Map.of("affiliation", TEST_AFFILIATION));
             when(samlValidationService.validateSamlAssertionWithSignature(anyString()))
                 .thenReturn(Map.of("userid", TEST_USER_ID, "affiliation", TEST_AFFILIATION));
 
@@ -195,21 +188,18 @@ class SamlAuthServiceTest {
         }
 
         @Test
-        @DisplayName("Should allow authentication when JWT affiliation is null")
-        void shouldAllowWhenJwtAffiliationIsNull() throws Exception {
+        @DisplayName("Should throw exception when JWT affiliation is null")
+        void shouldThrowExceptionWhenJwtAffiliationIsNull() throws Exception {
             SamlAuthRequest request = createValidRequest();
-            String jwtWithoutAffiliation = createJwtWithClaims(Map.of("userid", TEST_USER_ID));
-            request.setMarketplaceToken(jwtWithoutAffiliation);
-
-            when(marketplaceKeyService.getPublicKey(anyBoolean())).thenReturn(keyPair.getPublic());
+            request.setMarketplaceToken("jwt-without-affiliation");
+            when(marketplaceEndpointAuthService.enforceToken(eq("jwt-without-affiliation"), eq(null)))
+                .thenReturn(Map.of("userid", TEST_USER_ID));
             when(samlValidationService.validateSamlAssertionWithSignature(anyString()))
                 .thenReturn(Map.of("userid", TEST_USER_ID, "affiliation", TEST_AFFILIATION));
-            when(jwtService.generateToken(any(), eq(null))).thenReturn("generated-token");
 
-            AuthResponse response = samlAuthService.handleAuthentication(request, false);
-
-            assertThat(response).isNotNull();
-            assertThat(response.getToken()).isEqualTo("generated-token");
+            assertThatThrownBy(() -> samlAuthService.handleAuthentication(request, false))
+                .isInstanceOf(SecurityException.class)
+                .hasMessageContaining("affiliation mismatch");
         }
     }
 
@@ -221,10 +211,9 @@ class SamlAuthServiceTest {
         @DisplayName("Should generate simple token when booking info not requested")
         void shouldGenerateSimpleTokenWhenBookingInfoNotRequested() throws Exception {
             SamlAuthRequest request = createValidRequest();
-            String validJwt = createValidJwt(TEST_USER_ID, TEST_AFFILIATION);
-            request.setMarketplaceToken(validJwt);
-
-            when(marketplaceKeyService.getPublicKey(anyBoolean())).thenReturn(keyPair.getPublic());
+            request.setMarketplaceToken("jwt-simple-token");
+            when(marketplaceEndpointAuthService.enforceToken(eq("jwt-simple-token"), eq(null)))
+                .thenReturn(Map.of("userid", TEST_USER_ID, "affiliation", TEST_AFFILIATION));
             when(samlValidationService.validateSamlAssertionWithSignature(anyString()))
                 .thenReturn(Map.of("userid", TEST_USER_ID, "affiliation", TEST_AFFILIATION));
             when(jwtService.generateToken(any(), eq(null))).thenReturn("generated-token");
@@ -239,10 +228,9 @@ class SamlAuthServiceTest {
         @DisplayName("Should throw exception when booking scope required but missing")
         void shouldThrowExceptionWhenBookingScopeRequiredButMissing() throws Exception {
             SamlAuthRequest request = createValidRequest();
-            String validJwt = createValidJwt(TEST_USER_ID, TEST_AFFILIATION);
-            request.setMarketplaceToken(validJwt);
-
-            when(marketplaceKeyService.getPublicKey(anyBoolean())).thenReturn(keyPair.getPublic());
+            request.setMarketplaceToken("jwt-missing-scope");
+            when(marketplaceEndpointAuthService.enforceToken(eq("jwt-missing-scope"), eq(null)))
+                .thenReturn(Map.of("userid", TEST_USER_ID, "affiliation", TEST_AFFILIATION));
             when(samlValidationService.validateSamlAssertionWithSignature(anyString()))
                 .thenReturn(Map.of("userid", TEST_USER_ID, "affiliation", TEST_AFFILIATION));
 
@@ -256,16 +244,15 @@ class SamlAuthServiceTest {
         void shouldAllowBookingInfoWhenClaimIsTrue() throws Exception {
             SamlAuthRequest request = createValidRequest();
             request.setReservationKey("0xreservation");
-            String jwtWithBookingAllowed = createJwtWithClaims(Map.of(
-                "userid", TEST_USER_ID,
-                "affiliation", TEST_AFFILIATION,
-                "bookingInfoAllowed", true,
-                "institutionalProviderWallet", "0xwallet",
-                "puc", "puc123"
-            ));
-            request.setMarketplaceToken(jwtWithBookingAllowed);
-
-            when(marketplaceKeyService.getPublicKey(anyBoolean())).thenReturn(keyPair.getPublic());
+            request.setMarketplaceToken("jwt-booking-allowed");
+            when(marketplaceEndpointAuthService.enforceToken(eq("jwt-booking-allowed"), eq(null)))
+                .thenReturn(Map.of(
+                    "userid", TEST_USER_ID,
+                    "affiliation", TEST_AFFILIATION,
+                    "bookingInfoAllowed", true,
+                    "institutionalProviderWallet", "0xwallet",
+                    "puc", "puc123"
+                ));
             when(samlValidationService.validateSamlAssertionWithSignature(anyString()))
                 .thenReturn(Map.of("userid", TEST_USER_ID, "affiliation", TEST_AFFILIATION));
             when(blockchainService.getBookingInfo(anyString(), anyString(), any(), anyString()))
@@ -283,16 +270,15 @@ class SamlAuthServiceTest {
         void shouldAllowBookingInfoWhenScopeContainsRequired() throws Exception {
             SamlAuthRequest request = createValidRequest();
             request.setReservationKey("0xreservation");
-            String jwtWithScope = createJwtWithClaims(Map.of(
-                "userid", TEST_USER_ID,
-                "affiliation", TEST_AFFILIATION,
-                "scope", "read booking:read write",
-                "institutionalProviderWallet", "0xwallet",
-                "puc", "puc123"
-            ));
-            request.setMarketplaceToken(jwtWithScope);
-
-            when(marketplaceKeyService.getPublicKey(anyBoolean())).thenReturn(keyPair.getPublic());
+            request.setMarketplaceToken("jwt-with-scope");
+            when(marketplaceEndpointAuthService.enforceToken(eq("jwt-with-scope"), eq(null)))
+                .thenReturn(Map.of(
+                    "userid", TEST_USER_ID,
+                    "affiliation", TEST_AFFILIATION,
+                    "scope", "read booking:read write",
+                    "institutionalProviderWallet", "0xwallet",
+                    "puc", "puc123"
+                ));
             when(samlValidationService.validateSamlAssertionWithSignature(anyString()))
                 .thenReturn(Map.of("userid", TEST_USER_ID, "affiliation", TEST_AFFILIATION));
             when(blockchainService.getBookingInfo(anyString(), anyString(), any(), anyString()))
@@ -309,16 +295,15 @@ class SamlAuthServiceTest {
         void shouldAllowBookingInfoWhenScopesListContainsRequired() throws Exception {
             SamlAuthRequest request = createValidRequest();
             request.setReservationKey("0xreservation");
-            String jwtWithScopes = createJwtWithClaims(Map.of(
-                "userid", TEST_USER_ID,
-                "affiliation", TEST_AFFILIATION,
-                "scopes", List.of("read", "booking:read", "write"),
-                "institutionalProviderWallet", "0xwallet",
-                "puc", "puc123"
-            ));
-            request.setMarketplaceToken(jwtWithScopes);
-
-            when(marketplaceKeyService.getPublicKey(anyBoolean())).thenReturn(keyPair.getPublic());
+            request.setMarketplaceToken("jwt-with-scopes");
+            when(marketplaceEndpointAuthService.enforceToken(eq("jwt-with-scopes"), eq(null)))
+                .thenReturn(Map.of(
+                    "userid", TEST_USER_ID,
+                    "affiliation", TEST_AFFILIATION,
+                    "scopes", List.of("read", "booking:read", "write"),
+                    "institutionalProviderWallet", "0xwallet",
+                    "puc", "puc123"
+                ));
             when(samlValidationService.validateSamlAssertionWithSignature(anyString()))
                 .thenReturn(Map.of("userid", TEST_USER_ID, "affiliation", TEST_AFFILIATION));
             when(blockchainService.getBookingInfo(anyString(), anyString(), any(), anyString()))
@@ -337,15 +322,14 @@ class SamlAuthServiceTest {
 
             SamlAuthRequest request = createValidRequest();
             request.setReservationKey("0xreservation");
-            String validJwt = createJwtWithClaims(Map.of(
-                "userid", TEST_USER_ID,
-                "affiliation", TEST_AFFILIATION,
-                "institutionalProviderWallet", "0xwallet",
-                "puc", "puc123"
-            ));
-            request.setMarketplaceToken(validJwt);
-
-            when(marketplaceKeyService.getPublicKey(anyBoolean())).thenReturn(keyPair.getPublic());
+            request.setMarketplaceToken("jwt-no-scope-required");
+            when(marketplaceEndpointAuthService.enforceToken(eq("jwt-no-scope-required"), eq(null)))
+                .thenReturn(Map.of(
+                    "userid", TEST_USER_ID,
+                    "affiliation", TEST_AFFILIATION,
+                    "institutionalProviderWallet", "0xwallet",
+                    "puc", "puc123"
+                ));
             when(samlValidationService.validateSamlAssertionWithSignature(anyString()))
                 .thenReturn(Map.of("userid", TEST_USER_ID, "affiliation", TEST_AFFILIATION));
             when(blockchainService.getBookingInfo(anyString(), anyString(), any(), anyString()))
@@ -365,21 +349,5 @@ class SamlAuthServiceTest {
         request.setMarketplaceToken("test-marketplace-token");
         request.setSamlAssertion("dGVzdC1zYW1sLWFzc2VydGlvbg=="); // base64 encoded
         return request;
-    }
-
-    private String createValidJwt(String userId, String affiliation) {
-        return createJwtWithClaims(Map.of(
-            "userid", userId,
-            "affiliation", affiliation
-        ));
-    }
-
-    private String createJwtWithClaims(Map<String, Object> claims) {
-        return Jwts.builder()
-            .claims(claims)
-            .issuedAt(new Date())
-            .expiration(new Date(System.currentTimeMillis() + 3600000))
-            .signWith(keyPair.getPrivate())
-            .compact();
     }
 }
