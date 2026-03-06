@@ -22,13 +22,31 @@ const API = {
 
         try {
             const response = await fetch(url, config);
-            const data = await response.json();
-            
-            if (!response.ok) {
-                throw new Error(data.error || `HTTP ${response.status}: ${response.statusText}`);
+            const rawBody = await response.text();
+            let data = null;
+            if (rawBody) {
+                try {
+                    data = JSON.parse(rawBody);
+                } catch (parseError) {
+                    data = null;
+                }
             }
             
-            return data;
+            if (!response.ok) {
+                const detailFromMap = (data && data.errors && typeof data.errors === 'object')
+                    ? Object.entries(data.errors)
+                        .map(([field, msg]) => `${field}: ${msg}`)
+                        .join(', ')
+                    : '';
+                const detail =
+                    (data && (data.error || data.message || data.details)) ||
+                    detailFromMap ||
+                    rawBody ||
+                    `HTTP ${response.status}${response.statusText ? `: ${response.statusText}` : ''}`;
+                throw new Error(detail);
+            }
+            
+            return data || {};
         } catch (error) {
             console.error(`API request failed: ${endpoint}`, error);
             throw error;

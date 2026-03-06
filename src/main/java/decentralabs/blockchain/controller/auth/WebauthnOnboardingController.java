@@ -6,11 +6,13 @@ import decentralabs.blockchain.dto.auth.WebauthnOnboardingCompleteResponse;
 import decentralabs.blockchain.dto.auth.WebauthnOnboardingOptionsRequest;
 import decentralabs.blockchain.dto.auth.WebauthnOnboardingOptionsResponse;
 import decentralabs.blockchain.dto.auth.WebauthnOnboardingStatusResponse;
+import decentralabs.blockchain.service.auth.MarketplaceEndpointAuthService;
 import decentralabs.blockchain.service.auth.WebauthnCredentialService;
 import decentralabs.blockchain.service.auth.WebauthnOnboardingService;
 import jakarta.validation.Valid;
 import java.net.URI;
 import java.time.Instant;
+import java.util.Map;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
@@ -21,6 +23,9 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.RequestHeader;
+import org.springframework.web.server.ResponseStatusException;
+import org.springframework.http.HttpStatus;
 
 /**
  * Controller for WebAuthn credential registration during user onboarding.
@@ -52,6 +57,7 @@ public class WebauthnOnboardingController {
 
     private final WebauthnOnboardingService onboardingService;
     private final WebauthnCredentialService credentialService;
+    private final MarketplaceEndpointAuthService marketplaceEndpointAuthService;
 
     /**
      * Check if a user has registered WebAuthn credentials.
@@ -66,7 +72,13 @@ public class WebauthnOnboardingController {
     @GetMapping("/key-status/{stableUserId}")
     public ResponseEntity<UserKeyStatusResponse> getKeyStatus(
             @PathVariable String stableUserId,
+            @RequestHeader(value = "Authorization", required = false) String authorizationHeader,
             @RequestParam(required = false) String institutionId) {
+        Map<String, Object> claims = marketplaceEndpointAuthService.enforceAuthorization(
+            authorizationHeader,
+            "onboarding:webauthn"
+        );
+        enforceUserScope(claims, stableUserId);
         log.debug("Key status check for user: {}, institution: {}", stableUserId, institutionId);
         
         WebauthnCredentialService.KeyStatus keyStatus = credentialService.getKeyStatus(stableUserId);
@@ -99,7 +111,13 @@ public class WebauthnOnboardingController {
      */
     @PostMapping("/options")
     public ResponseEntity<WebauthnOnboardingOptionsResponse> getOptions(
+            @RequestHeader(value = "Authorization", required = false) String authorizationHeader,
             @Valid @RequestBody WebauthnOnboardingOptionsRequest request) {
+        Map<String, Object> claims = marketplaceEndpointAuthService.enforceAuthorization(
+            authorizationHeader,
+            "onboarding:webauthn"
+        );
+        enforceUserScope(claims, request.getStableUserId());
         log.debug("WebAuthn options requested for institution: {}", request.getInstitutionId());
         WebauthnOnboardingOptionsResponse response = onboardingService.generateOptions(request);
         return ResponseEntity.ok(response);
@@ -136,9 +154,15 @@ public class WebauthnOnboardingController {
      */
     @GetMapping("/status/{sessionId}")
     public ResponseEntity<WebauthnOnboardingStatusResponse> getStatus(
-            @PathVariable String sessionId) {
+            @PathVariable String sessionId,
+            @RequestHeader(value = "Authorization", required = false) String authorizationHeader) {
+        Map<String, Object> claims = marketplaceEndpointAuthService.enforceAuthorization(
+            authorizationHeader,
+            "onboarding:webauthn"
+        );
         log.debug("WebAuthn status check for session: {}", sessionId);
         WebauthnOnboardingStatusResponse response = onboardingService.getStatus(sessionId);
+        enforceUserScope(claims, response.getStableUserId());
         return ResponseEntity.ok(response);
     }
 
@@ -486,5 +510,28 @@ public class WebauthnOnboardingController {
             log.warn("Failed to serialize string literal; using null fallback", e);
             return "null";
         }
+    }
+
+    private void enforceUserScope(Map<String, Object> claims, String stableUserId) {
+        if (claims == null || claims.isEmpty() || stableUserId == null || stableUserId.isBlank()) {
+            return;
+        }
+        String claimUser = firstClaim(claims, "userid", "sub", "uid", "puc");
+        if (claimUser == null || claimUser.isBlank()) {
+            return;
+        }
+        if (!claimUser.trim().equals(stableUserId.trim())) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "marketplace_user_mismatch");
+        }
+    }
+
+    private String firstClaim(Map<String, Object> claims, String... keys) {
+        for (String key : keys) {
+            Object value = claims.get(key);
+            if (value != null) {
+                return value.toString();
+            }
+        }
+        return null;
     }
 }

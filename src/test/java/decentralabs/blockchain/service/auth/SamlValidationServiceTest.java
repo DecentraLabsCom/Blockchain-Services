@@ -184,6 +184,34 @@ class SamlValidationServiceTest {
         assertThat(trustedResult).isNotNull().isFalse();
     }
 
+    @Test
+    void shouldResolveStableUserIdWithCombinedEppnAndTargetedId() {
+        String stableUserId = samlValidationService.resolveStableUserId(
+                "user@university.edu",
+                "targeted-user-1",
+                "user@example.com",
+                "legacy-uid",
+                "legacy-user",
+                "name-id"
+        );
+
+        assertThat(stableUserId).isEqualTo("user@university.edu|targeted-user-1");
+    }
+
+    @Test
+    void shouldResolveStableUserIdWithOnlyEppnWhenTargetedIdMissing() {
+        String stableUserId = samlValidationService.resolveStableUserId(
+                "user@university.edu",
+                null,
+                "user@example.com",
+                "legacy-uid",
+                "legacy-user",
+                "name-id"
+        );
+
+        assertThat(stableUserId).isEqualTo("user@university.edu");
+    }
+
     // Helper methods
 
     private String createMinimalSamlAssertion(String issuer) {

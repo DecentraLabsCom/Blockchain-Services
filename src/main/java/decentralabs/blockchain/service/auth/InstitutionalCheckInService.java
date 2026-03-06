@@ -6,18 +6,16 @@ import decentralabs.blockchain.dto.auth.InstitutionalCheckInRequest;
 import decentralabs.blockchain.service.wallet.BlockchainBookingService;
 import decentralabs.blockchain.service.wallet.InstitutionalWalletService;
 import decentralabs.blockchain.service.wallet.WalletService;
-import io.jsonwebtoken.Claims;
-import io.jsonwebtoken.Jws;
-import io.jsonwebtoken.Jwts;
 import java.nio.charset.StandardCharsets;
-import java.security.PublicKey;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
+import org.springframework.web.server.ResponseStatusException;
 import org.web3j.abi.FunctionEncoder;
 import org.web3j.abi.FunctionReturnDecoder;
 import org.web3j.abi.TypeReference;
@@ -40,8 +38,22 @@ import decentralabs.blockchain.util.PucNormalizer;
 public class InstitutionalCheckInService {
     private static final String ZERO_ADDRESS = "0x0000000000000000000000000000000000000000";
 
+    private static final class MarketplaceIdentityClaims {
+        private final String userId;
+        private final String affiliation;
+        private final String puc;
+        private final String institutionalProviderWallet;
+
+        MarketplaceIdentityClaims(String userId, String affiliation, String puc, String institutionalProviderWallet) {
+            this.userId = userId;
+            this.affiliation = affiliation;
+            this.puc = puc;
+            this.institutionalProviderWallet = institutionalProviderWallet;
+        }
+    }
+
     private final SamlValidationService samlValidationService;
-    private final MarketplaceKeyService marketplaceKeyService;
+    private final MarketplaceEndpointAuthService marketplaceEndpointAuthService;
     private final BlockchainBookingService bookingService;
     private final InstitutionalWalletService institutionalWalletService;
     private final WalletService walletService;
@@ -55,19 +67,28 @@ public class InstitutionalCheckInService {
         validateRequest(request);
 
         SamlAssertionAttributes saml = validateSaml(request.getSamlAssertion());
+        MarketplaceIdentityClaims marketplaceIdentity = validateMarketplaceToken(request.getMarketplaceToken(), saml);
 
-        if (request.getMarketplaceToken() != null && !request.getMarketplaceToken().isBlank()) {
-            validateMarketplaceToken(request.getMarketplaceToken(), saml);
-        }
-
-        String puc = PucNormalizer.normalize(firstNonBlank(request.getPuc(), saml.userid()));
+        String tokenIdentity = PucNormalizer.normalize(firstNonBlank(marketplaceIdentity.puc, marketplaceIdentity.userId));
+        String samlIdentity = PucNormalizer.normalize(saml.userid());
+        String puc = firstNonBlank(tokenIdentity, samlIdentity);
         if (puc == null || puc.isBlank()) {
             throw new IllegalArgumentException("Missing institutional user identifier");
+        }
+
+        String requestPuc = PucNormalizer.normalize(request.getPuc());
+        if (requestPuc != null && !requestPuc.isBlank() && !requestPuc.equals(puc)) {
+            throw new SecurityException("Request puc does not match authenticated user");
         }
 
         String institutionWallet = resolveInstitutionWallet(request, saml);
         if (institutionWallet == null || institutionWallet.isBlank() || ZERO_ADDRESS.equalsIgnoreCase(institutionWallet)) {
             throw new IllegalArgumentException("Institution wallet could not be resolved");
+        }
+
+        String claimedInstitutionWallet = normalizeAddress(marketplaceIdentity.institutionalProviderWallet);
+        if (claimedInstitutionWallet != null && !claimedInstitutionWallet.equalsIgnoreCase(institutionWallet)) {
+            throw new SecurityException("Marketplace token institutionalProviderWallet mismatch");
         }
 
         Map<String, Object> bookingInfo = bookingService.getBookingInfo(
@@ -110,6 +131,9 @@ public class InstitutionalCheckInService {
         if (request.getSamlAssertion() == null || request.getSamlAssertion().isBlank()) {
             throw new IllegalArgumentException("Missing samlAssertion");
         }
+        if (request.getMarketplaceToken() == null || request.getMarketplaceToken().isBlank()) {
+            throw new IllegalArgumentException("Missing marketplaceToken");
+        }
         boolean hasReservationKey = request.getReservationKey() != null && !request.getReservationKey().isBlank();
         boolean hasLabId = request.getLabId() != null && !request.getLabId().isBlank();
         if (!hasReservationKey && !hasLabId) {
@@ -125,19 +149,13 @@ public class InstitutionalCheckInService {
         }
     }
 
-    private void validateMarketplaceToken(String marketplaceToken, SamlAssertionAttributes saml) {
+    private MarketplaceIdentityClaims validateMarketplaceToken(String marketplaceToken, SamlAssertionAttributes saml) {
         try {
-            PublicKey marketplacePublicKey = marketplaceKeyService.getPublicKey(false);
-            Jws<Claims> jws = Jwts.parser()
-                .verifyWith(marketplacePublicKey)
-                .build()
-                .parseSignedClaims(marketplaceToken);
-
-            Map<String, Object> claims = jws.getPayload();
+            Map<String, Object> claims = marketplaceEndpointAuthService.enforceToken(marketplaceToken, null);
             String claimUser = firstClaim(claims, "userid", "sub", "uid");
             String claimAffiliation = firstClaim(claims, "affiliation", "schacHomeOrganization");
 
-            if (claimUser == null || claimAffiliation == null) {
+            if (claimUser == null || claimUser.isBlank() || claimAffiliation == null || claimAffiliation.isBlank()) {
                 throw new IllegalArgumentException("Marketplace token missing required claims");
             }
             String normalizedClaimUser = PucNormalizer.normalize(claimUser);
@@ -148,9 +166,23 @@ public class InstitutionalCheckInService {
                 && !normalizedClaimUser.equals(normalizedSamlUser)) {
                 throw new SecurityException("Marketplace token userid mismatch");
             }
-            if (saml.affiliation() != null && !claimAffiliation.equals(saml.affiliation())) {
+            if (saml.affiliation() != null && !saml.affiliation().isBlank() && !claimAffiliation.equals(saml.affiliation())) {
                 throw new SecurityException("Marketplace token affiliation mismatch");
             }
+
+            String claimPuc = firstClaim(claims, "puc");
+            String claimInstitutionalProviderWallet = firstClaim(claims, "institutionalProviderWallet");
+            return new MarketplaceIdentityClaims(
+                claimUser,
+                claimAffiliation,
+                claimPuc,
+                claimInstitutionalProviderWallet
+            );
+        } catch (ResponseStatusException ex) {
+            if (ex.getStatusCode().equals(HttpStatus.UNAUTHORIZED) || ex.getStatusCode().equals(HttpStatus.FORBIDDEN)) {
+                throw new SecurityException("Invalid marketplace token: " + ex.getReason(), ex);
+            }
+            throw new IllegalArgumentException("Invalid marketplace token: " + ex.getReason(), ex);
         } catch (SecurityException ex) {
             throw ex;
         } catch (Exception ex) {

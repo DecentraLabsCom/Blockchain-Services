@@ -27,6 +27,8 @@ import java.util.concurrent.ConcurrentHashMap;
  * - /auth/wallet-auth2
  * - /auth/saml-auth
  * - /auth/saml-auth2
+ * - /onboarding/webauthn/*
+ * - /webauthn/*
  * - /auth/jwks
  * - /.well-known/*
  * 
@@ -92,6 +94,9 @@ public class PublicEndpointRateLimitFilter extends OncePerRequestFilter {
         return path.startsWith("/auth/wallet-auth")
                 || path.startsWith("/auth/saml-auth")
                 || path.equals("/auth/message")
+                || path.startsWith("/auth/checkin")
+                || path.startsWith("/onboarding/webauthn")
+                || path.startsWith("/webauthn")
                 || path.startsWith("/auth/fmu/session-ticket/");
     }
 

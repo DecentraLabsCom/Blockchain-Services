@@ -26,6 +26,8 @@ import org.web3j.crypto.RawTransaction;
 import org.web3j.crypto.TransactionEncoder;
 import org.web3j.protocol.Web3j;
 import org.web3j.protocol.core.DefaultBlockParameterName;
+import org.web3j.protocol.core.methods.response.EthChainId;
+import org.web3j.protocol.core.methods.response.EthEstimateGas;
 import org.web3j.protocol.core.methods.response.EthGetTransactionCount;
 import org.web3j.protocol.core.methods.response.EthSendTransaction;
 import org.web3j.utils.Convert;
@@ -74,6 +76,12 @@ public class InstitutionalAdminService {
 
     @Value("${treasury.collect.max-batch:50}")
     private int defaultCollectMaxBatch;
+
+    @Value("${ethereum.gas.price.default:20}")
+    private BigInteger defaultGasPriceGwei;
+
+    @Value("${ethereum.gas.limit.contract:300000}")
+    private BigInteger defaultContractGasLimit;
 
     /**
      * Execute administrative operation with localhost and wallet ownership validation
@@ -647,9 +655,8 @@ public class InstitutionalAdminService {
             credentials.getAddress(), DefaultBlockParameterName.LATEST).send();
         BigInteger nonce = ethGetTransactionCount.getTransactionCount();
 
-        // Create transaction
-        BigInteger gasLimit = BigInteger.valueOf(300000); // Reasonable gas limit for contract calls
-        BigInteger gasPrice = Convert.toWei("20", Convert.Unit.GWEI).toBigInteger();
+        BigInteger gasPrice = resolveGasPriceWei();
+        BigInteger gasLimit = resolveContractGasLimit(credentials.getAddress(), nonce, encodedFunction);
 
         RawTransaction rawTransaction = RawTransaction.createTransaction(
             nonce,
@@ -659,8 +666,14 @@ public class InstitutionalAdminService {
             encodedFunction
         );
 
-        // Sign transaction
-        byte[] signedMessage = TransactionEncoder.signMessage(rawTransaction, credentials);
+        EthChainId ethChainId = web3j.ethChainId().send();
+        BigInteger chainId = ethChainId != null ? ethChainId.getChainId() : null;
+        if (chainId == null || chainId.compareTo(BigInteger.ZERO) <= 0) {
+            throw new RuntimeException("Unable to resolve blockchain chainId for EIP-155 signing.");
+        }
+
+        // Sign EIP-155 transaction with chainId (required by many RPC providers)
+        byte[] signedMessage = TransactionEncoder.signMessage(rawTransaction, chainId.longValueExact(), credentials);
         String hexValue = Numeric.toHexString(signedMessage);
 
         // Send transaction
@@ -671,6 +684,59 @@ public class InstitutionalAdminService {
         }
 
         return ethSendTransaction.getTransactionHash();
+    }
+
+    private BigInteger resolveGasPriceWei() {
+        BigInteger fallback = Convert.toWei(defaultGasPriceGwei.toString(), Convert.Unit.GWEI).toBigInteger();
+        try {
+            var response = web3j.ethGasPrice().send();
+            if (response != null && response.getGasPrice() != null && response.getGasPrice().compareTo(BigInteger.ZERO) > 0) {
+                return response.getGasPrice();
+            }
+        } catch (Exception ex) {
+            log.warn("Unable to resolve gas price from node, using default {} gwei: {}", defaultGasPriceGwei, ex.getMessage());
+        }
+        return fallback;
+    }
+
+    private BigInteger resolveContractGasLimit(String from, BigInteger nonce, String encodedFunction) {
+        BigInteger fallback = sanitizeContractGasLimit(defaultContractGasLimit);
+        try {
+            EthEstimateGas estimate = web3j.ethEstimateGas(
+                org.web3j.protocol.core.methods.request.Transaction.createFunctionCallTransaction(
+                    from,
+                    nonce,
+                    null,
+                    null,
+                    contractAddress,
+                    encodedFunction
+                )
+            ).send();
+
+            if (estimate != null && !estimate.hasError() && estimate.getAmountUsed() != null
+                && estimate.getAmountUsed().compareTo(BigInteger.ZERO) > 0) {
+                // Add 20% safety margin to reduce OOG failures on state-changing calls.
+                BigInteger withMargin = estimate.getAmountUsed().multiply(BigInteger.valueOf(120)).divide(BigInteger.valueOf(100));
+                return withMargin.max(fallback);
+            }
+
+            if (estimate != null && estimate.hasError()) {
+                log.warn("Gas estimation failed for admin tx: {}", estimate.getError().getMessage());
+            }
+        } catch (Exception ex) {
+            log.warn("Unable to estimate gas for admin tx, using fallback {}: {}", fallback, ex.getMessage());
+        }
+        return fallback;
+    }
+
+    private BigInteger sanitizeContractGasLimit(BigInteger configuredLimit) {
+        if (configuredLimit == null) {
+            return BigInteger.valueOf(300000);
+        }
+        if (configuredLimit.compareTo(BigInteger.valueOf(21000)) < 0) {
+            return BigInteger.valueOf(300000);
+        }
+        return configuredLimit;
     }
 
     private void recordAdminTransaction(

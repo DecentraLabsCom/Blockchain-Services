@@ -17,9 +17,11 @@ import decentralabs.blockchain.dto.auth.WebauthnOnboardingOptionsResponse.PubKey
 import decentralabs.blockchain.dto.auth.WebauthnOnboardingOptionsResponse.RelyingParty;
 import decentralabs.blockchain.dto.auth.WebauthnOnboardingOptionsResponse.User;
 import decentralabs.blockchain.dto.auth.WebauthnOnboardingStatusResponse;
+import decentralabs.blockchain.service.auth.MarketplaceEndpointAuthService;
 import decentralabs.blockchain.service.auth.WebauthnCredentialService;
 import decentralabs.blockchain.service.auth.WebauthnOnboardingService;
 import java.time.Instant;
+import java.util.Collections;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -34,6 +36,8 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.junit.jupiter.api.BeforeEach;
 import org.springframework.web.context.WebApplicationContext;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
+import org.springframework.web.server.ResponseStatusException;
+import org.springframework.http.HttpStatus;
 
 @SpringBootTest(classes = WebauthnOnboardingController.class)
 @Import(TestSecurityConfig.class)
@@ -53,6 +57,7 @@ class WebauthnOnboardingControllerTest {
             .setControllerAdvice(new decentralabs.blockchain.exception.GlobalExceptionHandler())
             .defaultRequest(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get("/").accept(org.springframework.http.MediaType.APPLICATION_JSON))
             .build();
+        when(marketplaceEndpointAuthService.enforceAuthorization(any(), any())).thenReturn(Collections.emptyMap());
     }
 
     private com.fasterxml.jackson.databind.ObjectMapper objectMapper = new com.fasterxml.jackson.databind.ObjectMapper().registerModule(new com.fasterxml.jackson.datatype.jsr310.JavaTimeModule());
@@ -62,6 +67,9 @@ class WebauthnOnboardingControllerTest {
 
     @MockitoBean
     private WebauthnCredentialService credentialService;
+
+    @MockitoBean
+    private MarketplaceEndpointAuthService marketplaceEndpointAuthService;
 
     @Test
     @WithMockUser
@@ -153,30 +161,19 @@ class WebauthnOnboardingControllerTest {
     }
 
     @Test
-    void getOptions_withoutAuth_stillAccessible() throws Exception {
-        // WebAuthn endpoints should be publicly accessible (browser needs to reach them)
+    void getOptions_withoutAuth_returnsUnauthorized() throws Exception {
         WebauthnOnboardingOptionsRequest request = new WebauthnOnboardingOptionsRequest();
         request.setStableUserId("user@institution.edu");
         request.setInstitutionId("institution.edu");
 
-        WebauthnOnboardingOptionsResponse response = WebauthnOnboardingOptionsResponse.builder()
-            .sessionId("session123")
-            .challenge("challenge")
-            .rp(RelyingParty.builder().id("localhost").name("Test").build())
-            .user(User.builder().id("userHandle").name("user").displayName("User").build())
-            .pubKeyCredParams(List.of())
-            .timeout(120000L)
-            .build();
+        when(marketplaceEndpointAuthService.enforceAuthorization(eq(null), eq("onboarding:webauthn")))
+            .thenThrow(new ResponseStatusException(HttpStatus.UNAUTHORIZED, "missing_marketplace_token"));
 
-        when(onboardingService.generateOptions(any())).thenReturn(response);
-
-        // This test verifies that the endpoint is accessible without authentication
-        // TestSecurityConfig permits all requests but requires CSRF token
         mockMvc.perform(post("/onboarding/webauthn/options")
                 .with(SecurityMockMvcRequestPostProcessors.csrf())
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(objectMapper.writeValueAsString(request)))
-            .andExpect(status().isOk());
+            .andExpect(status().isUnauthorized());
     }
 
     @Test
@@ -292,16 +289,11 @@ class WebauthnOnboardingControllerTest {
     }
 
     @Test
-    void getKeyStatus_withoutAuth_stillAccessible() throws Exception {
-        WebauthnCredentialService.KeyStatus keyStatus = new WebauthnCredentialService.KeyStatus(
-            true, 1, false, 1702400000L, false, true, false
-        );
-        
-        when(credentialService.getKeyStatus(any())).thenReturn(keyStatus);
-
-        // This endpoint should be publicly accessible for SP integration
+    void getKeyStatus_withoutAuth_returnsUnauthorized() throws Exception {
+        when(marketplaceEndpointAuthService.enforceAuthorization(eq(null), eq("onboarding:webauthn")))
+            .thenThrow(new ResponseStatusException(HttpStatus.UNAUTHORIZED, "missing_marketplace_token"));
         mockMvc.perform(get("/onboarding/webauthn/key-status/user@institution.edu")
                 .with(SecurityMockMvcRequestPostProcessors.csrf()))
-            .andExpect(status().isOk());
+            .andExpect(status().isUnauthorized());
     }
 }
