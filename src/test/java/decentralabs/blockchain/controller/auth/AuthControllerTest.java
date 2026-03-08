@@ -55,7 +55,7 @@ class AuthControllerTest {
         ReflectionTestUtils.setField(authController, "authPath", "/auth");
         ReflectionTestUtils.setField(authController, "walletAuth2Endpoint", "/auth/wallet/v2");
         ReflectionTestUtils.setField(authController, "samlAuth2Endpoint", "/auth/saml/v2");
-        ReflectionTestUtils.setField(authController, "jwksEndpoint", "/auth/.well-known/jwks.json");
+        ReflectionTestUtils.setField(authController, "jwksEndpoint", "/auth/jwks");
     }
 
     @Nested
@@ -95,7 +95,7 @@ class AuthControllerTest {
 
             assertThat(response.getBody()).containsKey("jwks_uri");
             assertThat(response.getBody().get("jwks_uri"))
-                .isEqualTo("https://backend.example.com/auth/.well-known/jwks.json");
+                .isEqualTo("https://backend.example.com/auth/jwks");
         }
 
         @Test
