@@ -40,13 +40,11 @@ public class InstitutionalCheckInService {
 
     private static final class MarketplaceIdentityClaims {
         private final String userId;
-        private final String affiliation;
         private final String puc;
         private final String institutionalProviderWallet;
 
-        MarketplaceIdentityClaims(String userId, String affiliation, String puc, String institutionalProviderWallet) {
+        MarketplaceIdentityClaims(String userId, String puc, String institutionalProviderWallet) {
             this.userId = userId;
-            this.affiliation = affiliation;
             this.puc = puc;
             this.institutionalProviderWallet = institutionalProviderWallet;
         }
@@ -153,6 +151,7 @@ public class InstitutionalCheckInService {
         try {
             Map<String, Object> claims = marketplaceEndpointAuthService.enforceToken(marketplaceToken, null);
             String claimUser = firstClaim(claims, "userid", "sub", "uid");
+            // affiliation is validated above but not retained in the return object
             String claimAffiliation = firstClaim(claims, "affiliation", "schacHomeOrganization");
 
             if (claimUser == null || claimUser.isBlank() || claimAffiliation == null || claimAffiliation.isBlank()) {
@@ -174,7 +173,6 @@ public class InstitutionalCheckInService {
             String claimInstitutionalProviderWallet = firstClaim(claims, "institutionalProviderWallet");
             return new MarketplaceIdentityClaims(
                 claimUser,
-                claimAffiliation,
                 claimPuc,
                 claimInstitutionalProviderWallet
             );

@@ -2,14 +2,11 @@ package decentralabs.blockchain.service.auth;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.mockito.Mockito.when;
 
 import io.jsonwebtoken.Jwts;
-import io.jsonwebtoken.SignatureAlgorithm;
 import java.security.KeyPair;
 import java.security.KeyPairGenerator;
 import java.security.PrivateKey;
-import java.security.PublicKey;
 import java.util.Date;
 import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
@@ -51,13 +48,16 @@ class MarketplaceEndpointAuthServiceTest {
     private String makeJwt(Map<String, Object> claims) {
         PrivateKey privateKey = keyPair.getPrivate();
         long now = System.currentTimeMillis();
+        // add audience claim manually (newer JwtBuilder API expects the audience helper to be used via the builder,
+        // but that helper doesn't accept a single string parameter, so it's simpler to include it in the map)
+        Map<String, Object> payload = new java.util.HashMap<>(claims);
+        payload.put("aud", "blockchain-services");
         return Jwts.builder()
-                .setClaims(claims)
-                .setIssuer("marketplace")
-                .setAudience("blockchain-services")
-                .setIssuedAt(new Date(now))
-                .setExpiration(new Date(now + 60_000))
-                .signWith(privateKey, SignatureAlgorithm.RS256)
+                .claims(payload)
+                .issuer("marketplace")
+                .issuedAt(new Date(now))
+                .expiration(new Date(now + 60_000))
+                .signWith(privateKey) // algorithm chosen based on key (RS256)
                 .compact();
     }
 
