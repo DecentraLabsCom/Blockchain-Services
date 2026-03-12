@@ -73,9 +73,19 @@ function maybePromptInviteToken(force = false) {
 }
 
 // Utility: Format wei to ETH
-const MAX_ETH_DECIMALS = 14;
+// show up to 12 decimal places in the dashboard (was 14 previously)
+// this affects all ETH-formatting but the original request only
+// targeted the "ETH Balance" display.
+const MAX_ETH_DECIMALS = 12;
 
-function formatEthDisplay(value) {
+// Converts a raw or formatted value to a human-readable ETH/LAB amount.
+//
+// Parameters:
+//   value        - input (string/number) already in ETH or LAB units (not wei)
+//   maxDecimals  - optional override of decimal precision; defaults to
+//                  the global MAX_ETH_DECIMALS (12). callers can request
+//                  fewer decimals for special displays (treasury/staked).
+function formatEthDisplay(value, maxDecimals = MAX_ETH_DECIMALS) {
     if (value === null || value === undefined) return '0';
 
     let text = String(value).trim().replace(/,/g, '');
@@ -92,12 +102,12 @@ function formatEthDisplay(value) {
         if (!Number.isFinite(numeric)) {
             return '0';
         }
-        text = Math.abs(numeric).toFixed(MAX_ETH_DECIMALS);
+        text = Math.abs(numeric).toFixed(maxDecimals);
     }
 
     let [whole, fraction = ''] = text.split('.');
     whole = whole.replace(/^0+(?=\d)/, '') || '0';
-    fraction = fraction.slice(0, MAX_ETH_DECIMALS).replace(/0+$/, '');
+    fraction = fraction.slice(0, maxDecimals).replace(/0+$/, '');
 
     return sign + (fraction ? `${whole}.${fraction}` : whole);
 }
@@ -1017,6 +1027,7 @@ async function loadBalances() {
                 
                 // Display LAB token balance (always show, even if token not configured)
                 if (balanceData.labBalance !== undefined) {
+                    // free LAB uses the default precision (12 decimals) just like ETH
                     const labBalance = formatEthDisplay(balanceData.labBalance || '0');
                     balanceGrid.innerHTML += `
                         <div class="balance-item">
@@ -1028,7 +1039,8 @@ async function loadBalances() {
                     // Check if user is a registered provider from treasury data
                     const isProvider = treasuryData.success && treasuryData.isProvider === true;
                     const stakeInfo = treasuryData.stakeInfo || null;
-                    const treasuryBalance = formatEthDisplay(treasuryData.treasuryBalanceFormatted || '0');
+                    // treasury and staked amounts only show 8 decimals
+                    const treasuryBalance = formatEthDisplay(treasuryData.treasuryBalanceFormatted || '0', 8);
                     
                     // Display Treasury Balance if provider
                     if (isProvider && parseFloat(treasuryBalance) > 0) {
@@ -1045,7 +1057,7 @@ async function loadBalances() {
                     
                     // Display Staked Amount if provider
                     if (isProvider && stakeInfo && stakeInfo.stakedAmountFormatted) {
-                        const stakedAmount = formatEthDisplay(stakeInfo.stakedAmountFormatted);
+                        const stakedAmount = formatEthDisplay(stakeInfo.stakedAmountFormatted, 8);
                         if (parseFloat(stakedAmount) > 0) {
                             balanceGrid.innerHTML += `
                                 <div class="balance-item">
