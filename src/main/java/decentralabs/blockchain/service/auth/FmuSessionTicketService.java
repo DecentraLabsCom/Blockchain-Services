@@ -1,5 +1,8 @@
 package decentralabs.blockchain.service.auth;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import decentralabs.blockchain.dto.auth.FmuSessionTicketIssueRequest;
 import decentralabs.blockchain.dto.auth.FmuSessionTicketIssueResponse;
 import decentralabs.blockchain.dto.auth.FmuSessionTicketRedeemRequest;
@@ -14,17 +17,27 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.atomic.AtomicBoolean;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.dao.DataAccessException;
 import org.springframework.http.HttpStatus;
+import org.springframework.jdbc.BadSqlGrammarException;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
 @Service
 @Slf4j
 public class FmuSessionTicketService {
 
+    private static final String TICKETS_TABLE = "fmu_session_tickets";
+
     private final JwtService jwtService;
+    private final JdbcTemplate jdbcTemplate;
+    private final ObjectMapper objectMapper = new ObjectMapper();
     private final SecureRandom random = new SecureRandom();
     private final ConcurrentMap<String, TicketRecord> tickets = new ConcurrentHashMap<>();
+    private final AtomicBoolean tableMissing = new AtomicBoolean(false);
 
     @Value("${auth.fmu.session-ticket.ttl-seconds:120}")
     private long defaultTtlSeconds = 120;
@@ -32,8 +45,9 @@ public class FmuSessionTicketService {
     @Value("${auth.fmu.session-ticket.max-ttl-seconds:300}")
     private long maxTtlSeconds = 300;
 
-    public FmuSessionTicketService(JwtService jwtService) {
+    public FmuSessionTicketService(JwtService jwtService, ObjectProvider<JdbcTemplate> jdbcTemplateProvider) {
         this.jwtService = jwtService;
+        this.jdbcTemplate = jdbcTemplateProvider.getIfAvailable();
     }
 
     public FmuSessionTicketIssueResponse issue(String bearerToken, FmuSessionTicketIssueRequest request) {
@@ -72,7 +86,9 @@ public class FmuSessionTicketService {
         }
 
         String ticket = generateTicket();
-        tickets.put(ticket, new TicketRecord(claims, ticketExpiry));
+        TicketRecord record = new TicketRecord(claims, ticketExpiry);
+        tickets.put(ticket, record);
+        persistTicket(ticket, record);
 
         FmuSessionTicketIssueResponse response = new FmuSessionTicketIssueResponse();
         response.setSessionTicket(ticket);
@@ -89,18 +105,15 @@ public class FmuSessionTicketService {
             throw new SessionTicketException(HttpStatus.BAD_REQUEST, "SESSION_TICKET_INVALID", "Missing sessionTicket");
         }
         String ticket = request.getSessionTicket().trim();
-        TicketRecord record = tickets.get(ticket);
+        TicketRecord record = loadTicket(ticket);
         if (record == null) {
             throw new SessionTicketException(HttpStatus.UNAUTHORIZED, "SESSION_TICKET_INVALID", "Invalid session ticket");
         }
 
         long now = Instant.now().getEpochSecond();
         if (now >= record.expiresAt()) {
-            tickets.remove(ticket);
+            removeTicket(ticket);
             throw new SessionTicketException(HttpStatus.UNAUTHORIZED, "SESSION_TICKET_EXPIRED", "Session ticket expired");
-        }
-        if (!record.used().compareAndSet(false, true)) {
-            throw new SessionTicketException(HttpStatus.UNAUTHORIZED, "SESSION_TICKET_ALREADY_USED", "Session ticket already used");
         }
 
         Map<String, Object> claims = record.claims();
@@ -122,6 +135,9 @@ public class FmuSessionTicketService {
         if (now >= exp) {
             throw new SessionTicketException(HttpStatus.UNAUTHORIZED, "SESSION_EXPIRED", "Reservation window expired");
         }
+        if (!markTicketUsed(ticket, record)) {
+            throw new SessionTicketException(HttpStatus.UNAUTHORIZED, "SESSION_TICKET_ALREADY_USED", "Session ticket already used");
+        }
 
         FmuSessionTicketRedeemResponse response = new FmuSessionTicketRedeemResponse();
         response.setClaims(claims);
@@ -129,9 +145,157 @@ public class FmuSessionTicketService {
         return response;
     }
 
+    @Scheduled(fixedDelayString = "${auth.fmu.session-ticket.cleanup-interval-ms:60000}")
+    public void scheduledCleanupExpired() {
+        cleanupExpired();
+    }
+
     private void cleanupExpired() {
         long now = Instant.now().getEpochSecond();
         tickets.entrySet().removeIf(entry -> now >= entry.getValue().expiresAt());
+        cleanupPersisted(now);
+    }
+
+    private void persistTicket(String ticket, TicketRecord record) {
+        if (!isPersistentStoreAvailable()) {
+            return;
+        }
+        try {
+            jdbcTemplate.update(
+                """
+                INSERT INTO fmu_session_tickets (session_ticket, lab_id, reservation_key, claims_json, expires_at)
+                VALUES (?, ?, ?, ?, FROM_UNIXTIME(?))
+                """,
+                ticket,
+                normalize(record.claims().get("labId")),
+                normalize(record.claims().get("reservationKey")),
+                objectMapper.writeValueAsString(record.claims()),
+                record.expiresAt()
+            );
+        } catch (JsonProcessingException e) {
+            throw new SessionTicketException(HttpStatus.INTERNAL_SERVER_ERROR, "SESSION_TICKET_PERSISTENCE_ERROR", "Failed to serialize session ticket claims");
+        } catch (DataAccessException e) {
+            handlePersistenceException("persist", e);
+        }
+    }
+
+    private TicketRecord loadTicket(String ticket) {
+        TicketRecord persisted = loadTicketFromPersistence(ticket);
+        return persisted != null ? persisted : tickets.get(ticket);
+    }
+
+    private TicketRecord loadTicketFromPersistence(String ticket) {
+        if (!isPersistentStoreAvailable()) {
+            return null;
+        }
+        try {
+            return jdbcTemplate.query(
+                """
+                SELECT claims_json, UNIX_TIMESTAMP(expires_at), used_at
+                FROM fmu_session_tickets
+                WHERE session_ticket = ?
+                LIMIT 1
+                """,
+                ps -> ps.setString(1, ticket),
+                rs -> {
+                    if (!rs.next()) {
+                        return null;
+                    }
+                    Map<String, Object> claims;
+                    try {
+                        claims = objectMapper.readValue(
+                            rs.getString(1),
+                            new TypeReference<Map<String, Object>>() { }
+                        );
+                    } catch (JsonProcessingException e) {
+                        throw new IllegalStateException("Failed to deserialize persisted session ticket", e);
+                    }
+                    long expiresAt = rs.getLong(2);
+                    boolean used = rs.getTimestamp(3) != null;
+                    return new TicketRecord(claims, expiresAt, new AtomicBoolean(used));
+                }
+            );
+        } catch (DataAccessException e) {
+            handlePersistenceException("load", e);
+            return null;
+        } catch (IllegalStateException e) {
+            if (e.getCause() instanceof JsonProcessingException jsonProcessingException) {
+                log.warn("Failed to deserialize FMU session ticket {}: {}", ticket, jsonProcessingException.getMessage());
+                return null;
+            }
+            throw e;
+        } catch (RuntimeException e) {
+            if (e.getCause() instanceof JsonProcessingException jsonProcessingException) {
+                log.warn("Failed to deserialize FMU session ticket {}: {}", ticket, jsonProcessingException.getMessage());
+                return null;
+            }
+            throw e;
+        }
+    }
+
+    private boolean markTicketUsed(String ticket, TicketRecord record) {
+        if (isPersistentStoreAvailable()) {
+            try {
+                int updated = jdbcTemplate.update(
+                    """
+                    UPDATE fmu_session_tickets
+                    SET used_at = CURRENT_TIMESTAMP
+                    WHERE session_ticket = ?
+                      AND used_at IS NULL
+                      AND expires_at > CURRENT_TIMESTAMP
+                    """,
+                    ticket
+                );
+                if (updated > 0) {
+                    return true;
+                }
+                return false;
+            } catch (DataAccessException e) {
+                handlePersistenceException("redeem", e);
+            }
+        }
+        if (!record.used().compareAndSet(false, true)) {
+            return false;
+        }
+        return true;
+    }
+
+    private void removeTicket(String ticket) {
+        tickets.remove(ticket);
+        if (!isPersistentStoreAvailable()) {
+            return;
+        }
+        try {
+            jdbcTemplate.update("DELETE FROM " + TICKETS_TABLE + " WHERE session_ticket = ?", ticket);
+        } catch (DataAccessException e) {
+            handlePersistenceException("delete", e);
+        }
+    }
+
+    private void cleanupPersisted(long now) {
+        if (!isPersistentStoreAvailable()) {
+            return;
+        }
+        try {
+            jdbcTemplate.update(
+                "DELETE FROM " + TICKETS_TABLE + " WHERE expires_at <= FROM_UNIXTIME(?)",
+                now
+            );
+        } catch (DataAccessException e) {
+            handlePersistenceException("cleanup", e);
+        }
+    }
+
+    private boolean isPersistentStoreAvailable() {
+        return jdbcTemplate != null && !tableMissing.get();
+    }
+
+    private void handlePersistenceException(String operation, DataAccessException ex) {
+        if (ex instanceof BadSqlGrammarException && tableMissing.compareAndSet(false, true)) {
+            log.warn("FMU session ticket persistence disabled because table {} is not available: {}", TICKETS_TABLE, ex.getMessage());
+            return;
+        }
+        log.warn("FMU session ticket {} failed; falling back to in-memory store: {}", operation, ex.getMessage());
     }
 
     private String normalizeBearerToken(String bearerToken) {
