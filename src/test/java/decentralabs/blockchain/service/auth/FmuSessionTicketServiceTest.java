@@ -98,6 +98,7 @@ class FmuSessionTicketServiceTest {
         );
     }
 
+    @SuppressWarnings("unchecked")
     @Test
     void shouldRedeemPersistedTicketOnce() throws Exception {
         service = buildService(jdbcTemplate);
@@ -106,7 +107,6 @@ class FmuSessionTicketServiceTest {
         when(jdbcTemplate.update(org.mockito.ArgumentMatchers.contains("DELETE FROM fmu_session_tickets WHERE expires_at"), anyLong())).thenReturn(0);
         when(jdbcTemplate.query(anyString(), any(PreparedStatementSetter.class), any(ResultSetExtractor.class)))
             .thenAnswer(invocation -> {
-                @SuppressWarnings("unchecked")
                 ResultSetExtractor<Object> extractor = invocation.getArgument(2, ResultSetExtractor.class);
                 ResultSet resultSet = org.mockito.Mockito.mock(ResultSet.class);
                 when(resultSet.next()).thenReturn(true);
