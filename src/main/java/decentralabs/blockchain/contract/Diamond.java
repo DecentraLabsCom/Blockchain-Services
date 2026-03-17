@@ -257,6 +257,21 @@ public class Diamond extends Contract {
                     return (byte[]) result.getValue();
                 });
     }
+
+    /**
+     * Get creator PUC hash by lab id (bytes32).
+     */
+    @SuppressWarnings("rawtypes")
+    public RemoteFunctionCall<byte[]> getCreatorPucHash(BigInteger labId) {
+        final Function function = new Function("getCreatorPucHash",
+                Arrays.asList(new Uint256(labId)),
+                Arrays.asList(new TypeReference<Bytes32>() {}));
+        return new RemoteFunctionCall<>(function,
+                () -> {
+                    Type result = executeCallSingleValueReturn(function);
+                    return (byte[]) result.getValue();
+                });
+    }
     
     /**
      * Check if user has active booking by token

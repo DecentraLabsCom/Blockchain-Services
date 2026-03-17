@@ -25,18 +25,17 @@ public final class PucNormalizer {
 
         String lower = trimmed.toLowerCase(Locale.ROOT);
         if (!lower.contains("personaluniquecode") && !lower.contains("schacpersonaluniquecode")) {
-            return trimmed;
+            return lower;
         }
 
         String[] segments = trimmed.split(":");
         for (int i = segments.length - 1; i >= 0; i--) {
             String segment = segments[i] == null ? "" : segments[i].trim();
             if (!segment.isEmpty()) {
-                return segment;
+                return segment.toLowerCase(Locale.ROOT);
             }
         }
 
-        return trimmed;
+        return lower;
     }
 }
-

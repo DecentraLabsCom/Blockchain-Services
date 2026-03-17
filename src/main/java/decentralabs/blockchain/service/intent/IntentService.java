@@ -20,6 +20,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 import jakarta.annotation.PostConstruct;
+import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.observation.annotation.Observed;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
@@ -28,8 +29,12 @@ import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;
 
 import org.web3j.crypto.Hash;
+import org.web3j.protocol.Web3j;
+import org.web3j.tx.ReadonlyTransactionManager;
+import org.web3j.tx.gas.StaticGasProvider;
 import org.web3j.utils.Numeric;
 
+import decentralabs.blockchain.contract.Diamond;
 import decentralabs.blockchain.dto.intent.ActionIntentPayload;
 import decentralabs.blockchain.dto.intent.IntentAction;
 import decentralabs.blockchain.dto.intent.IntentAckResponse;
@@ -41,6 +46,7 @@ import decentralabs.blockchain.dto.intent.ReservationIntentPayload;
 import decentralabs.blockchain.service.auth.SamlValidationService;
 import decentralabs.blockchain.service.auth.WebauthnCredentialService;
 import decentralabs.blockchain.service.auth.WebauthnCredentialService.WebauthnCredential;
+import decentralabs.blockchain.service.wallet.WalletService;
 import decentralabs.blockchain.util.PucNormalizer;
 import decentralabs.blockchain.util.LogSanitizer;
 import lombok.extern.slf4j.Slf4j;
@@ -75,6 +81,9 @@ public class IntentService {
     private final IntentWebhookService webhookService;
     private final SamlValidationService samlValidationService;
     private final WebauthnCredentialService webauthnCredentialService;
+    private final WalletService walletService;
+    private final String contractAddress;
+    private final MeterRegistry meterRegistry;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     public IntentService(
@@ -84,7 +93,10 @@ public class IntentService {
         IntentPersistenceService persistenceService,
         IntentWebhookService webhookService,
         SamlValidationService samlValidationService,
-        WebauthnCredentialService webauthnCredentialService
+        WebauthnCredentialService webauthnCredentialService,
+        WalletService walletService,
+        @Value("${contract.address}") String contractAddress,
+        MeterRegistry meterRegistry
     ) {
         this.defaultEta = defaultEta;
         this.samlReplayTtlMs = samlReplayTtlMs;
@@ -93,6 +105,9 @@ public class IntentService {
         this.webhookService = webhookService;
         this.samlValidationService = samlValidationService;
         this.webauthnCredentialService = webauthnCredentialService;
+        this.walletService = walletService;
+        this.contractAddress = contractAddress;
+        this.meterRegistry = meterRegistry;
     }
 
     @PostConstruct
@@ -134,6 +149,7 @@ public class IntentService {
         checkAssertionReplay(expectedAssertionHash);
 
         String puc = resolvePuc(actionPayload, reservationPayload);
+        enforceLabCreatorOwnershipPrecheck(action, actionPayload, puc);
         if (action != IntentAction.REQUEST_FUNDS) {
             validateWebauthnAssertion(puc, credentialId, meta, submission);
         }
@@ -319,7 +335,7 @@ public class IntentService {
             if (!meta.getExecutor().equalsIgnoreCase(actionPayload.getExecutor())) {
                 throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "executor mismatch");
             }
-            if (action != IntentAction.REQUEST_FUNDS && isBlank(actionPayload.getPuc())) {
+            if (isBlank(actionPayload.getPuc())) {
                 throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Missing puc");
             }
             switch (action) {
@@ -349,6 +365,95 @@ public class IntentService {
                 }
                 default -> { }
             }
+        }
+    }
+
+    private void enforceLabCreatorOwnershipPrecheck(
+        IntentAction action,
+        ActionIntentPayload actionPayload,
+        String puc
+    ) {
+        if (!requiresLabCreatorOwnershipPrecheck(action) || actionPayload == null || actionPayload.getLabId() == null) {
+            return;
+        }
+
+        String normalizedPuc = PucNormalizer.normalize(puc);
+        if (normalizedPuc == null || normalizedPuc.isBlank()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Missing puc");
+        }
+
+        String expectedHash = normalizeBytes32(Numeric.toHexString(Hash.sha3(normalizedPuc.getBytes(StandardCharsets.UTF_8))));
+        String storedHash = fetchCreatorPucHash(actionPayload.getLabId());
+
+        if (storedHash == null || Numeric.toBigInt(storedHash).equals(BigInteger.ZERO)) {
+            recordCreatorOwnershipMetric("authorization.lab_legacy_blocked.count", action, actionPayload);
+            log.warn(
+                "Intent rejected: legacy lab blocked (action={}, labId={})",
+                action.getWireValue(),
+                LogSanitizer.sanitize(actionPayload.getLabId().toString())
+            );
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "LAB_LEGACY_BLOCKED");
+        }
+
+        if (!storedHash.equalsIgnoreCase(expectedHash)) {
+            recordCreatorOwnershipMetric("authorization.lab_creator_mismatch.count", action, actionPayload);
+            log.warn(
+                "Intent rejected: creator mismatch (action={}, labId={})",
+                action.getWireValue(),
+                LogSanitizer.sanitize(actionPayload.getLabId().toString())
+            );
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "LAB_CREATOR_MISMATCH");
+        }
+    }
+
+    private void recordCreatorOwnershipMetric(String metricName, IntentAction action, ActionIntentPayload actionPayload) {
+        if (meterRegistry == null) {
+            return;
+        }
+
+        String institution = "unknown";
+        String labId = "unknown";
+        String actionType = action == null ? "unknown" : action.getWireValue();
+
+        if (actionPayload != null) {
+            if (actionPayload.getSchacHomeOrganization() != null && !actionPayload.getSchacHomeOrganization().isBlank()) {
+                institution = actionPayload.getSchacHomeOrganization().trim().toLowerCase(Locale.ROOT);
+            }
+            if (actionPayload.getLabId() != null) {
+                labId = actionPayload.getLabId().toString();
+            }
+        }
+
+        meterRegistry.counter(
+            metricName,
+            "institution", institution,
+            "actionType", actionType,
+            "labId", labId
+        ).increment();
+    }
+
+    private boolean requiresLabCreatorOwnershipPrecheck(IntentAction action) {
+        return action == IntentAction.LAB_SET_URI
+            || action == IntentAction.LAB_UPDATE
+            || action == IntentAction.LAB_DELETE
+            || action == IntentAction.LAB_LIST
+            || action == IntentAction.LAB_UNLIST
+            || action == IntentAction.REQUEST_FUNDS;
+    }
+
+    String fetchCreatorPucHash(BigInteger labId) {
+        try {
+            Web3j web3j = walletService.getWeb3jInstance();
+            Diamond diamond = Diamond.load(
+                contractAddress,
+                web3j,
+                new ReadonlyTransactionManager(web3j, contractAddress),
+                new StaticGasProvider(BigInteger.ZERO, BigInteger.ZERO)
+            );
+            return normalizeBytes32(Numeric.toHexString(diamond.getCreatorPucHash(labId).send()));
+        } catch (Exception ex) {
+            log.warn("Unable to fetch creator hash for lab {}: {}", labId, LogSanitizer.sanitize(ex.getMessage()));
+            throw new ResponseStatusException(HttpStatus.BAD_GATEWAY, "creator_hash_lookup_failed");
         }
     }
 

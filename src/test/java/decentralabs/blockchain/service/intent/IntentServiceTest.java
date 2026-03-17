@@ -5,6 +5,7 @@ import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
 import java.math.BigInteger;
+import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.Map;
 import java.util.Optional;
@@ -16,10 +17,14 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.springframework.web.server.ResponseStatusException;
+import org.web3j.crypto.Hash;
+import org.web3j.utils.Numeric;
 
 import decentralabs.blockchain.dto.intent.ActionIntentPayload;
 import decentralabs.blockchain.dto.intent.IntentAction;
+import decentralabs.blockchain.dto.intent.IntentAckResponse;
 import decentralabs.blockchain.dto.intent.IntentMeta;
 import decentralabs.blockchain.dto.intent.IntentStatus;
 import decentralabs.blockchain.dto.intent.IntentStatusResponse;
@@ -27,6 +32,7 @@ import decentralabs.blockchain.dto.intent.IntentSubmission;
 import decentralabs.blockchain.dto.intent.ReservationIntentPayload;
 import decentralabs.blockchain.service.auth.SamlValidationService;
 import decentralabs.blockchain.service.auth.WebauthnCredentialService;
+import decentralabs.blockchain.service.wallet.WalletService;
 
 @ExtendWith(MockitoExtension.class)
 @DisplayName("IntentService Tests")
@@ -47,10 +53,17 @@ class IntentServiceTest {
     @Mock
     private WebauthnCredentialService webauthnCredentialService;
 
+    @Mock
+    private WalletService walletService;
+
     private IntentService service;
+    private String creatorHashToReturn;
+    private SimpleMeterRegistry meterRegistry;
 
     @BeforeEach
     void setUp() {
+        creatorHashToReturn = "0x" + "1".repeat(64);
+        meterRegistry = new SimpleMeterRegistry();
         service = new IntentService(
             "15s",
             60000L,
@@ -58,8 +71,16 @@ class IntentServiceTest {
             persistenceService,
             webhookService,
             samlValidationService,
-            webauthnCredentialService
-        );
+            webauthnCredentialService,
+            walletService,
+            "0x0000000000000000000000000000000000000001",
+            meterRegistry
+        ) {
+            @Override
+            String fetchCreatorPucHash(BigInteger labId) {
+                return creatorHashToReturn;
+            }
+        };
     }
 
     @Test
@@ -73,7 +94,10 @@ class IntentServiceTest {
             persistenceService,
             webhookService,
             samlValidationService,
-            webauthnCredentialService
+            webauthnCredentialService,
+            walletService,
+            "0x0000000000000000000000000000000000000001",
+            meterRegistry
         );
 
         String hash = "0x" + "f".repeat(64);
@@ -132,6 +156,26 @@ class IntentServiceTest {
         payload.setEnd(Instant.now().plusSeconds(7200).getEpochSecond());
         payload.setAssertionHash("0x" + "b".repeat(64));
         return payload;
+    }
+
+    private IntentSubmission createValidRequestFundsSubmission() {
+        String samlAssertion = "valid-request-funds-saml";
+        String assertionHash = Numeric.toHexString(Hash.sha3(samlAssertion.getBytes(StandardCharsets.UTF_8)));
+
+        IntentMeta meta = createValidMeta();
+        meta.setAction(IntentAction.REQUEST_FUNDS.getId());
+        meta.setPayloadHash("0x" + "c".repeat(64));
+
+        ActionIntentPayload payload = createValidActionPayload();
+        payload.setMaxBatch(BigInteger.TEN);
+        payload.setAssertionHash(assertionHash);
+
+        IntentSubmission submission = new IntentSubmission();
+        submission.setMeta(meta);
+        submission.setActionPayload(payload);
+        submission.setSamlAssertion(samlAssertion);
+        submission.setWebauthnCredentialId("cred");
+        return submission;
     }
 
     @Nested
@@ -399,6 +443,105 @@ class IntentServiceTest {
             ResponseStatusException ex = assertThrows(ResponseStatusException.class,
                 () -> service.processIntent(submission));
             assertTrue(ex.getMessage().contains("Invalid maxBatch"));
+        }
+
+        @Test
+        @DisplayName("Should reject REQUEST_FUNDS without puc")
+        void shouldRejectRequestFundsWithoutPuc() {
+            IntentMeta meta = createValidMeta();
+            meta.setAction(IntentAction.REQUEST_FUNDS.getId());
+
+            ActionIntentPayload payload = createValidActionPayload();
+            payload.setPuc(null);
+            payload.setMaxBatch(BigInteger.TEN);
+
+            IntentSubmission submission = new IntentSubmission();
+            submission.setMeta(meta);
+            submission.setActionPayload(payload);
+            submission.setSamlAssertion("saml");
+            submission.setWebauthnCredentialId("cred");
+
+            ResponseStatusException ex = assertThrows(ResponseStatusException.class,
+                () -> service.processIntent(submission));
+            assertTrue(ex.getReason().contains("Missing puc"));
+        }
+    }
+
+    @Nested
+    @DisplayName("Creator Ownership Precheck Tests")
+    class CreatorOwnershipPrecheckTests {
+
+        @Test
+        @DisplayName("Should reject protected action for legacy lab without creator hash")
+        void shouldRejectLegacyLabBlocked() throws Exception {
+            creatorHashToReturn = "0x" + "0".repeat(64);
+            IntentSubmission submission = createValidRequestFundsSubmission();
+            submission.getActionPayload().setSchacHomeOrganization("UNED.ES");
+
+            when(samlValidationService.validateSamlAssertionWithSignature(anyString()))
+                .thenReturn(Map.of("userid", submission.getActionPayload().getPuc()));
+
+            ResponseStatusException ex = assertThrows(ResponseStatusException.class,
+                () -> service.processIntent(submission));
+
+            assertEquals(409, ex.getStatusCode().value());
+            assertEquals("LAB_LEGACY_BLOCKED", ex.getReason());
+            assertEquals(1.0, meterRegistry.get("authorization.lab_legacy_blocked.count")
+                .tag("institution", "uned.es")
+                .tag("actionType", IntentAction.REQUEST_FUNDS.getWireValue())
+                .tag("labId", "42")
+                .counter()
+                .count());
+        }
+
+        @Test
+        @DisplayName("Should reject protected action for different creator")
+        void shouldRejectCreatorMismatch() throws Exception {
+            creatorHashToReturn = "0x" + "2".repeat(64);
+            IntentSubmission submission = createValidRequestFundsSubmission();
+            submission.getActionPayload().setSchacHomeOrganization("UNED.ES");
+
+            when(samlValidationService.validateSamlAssertionWithSignature(anyString()))
+                .thenReturn(Map.of("userid", submission.getActionPayload().getPuc()));
+
+            ResponseStatusException ex = assertThrows(ResponseStatusException.class,
+                () -> service.processIntent(submission));
+
+            assertEquals(403, ex.getStatusCode().value());
+            assertEquals("LAB_CREATOR_MISMATCH", ex.getReason());
+            assertEquals(1.0, meterRegistry.get("authorization.lab_creator_mismatch.count")
+                .tag("institution", "uned.es")
+                .tag("actionType", IntentAction.REQUEST_FUNDS.getWireValue())
+                .tag("labId", "42")
+                .counter()
+                .count());
+        }
+
+        @Test
+        @DisplayName("Should accept protected action for matching creator hash")
+        void shouldAcceptMatchingCreatorHash() throws Exception {
+            IntentSubmission submission = createValidRequestFundsSubmission();
+            creatorHashToReturn = Numeric.toHexString(
+                Hash.sha3(submission.getActionPayload().getPuc().getBytes(StandardCharsets.UTF_8))
+            );
+
+            when(samlValidationService.validateSamlAssertionWithSignature(anyString()))
+                .thenReturn(Map.of("userid", submission.getActionPayload().getPuc()));
+            when(verifier.verify(
+                eq(IntentAction.REQUEST_FUNDS),
+                any(IntentMeta.class),
+                any(ActionIntentPayload.class),
+                isNull(),
+                any()
+            )).thenReturn(new Eip712IntentVerifier.VerificationResult(true, null, null, null));
+
+            IntentAckResponse response = service.processIntent(submission);
+
+            assertEquals("accepted", response.getStatus());
+            verify(persistenceService).upsert(argThat(record ->
+                record.getActionId().equals(IntentAction.REQUEST_FUNDS.getId())
+                    && "42".equals(record.getLabId())
+            ));
         }
     }
 

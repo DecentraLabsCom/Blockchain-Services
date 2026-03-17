@@ -221,6 +221,23 @@ class SamlAuthServiceTest {
         }
 
         @Test
+        @DisplayName("Should accept userid mismatch in case only after normalization")
+        void shouldAcceptUserIdWithDifferentCaseAfterNormalization() throws Exception {
+            SamlAuthRequest request = createValidRequest();
+            request.setMarketplaceToken("jwt-case-diff");
+            when(marketplaceEndpointAuthService.enforceToken(eq("jwt-case-diff"), eq(null)))
+                .thenReturn(Map.of("userid", "User@University.EDU|Targeted-User", "affiliation", TEST_AFFILIATION));
+            when(samlValidationService.validateSamlAssertionWithSignature(anyString()))
+                .thenReturn(Map.of("userid", "user@university.edu|targeted-user", "affiliation", TEST_AFFILIATION));
+            when(jwtService.generateToken(any(), eq(null))).thenReturn("generated-token");
+
+            AuthResponse response = samlAuthService.handleAuthentication(request, false);
+
+            assertThat(response).isNotNull();
+            assertThat(response.getToken()).isEqualTo("generated-token");
+        }
+
+        @Test
         @DisplayName("Should accept ePPN-only userid when JWT and SAML both use ePPN")
         void shouldAcceptEppnOnlyUserIdWhenBothSourcesMatch() throws Exception {
             SamlAuthRequest request = createValidRequest();
