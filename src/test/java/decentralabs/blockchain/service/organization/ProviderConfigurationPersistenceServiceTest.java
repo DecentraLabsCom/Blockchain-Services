@@ -30,6 +30,7 @@ class ProviderConfigurationPersistenceServiceTest {
         service = new ProviderConfigurationPersistenceService();
         // Set the config path to our temp directory
         ReflectionTestUtils.setField(service, "configLocation", tempDir.resolve("provider.properties").toString());
+        ReflectionTestUtils.setField(service, "currentContractAddress", "0x1111111111111111111111111111111111111111");
     }
 
     @AfterEach
@@ -84,6 +85,10 @@ class ProviderConfigurationPersistenceServiceTest {
         // Verify registered flag is set
         Properties propsAfterReg = service.loadConfigurationSafe();
         assertEquals("true", propsAfterReg.getProperty("provider.registered"));
+        assertEquals(
+            "0x1111111111111111111111111111111111111111",
+            propsAfterReg.getProperty("provider.registered.contract.address")
+        );
         
         // Verify other properties are preserved
         assertEquals("https://marketplace.example.com", propsAfterReg.getProperty("marketplace.base-url"));
@@ -104,6 +109,10 @@ class ProviderConfigurationPersistenceServiceTest {
         assertTrue(Files.exists(configPath));
         Properties props = service.loadConfigurationSafe();
         assertEquals("true", props.getProperty("provider.registered"));
+        assertEquals(
+            "0x1111111111111111111111111111111111111111",
+            props.getProperty("provider.registered.contract.address")
+        );
     }
 
     @Test
@@ -133,6 +142,50 @@ class ProviderConfigurationPersistenceServiceTest {
         assertEquals("US", props.getProperty("provider.country"));
         assertEquals("university.edu", props.getProperty("provider.organization"));
         assertEquals("https://gateway.university.edu", props.getProperty("public.base-url"));
+    }
+
+    @Test
+    @DisplayName("Should invalidate provider registration when contract address changes")
+    void shouldInvalidateProviderRegistrationWhenContractAddressChanges() throws IOException {
+        ProviderConfigurationRequest request = new ProviderConfigurationRequest();
+        request.setMarketplaceBaseUrl("https://marketplace.example.com");
+        request.setProviderName("Test University");
+        request.setProviderEmail("test@university.edu");
+        request.setProviderCountry("US");
+        request.setProviderOrganization("university.edu");
+        request.setPublicBaseUrl("https://gateway.university.edu");
+
+        service.saveConfiguration(request);
+        service.markAsRegistered(InstitutionRole.PROVIDER);
+
+        ReflectionTestUtils.setField(service, "currentContractAddress", "0x2222222222222222222222222222222222222222");
+
+        Properties props = service.loadConfigurationSafe();
+        assertEquals("false", props.getProperty("provider.registered"));
+        assertEquals(
+            "0x2222222222222222222222222222222222222222",
+            props.getProperty("provider.registered.contract.address")
+        );
+    }
+
+    @Test
+    @DisplayName("Should invalidate legacy provider registration missing stored contract address")
+    void shouldInvalidateLegacyProviderRegistrationWithoutStoredContractAddress() throws IOException {
+        Path configPath = tempDir.resolve("provider.properties");
+        Properties legacyProps = new Properties();
+        legacyProps.setProperty("provider.registered", "true");
+        legacyProps.setProperty("provider.name", "Legacy University");
+        try (FileOutputStream fos = new FileOutputStream(configPath.toFile())) {
+            legacyProps.store(fos, "Legacy config");
+        }
+
+        Properties props = service.loadConfigurationSafe();
+        assertEquals("false", props.getProperty("provider.registered"));
+        assertEquals(
+            "0x1111111111111111111111111111111111111111",
+            props.getProperty("provider.registered.contract.address")
+        );
+        assertEquals("Legacy University", props.getProperty("provider.name"));
     }
 
     @Test
@@ -226,6 +279,10 @@ class ProviderConfigurationPersistenceServiceTest {
             props.load(fis);
         }
         assertEquals("true", props.getProperty("consumer.registered"));
+        assertEquals(
+            "0x1111111111111111111111111111111111111111",
+            props.getProperty("consumer.registered.contract.address")
+        );
         assertEquals("https://marketplace.example.com", props.getProperty("marketplace.base-url"));
         assertEquals("Test Consumer", props.getProperty("consumer.name"));
     }
@@ -250,5 +307,9 @@ class ProviderConfigurationPersistenceServiceTest {
             props.load(fis);
         }
         assertEquals("true", props.getProperty("consumer.registered"));
+        assertEquals(
+            "0x1111111111111111111111111111111111111111",
+            props.getProperty("consumer.registered.contract.address")
+        );
     }
 }

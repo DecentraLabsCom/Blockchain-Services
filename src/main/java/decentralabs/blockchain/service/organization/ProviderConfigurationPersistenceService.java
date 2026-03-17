@@ -23,9 +23,13 @@ import java.util.Properties;
 public class ProviderConfigurationPersistenceService {
 
     private static final String CONFIG_FILE = "config/provider.properties";
+    private static final String REGISTERED_CONTRACT_SUFFIX = ".contract.address";
 
     @Value("${provider.config.path:}")
     private String configLocation;
+
+    @Value("${contract.address:}")
+    private String currentContractAddress;
 
     /**
      * Save provider configuration to persistent file
@@ -151,6 +155,9 @@ public class ProviderConfigurationPersistenceService {
         }
         
         properties.setProperty(role.getRegisteredFlag(), "true");
+        if (currentContractAddress != null && !currentContractAddress.isBlank()) {
+            properties.setProperty(role.getRegisteredFlag() + REGISTERED_CONTRACT_SUFFIX, currentContractAddress.trim());
+        }
         
         try (FileOutputStream fos = new FileOutputStream(configPath.toFile())) {
             properties.store(fos, "Institution Configuration - Auto-saved by DecentraLabs Blockchain Services");
@@ -194,6 +201,7 @@ public class ProviderConfigurationPersistenceService {
             try (FileInputStream fis = new FileInputStream(configPath.toFile())) {
                 properties.load(fis);
             }
+            invalidateRegistrationFlagsForContractChange(properties, configPath);
         }
 
         return properties;
@@ -208,6 +216,40 @@ public class ProviderConfigurationPersistenceService {
         } catch (IOException e) {
             log.warn("Unable to load provider configuration file: {}", e.getMessage());
             return new Properties();
+        }
+    }
+
+    private void invalidateRegistrationFlagsForContractChange(Properties properties, Path configPath) throws IOException {
+        String expectedContract = currentContractAddress == null ? "" : currentContractAddress.trim();
+        if (expectedContract.isBlank()) {
+            return;
+        }
+
+        boolean changed = false;
+        for (InstitutionRole role : InstitutionRole.values()) {
+            String registeredFlag = role.getRegisteredFlag();
+            if (!"true".equalsIgnoreCase(properties.getProperty(registeredFlag, "false"))) {
+                continue;
+            }
+
+            String storedContract = properties.getProperty(registeredFlag + REGISTERED_CONTRACT_SUFFIX, "").trim();
+            if (!expectedContract.equalsIgnoreCase(storedContract)) {
+                properties.setProperty(registeredFlag, "false");
+                properties.setProperty(registeredFlag + REGISTERED_CONTRACT_SUFFIX, expectedContract);
+                changed = true;
+                log.info(
+                    "Invalidated {} because contract.address changed (stored={}, current={})",
+                    registeredFlag,
+                    storedContract.isBlank() ? "<empty>" : storedContract,
+                    expectedContract
+                );
+            }
+        }
+
+        if (changed) {
+            try (FileOutputStream fos = new FileOutputStream(configPath.toFile())) {
+                properties.store(fos, "Institution Configuration - Auto-saved by DecentraLabs Blockchain Services");
+            }
         }
     }
 }
