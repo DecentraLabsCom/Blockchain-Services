@@ -241,6 +241,61 @@ class ProviderConfigurationControllerTest {
     }
 
     @Test
+    @DisplayName("Should return partial content when token is valid but registration does not complete")
+    void shouldReturnPartialContentWhenTokenApplicationRegistrationFails() throws Exception {
+        ProvisioningTokenRequest tokenRequest = new ProvisioningTokenRequest();
+        tokenRequest.setToken("valid-jwt-token");
+
+        var payload = decentralabs.blockchain.dto.provider.ProvisioningTokenPayload.builder()
+            .marketplaceBaseUrl("https://marketplace.example.com")
+            .providerName("Token University")
+            .providerEmail("token@university.edu")
+            .providerCountry("ES")
+            .providerOrganization("token.edu")
+            .publicBaseUrl("https://token.university.edu")
+            .jti("test-jti-124")
+            .build();
+
+        Properties emptyProps = new Properties();
+        when(persistenceService.loadConfigurationSafe()).thenReturn(emptyProps);
+        when(provisioningTokenService.validateAndExtract(anyString(), anyString(), anyString()))
+            .thenReturn(payload);
+        when(registrationService.register(any())).thenReturn(false);
+
+        ResponseEntity<Map<String, Object>> response = controller.applyProvisioningToken(tokenRequest);
+
+        assertEquals(HttpStatus.PARTIAL_CONTENT, response.getStatusCode());
+        assertNotNull(response.getBody());
+        assertEquals(true, response.getBody().get("success"));
+        assertEquals(false, response.getBody().get("registered"));
+
+        verify(persistenceService).saveConfigurationFromToken(payload);
+        verify(registrationService, never()).markAsRegistered(any());
+    }
+
+    @Test
+    @DisplayName("Should return clear error when provisioning token is expired")
+    void shouldReturnClearErrorWhenProvisioningTokenExpired() throws Exception {
+        ProvisioningTokenRequest tokenRequest = new ProvisioningTokenRequest();
+        tokenRequest.setToken("expired-jwt-token");
+
+        Properties emptyProps = new Properties();
+        when(persistenceService.loadConfigurationSafe()).thenReturn(emptyProps);
+        when(provisioningTokenService.validateAndExtract(anyString(), anyString(), anyString()))
+            .thenThrow(new IllegalArgumentException("Provisioning token expired"));
+
+        ResponseEntity<Map<String, Object>> response = controller.applyProvisioningToken(tokenRequest);
+
+        assertEquals(HttpStatus.BAD_REQUEST, response.getStatusCode());
+        assertNotNull(response.getBody());
+        assertEquals(false, response.getBody().get("success"));
+        assertEquals("Provisioning token expired", response.getBody().get("error"));
+
+        verify(persistenceService, never()).saveConfigurationFromToken(any());
+        verify(registrationService, never()).register(any());
+    }
+
+    @Test
     @DisplayName("Should handle empty configuration properties correctly")
     void shouldHandleEmptyConfiguration() {
         // Empty properties
