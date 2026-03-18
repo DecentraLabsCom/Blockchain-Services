@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import decentralabs.blockchain.dto.provider.ConsumerProvisioningTokenPayload;
 import decentralabs.blockchain.dto.provider.ProvisioningTokenPayload;
+import io.jsonwebtoken.ExpiredJwtException;
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.JwtParser;
 import io.jsonwebtoken.Jwts;
@@ -88,6 +89,8 @@ public class ProvisioningTokenService {
             }
 
             return payload;
+        } catch (ExpiredJwtException ex) {
+            throw new IllegalArgumentException("Provisioning token expired");
         } catch (IllegalArgumentException ex) {
             throw ex;
         } catch (Exception ex) {
@@ -146,6 +149,8 @@ public class ProvisioningTokenService {
             }
 
             return payload;
+        } catch (ExpiredJwtException ex) {
+            throw new IllegalArgumentException("Consumer provisioning token expired");
         } catch (IllegalArgumentException ex) {
             throw ex;
         } catch (Exception ex) {

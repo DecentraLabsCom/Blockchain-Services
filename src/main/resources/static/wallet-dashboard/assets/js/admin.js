@@ -592,24 +592,28 @@ async function applyProvisioningToken() {
         updateProvisioningProgress('Finalizing registration...');
 
         renderProvisioningResult(data, tokenType);
-        
-        if (data.success) {
+
+        const registrationCompleted = data.success && data.registered === true;
+
+        if (registrationCompleted) {
             DashboardState.inviteTokenApplied = true;
             persistInviteTokenState(DashboardState.walletAddress, true);
             DashboardState.invitePromptedWallet = DashboardState.walletAddress;
             updateApplyInviteButtonVisibility();
         }
 
-        const title = tokenType === 'consumer' 
-            ? 'Consumer Token Applied'
-            : 'Provider Token Applied';
-        const message = data.registered 
+        const title = registrationCompleted
+            ? (tokenType === 'consumer' ? 'Consumer Token Applied' : 'Provider Token Applied')
+            : (tokenType === 'consumer' ? 'Consumer Token Saved' : 'Provider Token Saved');
+        const message = registrationCompleted
             ? `Registration completed successfully. Type: ${tokenType}`
-            : `Configuration saved but registration pending. Type: ${tokenType}`;
+            : `Token validated and configuration saved, but registration did not complete. Request a fresh token and retry. Type: ${tokenType}`;
 
-        await showInfoModal(title, message, data.success);
+        await showInfoModal(title, message, registrationCompleted);
 
-        hideProvisioningTokenModal();
+        if (registrationCompleted) {
+            hideProvisioningTokenModal();
+        }
         await refreshAllData();
     } catch (error) {
         console.error('Failed to apply provisioning token:', error);
@@ -670,7 +674,10 @@ function renderProvisioningResult(data, tokenType) {
     
     if (data.success) {
         const config = data.config || {};
-        let html = '<div class="success-message"><i class="fas fa-check-circle"></i> Token applied successfully!</div>';
+        const registrationCompleted = data.registered === true;
+        let html = registrationCompleted
+            ? '<div class="success-message"><i class="fas fa-check-circle"></i> Token applied successfully!</div>'
+            : '<div class="warning-message"><i class="fas fa-exclamation-triangle"></i> Token validated, but registration did not complete.</div>';
         html += '<div class="token-details">';
         html += `<p><strong>Type:</strong> ${tokenType === 'consumer' ? 'Consumer (reserves only)' : 'Provider (publishes labs)'}</p>`;
         
@@ -684,6 +691,9 @@ function renderProvisioningResult(data, tokenType) {
         }
         
         html += `<p><strong>Registered:</strong> ${data.registered ? 'Yes ✓' : 'Pending'}</p>`;
+        if (!registrationCompleted) {
+            html += '<p><strong>Next step:</strong> Request a fresh invitation token and retry.</p>';
+        }
         html += '</div>';
         resultDiv.innerHTML = html;
     }
@@ -761,7 +771,6 @@ async function loadSystemStatus() {
                 const providerApplied = providerConfig && (
                     providerConfig.isRegistered
                     || providerConfig.fromProvisioningToken
-                    || providerConfig.isConfigured
                 );
 
                 DashboardState.inviteTokenApplied = storedInviteApplied || providerApplied;
