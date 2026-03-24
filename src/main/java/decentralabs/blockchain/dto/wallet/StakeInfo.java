@@ -6,25 +6,25 @@ import lombok.Data;
 import java.math.BigInteger;
 
 /**
- * DTO for provider stake information from the Diamond contract
+ * DTO for provider bond information from the Diamond contract
  */
 @Data
 @Builder
 public class StakeInfo {
     
-    /** Amount of LAB tokens currently staked (6 decimals) */
+    /** Amount of service credits currently bonded (1 decimal) */
     private BigInteger stakedAmount;
     
-    /** Total amount of tokens slashed historically (6 decimals) */
+    /** Total amount of credits slashed historically (1 decimal) */
     private BigInteger slashedAmount;
     
     /** Timestamp of the last reservation (Unix seconds) */
     private long lastReservationTimestamp;
     
-    /** Timestamp when tokens can be unstaked (Unix seconds) */
+    /** Timestamp when credits can be released (Unix seconds) */
     private long unlockTimestamp;
     
-    /** Whether the provider can currently unstake */
+    /** Whether the provider can currently release their bond */
     private boolean canUnstake;
     
     /**
@@ -41,14 +41,14 @@ public class StakeInfo {
     }
     
     /**
-     * Format staked amount as tokens (divide by 1e6)
+     * Format bonded amount as credits (divide by 10)
      */
     public String getStakedAmountFormatted() {
         if (stakedAmount == null || stakedAmount.equals(BigInteger.ZERO)) {
             return "0";
         }
         return new java.math.BigDecimal(stakedAmount)
-            .divide(java.math.BigDecimal.valueOf(1_000_000))
+            .divide(java.math.BigDecimal.valueOf(10))
             .stripTrailingZeros()
             .toPlainString();
     }

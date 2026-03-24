@@ -113,7 +113,7 @@ public class IntentOnChainExecutor {
                 yield result;
             }
             case "CANCEL_BOOKING" -> send(buildCancelBooking(record), credentials);
-            case "REQUEST_FUNDS" -> send(buildRequestFunds(record), credentials);
+            case "REQUEST_FUNDS", "REQUEST_PROVIDER_PAYOUT" -> send(buildRequestProviderPayout(record), credentials);
             default -> new ExecutionResult(false, null, null, null, null, "unsupported_action");
         };
     }
@@ -394,7 +394,7 @@ public class IntentOnChainExecutor {
         ));
     }
 
-    private Optional<Function> buildRequestFunds(IntentRecord record) {
+    private Optional<Function> buildRequestProviderPayout(IntentRecord record) {
         ActionIntentPayload payload = record.getActionPayload();
         if (payload == null || payload.getLabId() == null) {
             return Optional.empty();
@@ -425,7 +425,7 @@ public class IntentOnChainExecutor {
         );
 
         return Optional.of(new Function(
-            "requestFundsWithIntent",
+            "requestProviderPayoutWithIntent",
             List.of(new Bytes32(requestId), struct),
             List.of()
         ));

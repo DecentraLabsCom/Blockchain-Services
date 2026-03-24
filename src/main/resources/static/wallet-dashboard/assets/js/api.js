@@ -1,5 +1,5 @@
 /**
- * API Client for Treasury Admin Dashboard
+ * API Client for Billing Admin Dashboard
  * Handles all communication with the backend REST API
  */
 
@@ -53,8 +53,8 @@ const API = {
         }
     },
 
-    buildTreasuryAdminTypedData(status, payload) {
-        const domainConfig = (status && status.treasuryAdminEip712) || {};
+    buildBillingAdminTypedData(status, payload) {
+        const domainConfig = (status && status.billingAdminEip712) || {};
         const domain = {
             name: domainConfig.name || 'DecentraLabsTreasuryAdmin',
             version: domainConfig.version || '1',
@@ -72,6 +72,11 @@ const API = {
             amount: payload.amount || '0',
             labId: payload.labId || '0',
             maxBatch: payload.maxBatch || '0',
+            creditAccount: payload.creditAccount || this.ZERO_ADDRESS,
+            creditDelta: payload.creditDelta || '0',
+            fromReceivableState: payload.fromReceivableState || '0',
+            toReceivableState: payload.toReceivableState || '0',
+            reference: payload.reference || '',
             timestamp: payload.timestamp
         };
 
@@ -93,6 +98,11 @@ const API = {
                     { name: 'amount', type: 'uint256' },
                     { name: 'labId', type: 'uint256' },
                     { name: 'maxBatch', type: 'uint256' },
+                    { name: 'creditAccount', type: 'address' },
+                    { name: 'creditDelta', type: 'int256' },
+                    { name: 'fromReceivableState', type: 'uint256' },
+                    { name: 'toReceivableState', type: 'uint256' },
+                    { name: 'reference', type: 'string' },
                     { name: 'timestamp', type: 'uint64' }
                 ]
             },
@@ -102,7 +112,7 @@ const API = {
         };
     },
 
-    async signTreasuryAdminOperation(status, payload) {
+    async signBillingAdminOperation(status, payload) {
         if (!window.ethereum || !window.ethereum.request) {
             throw new Error('No wallet provider found. Connect the institutional wallet to sign admin actions.');
         }
@@ -115,7 +125,7 @@ const API = {
         if (!match) {
             throw new Error('Connected wallet does not match the institutional wallet address.');
         }
-        const typedData = this.buildTreasuryAdminTypedData(status, payload);
+        const typedData = this.buildBillingAdminTypedData(status, payload);
         return await window.ethereum.request({
             method: 'eth_signTypedData_v4',
             params: [match, JSON.stringify(typedData)]
@@ -123,11 +133,11 @@ const API = {
     },
 
     /**
-     * GET /treasury/admin/status
+     * GET /billing/admin/status
      * Get overall system status
      */
     async getSystemStatus() {
-        return await this.request('/treasury/admin/status');
+        return await this.request('/billing/admin/status');
     },
 
     /**
@@ -139,36 +149,36 @@ const API = {
     },
 
     /**
-     * GET /treasury/admin/balance?chainId=X
+     * GET /billing/admin/balance?chainId=X
      * Get institutional wallet balance
      * @param {number|null} chainId - Optional chain ID, null for all networks
      */
     async getBalance(chainId = null) {
         const endpoint = chainId 
-            ? `/treasury/admin/balance?chainId=${chainId}`
-            : '/treasury/admin/balance';
+            ? `/billing/admin/balance?chainId=${chainId}`
+            : '/billing/admin/balance';
         return await this.request(endpoint);
     },
 
     /**
-     * GET /treasury/admin/transactions?limit=X
+     * GET /billing/admin/transactions?limit=X
      * Get recent transactions
      * @param {number} limit - Number of transactions to fetch
      */
     async getRecentTransactions(limit = 10) {
-        return await this.request(`/treasury/admin/transactions?limit=${limit}`);
+        return await this.request(`/billing/admin/transactions?limit=${limit}`);
     },
 
     /**
-     * GET /treasury/admin/contract-info
+     * GET /billing/admin/contract-info
      * Get smart contract information
      */
     async getContractInfo() {
-        return await this.request('/treasury/admin/contract-info');
+        return await this.request('/billing/admin/contract-info');
     },
 
     /**
-     * POST /treasury/admin/execute
+     * POST /billing/admin/execute
      * Execute administrative operation
      * @param {string} operation - Operation type (SET_USER_LIMIT, SET_SPENDING_PERIOD, etc.)
      * @param {object} params - Operation parameters
@@ -189,9 +199,9 @@ const API = {
         };
 
         payload.timestamp = Date.now();
-        payload.signature = await this.signTreasuryAdminOperation(status, payload);
+        payload.signature = await this.signBillingAdminOperation(status, payload);
 
-        return await this.request('/treasury/admin/execute', {
+        return await this.request('/billing/admin/execute', {
             method: 'POST',
             body: JSON.stringify(payload)
         });
@@ -218,32 +228,64 @@ const API = {
     },
 
     /**
-     * Deposit to treasury
-     * @param {string} amountWei - Amount in wei
+     * Issue managed service credits to a customer credit account.
+     * @param {string} creditAccount - Ethereum account receiving the managed credits
+     * @param {string} amountRaw - Raw credit amount with 6 decimals
+     * @param {string} reference - Optional business reference
      */
-    async depositTreasury(amountWei) {
-        return await this.executeAdminOperation('DEPOSIT_TREASURY', {
-            amount: amountWei
+    async issueServiceCredits(creditAccount, amountRaw, reference = '') {
+        return await this.executeAdminOperation('ISSUE_SERVICE_CREDITS', {
+            creditAccount,
+            amount: amountRaw,
+            reference
         });
     },
 
     /**
-     * Withdraw from treasury
-     * @param {string} amountWei - Amount in wei
+     * Apply an administrative service-credit delta to a customer account.
+     * @param {string} creditAccount - Ethereum account being adjusted
+     * @param {string} creditDelta - Signed raw delta with 6 decimals
+     * @param {string} reference - Optional business reference
      */
-    async withdrawTreasury(amountWei) {
-        return await this.executeAdminOperation('WITHDRAW_TREASURY', {
-            amount: amountWei
+    async adjustServiceCredits(creditAccount, creditDelta, reference = '') {
+        return await this.executeAdminOperation('ADJUST_SERVICE_CREDITS', {
+            creditAccount,
+            creditDelta,
+            reference
         });
     },
 
     /**
-     * Collect lab payouts for a specific lab ID.
+     * Transition provider receivable lifecycle for a lab.
+     * @param {string|number} labId - Lab token ID
+     * @param {string|number} fromReceivableState - Source lifecycle bucket
+     * @param {string|number} toReceivableState - Target lifecycle bucket
+     * @param {string|number} amountRaw - Raw credit-denominated amount with 6 decimals
+     * @param {string} reference - Optional business reference
+     */
+    async transitionProviderReceivableState(
+        labId,
+        fromReceivableState,
+        toReceivableState,
+        amountRaw,
+        reference = ''
+    ) {
+        return await this.executeAdminOperation('TRANSITION_PROVIDER_RECEIVABLE_STATE', {
+            labId: String(labId),
+            fromReceivableState: String(fromReceivableState),
+            toReceivableState: String(toReceivableState),
+            amount: String(amountRaw),
+            reference
+        });
+    },
+
+    /**
+     * Request provider payout for a specific lab ID.
      * @param {string|number} labId - Lab token ID
      * @param {string|number} maxBatch - Max reservations to process in one tx
      */
-    async collectLabPayout(labId, maxBatch) {
-        return await this.request('/treasury/admin/collect-lab-payout', {
+    async requestProviderPayout(labId, maxBatch) {
+        return await this.request('/billing/admin/request-provider-payout', {
             method: 'POST',
             body: JSON.stringify({
                 labId: String(labId),
@@ -312,10 +354,10 @@ const API = {
     },
 
     /**
-     * Get treasury information (limit, period, balance)
+     * Get billing information (limit, period, balance)
      */
-    async getTreasuryInfo() {
-        return await this.request('/treasury/admin/treasury-info');
+    async getBillingInfo() {
+        return await this.request('/billing/admin/billing-info');
     },
 
     /**
@@ -323,29 +365,30 @@ const API = {
      * @param {number} limit - Number of top spenders to retrieve (default: 10)
      */
     async getTopSpenders(limit = 10) {
-        return await this.request(`/treasury/admin/top-spenders?limit=${limit}`);
+        return await this.request(`/billing/admin/top-spenders?limit=${limit}`);
     },
 
     /**
      * Get labs owned by the institutional provider wallet.
      */
     async getProviderLabs() {
-        return await this.request('/treasury/admin/provider-labs');
+        return await this.request('/billing/admin/provider-labs');
     },
 
     /**
-     * Get pending payout and collect readiness for a specific lab.
+     * Get provider receivable and payout-request readiness for a specific lab.
      * @param {string|number} labId - Lab token ID
-     * @param {number|null} maxBatch - Batch size for collect simulation
+     * @param {number|null} maxBatch - Batch size for payout-request simulation
      */
-    async getLabPayoutStatus(labId, maxBatch = null) {
+    async getProviderReceivableStatus(labId, maxBatch = null) {
         const params = new URLSearchParams();
         params.set('labId', String(labId));
         if (maxBatch !== null && maxBatch !== undefined) {
             params.set('maxBatch', String(maxBatch));
         }
-        return await this.request(`/treasury/admin/lab-payout-status?${params.toString()}`);
-    }
+        return await this.request(`/billing/admin/provider-receivable-status?${params.toString()}`);
+    },
+
 };
 
 // Export for use in other scripts

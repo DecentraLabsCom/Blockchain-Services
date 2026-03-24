@@ -8,7 +8,7 @@ description: >-
 Spring Boot service for DecentraLabs that provides:
 
 - Authentication and authorization (`wallet`, `SAML`, `WebAuthn` onboarding)
-- Institutional wallet and treasury operations
+- Institutional wallet and billing operations
 - Intent submission and authorization flows
 - Provider/consumer institutional provisioning
 
@@ -19,7 +19,7 @@ While it is designed so that it can be deployed as an independent container (use
 This service provides four main components:
 
 1. **Authentication and Authorization Service**: Web3-based JWT authentication with wallet challenges, SAML2 SSO integration, and WebAuthn support.
-2. **Institutional Wallet and Treasury**: Ethereum wallet management and treasury operations for institutional lab providers and consumers.
+2. **Institutional Wallet and Billing**: Ethereum wallet management and billing operations for institutional lab providers and consumers.
 3. **Intent Authorization and Execution**: signed intent intake, WebAuthn ceremony, and on-chain execution/status tracking.
 4. **Institution Provisioning**: provider/consumer token application and Marketplace registration flows.
 
@@ -33,10 +33,10 @@ Together, they bridge institutional access control systems (such as **Lab Gatewa
 - **JWT Management**: OIDC/JWKS discovery, JWT issuance, and claim/scope-based access checks.
 - **Smart Contract Validation**: direct on-chain reservation/booking queries for booking-aware flows.
 
-### Institutional Wallet and Treasury
+### Institutional Wallet and Billing
 - **Wallet Management**: create/import/reveal institutional wallets encrypted at rest (AES-256-GCM + PBKDF2).
 - **Multi-Network Support**: Mainnet/Sepolia operations with active-network switching and RPC fallback.
-- **Treasury Operations**: deposits, withdrawals, spending limits/periods, and institutional financial stats.
+- **Billing Operations**: service credit issuance, spending limits/periods, and institutional financial stats.
 - **Reservation Engine**: metadata-driven auto-approval/denial hooks for reservation requests.
 - **Event Monitoring**: contract event listener status and resilient event processing.
 

@@ -23,7 +23,7 @@ import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
 /**
- * Tests for InstitutionRegistrationService (Phase 4 consolidated)
+ * Tests for InstitutionRegistrationService
  */
 @ExtendWith(MockitoExtension.class)
 @DisplayName("InstitutionRegistrationService Tests")

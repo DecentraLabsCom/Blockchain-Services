@@ -40,7 +40,7 @@ class AccessTokenAuthenticationFilterTest {
     }
 
     @Test
-    void shouldNotFilter_nonTreasuryPath() {
+    void shouldNotFilter_nonBillingPath() {
         MockHttpServletRequest request = new MockHttpServletRequest();
         request.setRequestURI("/auth/message");
 
@@ -48,9 +48,9 @@ class AccessTokenAuthenticationFilterTest {
     }
 
     @Test
-    void shouldFilter_treasuryAdminPath() {
+    void shouldFilter_billingAdminPath() {
         MockHttpServletRequest request = new MockHttpServletRequest();
-        request.setRequestURI("/treasury/admin/payouts");
+        request.setRequestURI("/billing/admin/payouts");
 
         assertThat(filter.shouldSkip(request)).isFalse();
     }
@@ -58,7 +58,7 @@ class AccessTokenAuthenticationFilterTest {
     @Test
     void blankConfiguredToken_passesThroughWithoutAuthentication() throws Exception {
         ReflectionTestUtils.setField(filter, "accessToken", " ");
-        MockHttpServletRequest request = treasuryAdminRequest();
+        MockHttpServletRequest request = billingAdminRequest();
         MockHttpServletResponse response = new MockHttpServletResponse();
         FilterChain chain = mock(FilterChain.class);
 
@@ -70,7 +70,7 @@ class AccessTokenAuthenticationFilterTest {
 
     @Test
     void validQueryToken_setsInternalAuthentication() throws Exception {
-        MockHttpServletRequest request = treasuryAdminRequest();
+        MockHttpServletRequest request = billingAdminRequest();
         request.setParameter("token", "expected-token");
         MockHttpServletResponse response = new MockHttpServletResponse();
         FilterChain chain = mock(FilterChain.class);
@@ -88,7 +88,7 @@ class AccessTokenAuthenticationFilterTest {
 
     @Test
     void validHeaderToken_setsInternalAuthentication() throws Exception {
-        MockHttpServletRequest request = treasuryAdminRequest();
+        MockHttpServletRequest request = billingAdminRequest();
         request.addHeader("X-Access-Token", "expected-token");
         MockHttpServletResponse response = new MockHttpServletResponse();
         FilterChain chain = mock(FilterChain.class);
@@ -101,7 +101,7 @@ class AccessTokenAuthenticationFilterTest {
 
     @Test
     void validCookieToken_setsInternalAuthentication() throws Exception {
-        MockHttpServletRequest request = treasuryAdminRequest();
+        MockHttpServletRequest request = billingAdminRequest();
         request.setCookies(new Cookie("access_token", "expected-token"));
         MockHttpServletResponse response = new MockHttpServletResponse();
         FilterChain chain = mock(FilterChain.class);
@@ -114,7 +114,7 @@ class AccessTokenAuthenticationFilterTest {
 
     @Test
     void invalidToken_returnsUnauthorizedAndStopsChain() throws Exception {
-        MockHttpServletRequest request = treasuryAdminRequest();
+        MockHttpServletRequest request = billingAdminRequest();
         request.setParameter("token", "wrong-token");
         MockHttpServletResponse response = new MockHttpServletResponse();
         FilterChain chain = mock(FilterChain.class);
@@ -135,7 +135,7 @@ class AccessTokenAuthenticationFilterTest {
         );
         SecurityContextHolder.getContext().setAuthentication(existing);
 
-        MockHttpServletRequest request = treasuryAdminRequest();
+        MockHttpServletRequest request = billingAdminRequest();
         request.addHeader("X-Access-Token", "expected-token");
         MockHttpServletResponse response = new MockHttpServletResponse();
         FilterChain chain = mock(FilterChain.class);
@@ -148,7 +148,7 @@ class AccessTokenAuthenticationFilterTest {
 
     @Test
     void missingProvidedToken_onProtectedPathLeavesContextEmpty() throws Exception {
-        MockHttpServletRequest request = treasuryAdminRequest();
+        MockHttpServletRequest request = billingAdminRequest();
         MockHttpServletResponse response = new MockHttpServletResponse();
         FilterChain chain = mock(FilterChain.class);
 
@@ -159,9 +159,9 @@ class AccessTokenAuthenticationFilterTest {
         assertThat(SecurityContextHolder.getContext().getAuthentication()).isNull();
     }
 
-    private MockHttpServletRequest treasuryAdminRequest() {
+    private MockHttpServletRequest billingAdminRequest() {
         MockHttpServletRequest request = new MockHttpServletRequest();
-        request.setRequestURI("/treasury/admin/payouts");
+        request.setRequestURI("/billing/admin/payouts");
         return request;
     }
 

@@ -91,4 +91,17 @@ public class EthereumAddressValidator {
             throw new IllegalArgumentException(fieldName + " must be a valid number: " + value, ex);
         }
     }
+
+    /**
+     * Validates an Ethereum address and throws if invalid.
+     *
+     * @param address   The address to validate
+     * @param fieldName Human-readable field name for error messages
+     * @throws IllegalArgumentException if address is invalid
+     */
+    public static void validate(String address, String fieldName) {
+        if (!isValidAddress(address)) {
+            throw new IllegalArgumentException("Invalid Ethereum address for " + fieldName + ": " + address);
+        }
+    }
 }

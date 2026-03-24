@@ -58,7 +58,7 @@ public class Diamond extends Contract {
         public String payerInstitution;        // address - institution paying for reservation
         public String collectorInstitution;    // address - institution receiving payout
         public BigInteger providerShare;       // uint96 - provider allocation
-        public BigInteger projectTreasuryShare; // uint96 - project treasury allocation
+        public BigInteger projectTreasuryShare; // uint96 - platform fee allocation
         public BigInteger subsidiesShare;      // uint96 - subsidies allocation
         public BigInteger governanceShare;     // uint96 - governance allocation
 

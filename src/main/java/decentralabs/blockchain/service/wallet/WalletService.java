@@ -36,7 +36,7 @@ import org.web3j.tx.gas.StaticGasProvider;
 import org.web3j.utils.Convert;
 import org.web3j.utils.Numeric;
 
-import decentralabs.blockchain.dto.treasury.InstitutionalUserFinancialStats;
+import decentralabs.blockchain.dto.billing.InstitutionalUserFinancialStats;
 import decentralabs.blockchain.dto.wallet.*;
 import decentralabs.blockchain.service.persistence.WalletPersistenceService;
 import decentralabs.blockchain.util.LogSanitizer;
@@ -102,7 +102,7 @@ public class WalletService {
     private final Map<String, Integer> currentRpcIndex = new ConcurrentHashMap<>();
     private String activeNetwork;
     
-    // Cache for LAB token address (queried from Diamond contract)
+    // Cache for credit-ledger address (queried from Diamond contract)
     private volatile String cachedLabTokenAddress = null;
     
     // Shared OkHttpClient with connection pooling for all Web3j instances
@@ -282,23 +282,16 @@ public class WalletService {
 
             BigDecimal ethBalance = Convert.fromWei(balance.getBalance().toString(), Convert.Unit.ETHER);
 
-            // Get LAB token balance
-            String labTokenAddress = getLabTokenAddress();
-            BigInteger labTokenBalance = BigInteger.ZERO;
-            if (labTokenAddress != null && !labTokenAddress.equals("0x0000000000000000000000000000000000000000")) {
-                labTokenBalance = getERC20Balance(address, labTokenAddress);
-            }
-            
-            // LAB token has 6 decimals
-            BigDecimal labBalance = new BigDecimal(labTokenBalance).divide(BigDecimal.valueOf(1_000_000));
+            BigInteger serviceCreditBalance = getServiceCreditBalance(address);
+            BigDecimal labBalance = new BigDecimal(serviceCreditBalance).divide(BigDecimal.valueOf(10));
 
             return BalanceResponse.builder()
                 .success(true)
                 .address(address)
                 .balanceWei(balance.getBalance().toString())
                 .balanceEth(ethBalance.toString())
-                .labTokenAddress(labTokenAddress)
-                .labBalanceRaw(labTokenBalance.toString())
+                .labTokenAddress(contractAddress)
+                .labBalanceRaw(serviceCreditBalance.toString())
                 .labBalance(labBalance.toString())
                 .network(activeNetwork)
                 .build();
@@ -311,7 +304,7 @@ public class WalletService {
     }
 
     /**
-     * Gets the LAB token address from the Diamond contract
+     * Gets the credit-ledger address from the Diamond contract
      * Caches the result to avoid repeated contract calls
      */
     private String getLabTokenAddress() {
@@ -346,20 +339,20 @@ public class WalletService {
             List<Type> decoded = FunctionReturnDecoder.decode(response.getValue(), function.getOutputParameters());
             if (!decoded.isEmpty()) {
                 cachedLabTokenAddress = decoded.get(0).getValue().toString();
-                log.info("LAB token address retrieved from Diamond contract");
+                log.info("Credit-ledger address retrieved from Diamond contract");
                 return cachedLabTokenAddress;
             }
             
             return null;
         } catch (Exception e) {
-            log.error("Error getting LAB token address from Diamond contract", e);
+            log.error("Error getting credit-ledger address from Diamond contract", e);
             return null;
         }
     }
     
     /**
      * Gets the institutional user spending limit from the Diamond contract
-     * @return User spending limit in LAB token base units (6 decimals), or null if error
+     * @return User spending limit in credit base units (6 decimals), or null if error
      */
     public BigInteger getInstitutionalUserLimit(String providerAddress) {
         if (providerAddress == null || providerAddress.isBlank()) {
@@ -451,10 +444,10 @@ public class WalletService {
     }
     
     /**
-     * Gets the institutional treasury balance from the Diamond contract
-     * @return Treasury balance in LAB token base units (6 decimals), or null if error
+     * Gets the institutional billing balance from the Diamond contract
+     * @return Billing balance in base units (6 decimals), or null if error
      */
-    public BigInteger getInstitutionalTreasuryBalance(String providerAddress) {
+    public BigInteger getInstitutionalBillingBalance(String providerAddress) {
         if (providerAddress == null || providerAddress.isBlank()) {
             return null;
         }
@@ -486,13 +479,13 @@ public class WalletService {
             List<Type> decoded = FunctionReturnDecoder.decode(response.getValue(), function.getOutputParameters());
             if (!decoded.isEmpty()) {
                 BigInteger balance = (BigInteger) decoded.get(0).getValue();
-                log.debug("Institutional treasury balance retrieved");
+                log.debug("Institutional billing balance retrieved");
                 return balance;
             }
             
             return null;
         } catch (Exception e) {
-            log.error("Error getting institutional treasury balance from Diamond contract", e);
+            log.error("Error getting institutional billing balance from Diamond contract", e);
             return null;
         }
     }
@@ -885,16 +878,16 @@ public class WalletService {
     }
 
     /**
-     * Returns pending payout buckets for a specific lab.
+     * Returns the provider receivable currently accrued or settleable for a specific lab.
      */
-    public Optional<LabPayoutStatus> getLabPayoutStatus(BigInteger labId) {
+    public Optional<ProviderReceivableStatus> getProviderReceivableStatus(BigInteger labId) {
         if (labId == null || labId.compareTo(BigInteger.ZERO) <= 0) {
             return Optional.empty();
         }
         try {
             Web3j web3j = getWeb3jInstance();
-            Function function = new Function(
-                "getPendingLabPayout",
+            Function summaryFunction = new Function(
+                "getLabProviderReceivable",
                 Collections.singletonList(new Uint256(labId)),
                 Arrays.asList(
                     new TypeReference<Uint256>() {},
@@ -904,53 +897,111 @@ public class WalletService {
                 )
             );
 
-            String encodedFunction = FunctionEncoder.encode(function);
+            String encodedFunction = FunctionEncoder.encode(summaryFunction);
             EthCall response = web3j.ethCall(
                 Transaction.createEthCallTransaction(null, contractAddress, encodedFunction),
                 DefaultBlockParameterName.LATEST
             ).send();
 
             if (response.hasError()) {
-                log.warn("Error calling getPendingLabPayout() for lab {}", labId);
+                log.warn("Error calling getLabProviderReceivable() for lab {}", labId);
                 return Optional.empty();
             }
 
             @SuppressWarnings("rawtypes")
-            List<Type> decoded = FunctionReturnDecoder.decode(response.getValue(), function.getOutputParameters());
+            List<Type> decoded = FunctionReturnDecoder.decode(response.getValue(), summaryFunction.getOutputParameters());
             if (decoded.size() < 4) {
                 return Optional.empty();
             }
 
-            return Optional.of(new LabPayoutStatus(
+            BigInteger accruedReceivable = BigInteger.ZERO;
+            BigInteger settlementQueued = BigInteger.ZERO;
+            BigInteger invoicedReceivable = BigInteger.ZERO;
+            BigInteger approvedReceivable = BigInteger.ZERO;
+            BigInteger paidReceivable = BigInteger.ZERO;
+            BigInteger reversedReceivable = BigInteger.ZERO;
+            BigInteger disputedReceivable = BigInteger.ZERO;
+            BigInteger lastAccruedAt = BigInteger.ZERO;
+
+            try {
+                Function lifecycleFunction = new Function(
+                    "getLabProviderReceivableLifecycle",
+                    Collections.singletonList(new Uint256(labId)),
+                    Arrays.asList(
+                        new TypeReference<Uint256>() {},
+                        new TypeReference<Uint256>() {},
+                        new TypeReference<Uint256>() {},
+                        new TypeReference<Uint256>() {},
+                        new TypeReference<Uint256>() {},
+                        new TypeReference<Uint256>() {},
+                        new TypeReference<Uint256>() {},
+                        new TypeReference<Uint256>() {}
+                    )
+                );
+
+                String encodedLifecycleFunction = FunctionEncoder.encode(lifecycleFunction);
+                EthCall lifecycleResponse = web3j.ethCall(
+                    Transaction.createEthCallTransaction(null, contractAddress, encodedLifecycleFunction),
+                    DefaultBlockParameterName.LATEST
+                ).send();
+
+                if (!lifecycleResponse.hasError()) {
+                    @SuppressWarnings("rawtypes")
+                    List<Type> decodedLifecycle =
+                        FunctionReturnDecoder.decode(lifecycleResponse.getValue(), lifecycleFunction.getOutputParameters());
+                    if (decodedLifecycle.size() >= 8) {
+                        accruedReceivable = (BigInteger) decodedLifecycle.get(0).getValue();
+                        settlementQueued = (BigInteger) decodedLifecycle.get(1).getValue();
+                        invoicedReceivable = (BigInteger) decodedLifecycle.get(2).getValue();
+                        approvedReceivable = (BigInteger) decodedLifecycle.get(3).getValue();
+                        paidReceivable = (BigInteger) decodedLifecycle.get(4).getValue();
+                        reversedReceivable = (BigInteger) decodedLifecycle.get(5).getValue();
+                        disputedReceivable = (BigInteger) decodedLifecycle.get(6).getValue();
+                        lastAccruedAt = (BigInteger) decodedLifecycle.get(7).getValue();
+                    }
+                }
+            } catch (Exception lifecycleError) {
+                log.warn("Error calling getLabProviderReceivableLifecycle() for lab {}", labId);
+            }
+
+            return Optional.of(new ProviderReceivableStatus(
                 (BigInteger) decoded.get(0).getValue(),
                 (BigInteger) decoded.get(1).getValue(),
                 (BigInteger) decoded.get(2).getValue(),
-                (BigInteger) decoded.get(3).getValue()
+                (BigInteger) decoded.get(3).getValue(),
+                accruedReceivable,
+                settlementQueued,
+                invoicedReceivable,
+                approvedReceivable,
+                paidReceivable,
+                reversedReceivable,
+                disputedReceivable,
+                lastAccruedAt
             ));
         } catch (Exception e) {
-            log.error("Error getting pending payout status for lab {}", labId, e);
+            log.error("Error getting provider receivable status for lab {}", labId, e);
             return Optional.empty();
         }
     }
 
     /**
-     * Simulates requestFunds() via eth_call to determine if collect is currently executable.
+     * Simulates requestProviderPayout() via eth_call to determine if payout can be requested now.
      */
-    public CollectSimulationResult simulateCollectLabPayout(String callerAddress, BigInteger labId, BigInteger maxBatch) {
+    public PayoutRequestSimulationResult simulateProviderPayoutRequest(String callerAddress, BigInteger labId, BigInteger maxBatch) {
         if (callerAddress == null || callerAddress.isBlank()) {
-            return new CollectSimulationResult(false, "Institutional wallet is not configured");
+            return new PayoutRequestSimulationResult(false, "Institutional wallet is not configured");
         }
         if (labId == null || labId.compareTo(BigInteger.ZERO) <= 0) {
-            return new CollectSimulationResult(false, "Invalid lab ID");
+            return new PayoutRequestSimulationResult(false, "Invalid lab ID");
         }
         if (maxBatch == null || maxBatch.compareTo(BigInteger.ONE) < 0 || maxBatch.compareTo(BigInteger.valueOf(100)) > 0) {
-            return new CollectSimulationResult(false, "maxBatch must be between 1 and 100");
+            return new PayoutRequestSimulationResult(false, "maxBatch must be between 1 and 100");
         }
 
         try {
             Web3j web3j = getWeb3jInstance();
             Function function = new Function(
-                "requestFunds",
+                "requestProviderPayout",
                 Arrays.asList(new Uint256(labId), new Uint256(maxBatch)),
                 Collections.emptyList()
             );
@@ -962,77 +1013,25 @@ public class WalletService {
             ).send();
 
             if (response.hasError()) {
-                String message = response.getError() != null ? response.getError().getMessage() : "Collect call reverted";
-                return new CollectSimulationResult(false, sanitizeRpcMessage(message));
+                String message = response.getError() != null ? response.getError().getMessage() : "Payout request reverted";
+                return new PayoutRequestSimulationResult(false, sanitizeRpcMessage(message));
             }
 
             String returnData = response.getValue();
-            // requestFunds(uint256,uint256) has no return values. For this call, any non-empty return
+            // requestProviderPayout(uint256,uint256) has no return values. Any non-empty return
             // payload indicates a revert payload encoded in the response body.
             if (returnData != null && !returnData.isBlank() && !"0x".equalsIgnoreCase(returnData)) {
                 String decodedReason = decodeRevertReason(returnData);
-                return new CollectSimulationResult(false, decodedReason != null ? decodedReason : "Collect is not available");
+                return new PayoutRequestSimulationResult(
+                    false,
+                    decodedReason != null ? decodedReason : "Payout request is not available"
+                );
             }
 
-            return new CollectSimulationResult(true, null);
+            return new PayoutRequestSimulationResult(true, null);
         } catch (Exception e) {
-            log.warn("Failed to simulate collect for lab {}", labId, e);
-            return new CollectSimulationResult(false, "Unable to simulate collect right now");
-        }
-    }
-
-    /**
-     * Simulates prunePayoutHeap() via eth_call and returns how many entries would be removed.
-     */
-    public Optional<BigInteger> simulatePrunePayoutHeap(
-        String callerAddress,
-        BigInteger labId,
-        BigInteger maxIterations
-    ) {
-        if (callerAddress == null || callerAddress.isBlank()) {
-            return Optional.empty();
-        }
-        if (labId == null || labId.compareTo(BigInteger.ZERO) <= 0) {
-            return Optional.empty();
-        }
-        if (
-            maxIterations == null
-                || maxIterations.compareTo(BigInteger.ONE) < 0
-                || maxIterations.compareTo(BigInteger.valueOf(1000)) > 0
-        ) {
-            return Optional.empty();
-        }
-
-        try {
-            Web3j web3j = getWeb3jInstance();
-            Function function = new Function(
-                "prunePayoutHeap",
-                Arrays.asList(new Uint256(labId), new Uint256(maxIterations)),
-                Collections.singletonList(new TypeReference<Uint256>() {})
-            );
-
-            String encodedFunction = FunctionEncoder.encode(function);
-            EthCall response = web3j.ethCall(
-                Transaction.createEthCallTransaction(callerAddress, contractAddress, encodedFunction),
-                DefaultBlockParameterName.LATEST
-            ).send();
-
-            if (response.hasError()) {
-                String message = response.getError() != null ? response.getError().getMessage() : "Prune simulation failed";
-                log.warn("Failed to simulate prune for lab {}: {}", labId, sanitizeRpcMessage(message));
-                return Optional.empty();
-            }
-
-            @SuppressWarnings("rawtypes")
-            List<Type> decoded = FunctionReturnDecoder.decode(response.getValue(), function.getOutputParameters());
-            if (decoded.isEmpty()) {
-                return Optional.empty();
-            }
-
-            return Optional.of((BigInteger) decoded.get(0).getValue());
-        } catch (Exception e) {
-            log.warn("Failed to simulate prune for lab {}", labId, e);
-            return Optional.empty();
+            log.warn("Failed to simulate provider payout request for lab {}", labId, e);
+            return new PayoutRequestSimulationResult(false, "Unable to simulate payout request right now");
         }
     }
 
@@ -1151,6 +1150,48 @@ public class WalletService {
             return Optional.empty();
         }
     }
+
+    /**
+     * Returns the closed service credit balance tracked by the Diamond contract.
+     */
+    public BigInteger getServiceCreditBalance(String accountAddress) {
+        if (accountAddress == null || accountAddress.isBlank()) {
+            return BigInteger.ZERO;
+        }
+
+        try {
+            Web3j web3j = getWeb3jInstance();
+            Function function = new Function(
+                "getServiceCreditBalance",
+                Collections.singletonList(new Address(accountAddress)),
+                Collections.singletonList(new TypeReference<Uint256>() {})
+            );
+
+            String encodedFunction = FunctionEncoder.encode(function);
+            EthCall response = web3j.ethCall(
+                Transaction.createEthCallTransaction(null, contractAddress, encodedFunction),
+                DefaultBlockParameterName.LATEST
+            ).send();
+
+            if (response.hasError()) {
+                log.warn("Error calling getServiceCreditBalance()");
+                log.debug("getServiceCreditBalance() RPC error (details omitted)");
+                return BigInteger.ZERO;
+            }
+
+            @SuppressWarnings("rawtypes")
+            List<Type> decoded = FunctionReturnDecoder.decode(response.getValue(), function.getOutputParameters());
+            if (!decoded.isEmpty()) {
+                return (BigInteger) decoded.get(0).getValue();
+            }
+
+            return BigInteger.ZERO;
+        } catch (Exception e) {
+            log.error("Error getting service credit balance");
+            log.debug("Service credit balance lookup failed (context omitted)", e);
+            return BigInteger.ZERO;
+        }
+    }
     
     /**
      * Gets the ERC20 token balance for an address
@@ -1224,10 +1265,10 @@ public class WalletService {
 
     private String sanitizeRpcMessage(String message) {
         if (message == null || message.isBlank()) {
-            return "Collect call reverted";
+            return "Payout request reverted";
         }
         String sanitized = message.replace("execution reverted:", "").trim();
-        return sanitized.isEmpty() ? "Collect call reverted" : sanitized;
+        return sanitized.isEmpty() ? "Payout request reverted" : sanitized;
     }
 
 

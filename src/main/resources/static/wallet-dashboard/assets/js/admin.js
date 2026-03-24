@@ -1,5 +1,5 @@
 /**
- * Treasury Admin Dashboard - Main Logic
+ * Billing Admin Dashboard - Main Logic
  * Handles UI interactions, data loading, and automatic refresh
  */
 
@@ -25,6 +25,20 @@ const DashboardState = {
 
 const INVITE_TOKEN_STORAGE_PREFIX = 'dlabs_invite_token_applied:';
 const COLLECT_LABS_RETRY_DELAYS_MS = [1500, 3500, 7000];
+const RECEIVABLE_TRANSITION_PRESETS = {
+    '2:3': { from: 2, to: 3, label: 'Queue to invoiced' },
+    '3:4': { from: 3, to: 4, label: 'Invoice approved' },
+    '4:5': { from: 4, to: 5, label: 'Approval to paid' },
+    '2:7': { from: 2, to: 7, label: 'Queue disputed' },
+    '3:7': { from: 3, to: 7, label: 'Invoice disputed' },
+    '4:7': { from: 4, to: 7, label: 'Approval disputed' },
+    '7:3': { from: 7, to: 3, label: 'Dispute back to invoiced' },
+    '7:4': { from: 7, to: 4, label: 'Dispute resolved as approved' },
+    '2:6': { from: 2, to: 6, label: 'Queue reversed' },
+    '3:6': { from: 3, to: 6, label: 'Invoice reversed' },
+    '4:6': { from: 4, to: 6, label: 'Approval reversed' },
+    '7:6': { from: 7, to: 6, label: 'Dispute reversed' }
+};
 
 function getInviteTokenStorageKey(address) {
     return `${INVITE_TOKEN_STORAGE_PREFIX}${(address || '').toLowerCase()}`;
@@ -78,13 +92,13 @@ function maybePromptInviteToken(force = false) {
 // targeted the "ETH Balance" display.
 const MAX_ETH_DECIMALS = 12;
 
-// Converts a raw or formatted value to a human-readable ETH/LAB amount.
+// Converts a raw or formatted value to a human-readable ETH/credit amount.
 //
 // Parameters:
-//   value        - input (string/number) already in ETH or LAB units (not wei)
+//   value        - input (string/number) already in ETH or credit units (not wei)
 //   maxDecimals  - optional override of decimal precision; defaults to
 //                  the global MAX_ETH_DECIMALS (12). callers can request
-//                  fewer decimals for special displays (treasury/staked).
+//                  fewer decimals for special displays (billing/bonded).
 function formatEthDisplay(value, maxDecimals = MAX_ETH_DECIMALS) {
     if (value === null || value === undefined) return '0';
 
@@ -164,6 +178,23 @@ function formatLabTokenRaw(rawValue) {
         }
         return (fallback / 1e6).toFixed(6).replace(/\.?0+$/, '');
     }
+}
+
+function decimalToRawUnits(value, decimals = 6) {
+    const text = String(value ?? '').trim();
+    if (!text) {
+        throw new Error('Amount is required');
+    }
+
+    const match = text.match(/^([+-]?)(\d+)(?:\.(\d+))?$/);
+    if (!match) {
+        throw new Error('Please enter a valid numeric amount');
+    }
+
+    const [, sign, wholePart, fractionPart = ''] = match;
+    const fraction = fractionPart.padEnd(decimals, '0').slice(0, decimals);
+    const raw = `${sign}${wholePart}${fraction}`.replace(/^(-?)0+(?=\d)/, '$1');
+    return raw === '-0' ? '0' : raw;
 }
 
 function escapeHtml(value) {
@@ -989,10 +1020,10 @@ async function loadBalances() {
         const statusData = await API.getSystemStatus();
         const activeNetwork = statusData.activeNetwork || 'sepolia';
         
-        // Get all balances and treasury info in parallel
-        const [data, treasuryData] = await Promise.all([
+        // Get all balances and billing info in parallel
+        const [data, billingData] = await Promise.all([
             API.getBalance(),
-            API.getTreasuryInfo().catch(err => ({ success: false }))
+            API.getBillingInfo().catch(err => ({ success: false }))
         ]);
         
         if (data.success && data.balances) {
@@ -1034,53 +1065,53 @@ async function loadBalances() {
                     </div>
                 `;
                 
-                // Display LAB token balance (always show, even if token not configured)
+                // Display closed service credit balance for the connected wallet
                 if (balanceData.labBalance !== undefined) {
-                    // free LAB uses the default precision (12 decimals) just like ETH
+                    // Service credits use the same generic formatter for dashboard display
                     const labBalance = formatEthDisplay(balanceData.labBalance || '0');
                     balanceGrid.innerHTML += `
                         <div class="balance-item">
-                            <div class="balance-label">Free LAB</div>
-                            <div class="balance-amount">${labBalance} LAB</div>
+                            <div class="balance-label">Service credits</div>
+                            <div class="balance-amount">${labBalance} credits</div>
                         </div>
                     `;
                     
-                    // Check if user is a registered provider from treasury data
-                    const isProvider = treasuryData.success && treasuryData.isProvider === true;
-                    const stakeInfo = treasuryData.stakeInfo || null;
-                    // treasury and staked amounts only show 8 decimals
-                    const treasuryBalance = formatEthDisplay(treasuryData.treasuryBalanceFormatted || '0', 8);
+                    // Check if user is a registered provider from billing data
+                    const isProvider = billingData.success && billingData.isProvider === true;
+                    const stakeInfo = billingData.stakeInfo || null;
+                    // billing and bonded amounts only show 8 decimals
+                    const billingBalance = formatEthDisplay(billingData.billingBalanceFormatted || '0', 8);
                     
-                    // Display Treasury Balance if provider
-                    if (isProvider && parseFloat(treasuryBalance) > 0) {
+                    // Display billing balance if provider
+                    if (isProvider && parseFloat(billingBalance) > 0) {
                         balanceGrid.innerHTML += `
                             <div class="balance-item">
                                 <div class="balance-label">
                                     <i class="fas fa-university" style="margin-right: 0.3rem; color: var(--neon-cyan);"></i>
-                                    Treasury
+                                    Provider billing balance
                                 </div>
-                                <div class="balance-amount" style="color: var(--neon-cyan);">${treasuryBalance} LAB</div>
+                                <div class="balance-amount" style="color: var(--neon-cyan);">${billingBalance} credits</div>
                             </div>
                         `;
                     }
                     
-                    // Display Staked Amount if provider
+                    // Display Bonded Amount if provider
                     if (isProvider && stakeInfo && stakeInfo.stakedAmountFormatted) {
-                        const stakedAmount = formatEthDisplay(stakeInfo.stakedAmountFormatted, 8);
-                        if (parseFloat(stakedAmount) > 0) {
+                        const bondedAmount = formatEthDisplay(stakeInfo.stakedAmountFormatted, 8);
+                        if (parseFloat(bondedAmount) > 0) {
                             balanceGrid.innerHTML += `
                                 <div class="balance-item">
                                     <div class="balance-label">
                                         <i class="fas fa-lock" style="margin-right: 0.3rem; color: var(--neon-purple);"></i>
-                                        Staked
+                                        Bonded
                                     </div>
-                                    <div class="balance-amount" style="color: var(--neon-purple);">${stakedAmount} LAB</div>
+                                    <div class="balance-amount" style="color: var(--neon-purple);">${bondedAmount} credits</div>
                                 </div>
                             `;
                         }
                     }
                     
-                    // Show promotional message only if NOT a provider and LAB balance is 0
+                    // Show promotional message only if NOT a provider and credit balance is 0
                     const promoContainer = document.getElementById('labPromoMessage');
                     if (promoContainer) {
                         if (!isProvider && parseFloat(labBalance) === 0) {
@@ -1089,7 +1120,7 @@ async function loadBalances() {
                                 <div style="text-align: center; padding: 1.5rem; background: linear-gradient(135deg, rgba(0, 255, 157, 0.1), rgba(0, 229, 255, 0.1)); border-radius: 0.5rem; margin-top: 1rem; border: 1px solid rgba(0, 255, 157, 0.2);">
                                     <div style="font-size: 1.1rem; color: var(--neon-cyan); margin-bottom: 0.5rem;">
                                         <i class="fas fa-rocket" style="margin-right: 0.5rem; color: var(--neon-green);"></i>
-                                        Register as a provider now to get <strong style="color: var(--neon-green);">1000 $LAB</strong>!
+                                        Register as a provider now to get <strong style="color: var(--neon-green);">1000 onboarding credits</strong>!
                                     </div>
                                     <a href="https://marketplace-decentralabs.vercel.app" 
                                        target="_blank" 
@@ -1183,6 +1214,43 @@ function setCollectPendingClosuresText(value) {
     closuresEl.textContent = value ?? '--';
 }
 
+function setCollectLifecycleSummaryText(value) {
+    const lifecycleEl = document.getElementById('collectLifecycleSummary');
+    if (!lifecycleEl) return;
+    lifecycleEl.textContent = value ?? 'Lifecycle breakdown unavailable';
+}
+
+function formatLifecycleBucket(label, rawValue, formattedValue) {
+    const raw = rawValue ?? '0';
+    try {
+        if (BigInt(raw.toString()) <= 0n) {
+            return null;
+        }
+    } catch (error) {
+        return null;
+    }
+    const amount = formattedValue || formatLabTokenRaw(raw);
+    return `${label} ${amount} credits`;
+}
+
+function buildCollectLifecycleSummary(data) {
+    const items = [
+        formatLifecycleBucket('Accrued', data.accruedReceivableRaw, data.accruedReceivableLab),
+        formatLifecycleBucket('Queued', data.settlementQueuedRaw, data.settlementQueuedLab),
+        formatLifecycleBucket('Invoiced', data.invoicedReceivableRaw, data.invoicedReceivableLab),
+        formatLifecycleBucket('Approved', data.approvedReceivableRaw, data.approvedReceivableLab),
+        formatLifecycleBucket('Disputed', data.disputedReceivableRaw, data.disputedReceivableLab),
+        formatLifecycleBucket('Paid', data.paidReceivableRaw, data.paidReceivableLab),
+        formatLifecycleBucket('Reversed', data.reversedReceivableRaw, data.reversedReceivableLab),
+    ].filter(Boolean);
+
+    return items.length ? items.join(' | ') : 'No lifecycle buckets populated for this lab';
+}
+
+function getReceivableTransitionPreset(value) {
+    return RECEIVABLE_TRANSITION_PRESETS[value] || null;
+}
+
 function formatPendingClosures(rawValue) {
     if (rawValue === null || rawValue === undefined || rawValue === '') {
         return '0';
@@ -1230,11 +1298,11 @@ function updateCollectButtonState() {
 
     if (DashboardState.collectSubmitting) {
         collectBtn.disabled = true;
-        collectBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Collecting...';
+        collectBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Requesting payout...';
         return;
     }
 
-    collectBtn.innerHTML = '<i class="fas fa-coins"></i> Collect';
+    collectBtn.innerHTML = '<i class="fas fa-coins"></i> Request Payout';
     collectBtn.disabled =
         DashboardState.collectLoadingStatus ||
         !DashboardState.collectCanExecute ||
@@ -1364,6 +1432,7 @@ async function loadCollectStatusForSelectedLab() {
         pendingEl.textContent = '0 LAB';
         setCollectPendingClosuresText('0');
         setCollectStatusText('Select a lab', 'warning');
+        setCollectLifecycleSummaryText('No lab selected');
         updateCollectButtonState();
         return;
     }
@@ -1373,27 +1442,29 @@ async function loadCollectStatusForSelectedLab() {
     pendingEl.textContent = '--';
     setCollectPendingClosuresText('--');
     setCollectStatusText('Checking...');
+    setCollectLifecycleSummaryText('Loading lifecycle breakdown...');
     updateCollectButtonState();
 
     try {
-        const data = await API.getLabPayoutStatus(selectedLabId, DashboardState.collectMaxBatch);
+        const data = await API.getProviderReceivableStatus(selectedLabId, DashboardState.collectMaxBatch);
         if (!data.success) {
-            throw new Error(data.error || 'Failed to load payout status');
+            throw new Error(data.error || 'Failed to load provider receivable status');
         }
 
-        const totalLab = data.totalPayoutLab || formatLabTokenRaw(data.totalPayoutRaw);
+        const totalLab = data.totalReceivableLab || formatLabTokenRaw(data.totalReceivableRaw);
         pendingEl.textContent = `${totalLab} LAB`;
-        const pendingClosuresRaw = data.pendingCompletedReservations ?? data.institutionalCollectorCount ?? '0';
+        const pendingClosuresRaw = data.eligibleReservationCount ?? '0';
         const pendingClosures = formatPendingClosures(pendingClosuresRaw);
         setCollectPendingClosuresText(pendingClosures);
+        setCollectLifecycleSummaryText(buildCollectLifecycleSummary(data));
 
-        DashboardState.collectCanExecute = data.canCollect === true;
+        DashboardState.collectCanExecute = data.canRequestPayout === true;
         if (DashboardState.collectCanExecute) {
-            setCollectStatusText('Ready to collect', 'success');
-        } else if (data.collectReason) {
-            setCollectStatusText(data.collectReason, 'warning');
+            setCollectStatusText('Ready for payout request', 'success');
+        } else if (data.payoutRequestReason) {
+            setCollectStatusText(data.payoutRequestReason, 'warning');
         } else {
-            setCollectStatusText('No collectable rewards', 'warning');
+            setCollectStatusText('No payout currently available', 'warning');
         }
 
     } catch (error) {
@@ -1401,6 +1472,7 @@ async function loadCollectStatusForSelectedLab() {
         pendingEl.textContent = '--';
         setCollectPendingClosuresText('--');
         setCollectStatusText('Status unavailable', 'error');
+        setCollectLifecycleSummaryText('Lifecycle breakdown unavailable');
     } finally {
         DashboardState.collectLoadingStatus = false;
         updateCollectButtonState();
@@ -1414,7 +1486,7 @@ async function handleCollectLabPayout() {
         return;
     }
     if (!DashboardState.collectCanExecute) {
-        showToast('No collectable rewards for the selected lab', 'error');
+        showToast('No requestable provider receivable for the selected lab', 'error');
         return;
     }
 
@@ -1422,11 +1494,11 @@ async function handleCollectLabPayout() {
         ?.selectedOptions?.[0]?.textContent?.trim();
     const collectTarget = selectedLabText || `lab #${labId}`;
     const confirmed = await showConfirmModal(
-        'Collect Pending Rewards',
-        `Collect pending rewards for ${collectTarget}?`,
+        'Request Provider Payout',
+        `Request provider payout for ${collectTarget}?`,
         {
             icon: 'coins',
-            confirmText: 'Collect',
+            confirmText: 'Request payout',
             confirmButtonClass: 'btn-primary'
         }
     );
@@ -1438,10 +1510,10 @@ async function handleCollectLabPayout() {
     updateCollectButtonState();
 
     try {
-        const result = await API.collectLabPayout(labId, DashboardState.collectMaxBatch);
+        const result = await API.requestProviderPayout(labId, DashboardState.collectMaxBatch);
         if (result.success) {
-            showToast(`Collect submitted. Tx: ${formatAddress(result.transactionHash)}`, 'success');
-            setCollectStatusText('Collect submitted', 'success');
+            showToast(`Payout request submitted. Tx: ${formatAddress(result.transactionHash)}`, 'success');
+            setCollectStatusText('Payout request submitted', 'success');
             DashboardState.collectCanExecute = false;
             updateCollectButtonState();
 
@@ -1451,20 +1523,95 @@ async function handleCollectLabPayout() {
                 loadCollectStatusForSelectedLab();
             }, 5000);
         } else {
-            showToast('Collect failed: ' + (result.message || 'Unknown error'), 'error');
+            showToast('Payout request failed: ' + (result.message || 'Unknown error'), 'error');
         }
     } catch (error) {
-        showToast('Collect failed: ' + error.message, 'error');
+        showToast('Payout request failed: ' + error.message, 'error');
     } finally {
         DashboardState.collectSubmitting = false;
         updateCollectButtonState();
     }
 }
 
-// Load treasury administration data
-async function loadTreasuryAdminData() {
+async function handleProviderSettlementTransition(event) {
+    event.preventDefault();
+
+    const labId = DashboardState.selectedCollectLabId;
+    if (!labId) {
+        showToast('Select a lab first', 'error');
+        return;
+    }
+
+    const transitionSelect = document.getElementById('providerSettlementTransitionSelect');
+    const amountInput = document.getElementById('providerSettlementAmountInput');
+    const referenceInput = document.getElementById('providerSettlementReferenceInput');
+    const selectedPreset = getReceivableTransitionPreset(transitionSelect?.value);
+
+    if (!selectedPreset) {
+        showToast('Select a settlement transition', 'error');
+        return;
+    }
+
+    let amountRaw;
     try {
-        const data = await API.getTreasuryInfo();
+        amountRaw = decimalToRawUnits(amountInput?.value ?? '', 6);
+    } catch (error) {
+        showToast(error.message, 'error');
+        return;
+    }
+
+    if (amountRaw === '0') {
+        showToast('Transition amount must be greater than zero', 'error');
+        return;
+    }
+
+    const selectedLabText = document.getElementById('collectLabSelect')
+        ?.selectedOptions?.[0]?.textContent?.trim();
+    const collectTarget = selectedLabText || `lab #${labId}`;
+    const formattedAmount = amountInput?.value?.trim() || formatLabTokenRaw(amountRaw);
+    const confirmed = await showConfirmModal(
+        'Submit Settlement Transition',
+        `Submit "${selectedPreset.label}" for ${collectTarget} with amount ${formattedAmount} LAB?`,
+        {
+            icon: 'file-invoice-dollar',
+            confirmText: 'Submit transition',
+            confirmButtonClass: 'btn-secondary'
+        }
+    );
+    if (!confirmed) {
+        return;
+    }
+
+    try {
+        const result = await API.transitionProviderReceivableState(
+            labId,
+            selectedPreset.from,
+            selectedPreset.to,
+            amountRaw,
+            referenceInput?.value?.trim() || ''
+        );
+
+        if (result.success) {
+            showToast(`Settlement transition submitted. Tx: ${formatAddress(result.transactionHash)}`, 'success');
+            if (event.target && typeof event.target.reset === 'function') {
+                event.target.reset();
+            }
+            setTimeout(() => {
+                loadRecentTransactions();
+                loadCollectStatusForSelectedLab();
+            }, 5000);
+        } else {
+            showToast('Settlement transition failed: ' + (result.message || 'Unknown error'), 'error');
+        }
+    } catch (error) {
+        showToast('Settlement transition failed: ' + error.message, 'error');
+    }
+}
+
+// Load billing administration data
+async function loadBillingAdminData() {
+    try {
+        const data = await API.getBillingInfo();
         
         if (data.success) {
             // Check if wallet is configured
@@ -1480,7 +1627,7 @@ async function loadTreasuryAdminData() {
             // Wallet IS configured - show values (either from contract or defaults)
             // Update current user limit
             const limitTokens = (parseFloat(data.userLimit) / 1e6).toFixed(2);
-            document.getElementById('currentUserLimit').textContent = `${limitTokens} LAB`;
+            document.getElementById('currentUserLimit').textContent = `${limitTokens} credits`;
             
             // Update current period
             const periodDays = Math.floor(data.periodDuration / 86400);
@@ -1493,7 +1640,7 @@ async function loadTreasuryAdminData() {
             document.getElementById('periodEndDateTop').textContent = endDate.toLocaleDateString();
         }
     } catch (error) {
-        console.error('Failed to load treasury data:', error);
+        console.error('Failed to load billing data:', error);
         
         // On error, show "--" (likely wallet not configured)
         document.getElementById('currentUserLimit').textContent = '--';
@@ -1546,7 +1693,7 @@ async function refreshAllData() {
     await Promise.all([
         loadBalances(),
         loadCollectLabs(),
-        loadTreasuryAdminData(),
+        loadBillingAdminData(),
         loadRecentTransactions()
     ]);
     showToast('Dashboard refreshed successfully', 'success');
@@ -1634,11 +1781,11 @@ function setupFormHandlers() {
         const limitTokens = document.getElementById('userLimitInput').value.trim();
         
         if (!limitTokens || isNaN(limitTokens)) {
-            showToast('Please enter a valid limit in LAB tokens', 'error');
+            showToast('Please enter a valid limit in service credits', 'error');
             return;
         }
         
-        // Convert LAB tokens to raw amount (6 decimals)
+        // Convert service credits to raw amount (6 decimals)
         const limitRaw = (parseFloat(limitTokens) * 1e6).toString();
         
         try {
@@ -1646,7 +1793,7 @@ function setupFormHandlers() {
             if (result.success) {
                 showToast(`Limit updated successfully. Tx: ${formatAddress(result.transactionHash)}`, 'success');
                 document.getElementById('userLimitInput').value = '';
-                setTimeout(() => loadTreasuryAdminData(), 5000); // Reload after 5 seconds
+                setTimeout(() => loadBillingAdminData(), 5000); // Reload after 5 seconds
             } else {
                 showToast('Failed to update limit: ' + result.message, 'error');
             }
@@ -1673,7 +1820,7 @@ function setupFormHandlers() {
             if (result.success) {
                 showToast(`Period updated successfully. Tx: ${formatAddress(result.transactionHash)}`, 'success');
                 document.getElementById('periodInput').value = '';
-                setTimeout(() => loadTreasuryAdminData(), 5000);
+                setTimeout(() => loadBillingAdminData(), 5000);
             } else {
                 showToast('Failed to update period: ' + result.message, 'error');
             }
@@ -1681,72 +1828,99 @@ function setupFormHandlers() {
             showToast('Error updating period: ' + error.message, 'error');
         }
     });
-    
-    // Treasury deposit button
-    document.getElementById('depositBtn').addEventListener('click', async () => {
-        const amountTokens = document.getElementById('treasuryAmount').value.trim();
-        
-        if (!amountTokens || isNaN(amountTokens)) {
-            showToast('Please enter a valid amount in LAB tokens', 'error');
-            return;
-        }
-        
-        // Convert LAB tokens to raw amount (6 decimals)
-        const amountRaw = (parseFloat(amountTokens) * 1e6).toString();
-        
-        if (!confirm(`Deposit ${amountTokens} LAB tokens to treasury?`)) {
-            return;
-        }
-        
-        try {
-            const result = await API.depositTreasury(amountRaw);
-            if (result.success) {
-                showToast(`Deposit successful. Tx: ${formatAddress(result.transactionHash)}`, 'success');
-                document.getElementById('treasuryAmount').value = '';
-                setTimeout(() => {
-                    loadBalances();
-                    loadTreasuryAdminData();
-                }, 5000);
-            } else {
-                showToast('Deposit failed: ' + result.message, 'error');
+
+    const issueServiceCreditsForm = document.getElementById('issueServiceCreditsForm');
+    if (issueServiceCreditsForm) {
+        issueServiceCreditsForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const creditAccount = document.getElementById('issueCreditAccountInput').value.trim();
+            const amountInput = document.getElementById('issueCreditAmountInput').value.trim();
+            const reference = document.getElementById('issueCreditReferenceInput').value.trim();
+
+            if (!creditAccount) {
+                showToast('Customer account is required', 'error');
+                return;
             }
-        } catch (error) {
-            showToast('Error depositing: ' + error.message, 'error');
-        }
-    });
-    
-    // Treasury withdraw button
-    document.getElementById('withdrawBtn').addEventListener('click', async () => {
-        const amountTokens = document.getElementById('treasuryAmount').value.trim();
-        
-        if (!amountTokens || isNaN(amountTokens)) {
-            showToast('Please enter a valid amount in LAB tokens', 'error');
-            return;
-        }
-        
-        // Convert LAB tokens to raw amount (6 decimals)
-        const amountRaw = (parseFloat(amountTokens) * 1e6).toString();
-        
-        if (!confirm(`⚠️ Withdraw ${amountTokens} LAB tokens from treasury? This action cannot be undone.`)) {
-            return;
-        }
-        
-        try {
-            const result = await API.withdrawTreasury(amountRaw);
-            if (result.success) {
-                showToast(`Withdrawal successful. Tx: ${formatAddress(result.transactionHash)}`, 'success');
-                document.getElementById('treasuryAmount').value = '';
-                setTimeout(() => {
-                    loadBalances();
-                    loadTreasuryAdminData();
-                }, 5000);
-            } else {
-                showToast('Withdrawal failed: ' + result.message, 'error');
+
+            let amountRaw;
+            try {
+                amountRaw = decimalToRawUnits(amountInput, 6);
+            } catch (error) {
+                showToast(error.message, 'error');
+                return;
             }
-        } catch (error) {
-            showToast('Error withdrawing: ' + error.message, 'error');
-        }
-    });
+
+            if (amountRaw === '0') {
+                showToast('Issued amount must be greater than zero', 'error');
+                return;
+            }
+
+            try {
+                const result = await API.issueServiceCredits(creditAccount, amountRaw, reference);
+                if (result.success) {
+                    showToast(`Service credits issued. Tx: ${formatAddress(result.transactionHash)}`, 'success');
+                    issueServiceCreditsForm.reset();
+                    setTimeout(() => {
+                        loadBalances();
+                        loadBillingAdminData();
+                    }, 5000);
+                } else {
+                    showToast('Issuance failed: ' + result.message, 'error');
+                }
+            } catch (error) {
+                showToast('Error issuing credits: ' + error.message, 'error');
+            }
+        });
+    }
+
+    const adjustServiceCreditsForm = document.getElementById('adjustServiceCreditsForm');
+    if (adjustServiceCreditsForm) {
+        adjustServiceCreditsForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const creditAccount = document.getElementById('adjustCreditAccountInput').value.trim();
+            const deltaInput = document.getElementById('adjustCreditDeltaInput').value.trim();
+            const reference = document.getElementById('adjustCreditReferenceInput').value.trim();
+
+            if (!creditAccount) {
+                showToast('Customer account is required', 'error');
+                return;
+            }
+
+            let creditDelta;
+            try {
+                creditDelta = decimalToRawUnits(deltaInput, 6);
+            } catch (error) {
+                showToast(error.message, 'error');
+                return;
+            }
+
+            if (creditDelta === '0') {
+                showToast('Adjustment delta must not be zero', 'error');
+                return;
+            }
+
+            try {
+                const result = await API.adjustServiceCredits(creditAccount, creditDelta, reference);
+                if (result.success) {
+                    showToast(`Service credit adjustment submitted. Tx: ${formatAddress(result.transactionHash)}`, 'success');
+                    adjustServiceCreditsForm.reset();
+                    setTimeout(() => {
+                        loadBalances();
+                        loadBillingAdminData();
+                    }, 5000);
+                } else {
+                    showToast('Adjustment failed: ' + result.message, 'error');
+                }
+            } catch (error) {
+                showToast('Error adjusting credits: ' + error.message, 'error');
+            }
+        });
+    }
+
+    const providerSettlementTransitionForm = document.getElementById('providerSettlementTransitionForm');
+    if (providerSettlementTransitionForm) {
+        providerSettlementTransitionForm.addEventListener('submit', handleProviderSettlementTransition);
+    }
 }
 
 // Setup button handlers
@@ -1849,7 +2023,7 @@ function setupButtonHandlers() {
             const result = await API.resetSpendingPeriod();
             if (result.success) {
                 showToast(`Period reset successful. Tx: ${formatAddress(result.transactionHash)}`, 'success');
-                setTimeout(() => loadTreasuryAdminData(), 5000);
+                setTimeout(() => loadBillingAdminData(), 5000);
             } else {
                 showToast('Failed to reset period: ' + result.message, 'error');
             }
@@ -2097,7 +2271,7 @@ function stopAutoRefresh() {
 
 // Initialize dashboard
 async function initDashboard() {
-    console.log('Initializing Treasury Admin Dashboard...');
+    console.log('Initializing operations dashboard...');
     
     // Setup event handlers
     setupFormHandlers();

@@ -27,8 +27,8 @@ import org.web3j.crypto.Credentials;
  * 
  * This service manages a SINGLE wallet that is used for:
  * - Automatic reservation confirmations/denials (event listeners)
- * - Institutional reservations (treasury operations)
- * - Administrative operations (treasury admin)
+ * - Institutional reservations (billing operations)
+ * - Administrative operations (billing admin)
  * 
  * The institutional wallet is:
  * - Created once via POST /wallet/create with a password

@@ -1,5 +1,5 @@
 /**
- * Treasury Admin Dashboard - Cyber Dark Theme
+ * Billing Admin Dashboard - Cyber Dark Theme
  * Modern dark UI with neon accents
  */
 
@@ -1293,18 +1293,18 @@ body {
     margin-bottom: var(--spacing-md);
 }
 
-/* Treasury Actions Form (below balances) */
-.treasury-actions-form {
+/* Billing Actions Form (below balances) */
+.billing-actions-form {
     margin-top: var(--spacing-lg);
     padding-top: var(--spacing-lg);
     border-top: 1px solid rgba(0, 229, 255, 0.2);
 }
 
-.treasury-actions-form .form-group {
+.billing-actions-form .form-group {
     margin-bottom: var(--spacing-md);
 }
 
-.treasury-actions-form label {
+.billing-actions-form label {
     display: block;
     color: var(--text-secondary);
     margin-bottom: var(--spacing-xs);
@@ -1312,7 +1312,7 @@ body {
     font-size: 0.9rem;
 }
 
-.treasury-actions-form input[type="text"] {
+.billing-actions-form input[type="text"] {
     width: 100%;
     background: rgba(26, 27, 38, 0.8);
     border: 1px solid var(--border-color);
@@ -1323,19 +1323,19 @@ body {
     transition: all 0.3s ease;
 }
 
-.treasury-actions-form input[type="text"]:focus {
+.billing-actions-form input[type="text"]:focus {
     outline: none;
     border-color: var(--neon-cyan);
     box-shadow: 0 0 10px rgba(0, 229, 255, 0.3);
 }
 
-.treasury-actions-buttons {
+.billing-actions-buttons {
     display: flex;
     gap: var(--spacing-md);
     justify-content: center;
 }
 
-.treasury-actions-buttons .btn {
+.billing-actions-buttons .btn {
     flex: 0 0 25%;
     min-width: 120px;
 }

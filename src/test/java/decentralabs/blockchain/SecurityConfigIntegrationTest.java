@@ -119,8 +119,8 @@ class SecurityConfigIntegrationTest {
     }
 
     @Test
-    void treasuryAdmin_requiresInternalRoleWhenTokenMissing() throws Exception {
-        mockMvc.perform(get("/treasury/admin/test")
+    void billingAdmin_requiresInternalRoleWhenTokenMissing() throws Exception {
+        mockMvc.perform(get("/billing/admin/test")
                 .with(anonymous())
                 .with(req -> {
                     req.setRemoteAddr("127.0.0.1");
@@ -130,20 +130,20 @@ class SecurityConfigIntegrationTest {
     }
 
     @Test
-    void treasuryAdmin_acceptsValidAccessToken() throws Exception {
-        mockMvc.perform(get("/treasury/admin/test")
+    void billingAdmin_acceptsValidAccessToken() throws Exception {
+        mockMvc.perform(get("/billing/admin/test")
                 .header("X-Access-Token", "test-token")
                 .with(req -> {
                     req.setRemoteAddr("127.0.0.1");
                     return req;
                 }))
             .andExpect(status().isOk())
-            .andExpect(content().string("treasury-admin-ok"));
+            .andExpect(content().string("billing-admin-ok"));
     }
 
     @Test
-    void treasuryAdmin_rejectsInvalidAccessToken() throws Exception {
-        mockMvc.perform(get("/treasury/admin/test")
+    void billingAdmin_rejectsInvalidAccessToken() throws Exception {
+        mockMvc.perform(get("/billing/admin/test")
                 .header("X-Access-Token", "wrong-token")
                 .with(req -> {
                     req.setRemoteAddr("127.0.0.1");
@@ -206,9 +206,9 @@ class SecurityConfigIntegrationTest {
             return "wallet-ok";
         }
 
-        @GetMapping("/treasury/admin/test")
-        String treasuryAdmin() {
-            return "treasury-admin-ok";
+        @GetMapping("/billing/admin/test")
+        String billingAdmin() {
+            return "billing-admin-ok";
         }
 
         @GetMapping("/intents/test")

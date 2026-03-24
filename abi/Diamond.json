@@ -186,83 +186,12 @@
   },
   {
     "inputs": [],
-    "name": "AccessControlBadConfirmation",
-    "type": "error"
-  },
-  {
-    "inputs": [
-      {
-        "internalType": "address",
-        "name": "account",
-        "type": "address"
-      },
-      {
-        "internalType": "bytes32",
-        "name": "neededRole",
-        "type": "bytes32"
-      }
-    ],
-    "name": "AccessControlUnauthorizedAccount",
-    "type": "error"
-  },
-  {
-    "inputs": [],
-    "name": "DistributionAlreadyInitialized",
-    "type": "error"
-  },
-  {
-    "inputs": [],
-    "name": "DistributionBalanceAboveThreshold",
-    "type": "error"
-  },
-  {
-    "inputs": [],
-    "name": "DistributionEcosystemCapReached",
-    "type": "error"
-  },
-  {
-    "inputs": [],
-    "name": "DistributionNotAdmin",
-    "type": "error"
-  },
-  {
-    "inputs": [],
-    "name": "DistributionNotInitialized",
-    "type": "error"
-  },
-  {
-    "inputs": [],
-    "name": "DistributionReserveCapReached",
-    "type": "error"
-  },
-  {
-    "inputs": [],
-    "name": "DistributionSubsidiesCapReached",
-    "type": "error"
-  },
-  {
-    "inputs": [],
-    "name": "DistributionZeroAddress",
-    "type": "error"
-  },
-  {
-    "inputs": [],
-    "name": "DistributionZeroAmount",
-    "type": "error"
-  },
-  {
-    "inputs": [],
     "name": "InvalidInitialization",
     "type": "error"
   },
   {
     "inputs": [],
     "name": "NotInitializing",
-    "type": "error"
-  },
-  {
-    "inputs": [],
-    "name": "ReentrancyGuardReentrantCall",
     "type": "error"
   },
   {
@@ -511,8 +440,61 @@
     "type": "error"
   },
   {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "labId",
+        "type": "uint256"
+      }
+    ],
+    "name": "LabCreatorMismatch",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "LabCreatorPucRequired",
+    "type": "error"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "labId",
+        "type": "uint256"
+      }
+    ],
+    "name": "LabLegacyNotMigrated",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "AccessControlBadConfirmation",
+    "type": "error"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "account",
+        "type": "address"
+      },
+      {
+        "internalType": "bytes32",
+        "name": "neededRole",
+        "type": "bytes32"
+      }
+    ],
+    "name": "AccessControlUnauthorizedAccount",
+    "type": "error"
+  },
+  {
     "inputs": [],
     "name": "InvalidPaginationLimit",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "ReentrancyGuardReentrantCall",
     "type": "error"
   },
   {
@@ -621,17 +603,6 @@
     "type": "error"
   },
   {
-    "inputs": [
-      {
-        "internalType": "address",
-        "name": "token",
-        "type": "address"
-      }
-    ],
-    "name": "SafeERC20FailedOperation",
-    "type": "error"
-  },
-  {
     "inputs": [],
     "name": "IntentExecutorMustBeCaller",
     "type": "error"
@@ -663,6 +634,11 @@
   },
   {
     "inputs": [],
+    "name": "InsufficientLockedCredits",
+    "type": "error"
+  },
+  {
+    "inputs": [],
     "name": "InsufficientStake",
     "type": "error"
   },
@@ -678,12 +654,37 @@
   },
   {
     "inputs": [],
-    "name": "LowAllowance",
+    "name": "SlotUnavailable",
     "type": "error"
   },
   {
     "inputs": [],
-    "name": "SlotUnavailable",
+    "name": "ZeroAccount",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "ZeroAmount",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "InsufficientAvailableCredits",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "InsufficientServiceCredits",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "LotAlreadyExpired",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "LotNotExpired",
     "type": "error"
   },
   {
@@ -854,204 +855,6 @@
       }
     ],
     "name": "transferOwnership",
-    "outputs": [],
-    "stateMutability": "nonpayable",
-    "type": "function"
-  },
-  {
-    "inputs": [],
-    "name": "DEFAULT_ADMIN_ROLE",
-    "outputs": [
-      {
-        "internalType": "bytes32",
-        "name": "",
-        "type": "bytes32"
-      }
-    ],
-    "stateMutability": "view",
-    "type": "function"
-  },
-  {
-    "inputs": [
-      {
-        "internalType": "address",
-        "name": "newMinter",
-        "type": "address"
-      }
-    ],
-    "name": "finalizeMinterGovernance",
-    "outputs": [],
-    "stateMutability": "nonpayable",
-    "type": "function"
-  },
-  {
-    "inputs": [
-      {
-        "internalType": "bytes32",
-        "name": "role",
-        "type": "bytes32"
-      }
-    ],
-    "name": "getRoleAdmin",
-    "outputs": [
-      {
-        "internalType": "bytes32",
-        "name": "",
-        "type": "bytes32"
-      }
-    ],
-    "stateMutability": "view",
-    "type": "function"
-  },
-  {
-    "inputs": [
-      {
-        "internalType": "bytes32",
-        "name": "role",
-        "type": "bytes32"
-      },
-      {
-        "internalType": "address",
-        "name": "account",
-        "type": "address"
-      }
-    ],
-    "name": "grantRole",
-    "outputs": [],
-    "stateMutability": "nonpayable",
-    "type": "function"
-  },
-  {
-    "inputs": [
-      {
-        "internalType": "bytes32",
-        "name": "role",
-        "type": "bytes32"
-      },
-      {
-        "internalType": "address",
-        "name": "account",
-        "type": "address"
-      }
-    ],
-    "name": "hasRole",
-    "outputs": [
-      {
-        "internalType": "bool",
-        "name": "",
-        "type": "bool"
-      }
-    ],
-    "stateMutability": "view",
-    "type": "function"
-  },
-  {
-    "inputs": [
-      {
-        "internalType": "address",
-        "name": "projectTreasury",
-        "type": "address"
-      },
-      {
-        "internalType": "address",
-        "name": "subsidies",
-        "type": "address"
-      },
-      {
-        "internalType": "address",
-        "name": "governance",
-        "type": "address"
-      },
-      {
-        "internalType": "address",
-        "name": "liquidity",
-        "type": "address"
-      },
-      {
-        "internalType": "address",
-        "name": "ecosystemGrowth",
-        "type": "address"
-      },
-      {
-        "internalType": "address",
-        "name": "teamBeneficiary",
-        "type": "address"
-      },
-      {
-        "internalType": "uint256",
-        "name": "timelockDelay",
-        "type": "uint256"
-      }
-    ],
-    "name": "initializeTokenPools",
-    "outputs": [],
-    "stateMutability": "nonpayable",
-    "type": "function"
-  },
-  {
-    "inputs": [
-      {
-        "internalType": "address",
-        "name": "to",
-        "type": "address"
-      },
-      {
-        "internalType": "uint256",
-        "name": "amount",
-        "type": "uint256"
-      }
-    ],
-    "name": "mintFromReserve",
-    "outputs": [],
-    "stateMutability": "nonpayable",
-    "type": "function"
-  },
-  {
-    "inputs": [
-      {
-        "internalType": "bytes32",
-        "name": "role",
-        "type": "bytes32"
-      },
-      {
-        "internalType": "address",
-        "name": "callerConfirmation",
-        "type": "address"
-      }
-    ],
-    "name": "renounceRole",
-    "outputs": [],
-    "stateMutability": "nonpayable",
-    "type": "function"
-  },
-  {
-    "inputs": [
-      {
-        "internalType": "bytes32",
-        "name": "role",
-        "type": "bytes32"
-      },
-      {
-        "internalType": "address",
-        "name": "account",
-        "type": "address"
-      }
-    ],
-    "name": "revokeRole",
-    "outputs": [],
-    "stateMutability": "nonpayable",
-    "type": "function"
-  },
-  {
-    "inputs": [],
-    "name": "topUpEcosystemGrowth",
-    "outputs": [],
-    "stateMutability": "nonpayable",
-    "type": "function"
-  },
-  {
-    "inputs": [],
-    "name": "topUpSubsidies",
     "outputs": [],
     "stateMutability": "nonpayable",
     "type": "function"
@@ -1678,7 +1481,7 @@
         "type": "uint256"
       }
     ],
-    "stateMutability": "view",
+    "stateMutability": "pure",
     "type": "function"
   },
   {
@@ -2966,6 +2769,25 @@
         "type": "uint256"
       }
     ],
+    "name": "getCreatorPucHash",
+    "outputs": [
+      {
+        "internalType": "bytes32",
+        "name": "",
+        "type": "bytes32"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "_labId",
+        "type": "uint256"
+      }
+    ],
     "name": "getLab",
     "outputs": [
       {
@@ -3124,6 +2946,25 @@
         "internalType": "uint96",
         "name": "",
         "type": "uint96"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "_labId",
+        "type": "uint256"
+      }
+    ],
+    "name": "getLabResourceType",
+    "outputs": [
+      {
+        "internalType": "uint8",
+        "name": "",
+        "type": "uint8"
       }
     ],
     "stateMutability": "view",
@@ -3320,6 +3161,19 @@
     "type": "function"
   },
   {
+    "inputs": [],
+    "name": "DEFAULT_ADMIN_ROLE",
+    "outputs": [
+      {
+        "internalType": "bytes32",
+        "name": "",
+        "type": "bytes32"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
     "inputs": [
       {
         "internalType": "string",
@@ -3484,6 +3338,86 @@
   {
     "inputs": [
       {
+        "internalType": "address",
+        "name": "_provider",
+        "type": "address"
+      }
+    ],
+    "name": "getProviderNetworkStatus",
+    "outputs": [
+      {
+        "internalType": "enum ProviderNetworkStatus",
+        "name": "",
+        "type": "uint8"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "bytes32",
+        "name": "role",
+        "type": "bytes32"
+      }
+    ],
+    "name": "getRoleAdmin",
+    "outputs": [
+      {
+        "internalType": "bytes32",
+        "name": "",
+        "type": "bytes32"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "bytes32",
+        "name": "role",
+        "type": "bytes32"
+      },
+      {
+        "internalType": "address",
+        "name": "account",
+        "type": "address"
+      }
+    ],
+    "name": "grantRole",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "bytes32",
+        "name": "role",
+        "type": "bytes32"
+      },
+      {
+        "internalType": "address",
+        "name": "account",
+        "type": "address"
+      }
+    ],
+    "name": "hasRole",
+    "outputs": [
+      {
+        "internalType": "bool",
+        "name": "",
+        "type": "bool"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
         "internalType": "string",
         "name": "_name",
         "type": "string"
@@ -3536,7 +3470,62 @@
         "type": "address"
       }
     ],
+    "name": "isProviderNetworkActive",
+    "outputs": [
+      {
+        "internalType": "bool",
+        "name": "",
+        "type": "bool"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "_provider",
+        "type": "address"
+      }
+    ],
     "name": "removeProvider",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "bytes32",
+        "name": "role",
+        "type": "bytes32"
+      },
+      {
+        "internalType": "address",
+        "name": "callerConfirmation",
+        "type": "address"
+      }
+    ],
+    "name": "renounceRole",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "bytes32",
+        "name": "role",
+        "type": "bytes32"
+      },
+      {
+        "internalType": "address",
+        "name": "account",
+        "type": "address"
+      }
+    ],
+    "name": "revokeRole",
     "outputs": [],
     "stateMutability": "nonpayable",
     "type": "function"
@@ -3550,6 +3539,24 @@
       }
     ],
     "name": "setProviderAuthURI",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "_provider",
+        "type": "address"
+      },
+      {
+        "internalType": "enum ProviderNetworkStatus",
+        "name": "_newStatus",
+        "type": "uint8"
+      }
+    ],
+    "name": "setProviderNetworkStatus",
     "outputs": [],
     "stateMutability": "nonpayable",
     "type": "function"
@@ -4813,19 +4820,6 @@
   {
     "inputs": [
       {
-        "internalType": "uint256",
-        "name": "amount",
-        "type": "uint256"
-      }
-    ],
-    "name": "depositToInstitutionalTreasury",
-    "outputs": [],
-    "stateMutability": "nonpayable",
-    "type": "function"
-  },
-  {
-    "inputs": [
-      {
         "internalType": "address",
         "name": "institution",
         "type": "address"
@@ -5066,19 +5060,6 @@
       }
     ],
     "name": "setInstitutionalUserLimit",
-    "outputs": [],
-    "stateMutability": "nonpayable",
-    "type": "function"
-  },
-  {
-    "inputs": [
-      {
-        "internalType": "uint256",
-        "name": "amount",
-        "type": "uint256"
-      }
-    ],
-    "name": "withdrawFromInstitutionalTreasury",
     "outputs": [],
     "stateMutability": "nonpayable",
     "type": "function"
@@ -5536,31 +5517,29 @@
         "internalType": "uint256",
         "name": "_labId",
         "type": "uint256"
-      },
+      }
+    ],
+    "name": "getLabProviderReceivable",
+    "outputs": [
       {
         "internalType": "uint256",
-        "name": "maxBatch",
+        "name": "providerReceivable",
         "type": "uint256"
       },
       {
-        "internalType": "address",
-        "name": "recipient",
-        "type": "address"
-      }
-    ],
-    "name": "adminRecoverOrphanedPayouts",
-    "outputs": [],
-    "stateMutability": "nonpayable",
-    "type": "function"
-  },
-  {
-    "inputs": [],
-    "name": "getLabTokenAddress",
-    "outputs": [
+        "internalType": "uint256",
+        "name": "deferredInstitutionalReceivable",
+        "type": "uint256"
+      },
       {
-        "internalType": "address",
-        "name": "",
-        "type": "address"
+        "internalType": "uint256",
+        "name": "totalReceivable",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint256",
+        "name": "eligibleReservationCount",
+        "type": "uint256"
       }
     ],
     "stateMutability": "view",
@@ -5574,26 +5553,46 @@
         "type": "uint256"
       }
     ],
-    "name": "getPendingLabPayout",
+    "name": "getLabProviderReceivableLifecycle",
     "outputs": [
       {
         "internalType": "uint256",
-        "name": "walletPayout",
+        "name": "accruedReceivable",
         "type": "uint256"
       },
       {
         "internalType": "uint256",
-        "name": "institutionalPayout",
+        "name": "settlementQueued",
         "type": "uint256"
       },
       {
         "internalType": "uint256",
-        "name": "totalPayout",
+        "name": "invoicedReceivable",
         "type": "uint256"
       },
       {
         "internalType": "uint256",
-        "name": "institutionalCollectorCount",
+        "name": "approvedReceivable",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint256",
+        "name": "paidReceivable",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint256",
+        "name": "reversedReceivable",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint256",
+        "name": "disputedReceivable",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint256",
+        "name": "lastAccruedAt",
         "type": "uint256"
       }
     ],
@@ -5618,26 +5617,26 @@
         "type": "uint256"
       }
     ],
-    "name": "getPendingLabPayoutPaginated",
+    "name": "getLabProviderReceivablePaginated",
     "outputs": [
       {
         "internalType": "uint256",
-        "name": "walletPayoutChunk",
+        "name": "providerReceivableChunk",
         "type": "uint256"
       },
       {
         "internalType": "uint256",
-        "name": "institutionalPayoutChunk",
+        "name": "deferredInstitutionalReceivableChunk",
         "type": "uint256"
       },
       {
         "internalType": "uint256",
-        "name": "totalPayoutChunk",
+        "name": "totalReceivableChunk",
         "type": "uint256"
       },
       {
         "internalType": "uint256",
-        "name": "institutionalCollectorCountChunk",
+        "name": "eligibleReservationCountChunk",
         "type": "uint256"
       },
       {
@@ -5649,6 +5648,19 @@
         "internalType": "bool",
         "name": "hasMore",
         "type": "bool"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "getLabTokenAddress",
+    "outputs": [
+      {
+        "internalType": "address",
+        "name": "",
+        "type": "address"
       }
     ],
     "stateMutability": "view",
@@ -5699,35 +5711,11 @@
       },
       {
         "internalType": "uint256",
-        "name": "maxIterations",
-        "type": "uint256"
-      }
-    ],
-    "name": "prunePayoutHeap",
-    "outputs": [
-      {
-        "internalType": "uint256",
-        "name": "removed",
-        "type": "uint256"
-      }
-    ],
-    "stateMutability": "nonpayable",
-    "type": "function"
-  },
-  {
-    "inputs": [
-      {
-        "internalType": "uint256",
-        "name": "_labId",
-        "type": "uint256"
-      },
-      {
-        "internalType": "uint256",
         "name": "maxBatch",
         "type": "uint256"
       }
     ],
-    "name": "requestFunds",
+    "name": "requestProviderPayout",
     "outputs": [],
     "stateMutability": "nonpayable",
     "type": "function"
@@ -5812,28 +5800,40 @@
         "type": "tuple"
       }
     ],
-    "name": "requestFundsWithIntent",
+    "name": "requestProviderPayoutWithIntent",
     "outputs": [],
     "stateMutability": "nonpayable",
     "type": "function"
   },
   {
-    "inputs": [],
-    "name": "withdrawGovernance",
-    "outputs": [],
-    "stateMutability": "nonpayable",
-    "type": "function"
-  },
-  {
-    "inputs": [],
-    "name": "withdrawProjectTreasury",
-    "outputs": [],
-    "stateMutability": "nonpayable",
-    "type": "function"
-  },
-  {
-    "inputs": [],
-    "name": "withdrawSubsidies",
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "_labId",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint8",
+        "name": "fromState",
+        "type": "uint8"
+      },
+      {
+        "internalType": "uint8",
+        "name": "toState",
+        "type": "uint8"
+      },
+      {
+        "internalType": "uint256",
+        "name": "amount",
+        "type": "uint256"
+      },
+      {
+        "internalType": "bytes32",
+        "name": "referenceHash",
+        "type": "bytes32"
+      }
+    ],
+    "name": "transitionProviderReceivableState",
     "outputs": [],
     "stateMutability": "nonpayable",
     "type": "function"
@@ -5865,6 +5865,479 @@
       }
     ],
     "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "account",
+        "type": "address"
+      },
+      {
+        "internalType": "int256",
+        "name": "delta",
+        "type": "int256"
+      },
+      {
+        "internalType": "bytes32",
+        "name": "adjustmentReference",
+        "type": "bytes32"
+      }
+    ],
+    "name": "adjustServiceCredits",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "newBalance",
+        "type": "uint256"
+      }
+    ],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "account",
+        "type": "address"
+      }
+    ],
+    "name": "availableBalanceOf",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "account",
+        "type": "address"
+      },
+      {
+        "internalType": "uint256",
+        "name": "amount",
+        "type": "uint256"
+      },
+      {
+        "internalType": "bytes32",
+        "name": "reservationRef",
+        "type": "bytes32"
+      }
+    ],
+    "name": "cancelCredits",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "account",
+        "type": "address"
+      },
+      {
+        "internalType": "uint256",
+        "name": "amount",
+        "type": "uint256"
+      },
+      {
+        "internalType": "bytes32",
+        "name": "reservationRef",
+        "type": "bytes32"
+      }
+    ],
+    "name": "captureLockedCredits",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "account",
+        "type": "address"
+      },
+      {
+        "internalType": "uint256",
+        "name": "lotIndex",
+        "type": "uint256"
+      }
+    ],
+    "name": "expireCredits",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "expiredAmount",
+        "type": "uint256"
+      }
+    ],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "account",
+        "type": "address"
+      },
+      {
+        "internalType": "uint256",
+        "name": "offset",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint256",
+        "name": "limit",
+        "type": "uint256"
+      }
+    ],
+    "name": "getCreditLots",
+    "outputs": [
+      {
+        "components": [
+          {
+            "internalType": "uint256",
+            "name": "lotId",
+            "type": "uint256"
+          },
+          {
+            "internalType": "bytes32",
+            "name": "fundingOrderId",
+            "type": "bytes32"
+          },
+          {
+            "internalType": "uint256",
+            "name": "creditAmount",
+            "type": "uint256"
+          },
+          {
+            "internalType": "uint256",
+            "name": "remaining",
+            "type": "uint256"
+          },
+          {
+            "internalType": "uint256",
+            "name": "eurGrossAmount",
+            "type": "uint256"
+          },
+          {
+            "internalType": "uint48",
+            "name": "issuedAt",
+            "type": "uint48"
+          },
+          {
+            "internalType": "uint48",
+            "name": "expiresAt",
+            "type": "uint48"
+          },
+          {
+            "internalType": "bool",
+            "name": "expired",
+            "type": "bool"
+          }
+        ],
+        "internalType": "struct CreditLot[]",
+        "name": "lots",
+        "type": "tuple[]"
+      },
+      {
+        "internalType": "uint256",
+        "name": "total",
+        "type": "uint256"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "account",
+        "type": "address"
+      },
+      {
+        "internalType": "uint256",
+        "name": "offset",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint256",
+        "name": "limit",
+        "type": "uint256"
+      }
+    ],
+    "name": "getCreditMovements",
+    "outputs": [
+      {
+        "components": [
+          {
+            "internalType": "enum CreditMovementKind",
+            "name": "kind",
+            "type": "uint8"
+          },
+          {
+            "internalType": "uint256",
+            "name": "amount",
+            "type": "uint256"
+          },
+          {
+            "internalType": "uint256",
+            "name": "balanceAfter",
+            "type": "uint256"
+          },
+          {
+            "internalType": "uint256",
+            "name": "lockedAfter",
+            "type": "uint256"
+          },
+          {
+            "internalType": "bytes32",
+            "name": "ref",
+            "type": "bytes32"
+          },
+          {
+            "internalType": "uint48",
+            "name": "timestamp",
+            "type": "uint48"
+          }
+        ],
+        "internalType": "struct CreditMovement[]",
+        "name": "movements",
+        "type": "tuple[]"
+      },
+      {
+        "internalType": "uint256",
+        "name": "total",
+        "type": "uint256"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "getMyServiceCreditBalance",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "account",
+        "type": "address"
+      }
+    ],
+    "name": "getServiceCreditBalance",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "account",
+        "type": "address"
+      },
+      {
+        "internalType": "uint256",
+        "name": "amount",
+        "type": "uint256"
+      },
+      {
+        "internalType": "bytes32",
+        "name": "fundingReference",
+        "type": "bytes32"
+      }
+    ],
+    "name": "issueServiceCredits",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "newBalance",
+        "type": "uint256"
+      }
+    ],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "account",
+        "type": "address"
+      },
+      {
+        "internalType": "int256",
+        "name": "delta",
+        "type": "int256"
+      },
+      {
+        "internalType": "bytes32",
+        "name": "adjustmentRef",
+        "type": "bytes32"
+      }
+    ],
+    "name": "ledgerAdjustCredits",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "newBalance",
+        "type": "uint256"
+      }
+    ],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "account",
+        "type": "address"
+      },
+      {
+        "internalType": "uint256",
+        "name": "amount",
+        "type": "uint256"
+      },
+      {
+        "internalType": "bytes32",
+        "name": "reservationRef",
+        "type": "bytes32"
+      }
+    ],
+    "name": "lockCredits",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "account",
+        "type": "address"
+      }
+    ],
+    "name": "lockedBalanceOf",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "account",
+        "type": "address"
+      },
+      {
+        "internalType": "uint256",
+        "name": "creditAmount",
+        "type": "uint256"
+      },
+      {
+        "internalType": "bytes32",
+        "name": "fundingOrderId",
+        "type": "bytes32"
+      },
+      {
+        "internalType": "uint256",
+        "name": "eurGrossAmount",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint48",
+        "name": "expiresAt",
+        "type": "uint48"
+      }
+    ],
+    "name": "mintCredits",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "lotId",
+        "type": "uint256"
+      }
+    ],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "account",
+        "type": "address"
+      },
+      {
+        "internalType": "uint256",
+        "name": "amount",
+        "type": "uint256"
+      },
+      {
+        "internalType": "bytes32",
+        "name": "reservationRef",
+        "type": "bytes32"
+      }
+    ],
+    "name": "releaseLockedCredits",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "account",
+        "type": "address"
+      }
+    ],
+    "name": "totalBalanceOf",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "stateMutability": "view",
     "type": "function"
   },
   {
@@ -6061,32 +6534,6 @@
   {
     "inputs": [
       {
-        "internalType": "uint256",
-        "name": "amount",
-        "type": "uint256"
-      }
-    ],
-    "name": "stakeTokens",
-    "outputs": [],
-    "stateMutability": "nonpayable",
-    "type": "function"
-  },
-  {
-    "inputs": [
-      {
-        "internalType": "uint256",
-        "name": "amount",
-        "type": "uint256"
-      }
-    ],
-    "name": "unstakeTokens",
-    "outputs": [],
-    "stateMutability": "nonpayable",
-    "type": "function"
-  },
-  {
-    "inputs": [
-      {
         "internalType": "address",
         "name": "inst",
         "type": "address"
@@ -6098,6 +6545,24 @@
       }
     ],
     "name": "test_setBackend",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "labId",
+        "type": "uint256"
+      },
+      {
+        "internalType": "bytes32",
+        "name": "creatorPucHash",
+        "type": "bytes32"
+      }
+    ],
+    "name": "test_setCreatorPucHash",
     "outputs": [],
     "stateMutability": "nonpayable",
     "type": "function"
@@ -6177,6 +6642,24 @@
     "type": "function"
   },
   {
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "provider",
+        "type": "address"
+      },
+      {
+        "internalType": "uint256",
+        "name": "amount",
+        "type": "uint256"
+      }
+    ],
+    "name": "test_setProviderStake",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
     "anonymous": false,
     "inputs": [
       {
@@ -6242,193 +6725,12 @@
     "inputs": [
       {
         "indexed": false,
-        "internalType": "uint256",
-        "name": "amount",
-        "type": "uint256"
-      },
-      {
-        "indexed": false,
-        "internalType": "uint256",
-        "name": "totalMinted",
-        "type": "uint256"
-      }
-    ],
-    "name": "EcosystemToppedUp",
-    "type": "event"
-  },
-  {
-    "anonymous": false,
-    "inputs": [
-      {
-        "indexed": false,
         "internalType": "uint64",
         "name": "version",
         "type": "uint64"
       }
     ],
     "name": "Initialized",
-    "type": "event"
-  },
-  {
-    "anonymous": false,
-    "inputs": [
-      {
-        "indexed": true,
-        "internalType": "address",
-        "name": "to",
-        "type": "address"
-      },
-      {
-        "indexed": false,
-        "internalType": "uint256",
-        "name": "amount",
-        "type": "uint256"
-      },
-      {
-        "indexed": false,
-        "internalType": "uint256",
-        "name": "totalMinted",
-        "type": "uint256"
-      }
-    ],
-    "name": "ReserveMinted",
-    "type": "event"
-  },
-  {
-    "anonymous": false,
-    "inputs": [
-      {
-        "indexed": true,
-        "internalType": "bytes32",
-        "name": "role",
-        "type": "bytes32"
-      },
-      {
-        "indexed": true,
-        "internalType": "bytes32",
-        "name": "previousAdminRole",
-        "type": "bytes32"
-      },
-      {
-        "indexed": true,
-        "internalType": "bytes32",
-        "name": "newAdminRole",
-        "type": "bytes32"
-      }
-    ],
-    "name": "RoleAdminChanged",
-    "type": "event"
-  },
-  {
-    "anonymous": false,
-    "inputs": [
-      {
-        "indexed": true,
-        "internalType": "bytes32",
-        "name": "role",
-        "type": "bytes32"
-      },
-      {
-        "indexed": true,
-        "internalType": "address",
-        "name": "account",
-        "type": "address"
-      },
-      {
-        "indexed": true,
-        "internalType": "address",
-        "name": "sender",
-        "type": "address"
-      }
-    ],
-    "name": "RoleGranted",
-    "type": "event"
-  },
-  {
-    "anonymous": false,
-    "inputs": [
-      {
-        "indexed": true,
-        "internalType": "bytes32",
-        "name": "role",
-        "type": "bytes32"
-      },
-      {
-        "indexed": true,
-        "internalType": "address",
-        "name": "account",
-        "type": "address"
-      },
-      {
-        "indexed": true,
-        "internalType": "address",
-        "name": "sender",
-        "type": "address"
-      }
-    ],
-    "name": "RoleRevoked",
-    "type": "event"
-  },
-  {
-    "anonymous": false,
-    "inputs": [
-      {
-        "indexed": false,
-        "internalType": "uint256",
-        "name": "amount",
-        "type": "uint256"
-      },
-      {
-        "indexed": false,
-        "internalType": "uint256",
-        "name": "totalMinted",
-        "type": "uint256"
-      }
-    ],
-    "name": "SubsidiesToppedUp",
-    "type": "event"
-  },
-  {
-    "anonymous": false,
-    "inputs": [
-      {
-        "indexed": false,
-        "internalType": "address",
-        "name": "projectTreasury",
-        "type": "address"
-      },
-      {
-        "indexed": false,
-        "internalType": "address",
-        "name": "treasuryTimelock",
-        "type": "address"
-      },
-      {
-        "indexed": false,
-        "internalType": "address",
-        "name": "subsidies",
-        "type": "address"
-      },
-      {
-        "indexed": false,
-        "internalType": "address",
-        "name": "liquidity",
-        "type": "address"
-      },
-      {
-        "indexed": false,
-        "internalType": "address",
-        "name": "ecosystemGrowth",
-        "type": "address"
-      },
-      {
-        "indexed": false,
-        "internalType": "address",
-        "name": "teamVesting",
-        "type": "address"
-      }
-    ],
-    "name": "TokenPoolsInitialized",
     "type": "event"
   },
   {
@@ -6519,6 +6821,12 @@
         "internalType": "string",
         "name": "_accessKey",
         "type": "string"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint8",
+        "name": "_resourceType",
+        "type": "uint8"
       }
     ],
     "name": "LabAdded",
@@ -6626,6 +6934,12 @@
         "internalType": "string",
         "name": "_accessKey",
         "type": "string"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint8",
+        "name": "_resourceType",
+        "type": "uint8"
       }
     ],
     "name": "LabUpdated",
@@ -6705,6 +7019,49 @@
     "inputs": [
       {
         "indexed": true,
+        "internalType": "uint256",
+        "name": "_labId",
+        "type": "uint256"
+      },
+      {
+        "indexed": true,
+        "internalType": "address",
+        "name": "_provider",
+        "type": "address"
+      },
+      {
+        "indexed": false,
+        "internalType": "string",
+        "name": "_uri",
+        "type": "string"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint96",
+        "name": "_price",
+        "type": "uint96"
+      },
+      {
+        "indexed": false,
+        "internalType": "string",
+        "name": "_accessUri",
+        "type": "string"
+      },
+      {
+        "indexed": false,
+        "internalType": "string",
+        "name": "_accessKey",
+        "type": "string"
+      }
+    ],
+    "name": "LabAdded",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
         "internalType": "bytes32",
         "name": "requestId",
         "type": "bytes32"
@@ -6741,6 +7098,43 @@
       }
     ],
     "name": "LabIntentProcessed",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "uint256",
+        "name": "_labId",
+        "type": "uint256"
+      },
+      {
+        "indexed": false,
+        "internalType": "string",
+        "name": "_uri",
+        "type": "string"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint96",
+        "name": "_price",
+        "type": "uint96"
+      },
+      {
+        "indexed": false,
+        "internalType": "string",
+        "name": "_accessUri",
+        "type": "string"
+      },
+      {
+        "indexed": false,
+        "internalType": "string",
+        "name": "_accessKey",
+        "type": "string"
+      }
+    ],
+    "name": "LabUpdated",
     "type": "event"
   },
   {
@@ -7162,6 +7556,25 @@
         "type": "uint256"
       },
       {
+        "indexed": true,
+        "internalType": "bytes32",
+        "name": "creatorPucHash",
+        "type": "bytes32"
+      }
+    ],
+    "name": "LabCreatorBound",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "uint256",
+        "name": "labId",
+        "type": "uint256"
+      },
+      {
         "indexed": false,
         "internalType": "int32",
         "name": "delta",
@@ -7239,31 +7652,6 @@
       {
         "indexed": true,
         "internalType": "address",
-        "name": "provider",
-        "type": "address"
-      },
-      {
-        "indexed": false,
-        "internalType": "uint256",
-        "name": "amount",
-        "type": "uint256"
-      },
-      {
-        "indexed": false,
-        "internalType": "uint256",
-        "name": "limit",
-        "type": "uint256"
-      }
-    ],
-    "name": "InstitutionalTreasuryInitialized",
-    "type": "event"
-  },
-  {
-    "anonymous": false,
-    "inputs": [
-      {
-        "indexed": true,
-        "internalType": "address",
         "name": "_account",
         "type": "address"
       },
@@ -7295,25 +7683,6 @@
       {
         "indexed": true,
         "internalType": "address",
-        "name": "_account",
-        "type": "address"
-      },
-      {
-        "indexed": false,
-        "internalType": "string",
-        "name": "reason",
-        "type": "string"
-      }
-    ],
-    "name": "ProviderAddedWithoutTokens",
-    "type": "event"
-  },
-  {
-    "anonymous": false,
-    "inputs": [
-      {
-        "indexed": true,
-        "internalType": "address",
         "name": "_provider",
         "type": "address"
       },
@@ -7333,11 +7702,55 @@
       {
         "indexed": true,
         "internalType": "address",
+        "name": "provider",
+        "type": "address"
+      },
+      {
+        "indexed": false,
+        "internalType": "enum ProviderNetworkStatus",
+        "name": "previousStatus",
+        "type": "uint8"
+      },
+      {
+        "indexed": false,
+        "internalType": "enum ProviderNetworkStatus",
+        "name": "newStatus",
+        "type": "uint8"
+      }
+    ],
+    "name": "ProviderNetworkStatusChanged",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "address",
         "name": "_account",
         "type": "address"
       }
     ],
     "name": "ProviderRemoved",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "address",
+        "name": "_account",
+        "type": "address"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint256",
+        "name": "credits",
+        "type": "uint256"
+      }
+    ],
+    "name": "ProviderServiceCreditsIssued",
     "type": "event"
   },
   {
@@ -7369,6 +7782,81 @@
       }
     ],
     "name": "ProviderUpdated",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "bytes32",
+        "name": "role",
+        "type": "bytes32"
+      },
+      {
+        "indexed": true,
+        "internalType": "bytes32",
+        "name": "previousAdminRole",
+        "type": "bytes32"
+      },
+      {
+        "indexed": true,
+        "internalType": "bytes32",
+        "name": "newAdminRole",
+        "type": "bytes32"
+      }
+    ],
+    "name": "RoleAdminChanged",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "bytes32",
+        "name": "role",
+        "type": "bytes32"
+      },
+      {
+        "indexed": true,
+        "internalType": "address",
+        "name": "account",
+        "type": "address"
+      },
+      {
+        "indexed": true,
+        "internalType": "address",
+        "name": "sender",
+        "type": "address"
+      }
+    ],
+    "name": "RoleGranted",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "bytes32",
+        "name": "role",
+        "type": "bytes32"
+      },
+      {
+        "indexed": true,
+        "internalType": "address",
+        "name": "account",
+        "type": "address"
+      },
+      {
+        "indexed": true,
+        "internalType": "address",
+        "name": "sender",
+        "type": "address"
+      }
+    ],
+    "name": "RoleRevoked",
     "type": "event"
   },
   {
@@ -7488,6 +7976,31 @@
     "inputs": [
       {
         "indexed": true,
+        "internalType": "uint256",
+        "name": "labId",
+        "type": "uint256"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint256",
+        "name": "amount",
+        "type": "uint256"
+      },
+      {
+        "indexed": true,
+        "internalType": "bytes32",
+        "name": "reservationKey",
+        "type": "bytes32"
+      }
+    ],
+    "name": "ProviderReceivableAccrued",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
         "internalType": "address",
         "name": "institution",
         "type": "address"
@@ -7538,56 +8051,6 @@
       }
     ],
     "name": "InstitutionalSpendingPeriodUpdated",
-    "type": "event"
-  },
-  {
-    "anonymous": false,
-    "inputs": [
-      {
-        "indexed": true,
-        "internalType": "address",
-        "name": "institution",
-        "type": "address"
-      },
-      {
-        "indexed": true,
-        "internalType": "uint256",
-        "name": "amount",
-        "type": "uint256"
-      },
-      {
-        "indexed": false,
-        "internalType": "uint256",
-        "name": "newBalance",
-        "type": "uint256"
-      }
-    ],
-    "name": "InstitutionalTreasuryDeposit",
-    "type": "event"
-  },
-  {
-    "anonymous": false,
-    "inputs": [
-      {
-        "indexed": true,
-        "internalType": "address",
-        "name": "institution",
-        "type": "address"
-      },
-      {
-        "indexed": true,
-        "internalType": "uint256",
-        "name": "amount",
-        "type": "uint256"
-      },
-      {
-        "indexed": false,
-        "internalType": "uint256",
-        "name": "newBalance",
-        "type": "uint256"
-      }
-    ],
-    "name": "InstitutionalTreasuryWithdrawal",
     "type": "event"
   },
   {
@@ -7757,20 +8220,20 @@
     "inputs": [
       {
         "indexed": true,
+        "internalType": "address",
+        "name": "provider",
+        "type": "address"
+      },
+      {
+        "indexed": true,
         "internalType": "uint256",
         "name": "labId",
         "type": "uint256"
       },
       {
-        "indexed": true,
-        "internalType": "address",
-        "name": "recipient",
-        "type": "address"
-      },
-      {
         "indexed": false,
         "internalType": "uint256",
-        "name": "providerPayout",
+        "name": "amount",
         "type": "uint256"
       },
       {
@@ -7780,7 +8243,7 @@
         "type": "uint256"
       }
     ],
-    "name": "OrphanedLabPayoutRecovered",
+    "name": "ProviderPayoutRequested",
     "type": "event"
   },
   {
@@ -7788,24 +8251,278 @@
     "inputs": [
       {
         "indexed": true,
+        "internalType": "address",
+        "name": "operator",
+        "type": "address"
+      },
+      {
+        "indexed": true,
         "internalType": "uint256",
         "name": "labId",
         "type": "uint256"
       },
       {
+        "indexed": true,
+        "internalType": "uint8",
+        "name": "fromState",
+        "type": "uint8"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint8",
+        "name": "toState",
+        "type": "uint8"
+      },
+      {
         "indexed": false,
         "internalType": "uint256",
-        "name": "removed",
+        "name": "amount",
+        "type": "uint256"
+      },
+      {
+        "indexed": false,
+        "internalType": "bytes32",
+        "name": "referenceHash",
+        "type": "bytes32"
+      }
+    ],
+    "name": "ProviderReceivableLifecycleTransition",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "address",
+        "name": "account",
+        "type": "address"
+      },
+      {
+        "indexed": false,
+        "internalType": "int256",
+        "name": "delta",
+        "type": "int256"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint256",
+        "name": "newBalance",
+        "type": "uint256"
+      },
+      {
+        "indexed": true,
+        "internalType": "bytes32",
+        "name": "adjustmentRef",
+        "type": "bytes32"
+      }
+    ],
+    "name": "CreditLotAdjusted",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "address",
+        "name": "account",
+        "type": "address"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint256",
+        "name": "amount",
+        "type": "uint256"
+      },
+      {
+        "indexed": true,
+        "internalType": "bytes32",
+        "name": "reservationRef",
+        "type": "bytes32"
+      }
+    ],
+    "name": "CreditLotConsumed",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "address",
+        "name": "account",
+        "type": "address"
+      },
+      {
+        "indexed": true,
+        "internalType": "uint256",
+        "name": "lotIndex",
         "type": "uint256"
       },
       {
         "indexed": false,
         "internalType": "uint256",
-        "name": "remaining",
+        "name": "expiredAmount",
         "type": "uint256"
       }
     ],
-    "name": "PayoutHeapPruned",
+    "name": "CreditLotExpired",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "address",
+        "name": "account",
+        "type": "address"
+      },
+      {
+        "indexed": true,
+        "internalType": "uint256",
+        "name": "lotId",
+        "type": "uint256"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint256",
+        "name": "creditAmount",
+        "type": "uint256"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint256",
+        "name": "eurGrossAmount",
+        "type": "uint256"
+      },
+      {
+        "indexed": false,
+        "internalType": "bytes32",
+        "name": "fundingOrderId",
+        "type": "bytes32"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint48",
+        "name": "expiresAt",
+        "type": "uint48"
+      }
+    ],
+    "name": "CreditLotMinted",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "address",
+        "name": "account",
+        "type": "address"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint256",
+        "name": "amount",
+        "type": "uint256"
+      },
+      {
+        "indexed": true,
+        "internalType": "bytes32",
+        "name": "reservationRef",
+        "type": "bytes32"
+      }
+    ],
+    "name": "CreditLotReleased",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "address",
+        "name": "account",
+        "type": "address"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint256",
+        "name": "amount",
+        "type": "uint256"
+      },
+      {
+        "indexed": true,
+        "internalType": "bytes32",
+        "name": "reservationRef",
+        "type": "bytes32"
+      }
+    ],
+    "name": "CreditsLocked",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "address",
+        "name": "account",
+        "type": "address"
+      },
+      {
+        "indexed": false,
+        "internalType": "int256",
+        "name": "delta",
+        "type": "int256"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint256",
+        "name": "newBalance",
+        "type": "uint256"
+      },
+      {
+        "indexed": true,
+        "internalType": "bytes32",
+        "name": "adjustmentReference",
+        "type": "bytes32"
+      }
+    ],
+    "name": "ServiceCreditAdjusted",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "address",
+        "name": "account",
+        "type": "address"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint256",
+        "name": "amount",
+        "type": "uint256"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint256",
+        "name": "newBalance",
+        "type": "uint256"
+      },
+      {
+        "indexed": true,
+        "internalType": "bytes32",
+        "name": "fundingReference",
+        "type": "bytes32"
+      }
+    ],
+    "name": "ServiceCreditIssued",
     "type": "event"
   },
   {
@@ -7893,31 +8610,6 @@
         "type": "address"
       },
       {
-        "indexed": false,
-        "internalType": "uint256",
-        "name": "newTotalStake",
-        "type": "uint256"
-      },
-      {
-        "indexed": false,
-        "internalType": "uint256",
-        "name": "requiredStake",
-        "type": "uint256"
-      }
-    ],
-    "name": "ProviderStakeSufficient",
-    "type": "event"
-  },
-  {
-    "anonymous": false,
-    "inputs": [
-      {
-        "indexed": true,
-        "internalType": "address",
-        "name": "provider",
-        "type": "address"
-      },
-      {
         "indexed": true,
         "internalType": "address",
         "name": "cancelledBy",
@@ -7982,61 +8674,6 @@
     ],
     "name": "StakeBurned",
     "type": "event"
-  },
-  {
-    "anonymous": false,
-    "inputs": [
-      {
-        "indexed": true,
-        "internalType": "address",
-        "name": "provider",
-        "type": "address"
-      },
-      {
-        "indexed": true,
-        "internalType": "uint256",
-        "name": "amount",
-        "type": "uint256"
-      },
-      {
-        "indexed": false,
-        "internalType": "uint256",
-        "name": "newTotalStake",
-        "type": "uint256"
-      }
-    ],
-    "name": "TokensStaked",
-    "type": "event"
-  },
-  {
-    "anonymous": false,
-    "inputs": [
-      {
-        "indexed": true,
-        "internalType": "address",
-        "name": "provider",
-        "type": "address"
-      },
-      {
-        "indexed": true,
-        "internalType": "uint256",
-        "name": "amount",
-        "type": "uint256"
-      },
-      {
-        "indexed": false,
-        "internalType": "uint256",
-        "name": "remainingStake",
-        "type": "uint256"
-      }
-    ],
-    "name": "TokensUnstaked",
-    "type": "event"
-  },
-  {
-    "inputs": [],
-    "stateMutability": "nonpayable",
-    "type": "constructor"
   },
   {
     "inputs": [],

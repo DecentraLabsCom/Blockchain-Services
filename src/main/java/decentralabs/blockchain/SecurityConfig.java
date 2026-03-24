@@ -68,8 +68,8 @@ public class SecurityConfig {
     @Value("${endpoint.wallet:/wallet}")
     private @Nonnull String walletEndpoint = "/wallet";
     
-    @Value("${endpoint.treasury:/treasury}")
-    private @Nonnull String treasuryEndpoint = "/treasury";
+    @Value("${endpoint.billing:/billing}")
+    private @Nonnull String billingEndpoint = "/billing";
     
     @Value("${endpoint.intents:/intents}")
     private @Nonnull String intentsEndpoint = "/intents";
@@ -114,7 +114,7 @@ public class SecurityConfig {
                     "/actuator/metrics/**",
                     "/actuator/prometheus",
                     walletEndpoint + "/**",
-                    treasuryEndpoint + "/**",
+                    billingEndpoint + "/**",
                     "/webauthn/**",
                     intentsEndpoint + "/**",
                     "/onboarding/**",
@@ -149,11 +149,22 @@ public class SecurityConfig {
                 // ALL wallet endpoints - restricted by CORS to localhost
                 authorize.requestMatchers(walletEndpoint + "/**").permitAll();
                 if (accessTokenRequired) {
-                    authorize.requestMatchers(treasuryEndpoint + "/admin/**").hasRole("INTERNAL");
+                    // Admin operations always require token
+                    authorize.requestMatchers(billingEndpoint + "/admin/**").hasRole("INTERNAL");
+                    // Settlement operator write operations — require token to prevent
+                    // unauthenticated writes even from localhost
+                    authorize.requestMatchers(HttpMethod.POST, billingEndpoint + "/provider-network/**").hasRole("INTERNAL");
+                    authorize.requestMatchers(HttpMethod.POST, billingEndpoint + "/provider-receivables/**").hasRole("INTERNAL");
+                    authorize.requestMatchers(HttpMethod.POST, billingEndpoint + "/funding-orders/**").hasRole("INTERNAL");
+                    authorize.requestMatchers(HttpMethod.POST, billingEndpoint + "/funding-orders").hasRole("INTERNAL");
                 } else {
-                    authorize.requestMatchers(treasuryEndpoint + "/admin/**").permitAll();
+                    authorize.requestMatchers(billingEndpoint + "/admin/**").permitAll();
+                    authorize.requestMatchers(HttpMethod.POST, billingEndpoint + "/provider-network/**").permitAll();
+                    authorize.requestMatchers(HttpMethod.POST, billingEndpoint + "/provider-receivables/**").permitAll();
+                    authorize.requestMatchers(HttpMethod.POST, billingEndpoint + "/funding-orders/**").permitAll();
+                    authorize.requestMatchers(HttpMethod.POST, billingEndpoint + "/funding-orders").permitAll();
                 }
-                authorize.requestMatchers(treasuryEndpoint + "/**").permitAll();
+                authorize.requestMatchers(billingEndpoint + "/**").permitAll();
                 authorize.anyRequest().denyAll();
             })
             .addFilterBefore(accessTokenAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
@@ -193,7 +204,7 @@ public class SecurityConfig {
         
         // ALL wallet endpoints - localhost only
         source.registerCorsConfiguration(walletEndpoint + "/**", walletConfiguration);
-        source.registerCorsConfiguration(treasuryEndpoint + "/**", walletConfiguration);
+        source.registerCorsConfiguration(billingEndpoint + "/**", walletConfiguration);
         // Token-based onboarding (invite tokens) - localhost only
         source.registerCorsConfiguration("/onboarding/token/**", walletConfiguration);
 

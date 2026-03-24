@@ -18,7 +18,7 @@ import org.springframework.web.filter.OncePerRequestFilter;
 
 /**
  * Populates ROLE_INTERNAL when a valid access token is provided.
- * Used to secure administrative treasury endpoints in standalone mode.
+ * Used to secure administrative billing endpoints in standalone mode.
  */
 @Component
 public class AccessTokenAuthenticationFilter extends OncePerRequestFilter {
@@ -35,7 +35,9 @@ public class AccessTokenAuthenticationFilter extends OncePerRequestFilter {
     @Override
     protected boolean shouldNotFilter(@Nonnull HttpServletRequest request) {
         String path = request.getRequestURI();
-        return path == null || !path.startsWith("/treasury/admin");
+        // Run for all /billing/** so the SecurityConfig hasRole rules can enforce ROLE_INTERNAL
+        // on settlement and network write operations as well as /billing/admin/**
+        return path == null || !path.startsWith("/billing");
     }
 
     @Override
