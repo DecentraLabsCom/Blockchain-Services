@@ -5696,13 +5696,9 @@
         "name": "governance",
         "type": "address"
       }
-    ],
-    "name": "initializeRevenueRecipients",
-    "outputs": [],
-    "stateMutability": "nonpayable",
-    "type": "function"
-  },
-  {
+      ]
+    },
+    {
     "inputs": [
       {
         "internalType": "uint256",
