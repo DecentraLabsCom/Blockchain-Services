@@ -42,7 +42,7 @@ class AccessTokenAuthenticationFilterTest {
     @Test
     void shouldNotFilter_nonBillingPath() {
         MockHttpServletRequest request = new MockHttpServletRequest();
-        request.setRequestURI("/auth/message");
+        request.setRequestURI("/auth/saml-auth");
 
         assertThat(filter.shouldSkip(request)).isTrue();
     }

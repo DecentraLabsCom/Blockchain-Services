@@ -7,8 +7,8 @@ description: >-
 
 Spring Boot service for DecentraLabs that provides:
 
-- Authentication and authorization (`wallet`, `SAML`, `WebAuthn` onboarding)
-- Institutional wallet and billing operations
+- Authentication and authorization (`SAML`, `WebAuthn` onboarding, JWT/JWKS)
+- Institutional wallet and treasury operations
 - Intent submission and authorization flows
 - Provider/consumer institutional provisioning
 
@@ -18,8 +18,8 @@ While it is designed so that it can be deployed as an independent container (use
 
 This service provides four main components:
 
-1. **Authentication and Authorization Service**: Web3-based JWT authentication with wallet challenges, SAML2 SSO integration, and WebAuthn support.
-2. **Institutional Wallet and Billing**: Ethereum wallet management and billing operations for institutional lab providers and consumers.
+1. **Authentication and Authorization Service**: institutional SAML2 JWT authentication, OIDC/JWKS discovery, and WebAuthn support.
+2. **Institutional Wallet and Treasury**: Ethereum wallet management and treasury operations for institutional lab providers and consumers.
 3. **Intent Authorization and Execution**: signed intent intake, WebAuthn ceremony, and on-chain execution/status tracking.
 4. **Institution Provisioning**: provider/consumer token application and Marketplace registration flows.
 
@@ -28,15 +28,14 @@ Together, they bridge institutional access control systems (such as **Lab Gatewa
 ## ✨ Key Features
 
 ### Authentication and Authorization Service
-- **Wallet Challenges**: Web3 signature-based authentication with wallet verification.
 - **SAML2 Integration**: dual-path SSO flows (`/auth/saml-auth` and `/auth/saml-auth2`).
 - **JWT Management**: OIDC/JWKS discovery, JWT issuance, and claim/scope-based access checks.
 - **Smart Contract Validation**: direct on-chain reservation/booking queries for booking-aware flows.
 
-### Institutional Wallet and Billing
+### Institutional Wallet and Treasury
 - **Wallet Management**: create/import/reveal institutional wallets encrypted at rest (AES-256-GCM + PBKDF2).
 - **Multi-Network Support**: Mainnet/Sepolia operations with active-network switching and RPC fallback.
-- **Billing Operations**: service credit issuance, spending limits/periods, and institutional financial stats.
+- **Treasury Operations**: deposits, withdrawals, spending limits/periods, and institutional financial stats.
 - **Reservation Engine**: metadata-driven auto-approval/denial hooks for reservation requests.
 - **Event Monitoring**: contract event listener status and resilient event processing.
 
@@ -50,9 +49,9 @@ Together, they bridge institutional access control systems (such as **Lab Gatewa
 ```
 +------------------+     +------------------------+     +--------------------+
 | Marketplace dApp | <-->| Auth Service           | <-->| Smart Contracts    |
-| (User Frontend)  |     | - Wallet challenges    |     | - Diamond proxy    |
-|                  |     | - SAML2 SSO            |     | - LAB token        |
-|                  |     | - JWT generation       |     | - Reservations     |
+| (User Frontend)  |     | - SAML2 SSO            |     | - Diamond proxy    |
+|                  |     | - JWT generation       |     | - LAB token        |
+|                  |     | - Booking validation   |     | - Reservations     |
 +------------------+     +------------------------+     +--------------------+
          ^                         |                             ^
          |                         |                             |
@@ -94,12 +93,8 @@ Together, they bridge institutional access control systems (such as **Lab Gatewa
 
 - `GET /.well-known/openid-configuration`
 - `GET /auth/jwks`
-- `GET /auth/message`
-- `POST /auth/wallet-auth`
-- `POST /auth/wallet-auth2`
 - `POST /auth/saml-auth`
 - `POST /auth/saml-auth2`
-- `POST /auth/checkin`
 - `POST /auth/checkin-institutional`
 - `POST /webauthn/register`
 - `POST /webauthn/revoke`
@@ -246,12 +241,10 @@ Health endpoint available at `/health`:
   "marketplace_key_cached": true,
   "jwt_validation": "ready",
   "endpoints": {
-    "wallet-auth": "available",
-    "wallet-auth2": "available",
     "saml-auth": "available",
     "saml-auth2": "available",
+    "checkin-institutional": "available",
     "jwks": "available",
-    "message": "available",
     "wallet-create": "available (localhost only)",
     "wallet-balance": "available (localhost only)",
     "treasury-reservations": "available (localhost only)",

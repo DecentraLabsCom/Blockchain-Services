@@ -41,7 +41,7 @@ class PublicEndpointRateLimitFilterTest {
     @DisplayName("Auth endpoint allows requests within rate limit")
     void authEndpoint_allowsRequestsWithinLimit() throws Exception {
         // First request should succeed
-        mockMvc.perform(get("/auth/message")
+        mockMvc.perform(post("/auth/saml-auth")
                 .with(req -> { req.setRemoteAddr("192.168.1.100"); return req; }))
             .andExpect(status().isOk());
     }
@@ -53,13 +53,13 @@ class PublicEndpointRateLimitFilterTest {
         
         // Make requests up to burst limit (3)
         for (int i = 0; i < 3; i++) {
-            mockMvc.perform(get("/auth/message")
+            mockMvc.perform(post("/auth/saml-auth")
                     .with(req -> { req.setRemoteAddr(clientIp); return req; }))
                 .andExpect(status().isOk());
         }
         
         // 4th request should be rate limited
-        mockMvc.perform(get("/auth/message")
+        mockMvc.perform(post("/auth/saml-auth")
                 .with(req -> { req.setRemoteAddr(clientIp); return req; }))
             .andExpect(status().isTooManyRequests())
             .andExpect(header().string("Retry-After", "60"))
@@ -74,18 +74,18 @@ class PublicEndpointRateLimitFilterTest {
         
         // Exhaust limit for IP1
         for (int i = 0; i < 3; i++) {
-            mockMvc.perform(get("/auth/message")
+            mockMvc.perform(post("/auth/saml-auth")
                     .with(req -> { req.setRemoteAddr(clientIp1); return req; }))
                 .andExpect(status().isOk());
         }
         
         // IP1 is now rate limited
-        mockMvc.perform(get("/auth/message")
+        mockMvc.perform(post("/auth/saml-auth")
                 .with(req -> { req.setRemoteAddr(clientIp1); return req; }))
             .andExpect(status().isTooManyRequests());
         
         // IP2 should still be allowed (independent bucket)
-        mockMvc.perform(get("/auth/message")
+        mockMvc.perform(post("/auth/saml-auth")
                 .with(req -> { req.setRemoteAddr(clientIp2); return req; }))
             .andExpect(status().isOk());
     }
@@ -98,20 +98,20 @@ class PublicEndpointRateLimitFilterTest {
         
         // Make requests with X-Forwarded-For
         for (int i = 0; i < 3; i++) {
-            mockMvc.perform(get("/auth/message")
+            mockMvc.perform(post("/auth/saml-auth")
                     .header("X-Forwarded-For", realClientIp + ", " + proxyIp)
                     .with(req -> { req.setRemoteAddr(proxyIp); return req; }))
                 .andExpect(status().isOk());
         }
         
         // Should be rate limited based on real client IP, not proxy
-        mockMvc.perform(get("/auth/message")
+        mockMvc.perform(post("/auth/saml-auth")
                 .header("X-Forwarded-For", realClientIp + ", " + proxyIp)
                 .with(req -> { req.setRemoteAddr(proxyIp); return req; }))
             .andExpect(status().isTooManyRequests());
         
         // Different client through same proxy should work
-        mockMvc.perform(get("/auth/message")
+        mockMvc.perform(post("/auth/saml-auth")
                 .header("X-Forwarded-For", "203.0.113.100, " + proxyIp)
                 .with(req -> { req.setRemoteAddr(proxyIp); return req; }))
             .andExpect(status().isOk());
@@ -123,14 +123,14 @@ class PublicEndpointRateLimitFilterTest {
         String realClientIp = "198.51.100.25";
         
         for (int i = 0; i < 3; i++) {
-            mockMvc.perform(get("/auth/message")
+            mockMvc.perform(post("/auth/saml-auth")
                     .header("X-Real-IP", realClientIp)
                     .with(req -> { req.setRemoteAddr("10.0.0.1"); return req; }))
                 .andExpect(status().isOk());
         }
         
         // Should be rate limited based on X-Real-IP
-        mockMvc.perform(get("/auth/message")
+        mockMvc.perform(post("/auth/saml-auth")
                 .header("X-Real-IP", realClientIp)
                 .with(req -> { req.setRemoteAddr("10.0.0.1"); return req; }))
             .andExpect(status().isTooManyRequests());
@@ -143,13 +143,13 @@ class PublicEndpointRateLimitFilterTest {
         
         // Exhaust auth limit (3 requests)
         for (int i = 0; i < 3; i++) {
-            mockMvc.perform(get("/auth/message")
+            mockMvc.perform(post("/auth/saml-auth")
                     .with(req -> { req.setRemoteAddr(clientIp); return req; }))
                 .andExpect(status().isOk());
         }
         
         // Auth is rate limited
-        mockMvc.perform(get("/auth/message")
+        mockMvc.perform(post("/auth/saml-auth")
                 .with(req -> { req.setRemoteAddr(clientIp); return req; }))
             .andExpect(status().isTooManyRequests());
         
@@ -178,17 +178,17 @@ class PublicEndpointRateLimitFilterTest {
     }
 
     @Test
-    @DisplayName("Wallet-auth endpoints are rate limited")
-    void walletAuthEndpoints_areRateLimited() throws Exception {
+    @DisplayName("Institutional auth endpoints are rate limited")
+    void institutionalAuthEndpoints_areRateLimited() throws Exception {
         String clientIp = "10.10.10.10";
         
         for (int i = 0; i < 3; i++) {
-            mockMvc.perform(post("/auth/wallet-auth")
+            mockMvc.perform(post("/auth/checkin-institutional")
                     .with(req -> { req.setRemoteAddr(clientIp); return req; }))
                 .andExpect(status().isOk());
         }
         
-        mockMvc.perform(post("/auth/wallet-auth")
+        mockMvc.perform(post("/auth/checkin-institutional")
                 .with(req -> { req.setRemoteAddr(clientIp); return req; }))
             .andExpect(status().isTooManyRequests());
     }
@@ -202,7 +202,7 @@ class PublicEndpointRateLimitFilterTest {
         
         // Should allow unlimited requests when disabled
         for (int i = 0; i < 20; i++) {
-            mockMvc.perform(get("/auth/message")
+            mockMvc.perform(post("/auth/saml-auth")
                     .with(req -> { req.setRemoteAddr(clientIp); return req; }))
                 .andExpect(status().isOk());
         }

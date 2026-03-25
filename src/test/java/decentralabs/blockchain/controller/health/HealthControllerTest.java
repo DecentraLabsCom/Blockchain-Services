@@ -278,7 +278,8 @@ class HealthControllerTest {
 
             mockMvc.perform(get("/health"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.endpoints.['wallet-auth']").value("available"))
+                .andExpect(jsonPath("$.endpoints.['saml-auth']").value("available"))
+                .andExpect(jsonPath("$.endpoints.['checkin-institutional']").value("available"))
                 .andExpect(jsonPath("$.endpoints.jwks").value("available"))
                 .andExpect(jsonPath("$.endpoints.health").value("available"));
         }
@@ -290,34 +291,35 @@ class HealthControllerTest {
             ReflectionTestUtils.setField(healthController, "providersEnabled", false);
 
             mockMvc.perform(get("/health"))
-                .andExpect(status().isServiceUnavailable()) // billing_configured will be false
-                .andExpect(jsonPath("$.endpoints.['wallet-auth']").value("disabled (providers flag off)"));
+                .andExpect(status().isServiceUnavailable()) // treasury_configured will be false
+                .andExpect(jsonPath("$.endpoints.['saml-auth']").value("disabled (providers flag off)"))
+                .andExpect(jsonPath("$.endpoints.['checkin-institutional']").value("disabled (providers flag off)"));
         }
     }
 
     @Nested
-    @DisplayName("Billing Configuration Tests")
-    class BillingConfigTests {
+    @DisplayName("Treasury Configuration Tests")
+    class TreasuryConfigTests {
 
         @Test
-        @DisplayName("Should include billing configuration status")
-        void shouldIncludeBillingConfigurationStatus() throws Exception {
+        @DisplayName("Should include treasury configuration status")
+        void shouldIncludeTreasuryConfigurationStatus() throws Exception {
             setupHealthyEnvironment();
 
             mockMvc.perform(get("/health"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.billing_configured").value(true));
+                .andExpect(jsonPath("$.treasury_configured").value(true));
         }
 
         @Test
-        @DisplayName("Should return DEGRADED when billing not configured")
-        void shouldReturnDegradedWhenBillingNotConfigured() throws Exception {
+        @DisplayName("Should return DEGRADED when treasury not configured")
+        void shouldReturnDegradedWhenTreasuryNotConfigured() throws Exception {
             setupHealthyEnvironment();
             ReflectionTestUtils.setField(healthController, "contractAddress", "");
 
             mockMvc.perform(get("/health"))
                 .andExpect(status().isServiceUnavailable())
-                .andExpect(jsonPath("$.billing_configured").value(false));
+                .andExpect(jsonPath("$.treasury_configured").value(false));
         }
     }
 

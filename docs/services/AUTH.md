@@ -1,55 +1,11 @@
 # Authentication Service
 
-This service issues JWTs using two entry points:
-
-- Wallet challenge flow
-- SAML flow with marketplace token cross-validation
+This service issues JWTs through the institutional SAML flow with marketplace token cross-validation.
 
 Important runtime switch:
 
 - Auth controllers are enabled only when `features.providers.enabled=true`.
 - Repository default is `false` (`application.properties`), so `/auth/*` endpoints are disabled unless enabled.
-
-## Wallet Flow
-
-### 1) Challenge
-
-- `GET /auth/message` (default purpose: `login`)
-- Response:
-
-```json
-{
-  "purpose": "login",
-  "message": "Login request: <timestampMs>",
-  "timestamp": "<timestampMs>"
-}
-```
-
-### 2) Signature format
-
-- Client signs `message` with `personal_sign`.
-- API expects `signature = <65-byte-signature-hex><timestampHex13>`.
-- Timestamp validity window: 5 minutes.
-- Replay protection: same `wallet+timestamp` is rejected (`AntiReplayService`).
-
-### 3) Authentication endpoints
-
-- `POST /auth/wallet-auth`
-  - Input: `wallet`, `signature`
-  - Output: `{ "token": "..." }`
-
-- `POST /auth/wallet-auth2`
-  - Input: `wallet`, `signature`, and either `reservationKey` or `labId`
-  - Output: `{ "token": "...", "labURL": "..." }`
-
-Booking checks use `BlockchainBookingService` and require a valid active reservation for the signer.
-
-## Check-in Message Mode
-
-`GET /auth/message` also supports `purpose=checkin`:
-
-- Query params: `signer`, and either `reservationKey` or `labId` (optional `puc`)
-- Returns typed data payload for EIP-712 check-in signing (`typedData`), plus resolved `reservationKey`.
 
 ## SAML Flow
 
@@ -57,6 +13,7 @@ Endpoints:
 
 - `POST /auth/saml-auth`
 - `POST /auth/saml-auth2`
+- `POST /auth/checkin-institutional`
 
 Request body:
 
@@ -77,6 +34,8 @@ Validation pipeline:
 4. If booking info is requested (`/auth/saml-auth2`), enforce booking entitlement:
    - `bookingInfoAllowed=true` OR
    - required scope (`auth.saml.required-booking-scope`, default `booking:read`).
+
+Institutional check-in is handled through `/auth/checkin-institutional` and derives the signer context from the validated institutional request instead of a customer wallet-signature challenge.
 
 SAML trust defaults:
 

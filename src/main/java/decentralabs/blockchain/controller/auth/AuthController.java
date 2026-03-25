@@ -19,9 +19,8 @@ import org.springframework.web.bind.annotation.*;
 /**
  * Main controller for OpenID Connect and JWKS endpoints
  * 
- * Authentication endpoints have been moved to:
- * - WalletAuthController (wallet-based authentication)
- * - SamlAuthController (SAML-based authentication)
+ * Authentication endpoints have been moved to SamlAuthController
+ * (institutional SAML-based authentication).
  */
 @RestController
 @ConditionalOnProperty(value = "features.providers.enabled", havingValue = "true", matchIfMissing = true)
@@ -30,9 +29,6 @@ public class AuthController {
 
     @Value("${auth.base-path:/auth}")
     private String authPath;
-    
-    @Value("${endpoint.wallet-auth2}")
-    private String walletAuth2Endpoint;
     
     @Value("${endpoint.saml-auth2}")
     private String samlAuth2Endpoint;
@@ -64,8 +60,8 @@ public class AuthController {
         Map<String, Object> config = new HashMap<>();
         config.put("issuer", baseDomain + authPath);
         
-        // Primary authorization endpoint (wallet-based by default)
-        config.put("authorization_endpoint", baseDomain + walletAuth2Endpoint);
+        // Primary authorization endpoint for institutional auth.
+        config.put("authorization_endpoint", baseDomain + samlAuth2Endpoint);
 
         config.put("jwks_uri", baseDomain + jwksEndpoint);
         return ResponseEntity.ok()

@@ -75,7 +75,7 @@ public class HealthController {
             healthStatus.put("event_listener_enabled", eventListeningEnabled);
             healthStatus.put("database_up", isDatabaseUp());
             healthStatus.put("wallet_configured", institutionalWalletService.isConfigured());
-            healthStatus.put("billing_configured", isBillingConfigured());
+            healthStatus.put("treasury_configured", isTreasuryConfigured());
             healthStatus.put("provider_registered", institutionRegistrationService.isRegistered(InstitutionRole.PROVIDER));
             healthStatus.put("invite_token_configured", true);
             healthStatus.put("endpoints", getEndpointStatus());
@@ -99,13 +99,13 @@ public class HealthController {
         boolean marketplaceReady = Boolean.TRUE.equals(status.get("marketplace_key_cached"));
         boolean dbUp = Boolean.TRUE.equals(status.get("database_up"));
         boolean walletConfigured = Boolean.TRUE.equals(status.get("wallet_configured"));
-        boolean billingConfigured = Boolean.TRUE.equals(status.get("billing_configured"));
+        boolean treasuryConfigured = Boolean.TRUE.equals(status.get("treasury_configured"));
         boolean providerRegistered = Boolean.TRUE.equals(status.get("provider_registered"));
         boolean inviteConfigured = Boolean.TRUE.equals(status.get("invite_token_configured"));
 
         boolean providerReady = !providersEnabled || providerRegistered;
 
-        if (!rpcUp || !keyPresent || !marketplaceReady || !dbUp || !walletConfigured || !billingConfigured || !providerReady || !inviteConfigured) {
+        if (!rpcUp || !keyPresent || !marketplaceReady || !dbUp || !walletConfigured || !treasuryConfigured || !providerReady || !inviteConfigured) {
             status.put("status", "DEGRADED");
             return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).body(status);
         }
@@ -149,20 +149,16 @@ public class HealthController {
         Map<String, String> endpoints = new HashMap<>();
 
         if (providersEnabled) {
-            endpoints.put("wallet-auth", "available");
-            endpoints.put("wallet-auth2", "available");
             endpoints.put("saml-auth", "available");
             endpoints.put("saml-auth2", "available");
+            endpoints.put("checkin-institutional", "available");
             endpoints.put("jwks", "available");
-            endpoints.put("message", "available");
         } else {
             String disabled = "disabled (providers flag off)";
-            endpoints.put("wallet-auth", disabled);
-            endpoints.put("wallet-auth2", disabled);
             endpoints.put("saml-auth", disabled);
             endpoints.put("saml-auth2", disabled);
+            endpoints.put("checkin-institutional", disabled);
             endpoints.put("jwks", disabled);
-            endpoints.put("message", disabled);
         }
 
         endpoints.put("wallet-create", "available (localhost)");
@@ -173,8 +169,8 @@ public class HealthController {
         endpoints.put("wallet-networks", "available (localhost)");
         endpoints.put("wallet-switch-network", "available (localhost)");
 
-        endpoints.put("billing-reservations", "available (localhost)");
-        endpoints.put("billing-admin", "available (localhost)");
+        endpoints.put("treasury-reservations", "available (localhost)");
+        endpoints.put("treasury-admin", "available (localhost)");
 
         endpoints.put("health", "available");
         return endpoints;
@@ -195,7 +191,7 @@ public class HealthController {
         }
     }
 
-    private boolean isBillingConfigured() {
+    private boolean isTreasuryConfigured() {
         return providersEnabled
             && contractAddress != null
             && !contractAddress.isBlank()

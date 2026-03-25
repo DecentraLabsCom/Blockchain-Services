@@ -10,6 +10,7 @@ import org.springframework.web.bind.annotation.ControllerAdvice;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.server.ResponseStatusException;
+import org.springframework.web.servlet.NoHandlerFoundException;
 import org.springframework.web.servlet.ModelAndView;
 
 import java.util.HashMap;
@@ -166,6 +167,31 @@ public class GlobalExceptionHandler {
 
         log.error("Blockchain error: {}", ex.getMessage(), ex);
         return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).body(response);
+    }
+
+    /**
+     * Handles requests to unmapped endpoints with a proper 404 JSON response for APIs.
+     */
+    @ExceptionHandler(NoHandlerFoundException.class)
+    public Object handleNoHandlerFound(
+            NoHandlerFoundException ex, HttpServletRequest request) {
+
+        log.warn("No handler found for {} {}", ex.getHttpMethod(), ex.getRequestURL());
+
+        if (!isApiRequest(request)) {
+            ModelAndView mav = new ModelAndView("error");
+            mav.addObject("error", "Resource not found");
+            mav.addObject("status", 404);
+            mav.setStatus(HttpStatus.NOT_FOUND);
+            return mav;
+        }
+
+        Map<String, Object> response = new HashMap<>();
+        response.put("success", false);
+        response.put("message", "Resource not found");
+        response.put("status", 404);
+
+        return ResponseEntity.status(HttpStatus.NOT_FOUND).body(response);
     }
 
     /**

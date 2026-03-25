@@ -29,23 +29,8 @@ public class SecurityConfig {
     @Value("${allowed-origins:}")
     private String[] allowedOrigins;
 
-    @Value("${wallet.allowed-origins:}")
-    private String[] walletAllowedOrigins;
-    
-    @Value("${endpoint.wallet-auth:/auth/wallet-auth}")
-    private @Nonnull String walletAuthEndpoint = "/auth/wallet-auth";
-    
-    @Value("${endpoint.wallet-auth2:/auth/wallet-auth2}")
-    private @Nonnull String walletAuth2Endpoint = "/auth/wallet-auth2";
-
-    @Value("${endpoint.checkin:/auth/checkin}")
-    private @Nonnull String checkinEndpoint = "/auth/checkin";
-    
     @Value("${endpoint.jwks:/auth/jwks}")
     private @Nonnull String jwksEndpoint = "/auth/jwks";
-    
-    @Value("${endpoint.message:/auth/message}")
-    private @Nonnull String messageEndpoint = "/auth/message";
     
     @Value("${endpoint.saml-auth:/auth/saml-auth}")
     private @Nonnull String samlAuthEndpoint = "/auth/saml-auth";
@@ -55,12 +40,6 @@ public class SecurityConfig {
 
     @Value("${endpoint.checkin-institutional:/auth/checkin-institutional}")
     private @Nonnull String checkinInstitutionalEndpoint = "/auth/checkin-institutional";
-
-    @Value("${endpoint.fmu-session-ticket-issue:/auth/fmu/session-ticket/issue}")
-    private @Nonnull String fmuSessionTicketIssueEndpoint = "/auth/fmu/session-ticket/issue";
-
-    @Value("${endpoint.fmu-session-ticket-redeem:/auth/fmu/session-ticket/redeem}")
-    private @Nonnull String fmuSessionTicketRedeemEndpoint = "/auth/fmu/session-ticket/redeem";
     
     @Value("${endpoint.health:/health}")
     private @Nonnull String healthEndpoint = "/health";
@@ -68,8 +47,8 @@ public class SecurityConfig {
     @Value("${endpoint.wallet:/wallet}")
     private @Nonnull String walletEndpoint = "/wallet";
     
-    @Value("${endpoint.billing:/billing}")
-    private @Nonnull String billingEndpoint = "/billing";
+    @Value("${endpoint.treasury:/treasury}")
+    private @Nonnull String treasuryEndpoint = "/treasury";
     
     @Value("${endpoint.intents:/intents}")
     private @Nonnull String intentsEndpoint = "/intents";
@@ -99,22 +78,16 @@ public class SecurityConfig {
                 .ignoringRequestMatchers(
                     authBasePath + "/.well-known/*",
                     jwksEndpoint,
-                    messageEndpoint,
-                    walletAuthEndpoint,
-                    walletAuth2Endpoint,
-                    checkinEndpoint,
                     samlAuthEndpoint,
                     samlAuth2Endpoint,
                     checkinInstitutionalEndpoint,
-                    fmuSessionTicketIssueEndpoint,
-                    fmuSessionTicketRedeemEndpoint,
                     healthEndpoint,
                     "/actuator/health/**",
                     "/actuator/info",
                     "/actuator/metrics/**",
                     "/actuator/prometheus",
                     walletEndpoint + "/**",
-                    billingEndpoint + "/**",
+                    treasuryEndpoint + "/**",
                     "/webauthn/**",
                     intentsEndpoint + "/**",
                     "/onboarding/**",
@@ -126,15 +99,9 @@ public class SecurityConfig {
                 authorize.requestMatchers("/").permitAll();
                 authorize.requestMatchers(authBasePath + "/.well-known/*").permitAll();
                 authorize.requestMatchers(jwksEndpoint).permitAll();
-                authorize.requestMatchers(messageEndpoint).permitAll();
-                authorize.requestMatchers(walletAuthEndpoint).permitAll();
-                authorize.requestMatchers(walletAuth2Endpoint).permitAll();
-                authorize.requestMatchers(checkinEndpoint).permitAll();
                 authorize.requestMatchers(samlAuthEndpoint).permitAll();
                 authorize.requestMatchers(samlAuth2Endpoint).permitAll();
                 authorize.requestMatchers(checkinInstitutionalEndpoint).permitAll();
-                authorize.requestMatchers(fmuSessionTicketIssueEndpoint).permitAll();
-                authorize.requestMatchers(fmuSessionTicketRedeemEndpoint).permitAll();
                 authorize.requestMatchers(healthEndpoint).permitAll();
                 authorize.requestMatchers("/actuator/health/**").permitAll();
                 authorize.requestMatchers("/actuator/info").permitAll();
@@ -149,22 +116,11 @@ public class SecurityConfig {
                 // ALL wallet endpoints - restricted by CORS to localhost
                 authorize.requestMatchers(walletEndpoint + "/**").permitAll();
                 if (accessTokenRequired) {
-                    // Admin operations always require token
-                    authorize.requestMatchers(billingEndpoint + "/admin/**").hasRole("INTERNAL");
-                    // Settlement operator write operations — require token to prevent
-                    // unauthenticated writes even from localhost
-                    authorize.requestMatchers(HttpMethod.POST, billingEndpoint + "/provider-network/**").hasRole("INTERNAL");
-                    authorize.requestMatchers(HttpMethod.POST, billingEndpoint + "/provider-receivables/**").hasRole("INTERNAL");
-                    authorize.requestMatchers(HttpMethod.POST, billingEndpoint + "/funding-orders/**").hasRole("INTERNAL");
-                    authorize.requestMatchers(HttpMethod.POST, billingEndpoint + "/funding-orders").hasRole("INTERNAL");
+                    authorize.requestMatchers(treasuryEndpoint + "/admin/**").hasRole("INTERNAL");
                 } else {
-                    authorize.requestMatchers(billingEndpoint + "/admin/**").permitAll();
-                    authorize.requestMatchers(HttpMethod.POST, billingEndpoint + "/provider-network/**").permitAll();
-                    authorize.requestMatchers(HttpMethod.POST, billingEndpoint + "/provider-receivables/**").permitAll();
-                    authorize.requestMatchers(HttpMethod.POST, billingEndpoint + "/funding-orders/**").permitAll();
-                    authorize.requestMatchers(HttpMethod.POST, billingEndpoint + "/funding-orders").permitAll();
+                    authorize.requestMatchers(treasuryEndpoint + "/admin/**").permitAll();
                 }
-                authorize.requestMatchers(billingEndpoint + "/**").permitAll();
+                authorize.requestMatchers(treasuryEndpoint + "/**").permitAll();
                 authorize.anyRequest().denyAll();
             })
             .addFilterBefore(accessTokenAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
@@ -180,22 +136,16 @@ public class SecurityConfig {
         publicConfiguration.addAllowedHeader("*");
 
         CorsConfiguration walletConfiguration = new CorsConfiguration();
-        String[] walletOrigins = walletAllowedOrigins != null ? walletAllowedOrigins : new String[0];
+        String[] walletOrigins = allowedOrigins != null ? allowedOrigins : new String[0];
         walletConfiguration.setAllowedOrigins(Arrays.asList(walletOrigins));
         walletConfiguration.setAllowedMethods(Arrays.asList("GET", "POST"));
         walletConfiguration.addAllowedHeader("*");
 
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
         // Public endpoints
-        source.registerCorsConfiguration(messageEndpoint, publicConfiguration);
-        source.registerCorsConfiguration(walletAuthEndpoint, publicConfiguration);
-        source.registerCorsConfiguration(walletAuth2Endpoint, publicConfiguration);
-        source.registerCorsConfiguration(checkinEndpoint, publicConfiguration);
         source.registerCorsConfiguration(samlAuthEndpoint, publicConfiguration);
         source.registerCorsConfiguration(samlAuth2Endpoint, publicConfiguration);
         source.registerCorsConfiguration(checkinInstitutionalEndpoint, publicConfiguration);
-        source.registerCorsConfiguration(fmuSessionTicketIssueEndpoint, publicConfiguration);
-        source.registerCorsConfiguration(fmuSessionTicketRedeemEndpoint, publicConfiguration);
         source.registerCorsConfiguration(healthEndpoint, publicConfiguration);
         source.registerCorsConfiguration(intentsEndpoint + "/**", publicConfiguration);
         source.registerCorsConfiguration("/webauthn/**", publicConfiguration);
@@ -204,7 +154,7 @@ public class SecurityConfig {
         
         // ALL wallet endpoints - localhost only
         source.registerCorsConfiguration(walletEndpoint + "/**", walletConfiguration);
-        source.registerCorsConfiguration(billingEndpoint + "/**", walletConfiguration);
+        source.registerCorsConfiguration(treasuryEndpoint + "/**", walletConfiguration);
         // Token-based onboarding (invite tokens) - localhost only
         source.registerCorsConfiguration("/onboarding/token/**", walletConfiguration);
 

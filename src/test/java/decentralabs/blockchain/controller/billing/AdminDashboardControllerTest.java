@@ -310,7 +310,7 @@ class AdminDashboardControllerTest {
                 .andExpect(jsonPath("$.labs[0].labId").value("3"))
                 .andExpect(jsonPath("$.labs[0].label").value("Quantum Lab"))
                 .andExpect(jsonPath("$.labs[0].eligibleReservationCount").value("0"))
-                .andExpect(jsonPath("$.labs[0].totalReceivableLab").value("1"));
+                .andExpect(jsonPath("$.labs[0].totalReceivableLab").value("100000"));
         }
 
         @Test
@@ -366,11 +366,11 @@ class AdminDashboardControllerTest {
                 .andExpect(jsonPath("$.labId").value("3"))
                 .andExpect(jsonPath("$.canRequestPayout").value(true))
                 .andExpect(jsonPath("$.eligibleReservationCount").value("0"))
-                .andExpect(jsonPath("$.totalReceivableLab").value("2"))
-                .andExpect(jsonPath("$.accruedReceivableLab").value("0.5"))
-                .andExpect(jsonPath("$.settlementQueuedLab").value("0.75"))
-                .andExpect(jsonPath("$.invoicedReceivableLab").value("0.25"))
-                .andExpect(jsonPath("$.approvedReceivableLab").value("0.5"))
+                .andExpect(jsonPath("$.totalReceivableLab").value("200000"))
+                .andExpect(jsonPath("$.accruedReceivableLab").value("50000"))
+                .andExpect(jsonPath("$.settlementQueuedLab").value("75000"))
+                .andExpect(jsonPath("$.invoicedReceivableLab").value("25000"))
+                .andExpect(jsonPath("$.approvedReceivableLab").value("50000"))
                 .andExpect(jsonPath("$.lastAccruedAt").value("1700000000"));
         }
     }
@@ -394,9 +394,9 @@ class AdminDashboardControllerTest {
                 .andExpect(jsonPath("$.success").value(true))
                 .andExpect(jsonPath("$.walletConfigured").value(true))
                 .andExpect(jsonPath("$.serviceCreditBalance").value("7500000"))
-                .andExpect(jsonPath("$.serviceCreditBalanceFormatted").value("7.5"))
+                .andExpect(jsonPath("$.serviceCreditBalanceFormatted").value("750000"))
                 .andExpect(jsonPath("$.billingBalance").value("2500000"))
-                .andExpect(jsonPath("$.billingBalanceFormatted").value("2.5"));
+                .andExpect(jsonPath("$.billingBalanceFormatted").value("250000"));
         }
     }
 

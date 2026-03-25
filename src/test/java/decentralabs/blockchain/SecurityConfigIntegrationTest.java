@@ -4,6 +4,7 @@ import static org.springframework.security.test.web.servlet.request.SecurityMock
 import static org.springframework.security.test.web.servlet.setup.SecurityMockMvcConfigurers.springSecurity;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.options;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -20,12 +21,14 @@ import org.springframework.boot.autoconfigure.EnableAutoConfiguration;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.annotation.Import;
 import org.springframework.http.MediaType;
+import org.springframework.security.test.context.support.WithMockUser;
 import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import org.springframework.web.context.WebApplicationContext;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 @SpringBootTest(
@@ -33,7 +36,6 @@ import org.springframework.web.bind.annotation.RestController;
 )
 @TestPropertySource(properties = {
     "allowed-origins=https://app.example/",
-    "wallet.allowed-origins=http://localhost:3000",
     "base.domain=https://gateway.example/",
     "management.health.defaults.enabled=false",
     "security.access-token.required=true",
@@ -78,9 +80,9 @@ class SecurityConfigIntegrationTest {
 
     @Test
     void preflightOnPublicAuthEndpoint_allowsConfiguredOrigin() throws Exception {
-        mockMvc.perform(options("/auth/message")
+        mockMvc.perform(options("/auth/saml-auth")
                 .header("Origin", "https://app.example")
-                .header("Access-Control-Request-Method", "GET")
+                .header("Access-Control-Request-Method", "POST")
                 .header("Access-Control-Request-Headers", "Content-Type"))
             .andExpect(status().isOk())
             .andExpect(header().string("Access-Control-Allow-Origin", "https://app.example"));
@@ -88,9 +90,9 @@ class SecurityConfigIntegrationTest {
 
     @Test
     void preflightOnPublicAuthEndpoint_allowsGatewayOriginFromResolver() throws Exception {
-        mockMvc.perform(options("/auth/message")
+        mockMvc.perform(options("/auth/saml-auth")
                 .header("Origin", "https://gateway.example")
-                .header("Access-Control-Request-Method", "GET"))
+                .header("Access-Control-Request-Method", "POST"))
             .andExpect(status().isOk())
             .andExpect(header().string("Access-Control-Allow-Origin", "https://gateway.example"));
     }
@@ -119,8 +121,8 @@ class SecurityConfigIntegrationTest {
     }
 
     @Test
-    void billingAdmin_requiresInternalRoleWhenTokenMissing() throws Exception {
-        mockMvc.perform(get("/billing/admin/test")
+    void treasuryAdmin_requiresInternalRoleWhenTokenMissing() throws Exception {
+        mockMvc.perform(get("/treasury/admin/test")
                 .with(anonymous())
                 .with(req -> {
                     req.setRemoteAddr("127.0.0.1");
@@ -130,26 +132,15 @@ class SecurityConfigIntegrationTest {
     }
 
     @Test
-    void billingAdmin_acceptsValidAccessToken() throws Exception {
-        mockMvc.perform(get("/billing/admin/test")
-                .header("X-Access-Token", "test-token")
+    @WithMockUser(roles = "INTERNAL")
+    void treasuryAdmin_acceptsInternalRoleAuthentication() throws Exception {
+        mockMvc.perform(get("/treasury/admin/test")
                 .with(req -> {
                     req.setRemoteAddr("127.0.0.1");
                     return req;
                 }))
             .andExpect(status().isOk())
-            .andExpect(content().string("billing-admin-ok"));
-    }
-
-    @Test
-    void billingAdmin_rejectsInvalidAccessToken() throws Exception {
-        mockMvc.perform(get("/billing/admin/test")
-                .header("X-Access-Token", "wrong-token")
-                .with(req -> {
-                    req.setRemoteAddr("127.0.0.1");
-                    return req;
-                }))
-            .andExpect(status().isUnauthorized());
+            .andExpect(content().string("treasury-admin-ok"));
     }
 
     @Test
@@ -175,15 +166,19 @@ class SecurityConfigIntegrationTest {
 
     @Test
     void publicAuthEndpoint_isRateLimitedPerIp() throws Exception {
-        mockMvc.perform(get("/auth/message")
+        mockMvc.perform(post("/auth/saml-auth")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{}")
                 .with(req -> {
                     req.setRemoteAddr("198.51.100.20");
                     return req;
                 }))
             .andExpect(status().isOk())
-            .andExpect(content().string("message-ok"));
+            .andExpect(content().string("saml-ok"));
 
-        mockMvc.perform(get("/auth/message")
+        mockMvc.perform(post("/auth/saml-auth")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{}")
                 .with(req -> {
                     req.setRemoteAddr("198.51.100.20");
                     return req;
@@ -196,9 +191,9 @@ class SecurityConfigIntegrationTest {
     @RestController
     static class TestEndpoints {
 
-        @GetMapping("/auth/message")
-        String authMessage() {
-            return "message-ok";
+        @PostMapping("/auth/saml-auth")
+        String authSaml() {
+            return "saml-ok";
         }
 
         @GetMapping("/wallet/test")
@@ -206,9 +201,9 @@ class SecurityConfigIntegrationTest {
             return "wallet-ok";
         }
 
-        @GetMapping("/billing/admin/test")
-        String billingAdmin() {
-            return "billing-admin-ok";
+        @GetMapping("/treasury/admin/test")
+        String treasuryAdmin() {
+            return "treasury-admin-ok";
         }
 
         @GetMapping("/intents/test")

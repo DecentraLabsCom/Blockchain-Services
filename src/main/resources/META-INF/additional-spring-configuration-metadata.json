@@ -17,24 +17,6 @@
     "defaultValue": "/health"
   },
   {
-    "name": "endpoint.wallet-auth",
-    "type": "java.lang.String",
-    "description": "Wallet auth endpoint path.",
-    "defaultValue": "/auth/wallet-auth"
-  },
-  {
-    "name": "endpoint.wallet-auth2",
-    "type": "java.lang.String",
-    "description": "Wallet auth2 endpoint path.",
-    "defaultValue": "/auth/wallet-auth2"
-  },
-  {
-    "name": "endpoint.checkin",
-    "type": "java.lang.String",
-    "description": "Wallet check-in endpoint path.",
-    "defaultValue": "/auth/checkin"
-  },
-  {
     "name": "endpoint.saml-auth",
     "type": "java.lang.String",
     "description": "SAML auth endpoint path.",
@@ -59,22 +41,16 @@
     "defaultValue": "/auth/jwks"
   },
   {
-    "name": "endpoint.message",
-    "type": "java.lang.String",
-    "description": "Message endpoint path.",
-    "defaultValue": "/auth/message"
-  },
-  {
     "name": "endpoint.wallet",
     "type": "java.lang.String",
     "description": "Wallet endpoint path.",
     "defaultValue": "/wallet"
   },
   {
-    "name": "endpoint.billing",
+    "name": "endpoint.treasury",
     "type": "java.lang.String",
-    "description": "Billing endpoint path.",
-    "defaultValue": "/billing"
+    "description": "Treasury endpoint path.",
+    "defaultValue": "/treasury"
   },
   {
     "name": "endpoint.intents",
@@ -431,12 +407,6 @@
     "description": "Comma-separated list of allowed CORS origins."
   },
   {
-    "name": "wallet.allowed-origins",
-    "type": "java.lang.String",
-    "description": "Comma-separated list of allowed CORS origins for wallet endpoints.",
-    "defaultValue": "http://localhost:8080"
-  },
-  {
     "name": "wallet.address",
     "type": "java.lang.String",
     "description": "Default wallet address.",
@@ -771,23 +741,83 @@
     "description": "Public base URL where this gateway is accessible"
   },
   {
-    "name": "billing.admin.domain.name",
-    "type": "java.lang.String",
-    "description": "EIP-712 domain name for billing admin signatures"
+    "name": "treasury.collect.auto.enabled",
+    "type": "java.lang.Boolean",
+    "description": "Enable periodic automatic lab payout collection with the configured institutional wallet.",
+    "defaultValue": true
   },
   {
-    "name": "billing.admin.domain.version",
-    "type": "java.lang.String",
-    "description": "EIP-712 domain version for billing admin signatures"
+    "name": "treasury.collect.auto.interval.ms",
+    "type": "java.lang.Long",
+    "description": "Delay in milliseconds between automatic lab payout collection runs.",
+    "defaultValue": 604800000
   },
   {
-    "name": "billing.admin.domain.chain-id",
+    "name": "treasury.collect.auto.initial-delay.ms",
+    "type": "java.lang.Long",
+    "description": "Initial delay in milliseconds before the first automatic lab payout collection run.",
+    "defaultValue": 120000
+  },
+  {
+    "name": "treasury.collect.auto.max-batch",
     "type": "java.lang.Integer",
-    "description": "Chain ID for billing admin EIP-712 domain"
+    "description": "Maximum reservations to process per collect transaction submitted by the auto-collect scheduler.",
+    "defaultValue": 50
   },
   {
-    "name": "billing.admin.domain.verifying-contract",
+    "name": "treasury.collect.auto.max-rounds-per-lab",
+    "type": "java.lang.Integer",
+    "description": "Maximum collect transactions attempted per lab in each auto-collect scheduler run.",
+    "defaultValue": 4
+  },
+  {
+    "name": "treasury.prune.auto.enabled",
+    "type": "java.lang.Boolean",
+    "description": "Enable periodic automatic payout heap pruning for labs associated with the configured institutional wallet.",
+    "defaultValue": true
+  },
+  {
+    "name": "treasury.prune.auto.interval.ms",
+    "type": "java.lang.Long",
+    "description": "Delay in milliseconds between automatic payout heap pruning runs.",
+    "defaultValue": 1209600000
+  },
+  {
+    "name": "treasury.prune.auto.initial-delay.ms",
+    "type": "java.lang.Long",
+    "description": "Initial delay in milliseconds before the first automatic payout heap pruning run.",
+    "defaultValue": 300000
+  },
+  {
+    "name": "treasury.prune.auto.max-iterations",
+    "type": "java.lang.Integer",
+    "description": "Maximum heap entries to inspect per lab in each automatic prune transaction.",
+    "defaultValue": 100
+  },
+  {
+    "name": "treasury.prune.auto.max-labs-per-run",
+    "type": "java.lang.Integer",
+    "description": "Maximum number of provider labs processed in each automatic prune scheduler run.",
+    "defaultValue": 25
+  },
+  {
+    "name": "treasury.admin.domain.name",
     "type": "java.lang.String",
-    "description": "Verifying contract address for billing admin EIP-712 domain"
+    "description": "EIP-712 domain name for treasury admin signatures"
+  },
+  {
+    "name": "treasury.admin.domain.version",
+    "type": "java.lang.String",
+    "description": "EIP-712 domain version for treasury admin signatures"
+  },
+  {
+    "name": "treasury.admin.domain.chain-id",
+    "type": "java.lang.Integer",
+    "description": "Chain ID for treasury admin EIP-712 domain"
+  },
+  {
+    "name": "treasury.admin.domain.verifying-contract",
+    "type": "java.lang.String",
+    "description": "Verifying contract address for treasury admin EIP-712 domain"
   }
 ]}

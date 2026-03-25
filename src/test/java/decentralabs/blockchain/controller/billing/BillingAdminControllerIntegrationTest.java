@@ -1,7 +1,7 @@
 package decentralabs.blockchain.controller.billing;
 
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.verifyNoInteractions;
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
 import static org.springframework.security.test.web.servlet.setup.SecurityMockMvcConfigurers.springSecurity;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -24,6 +24,7 @@ import org.springframework.boot.autoconfigure.EnableAutoConfiguration;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.annotation.Import;
 import org.springframework.http.MediaType;
+import org.springframework.security.test.context.support.WithMockUser;
 import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
@@ -37,7 +38,6 @@ import org.springframework.web.context.WebApplicationContext;
     "security.access-token-header=X-Access-Token",
     "security.access-token-cookie=access_token",
     "allowed-origins=https://app.example/",
-    "wallet.allowed-origins=http://localhost:3000",
     "base.domain=https://gateway.example/",
     "rate.limit.enabled=false",
     "spring.autoconfigure.exclude="
@@ -71,9 +71,10 @@ class BillingAdminControllerIntegrationTest {
     }
 
     @Test
+    @WithMockUser(roles = "INTERNAL")
     void executeAdminOperation_blocksNonLocalhostRequestsEvenWithValidToken() throws Exception {
         mockMvc.perform(post("/billing/admin/execute")
-                .header("X-Access-Token", "test-token")
+                .with(csrf())
                 .with(req -> {
                     req.setRemoteAddr("198.51.100.20");
                     return req;
@@ -86,6 +87,7 @@ class BillingAdminControllerIntegrationTest {
     @Test
     void executeAdminOperation_rejectsMissingAccessToken() throws Exception {
         mockMvc.perform(post("/billing/admin/execute")
+                .with(csrf())
                 .with(req -> {
                     req.setRemoteAddr("127.0.0.1");
                     return req;
@@ -96,44 +98,39 @@ class BillingAdminControllerIntegrationTest {
     }
 
     @Test
-    void executeAdminOperation_rejectsInvalidAccessToken() throws Exception {
+    void executeAdminOperation_rejectsMissingInternalRole() throws Exception {
         mockMvc.perform(post("/billing/admin/execute")
-                .header("X-Access-Token", "wrong-token")
+                .with(csrf())
                 .with(req -> {
                     req.setRemoteAddr("127.0.0.1");
                     return req;
                 })
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(validExecutePayload()))
-            .andExpect(status().isUnauthorized());
+            .andExpect(status().isForbidden());
     }
 
     @Test
-    void executeAdminOperation_acceptsValidAccessTokenAndReturnsControllerPayload() throws Exception {
-        when(adminService.executeAdminOperation(any(InstitutionalAdminRequest.class)))
-            .thenReturn(InstitutionalAdminResponse.success("ok", "0xabc", "AUTHORIZE_BACKEND"));
-
+    @WithMockUser(roles = "INTERNAL")
+    void executeAdminOperation_deniesBillingAdminPathEvenWithInternalRole() throws Exception {
         mockMvc.perform(post("/billing/admin/execute")
-                .header("X-Access-Token", "test-token")
+                .with(csrf())
                 .with(req -> {
                     req.setRemoteAddr("127.0.0.1");
                     return req;
                 })
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(validExecutePayload()))
-            .andExpect(status().isOk())
-            .andExpect(jsonPath("$.success").value(true))
-            .andExpect(jsonPath("$.transactionHash").value("0xabc"))
-            .andExpect(jsonPath("$.operationType").value("AUTHORIZE_BACKEND"));
+            .andExpect(status().isForbidden());
+
+        verifyNoInteractions(adminService);
     }
 
     @Test
-    void requestProviderPayout_acceptsValidTokenAndMapsServiceFailure() throws Exception {
-        when(adminService.requestProviderPayoutWithConfiguredWallet("3", "50"))
-            .thenReturn(InstitutionalAdminResponse.error("collect failed"));
-
+    @WithMockUser(roles = "INTERNAL")
+    void requestProviderPayout_deniesBillingAdminPathEvenWithInternalRole() throws Exception {
         mockMvc.perform(post("/billing/admin/request-provider-payout")
-                .header("X-Access-Token", "test-token")
+                .with(csrf())
                 .with(req -> {
                     req.setRemoteAddr("127.0.0.1");
                     return req;
@@ -142,9 +139,9 @@ class BillingAdminControllerIntegrationTest {
                 .content("""
                     {"labId":"3","maxBatch":"50"}
                     """))
-            .andExpect(status().isBadRequest())
-            .andExpect(jsonPath("$.success").value(false))
-            .andExpect(jsonPath("$.message").value("collect failed"));
+            .andExpect(status().isForbidden());
+
+        verifyNoInteractions(adminService);
     }
 
     private String validExecutePayload() {
