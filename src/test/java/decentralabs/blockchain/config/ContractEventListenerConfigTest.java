@@ -147,10 +147,7 @@ class ContractEventListenerConfigTest {
             BigInteger.ZERO,
             "0x0000000000000000000000000000000000000000",
             "0x0000000000000000000000000000000000000000",
-            BigInteger.TEN,
-            BigInteger.ZERO,
-            BigInteger.ZERO,
-            BigInteger.ZERO
+            BigInteger.TEN
         );
         when(reservationCall.send()).thenReturn(reservation);
         when(diamond.getReservation(any(byte[].class))).thenReturn(reservationCall);
@@ -213,9 +210,6 @@ class ContractEventListenerConfigTest {
             BigInteger.ZERO,
             "0x0",
             "0x0",
-            BigInteger.ZERO,
-            BigInteger.ZERO,
-            BigInteger.ZERO,
             BigInteger.ZERO
         );
         when(reservationCall.send()).thenReturn(reservation);
@@ -299,9 +293,6 @@ class ContractEventListenerConfigTest {
             BigInteger.ZERO,
             "0x0",
             "0x0",
-            BigInteger.ZERO,
-            BigInteger.ZERO,
-            BigInteger.ZERO,
             BigInteger.ZERO
         );
         when(reservationCall.send()).thenReturn(reservation);
@@ -433,9 +424,6 @@ class ContractEventListenerConfigTest {
             BigInteger.ZERO,
             "0x0",
             "0x0",
-            BigInteger.ZERO,
-            BigInteger.ZERO,
-            BigInteger.ZERO,
             BigInteger.ZERO
         );
         when(reservationCall.send()).thenReturn(reservation);
@@ -490,9 +478,6 @@ class ContractEventListenerConfigTest {
             BigInteger.ZERO,
             "0x0",
             "0x0",
-            BigInteger.ZERO,
-            BigInteger.ZERO,
-            BigInteger.ZERO,
             BigInteger.ZERO
         );
         when(reservationCall.send()).thenReturn(reservation);
