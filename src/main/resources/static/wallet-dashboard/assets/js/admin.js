@@ -861,13 +861,23 @@ async function loadSystemStatus() {
                 dropdown.style.display = 'none'; // Always start hidden, user clicks to open
             }
             
-            document.getElementById('contractAddress').textContent = 
-                data.contractAddress ? formatAddress(data.contractAddress) : 'Not configured';
+            const detectedContractAddress =
+                data.contractAddress ||
+                data.verifyingContract ||
+                data.billingAdminEip712?.verifyingContract ||
+                null;
+
+            document.getElementById('contractAddress').textContent =
+                detectedContractAddress ? formatAddress(detectedContractAddress) : 'Not configured';
             
             console.log('[loadSystemStatus] Updated contract address element');
             
             // Update network buttons to show active network
-            const activeNet = data.activeNetwork || 'sepolia';
+            const activeNet =
+                data.activeNetwork ||
+                data.network ||
+                data.chainId ||
+                'sepolia';
             updateNetworkButtons(activeNet);
             
             // Update status indicator
@@ -931,6 +941,7 @@ function toggleWalletSetupDropdown() {
 function updateNetworkButtons(activeNetwork) {
     const sepoliaBtn = document.getElementById('sepoliaBtn');
     const mainnetBtn = document.getElementById('mainnetBtn');
+    const normalized = (activeNetwork || '').toString().trim().toLowerCase();
     
     if (sepoliaBtn && mainnetBtn) {
         // Remove active class from both
@@ -938,9 +949,9 @@ function updateNetworkButtons(activeNetwork) {
         mainnetBtn.classList.remove('active');
         
         // Add active class to the current network
-        if (activeNetwork === 'sepolia') {
+        if (normalized.includes('sepolia') || normalized === '11155111') {
             sepoliaBtn.classList.add('active');
-        } else if (activeNetwork === 'mainnet') {
+        } else if (normalized.includes('mainnet') || normalized === '1') {
             mainnetBtn.classList.add('active');
         }
     }

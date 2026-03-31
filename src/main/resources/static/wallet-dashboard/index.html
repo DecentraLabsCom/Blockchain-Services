@@ -141,7 +141,7 @@
             <!-- Wallet Balances Section -->
             <section class="card">
                 <div class="card-header">
-                    <h2>Wallet Balances</h2>
+                    <h2>Wallet & Service Balance</h2>
                 </div>
                 <div class="card-body">
                     <div class="balance-grid" id="balanceGrid">
@@ -153,10 +153,6 @@
                     </div>
                     <!-- Promotional message container -->
                     <div id="labPromoMessage" class="hidden"></div>
-                    
-                    <div class="info-text" style="margin-top: var(--spacing-lg);">
-                        Customer balances are managed as service credits. Administrative issuance and adjustments are available in the controls below.
-                    </div>
                 </div>
             </section>
 
@@ -198,7 +194,7 @@
                         <form id="providerSettlementTransitionForm" class="operation-form" style="margin-top: var(--spacing-lg);">
                             <div class="form-group">
                                 <label for="providerSettlementTransitionSelect">Settlement Transition</label>
-                                <select id="providerSettlementTransitionSelect">
+                                <select id="providerSettlementTransitionSelect" class="settlement-transition-select">
                                     <option value="2:3">Queue to invoiced</option>
                                     <option value="3:4">Invoice approved</option>
                                     <option value="4:5">Approval to paid</option>
@@ -255,9 +251,9 @@
                 </div>
                 
                 <div class="card-body">
-                    <div class="operations-grid">
+                    <div class="operations-grid credit-policy-grid">
                         <!-- User Spending Limit Card -->
-                        <div class="operation-card">
+                        <div class="operation-card credit-policy-card limit-card">
                             <h3><i class="fas fa-user-check"></i> User Spending Limit</h3>
                             <div class="current-value-display">
                                 <span class="label">Current Limit:</span>
@@ -275,7 +271,7 @@
                         </div>
 
                         <!-- Spending Period Card -->
-                        <div class="operation-card">
+                        <div class="operation-card credit-policy-card period-card">
                             <h3><i class="fas fa-calendar-alt"></i> Spending Period</h3>
                             <div class="current-value-display">
                                 <span class="label">Current Period:</span>
@@ -293,7 +289,7 @@
                         </div>
 
                         <!-- Reset Period Card -->
-                        <div class="operation-card">
+                        <div class="operation-card credit-policy-card reset-card">
                             <h3><i class="fas fa-redo-alt"></i> Reset Period</h3>
                             <p class="operation-description">
                                 Reset the spending period counters. All users' spending will be reset to zero and a new period will begin immediately.
@@ -303,7 +299,7 @@
                             </button>
                         </div>
 
-                        <div class="operation-card">
+                        <div class="operation-card credit-policy-card issue-card">
                             <h3><i class="fas fa-ticket-alt"></i> Issue Service Credits</h3>
                             <p class="operation-description">
                                 Create managed customer service credits after EUR funding has been reconciled.
@@ -327,7 +323,7 @@
                             </form>
                         </div>
 
-                        <div class="operation-card">
+                        <div class="operation-card credit-policy-card adjust-card">
                             <h3><i class="fas fa-sliders-h"></i> Adjust Service Credits</h3>
                             <p class="operation-description">
                                 Apply a signed administrative delta for corrections, reversals, expiries, or manual write-offs.

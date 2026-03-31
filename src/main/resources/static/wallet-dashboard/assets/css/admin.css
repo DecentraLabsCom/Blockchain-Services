@@ -673,6 +673,22 @@ body {
     gap: var(--spacing-md);
 }
 
+.credit-policy-grid {
+    grid-template-columns: repeat(12, minmax(0, 1fr));
+}
+
+.credit-policy-grid .credit-policy-card {
+    grid-column: span 4;
+}
+
+.credit-policy-grid .issue-card {
+    grid-column: 3 / span 4;
+}
+
+.credit-policy-grid .adjust-card {
+    grid-column: 7 / span 4;
+}
+
 .operation-card {
     background: var(--bg-secondary);
     padding: var(--spacing-md);
@@ -711,7 +727,8 @@ body {
     font-weight: 500;
 }
 
-.form-group input {
+.form-group input,
+.form-group select {
     background: var(--bg-primary);
     border: 1px solid var(--border-color);
     border-radius: var(--radius-sm);
@@ -721,7 +738,8 @@ body {
     transition: all 0.3s ease;
 }
 
-.form-group input:focus {
+.form-group input:focus,
+.form-group select:focus {
     outline: none;
     border-color: var(--neon-blue);
     box-shadow: 0 0 10px rgba(0, 212, 255, 0.3);
@@ -729,6 +747,23 @@ body {
 
 .form-group input::placeholder {
     color: var(--text-muted);
+}
+
+.form-group select option {
+    background: var(--bg-secondary);
+    color: var(--text-primary);
+}
+
+.settlement-transition-select {
+    width: 100%;
+    background-image: linear-gradient(45deg, transparent 50%, var(--neon-blue) 50%), linear-gradient(135deg, var(--neon-blue) 50%, transparent 50%);
+    background-position: calc(100% - 18px) calc(50% - 3px), calc(100% - 12px) calc(50% - 3px);
+    background-size: 6px 6px, 6px 6px;
+    background-repeat: no-repeat;
+    -webkit-appearance: none;
+    -moz-appearance: none;
+    appearance: none;
+    padding-right: 2.5rem;
 }
 
 /* Buttons */
@@ -1459,8 +1494,15 @@ body {
     
     .info-grid,
     .balance-grid,
-    .operations-grid {
+    .operations-grid,
+    .credit-policy-grid {
         grid-template-columns: 1fr;
+    }
+
+    .credit-policy-grid .credit-policy-card,
+    .credit-policy-grid .issue-card,
+    .credit-policy-grid .adjust-card {
+        grid-column: auto;
     }
     
     .logo {
@@ -1496,6 +1538,18 @@ body {
 
     .collect-actions .btn {
         width: 100%;
+    }
+}
+
+@media (max-width: 1200px) and (min-width: 769px) {
+    .credit-policy-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .credit-policy-grid .credit-policy-card,
+    .credit-policy-grid .issue-card,
+    .credit-policy-grid .adjust-card {
+        grid-column: auto;
     }
 }
 

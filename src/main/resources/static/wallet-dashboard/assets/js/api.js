@@ -137,7 +137,15 @@ const API = {
      * Get overall system status
      */
     async getSystemStatus() {
-        return await this.request('/billing/admin/status');
+        try {
+            return await this.request('/billing/admin/status');
+        } catch (error) {
+            const message = (error && error.message ? error.message : '').toLowerCase();
+            if (message.includes('404')) {
+                return await this.request('/treasury/admin/status');
+            }
+            throw error;
+        }
     },
 
     /**
@@ -167,14 +175,6 @@ const API = {
      */
     async getRecentTransactions(limit = 10) {
         return await this.request(`/billing/admin/transactions?limit=${limit}`);
-    },
-
-    /**
-     * GET /billing/admin/contract-info
-     * Get smart contract information
-     */
-    async getContractInfo() {
-        return await this.request('/billing/admin/contract-info');
     },
 
     /**
@@ -285,42 +285,24 @@ const API = {
      * @param {string|number} maxBatch - Max reservations to process in one tx
      */
     async requestProviderPayout(labId, maxBatch) {
-        return await this.request('/billing/admin/request-provider-payout', {
-            method: 'POST',
-            body: JSON.stringify({
-                labId: String(labId),
-                maxBatch: String(maxBatch)
-            })
-        });
-    },
+        const payload = {
+            labId: String(labId),
+            maxBatch: String(maxBatch)
+        };
 
-    /**
-     * Authorize backend address
-     * @param {string} backendAddress - Ethereum address to authorize
-     */
-    async authorizeBackend(backendAddress) {
-        return await this.executeAdminOperation('AUTHORIZE_BACKEND', {
-            backendAddress
-        });
-    },
-
-    /**
-     * Revoke backend authorization
-     */
-    async revokeBackend() {
-        return await this.executeAdminOperation('REVOKE_BACKEND', {});
-    },
-
-    /**
-     * Admin reset backend for provider
-     * @param {string} providerAddress - Provider Ethereum address
-     * @param {string} backendAddress - Backend Ethereum address (optional)
-     */
-    async adminResetBackend(providerAddress, backendAddress = null) {
-        return await this.executeAdminOperation('ADMIN_RESET_BACKEND', {
-            providerAddress,
-            backendAddress
-        });
+        try {
+            return await this.request('/billing/admin/request-provider-payout', {
+                method: 'POST',
+                body: JSON.stringify(payload)
+            });
+        } catch (error) {
+            const message = (error && error.message ? error.message : '').toLowerCase();
+            // Compatibility path for environments still exposing legacy payout flow.
+            if (message.includes('404')) {
+                return await this.executeAdminOperation('COLLECT_LAB_PAYOUT', payload);
+            }
+            throw error;
+        }
     },
 
     /**
@@ -386,7 +368,16 @@ const API = {
         if (maxBatch !== null && maxBatch !== undefined) {
             params.set('maxBatch', String(maxBatch));
         }
-        return await this.request(`/billing/admin/provider-receivable-status?${params.toString()}`);
+
+        try {
+            return await this.request(`/billing/admin/provider-receivable-status?${params.toString()}`);
+        } catch (error) {
+            const message = (error && error.message ? error.message : '').toLowerCase();
+            if (message.includes('404')) {
+                return await this.request(`/treasury/admin/lab-payout-status?${params.toString()}`);
+            }
+            throw error;
+        }
     },
 
 };
