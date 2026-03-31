@@ -214,9 +214,6 @@ public class Diamond extends Contract {
                     new TypeReference<Uint64>() {},
                     new TypeReference<Address>() {},
                     new TypeReference<Address>() {},
-                    new TypeReference<Uint96>() {},
-                    new TypeReference<Uint96>() {},
-                    new TypeReference<Uint96>() {},
                     new TypeReference<Uint96>() {}
                 ));
         return new RemoteFunctionCall<>(function,
@@ -234,10 +231,7 @@ public class Diamond extends Contract {
                         ((Uint64) results.get(8)).getValue(),
                         ((Address) results.get(9)).getValue(),
                         ((Address) results.get(10)).getValue(),
-                        ((Uint96) results.get(11)).getValue(),
-                        ((Uint96) results.get(12)).getValue(),
-                        ((Uint96) results.get(13)).getValue(),
-                        ((Uint96) results.get(14)).getValue()
+                        ((Uint96) results.get(11)).getValue()
                     );
                 });
     }
