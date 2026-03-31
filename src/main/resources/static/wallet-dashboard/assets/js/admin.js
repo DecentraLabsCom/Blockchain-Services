@@ -105,11 +105,11 @@ function updateRoleBasedSections() {
 
     if (settlementTitle) {
         if (showProviderControls && showOperatorControls) {
-            settlementTitle.textContent = 'Settlement Operations';
+            settlementTitle.textContent = 'Provider Settlement and Operator Review';
         } else if (showOperatorControls) {
-            settlementTitle.textContent = 'Operator Settlement Controls';
+            settlementTitle.textContent = 'Operator Settlement Review';
         } else if (showProviderControls) {
-            settlementTitle.textContent = 'Provider Settlement Requests';
+            settlementTitle.textContent = 'Provider Settlement';
         } else {
             settlementTitle.textContent = 'Settlement Operations';
         }
@@ -119,9 +119,9 @@ function updateRoleBasedSections() {
         if (showInstitutionControls && showOperatorControls) {
             creditPolicyTitle.textContent = 'Institution Policy and Operator Controls';
         } else if (showInstitutionControls) {
-            creditPolicyTitle.textContent = 'Institution Policy Administration';
+            creditPolicyTitle.textContent = 'Institution Policy';
         } else if (showOperatorControls) {
-            creditPolicyTitle.textContent = 'Operator Credit Administration';
+            creditPolicyTitle.textContent = 'Operator Controls';
         } else {
             creditPolicyTitle.textContent = 'Administration';
         }
