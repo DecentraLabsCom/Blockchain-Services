@@ -6,6 +6,7 @@ import decentralabs.blockchain.dto.billing.InstitutionalAdminResponse;
 import decentralabs.blockchain.service.RateLimitService;
 import decentralabs.blockchain.service.persistence.AntiReplayService;
 import decentralabs.blockchain.service.wallet.InstitutionalWalletService;
+import decentralabs.blockchain.service.wallet.WalletService;
 import jakarta.servlet.http.HttpServletRequest;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -45,6 +46,8 @@ class InstitutionalAdminServiceTest {
     @Mock
     private InstitutionalWalletService institutionalWalletService;
     @Mock
+    private WalletService walletService;
+    @Mock
     private InstitutionalAnalyticsService analyticsService;
     @Mock
     private Eip712BillingAdminVerifier adminVerifier;
@@ -60,6 +63,7 @@ class InstitutionalAdminServiceTest {
             httpServletRequest,
             rateLimitService,
             institutionalWalletService,
+            walletService,
             analyticsService,
             adminVerifier,
             antiReplayService
@@ -71,6 +75,10 @@ class InstitutionalAdminServiceTest {
         lenient().when(adminVerifier.verify(any(), any()))
             .thenReturn(new Eip712BillingAdminVerifier.VerificationResult(true, "0xabc", null));
         lenient().when(antiReplayService.isTimestampUsed(any(), anyLong())).thenReturn(false);
+        lenient().when(walletService.isInstitution(any())).thenReturn(true);
+        lenient().when(walletService.isDefaultAdmin(any())).thenReturn(true);
+        lenient().when(walletService.isLabProvider(any())).thenReturn(true);
+        lenient().when(walletService.isLabOwnedByProvider(any(), any())).thenReturn(true);
     }
 
     @Nested
