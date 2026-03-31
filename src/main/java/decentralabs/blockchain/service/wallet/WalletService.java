@@ -672,45 +672,14 @@ public class WalletService {
      */
     private List<BigInteger> getDirectlyOwnedLabs(String providerAddress, Web3j web3j) {
         try {
-            // Step 1: fetch all listed lab IDs in one call
-            Function paginated = new Function(
-                "getLabsPaginated",
-                Arrays.asList(new Uint256(BigInteger.ZERO), new Uint256(BigInteger.valueOf(MAX_PROVIDER_LABS_QUERY))),
-                Arrays.asList(
-                    new TypeReference<DynamicArray<Uint256>>() {},
-                    new TypeReference<Uint256>() {}
-                )
-            );
-            String encodedPaginated = FunctionEncoder.encode(paginated);
-            EthCall paginatedResponse = web3j.ethCall(
-                Transaction.createEthCallTransaction(null, contractAddress, encodedPaginated),
-                DefaultBlockParameterName.LATEST
-            ).send();
-
-            if (paginatedResponse.hasError()) {
-                log.warn("Error calling getLabsPaginated() for provider labs query");
-                return List.of();
-            }
-
-            @SuppressWarnings("rawtypes")
-            List<Type> decodedPaginated = FunctionReturnDecoder.decode(
-                paginatedResponse.getValue(),
-                paginated.getOutputParameters()
-            );
-            if (decodedPaginated.isEmpty()) {
-                return List.of();
-            }
-
-            @SuppressWarnings("unchecked")
-            DynamicArray<Uint256> allIds = (DynamicArray<Uint256>) decodedPaginated.get(0);
-            if (allIds.getValue() == null || allIds.getValue().isEmpty()) {
+            List<BigInteger> allLabIds = getAllLabIds(web3j);
+            if (allLabIds.isEmpty()) {
                 return List.of();
             }
 
             // Step 2: for each lab ID, check ERC721 owner
             List<BigInteger> owned = new ArrayList<>();
-            for (Uint256 idToken : allIds.getValue()) {
-                BigInteger labId = idToken.getValue();
+            for (BigInteger labId : allLabIds) {
                 Optional<String> owner = getLabOwner(labId, web3j);
                 if (owner.isPresent() && owner.get().equalsIgnoreCase(providerAddress)) {
                     owned.add(labId);
@@ -723,6 +692,58 @@ public class WalletService {
             log.warn("Failed to get directly owned labs for provider {}", LogSanitizer.maskIdentifier(providerAddress), e);
             return List.of();
         }
+    }
+
+    public List<BigInteger> getAllLabIds() {
+        try {
+            return getAllLabIds(getWeb3jInstance());
+        } catch (Exception e) {
+            log.warn("Failed to get all lab IDs", e);
+            return List.of();
+        }
+    }
+
+    private List<BigInteger> getAllLabIds(Web3j web3j) throws Exception {
+        Function paginated = new Function(
+            "getLabsPaginated",
+            Arrays.asList(new Uint256(BigInteger.ZERO), new Uint256(BigInteger.valueOf(MAX_PROVIDER_LABS_QUERY))),
+            Arrays.asList(
+                new TypeReference<DynamicArray<Uint256>>() {},
+                new TypeReference<Uint256>() {}
+            )
+        );
+        String encodedPaginated = FunctionEncoder.encode(paginated);
+        EthCall paginatedResponse = web3j.ethCall(
+            Transaction.createEthCallTransaction(null, contractAddress, encodedPaginated),
+            DefaultBlockParameterName.LATEST
+        ).send();
+
+        if (paginatedResponse.hasError()) {
+            log.warn("Error calling getLabsPaginated()");
+            return List.of();
+        }
+
+        @SuppressWarnings("rawtypes")
+        List<Type> decodedPaginated = FunctionReturnDecoder.decode(
+            paginatedResponse.getValue(),
+            paginated.getOutputParameters()
+        );
+        if (decodedPaginated.isEmpty()) {
+            return List.of();
+        }
+
+        @SuppressWarnings("unchecked")
+        DynamicArray<Uint256> allIds = (DynamicArray<Uint256>) decodedPaginated.get(0);
+        if (allIds.getValue() == null || allIds.getValue().isEmpty()) {
+            return List.of();
+        }
+
+        List<BigInteger> labIds = new ArrayList<>();
+        for (Uint256 idToken : allIds.getValue()) {
+            labIds.add(idToken.getValue());
+        }
+        labIds.sort(Comparator.naturalOrder());
+        return labIds;
     }
 
     private List<BigInteger> getLabsByProviderAuthUri(String providerAuthUri, Web3j web3j) {
@@ -1298,6 +1319,39 @@ public class WalletService {
             log.error("Error getting transaction history");
             log.debug("Transaction history lookup failed (context omitted)", e);
             return TransactionHistoryResponse.error("Failed to get transaction history: " + e.getMessage());
+        }
+    }
+
+    public Optional<String> getContractOwnerAddress() {
+        try {
+            Web3j web3j = getWeb3jInstance();
+            Function function = new Function(
+                "owner",
+                Collections.emptyList(),
+                Collections.singletonList(new TypeReference<Address>() {})
+            );
+
+            String encodedFunction = FunctionEncoder.encode(function);
+            EthCall response = web3j.ethCall(
+                Transaction.createEthCallTransaction(null, contractAddress, encodedFunction),
+                DefaultBlockParameterName.LATEST
+            ).send();
+
+            if (response.hasError()) {
+                return Optional.empty();
+            }
+
+            @SuppressWarnings("rawtypes")
+            List<Type> decoded = FunctionReturnDecoder.decode(response.getValue(), function.getOutputParameters());
+            if (decoded.isEmpty()) {
+                return Optional.empty();
+            }
+
+            String owner = Objects.toString(decoded.get(0).getValue(), "").trim();
+            return owner.isEmpty() ? Optional.empty() : Optional.of(owner);
+        } catch (Exception e) {
+            log.debug("Failed to resolve contract owner", e);
+            return Optional.empty();
         }
     }
 

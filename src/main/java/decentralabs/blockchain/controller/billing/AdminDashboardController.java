@@ -78,11 +78,21 @@ public class AdminDashboardController {
         try {
             String institutionalAddress = institutionalWalletService.getInstitutionalWalletAddress();
             boolean walletConfigured = institutionalAddress != null && !institutionalAddress.isBlank();
+            boolean isProvider = walletConfigured && walletService.isLabProvider(institutionalAddress);
+            Optional<String> contractOwnerAddress = walletService.getContractOwnerAddress();
+            boolean isContractOwner = walletConfigured
+                && contractOwnerAddress.isPresent()
+                && institutionalAddress.equalsIgnoreCase(contractOwnerAddress.get());
 
             Map<String, Object> status = new LinkedHashMap<>();
             status.put("success", true);
             status.put("walletConfigured", walletConfigured);
             status.put("institutionalWalletAddress", walletConfigured ? institutionalAddress : null);
+            status.put("isProvider", isProvider);
+            status.put("contractOwnerAddress", contractOwnerAddress.orElse(null));
+            status.put("isContractOwner", isContractOwner);
+            status.put("providerControlsEnabled", isProvider);
+            status.put("operatorControlsEnabled", isContractOwner);
             status.put("contractAddress", contractAddress);
             status.put("marketplaceUrl", marketplaceUrl);
             status.put("timestamp", System.currentTimeMillis());
@@ -254,14 +264,26 @@ public class AdminDashboardController {
             result.put("maxBatch", resolveCollectBatch(null));
 
             boolean isProvider = walletService.isLabProvider(providerAddress);
+            boolean isContractOwner = walletService.getContractOwnerAddress()
+                .map(providerAddress::equalsIgnoreCase)
+                .orElse(false);
             result.put("isProvider", isProvider);
+            result.put("isContractOwner", isContractOwner);
+            result.put("operatorControlsEnabled", isContractOwner);
             List<Map<String, Object>> labs = new ArrayList<>();
-            for (BigInteger labId : walletService.getLabsOwnedByProvider(providerAddress)) {
+            List<BigInteger> visibleLabIds = isContractOwner
+                ? walletService.getAllLabIds()
+                : walletService.getLabsOwnedByProvider(providerAddress);
+            for (BigInteger labId : visibleLabIds) {
+                boolean ownedByInstitutionalProvider = walletService.isLabOwnedByProvider(providerAddress, labId);
                 Map<String, Object> lab = new LinkedHashMap<>();
                 lab.put("labId", labId.toString());
                 String labName = resolveLabDisplayName(labId);
                 lab.put("name", labName);
                 lab.put("label", labName);
+                lab.put("ownedByInstitutionalProvider", ownedByInstitutionalProvider);
+                lab.put("providerPayoutEnabled", ownedByInstitutionalProvider);
+                lab.put("operatorReviewOnly", isContractOwner && !ownedByInstitutionalProvider);
 
                 walletService.getProviderReceivableStatus(labId).ifPresent(status -> {
                     lab.put("providerReceivableRaw", status.providerReceivable().toString());
@@ -278,7 +300,9 @@ public class AdminDashboardController {
             }
 
             result.put("labs", labs);
-            if (!isProvider && labs.isEmpty()) {
+            if (isContractOwner && !labs.isEmpty()) {
+                result.put("note", "Operator view: showing all labs for settlement oversight");
+            } else if (!isProvider && labs.isEmpty()) {
                 result.put("note", "Institutional wallet is not registered as provider");
             }
 
@@ -330,7 +354,11 @@ public class AdminDashboardController {
                 ));
             }
 
-            if (!walletService.isLabOwnedByProvider(providerAddress, parsedLabId)) {
+            boolean isContractOwner = walletService.getContractOwnerAddress()
+                .map(providerAddress::equalsIgnoreCase)
+                .orElse(false);
+            boolean ownedByInstitutionalProvider = walletService.isLabOwnedByProvider(providerAddress, parsedLabId);
+            if (!isContractOwner && !ownedByInstitutionalProvider) {
                 return ResponseEntity.badRequest().body(Map.of(
                     "success", false,
                     "error", "Selected lab is not associated with this institutional provider"
@@ -357,6 +385,9 @@ public class AdminDashboardController {
             result.put("success", true);
             result.put("providerAddress", providerAddress);
             result.put("labId", parsedLabId.toString());
+            result.put("ownedByInstitutionalProvider", ownedByInstitutionalProvider);
+            result.put("providerPayoutEnabled", ownedByInstitutionalProvider);
+            result.put("operatorReviewOnly", isContractOwner && !ownedByInstitutionalProvider);
             result.put("maxBatch", effectiveBatch);
             result.put("providerReceivableRaw", receivable.providerReceivable().toString());
             result.put("providerReceivableLab", formatLabTokens(receivable.providerReceivable()));

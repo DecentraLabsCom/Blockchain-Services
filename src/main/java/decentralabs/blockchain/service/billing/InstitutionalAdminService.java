@@ -3,6 +3,7 @@ package decentralabs.blockchain.service.billing;
 import decentralabs.blockchain.service.RateLimitService;
 import decentralabs.blockchain.service.persistence.AntiReplayService;
 import decentralabs.blockchain.service.wallet.InstitutionalWalletService;
+import decentralabs.blockchain.service.wallet.WalletService;
 import decentralabs.blockchain.dto.billing.InstitutionalAdminRequest;
 import decentralabs.blockchain.dto.billing.InstitutionalAdminResponse;
 import decentralabs.blockchain.util.EthereumAddressValidator;
@@ -57,6 +58,7 @@ public class InstitutionalAdminService {
     private final HttpServletRequest request;
     private final RateLimitService rateLimitService;
     private final InstitutionalWalletService institutionalWalletService;
+    private final WalletService walletService;
     private final InstitutionalAnalyticsService analyticsService;
     private final Eip712BillingAdminVerifier adminVerifier;
     private final AntiReplayService antiReplayService;
@@ -120,6 +122,11 @@ public class InstitutionalAdminService {
                 return InstitutionalAdminResponse.error("Access denied: wallet address does not match configured wallet");
             }
 
+            String roleError = validateRoleForOperation(request, institutionalAddress);
+            if (roleError != null) {
+                return InstitutionalAdminResponse.error(roleError);
+            }
+
             // Step 3: Execute the requested operation
             return executeOperation(request);
 
@@ -142,12 +149,20 @@ public class InstitutionalAdminService {
             if (institutionalAddress == null || institutionalAddress.isBlank()) {
                 return InstitutionalAdminResponse.error("Institutional wallet not configured");
             }
+            if (!walletService.isLabProvider(institutionalAddress)) {
+                return InstitutionalAdminResponse.error("Provider payout requests are only available for provider wallets");
+            }
 
             Credentials credentials = institutionalWalletService.getInstitutionalCredentials();
             InstitutionalAdminRequest request = new InstitutionalAdminRequest();
             request.setOperation(InstitutionalAdminRequest.AdminOperation.COLLECT_LAB_PAYOUT);
             request.setLabId(labId);
             request.setMaxBatch(maxBatch);
+
+            String roleError = validateRoleForOperation(request, institutionalAddress);
+            if (roleError != null) {
+                return InstitutionalAdminResponse.error(roleError);
+            }
 
             return requestProviderPayout(credentials, request);
         } catch (Exception e) {
@@ -272,6 +287,55 @@ public class InstitutionalAdminService {
         }
 
         return null;
+    }
+
+    private String validateRoleForOperation(InstitutionalAdminRequest request, String institutionalAddress) {
+        if (request == null || request.getOperation() == null) {
+            return "Missing administrative operation";
+        }
+
+        boolean isOperator = walletService.getContractOwnerAddress()
+            .map(institutionalAddress::equalsIgnoreCase)
+            .orElse(false);
+        boolean isProvider = walletService.isLabProvider(institutionalAddress);
+
+        return switch (request.getOperation()) {
+            case COLLECT_LAB_PAYOUT -> validateProviderPayoutRole(request, institutionalAddress, isProvider);
+            case AUTHORIZE_BACKEND,
+                 REVOKE_BACKEND,
+                 ADMIN_RESET_BACKEND,
+                 SET_USER_LIMIT,
+                 SET_SPENDING_PERIOD,
+                 RESET_SPENDING_PERIOD,
+                 ISSUE_SERVICE_CREDITS,
+                 ADJUST_SERVICE_CREDITS,
+                 TRANSITION_PROVIDER_RECEIVABLE_STATE -> isOperator
+                    ? null
+                    : "Operator privileges required: this action is only available to the contract owner wallet";
+        };
+    }
+
+    private String validateProviderPayoutRole(
+        InstitutionalAdminRequest request,
+        String institutionalAddress,
+        boolean isProvider
+    ) {
+        if (!isProvider) {
+            return "Provider privileges required: payout requests are only available to provider wallets";
+        }
+        if (request == null || request.getLabId() == null || request.getLabId().isBlank()) {
+            return null;
+        }
+
+        try {
+            BigInteger labId = EthereumAddressValidator.parseBigInteger(request.getLabId(), "labId");
+            if (!walletService.isLabOwnedByProvider(institutionalAddress, labId)) {
+                return "Provider payout requests are limited to labs associated with this institutional provider wallet";
+            }
+            return null;
+        } catch (IllegalArgumentException ex) {
+            return ex.getMessage();
+        }
     }
 
     /**

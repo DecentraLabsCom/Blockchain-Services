@@ -157,15 +157,16 @@
             </section>
 
             <!-- Provider Settlement Requests Section -->
-            <section class="card">
+            <section class="card hidden" id="settlementOperationsSection">
                 <div class="card-header">
-                    <h2>Provider Settlement Requests</h2>
+                    <h2 id="settlementOperationsTitle">Settlement Operations</h2>
                 </div>
                 <div class="card-body">
                     <div class="collect-panel" id="collectPanel">
+                        <div id="providerSettlementControls">
                         <div class="collect-grid">
                             <div class="form-group">
-                                <label for="collectLabSelect">Select one of your labs</label>
+                                <label for="collectLabSelect" id="collectLabSelectLabel">Select one of your labs</label>
                                 <select id="collectLabSelect" class="collect-select" disabled>
                                     <option value="">Loading labs...</option>
                                 </select>
@@ -183,15 +184,16 @@
                                 <span class="collect-status-value" id="collectStatusText">--</span>
                             </div>
                         </div>
-                        <div class="collect-actions">
+                        <div class="collect-actions" id="providerPayoutActions">
                             <button type="button" id="collectLabBtn" class="btn btn-primary" disabled>
                                 <i class="fas fa-coins"></i> Request Payout
                             </button>
                         </div>
+                        </div>
                         <div class="info-text" id="collectLifecycleSummary" style="margin-top: var(--spacing-md);">
                             Lifecycle breakdown unavailable
                         </div>
-                        <form id="providerSettlementTransitionForm" class="operation-form" style="margin-top: var(--spacing-lg);">
+                        <form id="providerSettlementTransitionForm" class="operation-form hidden" style="margin-top: var(--spacing-lg);">
                             <div class="form-group">
                                 <label for="providerSettlementTransitionSelect">Settlement Transition</label>
                                 <select id="providerSettlementTransitionSelect" class="settlement-transition-select">
@@ -226,7 +228,7 @@
             </section>
 
             <!-- Credit and Policy Administration Section -->
-            <section class="card">
+            <section class="card hidden" id="operatorCreditPolicySection">
                 <div class="card-header">
                     <h2>Credit and Policy Administration</h2>
                     <span class="warning-badge">⚠ Localhost Only</span>

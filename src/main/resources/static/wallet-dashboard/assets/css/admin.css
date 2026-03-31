@@ -1459,6 +1459,10 @@ body {
     color: var(--neon-orange);
 }
 
+.collect-status-value.info {
+    color: var(--info);
+}
+
 .collect-status-value.error {
     color: var(--neon-red);
 }

@@ -10,6 +10,8 @@ const DashboardState = {
     refreshIntervalMs: 300000, // 5 minutes
     lastUpdate: null,
     walletAddress: null,
+    isProvider: false,
+    isOperator: false,
     welcomeModalDismissed: false,
     inviteTokenApplied: false,  // Track if invite token has been applied
     invitePromptedWallet: null,  // Track which wallet has been prompted this session
@@ -39,6 +41,63 @@ const RECEIVABLE_TRANSITION_PRESETS = {
     '4:6': { from: 4, to: 6, label: 'Approval reversed' },
     '7:6': { from: 7, to: 6, label: 'Dispute reversed' }
 };
+
+function updateRoleBasedSections() {
+    const hasWallet = Boolean(DashboardState.walletAddress);
+    const showProviderControls = hasWallet && DashboardState.isProvider;
+    const showOperatorControls = hasWallet && DashboardState.isOperator;
+
+    const settlementSection = document.getElementById('settlementOperationsSection');
+    const settlementTitle = document.getElementById('settlementOperationsTitle');
+    const providerSettlementControls = document.getElementById('providerSettlementControls');
+    const providerPayoutActions = document.getElementById('providerPayoutActions');
+    const providerSettlementTransitionForm = document.getElementById('providerSettlementTransitionForm');
+    const operatorCreditPolicySection = document.getElementById('operatorCreditPolicySection');
+    const collectLifecycleSummary = document.getElementById('collectLifecycleSummary');
+    const collectLabSelectLabel = document.getElementById('collectLabSelectLabel');
+
+    if (settlementSection) {
+        settlementSection.classList.toggle('hidden', !showProviderControls && !showOperatorControls);
+    }
+    if (providerSettlementControls) {
+        providerSettlementControls.classList.toggle('hidden', !showProviderControls && !showOperatorControls);
+    }
+    if (providerPayoutActions) {
+        providerPayoutActions.classList.toggle('hidden', !showProviderControls);
+    }
+    if (providerSettlementTransitionForm) {
+        providerSettlementTransitionForm.classList.toggle('hidden', !showOperatorControls);
+    }
+    if (operatorCreditPolicySection) {
+        operatorCreditPolicySection.classList.toggle('hidden', !showOperatorControls);
+    }
+
+    if (settlementTitle) {
+        if (showProviderControls && showOperatorControls) {
+            settlementTitle.textContent = 'Settlement Operations';
+        } else if (showOperatorControls) {
+            settlementTitle.textContent = 'Operator Settlement Controls';
+        } else if (showProviderControls) {
+            settlementTitle.textContent = 'Provider Settlement Requests';
+        } else {
+            settlementTitle.textContent = 'Settlement Operations';
+        }
+    }
+
+    if (collectLabSelectLabel) {
+        if (showProviderControls && !showOperatorControls) {
+            collectLabSelectLabel.textContent = 'Select one of your labs';
+        } else if (showOperatorControls) {
+            collectLabSelectLabel.textContent = 'Select lab for settlement review';
+        } else {
+            collectLabSelectLabel.textContent = 'Select lab';
+        }
+    }
+
+    if (collectLifecycleSummary && !showProviderControls && !showOperatorControls) {
+        collectLifecycleSummary.textContent = 'Settlement controls unavailable for this wallet';
+    }
+}
 
 function getInviteTokenStorageKey(address) {
     return `${INVITE_TOKEN_STORAGE_PREFIX}${(address || '').toLowerCase()}`;
@@ -801,6 +860,8 @@ async function loadSystemStatus() {
         if (data.success) {
             const walletConfigured = data.walletConfigured;
             const walletAddress = data.institutionalWalletAddress;
+            DashboardState.isProvider = data.providerControlsEnabled === true || data.isProvider === true;
+            DashboardState.isOperator = data.operatorControlsEnabled === true || data.isContractOwner === true;
             const previousWallet = DashboardState.walletAddress;
             DashboardState.walletAddress = walletAddress || null;
             
@@ -865,6 +926,7 @@ async function loadSystemStatus() {
             // Update Apply Invite Token button visibility
             updateApplyInviteButtonVisibility();
             maybePromptInviteToken();
+            updateRoleBasedSections();
             
             // Show/hide wallet setup dropdown
             const dropdown = document.getElementById('walletSetupDropdown');
@@ -910,11 +972,14 @@ async function loadSystemStatus() {
         showToast('Failed to load system status: ' + error.message, 'error');
 
         DashboardState.walletAddress = null;
+        DashboardState.isProvider = false;
+        DashboardState.isOperator = false;
         DashboardState.inviteTokenApplied = false;
         DashboardState.invitePromptedWallet = null;
         hideProvisioningTokenModal();
         updateApplyInviteButtonVisibility();
         renderWalletSetupPrompt();
+        updateRoleBasedSections();
 
         const contractAddressEl = document.getElementById('contractAddress');
         if (contractAddressEl) {
@@ -1306,7 +1371,9 @@ function renderCollectLabOptions(selectEl, labs, preferredLabId = null) {
 
     selectEl.innerHTML = labs.map(item => {
         const labId = String(item.labId);
-        const label = item.name || item.label || `Lab #${labId}`;
+        const baseLabel = item.name || item.label || `Lab #${labId}`;
+        const suffix = item.operatorReviewOnly ? ' (operator review)' : '';
+        const label = `${baseLabel}${suffix}`;
         return `<option value="${escapeHtml(labId)}">${escapeHtml(label)}</option>`;
     }).join('');
 
@@ -1329,6 +1396,15 @@ function updateCollectButtonState() {
         DashboardState.collectLoadingStatus ||
         !DashboardState.collectCanExecute ||
         !DashboardState.selectedCollectLabId;
+}
+
+function getSelectedCollectLab() {
+    if (!DashboardState.selectedCollectLabId || !Array.isArray(DashboardState.collectLabs)) {
+        return null;
+    }
+    return DashboardState.collectLabs.find(
+        item => String(item.labId) === String(DashboardState.selectedCollectLabId)
+    ) || null;
 }
 
 async function loadCollectLabs() {
@@ -1473,6 +1549,13 @@ async function loadCollectStatusForSelectedLab() {
             throw new Error(data.error || 'Failed to load provider receivable status');
         }
 
+        const selectedLab = getSelectedCollectLab();
+        const payoutEnabledForSelectedLab = data.providerPayoutEnabled === true
+            || selectedLab?.providerPayoutEnabled === true
+            || selectedLab?.ownedByInstitutionalProvider === true;
+        const operatorReviewOnly = data.operatorReviewOnly === true
+            || selectedLab?.operatorReviewOnly === true;
+
         const totalLab = data.totalReceivableLab || formatLabTokenRaw(data.totalReceivableRaw);
         pendingEl.textContent = `${totalLab} LAB`;
         const pendingClosuresRaw = data.eligibleReservationCount ?? '0';
@@ -1480,9 +1563,18 @@ async function loadCollectStatusForSelectedLab() {
         setCollectPendingClosuresText(pendingClosures);
         setCollectLifecycleSummaryText(buildCollectLifecycleSummary(data));
 
-        DashboardState.collectCanExecute = data.canRequestPayout === true;
+        DashboardState.collectCanExecute = DashboardState.isProvider
+            && payoutEnabledForSelectedLab
+            && data.canRequestPayout === true;
+
         if (DashboardState.collectCanExecute) {
             setCollectStatusText('Ready for payout request', 'success');
+        } else if (DashboardState.isProvider && !payoutEnabledForSelectedLab) {
+            setCollectStatusText('Payout requests are limited to this provider wallet\'s labs', 'warning');
+        } else if (!DashboardState.isProvider && DashboardState.isOperator && operatorReviewOnly) {
+            setCollectStatusText('Operator review only', 'info');
+        } else if (!DashboardState.isProvider && DashboardState.isOperator && data.canRequestPayout === true) {
+            setCollectStatusText('Payout available for owning provider', 'info');
         } else if (data.payoutRequestReason) {
             setCollectStatusText(data.payoutRequestReason, 'warning');
         } else {
@@ -1503,8 +1595,13 @@ async function loadCollectStatusForSelectedLab() {
 
 async function handleCollectLabPayout() {
     const labId = DashboardState.selectedCollectLabId;
+    const selectedLab = getSelectedCollectLab();
     if (!labId) {
         showToast('Select a lab first', 'error');
+        return;
+    }
+    if (selectedLab && selectedLab.providerPayoutEnabled === false) {
+        showToast('Payout requests are limited to labs associated with this provider wallet', 'error');
         return;
     }
     if (!DashboardState.collectCanExecute) {
