@@ -57,10 +57,7 @@ public class Diamond extends Contract {
         public BigInteger requestPeriodDuration; // uint64 - institutional request window duration
         public String payerInstitution;        // address - institution paying for reservation
         public String collectorInstitution;    // address - institution receiving payout
-        public BigInteger providerShare;       // uint96 - provider allocation
-        public BigInteger projectTreasuryShare; // uint96 - platform fee allocation
-        public BigInteger subsidiesShare;      // uint96 - subsidies allocation
-        public BigInteger governanceShare;     // uint96 - governance allocation
+        public BigInteger providerShare;       // uint96 - provider allocation (platform margin is implicit)
 
         public Reservation(
             BigInteger labId,
@@ -74,10 +71,7 @@ public class Diamond extends Contract {
             BigInteger requestPeriodDuration,
             String payerInstitution,
             String collectorInstitution,
-            BigInteger providerShare,
-            BigInteger projectTreasuryShare,
-            BigInteger subsidiesShare,
-            BigInteger governanceShare
+            BigInteger providerShare
         ) {
             this.labId = labId;
             this.renter = renter;
@@ -91,9 +85,6 @@ public class Diamond extends Contract {
             this.payerInstitution = payerInstitution;
             this.collectorInstitution = collectorInstitution;
             this.providerShare = providerShare;
-            this.projectTreasuryShare = projectTreasuryShare;
-            this.subsidiesShare = subsidiesShare;
-            this.governanceShare = governanceShare;
         }
     }
     
