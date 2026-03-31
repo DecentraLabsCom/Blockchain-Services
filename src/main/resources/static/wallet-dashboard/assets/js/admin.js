@@ -550,6 +550,17 @@ async function readJsonResponse(response) {
     }
 }
 
+function extractResponseErrorMessage(response, result, fallbackMessage) {
+    const parsed = result && result.data ? result.data : null;
+    const text = result && typeof result.text === 'string' ? result.text.trim() : '';
+    return (
+        (parsed && (parsed.error || parsed.message || parsed.details)) ||
+        text ||
+        fallbackMessage ||
+        `HTTP ${response.status}${response.statusText ? `: ${response.statusText}` : ''}`
+    );
+}
+
 async function applyProvisioningToken() {
     const tokenInput = document.getElementById('provisioningTokenInput');
     if (!tokenInput) {
@@ -2108,9 +2119,12 @@ function setupButtonHandlers() {
                 
                 const result = await readJsonResponse(response);
                 if (result.parseError || !result.data) {
-                    throw new Error('Invalid response from server.');
+                    throw new Error(extractResponseErrorMessage(response, result, 'Invalid response from server.'));
                 }
                 const data = result.data;
+                if (!response.ok) {
+                    throw new Error(extractResponseErrorMessage(response, result, 'Failed to create wallet.'));
+                }
                 if (data.success && data.address) {
                     showToast('✓ Wallet created and configured successfully!', 'success');
                     
@@ -2207,9 +2221,12 @@ function setupButtonHandlers() {
                 
                 const result = await readJsonResponse(response);
                 if (result.parseError || !result.data) {
-                    throw new Error('Invalid response from server.');
+                    throw new Error(extractResponseErrorMessage(response, result, 'Invalid response from server.'));
                 }
                 const data = result.data;
+                if (!response.ok) {
+                    throw new Error(extractResponseErrorMessage(response, result, 'Failed to import wallet.'));
+                }
                 if (data.success && data.address) {
                     showToast('Wallet imported and configured successfully!', 'success');
                     
