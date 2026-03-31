@@ -20,10 +20,12 @@ import org.web3j.abi.FunctionEncoder;
 import org.web3j.abi.FunctionReturnDecoder;
 import org.web3j.abi.TypeReference;
 import org.web3j.abi.datatypes.Address;
+import org.web3j.abi.datatypes.Bool;
 import org.web3j.abi.datatypes.DynamicArray;
 import org.web3j.abi.datatypes.Function;
 import org.web3j.abi.datatypes.Type;
 import org.web3j.abi.datatypes.Utf8String;
+import org.web3j.abi.datatypes.generated.Bytes32;
 import org.web3j.abi.datatypes.generated.Uint256;
 import org.web3j.crypto.*;
 import org.web3j.protocol.Web3j;
@@ -95,6 +97,9 @@ public class WalletService {
     private static final int PBKDF2_ITERATIONS = 65536;
     private static final int AES_KEY_SIZE = 256;
     private static final int MAX_PROVIDER_LABS_QUERY = 100;
+    private static final String DEFAULT_ADMIN_ROLE_HEX =
+        "0x0000000000000000000000000000000000000000000000000000000000000000";
+    private static final String INSTITUTION_ROLE_HEX = Hash.sha3String("INSTITUTION_ROLE");
 
     // Cache of Web3j connections per network (with fallback URLs)
     private final Map<String, Web3j> web3jInstances = new ConcurrentHashMap<>();
@@ -1352,6 +1357,95 @@ public class WalletService {
         } catch (Exception e) {
             log.debug("Failed to resolve contract owner", e);
             return Optional.empty();
+        }
+    }
+
+    public Optional<String> getDefaultAdminRole() {
+        try {
+            Web3j web3j = getWeb3jInstance();
+            Function function = new Function(
+                "DEFAULT_ADMIN_ROLE",
+                Collections.emptyList(),
+                Collections.singletonList(new TypeReference<Bytes32>() {})
+            );
+
+            String encodedFunction = FunctionEncoder.encode(function);
+            EthCall response = web3j.ethCall(
+                Transaction.createEthCallTransaction(null, contractAddress, encodedFunction),
+                DefaultBlockParameterName.LATEST
+            ).send();
+
+            if (response.hasError()) {
+                return Optional.of(DEFAULT_ADMIN_ROLE_HEX);
+            }
+
+            @SuppressWarnings("rawtypes")
+            List<Type> decoded = FunctionReturnDecoder.decode(response.getValue(), function.getOutputParameters());
+            if (decoded.isEmpty()) {
+                return Optional.of(DEFAULT_ADMIN_ROLE_HEX);
+            }
+
+            byte[] roleBytes = ((Bytes32) decoded.get(0)).getValue();
+            return Optional.of(Numeric.toHexString(roleBytes));
+        } catch (Exception e) {
+            log.debug("Failed to resolve DEFAULT_ADMIN_ROLE", e);
+            return Optional.of(DEFAULT_ADMIN_ROLE_HEX);
+        }
+    }
+
+    public boolean isDefaultAdmin(String accountAddress) {
+        if (accountAddress == null || accountAddress.isBlank()) {
+            return false;
+        }
+        return hasRole(getDefaultAdminRole().orElse(DEFAULT_ADMIN_ROLE_HEX), accountAddress);
+    }
+
+    public boolean isInstitution(String accountAddress) {
+        if (accountAddress == null || accountAddress.isBlank()) {
+            return false;
+        }
+        return hasRole(INSTITUTION_ROLE_HEX, accountAddress);
+    }
+
+    public boolean hasRole(String roleHex, String accountAddress) {
+        if (accountAddress == null || accountAddress.isBlank()) {
+            return false;
+        }
+        try {
+            Web3j web3j = getWeb3jInstance();
+            byte[] roleBytes = Numeric.hexStringToByteArray(
+                roleHex == null || roleHex.isBlank() ? DEFAULT_ADMIN_ROLE_HEX : roleHex
+            );
+            if (roleBytes.length != 32) {
+                roleBytes = Arrays.copyOf(roleBytes, 32);
+            }
+
+            Function function = new Function(
+                "hasRole",
+                Arrays.asList(new Bytes32(roleBytes), new Address(accountAddress)),
+                Collections.singletonList(new TypeReference<Bool>() {})
+            );
+
+            String encodedFunction = FunctionEncoder.encode(function);
+            EthCall response = web3j.ethCall(
+                Transaction.createEthCallTransaction(null, contractAddress, encodedFunction),
+                DefaultBlockParameterName.LATEST
+            ).send();
+
+            if (response.hasError()) {
+                return false;
+            }
+
+            @SuppressWarnings("rawtypes")
+            List<Type> decoded = FunctionReturnDecoder.decode(response.getValue(), function.getOutputParameters());
+            if (decoded.isEmpty()) {
+                return false;
+            }
+
+            return Boolean.TRUE.equals(decoded.get(0).getValue());
+        } catch (Exception e) {
+            log.debug("Failed to check role {} for {}", roleHex, accountAddress, e);
+            return false;
         }
     }
 

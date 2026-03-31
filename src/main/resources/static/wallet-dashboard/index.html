@@ -230,12 +230,12 @@
             <!-- Credit and Policy Administration Section -->
             <section class="card hidden" id="operatorCreditPolicySection">
                 <div class="card-header">
-                    <h2>Credit and Policy Administration</h2>
+                    <h2 id="creditPolicyTitle">Administration</h2>
                     <span class="warning-badge">⚠ Localhost Only</span>
                 </div>
                 
                 <!-- Ongoing Period Info Box -->
-                <div class="ongoing-period-box">
+                <div class="ongoing-period-box" id="institutionPeriodBox">
                     <h3><i class="fas fa-hourglass-half"></i> Ongoing Period</h3>
                     <div class="period-dates-inline">
                         <div class="date-item-inline">
@@ -255,7 +255,7 @@
                 <div class="card-body">
                     <div class="operations-grid credit-policy-grid">
                         <!-- User Spending Limit Card -->
-                        <div class="operation-card credit-policy-card limit-card">
+                        <div class="operation-card credit-policy-card limit-card" id="institutionLimitCard">
                             <h3><i class="fas fa-user-check"></i> User Spending Limit</h3>
                             <div class="current-value-display">
                                 <span class="label">Current Limit:</span>
@@ -273,7 +273,7 @@
                         </div>
 
                         <!-- Spending Period Card -->
-                        <div class="operation-card credit-policy-card period-card">
+                        <div class="operation-card credit-policy-card period-card" id="institutionPeriodCard">
                             <h3><i class="fas fa-calendar-alt"></i> Spending Period</h3>
                             <div class="current-value-display">
                                 <span class="label">Current Period:</span>
@@ -291,7 +291,7 @@
                         </div>
 
                         <!-- Reset Period Card -->
-                        <div class="operation-card credit-policy-card reset-card">
+                        <div class="operation-card credit-policy-card reset-card" id="institutionResetCard">
                             <h3><i class="fas fa-redo-alt"></i> Reset Period</h3>
                             <p class="operation-description">
                                 Reset the spending period counters. All users' spending will be reset to zero and a new period will begin immediately.
@@ -301,7 +301,7 @@
                             </button>
                         </div>
 
-                        <div class="operation-card credit-policy-card issue-card">
+                        <div class="operation-card credit-policy-card issue-card" id="operatorIssueCreditsCard">
                             <h3><i class="fas fa-ticket-alt"></i> Issue Service Credits</h3>
                             <p class="operation-description">
                                 Create managed customer service credits after EUR funding has been reconciled.
@@ -325,7 +325,7 @@
                             </form>
                         </div>
 
-                        <div class="operation-card credit-policy-card adjust-card">
+                        <div class="operation-card credit-policy-card adjust-card" id="operatorAdjustCreditsCard">
                             <h3><i class="fas fa-sliders-h"></i> Adjust Service Credits</h3>
                             <p class="operation-description">
                                 Apply a signed administrative delta for corrections, reversals, expiries, or manual write-offs.
@@ -351,7 +351,7 @@
                     </div>
                     
                     <!-- Top Spenders Section -->
-                    <div class="top-spenders-section">
+                    <div class="top-spenders-section" id="institutionTopSpendersSection">
                         <button id="showTopSpendersBtn" class="btn btn-secondary full-width">
                             <i class="fas fa-chart-line"></i> View Top 10 Spenders
                         </button>

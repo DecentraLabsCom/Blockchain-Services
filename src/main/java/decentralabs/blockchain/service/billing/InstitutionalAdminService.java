@@ -294,24 +294,25 @@ public class InstitutionalAdminService {
             return "Missing administrative operation";
         }
 
-        boolean isOperator = walletService.getContractOwnerAddress()
-            .map(institutionalAddress::equalsIgnoreCase)
-            .orElse(false);
+        boolean isOperator = walletService.isDefaultAdmin(institutionalAddress);
+        boolean isInstitution = walletService.isInstitution(institutionalAddress);
         boolean isProvider = walletService.isLabProvider(institutionalAddress);
 
         return switch (request.getOperation()) {
             case COLLECT_LAB_PAYOUT -> validateProviderPayoutRole(request, institutionalAddress, isProvider);
             case AUTHORIZE_BACKEND,
                  REVOKE_BACKEND,
-                 ADMIN_RESET_BACKEND,
                  SET_USER_LIMIT,
                  SET_SPENDING_PERIOD,
-                 RESET_SPENDING_PERIOD,
+                 RESET_SPENDING_PERIOD -> isInstitution
+                    ? null
+                    : "Institution privileges required: this action is only available to wallets with INSTITUTION_ROLE";
+            case ADMIN_RESET_BACKEND,
                  ISSUE_SERVICE_CREDITS,
                  ADJUST_SERVICE_CREDITS,
                  TRANSITION_PROVIDER_RECEIVABLE_STATE -> isOperator
                     ? null
-                    : "Operator privileges required: this action is only available to the contract owner wallet";
+                    : "Operator privileges required: this action is only available to wallets with DEFAULT_ADMIN_ROLE";
         };
     }
 

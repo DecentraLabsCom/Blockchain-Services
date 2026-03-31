@@ -10,6 +10,7 @@ const DashboardState = {
     refreshIntervalMs: 300000, // 5 minutes
     lastUpdate: null,
     walletAddress: null,
+    isInstitution: false,
     isProvider: false,
     isOperator: false,
     welcomeModalDismissed: false,
@@ -44,6 +45,7 @@ const RECEIVABLE_TRANSITION_PRESETS = {
 
 function updateRoleBasedSections() {
     const hasWallet = Boolean(DashboardState.walletAddress);
+    const showInstitutionControls = hasWallet && DashboardState.isInstitution;
     const showProviderControls = hasWallet && DashboardState.isProvider;
     const showOperatorControls = hasWallet && DashboardState.isOperator;
 
@@ -53,6 +55,14 @@ function updateRoleBasedSections() {
     const providerPayoutActions = document.getElementById('providerPayoutActions');
     const providerSettlementTransitionForm = document.getElementById('providerSettlementTransitionForm');
     const operatorCreditPolicySection = document.getElementById('operatorCreditPolicySection');
+    const creditPolicyTitle = document.getElementById('creditPolicyTitle');
+    const institutionPeriodBox = document.getElementById('institutionPeriodBox');
+    const institutionLimitCard = document.getElementById('institutionLimitCard');
+    const institutionPeriodCard = document.getElementById('institutionPeriodCard');
+    const institutionResetCard = document.getElementById('institutionResetCard');
+    const institutionTopSpendersSection = document.getElementById('institutionTopSpendersSection');
+    const operatorIssueCreditsCard = document.getElementById('operatorIssueCreditsCard');
+    const operatorAdjustCreditsCard = document.getElementById('operatorAdjustCreditsCard');
     const collectLifecycleSummary = document.getElementById('collectLifecycleSummary');
     const collectLabSelectLabel = document.getElementById('collectLabSelectLabel');
 
@@ -69,7 +79,28 @@ function updateRoleBasedSections() {
         providerSettlementTransitionForm.classList.toggle('hidden', !showOperatorControls);
     }
     if (operatorCreditPolicySection) {
-        operatorCreditPolicySection.classList.toggle('hidden', !showOperatorControls);
+        operatorCreditPolicySection.classList.toggle('hidden', !showInstitutionControls && !showOperatorControls);
+    }
+    if (institutionPeriodBox) {
+        institutionPeriodBox.classList.toggle('hidden', !showInstitutionControls);
+    }
+    if (institutionLimitCard) {
+        institutionLimitCard.classList.toggle('hidden', !showInstitutionControls);
+    }
+    if (institutionPeriodCard) {
+        institutionPeriodCard.classList.toggle('hidden', !showInstitutionControls);
+    }
+    if (institutionResetCard) {
+        institutionResetCard.classList.toggle('hidden', !showInstitutionControls);
+    }
+    if (institutionTopSpendersSection) {
+        institutionTopSpendersSection.classList.toggle('hidden', !showInstitutionControls);
+    }
+    if (operatorIssueCreditsCard) {
+        operatorIssueCreditsCard.classList.toggle('hidden', !showOperatorControls);
+    }
+    if (operatorAdjustCreditsCard) {
+        operatorAdjustCreditsCard.classList.toggle('hidden', !showOperatorControls);
     }
 
     if (settlementTitle) {
@@ -81,6 +112,18 @@ function updateRoleBasedSections() {
             settlementTitle.textContent = 'Provider Settlement Requests';
         } else {
             settlementTitle.textContent = 'Settlement Operations';
+        }
+    }
+
+    if (creditPolicyTitle) {
+        if (showInstitutionControls && showOperatorControls) {
+            creditPolicyTitle.textContent = 'Institution Policy and Operator Controls';
+        } else if (showInstitutionControls) {
+            creditPolicyTitle.textContent = 'Institution Policy Administration';
+        } else if (showOperatorControls) {
+            creditPolicyTitle.textContent = 'Operator Credit Administration';
+        } else {
+            creditPolicyTitle.textContent = 'Administration';
         }
     }
 
@@ -860,8 +903,9 @@ async function loadSystemStatus() {
         if (data.success) {
             const walletConfigured = data.walletConfigured;
             const walletAddress = data.institutionalWalletAddress;
+            DashboardState.isInstitution = data.institutionControlsEnabled === true || data.isInstitution === true;
             DashboardState.isProvider = data.providerControlsEnabled === true || data.isProvider === true;
-            DashboardState.isOperator = data.operatorControlsEnabled === true || data.isContractOwner === true;
+            DashboardState.isOperator = data.operatorControlsEnabled === true || data.isDefaultAdmin === true;
             const previousWallet = DashboardState.walletAddress;
             DashboardState.walletAddress = walletAddress || null;
             
@@ -972,6 +1016,7 @@ async function loadSystemStatus() {
         showToast('Failed to load system status: ' + error.message, 'error');
 
         DashboardState.walletAddress = null;
+        DashboardState.isInstitution = false;
         DashboardState.isProvider = false;
         DashboardState.isOperator = false;
         DashboardState.inviteTokenApplied = false;

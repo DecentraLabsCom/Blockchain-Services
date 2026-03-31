@@ -78,21 +78,22 @@ public class AdminDashboardController {
         try {
             String institutionalAddress = institutionalWalletService.getInstitutionalWalletAddress();
             boolean walletConfigured = institutionalAddress != null && !institutionalAddress.isBlank();
+            boolean isInstitution = walletConfigured && walletService.isInstitution(institutionalAddress);
             boolean isProvider = walletConfigured && walletService.isLabProvider(institutionalAddress);
-            Optional<String> contractOwnerAddress = walletService.getContractOwnerAddress();
-            boolean isContractOwner = walletConfigured
-                && contractOwnerAddress.isPresent()
-                && institutionalAddress.equalsIgnoreCase(contractOwnerAddress.get());
+            Optional<String> defaultAdminRole = walletService.getDefaultAdminRole();
+            boolean isDefaultAdmin = walletConfigured && walletService.isDefaultAdmin(institutionalAddress);
 
             Map<String, Object> status = new LinkedHashMap<>();
             status.put("success", true);
             status.put("walletConfigured", walletConfigured);
             status.put("institutionalWalletAddress", walletConfigured ? institutionalAddress : null);
+            status.put("isInstitution", isInstitution);
             status.put("isProvider", isProvider);
-            status.put("contractOwnerAddress", contractOwnerAddress.orElse(null));
-            status.put("isContractOwner", isContractOwner);
+            status.put("defaultAdminRole", defaultAdminRole.orElse(null));
+            status.put("isDefaultAdmin", isDefaultAdmin);
+            status.put("institutionControlsEnabled", isInstitution);
             status.put("providerControlsEnabled", isProvider);
-            status.put("operatorControlsEnabled", isContractOwner);
+            status.put("operatorControlsEnabled", isDefaultAdmin);
             status.put("contractAddress", contractAddress);
             status.put("marketplaceUrl", marketplaceUrl);
             status.put("timestamp", System.currentTimeMillis());
@@ -264,14 +265,12 @@ public class AdminDashboardController {
             result.put("maxBatch", resolveCollectBatch(null));
 
             boolean isProvider = walletService.isLabProvider(providerAddress);
-            boolean isContractOwner = walletService.getContractOwnerAddress()
-                .map(providerAddress::equalsIgnoreCase)
-                .orElse(false);
+            boolean isDefaultAdmin = walletService.isDefaultAdmin(providerAddress);
             result.put("isProvider", isProvider);
-            result.put("isContractOwner", isContractOwner);
-            result.put("operatorControlsEnabled", isContractOwner);
+            result.put("isDefaultAdmin", isDefaultAdmin);
+            result.put("operatorControlsEnabled", isDefaultAdmin);
             List<Map<String, Object>> labs = new ArrayList<>();
-            List<BigInteger> visibleLabIds = isContractOwner
+            List<BigInteger> visibleLabIds = isDefaultAdmin
                 ? walletService.getAllLabIds()
                 : walletService.getLabsOwnedByProvider(providerAddress);
             for (BigInteger labId : visibleLabIds) {
@@ -283,7 +282,7 @@ public class AdminDashboardController {
                 lab.put("label", labName);
                 lab.put("ownedByInstitutionalProvider", ownedByInstitutionalProvider);
                 lab.put("providerPayoutEnabled", ownedByInstitutionalProvider);
-                lab.put("operatorReviewOnly", isContractOwner && !ownedByInstitutionalProvider);
+                lab.put("operatorReviewOnly", isDefaultAdmin && !ownedByInstitutionalProvider);
 
                 walletService.getProviderReceivableStatus(labId).ifPresent(status -> {
                     lab.put("providerReceivableRaw", status.providerReceivable().toString());
@@ -300,7 +299,7 @@ public class AdminDashboardController {
             }
 
             result.put("labs", labs);
-            if (isContractOwner && !labs.isEmpty()) {
+            if (isDefaultAdmin && !labs.isEmpty()) {
                 result.put("note", "Operator view: showing all labs for settlement oversight");
             } else if (!isProvider && labs.isEmpty()) {
                 result.put("note", "Institutional wallet is not registered as provider");
@@ -354,11 +353,9 @@ public class AdminDashboardController {
                 ));
             }
 
-            boolean isContractOwner = walletService.getContractOwnerAddress()
-                .map(providerAddress::equalsIgnoreCase)
-                .orElse(false);
+            boolean isDefaultAdmin = walletService.isDefaultAdmin(providerAddress);
             boolean ownedByInstitutionalProvider = walletService.isLabOwnedByProvider(providerAddress, parsedLabId);
-            if (!isContractOwner && !ownedByInstitutionalProvider) {
+            if (!isDefaultAdmin && !ownedByInstitutionalProvider) {
                 return ResponseEntity.badRequest().body(Map.of(
                     "success", false,
                     "error", "Selected lab is not associated with this institutional provider"
@@ -387,7 +384,7 @@ public class AdminDashboardController {
             result.put("labId", parsedLabId.toString());
             result.put("ownedByInstitutionalProvider", ownedByInstitutionalProvider);
             result.put("providerPayoutEnabled", ownedByInstitutionalProvider);
-            result.put("operatorReviewOnly", isContractOwner && !ownedByInstitutionalProvider);
+            result.put("operatorReviewOnly", isDefaultAdmin && !ownedByInstitutionalProvider);
             result.put("maxBatch", effectiveBatch);
             result.put("providerReceivableRaw", receivable.providerReceivable().toString());
             result.put("providerReceivableLab", formatLabTokens(receivable.providerReceivable()));
