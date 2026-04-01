@@ -1572,8 +1572,6 @@ async function loadCollectLabs() {
         }
 
         if (!labs.length) {
-            const retryScheduled = scheduleCollectLabsRetry(new Error('Failed to retrieve provider labs'));
-
             if (previousLabs.length) {
                 DashboardState.collectLabs = previousLabs;
                 DashboardState.selectedCollectLabId = renderCollectLabOptions(
@@ -1592,12 +1590,10 @@ async function loadCollectLabs() {
             selectEl.innerHTML = '<option value="">No labs available</option>';
             pendingEl.textContent = '0 LAB';
             setCollectPendingClosuresText('0');
-            setCollectStatusText(retryScheduled ? 'Rechecking labs...' : 'Not available', 'warning');
+            setCollectStatusText('Not available', 'warning');
             setCollectPanelCompact(true);
             updateCollectDetailVisibility();
-            if (!retryScheduled) {
-                resetCollectLabsRetryState();
-            }
+            resetCollectLabsRetryState();
             return;
         }
 
