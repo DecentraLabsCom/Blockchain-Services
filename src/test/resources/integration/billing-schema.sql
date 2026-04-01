@@ -1,6 +1,6 @@
 -- H2-compatible billing domain schema for integration tests.
 -- Mirrors V6 + V7 + V8 Flyway migrations without MySQL-specific syntax.
--- Credit columns use DECIMAL(24,1) — 1 EUR = 10 credits, max 1 decimal place.
+-- Credit columns use DECIMAL(24,5) — 1 EUR = 10 credits, max 5 decimal places.
 
 -- ============================================================================
 -- A. Funding lifecycle
@@ -10,7 +10,7 @@ CREATE TABLE IF NOT EXISTS funding_orders (
     id              BIGINT AUTO_INCREMENT PRIMARY KEY,
     institution_address VARCHAR(42)     NOT NULL,
     eur_gross_amount DECIMAL(18,2)      NOT NULL,
-    credit_amount   DECIMAL(24,1)       NOT NULL,
+    credit_amount   DECIMAL(24,5)       NOT NULL,
     status          VARCHAR(20)         NOT NULL DEFAULT 'DRAFT',
     reference       VARCHAR(256)        NULL,
     created_at      TIMESTAMP           NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -46,11 +46,11 @@ CREATE TABLE IF NOT EXISTS payment_reconciliations (
 CREATE TABLE IF NOT EXISTS credit_accounts (
     id              BIGINT AUTO_INCREMENT PRIMARY KEY,
     account_address VARCHAR(42)         NOT NULL UNIQUE,
-    available       DECIMAL(24,1)       NOT NULL DEFAULT 0,
-    locked          DECIMAL(24,1)       NOT NULL DEFAULT 0,
-    consumed        DECIMAL(24,1)       NOT NULL DEFAULT 0,
-    adjusted        DECIMAL(24,1)       NOT NULL DEFAULT 0,
-    expired         DECIMAL(24,1)       NOT NULL DEFAULT 0,
+    available       DECIMAL(24,5)       NOT NULL DEFAULT 0,
+    locked          DECIMAL(24,5)       NOT NULL DEFAULT 0,
+    consumed        DECIMAL(24,5)       NOT NULL DEFAULT 0,
+    adjusted        DECIMAL(24,5)       NOT NULL DEFAULT 0,
+    expired         DECIMAL(24,5)       NOT NULL DEFAULT 0,
     updated_at      TIMESTAMP           NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -60,8 +60,8 @@ CREATE TABLE IF NOT EXISTS credit_lots (
     lot_index       INT                 NOT NULL,
     funding_order_id BIGINT             NULL,
     eur_gross_amount DECIMAL(18,2)      NULL,
-    credit_amount   DECIMAL(24,1)       NOT NULL,
-    remaining       DECIMAL(24,1)       NOT NULL,
+    credit_amount   DECIMAL(24,5)       NOT NULL,
+    remaining       DECIMAL(24,5)       NOT NULL,
     issued_at       TIMESTAMP           NOT NULL DEFAULT CURRENT_TIMESTAMP,
     expires_at      TIMESTAMP           NULL,
     expired         BOOLEAN             NOT NULL DEFAULT FALSE,
@@ -73,7 +73,7 @@ CREATE TABLE IF NOT EXISTS credit_movements (
     account_address VARCHAR(42)         NOT NULL,
     lot_index       INT                 NULL,
     movement_type   VARCHAR(20)         NOT NULL,
-    amount          DECIMAL(24,1)       NOT NULL,
+    amount          DECIMAL(24,5)       NOT NULL,
     reservation_ref VARCHAR(66)         NULL,
     reference       VARCHAR(256)        NULL,
     created_at      TIMESTAMP           NOT NULL DEFAULT CURRENT_TIMESTAMP
@@ -107,7 +107,7 @@ CREATE TABLE IF NOT EXISTS provider_invoice_records (
     provider_address VARCHAR(42)        NOT NULL,
     invoice_ref     VARCHAR(256)        NOT NULL,
     eur_amount      DECIMAL(18,2)       NOT NULL,
-    credit_amount   DECIMAL(24,1)       NOT NULL DEFAULT 0,
+    credit_amount   DECIMAL(24,5)       NOT NULL DEFAULT 0,
     status          VARCHAR(20)         NOT NULL DEFAULT 'SUBMITTED',
     submitted_at    TIMESTAMP           NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at      TIMESTAMP           NOT NULL DEFAULT CURRENT_TIMESTAMP
@@ -128,7 +128,7 @@ CREATE TABLE IF NOT EXISTS provider_payouts (
     lab_id          VARCHAR(128)        NOT NULL,
     provider_address VARCHAR(42)        NOT NULL,
     eur_amount      DECIMAL(18,2)       NOT NULL,
-    credit_amount   DECIMAL(24,1)       NOT NULL DEFAULT 0,
+    credit_amount   DECIMAL(24,5)       NOT NULL DEFAULT 0,
     bank_ref        VARCHAR(256)        NULL,
     eurc_tx_hash    VARCHAR(80)         NULL,
     usdc_tx_hash    VARCHAR(80)         NULL,
@@ -144,7 +144,7 @@ CREATE TABLE IF NOT EXISTS mica_offer_volume (
     period_start    DATE                NOT NULL,
     period_end      DATE                NOT NULL,
     eur_volume      DECIMAL(18,2)       NOT NULL DEFAULT 0,
-    credit_volume   DECIMAL(24,1)       NOT NULL DEFAULT 0,
+    credit_volume   DECIMAL(24,5)       NOT NULL DEFAULT 0,
     transaction_count INT               NOT NULL DEFAULT 0,
     computed_at     TIMESTAMP           NOT NULL DEFAULT CURRENT_TIMESTAMP
 );

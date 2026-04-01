@@ -1,5 +1,6 @@
 package decentralabs.blockchain.dto.wallet;
 
+import decentralabs.blockchain.util.CreditUnitConverter;
 import lombok.Builder;
 import lombok.Data;
 
@@ -12,10 +13,10 @@ import java.math.BigInteger;
 @Builder
 public class StakeInfo {
     
-    /** Amount of service credits currently bonded (1 decimal) */
+    /** Amount of service credits currently bonded (5 decimals) */
     private BigInteger stakedAmount;
     
-    /** Total amount of credits slashed historically (1 decimal) */
+    /** Total amount of credits slashed historically (5 decimals) */
     private BigInteger slashedAmount;
     
     /** Timestamp of the last reservation (Unix seconds) */
@@ -41,15 +42,12 @@ public class StakeInfo {
     }
     
     /**
-     * Format bonded amount as credits (divide by 10)
+     * Format bonded amount as credits using the canonical raw-credit scale.
      */
     public String getStakedAmountFormatted() {
         if (stakedAmount == null || stakedAmount.equals(BigInteger.ZERO)) {
             return "0";
         }
-        return new java.math.BigDecimal(stakedAmount)
-            .divide(java.math.BigDecimal.valueOf(10))
-            .stripTrailingZeros()
-            .toPlainString();
+        return CreditUnitConverter.formatRawCredits(stakedAmount);
     }
 }

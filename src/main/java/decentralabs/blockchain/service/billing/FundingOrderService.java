@@ -3,6 +3,7 @@ package decentralabs.blockchain.service.billing;
 import decentralabs.blockchain.domain.*;
 import decentralabs.blockchain.service.persistence.CreditAccountPersistenceService;
 import decentralabs.blockchain.service.persistence.FundingOrderPersistenceService;
+import decentralabs.blockchain.util.CreditUnitConverter;
 import decentralabs.blockchain.util.EthereumAddressValidator;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -18,8 +19,8 @@ import java.util.Optional;
  * Manages the funding order lifecycle:
  * create order → issue invoice → confirm payment → trigger on-chain credit mint.
  *
- * All commercial amounts are kept in EUR; the credit amount is a derived
- * 1:1 mapping at issuance time.
+ * All commercial amounts are kept in EUR; the credit amount is derived
+ * from the fixed platform policy of 10 service credits per EUR.
  */
 @Service
 @RequiredArgsConstructor
@@ -36,17 +37,25 @@ public class FundingOrderService {
     public FundingOrder createFundingOrder(String institutionAddress, BigDecimal eurGrossAmount,
                                            BigDecimal creditAmount, String reference, Instant expiresAt) {
         EthereumAddressValidator.validate(institutionAddress, "institutionAddress");
-        if (eurGrossAmount == null || eurGrossAmount.compareTo(BigDecimal.ZERO) <= 0) {
+        BigDecimal normalizedEurAmount = CreditUnitConverter.normalizeEur(eurGrossAmount);
+        if (normalizedEurAmount == null || normalizedEurAmount.compareTo(BigDecimal.ZERO) <= 0) {
             throw new IllegalArgumentException("EUR gross amount must be positive");
         }
-        if (creditAmount == null || creditAmount.compareTo(BigDecimal.ZERO) <= 0) {
+
+        BigDecimal derivedCreditAmount = CreditUnitConverter.creditsFromEur(normalizedEurAmount);
+        if (derivedCreditAmount == null || derivedCreditAmount.compareTo(BigDecimal.ZERO) <= 0) {
             throw new IllegalArgumentException("Credit amount must be positive");
+        }
+        if (creditAmount != null && creditAmount.compareTo(derivedCreditAmount) != 0) {
+            throw new IllegalArgumentException(
+                "Credit amount must match the fixed conversion of 10 credits per EUR"
+            );
         }
 
         FundingOrder order = FundingOrder.builder()
                 .institutionAddress(institutionAddress.toLowerCase())
-                .eurGrossAmount(eurGrossAmount)
-                .creditAmount(creditAmount)
+                .eurGrossAmount(normalizedEurAmount)
+                .creditAmount(derivedCreditAmount)
                 .status(FundingOrder.Status.DRAFT)
                 .reference(reference)
                 .expiresAt(expiresAt)
@@ -54,7 +63,7 @@ public class FundingOrderService {
 
         order = persistence.createFundingOrder(order);
         log.info("Created funding order {} for {} (EUR {} → {} credits)",
-                order.getId(), institutionAddress, eurGrossAmount, creditAmount);
+                order.getId(), institutionAddress, normalizedEurAmount, derivedCreditAmount);
         return order;
     }
 

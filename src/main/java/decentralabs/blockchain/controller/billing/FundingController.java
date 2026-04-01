@@ -36,7 +36,9 @@ public class FundingController {
             String institution = extractString(body, "institutionAddress");
             EthereumAddressValidator.validate(institution, "institutionAddress");
             BigDecimal eurAmount = extractDecimal(body, "eurGrossAmount");
-            BigDecimal creditAmount = extractDecimal(body, "creditAmount");
+            BigDecimal creditAmount = body.containsKey("creditAmount")
+                    ? extractDecimal(body, "creditAmount")
+                    : null;
             String reference = (String) body.get("reference");
             Instant expiresAt = body.containsKey("expiresAt") ? Instant.parse((String) body.get("expiresAt")) : null;
 

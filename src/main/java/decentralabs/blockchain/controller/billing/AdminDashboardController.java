@@ -6,6 +6,7 @@ import decentralabs.blockchain.service.health.LabMetadataService;
 import decentralabs.blockchain.service.billing.InstitutionalAnalyticsService;
 import decentralabs.blockchain.service.wallet.InstitutionalWalletService;
 import decentralabs.blockchain.service.wallet.WalletService;
+import decentralabs.blockchain.util.CreditUnitConverter;
 import decentralabs.blockchain.util.EthereumAddressValidator;
 import decentralabs.blockchain.util.LogSanitizer;
 import jakarta.servlet.http.HttpServletRequest;
@@ -39,7 +40,7 @@ public class AdminDashboardController {
     private final InstitutionalAnalyticsService institutionalAnalyticsService;
     private final LabMetadataService labMetadataService;
 
-    private static final int LAB_TOKEN_DECIMALS = 1;
+    private static final int LAB_TOKEN_DECIMALS = CreditUnitConverter.CREDIT_DECIMALS;
 
     @Value("${contract.address}")
     private String contractAddress;
@@ -693,7 +694,7 @@ public class AdminDashboardController {
             String institutionalAddress = institutionalWalletService.getInstitutionalWalletAddress();
             
             // Default contract values (if wallet not configured or contract call fails)
-            final String DEFAULT_USER_LIMIT = "100"; // 10 service credits (1 decimal)
+            final String DEFAULT_USER_LIMIT = CreditUnitConverter.DEFAULT_USER_LIMIT_RAW; // 10 service credits
             final long DEFAULT_PERIOD_DURATION = 10368000L; // 120 days in seconds
             
             // If wallet not configured, return contract default values
@@ -745,12 +746,7 @@ public class AdminDashboardController {
             java.math.BigInteger billingBalance = walletService.getInstitutionalBillingBalance(institutionalAddress);
             if (billingBalance != null) {
                 info.put("billingBalance", billingBalance.toString());
-                // Format billing balance for display (divide by 10)
-                String formattedBalance = new java.math.BigDecimal(billingBalance)
-                    .divide(java.math.BigDecimal.valueOf(10))
-                    .stripTrailingZeros()
-                    .toPlainString();
-                info.put("billingBalanceFormatted", formattedBalance);
+                info.put("billingBalanceFormatted", formatLabTokens(billingBalance));
             } else {
                 info.put("billingBalance", "0");
                 info.put("billingBalanceFormatted", "0");
@@ -758,13 +754,7 @@ public class AdminDashboardController {
 
             java.math.BigInteger serviceCreditBalance = walletService.getServiceCreditBalance(institutionalAddress);
             info.put("serviceCreditBalance", serviceCreditBalance.toString());
-            info.put(
-                "serviceCreditBalanceFormatted",
-                new java.math.BigDecimal(serviceCreditBalance)
-                    .divide(java.math.BigDecimal.valueOf(10))
-                    .stripTrailingZeros()
-                    .toPlainString()
-            );
+            info.put("serviceCreditBalanceFormatted", formatLabTokens(serviceCreditBalance));
 
             // Check if wallet is registered as provider
             boolean isProvider = walletService.isLabProvider(institutionalAddress);

@@ -37,7 +37,7 @@ class FundingOrderServiceTest {
 
     private static final String INSTITUTION_ADDRESS = "0x1234567890abcdef1234567890abcdef12345678";
     private static final BigDecimal EUR_150 = new BigDecimal("150.00");
-    private static final BigDecimal CREDITS_150M = new BigDecimal("1500.0");
+    private static final BigDecimal CREDITS_150M = new BigDecimal("1500.00000");
 
     @BeforeEach
     void setUp() {
@@ -95,7 +95,7 @@ class FundingOrderServiceTest {
             assertThatThrownBy(() ->
                     service.createFundingOrder(INSTITUTION_ADDRESS, EUR_150, BigDecimal.ZERO, null, null))
                     .isInstanceOf(IllegalArgumentException.class)
-                    .hasMessageContaining("Credit amount");
+                    .hasMessageContaining("fixed conversion");
         }
     }
 

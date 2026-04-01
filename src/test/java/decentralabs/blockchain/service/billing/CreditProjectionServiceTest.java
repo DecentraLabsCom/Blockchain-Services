@@ -87,7 +87,7 @@ class CreditProjectionServiceTest {
             Instant expires = Instant.now().plusSeconds(86400 * 360L);
 
             service.syncLot(ADDRESS, 0, 42L, new BigDecimal("150.00"),
-                    new BigDecimal("1500.0"), new BigDecimal("1200.0"),
+                    new BigDecimal("1500.00000"), new BigDecimal("1200.00000"),
                     issued, expires, false);
 
             ArgumentCaptor<CreditLot> cap = ArgumentCaptor.forClass(CreditLot.class);
@@ -96,8 +96,8 @@ class CreditProjectionServiceTest {
             assertThat(lot.getLotIndex()).isEqualTo(0);
             assertThat(lot.getFundingOrderId()).isEqualTo(42L);
             assertThat(lot.getEurGrossAmount()).isEqualByComparingTo("150.00");
-            assertThat(lot.getCreditAmount()).isEqualByComparingTo("1500.0");
-            assertThat(lot.getRemaining()).isEqualByComparingTo("1200.0");
+            assertThat(lot.getCreditAmount()).isEqualByComparingTo("1500.00000");
+            assertThat(lot.getRemaining()).isEqualByComparingTo("1200.00000");
             assertThat(lot.isExpired()).isFalse();
         }
 
@@ -108,7 +108,7 @@ class CreditProjectionServiceTest {
             Instant expires = Instant.now().minusSeconds(86400 * 5L);
 
             service.syncLot(ADDRESS, 1, 43L, new BigDecimal("100.00"),
-                    new BigDecimal("1000.0"), BigDecimal.ZERO,
+                    new BigDecimal("1000.00000"), BigDecimal.ZERO,
                     issued, expires, true);
 
             ArgumentCaptor<CreditLot> cap = ArgumentCaptor.forClass(CreditLot.class);
@@ -121,7 +121,7 @@ class CreditProjectionServiceTest {
         @DisplayName("Syncs lot with null expiresAt (no-expiry lot)")
         void syncsLotWithNoExpiry() {
             service.syncLot(ADDRESS, 2, 44L, new BigDecimal("50.00"),
-                    new BigDecimal("500.0"), new BigDecimal("500.0"),
+                    new BigDecimal("500.00000"), new BigDecimal("500.00000"),
                     Instant.now(), null, false);
 
             ArgumentCaptor<CreditLot> cap = ArgumentCaptor.forClass(CreditLot.class);
@@ -153,7 +153,7 @@ class CreditProjectionServiceTest {
         @DisplayName("Records a MINT movement with funding-order reference")
         void recordsMintMovement() {
             service.recordMovement(ADDRESS, null, CreditMovement.Type.MINT,
-                    new BigDecimal("1500.0"), null, "funding-order:42");
+                    new BigDecimal("1500.00000"), null, "funding-order:42");
 
             ArgumentCaptor<CreditMovement> cap = ArgumentCaptor.forClass(CreditMovement.class);
             verify(persistence).recordMovement(cap.capture());

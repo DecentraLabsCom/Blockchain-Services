@@ -310,7 +310,7 @@ class AdminDashboardControllerTest {
                 .andExpect(jsonPath("$.labs[0].labId").value("3"))
                 .andExpect(jsonPath("$.labs[0].label").value("Quantum Lab"))
                 .andExpect(jsonPath("$.labs[0].eligibleReservationCount").value("0"))
-                .andExpect(jsonPath("$.labs[0].totalReceivableLab").value("100000"));
+                .andExpect(jsonPath("$.labs[0].totalReceivableLab").value("10"));
         }
 
         @Test
@@ -366,11 +366,11 @@ class AdminDashboardControllerTest {
                 .andExpect(jsonPath("$.labId").value("3"))
                 .andExpect(jsonPath("$.canRequestPayout").value(true))
                 .andExpect(jsonPath("$.eligibleReservationCount").value("0"))
-                .andExpect(jsonPath("$.totalReceivableLab").value("200000"))
-                .andExpect(jsonPath("$.accruedReceivableLab").value("50000"))
-                .andExpect(jsonPath("$.settlementQueuedLab").value("75000"))
-                .andExpect(jsonPath("$.invoicedReceivableLab").value("25000"))
-                .andExpect(jsonPath("$.approvedReceivableLab").value("50000"))
+                .andExpect(jsonPath("$.totalReceivableLab").value("20"))
+                .andExpect(jsonPath("$.accruedReceivableLab").value("5"))
+                .andExpect(jsonPath("$.settlementQueuedLab").value("7.5"))
+                .andExpect(jsonPath("$.invoicedReceivableLab").value("2.5"))
+                .andExpect(jsonPath("$.approvedReceivableLab").value("5"))
                 .andExpect(jsonPath("$.lastAccruedAt").value("1700000000"));
         }
     }
@@ -383,20 +383,20 @@ class AdminDashboardControllerTest {
         @DisplayName("Should include service credit balance in billing info")
         void shouldIncludeServiceCreditBalanceInBillingInfo() throws Exception {
             when(institutionalWalletService.getInstitutionalWalletAddress()).thenReturn(VALID_ADDRESS);
-            when(walletService.getInstitutionalUserLimit(VALID_ADDRESS)).thenReturn(BigInteger.valueOf(10_000_000));
+            when(walletService.getInstitutionalUserLimit(VALID_ADDRESS)).thenReturn(BigInteger.valueOf(1_000_000));
             when(walletService.getInstitutionalSpendingPeriod(VALID_ADDRESS)).thenReturn(BigInteger.valueOf(86_400));
-            when(walletService.getInstitutionalBillingBalance(VALID_ADDRESS)).thenReturn(BigInteger.valueOf(2_500_000));
-            when(walletService.getServiceCreditBalance(VALID_ADDRESS)).thenReturn(BigInteger.valueOf(7_500_000));
+            when(walletService.getInstitutionalBillingBalance(VALID_ADDRESS)).thenReturn(BigInteger.valueOf(250_000));
+            when(walletService.getServiceCreditBalance(VALID_ADDRESS)).thenReturn(BigInteger.valueOf(750_000));
             when(walletService.isLabProvider(VALID_ADDRESS)).thenReturn(false);
 
             mockMvc.perform(get("/billing/admin/billing-info"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.success").value(true))
                 .andExpect(jsonPath("$.walletConfigured").value(true))
-                .andExpect(jsonPath("$.serviceCreditBalance").value("7500000"))
-                .andExpect(jsonPath("$.serviceCreditBalanceFormatted").value("750000"))
-                .andExpect(jsonPath("$.billingBalance").value("2500000"))
-                .andExpect(jsonPath("$.billingBalanceFormatted").value("250000"));
+                .andExpect(jsonPath("$.serviceCreditBalance").value("750000"))
+                .andExpect(jsonPath("$.serviceCreditBalanceFormatted").value("7.5"))
+                .andExpect(jsonPath("$.billingBalance").value("250000"))
+                .andExpect(jsonPath("$.billingBalanceFormatted").value("2.5"));
         }
     }
 

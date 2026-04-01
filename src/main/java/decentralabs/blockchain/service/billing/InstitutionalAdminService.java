@@ -6,6 +6,7 @@ import decentralabs.blockchain.service.wallet.InstitutionalWalletService;
 import decentralabs.blockchain.service.wallet.WalletService;
 import decentralabs.blockchain.dto.billing.InstitutionalAdminRequest;
 import decentralabs.blockchain.dto.billing.InstitutionalAdminResponse;
+import decentralabs.blockchain.util.CreditUnitConverter;
 import decentralabs.blockchain.util.EthereumAddressValidator;
 import decentralabs.blockchain.util.LogSanitizer;
 import jakarta.servlet.http.HttpServletRequest;
@@ -63,7 +64,7 @@ public class InstitutionalAdminService {
     private final Eip712BillingAdminVerifier adminVerifier;
     private final AntiReplayService antiReplayService;
 
-    private static final int LAB_TOKEN_DECIMALS = 1;
+    private static final int LAB_TOKEN_DECIMALS = CreditUnitConverter.CREDIT_DECIMALS;
     private static final long SIGNATURE_MAX_AGE_MS = 5 * 60 * 1000;
 
     @Value("${contract.address}")

@@ -230,7 +230,7 @@ const API = {
     /**
      * Issue managed service credits to a customer credit account.
      * @param {string} creditAccount - Ethereum account receiving the managed credits
-     * @param {string} amountRaw - Raw credit amount with 6 decimals
+     * @param {string} amountRaw - Raw credit amount with 5 decimals
      * @param {string} reference - Optional business reference
      */
     async issueServiceCredits(creditAccount, amountRaw, reference = '') {
@@ -244,7 +244,7 @@ const API = {
     /**
      * Apply an administrative service-credit delta to a customer account.
      * @param {string} creditAccount - Ethereum account being adjusted
-     * @param {string} creditDelta - Signed raw delta with 6 decimals
+     * @param {string} creditDelta - Signed raw delta with 5 decimals
      * @param {string} reference - Optional business reference
      */
     async adjustServiceCredits(creditAccount, creditDelta, reference = '') {
@@ -260,7 +260,7 @@ const API = {
      * @param {string|number} labId - Lab token ID
      * @param {string|number} fromReceivableState - Source lifecycle bucket
      * @param {string|number} toReceivableState - Target lifecycle bucket
-     * @param {string|number} amountRaw - Raw credit-denominated amount with 6 decimals
+     * @param {string|number} amountRaw - Raw credit-denominated amount with 5 decimals
      * @param {string} reference - Optional business reference
      */
     async transitionProviderReceivableState(

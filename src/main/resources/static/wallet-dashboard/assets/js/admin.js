@@ -240,6 +240,8 @@ function maybePromptInviteToken(force = false) {
 // this affects all ETH-formatting but the original request only
 // targeted the "ETH Balance" display.
 const MAX_ETH_DECIMALS = 12;
+const CREDIT_DECIMALS = 5;
+const CREDIT_RAW_BASE = 10n ** BigInt(CREDIT_DECIMALS);
 
 // Converts a raw or formatted value to a human-readable ETH/credit amount.
 //
@@ -311,25 +313,24 @@ function formatLabTokenRaw(rawValue) {
         return '0';
     }
     try {
-        const base = 1000000n;
         const value = BigInt(rawValue.toString());
-        const whole = value / base;
-        const fraction = value % base;
+        const whole = value / CREDIT_RAW_BASE;
+        const fraction = value % CREDIT_RAW_BASE;
         if (fraction === 0n) {
             return whole.toString();
         }
-        const fractionText = fraction.toString().padStart(6, '0').replace(/0+$/, '');
+        const fractionText = fraction.toString().padStart(CREDIT_DECIMALS, '0').replace(/0+$/, '');
         return `${whole.toString()}.${fractionText}`;
     } catch (error) {
         const fallback = Number(rawValue);
         if (!Number.isFinite(fallback)) {
             return '0';
         }
-        return (fallback / 1e6).toFixed(6).replace(/\.?0+$/, '');
+        return (fallback / Number(CREDIT_RAW_BASE)).toFixed(CREDIT_DECIMALS).replace(/\.?0+$/, '');
     }
 }
 
-function decimalToRawUnits(value, decimals = 6) {
+function decimalToRawUnits(value, decimals = CREDIT_DECIMALS) {
     const text = String(value ?? '').trim();
     if (!text) {
         throw new Error('Amount is required');
@@ -1780,7 +1781,7 @@ async function handleProviderSettlementTransition(event) {
 
     let amountRaw;
     try {
-        amountRaw = decimalToRawUnits(amountInput?.value ?? '', 6);
+        amountRaw = decimalToRawUnits(amountInput?.value ?? '', CREDIT_DECIMALS);
     } catch (error) {
         showToast(error.message, 'error');
         return;
@@ -1852,7 +1853,7 @@ async function loadBillingAdminData() {
             
             // Wallet IS configured - show values (either from contract or defaults)
             // Update current user limit
-            const limitTokens = (parseFloat(data.userLimit) / 1e6).toFixed(2);
+            const limitTokens = formatLabTokenRaw(data.userLimit);
             document.getElementById('currentUserLimit').textContent = `${limitTokens} credits`;
             
             // Update current period
@@ -2011,8 +2012,13 @@ function setupFormHandlers() {
             return;
         }
         
-        // Convert service credits to raw amount (6 decimals)
-        const limitRaw = (parseFloat(limitTokens) * 1e6).toString();
+        let limitRaw;
+        try {
+            limitRaw = decimalToRawUnits(limitTokens, CREDIT_DECIMALS);
+        } catch (error) {
+            showToast(error.message, 'error');
+            return;
+        }
         
         try {
             const result = await API.setUserLimit(limitRaw);
@@ -2070,7 +2076,7 @@ function setupFormHandlers() {
 
             let amountRaw;
             try {
-                amountRaw = decimalToRawUnits(amountInput, 6);
+                amountRaw = decimalToRawUnits(amountInput, CREDIT_DECIMALS);
             } catch (error) {
                 showToast(error.message, 'error');
                 return;
@@ -2114,7 +2120,7 @@ function setupFormHandlers() {
 
             let creditDelta;
             try {
-                creditDelta = decimalToRawUnits(deltaInput, 6);
+                creditDelta = decimalToRawUnits(deltaInput, CREDIT_DECIMALS);
             } catch (error) {
                 showToast(error.message, 'error');
                 return;
