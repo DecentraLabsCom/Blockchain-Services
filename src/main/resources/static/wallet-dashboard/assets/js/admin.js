@@ -103,6 +103,9 @@ function updateRoleBasedSections() {
     if (operatorAdjustCreditsCard) {
         operatorAdjustCreditsCard.classList.toggle('hidden', !showOperatorControls);
     }
+    if (collectLifecycleSummary) {
+        collectLifecycleSummary.classList.toggle('hidden', !showProviderControls && !showOperatorControls);
+    }
 
     if (settlementTitle) {
         if (showProviderControls && showOperatorControls) {
@@ -138,8 +141,11 @@ function updateRoleBasedSections() {
         }
     }
 
-    if (collectLifecycleSummary && !showProviderControls && !showOperatorControls) {
-        collectLifecycleSummary.textContent = 'Settlement controls unavailable for this wallet';
+    if (collectLifecycleSummary && (
+        !collectLifecycleSummary.textContent.trim()
+        || collectLifecycleSummary.textContent === 'Settlement controls unavailable for this wallet'
+    )) {
+        collectLifecycleSummary.textContent = 'Lifecycle breakdown unavailable';
     }
 }
 
