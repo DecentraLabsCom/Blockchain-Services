@@ -136,8 +136,7 @@ public class SecurityConfig {
         publicConfiguration.addAllowedHeader("*");
 
         CorsConfiguration walletConfiguration = new CorsConfiguration();
-        String[] walletOrigins = allowedOrigins != null ? allowedOrigins : new String[0];
-        walletConfiguration.setAllowedOrigins(Arrays.asList(walletOrigins));
+        walletConfiguration.setAllowedOrigins(buildWalletAllowedOrigins());
         walletConfiguration.setAllowedMethods(Arrays.asList("GET", "POST"));
         walletConfiguration.addAllowedHeader("*");
 
@@ -162,6 +161,25 @@ public class SecurityConfig {
     }
 
     private List<String> buildPublicAllowedOrigins() {
+        Set<String> origins = new LinkedHashSet<>();
+        if (allowedOrigins != null) {
+            for (String origin : allowedOrigins) {
+                String normalized = normalizeOrigin(origin);
+                if (normalized != null) {
+                    origins.add(normalized);
+                }
+            }
+        }
+
+        String gatewayOrigin = normalizeOrigin(backendUrlResolver.resolveBaseDomain());
+        if (gatewayOrigin != null) {
+            origins.add(gatewayOrigin);
+        }
+
+        return new ArrayList<>(origins);
+    }
+
+    private List<String> buildWalletAllowedOrigins() {
         Set<String> origins = new LinkedHashSet<>();
         if (allowedOrigins != null) {
             for (String origin : allowedOrigins) {

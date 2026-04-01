@@ -10,6 +10,7 @@ const DashboardState = {
     refreshIntervalMs: 300000, // 5 minutes
     lastUpdate: null,
     walletAddress: null,
+    contractAddress: null,
     isInstitution: false,
     isProvider: false,
     isOperator: false,
@@ -146,26 +147,66 @@ function getInviteTokenStorageKey(address) {
     return `${INVITE_TOKEN_STORAGE_PREFIX}${(address || '').toLowerCase()}`;
 }
 
-function loadInviteTokenState(address) {
+function normalizeStoredContractAddress(contractAddress) {
+    return (contractAddress || '').trim().toLowerCase();
+}
+
+function loadInviteTokenState(address, contractAddress = null) {
     if (!address) {
         return false;
     }
     try {
-        return localStorage.getItem(getInviteTokenStorageKey(address)) === 'true';
+        const storageKey = getInviteTokenStorageKey(address);
+        const raw = localStorage.getItem(storageKey);
+        if (!raw) {
+            return false;
+        }
+
+        const expectedContract = normalizeStoredContractAddress(contractAddress);
+        if (raw === 'true') {
+            if (!expectedContract) {
+                return true;
+            }
+            localStorage.removeItem(storageKey);
+            return false;
+        }
+
+        let parsed;
+        try {
+            parsed = JSON.parse(raw);
+        } catch (parseError) {
+            localStorage.removeItem(storageKey);
+            return false;
+        }
+
+        if (!parsed || parsed.applied !== true) {
+            return false;
+        }
+
+        const storedContract = normalizeStoredContractAddress(parsed.contractAddress);
+        if (expectedContract && storedContract !== expectedContract) {
+            localStorage.removeItem(storageKey);
+            return false;
+        }
+
+        return true;
     } catch (error) {
         console.warn('Unable to read invite token state from storage', error);
         return false;
     }
 }
 
-function persistInviteTokenState(address, applied) {
+function persistInviteTokenState(address, applied, contractAddress = null) {
     if (!address) {
         return;
     }
     try {
         const storageKey = getInviteTokenStorageKey(address);
         if (applied) {
-            localStorage.setItem(storageKey, 'true');
+            localStorage.setItem(storageKey, JSON.stringify({
+                applied: true,
+                contractAddress: normalizeStoredContractAddress(contractAddress)
+            }));
         } else {
             localStorage.removeItem(storageKey);
         }
@@ -741,7 +782,11 @@ async function applyProvisioningToken() {
 
         if (registrationCompleted) {
             DashboardState.inviteTokenApplied = true;
-            persistInviteTokenState(DashboardState.walletAddress, true);
+            persistInviteTokenState(
+                DashboardState.walletAddress,
+                true,
+                DashboardState.contractAddress
+            );
             DashboardState.invitePromptedWallet = DashboardState.walletAddress;
             updateApplyInviteButtonVisibility();
         }
@@ -903,33 +948,43 @@ async function loadSystemStatus() {
         if (data.success) {
             const walletConfigured = data.walletConfigured;
             const walletAddress = data.institutionalWalletAddress;
+            const contractAddress =
+                data.contractAddress ||
+                data.verifyingContract ||
+                data.billingAdminEip712?.verifyingContract ||
+                null;
             DashboardState.isInstitution = data.institutionControlsEnabled === true || data.isInstitution === true;
             DashboardState.isProvider = data.providerControlsEnabled === true || data.isProvider === true;
             DashboardState.isOperator = data.operatorControlsEnabled === true || data.isDefaultAdmin === true;
             const previousWallet = DashboardState.walletAddress;
             DashboardState.walletAddress = walletAddress || null;
+            DashboardState.contractAddress = contractAddress;
             
             if (DashboardState.walletAddress !== previousWallet) {
                 DashboardState.invitePromptedWallet = null;
             }
             
             if (DashboardState.walletAddress) {
-                const storedInviteApplied = loadInviteTokenState(DashboardState.walletAddress);
-                const providerApplied = providerConfig && (
-                    providerConfig.isRegistered
-                    || providerConfig.fromProvisioningToken
+                const storedInviteApplied = loadInviteTokenState(
+                    DashboardState.walletAddress,
+                    DashboardState.contractAddress
                 );
+                const providerApplied = providerConfig && providerConfig.isRegistered === true;
 
                 DashboardState.inviteTokenApplied = storedInviteApplied || providerApplied;
 
-                // Persist server-known provisioning so it stays hidden across browsers
                 if (providerApplied) {
-                    persistInviteTokenState(DashboardState.walletAddress, true);
+                    persistInviteTokenState(
+                        DashboardState.walletAddress,
+                        true,
+                        DashboardState.contractAddress
+                    );
                     DashboardState.invitePromptedWallet = DashboardState.walletAddress;
                 }
             } else {
                 DashboardState.inviteTokenApplied = false;
                 DashboardState.invitePromptedWallet = null;
+                DashboardState.contractAddress = null;
                 hideProvisioningTokenModal();
             }
             
@@ -1016,6 +1071,7 @@ async function loadSystemStatus() {
         showToast('Failed to load system status: ' + error.message, 'error');
 
         DashboardState.walletAddress = null;
+        DashboardState.contractAddress = null;
         DashboardState.isInstitution = false;
         DashboardState.isProvider = false;
         DashboardState.isOperator = false;
@@ -2304,7 +2360,7 @@ function setupButtonHandlers() {
                     DashboardState.walletAddress = data.address;
                     DashboardState.inviteTokenApplied = false;
                     DashboardState.invitePromptedWallet = null;
-                    persistInviteTokenState(data.address, false);
+                    persistInviteTokenState(data.address, false, DashboardState.contractAddress);
                     
                     // Refresh dashboard to show new wallet
                     await refreshAllData();
@@ -2394,7 +2450,7 @@ function setupButtonHandlers() {
                     DashboardState.walletAddress = data.address;
                     DashboardState.inviteTokenApplied = false;
                     DashboardState.invitePromptedWallet = null;
-                    persistInviteTokenState(data.address, false);
+                    persistInviteTokenState(data.address, false, DashboardState.contractAddress);
                     
                     // Refresh dashboard to show imported wallet
                     await refreshAllData();
