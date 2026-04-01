@@ -171,17 +171,19 @@
                                     <option value="">Loading labs...</option>
                                 </select>
                             </div>
-                            <div class="collect-metric">
-                                <span class="collect-metric-label">Pending Closures</span>
-                                <span class="collect-metric-value" id="collectPendingClosures">--</span>
-                            </div>
-                            <div class="collect-metric">
-                                <span class="collect-metric-label">Pending Provider Payout</span>
-                                <span class="collect-metric-value" id="collectPendingTotal">--</span>
-                            </div>
-                            <div class="collect-metric">
-                                <span class="collect-metric-label">Payout Status</span>
-                                <span class="collect-status-value" id="collectStatusText">--</span>
+                            <div id="collectStatusMetrics" class="hidden">
+                                <div class="collect-metric">
+                                    <span class="collect-metric-label">Pending Closures</span>
+                                    <span class="collect-metric-value" id="collectPendingClosures">--</span>
+                                </div>
+                                <div class="collect-metric">
+                                    <span class="collect-metric-label">Pending Provider Payout</span>
+                                    <span class="collect-metric-value" id="collectPendingTotal">--</span>
+                                </div>
+                                <div class="collect-metric">
+                                    <span class="collect-metric-label">Payout Status</span>
+                                    <span class="collect-status-value" id="collectStatusText">--</span>
+                                </div>
                             </div>
                         </div>
                         <div class="collect-actions" id="providerPayoutActions">

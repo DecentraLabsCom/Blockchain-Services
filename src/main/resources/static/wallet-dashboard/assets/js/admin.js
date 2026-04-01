@@ -74,7 +74,10 @@ function updateRoleBasedSections() {
         providerSettlementControls.classList.toggle('hidden', !showProviderControls && !showOperatorControls);
     }
     if (providerPayoutActions) {
-        providerPayoutActions.classList.toggle('hidden', !showProviderControls);
+        providerPayoutActions.classList.toggle(
+            'hidden',
+            !showProviderControls || !(Array.isArray(DashboardState.collectLabs) && DashboardState.collectLabs.length > 0 && DashboardState.selectedCollectLabId)
+        );
     }
     if (providerSettlementTransitionForm) {
         providerSettlementTransitionForm.classList.toggle('hidden', !showOperatorControls);
@@ -146,6 +149,21 @@ function updateRoleBasedSections() {
         || collectLifecycleSummary.textContent === 'Settlement controls unavailable for this wallet'
     )) {
         collectLifecycleSummary.textContent = 'Lifecycle breakdown unavailable';
+    }
+}
+
+function updateCollectDetailVisibility() {
+    const metricsEl = document.getElementById('collectStatusMetrics');
+    const actionsEl = document.getElementById('providerPayoutActions');
+    const hasSelectedLab = Boolean(DashboardState.selectedCollectLabId);
+    const hasLabs = Array.isArray(DashboardState.collectLabs) && DashboardState.collectLabs.length > 0;
+    const showDetails = hasLabs && hasSelectedLab;
+
+    if (metricsEl) {
+        metricsEl.classList.toggle('hidden', !showDetails);
+    }
+    if (actionsEl) {
+        actionsEl.classList.toggle('hidden', !DashboardState.isProvider || !showDetails);
     }
 }
 
@@ -1469,6 +1487,7 @@ function renderCollectLabOptions(selectEl, labs, preferredLabId = null) {
     }
     if (!Array.isArray(labs) || !labs.length) {
         selectEl.innerHTML = '<option value="">No labs available</option>';
+        updateCollectDetailVisibility();
         return null;
     }
 
@@ -1486,6 +1505,7 @@ function renderCollectLabOptions(selectEl, labs, preferredLabId = null) {
     }).join('');
 
     selectEl.value = selectedLabId;
+    updateCollectDetailVisibility();
     return selectedLabId;
 }
 
@@ -1529,6 +1549,8 @@ async function loadCollectLabs() {
 
     DashboardState.collectLoadingStatus = true;
     DashboardState.collectCanExecute = false;
+    DashboardState.selectedCollectLabId = null;
+    updateCollectDetailVisibility();
     updateCollectButtonState();
     setCollectStatusText('Loading labs...');
     setCollectPanelCompact(false);
@@ -1572,6 +1594,7 @@ async function loadCollectLabs() {
             setCollectPendingClosuresText('0');
             setCollectStatusText(retryScheduled ? 'Rechecking labs...' : 'Not available', 'warning');
             setCollectPanelCompact(true);
+            updateCollectDetailVisibility();
             if (!retryScheduled) {
                 resetCollectLabsRetryState();
             }
@@ -1587,6 +1610,7 @@ async function loadCollectLabs() {
         );
         selectEl.disabled = false;
         setCollectPanelCompact(false);
+        updateCollectDetailVisibility();
 
         await loadCollectStatusForSelectedLab();
     } catch (error) {
@@ -1615,6 +1639,7 @@ async function loadCollectLabs() {
         setCollectPendingClosuresText('--');
         setCollectStatusText('Unavailable', 'error');
         setCollectPanelCompact(true);
+        updateCollectDetailVisibility();
         if (!retryScheduled) {
             resetCollectLabsRetryState();
         }
@@ -1633,6 +1658,7 @@ async function loadCollectStatusForSelectedLab() {
 
     const selectedLabId = selectEl.value || DashboardState.selectedCollectLabId;
     DashboardState.selectedCollectLabId = selectedLabId || null;
+    updateCollectDetailVisibility();
     if (!selectedLabId) {
         DashboardState.collectCanExecute = false;
         pendingEl.textContent = '0 LAB';
@@ -1645,6 +1671,7 @@ async function loadCollectStatusForSelectedLab() {
 
     DashboardState.collectLoadingStatus = true;
     DashboardState.collectCanExecute = false;
+    updateCollectDetailVisibility();
     pendingEl.textContent = '--';
     setCollectPendingClosuresText('--');
     setCollectStatusText('Checking...');
@@ -1674,6 +1701,7 @@ async function loadCollectStatusForSelectedLab() {
         DashboardState.collectCanExecute = DashboardState.isProvider
             && payoutEnabledForSelectedLab
             && data.canRequestPayout === true;
+        updateCollectDetailVisibility();
 
         if (DashboardState.collectCanExecute) {
             setCollectStatusText('Ready for payout request', 'success');
@@ -1695,6 +1723,7 @@ async function loadCollectStatusForSelectedLab() {
         setCollectPendingClosuresText('--');
         setCollectStatusText('Status unavailable', 'error');
         setCollectLifecycleSummaryText('Lifecycle breakdown unavailable');
+        updateCollectDetailVisibility();
     } finally {
         DashboardState.collectLoadingStatus = false;
         updateCollectButtonState();
