@@ -715,6 +715,10 @@ body {
     gap: var(--spacing-sm);
 }
 
+.operation-form.hidden {
+    display: none;
+}
+
 .form-group {
     display: flex;
     flex-direction: column;
