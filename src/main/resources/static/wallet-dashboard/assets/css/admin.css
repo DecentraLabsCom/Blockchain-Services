@@ -1390,14 +1390,19 @@ body {
 .collect-grid {
     display: flex;
     gap: var(--spacing-sm);
-    align-items: flex-end;
+    align-items: flex-start;
     width: 100%;
 }
 
 .collect-select-group {
     flex: 1 1 0;
     min-width: 18rem;
-    justify-content: flex-end;
+    justify-content: flex-start;
+}
+
+.collect-select-group label {
+    min-height: 1.1rem;
+    line-height: 1.1rem;
 }
 
 .collect-status-metrics {
@@ -1405,11 +1410,45 @@ body {
     grid-template-columns: repeat(3, minmax(11rem, 1fr));
     gap: var(--spacing-sm);
     flex: 0 0 auto;
-    align-self: flex-end;
+    margin-top: calc(1.1rem + var(--spacing-xs));
 }
 
 .collect-status-metrics.hidden {
     display: none;
+}
+
+.collect-select-wrap {
+    position: relative;
+}
+
+.collect-select-wrap::before {
+    content: '';
+    position: absolute;
+    top: 50%;
+    right: 1.1rem;
+    width: 0.7rem;
+    height: 0.7rem;
+    border-right: 2px solid rgba(0, 212, 255, 0.92);
+    border-bottom: 2px solid rgba(0, 212, 255, 0.92);
+    transform: translateY(-70%) rotate(45deg);
+    pointer-events: none;
+    filter: drop-shadow(0 0 6px rgba(0, 212, 255, 0.45));
+}
+
+.collect-select-wrap::after {
+    content: '';
+    position: absolute;
+    top: 0.85rem;
+    bottom: 0.85rem;
+    right: 2.6rem;
+    width: 1px;
+    background: linear-gradient(
+        to bottom,
+        rgba(0, 212, 255, 0.05),
+        rgba(0, 212, 255, 0.35),
+        rgba(0, 212, 255, 0.05)
+    );
+    pointer-events: none;
 }
 
 .collect-select {
@@ -1422,14 +1461,10 @@ body {
     font-size: 1rem;
     transition: all 0.3s ease;
     min-height: 72px;
-    background-image: linear-gradient(45deg, transparent 50%, var(--neon-blue) 50%), linear-gradient(135deg, var(--neon-blue) 50%, transparent 50%);
-    background-position: calc(100% - 24px) calc(50% - 3px), calc(100% - 18px) calc(50% - 3px);
-    background-size: 6px 6px, 6px 6px;
-    background-repeat: no-repeat;
     -webkit-appearance: none;
     -moz-appearance: none;
     appearance: none;
-    padding-right: 3rem;
+    padding-right: 4rem;
 }
 
 .collect-select:focus {
@@ -1509,7 +1544,7 @@ body {
 }
 
 .collect-panel.compact .collect-grid {
-    align-items: flex-end;
+    align-items: flex-start;
 }
 
 .collect-panel.compact .collect-metric {
