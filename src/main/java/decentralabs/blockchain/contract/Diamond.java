@@ -598,6 +598,106 @@ public class Diamond extends Contract {
             throw new IllegalArgumentException("Offset overflow: " + a + " + " + b, ex);
         }
     }
+
+    public static Function authorizeBackendFunction(String backendAddress) {
+        return new Function(
+            "authorizeBackend",
+            Arrays.asList(new Address(backendAddress)),
+            List.of()
+        );
+    }
+
+    public static Function revokeBackendFunction() {
+        return new Function(
+            "revokeBackend",
+            List.of(),
+            List.of()
+        );
+    }
+
+    public static Function adminResetBackendFunction(String providerAddress, String backendAddress) {
+        return new Function(
+            "adminResetBackend",
+            Arrays.asList(new Address(providerAddress), new Address(backendAddress)),
+            List.of()
+        );
+    }
+
+    public static Function setInstitutionalUserLimitFunction(BigInteger limit) {
+        return new Function(
+            "setInstitutionalUserLimit",
+            Arrays.asList(new Uint256(limit)),
+            List.of()
+        );
+    }
+
+    public static Function setInstitutionalSpendingPeriodFunction(BigInteger period) {
+        return new Function(
+            "setInstitutionalSpendingPeriod",
+            Arrays.asList(new Uint256(period)),
+            List.of()
+        );
+    }
+
+    public static Function resetInstitutionalSpendingPeriodFunction() {
+        return new Function(
+            "resetInstitutionalSpendingPeriod",
+            List.of(),
+            List.of()
+        );
+    }
+
+    public static Function issueServiceCreditsFunction(String creditAccount, BigInteger amount, byte[] reference) {
+        return new Function(
+            "issueServiceCredits",
+            Arrays.asList(
+                new Address(creditAccount),
+                new Uint256(amount),
+                new Bytes32(reference)
+            ),
+            List.of()
+        );
+    }
+
+    public static Function adjustServiceCreditsFunction(String creditAccount, BigInteger delta, byte[] reference) {
+        return new Function(
+            "adjustServiceCredits",
+            Arrays.asList(
+                new Address(creditAccount),
+                new org.web3j.abi.datatypes.generated.Int256(delta),
+                new Bytes32(reference)
+            ),
+            List.of()
+        );
+    }
+
+    public static Function requestProviderPayoutFunction(BigInteger labId, BigInteger maxBatch) {
+        return new Function(
+            "requestProviderPayout",
+            Arrays.asList(new Uint256(labId), new Uint256(maxBatch)),
+            List.of()
+        );
+    }
+
+    public static Function transitionProviderReceivableStateFunction(
+        BigInteger labId,
+        BigInteger fromState,
+        BigInteger toState,
+        BigInteger amount,
+        byte[] reference
+    ) {
+        return new Function(
+            "transitionProviderReceivableState",
+            Arrays.asList(
+                new Uint256(labId),
+                new Uint256(fromState),
+                new Uint256(toState),
+                new Uint256(amount),
+                new Bytes32(reference)
+            ),
+            List.of()
+        );
+    }
     
     /**
      * Load an existing Diamond contract

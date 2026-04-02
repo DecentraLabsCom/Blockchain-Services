@@ -1,5 +1,6 @@
 package decentralabs.blockchain.service.billing;
 
+import decentralabs.blockchain.contract.Diamond;
 import decentralabs.blockchain.service.RateLimitService;
 import decentralabs.blockchain.service.persistence.AntiReplayService;
 import decentralabs.blockchain.service.wallet.InstitutionalWalletService;
@@ -13,19 +14,13 @@ import jakarta.servlet.http.HttpServletRequest;
 import java.math.BigDecimal;
 import java.math.BigInteger;
 import java.math.RoundingMode;
-import java.util.Arrays;
-import java.util.Collections;
 import java.util.Locale;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.web3j.abi.FunctionEncoder;
-import org.web3j.abi.datatypes.Address;
 import org.web3j.abi.datatypes.Function;
-import org.web3j.abi.datatypes.generated.Bytes32;
-import org.web3j.abi.datatypes.generated.Int256;
-import org.web3j.abi.datatypes.generated.Uint256;
 import org.web3j.crypto.Credentials;
 import org.web3j.crypto.RawTransaction;
 import org.web3j.crypto.TransactionEncoder;
@@ -387,11 +382,7 @@ public class InstitutionalAdminService {
             return InstitutionalAdminResponse.error("Backend address required for authorization");
         }
 
-        Function function = new Function(
-            "authorizeBackend",
-            Arrays.asList(new Address(request.getBackendAddress())),
-            Collections.emptyList()
-        );
+        Function function = Diamond.authorizeBackendFunction(request.getBackendAddress());
 
         String txHash = sendTransaction(credentials, function);
         recordAdminTransaction(
@@ -410,11 +401,7 @@ public class InstitutionalAdminService {
 
     private InstitutionalAdminResponse revokeBackend(Credentials credentials) throws Exception {
         log.info("Revoking backend access request received.");
-        Function function = new Function(
-            "revokeBackend",
-            Collections.emptyList(),
-            Collections.emptyList()
-        );
+        Function function = Diamond.revokeBackendFunction();
 
         String txHash = sendTransaction(credentials, function);
         recordAdminTransaction(
@@ -440,14 +427,7 @@ public class InstitutionalAdminService {
             request.getBackendAddress() :
             "0x0000000000000000000000000000000000000000";
 
-        Function function = new Function(
-            "adminResetBackend",
-            Arrays.asList(
-                new Address(request.getProviderAddress()),
-                new Address(backendAddress)
-            ),
-            Collections.emptyList()
-        );
+        Function function = Diamond.adminResetBackendFunction(request.getProviderAddress(), backendAddress);
 
         String txHash = sendTransaction(credentials, function);
         recordAdminTransaction(
@@ -470,11 +450,7 @@ public class InstitutionalAdminService {
         }
 
         BigInteger limit = EthereumAddressValidator.parseBigInteger(request.getSpendingLimit(), "spendingLimit");
-        Function function = new Function(
-            "setInstitutionalUserLimit",
-            Arrays.asList(new Uint256(limit)),
-            Collections.emptyList()
-        );
+        Function function = Diamond.setInstitutionalUserLimitFunction(limit);
 
         String txHash = sendTransaction(credentials, function);
         recordAdminTransaction(
@@ -497,11 +473,7 @@ public class InstitutionalAdminService {
         }
 
         BigInteger period = EthereumAddressValidator.parseBigInteger(request.getSpendingPeriod(), "spendingPeriod");
-        Function function = new Function(
-            "setInstitutionalSpendingPeriod",
-            Arrays.asList(new Uint256(period)),
-            Collections.emptyList()
-        );
+        Function function = Diamond.setInstitutionalSpendingPeriodFunction(period);
 
         String txHash = sendTransaction(credentials, function);
         recordAdminTransaction(
@@ -520,11 +492,7 @@ public class InstitutionalAdminService {
 
     private InstitutionalAdminResponse resetSpendingPeriod(Credentials credentials) throws Exception {
         log.info("Resetting spending period request received.");
-        Function function = new Function(
-            "resetInstitutionalSpendingPeriod",
-            Collections.emptyList(),
-            Collections.emptyList()
-        );
+        Function function = Diamond.resetInstitutionalSpendingPeriodFunction();
 
         String txHash = sendTransaction(credentials, function);
         recordAdminTransaction(
@@ -555,14 +523,10 @@ public class InstitutionalAdminService {
             return InstitutionalAdminResponse.error("Amount must be greater than zero");
         }
 
-        Function function = new Function(
-            "issueServiceCredits",
-            Arrays.asList(
-                new Address(creditAccount),
-                new Uint256(amount),
-                new Bytes32(referenceToBytes32(request.getReference()))
-            ),
-            Collections.emptyList()
+        Function function = Diamond.issueServiceCreditsFunction(
+            creditAccount,
+            amount,
+            referenceToBytes32(request.getReference())
         );
 
         String txHash = sendTransaction(credentials, function);
@@ -594,14 +558,10 @@ public class InstitutionalAdminService {
             return InstitutionalAdminResponse.error("creditDelta must not be zero");
         }
 
-        Function function = new Function(
-            "adjustServiceCredits",
-            Arrays.asList(
-                new Address(creditAccount),
-                new Int256(delta),
-                new Bytes32(referenceToBytes32(request.getReference()))
-            ),
-            Collections.emptyList()
+        Function function = Diamond.adjustServiceCreditsFunction(
+            creditAccount,
+            delta,
+            referenceToBytes32(request.getReference())
         );
 
         String txHash = sendTransaction(credentials, function);
@@ -640,11 +600,7 @@ public class InstitutionalAdminService {
             return InstitutionalAdminResponse.error("maxBatch must be between 1 and 100");
         }
 
-        Function function = new Function(
-            "requestProviderPayout",
-            Arrays.asList(new Uint256(labId), new Uint256(maxBatch)),
-            Collections.emptyList()
-        );
+        Function function = Diamond.requestProviderPayoutFunction(labId, maxBatch);
 
         String txHash = sendTransaction(credentials, function);
         recordAdminTransaction(
@@ -701,16 +657,12 @@ public class InstitutionalAdminService {
             return InstitutionalAdminResponse.error("Invalid provider receivable lifecycle transition");
         }
 
-        Function function = new Function(
-            "transitionProviderReceivableState",
-            Arrays.asList(
-                new Uint256(labId),
-                new Uint256(fromState),
-                new Uint256(toState),
-                new Uint256(amount),
-                new Bytes32(referenceToBytes32(request.getReference()))
-            ),
-            Collections.emptyList()
+        Function function = Diamond.transitionProviderReceivableStateFunction(
+            labId,
+            fromState,
+            toState,
+            amount,
+            referenceToBytes32(request.getReference())
         );
 
         String txHash = sendTransaction(credentials, function);
