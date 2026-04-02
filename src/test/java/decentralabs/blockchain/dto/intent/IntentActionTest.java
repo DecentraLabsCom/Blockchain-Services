@@ -104,14 +104,6 @@ class IntentActionTest {
             assertFalse(IntentAction.CANCEL_BOOKING.usesReservationPayload());
         }
 
-        @Test
-        @DisplayName("Should have REQUEST_FUNDS action")
-        void shouldHaveRequestFundsAction() {
-            assertNotNull(IntentAction.REQUEST_FUNDS);
-            assertEquals(11, IntentAction.REQUEST_FUNDS.getId());
-            assertEquals("REQUEST_FUNDS", IntentAction.REQUEST_FUNDS.getWireValue());
-            assertFalse(IntentAction.REQUEST_FUNDS.usesReservationPayload());
-        }
     }
 
     @Nested
@@ -132,14 +124,6 @@ class IntentActionTest {
             Optional<IntentAction> result = IntentAction.fromId(8);
             assertTrue(result.isPresent());
             assertEquals(IntentAction.RESERVATION_REQUEST, result.get());
-        }
-
-        @Test
-        @DisplayName("Should return REQUEST_FUNDS from id 11")
-        void shouldReturnRequestFundsFromId() {
-            Optional<IntentAction> result = IntentAction.fromId(11);
-            assertTrue(result.isPresent());
-            assertEquals(IntentAction.REQUEST_FUNDS, result.get());
         }
 
         @Test
@@ -237,7 +221,7 @@ class IntentActionTest {
         @DisplayName("Should return all values")
         void shouldReturnAllValues() {
             IntentAction[] values = IntentAction.values();
-            assertEquals(11, values.length);
+            assertEquals(10, values.length);
         }
 
         @Test
@@ -255,7 +239,6 @@ class IntentActionTest {
             assertTrue(containsAction(values, IntentAction.RESERVATION_REQUEST));
             assertTrue(containsAction(values, IntentAction.CANCEL_RESERVATION_REQUEST));
             assertTrue(containsAction(values, IntentAction.CANCEL_BOOKING));
-            assertTrue(containsAction(values, IntentAction.REQUEST_FUNDS));
         }
 
         @Test

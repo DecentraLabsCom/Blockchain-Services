@@ -150,9 +150,7 @@ public class IntentService {
 
         String puc = resolvePuc(actionPayload, reservationPayload);
         enforceLabCreatorOwnershipPrecheck(action, actionPayload, puc);
-        if (action != IntentAction.REQUEST_FUNDS) {
-            validateWebauthnAssertion(puc, credentialId, meta, submission);
-        }
+        validateWebauthnAssertion(puc, credentialId, meta, submission);
 
         if (isExpired(meta.getExpiresAt())) {
             return buildRejectedAck(meta.getRequestId(), "expired");
@@ -354,15 +352,6 @@ public class IntentService {
                         throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Missing reservationKey");
                     }
                 }
-                case REQUEST_FUNDS -> {
-                    if (actionPayload.getMaxBatch() == null) {
-                        throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Missing maxBatch");
-                    }
-                    if (actionPayload.getMaxBatch().compareTo(BigInteger.ONE) < 0
-                        || actionPayload.getMaxBatch().compareTo(BigInteger.valueOf(100)) > 0) {
-                        throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Invalid maxBatch");
-                    }
-                }
                 default -> { }
             }
         }
@@ -437,8 +426,7 @@ public class IntentService {
             || action == IntentAction.LAB_UPDATE
             || action == IntentAction.LAB_DELETE
             || action == IntentAction.LAB_LIST
-            || action == IntentAction.LAB_UNLIST
-            || action == IntentAction.REQUEST_FUNDS;
+            || action == IntentAction.LAB_UNLIST;
     }
 
     String fetchCreatorPucHash(BigInteger labId) {

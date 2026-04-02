@@ -113,7 +113,6 @@ public class IntentOnChainExecutor {
                 yield result;
             }
             case "CANCEL_BOOKING" -> send(buildCancelBooking(record), credentials);
-            case "REQUEST_FUNDS", "REQUEST_PROVIDER_PAYOUT" -> send(buildRequestProviderPayout(record), credentials);
             default -> new ExecutionResult(false, null, null, null, null, "unsupported_action");
         };
     }
@@ -389,43 +388,6 @@ public class IntentOnChainExecutor {
 
         return Optional.of(new Function(
             "cancelInstitutionalReservationRequestWithIntent",
-            List.of(new Bytes32(requestId), struct),
-            List.of()
-        ));
-    }
-
-    private Optional<Function> buildRequestProviderPayout(IntentRecord record) {
-        ActionIntentPayload payload = record.getActionPayload();
-        if (payload == null || payload.getLabId() == null) {
-            return Optional.empty();
-        }
-        BigInteger maxBatch = bigIntVal(payload.getMaxBatch());
-        if (maxBatch == null || maxBatch.compareTo(BigInteger.ONE) < 0 || maxBatch.compareTo(BigInteger.valueOf(100)) > 0) {
-            return Optional.empty();
-        }
-        if (payload.getExecutor() == null || payload.getExecutor().isBlank()) {
-            return Optional.empty();
-        }
-        byte[] requestId = toBytes32(record.getRequestId());
-
-        DynamicStruct struct = new DynamicStruct(
-            new Address(payload.getExecutor()),
-            new Utf8String(payload.getSchacHomeOrganization() != null ? payload.getSchacHomeOrganization() : ""),
-            new Utf8String(payload.getPuc() != null ? payload.getPuc() : ""),
-            new Bytes32(toBytes32(payload.getAssertionHash())),
-            new Uint256(payload.getLabId()),
-            new Bytes32(toBytes32(payload.getReservationKey())),
-            new Utf8String(payload.getUri() != null ? payload.getUri() : ""),
-            new Uint96(payload.getPrice() != null ? payload.getPrice() : BigInteger.ZERO),
-            new Uint96(payload.getMaxBatch() != null ? payload.getMaxBatch() : BigInteger.ZERO),
-            new Utf8String(payload.getAccessURI() != null ? payload.getAccessURI() : ""),
-            new Utf8String(payload.getAccessKey() != null ? payload.getAccessKey() : ""),
-            new Utf8String(payload.getTokenURI() != null ? payload.getTokenURI() : ""),
-            new Uint8(toUint8Value(payload.getResourceType()))
-        );
-
-        return Optional.of(new Function(
-            "requestProviderPayoutWithIntent",
             List.of(new Bytes32(requestId), struct),
             List.of()
         ));

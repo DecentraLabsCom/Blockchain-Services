@@ -26,7 +26,7 @@ public class ActionIntentPayload {
     private String reservationKey; // bytes32 hex
     private String uri;
     private BigInteger price;      // uint96
-    private BigInteger maxBatch;   // uint96 (only for REQUEST_FUNDS intent)
+    private BigInteger maxBatch;   // uint96 shared batch-size slot
     private String accessURI;
     private String accessKey;
     private String tokenURI;

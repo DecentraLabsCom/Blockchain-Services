@@ -471,24 +471,6 @@ class IntentOnChainExecutorTest {
     }
 
     @Nested
-    @DisplayName("Provider Payout Request Action Tests")
-    class RequestFundsTests {
-
-        @Test
-        @DisplayName("Should return missing_parameters when actionPayload is null")
-        void shouldReturnMissingParametersWhenPayloadIsNull() throws Exception {
-            when(institutionalWalletService.getInstitutionalCredentials()).thenReturn(testCredentials);
-
-            IntentRecord record = new IntentRecord("req-123", "REQUEST_FUNDS", "0xprovider");
-
-            ExecutionResult result = executor.execute(record);
-
-            assertThat(result.success()).isFalse();
-            assertThat(result.reason()).isEqualTo("missing_parameters");
-        }
-    }
-
-    @Nested
     @DisplayName("Builders Positive Tests")
     class BuildersPositiveTests {
 
@@ -611,49 +593,6 @@ class IntentOnChainExecutorTest {
             java.util.List<org.web3j.abi.datatypes.Type> values = ds.getValue();
             org.web3j.abi.datatypes.Utf8String tokenUri = (org.web3j.abi.datatypes.Utf8String) values.get(11);
             assertThat(tokenUri.getValue()).isEqualTo(payload.getTokenURI());
-        }
-
-        @Test
-        @DisplayName("buildRequestProviderPayout populates maxBatch in struct")
-        void buildRequestProviderPayoutMaxBatch() throws Exception {
-            IntentRecord record = new IntentRecord("req-funds", "REQUEST_PROVIDER_PAYOUT", "0xprovider");
-            ActionIntentPayload payload = new ActionIntentPayload();
-            payload.setExecutor("0x5555555555555555555555555555555555555555");
-            payload.setLabId(BigInteger.valueOf(11));
-            payload.setMaxBatch(BigInteger.valueOf(5));
-            payload.setPrice(BigInteger.valueOf(0));
-            record.setActionPayload(payload);
-
-            java.lang.reflect.Method m = IntentOnChainExecutor.class.getDeclaredMethod("buildRequestProviderPayout", IntentRecord.class);
-            m.setAccessible(true);
-            java.util.Optional<org.web3j.abi.datatypes.Function> maybe = (java.util.Optional<org.web3j.abi.datatypes.Function>) m.invoke(executor, record);
-            assertThat(maybe).isPresent();
-            org.web3j.abi.datatypes.Function f = maybe.get();
-            assertThat(f.getName()).isEqualTo("requestProviderPayoutWithIntent");
-            org.web3j.abi.datatypes.DynamicStruct ds = (org.web3j.abi.datatypes.DynamicStruct) f.getInputParameters().get(1);
-            java.util.List<org.web3j.abi.datatypes.Type> values = ds.getValue();
-            org.web3j.abi.datatypes.generated.Uint96 maxBatch = (org.web3j.abi.datatypes.generated.Uint96) values.get(8);
-            assertThat(maxBatch.getValue()).isEqualTo(payload.getMaxBatch());
-        }
-
-        @Test
-        @DisplayName("buildRequestProviderPayout accepts REQUEST_PROVIDER_PAYOUT wire action")
-        void buildRequestProviderPayout() throws Exception {
-            IntentRecord record = new IntentRecord("req-payout", "REQUEST_PROVIDER_PAYOUT", "0xprovider");
-            ActionIntentPayload payload = new ActionIntentPayload();
-            payload.setExecutor("0x5555555555555555555555555555555555555555");
-            payload.setLabId(BigInteger.valueOf(11));
-            payload.setMaxBatch(BigInteger.valueOf(5));
-            payload.setPrice(BigInteger.ZERO);
-            record.setActionPayload(payload);
-
-            java.lang.reflect.Method m =
-                IntentOnChainExecutor.class.getDeclaredMethod("buildRequestProviderPayout", IntentRecord.class);
-            m.setAccessible(true);
-            java.util.Optional<org.web3j.abi.datatypes.Function> maybe =
-                (java.util.Optional<org.web3j.abi.datatypes.Function>) m.invoke(executor, record);
-            assertThat(maybe).isPresent();
-            assertThat(maybe.get().getName()).isEqualTo("requestProviderPayoutWithIntent");
         }
 
         @Test
