@@ -10,8 +10,6 @@
 # Note: If deploying behind a reverse proxy (e.g., OpenResty), 
 #       comment out the ports mapping to avoid conflicts.
 
-version: '3.8'
-
 services:
   blockchain-services:
     build: .

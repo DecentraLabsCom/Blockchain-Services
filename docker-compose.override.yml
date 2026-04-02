@@ -1,5 +1,3 @@
-version: '3.8'
-
 # Development overrides (auto-loaded by Docker Compose when present).
 # For production, use docker-compose.prod.yml instead.
 

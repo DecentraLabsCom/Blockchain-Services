@@ -165,13 +165,13 @@
                     <div class="collect-panel" id="collectPanel">
                         <div id="providerSettlementControls">
                         <div class="collect-grid">
-                            <div class="form-group">
+                            <div class="form-group collect-select-group">
                                 <label for="collectLabSelect" id="collectLabSelectLabel">Select one of your labs</label>
                                 <select id="collectLabSelect" class="collect-select" disabled>
                                     <option value="">Loading labs...</option>
                                 </select>
                             </div>
-                            <div id="collectStatusMetrics" class="hidden">
+                            <div id="collectStatusMetrics" class="collect-status-metrics hidden">
                                 <div class="collect-metric">
                                     <span class="collect-metric-label">Pending Closures</span>
                                     <span class="collect-metric-value" id="collectPendingClosures">--</span>
@@ -192,9 +192,7 @@
                             </button>
                         </div>
                         </div>
-                        <div class="info-text" id="collectLifecycleSummary" style="margin-top: var(--spacing-md);">
-                            Lifecycle breakdown unavailable
-                        </div>
+                        <div class="info-text hidden" id="collectLifecycleSummary"></div>
                         <form id="providerSettlementTransitionForm" class="operation-form hidden" style="margin-top: var(--spacing-lg);">
                             <div class="form-group">
                                 <label for="providerSettlementTransitionSelect">Settlement Transition</label>

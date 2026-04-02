@@ -144,11 +144,8 @@ function updateRoleBasedSections() {
         }
     }
 
-    if (collectLifecycleSummary && (
-        !collectLifecycleSummary.textContent.trim()
-        || collectLifecycleSummary.textContent === 'Settlement controls unavailable for this wallet'
-    )) {
-        collectLifecycleSummary.textContent = 'Lifecycle breakdown unavailable';
+    if (collectLifecycleSummary && !collectLifecycleSummary.textContent.trim()) {
+        collectLifecycleSummary.classList.add('hidden');
     }
 }
 
@@ -1430,7 +1427,9 @@ function setCollectPendingClosuresText(value) {
 function setCollectLifecycleSummaryText(value) {
     const lifecycleEl = document.getElementById('collectLifecycleSummary');
     if (!lifecycleEl) return;
-    lifecycleEl.textContent = value ?? 'Lifecycle breakdown unavailable';
+    const normalizedValue = String(value || '').trim();
+    lifecycleEl.textContent = normalizedValue;
+    lifecycleEl.classList.toggle('hidden', !normalizedValue);
 }
 
 function formatLifecycleBucket(label, rawValue, formattedValue) {
@@ -1457,7 +1456,7 @@ function buildCollectLifecycleSummary(data) {
         formatLifecycleBucket('Reversed', data.reversedReceivableRaw, data.reversedReceivableLab),
     ].filter(Boolean);
 
-    return items.length ? items.join(' | ') : 'No lifecycle buckets populated for this lab';
+    return items.length ? items.join(' | ') : '';
 }
 
 function getReceivableTransitionPreset(value) {
@@ -1660,7 +1659,7 @@ async function loadCollectStatusForSelectedLab() {
         pendingEl.textContent = '0 LAB';
         setCollectPendingClosuresText('0');
         setCollectStatusText('Select a lab', 'warning');
-        setCollectLifecycleSummaryText('No lab selected');
+        setCollectLifecycleSummaryText('');
         updateCollectButtonState();
         return;
     }
@@ -1671,7 +1670,7 @@ async function loadCollectStatusForSelectedLab() {
     pendingEl.textContent = '--';
     setCollectPendingClosuresText('--');
     setCollectStatusText('Checking...');
-    setCollectLifecycleSummaryText('Loading lifecycle breakdown...');
+    setCollectLifecycleSummaryText('');
     updateCollectButtonState();
 
     try {
@@ -1718,7 +1717,7 @@ async function loadCollectStatusForSelectedLab() {
         pendingEl.textContent = '--';
         setCollectPendingClosuresText('--');
         setCollectStatusText('Status unavailable', 'error');
-        setCollectLifecycleSummaryText('Lifecycle breakdown unavailable');
+        setCollectLifecycleSummaryText('');
         updateCollectDetailVisibility();
     } finally {
         DashboardState.collectLoadingStatus = false;
