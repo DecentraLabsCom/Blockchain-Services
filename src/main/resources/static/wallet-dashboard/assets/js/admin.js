@@ -1400,6 +1400,14 @@ function scheduleCollectLabsRetry(error) {
         return false;
     }
 
+    return scheduleNextCollectLabsRetry();
+}
+
+function shouldRetryEmptyCollectLabs() {
+    return Boolean(DashboardState.walletAddress) && (DashboardState.isProvider || DashboardState.isOperator);
+}
+
+function scheduleNextCollectLabsRetry(statusMessage = null) {
     if (DashboardState.collectLabsRetryAttempts >= COLLECT_LABS_RETRY_DELAYS_MS.length) {
         return false;
     }
@@ -1409,7 +1417,10 @@ function scheduleCollectLabsRetry(error) {
     const delayMs = COLLECT_LABS_RETRY_DELAYS_MS[attemptIndex];
     DashboardState.collectLabsRetryAttempts += 1;
 
-    setCollectStatusText(`Retrying labs in ${Math.ceil(delayMs / 1000)}s...`, 'warning');
+    setCollectStatusText(
+        statusMessage || `Retrying labs in ${Math.ceil(delayMs / 1000)}s...`,
+        'warning'
+    );
     DashboardState.collectLabsRetryTimeout = setTimeout(() => {
         DashboardState.collectLabsRetryTimeout = null;
         loadCollectLabs();
@@ -1584,15 +1595,25 @@ async function loadCollectLabs() {
                 return;
             }
 
+            const retryScheduled = shouldRetryEmptyCollectLabs()
+                ? scheduleNextCollectLabsRetry('Waiting for labs...')
+                : false;
+
             DashboardState.collectLabs = [];
             DashboardState.selectedCollectLabId = null;
-            selectEl.innerHTML = '<option value="">No labs available</option>';
-            pendingEl.textContent = '0 LAB';
+            selectEl.innerHTML = retryScheduled
+                ? '<option value="">Checking labs...</option>'
+                : '<option value="">No labs available</option>';
+            pendingEl.textContent = '0 credits';
             setCollectPendingClosuresText('0');
-            setCollectStatusText('Not available', 'warning');
+            if (!retryScheduled) {
+                setCollectStatusText('Not available', 'warning');
+            }
             setCollectPanelCompact(true);
             updateCollectDetailVisibility();
-            resetCollectLabsRetryState();
+            if (!retryScheduled) {
+                resetCollectLabsRetryState();
+            }
             return;
         }
 
@@ -1656,7 +1677,7 @@ async function loadCollectStatusForSelectedLab() {
     updateCollectDetailVisibility();
     if (!selectedLabId) {
         DashboardState.collectCanExecute = false;
-        pendingEl.textContent = '0 LAB';
+        pendingEl.textContent = '0 credits';
         setCollectPendingClosuresText('0');
         setCollectStatusText('Select a lab', 'warning');
         setCollectLifecycleSummaryText('');
@@ -1687,7 +1708,7 @@ async function loadCollectStatusForSelectedLab() {
             || selectedLab?.operatorReviewOnly === true;
 
         const totalLab = data.totalReceivableLab || formatLabTokenRaw(data.totalReceivableRaw);
-        pendingEl.textContent = `${totalLab} LAB`;
+        pendingEl.textContent = `${totalLab} credits`;
         const pendingClosuresRaw = data.eligibleReservationCount ?? '0';
         const pendingClosures = formatPendingClosures(pendingClosuresRaw);
         setCollectPendingClosuresText(pendingClosures);
@@ -1822,7 +1843,7 @@ async function handleProviderSettlementTransition(event) {
     const formattedAmount = amountInput?.value?.trim() || formatLabTokenRaw(amountRaw);
     const confirmed = await showConfirmModal(
         'Submit Settlement Transition',
-        `Submit "${selectedPreset.label}" for ${collectTarget} with amount ${formattedAmount} LAB?`,
+        `Submit "${selectedPreset.label}" for ${collectTarget} with amount ${formattedAmount} credits?`,
         {
             icon: 'file-invoice-dollar',
             confirmText: 'Submit transition',
