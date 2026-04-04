@@ -371,6 +371,31 @@ function escapeHtml(value) {
         .replace(/'/g, '&#39;');
 }
 
+function getCollectTargetLabel(lab = getSelectedCollectLab()) {
+    if (!lab) {
+        return DashboardState.selectedCollectLabId ? `Lab #${DashboardState.selectedCollectLabId}` : 'selected lab';
+    }
+
+    const name = String(lab.name || lab.label || '').trim();
+    return name || `Lab #${lab.labId || DashboardState.selectedCollectLabId}`;
+}
+
+async function waitForAdminTransactionConfirmation(txHash, options = {}) {
+    const intervalMs = options.intervalMs || 2000;
+    const timeoutMs = options.timeoutMs || 120000;
+    const startedAt = Date.now();
+
+    while ((Date.now() - startedAt) < timeoutMs) {
+        const txStatus = await API.getAdminTransactionStatus(txHash);
+        if (txStatus.confirmed === true) {
+            return txStatus;
+        }
+        await new Promise(resolve => setTimeout(resolve, intervalMs));
+    }
+
+    throw new Error('Transaction confirmation timed out');
+}
+
 // Toast notification
 function showToast(message, type = 'info') {
     const toast = document.getElementById('toast');
@@ -1796,9 +1821,7 @@ async function handleCollectLabPayout() {
         return;
     }
 
-    const selectedLabText = document.getElementById('collectLabSelect')
-        ?.selectedOptions?.[0]?.textContent?.trim();
-    const collectTarget = selectedLabText || `lab #${labId}`;
+    const collectTarget = getCollectTargetLabel(selectedLab);
     const confirmed = await showConfirmModal(
         'Request Provider Payout',
         `Request provider payout for ${collectTarget}?`,
@@ -1818,16 +1841,33 @@ async function handleCollectLabPayout() {
     try {
         const result = await API.requestProviderPayout(labId, DashboardState.collectMaxBatch);
         if (result.success) {
-            showToast(`Payout request submitted. Tx: ${formatAddress(result.transactionHash)}`, 'success');
-            setCollectStatusText('Payout request submitted', 'success');
+            showToast(`Payout transaction submitted for ${collectTarget}. Tx: ${formatAddress(result.transactionHash)}`, 'info');
+            setCollectStatusText('Payout transaction submitted', 'info');
             DashboardState.collectCanExecute = false;
             updateCollectButtonState();
 
-            setTimeout(() => {
-                loadBalances();
-                loadRecentTransactions();
-                loadCollectStatusForSelectedLab();
-            }, 5000);
+            try {
+                const txStatus = await waitForAdminTransactionConfirmation(result.transactionHash);
+                if (txStatus.status === 'success') {
+                    showToast(`Payout completed for ${collectTarget}. Tx: ${formatAddress(result.transactionHash)}`, 'success');
+                    setCollectStatusText('Payout confirmed on-chain', 'success');
+                } else {
+                    showToast(`Payout transaction failed for ${collectTarget}. Tx: ${formatAddress(result.transactionHash)}`, 'error');
+                    setCollectStatusText('Payout transaction failed', 'error');
+                }
+            } catch (confirmationError) {
+                showToast(
+                    `Payout transaction submitted for ${collectTarget}. Confirmation still pending. Tx: ${formatAddress(result.transactionHash)}`,
+                    'info'
+                );
+                setCollectStatusText('Waiting for on-chain confirmation', 'info');
+            } finally {
+                await Promise.allSettled([
+                    loadBalances(),
+                    loadRecentTransactions(),
+                    loadCollectStatusForSelectedLab()
+                ]);
+            }
         } else {
             showToast('Payout request failed: ' + (result.message || 'Unknown error'), 'error');
         }

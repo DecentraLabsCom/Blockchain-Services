@@ -14,7 +14,9 @@ import jakarta.servlet.http.HttpServletRequest;
 import java.math.BigDecimal;
 import java.math.BigInteger;
 import java.math.RoundingMode;
+import java.util.LinkedHashMap;
 import java.util.Locale;
+import java.util.Map;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -29,7 +31,9 @@ import org.web3j.protocol.core.DefaultBlockParameterName;
 import org.web3j.protocol.core.methods.response.EthChainId;
 import org.web3j.protocol.core.methods.response.EthEstimateGas;
 import org.web3j.protocol.core.methods.response.EthGetTransactionCount;
+import org.web3j.protocol.core.methods.response.EthGetTransactionReceipt;
 import org.web3j.protocol.core.methods.response.EthSendTransaction;
+import org.web3j.protocol.core.methods.response.TransactionReceipt;
 import org.web3j.utils.Convert;
 import org.web3j.utils.Numeric;
 
@@ -164,6 +168,50 @@ public class InstitutionalAdminService {
         } catch (Exception e) {
             log.error("Error executing server-side payout request: {}", LogSanitizer.sanitize(e.getMessage()), e);
             return InstitutionalAdminResponse.error("Payout request failed: " + e.getMessage());
+        }
+    }
+
+    public Map<String, Object> getTransactionStatus(String txHash) {
+        if (!isLocalhostRequest()) {
+            return Map.of(
+                "success", false,
+                "error", "Access denied: administrative operations only allowed from localhost"
+            );
+        }
+        if (txHash == null || !txHash.matches("^0x[a-fA-F0-9]{64}$")) {
+            return Map.of(
+                "success", false,
+                "error", "Invalid transaction hash"
+            );
+        }
+
+        try {
+            EthGetTransactionReceipt response = web3j.ethGetTransactionReceipt(txHash).send();
+            Map<String, Object> result = new LinkedHashMap<>();
+            result.put("success", true);
+            result.put("transactionHash", txHash);
+
+            if (response == null || response.getTransactionReceipt().isEmpty()) {
+                result.put("confirmed", false);
+                result.put("pending", true);
+                result.put("status", "pending");
+                return result;
+            }
+
+            TransactionReceipt receipt = response.getTransactionReceipt().get();
+            result.put("confirmed", true);
+            result.put("pending", false);
+            result.put("status", receipt.isStatusOK() ? "success" : "failed");
+            result.put("receiptStatus", receipt.getStatus());
+            result.put("blockNumber", receipt.getBlockNumber() != null ? receipt.getBlockNumber().toString() : null);
+            result.put("gasUsed", receipt.getGasUsed() != null ? receipt.getGasUsed().toString() : null);
+            return result;
+        } catch (Exception e) {
+            log.warn("Failed to retrieve transaction status for {}", LogSanitizer.sanitize(txHash), e);
+            return Map.of(
+                "success", false,
+                "error", "Failed to retrieve transaction status: " + e.getMessage()
+            );
         }
     }
 

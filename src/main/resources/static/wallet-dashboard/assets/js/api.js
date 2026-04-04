@@ -178,6 +178,16 @@ const API = {
     },
 
     /**
+     * Get blockchain receipt status for an administrative transaction.
+     * @param {string} txHash - Transaction hash
+     */
+    async getAdminTransactionStatus(txHash) {
+        const params = new URLSearchParams();
+        params.set('txHash', String(txHash));
+        return await this.request(`/billing/admin/transaction-status?${params.toString()}`);
+    },
+
+    /**
      * POST /billing/admin/execute
      * Execute administrative operation
      * @param {string} operation - Operation type (SET_USER_LIMIT, SET_SPENDING_PERIOD, etc.)
