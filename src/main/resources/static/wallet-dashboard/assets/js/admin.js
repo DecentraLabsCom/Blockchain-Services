@@ -1529,7 +1529,25 @@ function updateCollectButtonState() {
         return;
     }
 
-    collectBtn.innerHTML = '<i class="fas fa-coins"></i> Request Payout';
+    let buttonLabel = 'Request Payout';
+    const pendingClosuresEl = document.getElementById('collectPendingClosures');
+    const pendingTotalEl = document.getElementById('collectPendingTotal');
+
+    try {
+        const pendingClosures = BigInt(pendingClosuresEl?.textContent?.trim() || '0');
+        const pendingTotalText = (pendingTotalEl?.textContent || '0').replace(/\s*credits\s*$/i, '').trim();
+        const pendingTotal = BigInt(decimalToRawUnits(pendingTotalText || '0', CREDIT_DECIMALS));
+
+        if (pendingClosures > 0n && pendingTotal > 0n) {
+            buttonLabel = 'Close Reservations & Queue Payout';
+        } else if (pendingClosures > 0n) {
+            buttonLabel = 'Close Reservations';
+        }
+    } catch (error) {
+        buttonLabel = 'Request Payout';
+    }
+
+    collectBtn.innerHTML = `<i class="fas fa-coins"></i> ${buttonLabel}`;
     collectBtn.disabled =
         DashboardState.collectLoadingStatus ||
         !DashboardState.collectCanExecute ||
@@ -1714,13 +1732,29 @@ async function loadCollectStatusForSelectedLab() {
         setCollectPendingClosuresText(pendingClosures);
         setCollectLifecycleSummaryText(buildCollectLifecycleSummary(data));
 
+        let hasPendingClosures = false;
+        let hasPendingPayout = false;
+        try {
+            hasPendingClosures = BigInt(pendingClosuresRaw.toString()) > 0n;
+            hasPendingPayout = BigInt((data.totalReceivableRaw ?? '0').toString()) > 0n;
+        } catch (error) {
+            hasPendingClosures = false;
+            hasPendingPayout = false;
+        }
+
         DashboardState.collectCanExecute = DashboardState.isProvider
             && payoutEnabledForSelectedLab
             && data.canRequestPayout === true;
         updateCollectDetailVisibility();
 
         if (DashboardState.collectCanExecute) {
-            setCollectStatusText('Ready for payout request', 'success');
+            if (hasPendingClosures && hasPendingPayout) {
+                setCollectStatusText('Ready for clouse & payout', 'success');
+            } else if (hasPendingClosures) {
+                setCollectStatusText('Ready for closure', 'success');
+            } else {
+                setCollectStatusText('Ready for payout request', 'success');
+            }
         } else if (DashboardState.isProvider && !payoutEnabledForSelectedLab) {
             setCollectStatusText('Payout requests are limited to this provider wallet\'s labs', 'warning');
         } else if (!DashboardState.isProvider && DashboardState.isOperator && operatorReviewOnly) {
