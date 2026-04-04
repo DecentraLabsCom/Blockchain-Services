@@ -144,6 +144,13 @@ body {
     gap: 0.35rem;
 }
 
+.header-notice-row {
+    width: 100%;
+    display: flex;
+    justify-content: center;
+    margin-top: 0.15rem;
+}
+
 .status-indicator {
     display: flex;
     align-items: center;
@@ -642,14 +649,6 @@ body {
     border-radius: var(--radius-sm);
     font-size: 0.85rem;
     border: 1px solid var(--neon-orange);
-}
-
-.header-status-stack .warning-badge {
-    margin-left: 0;
-}
-
-#operatorCreditPolicySection .warning-badge {
-    display: none;
 }
 
 /* Balance Grid */

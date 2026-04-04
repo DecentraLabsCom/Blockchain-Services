@@ -194,8 +194,24 @@ public class AdminDashboardController {
             }
 
             int safeLimit = Math.min(Math.max(limit, 1), 50);
-            List<InstitutionalAnalyticsService.TransactionRecord> transactions =
-                onChainAdminTransactionService.getRecentTransactions(providerAddress, Math.min(safeLimit + 1, 50));
+            List<InstitutionalAnalyticsService.TransactionRecord> onChainTransactions =
+                onChainAdminTransactionService.getRecentTransactions(providerAddress, Math.min(safeLimit + 5, 50));
+            List<InstitutionalAnalyticsService.TransactionRecord> localTransactions =
+                institutionalAnalyticsService.getRecentTransactions(providerAddress, Math.min(safeLimit + 5, 50));
+
+            Map<String, InstitutionalAnalyticsService.TransactionRecord> merged = new LinkedHashMap<>();
+            for (InstitutionalAnalyticsService.TransactionRecord tx : onChainTransactions) {
+                merged.put(tx.getHash(), tx);
+            }
+            for (InstitutionalAnalyticsService.TransactionRecord tx : localTransactions) {
+                merged.putIfAbsent(tx.getHash(), tx);
+            }
+
+            List<InstitutionalAnalyticsService.TransactionRecord> transactions = merged.values().stream()
+                .sorted(Comparator.comparingLong(InstitutionalAnalyticsService.TransactionRecord::getTimestamp).reversed())
+                .limit(Math.min(safeLimit + 1, 50))
+                .toList();
+
             boolean hasMore = transactions.size() > safeLimit;
             if (hasMore) {
                 transactions = transactions.subList(0, safeLimit);
