@@ -127,8 +127,21 @@ body {
 
 .header-actions {
     display: flex;
+    align-items: flex-start;
+    gap: var(--spacing-md);
+}
+
+.header-action-buttons {
+    display: flex;
     align-items: center;
     gap: var(--spacing-md);
+}
+
+.header-status-stack {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.35rem;
 }
 
 .status-indicator {
@@ -629,6 +642,14 @@ body {
     border-radius: var(--radius-sm);
     font-size: 0.85rem;
     border: 1px solid var(--neon-orange);
+}
+
+.header-status-stack .warning-badge {
+    margin-left: 0;
+}
+
+#operatorCreditPolicySection .warning-badge {
+    display: none;
 }
 
 /* Balance Grid */

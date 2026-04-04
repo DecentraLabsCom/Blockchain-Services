@@ -71,20 +71,25 @@
                     </a>
                 </h1>
                 <div class="header-actions">
-                    <button id="applyProvisioningTokenHeaderBtn" class="btn btn-primary hidden">
-                        <i class="fas fa-ticket-alt"></i> 
-                        Use Token
-                    </button>
-                    <button id="refreshBtn" class="btn btn-success btn-icon" type="button" title="Refresh dashboard">
-                        <i class="fas fa-rotate-right"></i>
-                    </button>
-                    <button id="revealPrivateKeyBtn" class="btn btn-secondary hidden">
-                        <i class="fas fa-key"></i> 
-                        Wallet Keys
-                    </button>
-                    <div class="status-indicator" id="statusIndicator">
-                        <span class="status-dot"></span>
-                        <span class="status-text">Connected</span>
+                    <div class="header-action-buttons">
+                        <button id="applyProvisioningTokenHeaderBtn" class="btn btn-primary hidden">
+                            <i class="fas fa-ticket-alt"></i> 
+                            Use Token
+                        </button>
+                        <button id="refreshBtn" class="btn btn-success btn-icon" type="button" title="Refresh dashboard">
+                            <i class="fas fa-rotate-right"></i>
+                        </button>
+                        <button id="revealPrivateKeyBtn" class="btn btn-secondary hidden">
+                            <i class="fas fa-key"></i> 
+                            Wallet Keys
+                        </button>
+                    </div>
+                    <div class="header-status-stack">
+                        <div class="status-indicator" id="statusIndicator">
+                            <span class="status-dot"></span>
+                            <span class="status-text">Connected</span>
+                        </div>
+                        <span class="warning-badge">⚠ Localhost Only</span>
                     </div>
                 </div>
             </div>
@@ -134,6 +139,11 @@
                                 </button>
                             </div>
                         </div>
+                    </div>
+                    <div class="modal-actions hidden" id="transactionsLoadMoreWrap">
+                        <button id="transactionsLoadMoreBtn" class="btn btn-secondary">
+                            <i class="fas fa-list"></i> Load more
+                        </button>
                     </div>
                 </div>
             </section>

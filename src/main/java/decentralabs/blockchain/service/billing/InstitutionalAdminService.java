@@ -2,6 +2,7 @@ package decentralabs.blockchain.service.billing;
 
 import decentralabs.blockchain.contract.Diamond;
 import decentralabs.blockchain.service.RateLimitService;
+import decentralabs.blockchain.service.health.LabMetadataService;
 import decentralabs.blockchain.service.persistence.AntiReplayService;
 import decentralabs.blockchain.service.wallet.InstitutionalWalletService;
 import decentralabs.blockchain.service.wallet.WalletService;
@@ -57,6 +58,7 @@ public class InstitutionalAdminService {
     private final Web3j web3j;
     private final HttpServletRequest request;
     private final RateLimitService rateLimitService;
+    private final LabMetadataService labMetadataService;
     private final InstitutionalWalletService institutionalWalletService;
     private final WalletService walletService;
     private final InstitutionalAnalyticsService analyticsService;
@@ -649,13 +651,14 @@ public class InstitutionalAdminService {
         }
 
         Function function = Diamond.requestProviderPayoutFunction(labId, maxBatch);
+        String labDisplayName = resolveLabDisplayName(labId);
 
         String txHash = sendTransaction(credentials, function);
         recordAdminTransaction(
             credentials.getAddress(),
             txHash,
             "COLLECT_LAB_PAYOUT",
-            "Request provider payout for lab #" + labId + " (maxBatch=" + maxBatch + ")",
+            "Request provider payout for " + labDisplayName + " (maxBatch=" + maxBatch + ")",
             null
         );
         return InstitutionalAdminResponse.success(
@@ -921,6 +924,43 @@ public class InstitutionalAdminService {
         }
         BigDecimal decimal = new BigDecimal(rawValue).movePointLeft(LAB_TOKEN_DECIMALS);
         return decimal.stripTrailingZeros().toPlainString() + " credits";
+    }
+
+    private String resolveLabDisplayName(BigInteger labId) {
+        if (labId == null) {
+            return "selected lab";
+        }
+        String fallback = "Lab #" + labId;
+        try {
+            return walletService.getLabTokenUri(labId)
+                .flatMap(this::resolveLabNameFromMetadata)
+                .orElse(fallback);
+        } catch (Exception ex) {
+            log.debug("Unable to resolve lab display name for {}: {}", labId, LogSanitizer.sanitize(ex.getMessage()));
+            return fallback;
+        }
+    }
+
+    private java.util.Optional<String> resolveLabNameFromMetadata(String metadataUri) {
+        if (metadataUri == null || metadataUri.isBlank()) {
+            return java.util.Optional.empty();
+        }
+
+        try {
+            var metadata = labMetadataService.getLabMetadata(metadataUri);
+            if (metadata == null || metadata.getName() == null) {
+                return java.util.Optional.empty();
+            }
+            String name = metadata.getName().trim();
+            return name.isEmpty() ? java.util.Optional.empty() : java.util.Optional.of(name);
+        } catch (RuntimeException ex) {
+            log.debug(
+                "Unable to resolve lab name from metadata {}: {}",
+                LogSanitizer.sanitize(metadataUri),
+                LogSanitizer.sanitize(ex.getMessage())
+            );
+            return java.util.Optional.empty();
+        }
     }
 
     private String formatPeriodDays(BigInteger seconds) {

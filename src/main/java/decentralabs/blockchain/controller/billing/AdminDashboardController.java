@@ -2,6 +2,7 @@ package decentralabs.blockchain.controller.billing;
 
 import decentralabs.blockchain.dto.wallet.PayoutRequestSimulationResult;
 import decentralabs.blockchain.dto.wallet.ProviderReceivableStatus;
+import decentralabs.blockchain.service.billing.OnChainAdminTransactionService;
 import decentralabs.blockchain.service.health.LabMetadataService;
 import decentralabs.blockchain.service.billing.InstitutionalAnalyticsService;
 import decentralabs.blockchain.service.wallet.InstitutionalWalletService;
@@ -38,6 +39,7 @@ public class AdminDashboardController {
     private final InstitutionalWalletService institutionalWalletService;
     private final WalletService walletService;
     private final InstitutionalAnalyticsService institutionalAnalyticsService;
+    private final OnChainAdminTransactionService onChainAdminTransactionService;
     private final LabMetadataService labMetadataService;
 
     private static final int LAB_TOKEN_DECIMALS = CreditUnitConverter.CREDIT_DECIMALS;
@@ -168,8 +170,7 @@ public class AdminDashboardController {
 
     /**
      * GET /billing/admin/transactions?limit=10
-     * Get recent transactions (requires indexing service or blockchain explorer API)
-     * TODO: Implement transaction history tracking
+     * Get recent on-chain administrative transactions for the configured institutional wallet.
      */
     @GetMapping("/transactions")
     public ResponseEntity<?> getRecentTransactions(
@@ -194,14 +195,19 @@ public class AdminDashboardController {
 
             int safeLimit = Math.min(Math.max(limit, 1), 50);
             List<InstitutionalAnalyticsService.TransactionRecord> transactions =
-                institutionalAnalyticsService.getRecentTransactions(providerAddress, safeLimit);
+                onChainAdminTransactionService.getRecentTransactions(providerAddress, Math.min(safeLimit + 1, 50));
+            boolean hasMore = transactions.size() > safeLimit;
+            if (hasMore) {
+                transactions = transactions.subList(0, safeLimit);
+            }
 
             Map<String, Object> result = new LinkedHashMap<>();
             result.put("success", true);
             result.put("transactions", transactions);
             result.put("provider", providerAddress);
+            result.put("hasMore", hasMore);
             if (transactions.isEmpty()) {
-                result.put("note", "No local transactions recorded yet. Execute an admin action or reservation to populate the feed.");
+                result.put("note", "No recent on-chain administrative events found in the configured lookback window.");
             }
 
             return ResponseEntity.ok(result);

@@ -25,7 +25,8 @@ const DashboardState = {
     collectSubmitting: false,
     collectMaxBatch: 50,
     collectLabsRetryTimeout: null,
-    collectLabsRetryAttempts: 0
+    collectLabsRetryAttempts: 0,
+    transactionsLimit: 10
 };
 
 const INVITE_TOKEN_STORAGE_PREFIX = 'dlabs_invite_token_applied:';
@@ -1985,9 +1986,7 @@ async function handleProviderSettlementTransition(event) {
         return;
     }
 
-    const selectedLabText = document.getElementById('collectLabSelect')
-        ?.selectedOptions?.[0]?.textContent?.trim();
-    const collectTarget = selectedLabText || `lab #${labId}`;
+    const collectTarget = getCollectTargetLabel();
     const formattedAmount = amountInput?.value?.trim() || formatLabTokenRaw(amountRaw);
     const confirmed = await showConfirmModal(
         'Submit Settlement Transition',
@@ -2071,11 +2070,13 @@ async function loadBillingAdminData() {
 }
 
 // Load recent transactions
-async function loadRecentTransactions() {
+async function loadRecentTransactions(limit = DashboardState.transactionsLimit) {
     try {
-        const data = await API.getRecentTransactions(10);
-        
+        DashboardState.transactionsLimit = limit;
+        const data = await API.getRecentTransactions(limit);
         const container = document.getElementById('transactionsContainer');
+        const loadMoreWrap = document.getElementById('transactionsLoadMoreWrap');
+        const loadMoreBtn = document.getElementById('transactionsLoadMoreBtn');
         
         if (data.success && data.transactions && data.transactions.length > 0) {
             container.innerHTML = data.transactions.map(tx => `
@@ -2092,6 +2093,12 @@ async function loadRecentTransactions() {
                     </div>
                 </div>
             `).join('');
+            if (loadMoreWrap) {
+                loadMoreWrap.classList.toggle('hidden', data.hasMore !== true);
+            }
+            if (loadMoreBtn) {
+                loadMoreBtn.disabled = false;
+            }
         } else {
             container.innerHTML = `
                 <div class="no-data">
@@ -2100,6 +2107,9 @@ async function loadRecentTransactions() {
                     <small>${data.note || 'Execute an admin operation or institutional reservation to populate this list.'}</small>
                 </div>
             `;
+            if (loadMoreWrap) {
+                loadMoreWrap.classList.add('hidden');
+            }
         }
     } catch (error) {
         console.error('Failed to load transactions:', error);
@@ -2415,6 +2425,14 @@ function setupButtonHandlers() {
     const refreshTxBtn = document.getElementById('refreshTxBtn');
     if (refreshTxBtn) {
         refreshTxBtn.addEventListener('click', loadRecentTransactions);
+    }
+
+    const transactionsLoadMoreBtn = document.getElementById('transactionsLoadMoreBtn');
+    if (transactionsLoadMoreBtn) {
+        transactionsLoadMoreBtn.addEventListener('click', async () => {
+            transactionsLoadMoreBtn.disabled = true;
+            await loadRecentTransactions(Math.min(DashboardState.transactionsLimit + 10, 50));
+        });
     }
 
     const collectLabSelect = document.getElementById('collectLabSelect');
