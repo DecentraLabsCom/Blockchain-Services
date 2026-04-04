@@ -91,14 +91,14 @@
                         </div>
                     </div>
                 </div>
-                <div class="header-notice-row">
-                    <span class="warning-badge">&#9888; Localhost Only</span>
-                </div>
             </div>
         </header>
 
         <!-- Main Content -->
         <main class="dashboard-main">
+            <div class="header-notice-row">
+                <span class="warning-badge" id="dashboardAccessBadge">Localhost Only</span>
+            </div>
             <!-- System Status Section -->
             <section class="card">
                 <div class="card-header">
@@ -397,7 +397,7 @@
                 </div>
                 <div class="footer-text">
                     <p>&copy; 2025 DecentraLabs. Institutional Operations Dashboard</p>
-                    <p class="security-notice">🔒 This dashboard is only accessible internally for security</p>
+                    <p class="security-notice" id="dashboardSecurityNotice">🔒 This dashboard is only accessible internally for security</p>
                 </div>
                 <div class="footer-logo">
                     <img src="assets/images/LogoBannerNebsyst.png" alt="Nebulous Systems" class="footer-logo-img">

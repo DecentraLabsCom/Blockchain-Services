@@ -14,6 +14,9 @@ Minimum actions to keep `blockchain-services` safe in production.
 - Sensitive endpoints are behind `LocalhostOnlyFilter`: `/wallet`, `/treasury`, `/treasury/admin/notifications`, `/wallet-dashboard`, `/institution-config`, and `/onboarding/token`.
 - `/onboarding/token/**` is currently reserved in security filters/CORS; there is no public controller endpoint in this repository version.
 - Keep `security.allow-private-networks=false` unless you run behind a trusted private network and enforce a strong `security.access-token`.
+- The administrative dashboard also observes `admin.dashboard.local-only` and `admin.dashboard.allow-private`.
+  - `admin.dashboard.local-only=true` keeps dashboard access limited to localhost by default.
+  - `admin.dashboard.allow-private=true` allows private-network access only when `security.allow-private-networks=true` and token rules permit it.
 - `/wallet/reveal` exists for break-glass scenarios; leave it reachable only from loopback.
 - `/treasury/admin/**` requires a valid access token when `security.access-token.required=true` (default).
 

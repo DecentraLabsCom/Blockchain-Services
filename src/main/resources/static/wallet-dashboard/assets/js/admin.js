@@ -731,6 +731,31 @@ function updateLastRefreshTime() {
     }
 }
 
+function updateDashboardAccessNotices(status) {
+    const badge = document.getElementById('dashboardAccessBadge');
+    const footer = document.getElementById('dashboardSecurityNotice');
+    if (!badge || !footer || !status) {
+        return;
+    }
+
+    const localOnly = status.dashboardLocalOnly !== false;
+    const privateEnabled = status.allowPrivateNetworks === true && status.dashboardAllowPrivate === true;
+
+    if (localOnly && !status.allowPrivateNetworks) {
+        badge.textContent = 'Localhost Only';
+        footer.textContent = '🔒 This dashboard is only accessible internally for security.';
+    } else if (localOnly && privateEnabled) {
+        badge.textContent = 'Private Network Access Enabled';
+        footer.textContent = '⚠️ Security recommendation: restrict access to localhost or trusted private networks only.';
+    } else if (!localOnly) {
+        badge.textContent = 'External Access Allowed';
+        footer.textContent = '⚠️ This dashboard may be accessible externally; enforce firewall or proxy restrictions.';
+    } else {
+        badge.textContent = 'Localhost Only';
+        footer.textContent = '🔒 This dashboard is only accessible internally for security.';
+    }
+}
+
 function renderProvisioningResult(result) {
     const container = document.getElementById('provisioningResult');
     if (!container) {
@@ -1182,6 +1207,8 @@ async function loadSystemStatus() {
                 statusIndicator.querySelector('.status-dot').style.background = 'var(--neon-yellow)';
                 statusIndicator.querySelector('.status-text').textContent = 'Wallet Setup Required';
             }
+
+            updateDashboardAccessNotices(data);
         }
         
         updateLastRefreshTime();

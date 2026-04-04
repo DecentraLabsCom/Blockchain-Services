@@ -99,6 +99,9 @@ public class AdminDashboardController {
             status.put("operatorControlsEnabled", isDefaultAdmin);
             status.put("contractAddress", contractAddress);
             status.put("marketplaceUrl", marketplaceUrl);
+            status.put("dashboardLocalOnly", adminDashboardLocalOnly);
+            status.put("dashboardAllowPrivate", adminDashboardAllowPrivate);
+            status.put("allowPrivateNetworks", allowPrivateNetworks);
             status.put("timestamp", System.currentTimeMillis());
 
             Map<String, Object> eip712 = new LinkedHashMap<>();

@@ -12,6 +12,11 @@ Sensitive routes are protected by `LocalhostOnlyFilter`:
 - `/institution-config/**`
 - `/billing/admin/notifications/**`
 
+Dashboard/admin access is further controlled by these flags:
+
+- `admin.dashboard.local-only=true` — default localhost-only behavior for the dashboard.
+- `admin.dashboard.allow-private=true` — allow private-network access to the dashboard when `security.allow-private-networks=true`.
+
 Private-network access can be enabled with:
 
 - `security.allow-private-networks=true`
