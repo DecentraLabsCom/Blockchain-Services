@@ -354,7 +354,7 @@ class WalletServiceTest {
 
     @SuppressWarnings("unchecked")
     @Test
-    void getLabsOwnedByProvider_mergesDirectOwnershipAndAuthUriMatches() throws Exception {
+    void getLabsOwnedByProvider_returnsOnlyDirectOwnership() throws Exception {
         WalletService spyService = spy(service);
         String provider = "0x1111111111111111111111111111111111111111";
         org.mockito.Mockito.doReturn(web3j).when(spyService).getWeb3jInstance();
@@ -363,12 +363,7 @@ class WalletServiceTest {
             ethCallResponse("0x1"),
             ethCallResponse("0x2"),
             ethCallResponse("0x3"),
-            ethCallResponse("0x4"),
-            ethCallResponse("0x5"),
-            ethCallResponse("0x6"),
-            ethCallResponse("0x7"),
-            ethCallResponse("0x8"),
-            ethCallResponse("0x9")
+            ethCallResponse("0x4")
         );
 
         try (MockedStatic<FunctionReturnDecoder> decoder = org.mockito.Mockito.mockStatic(FunctionReturnDecoder.class)) {
@@ -381,44 +376,28 @@ class WalletServiceTest {
                     )),
                     new org.web3j.abi.datatypes.generated.Uint256(BigInteger.valueOf(3))
                 ),
-                List.of(new Address("0x9999999999999999999999999999999999999999")),
                 List.of(new Address(provider)),
                 List.of(new Address(provider)),
-                List.of(new Utf8String(" https://auth.example/provider/ ")),
-                List.of(
-                    new DynamicArray<>(org.web3j.abi.datatypes.generated.Uint256.class, List.of(
-                        new org.web3j.abi.datatypes.generated.Uint256(BigInteger.valueOf(2)),
-                        new org.web3j.abi.datatypes.generated.Uint256(BigInteger.valueOf(4)),
-                        new org.web3j.abi.datatypes.generated.Uint256(BigInteger.valueOf(5))
-                    )),
-                    new org.web3j.abi.datatypes.generated.Uint256(BigInteger.valueOf(3))
-                ),
-                List.of(new Utf8String("https://auth.example/provider")),
-                List.of(new Utf8String("https://auth.example/provider/")),
-                List.of(new Utf8String("https://other.example"))
+                List.of(new Address("0x9999999999999999999999999999999999999999"))
             );
 
             assertThat(spyService.getLabsOwnedByProvider(provider))
-                .containsExactly(BigInteger.ONE, BigInteger.valueOf(2), BigInteger.valueOf(4));
+                .containsExactly(BigInteger.ONE, BigInteger.valueOf(2));
         }
     }
 
-    @SuppressWarnings("unchecked")
     @Test
-    void isLabOwnedByProvider_usesAuthUriWhenOwnerDoesNotMatch() throws Exception {
+    void isLabOwnedByProvider_returnsFalseWhenOwnerDoesNotMatch() throws Exception {
         WalletService spyService = spy(service);
         String provider = "0x1111111111111111111111111111111111111111";
         org.mockito.Mockito.doReturn(web3j).when(spyService).getWeb3jInstance();
-        stubEthCalls(web3j, ethCallResponse("0x1"), ethCallResponse("0x2"), ethCallResponse("0x3"));
+        stubEthCalls(web3j, ethCallResponse("0x1"));
 
         try (MockedStatic<FunctionReturnDecoder> decoder = org.mockito.Mockito.mockStatic(FunctionReturnDecoder.class)) {
-            decoder.when(() -> FunctionReturnDecoder.decode(any(String.class), any(List.class))).thenReturn(
-                List.of(new Address("0x9999999999999999999999999999999999999999")),
-                List.of(new Utf8String("https://auth.example/provider/")),
-                List.of(new Utf8String("https://auth.example/provider"))
-            );
+            decoder.when(() -> FunctionReturnDecoder.decode(any(String.class), any(List.class)))
+                .thenReturn(List.of(new Address("0x9999999999999999999999999999999999999999")));
 
-            assertThat(spyService.isLabOwnedByProvider(provider, BigInteger.valueOf(7))).isTrue();
+            assertThat(spyService.isLabOwnedByProvider(provider, BigInteger.valueOf(7))).isFalse();
         }
     }
 
