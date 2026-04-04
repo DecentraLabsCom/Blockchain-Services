@@ -4,6 +4,7 @@ import decentralabs.blockchain.dto.billing.InstitutionalAdminRequest;
 import decentralabs.blockchain.dto.billing.InstitutionalAdminRequest.AdminOperation;
 import decentralabs.blockchain.dto.billing.InstitutionalAdminResponse;
 import decentralabs.blockchain.service.RateLimitService;
+import decentralabs.blockchain.service.health.LabMetadataService;
 import decentralabs.blockchain.service.persistence.AntiReplayService;
 import decentralabs.blockchain.service.wallet.InstitutionalWalletService;
 import decentralabs.blockchain.service.wallet.WalletService;
@@ -44,6 +45,8 @@ class InstitutionalAdminServiceTest {
     @Mock
     private RateLimitService rateLimitService;
     @Mock
+    private LabMetadataService labMetadataService;
+    @Mock
     private InstitutionalWalletService institutionalWalletService;
     @Mock
     private WalletService walletService;
@@ -62,6 +65,7 @@ class InstitutionalAdminServiceTest {
             web3j,
             httpServletRequest,
             rateLimitService,
+            labMetadataService,
             institutionalWalletService,
             walletService,
             analyticsService,
