@@ -18,6 +18,7 @@ const DashboardState = {
     inviteTokenApplied: false,  // Track if invite token has been applied
     invitePromptedWallet: null,  // Track which wallet has been prompted this session
     collectLabs: [],
+    collectLabNames: {},
     selectedCollectLabId: null,
     collectCanExecute: false,
     collectLoadingStatus: false,
@@ -28,6 +29,7 @@ const DashboardState = {
 };
 
 const INVITE_TOKEN_STORAGE_PREFIX = 'dlabs_invite_token_applied:';
+const COLLECT_LAB_NAME_CACHE_PREFIX = 'dlabs_collect_lab_names:';
 const COLLECT_LABS_RETRY_DELAYS_MS = [1500, 3500, 7000];
 const RECEIVABLE_TRANSITION_PRESETS = {
     '2:3': { from: 2, to: 3, label: 'Queue to invoiced' },
@@ -369,6 +371,77 @@ function escapeHtml(value) {
         .replace(/>/g, '&gt;')
         .replace(/"/g, '&quot;')
         .replace(/'/g, '&#39;');
+}
+
+function getCollectLabNameCacheKey() {
+    const contractAddress = (DashboardState.contractAddress || 'unknown').trim().toLowerCase();
+    const walletAddress = (DashboardState.walletAddress || 'unknown').trim().toLowerCase();
+    return `${COLLECT_LAB_NAME_CACHE_PREFIX}${contractAddress}:${walletAddress}`;
+}
+
+function loadCollectLabNameCache() {
+    try {
+        const raw = localStorage.getItem(getCollectLabNameCacheKey());
+        const parsed = raw ? JSON.parse(raw) : {};
+        DashboardState.collectLabNames = parsed && typeof parsed === 'object' ? parsed : {};
+    } catch (error) {
+        DashboardState.collectLabNames = {};
+    }
+}
+
+function persistCollectLabNameCache() {
+    try {
+        localStorage.setItem(getCollectLabNameCacheKey(), JSON.stringify(DashboardState.collectLabNames || {}));
+    } catch (error) {
+        // Ignore storage failures; UI can still operate with in-memory state.
+    }
+}
+
+function isFallbackLabLabel(value, labId) {
+    const text = String(value || '').trim();
+    if (!text) {
+        return true;
+    }
+    return text.toLowerCase() === `lab #${String(labId).trim()}`.toLowerCase();
+}
+
+function enrichCollectLabsWithCachedNames(labs) {
+    if (!Array.isArray(labs)) {
+        return [];
+    }
+
+    const cache = DashboardState.collectLabNames || {};
+    let cacheUpdated = false;
+    const enriched = labs.map(lab => {
+        const labId = String(lab.labId || '').trim();
+        if (!labId) {
+            return lab;
+        }
+
+        const currentName = String(lab.name || lab.label || '').trim();
+        const cachedName = String(cache[labId] || '').trim();
+        const effectiveName = !isFallbackLabLabel(currentName, labId)
+            ? currentName
+            : (cachedName || currentName);
+
+        if (effectiveName && !isFallbackLabLabel(effectiveName, labId) && cache[labId] !== effectiveName) {
+            cache[labId] = effectiveName;
+            cacheUpdated = true;
+        }
+
+        return {
+            ...lab,
+            name: effectiveName || currentName || `Lab #${labId}`,
+            label: effectiveName || currentName || `Lab #${labId}`
+        };
+    });
+
+    DashboardState.collectLabNames = cache;
+    if (cacheUpdated) {
+        persistCollectLabNameCache();
+    }
+
+    return enriched;
 }
 
 function getCollectTargetLabel(lab = getSelectedCollectLab()) {
@@ -1594,6 +1667,7 @@ async function loadCollectLabs() {
     if (!selectEl || !pendingEl) {
         return;
     }
+    loadCollectLabNameCache();
     clearCollectLabsRetryTimer();
     const previousLabs = Array.isArray(DashboardState.collectLabs)
         ? DashboardState.collectLabs.slice()
@@ -1614,7 +1688,7 @@ async function loadCollectLabs() {
 
     try {
         const data = await API.getProviderLabs();
-        const labs = Array.isArray(data.labs) ? data.labs : [];
+        const labs = enrichCollectLabsWithCachedNames(Array.isArray(data.labs) ? data.labs : []);
 
         if (Number.isFinite(Number(data.maxBatch)) && Number(data.maxBatch) > 0) {
             DashboardState.collectMaxBatch = Math.max(1, Math.min(100, Number(data.maxBatch)));
