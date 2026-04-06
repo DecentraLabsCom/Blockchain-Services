@@ -55,6 +55,7 @@ import org.web3j.tx.TransactionManager;
 import org.web3j.tx.gas.ContractGasProvider;
 
 @ExtendWith(MockitoExtension.class)
+@SuppressWarnings("unchecked")
 class WalletServiceTest {
 
     private static final String PRIVATE_KEY =

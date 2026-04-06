@@ -17,6 +17,7 @@ import java.util.List;
 public class ProviderConfigurationResponse {
 
     private String marketplaceBaseUrl;
+    private String consumerName;
     private String providerName;
     private String providerEmail;
     private String providerCountry;
@@ -24,6 +25,11 @@ public class ProviderConfigurationResponse {
     private String publicBaseUrl;
     private boolean isConfigured;
     private boolean isRegistered;
+    private boolean providerRegistered;
+    private boolean consumerRegistered;
+    private boolean providerRegistrationEnabled;
+    private String operatingMode;
+    private String registrationRole;
     private boolean fromProvisioningToken;
     private List<String> lockedFields;
 }

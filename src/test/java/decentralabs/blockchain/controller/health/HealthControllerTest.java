@@ -289,9 +289,15 @@ class HealthControllerTest {
         void shouldMarkEndpointsDisabledWhenProvidersDisabled() throws Exception {
             setupHealthyEnvironment();
             ReflectionTestUtils.setField(healthController, "providersEnabled", false);
+            ReflectionTestUtils.setField(healthController, "privateKeyPath", tempDir.resolve("missing-key.pem").toString());
+            when(institutionRegistrationService.isRegistered(InstitutionRole.PROVIDER)).thenReturn(false);
+            when(institutionRegistrationService.isRegistered(InstitutionRole.CONSUMER)).thenReturn(true);
 
             mockMvc.perform(get("/health"))
-                .andExpect(status().isServiceUnavailable()) // treasury_configured will be false
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.operating_mode").value("consumer-only"))
+                .andExpect(jsonPath("$.consumer_registered").value(true))
+                .andExpect(jsonPath("$.institution_registered").value(true))
                 .andExpect(jsonPath("$.endpoints.['saml-auth']").value("disabled (providers flag off)"))
                 .andExpect(jsonPath("$.endpoints.['checkin-institutional']").value("disabled (providers flag off)"));
         }
@@ -347,6 +353,20 @@ class HealthControllerTest {
                 .andExpect(status().isServiceUnavailable())
                 .andExpect(jsonPath("$.provider_registered").value(false));
         }
+
+        @Test
+        @DisplayName("Should return DEGRADED in consumer-only mode when consumer not registered")
+        void shouldReturnDegradedWhenConsumerNotRegistered() throws Exception {
+            setupHealthyEnvironment();
+            ReflectionTestUtils.setField(healthController, "providersEnabled", false);
+            when(institutionRegistrationService.isRegistered(InstitutionRole.PROVIDER)).thenReturn(false);
+            when(institutionRegistrationService.isRegistered(InstitutionRole.CONSUMER)).thenReturn(false);
+
+            mockMvc.perform(get("/health"))
+                .andExpect(status().isServiceUnavailable())
+                .andExpect(jsonPath("$.consumer_registered").value(false))
+                .andExpect(jsonPath("$.institution_registered").value(false));
+        }
     }
 
     private void setupHealthyEnvironment() throws Exception {
@@ -355,6 +375,7 @@ class HealthControllerTest {
         lenient().when(samlValidationService.isConfigured()).thenReturn(true);
         lenient().when(institutionalWalletService.isConfigured()).thenReturn(true);
         lenient().when(institutionRegistrationService.isRegistered(InstitutionRole.PROVIDER)).thenReturn(true);
+        lenient().when(institutionRegistrationService.isRegistered(InstitutionRole.CONSUMER)).thenReturn(false);
         lenient().when(jdbcTemplateProvider.getIfAvailable()).thenReturn(jdbcTemplate);
         lenient().when(jdbcTemplate.queryForObject(anyString(), eq(Integer.class))).thenReturn(1);
 

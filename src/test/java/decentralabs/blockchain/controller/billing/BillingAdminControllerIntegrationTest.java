@@ -9,6 +9,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import decentralabs.blockchain.SecurityConfig;
 import decentralabs.blockchain.security.AccessTokenAuthenticationFilter;
+import decentralabs.blockchain.security.AdminNetworkAccessPolicy;
 import decentralabs.blockchain.security.LocalhostOnlyFilter;
 import decentralabs.blockchain.security.PublicEndpointRateLimitFilter;
 import decentralabs.blockchain.service.BackendUrlResolver;
@@ -37,6 +38,7 @@ import org.springframework.web.context.WebApplicationContext;
     "security.access-token=test-token",
     "security.access-token-header=X-Access-Token",
     "security.access-token-cookie=access_token",
+    "features.providers.enabled=true",
     "allowed-origins=https://app.example/",
     "base.domain=https://gateway.example/",
     "rate.limit.enabled=false",
@@ -170,6 +172,7 @@ class BillingAdminControllerIntegrationTest {
         SecurityConfig.class,
         BackendUrlResolver.class,
         AccessTokenAuthenticationFilter.class,
+        AdminNetworkAccessPolicy.class,
         LocalhostOnlyFilter.class,
         PublicEndpointRateLimitFilter.class,
         BillingAdminController.class

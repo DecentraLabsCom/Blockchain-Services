@@ -18,8 +18,8 @@
             <div class="welcome-modal-body">
                 <div class="welcome-message">
                     <p><strong>Institutional wallet configured.</strong></p>
-                    <p>Next, apply your <strong>provisioning token</strong> from the marketplace.</p>
-                    <p>If you do not have one yet, request access for your institution.</p>
+                    <p id="welcomeTokenInstruction">Next, apply your <strong>provisioning token</strong> from the marketplace.</p>
+                    <p id="welcomeTokenHelp">If you do not have one yet, request access for your institution.</p>
                 </div>
                 <div class="welcome-actions">
                     <a id="marketplaceLink" href="https://marketplace-decentralabs.vercel.app/" target="_blank" rel="noopener noreferrer" class="btn-marketplace">
@@ -44,8 +44,8 @@
             </div>
             <div class="modal-body">
                 <p class="info-text">
-                    Paste the provisioning token provided by the DecentraLabs marketplace to register your institution on-chain.
-                    Supports both <strong>Provider</strong> (publishes labs) and <strong>Consumer</strong> (only reserves labs) tokens.
+                    <span id="provisioningTokenIntro">Paste the provisioning token provided by the DecentraLabs marketplace to register your institution on-chain.</span>
+                    <span id="provisioningTokenModes">Supports both <strong>Provider</strong> (publishes labs) and <strong>Consumer</strong> (only reserves labs) tokens.</span>
                 </p>
                 <textarea id="provisioningTokenInput" class="token-input" rows="5"
                     placeholder="Paste your provisioning token here..."></textarea>
@@ -95,6 +95,10 @@
         </header>
         <div class="header-notice-row">
             <span class="warning-badge" id="dashboardAccessBadge">Localhost Only</span>
+            <span class="warning-badge" id="operatingModeBadge">Loading Mode</span>
+        </div>
+        <div class="header-notice-row">
+            <span class="info-text" id="operatingModeNotice">Detecting deployment mode...</span>
         </div>
 
         <!-- Main Content -->
@@ -495,7 +499,6 @@
     </div>
 
     <!-- Scripts -->
-    <script src="../assets/js/auth-token-fetch.js"></script>
     <script src="assets/js/api.js"></script>
     <script src="assets/js/admin.js"></script>
 </body>

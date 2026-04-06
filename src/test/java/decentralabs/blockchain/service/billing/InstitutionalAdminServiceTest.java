@@ -8,6 +8,7 @@ import decentralabs.blockchain.service.health.LabMetadataService;
 import decentralabs.blockchain.service.persistence.AntiReplayService;
 import decentralabs.blockchain.service.wallet.InstitutionalWalletService;
 import decentralabs.blockchain.service.wallet.WalletService;
+import decentralabs.blockchain.security.AdminNetworkAccessPolicy;
 import jakarta.servlet.http.HttpServletRequest;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -56,6 +57,8 @@ class InstitutionalAdminServiceTest {
     private Eip712BillingAdminVerifier adminVerifier;
     @Mock
     private AntiReplayService antiReplayService;
+    @Mock
+    private AdminNetworkAccessPolicy adminNetworkAccessPolicy;
 
     private InstitutionalAdminService adminService;
 
@@ -70,7 +73,8 @@ class InstitutionalAdminServiceTest {
             walletService,
             analyticsService,
             adminVerifier,
-            antiReplayService
+            antiReplayService,
+            adminNetworkAccessPolicy
         );
         ReflectionTestUtils.setField(adminService, "contractAddress", "0xABC");
         ReflectionTestUtils.setField(adminService, "defaultCollectMaxBatch", 50);
@@ -79,6 +83,7 @@ class InstitutionalAdminServiceTest {
         lenient().when(adminVerifier.verify(any(), any()))
             .thenReturn(new Eip712BillingAdminVerifier.VerificationResult(true, "0xabc", null));
         lenient().when(antiReplayService.isTimestampUsed(any(), anyLong())).thenReturn(false);
+        lenient().when(adminNetworkAccessPolicy.isRequestAllowed(any(), any())).thenReturn(true);
         lenient().when(walletService.isInstitution(any())).thenReturn(true);
         lenient().when(walletService.isDefaultAdmin(any())).thenReturn(true);
         lenient().when(walletService.isLabProvider(any())).thenReturn(true);
@@ -92,7 +97,7 @@ class InstitutionalAdminServiceTest {
         @Test
         @DisplayName("Should reject requests from non-localhost IP")
         void executeAdminOperationRejectsNonLocalhostRequests() {
-            when(httpServletRequest.getRemoteAddr()).thenReturn("10.0.0.5");
+            when(adminNetworkAccessPolicy.isRequestAllowed(any(), any())).thenReturn(false);
 
             InstitutionalAdminRequest request = buildRequest("0x123", AdminOperation.AUTHORIZE_BACKEND, null, null, null, null, null);
             InstitutionalAdminResponse response = adminService.executeAdminOperation(request);
@@ -142,7 +147,7 @@ class InstitutionalAdminServiceTest {
         @Test
         @DisplayName("Should reject requests from public IP")
         void shouldRejectRequestsFromPublicIp() {
-            when(httpServletRequest.getRemoteAddr()).thenReturn("203.0.113.50");
+            when(adminNetworkAccessPolicy.isRequestAllowed(any(), any())).thenReturn(false);
 
             InstitutionalAdminRequest request = buildRequest("0x123", AdminOperation.AUTHORIZE_BACKEND, null, null, null, null, null);
             InstitutionalAdminResponse response = adminService.executeAdminOperation(request);
@@ -154,7 +159,7 @@ class InstitutionalAdminServiceTest {
         @Test
         @DisplayName("Should reject requests from private network IP")
         void shouldRejectRequestsFromPrivateNetworkIp() {
-            when(httpServletRequest.getRemoteAddr()).thenReturn("192.168.1.100");
+            when(adminNetworkAccessPolicy.isRequestAllowed(any(), any())).thenReturn(false);
 
             InstitutionalAdminRequest request = buildRequest("0x123", AdminOperation.AUTHORIZE_BACKEND, null, null, null, null, null);
             InstitutionalAdminResponse response = adminService.executeAdminOperation(request);
@@ -166,14 +171,9 @@ class InstitutionalAdminServiceTest {
         @Test
         @DisplayName("Should allow private network with valid access token when enabled")
         void shouldAllowPrivateNetworkWithTokenWhenEnabled() {
-            ReflectionTestUtils.setField(adminService, "adminDashboardAllowPrivate", true);
-            ReflectionTestUtils.setField(adminService, "allowPrivateNetworks", true);
             ReflectionTestUtils.setField(adminService, "accessToken", "test-token");
             ReflectionTestUtils.setField(adminService, "accessTokenHeader", "X-Access-Token");
-            ReflectionTestUtils.setField(adminService, "accessTokenRequired", true);
-
-            when(httpServletRequest.getRemoteAddr()).thenReturn("10.0.0.5");
-            when(httpServletRequest.getHeader("X-Access-Token")).thenReturn("test-token");
+            when(adminNetworkAccessPolicy.isRequestAllowed(any(), any())).thenReturn(true);
             when(institutionalWalletService.getInstitutionalWalletAddress()).thenReturn("0xABCDEF");
 
             InstitutionalAdminRequest request = buildRequest("0x123", AdminOperation.AUTHORIZE_BACKEND, null, null, null, null, null);
@@ -185,11 +185,7 @@ class InstitutionalAdminServiceTest {
         @Test
         @DisplayName("Should allow private network when token is not required")
         void shouldAllowPrivateNetworkWhenTokenNotRequired() {
-            ReflectionTestUtils.setField(adminService, "adminDashboardAllowPrivate", true);
-            ReflectionTestUtils.setField(adminService, "allowPrivateNetworks", true);
-            ReflectionTestUtils.setField(adminService, "accessTokenRequired", false);
-
-            when(httpServletRequest.getRemoteAddr()).thenReturn("10.0.0.5");
+            when(adminNetworkAccessPolicy.isRequestAllowed(any(), any())).thenReturn(true);
             when(institutionalWalletService.getInstitutionalWalletAddress()).thenReturn("0xABCDEF");
 
             InstitutionalAdminRequest request = buildRequest("0x123", AdminOperation.AUTHORIZE_BACKEND, null, null, null, null, null);

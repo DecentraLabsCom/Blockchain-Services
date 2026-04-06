@@ -7,6 +7,7 @@ import decentralabs.blockchain.service.health.LabMetadataService;
 import decentralabs.blockchain.service.billing.InstitutionalAnalyticsService;
 import decentralabs.blockchain.service.wallet.InstitutionalWalletService;
 import decentralabs.blockchain.service.wallet.WalletService;
+import decentralabs.blockchain.security.AdminNetworkAccessPolicy;
 import decentralabs.blockchain.util.CreditUnitConverter;
 import decentralabs.blockchain.util.EthereumAddressValidator;
 import decentralabs.blockchain.util.LogSanitizer;
@@ -41,6 +42,7 @@ public class AdminDashboardController {
     private final InstitutionalAnalyticsService institutionalAnalyticsService;
     private final OnChainAdminTransactionService onChainAdminTransactionService;
     private final LabMetadataService labMetadataService;
+    private final AdminNetworkAccessPolicy adminNetworkAccessPolicy;
 
     private static final int LAB_TOKEN_DECIMALS = CreditUnitConverter.CREDIT_DECIMALS;
 
@@ -99,9 +101,10 @@ public class AdminDashboardController {
             status.put("operatorControlsEnabled", isDefaultAdmin);
             status.put("contractAddress", contractAddress);
             status.put("marketplaceUrl", marketplaceUrl);
-            status.put("dashboardLocalOnly", adminDashboardLocalOnly);
-            status.put("dashboardAllowPrivate", adminDashboardAllowPrivate);
-            status.put("allowPrivateNetworks", allowPrivateNetworks);
+            status.put("dashboardLocalOnly", adminNetworkAccessPolicy.isLocalOnly());
+            status.put("dashboardAllowPrivate", adminNetworkAccessPolicy.isPrivateAccessEnabled());
+            status.put("allowPrivateNetworks", adminNetworkAccessPolicy.isPrivateAccessEnabled());
+            status.put("dashboardAllowedCidrs", adminNetworkAccessPolicy.getConfiguredCidrs());
             status.put("timestamp", System.currentTimeMillis());
 
             Map<String, Object> eip712 = new LinkedHashMap<>();
@@ -451,15 +454,6 @@ public class AdminDashboardController {
 
     // ==================== PRIVATE HELPER METHODS ====================
 
-    @Value("${admin.dashboard.local-only:true}")
-    private boolean adminDashboardLocalOnly;
-
-    @Value("${admin.dashboard.allow-private:true}")
-    private boolean adminDashboardAllowPrivate;
-
-    @Value("${security.allow-private-networks:false}")
-    private boolean allowPrivateNetworks;
-
     @Value("${security.access-token:}")
     private String accessToken;
 
@@ -483,48 +477,15 @@ public class AdminDashboardController {
      * Check if request comes from localhost (unless explicitly disabled)
      */
     private boolean isLocalhostRequest(HttpServletRequest request) {
-        if (!adminDashboardLocalOnly) {
-            return true;
-        }
-
         String candidate = extractClientIp(request);
         log.info("Admin access check from IP={}", LogSanitizer.sanitize(candidate));
-        boolean allowed = candidate == null
-            || LOOPBACK_ADDRESSES.contains(candidate)
-            || candidate.startsWith("127.")
-            || (adminDashboardAllowPrivate
-                && allowPrivateNetworks
-                && isPrivateAddress(candidate)
-                && (!accessTokenRequired || hasValidAccessToken(request)));
+        boolean allowed = adminNetworkAccessPolicy.isRequestAllowed(request, () -> hasValidAccessToken(request));
 
         if (!allowed) {
             log.warn("Blocked administrative dashboard access from non-local address.");
         }
 
         return allowed;
-    }
-
-    private boolean isPrivateAddress(String address) {
-        if (address == null || address.isBlank()) {
-            return false;
-        }
-        return address.startsWith("10.")
-            || address.startsWith("192.168.")
-            || (address.startsWith("172.") && isInRange(address, 16, 31))
-            || address.startsWith("169.254.");
-    }
-
-    private boolean isInRange(String address, int start, int end) {
-        try {
-            String[] parts = address.split("\\.");
-            if (parts.length < 2) {
-                return false;
-            }
-            int second = Integer.parseInt(parts[1]);
-            return second >= start && second <= end;
-        } catch (NumberFormatException ex) {
-            return false;
-        }
     }
 
     private String extractClientIp(HttpServletRequest request) {

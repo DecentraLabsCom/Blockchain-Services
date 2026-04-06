@@ -2,6 +2,7 @@ package decentralabs.blockchain.controller.billing;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -28,6 +29,8 @@ import decentralabs.blockchain.dto.wallet.NetworkInfo;
 import decentralabs.blockchain.dto.wallet.NetworkResponse;
 import decentralabs.blockchain.dto.wallet.PayoutRequestSimulationResult;
 import decentralabs.blockchain.dto.wallet.ProviderReceivableStatus;
+import decentralabs.blockchain.security.AdminNetworkAccessPolicy;
+import decentralabs.blockchain.service.billing.OnChainAdminTransactionService;
 import decentralabs.blockchain.service.health.LabMetadataService;
 import decentralabs.blockchain.service.billing.InstitutionalAnalyticsService;
 import decentralabs.blockchain.service.wallet.InstitutionalWalletService;
@@ -52,6 +55,12 @@ class AdminDashboardControllerTest {
     @Mock
     private LabMetadataService labMetadataService;
 
+    @Mock
+    private AdminNetworkAccessPolicy adminNetworkAccessPolicy;
+
+    @Mock
+    private OnChainAdminTransactionService onChainAdminTransactionService;
+
     @InjectMocks
     private AdminDashboardController adminDashboardController;
 
@@ -61,9 +70,12 @@ class AdminDashboardControllerTest {
 
     @BeforeEach
     void setUp() {
-        // Disable localhost-only check for testing
-        ReflectionTestUtils.setField(adminDashboardController, "adminDashboardLocalOnly", false);
-        ReflectionTestUtils.setField(adminDashboardController, "adminDashboardAllowPrivate", true);
+        lenient().when(adminNetworkAccessPolicy.isRequestAllowed(any(), any())).thenReturn(true);
+        lenient().when(adminNetworkAccessPolicy.isLocalOnly()).thenReturn(false);
+        lenient().when(adminNetworkAccessPolicy.isPrivateAccessEnabled()).thenReturn(true);
+        lenient().when(adminNetworkAccessPolicy.getConfiguredCidrs()).thenReturn(Collections.emptyList());
+        lenient().when(onChainAdminTransactionService.getRecentTransactions(any(), anyInt()))
+            .thenReturn(Collections.emptyList());
         ReflectionTestUtils.setField(adminDashboardController, "contractAddress", VALID_ADDRESS);
         ReflectionTestUtils.setField(adminDashboardController, "marketplaceUrl", "https://marketplace.example.com");
         ReflectionTestUtils.setField(adminDashboardController, "collectMaxBatch", 50);
@@ -184,7 +196,7 @@ class AdminDashboardControllerTest {
         @DisplayName("Should respect limit parameter")
         void shouldRespectLimitParameter() throws Exception {
             when(institutionalWalletService.getInstitutionalWalletAddress()).thenReturn(VALID_ADDRESS);
-            when(institutionalAnalyticsService.getRecentTransactions(VALID_ADDRESS, 20))
+            when(institutionalAnalyticsService.getRecentTransactions(VALID_ADDRESS, 25))
                 .thenReturn(Collections.emptyList());
 
             mockMvc.perform(get("/billing/admin/transactions")
@@ -238,9 +250,6 @@ class AdminDashboardControllerTest {
 
         @BeforeEach
         void setUpAccess() {
-            ReflectionTestUtils.setField(adminDashboardController, "adminDashboardLocalOnly", true);
-            ReflectionTestUtils.setField(adminDashboardController, "adminDashboardAllowPrivate", true);
-            ReflectionTestUtils.setField(adminDashboardController, "allowPrivateNetworks", true);
             ReflectionTestUtils.setField(adminDashboardController, "accessToken", "test-token");
             ReflectionTestUtils.setField(adminDashboardController, "accessTokenHeader", "X-Access-Token");
             ReflectionTestUtils.setField(adminDashboardController, "accessTokenCookie", "access_token");
@@ -251,6 +260,7 @@ class AdminDashboardControllerTest {
         @Test
         @DisplayName("Should reject private network without access token")
         void shouldRejectPrivateNetworkWithoutToken() throws Exception {
+            when(adminNetworkAccessPolicy.isRequestAllowed(any(), any())).thenReturn(false);
             mockMvc.perform(get("/billing/admin/status")
                     .with(req -> { req.setRemoteAddr("10.0.0.5"); return req; }))
                 .andExpect(status().isForbidden())
@@ -261,6 +271,7 @@ class AdminDashboardControllerTest {
         @DisplayName("Should allow private network with valid access token")
         void shouldAllowPrivateNetworkWithToken() throws Exception {
             when(walletService.getAvailableNetworks()).thenReturn(createNetworkResponse());
+            when(adminNetworkAccessPolicy.isRequestAllowed(any(), any())).thenReturn(true);
 
             mockMvc.perform(get("/billing/admin/status")
                     .header("X-Access-Token", "test-token")
@@ -273,6 +284,7 @@ class AdminDashboardControllerTest {
         @DisplayName("Should allow IPv6-mapped loopback without access token")
         void shouldAllowIpv6MappedLoopback() throws Exception {
             when(walletService.getAvailableNetworks()).thenReturn(createNetworkResponse());
+            when(adminNetworkAccessPolicy.isRequestAllowed(any(), any())).thenReturn(true);
 
             mockMvc.perform(get("/billing/admin/status")
                     .with(req -> { req.setRemoteAddr("::ffff:127.0.0.1"); return req; }))

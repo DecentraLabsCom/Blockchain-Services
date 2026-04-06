@@ -59,6 +59,9 @@ public class SecurityConfig {
     @Value("${security.access-token.required:true}")
     private boolean accessTokenRequired;
 
+    @Value("${features.providers.enabled:false}")
+    private boolean providersEnabled;
+
     private final AccessTokenAuthenticationFilter accessTokenAuthenticationFilter;
     private final BackendUrlResolver backendUrlResolver;
 
@@ -115,7 +118,10 @@ public class SecurityConfig {
                 authorize.requestMatchers("/wallet-dashboard/**").permitAll();
                 // ALL wallet endpoints - restricted by CORS to localhost
                 authorize.requestMatchers(walletEndpoint + "/**").permitAll();
-                if (accessTokenRequired) {
+                // In provider+consumer deployments, keep the explicit INTERNAL-role barrier.
+                // In consumer-only standalone mode, allow localhost/service-level checks to govern
+                // access so the local dashboard keeps working without injecting an access token.
+                if (providersEnabled && accessTokenRequired) {
                     authorize.requestMatchers(billingEndpoint + "/admin/**").hasRole("INTERNAL");
                 } else {
                     authorize.requestMatchers(billingEndpoint + "/admin/**").permitAll();

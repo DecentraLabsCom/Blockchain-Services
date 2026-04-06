@@ -14,6 +14,30 @@ Spring Boot service for DecentraLabs that provides:
 
 While it is designed so that it can be deployed as an independent container (use case for lab institutional consumers), it is also included in the Lab Gateway (use case for lab institutional providers). 
 
+## Operating Modes
+
+`blockchain-services` supports two deployment modes:
+
+1. `provider+consumer` mode
+   This is the full mode used when `blockchain-services` runs together with Lab Gateway. The institution acts as a lab provider and can also fund reservations for its own users.
+   Available capabilities:
+   - SAML/OIDC/JWKS authentication endpoints
+   - provider registration and provider provisioning tokens
+   - provider settlement and payout operations
+   - wallet, treasury, intents, and consumer funding flows
+
+2. `consumer-only` mode
+   This is the standalone mode for institutions that do not publish labs and do not provide auth endpoints for third-party access. The institution only funds reservation and access costs for its own users.
+   Available capabilities:
+   - institutional wallet creation/import
+   - treasury and reservation funding operations
+   - consumer provisioning token application and consumer registration
+   - intents and local administrative dashboard
+   Not available in this mode:
+   - SAML/OIDC/JWKS provider endpoints
+   - manual provider registration UI
+   - provider settlement and payout operations
+
 <figure><img src=".gitbook/assets/DecentraLabs - Lab Access.png" alt=""><figcaption></figcaption></figure>
 
 This service provides four main components:
@@ -101,6 +125,8 @@ Together, they bridge institutional access control systems (such as **Lab Gatewa
 - `POST /onboarding/webauthn/options`
 - `POST /onboarding/webauthn/complete`
 
+These endpoints are only active in `provider+consumer` mode.
+
 ### Wallet and treasury
 
 - `POST /wallet/create`
@@ -134,7 +160,35 @@ Together, they bridge institutional access control systems (such as **Lab Gatewa
 - `POST /institution-config/apply-provider-token`
 - `POST /institution-config/apply-consumer-token`
 
+`/institution-config/save-and-register`, `/institution-config/retry-registration`, and `/institution-config/apply-provider-token` are provider-only flows.
+`/institution-config/apply-consumer-token` is the consumer-only registration flow.
+
 ## 🚀 Quick Start (Local)
+
+### Consumer-only standalone
+
+1. Build:
+
+```bash
+./mvnw clean package -DskipTests
+```
+
+2. Run with consumer mode defaults or set them explicitly:
+
+```bash
+FEATURES_PROVIDERS_ENABLED=false \
+FEATURES_PROVIDERS_REGISTRATION_ENABLED=false \
+java -jar target/blockchain-services-1.0-SNAPSHOT.war
+```
+
+3. Open `http://localhost:8080/wallet-dashboard`, create or import the institutional wallet, and apply a consumer provisioning token.
+
+4. Verify:
+
+- `http://localhost:8080/health`
+- `http://localhost:8080/wallet-dashboard`
+
+### Provider+consumer with Lab Gateway
 
 1. Build:
 
@@ -170,6 +224,37 @@ docker compose up -d
 ```
 
 4. Open `http://localhost:8080/wallet-dashboard` to create/import the institutional wallet.
+
+For consumer-only standalone deployments, keep:
+
+```env
+FEATURES_PROVIDERS_ENABLED=false
+FEATURES_PROVIDERS_REGISTRATION_ENABLED=false
+ADMIN_DASHBOARD_LOCAL_ONLY=true
+ADMIN_DASHBOARD_ALLOW_PRIVATE=false
+ADMIN_ALLOWED_CIDRS=
+SECURITY_ALLOW_PRIVATE_NETWORKS=false
+```
+
+For full Lab Gateway deployments, enable the full provider surface:
+
+```env
+FEATURES_PROVIDERS_ENABLED=true
+FEATURES_PROVIDERS_REGISTRATION_ENABLED=true
+```
+
+If you want `wallet-dashboard` and the wallet/billing administrative routes to be reachable from private network ranges instead of localhost only, use:
+
+```env
+ADMIN_DASHBOARD_LOCAL_ONLY=true
+ADMIN_DASHBOARD_ALLOW_PRIVATE=true
+SECURITY_ALLOW_PRIVATE_NETWORKS=true
+ADMIN_ALLOWED_CIDRS=10.20.0.0/16,192.168.50.0/24
+ADMIN_ACCESS_TOKEN_REQUIRED=true
+ADMIN_ACCESS_TOKEN=your_strong_token
+```
+
+Leave `ADMIN_ALLOWED_CIDRS` empty if you want to allow any private range. Set it if you want access limited to specific private subnets only.
 
 ## ⚙️ Configuration Files
 
@@ -208,6 +293,7 @@ src/main/resources/
 - Keep wallet/treasury routes behind trusted network/proxy boundaries.
 - If private-network access is enabled, enforce `ADMIN_ACCESS_TOKEN`.
 - Keep SAML trust mode on whitelist for production.
+- In `consumer-only` mode, JWT signing keys are not required for readiness because provider auth endpoints are disabled.
 
 ## 🔔 Reservation Notifications (email + ICS)
 
@@ -235,16 +321,18 @@ Health endpoint available at `/health`:
 ```json
 {
   "status": "UP",
+  "operating_mode": "consumer-only",
   "timestamp": "2025-11-09T12:00:00Z",
   "service": "blockchain-services",
   "version": "1.0.0",
   "marketplace_key_cached": true,
+  "institution_registered": true,
   "jwt_validation": "ready",
   "endpoints": {
-    "saml-auth": "available",
-    "saml-auth2": "available",
-    "checkin-institutional": "available",
-    "jwks": "available",
+    "saml-auth": "disabled (providers flag off)",
+    "saml-auth2": "disabled (providers flag off)",
+    "checkin-institutional": "disabled (providers flag off)",
+    "jwks": "disabled (providers flag off)",
     "wallet-create": "available (localhost only)",
     "wallet-balance": "available (localhost only)",
     "treasury-reservations": "available (localhost only)",

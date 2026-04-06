@@ -76,7 +76,13 @@ public class HealthController {
             healthStatus.put("database_up", isDatabaseUp());
             healthStatus.put("wallet_configured", institutionalWalletService.isConfigured());
             healthStatus.put("treasury_configured", isTreasuryConfigured());
-            healthStatus.put("provider_registered", institutionRegistrationService.isRegistered(InstitutionRole.PROVIDER));
+            boolean providerRegistered = institutionRegistrationService.isRegistered(InstitutionRole.PROVIDER);
+            boolean consumerRegistered = institutionRegistrationService.isRegistered(InstitutionRole.CONSUMER);
+            boolean institutionRegistered = providersEnabled ? providerRegistered : consumerRegistered;
+            healthStatus.put("operating_mode", providersEnabled ? "provider-consumer" : "consumer-only");
+            healthStatus.put("provider_registered", providerRegistered);
+            healthStatus.put("consumer_registered", consumerRegistered);
+            healthStatus.put("institution_registered", institutionRegistered);
             healthStatus.put("invite_token_configured", true);
             healthStatus.put("endpoints", getEndpointStatus());
 
@@ -101,11 +107,13 @@ public class HealthController {
         boolean walletConfigured = Boolean.TRUE.equals(status.get("wallet_configured"));
         boolean treasuryConfigured = Boolean.TRUE.equals(status.get("treasury_configured"));
         boolean providerRegistered = Boolean.TRUE.equals(status.get("provider_registered"));
+        boolean consumerRegistered = Boolean.TRUE.equals(status.get("consumer_registered"));
         boolean inviteConfigured = Boolean.TRUE.equals(status.get("invite_token_configured"));
 
-        boolean providerReady = !providersEnabled || providerRegistered;
+        boolean providerReady = providersEnabled ? providerRegistered : consumerRegistered;
+        boolean authSigningReady = !providersEnabled || keyPresent;
 
-        if (!rpcUp || !keyPresent || !marketplaceReady || !dbUp || !walletConfigured || !treasuryConfigured || !providerReady || !inviteConfigured) {
+        if (!rpcUp || !authSigningReady || !marketplaceReady || !dbUp || !walletConfigured || !treasuryConfigured || !providerReady || !inviteConfigured) {
             status.put("status", "DEGRADED");
             return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).body(status);
         }
@@ -192,8 +200,7 @@ public class HealthController {
     }
 
     private boolean isTreasuryConfigured() {
-        return providersEnabled
-            && contractAddress != null
+        return contractAddress != null
             && !contractAddress.isBlank()
             && institutionalWalletService.isConfigured();
     }

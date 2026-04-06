@@ -15,15 +15,20 @@ class LocalhostOnlyFilterTest {
 
     private MockMvc mockMvc;
     private LocalhostOnlyFilter filter;
+    private AdminNetworkAccessPolicy adminNetworkAccessPolicy;
 
     @BeforeEach
     void setUp() {
-        filter = new LocalhostOnlyFilter();
-        ReflectionTestUtils.setField(filter, "allowPrivateNetworks", false);
+        adminNetworkAccessPolicy = new AdminNetworkAccessPolicy();
+        ReflectionTestUtils.setField(adminNetworkAccessPolicy, "adminDashboardLocalOnly", true);
+        ReflectionTestUtils.setField(adminNetworkAccessPolicy, "adminDashboardAllowPrivate", false);
+        ReflectionTestUtils.setField(adminNetworkAccessPolicy, "allowPrivateNetworks", false);
+        ReflectionTestUtils.setField(adminNetworkAccessPolicy, "accessTokenRequired", true);
+        ReflectionTestUtils.setField(adminNetworkAccessPolicy, "configuredCidrs", "");
+        filter = new LocalhostOnlyFilter(adminNetworkAccessPolicy);
         ReflectionTestUtils.setField(filter, "accessToken", "test-token");
         ReflectionTestUtils.setField(filter, "accessTokenHeader", "X-Access-Token");
         ReflectionTestUtils.setField(filter, "accessTokenCookie", "access_token");
-        ReflectionTestUtils.setField(filter, "accessTokenRequired", true);
         mockMvc = MockMvcBuilders
             .standaloneSetup(new LocalhostFilterTestController())
             .addFilters(filter)
@@ -56,7 +61,8 @@ class LocalhostOnlyFilterTest {
 
     @Test
     void allowsPrivateNetworkWhenEnabledWithToken() throws Exception {
-        ReflectionTestUtils.setField(filter, "allowPrivateNetworks", true);
+        ReflectionTestUtils.setField(adminNetworkAccessPolicy, "adminDashboardAllowPrivate", true);
+        ReflectionTestUtils.setField(adminNetworkAccessPolicy, "allowPrivateNetworks", true);
         mockMvc = MockMvcBuilders
             .standaloneSetup(new LocalhostFilterTestController())
             .addFilters(filter)
@@ -70,7 +76,8 @@ class LocalhostOnlyFilterTest {
 
     @Test
     void allowsPrivateNetworkWithBearerToken() throws Exception {
-        ReflectionTestUtils.setField(filter, "allowPrivateNetworks", true);
+        ReflectionTestUtils.setField(adminNetworkAccessPolicy, "adminDashboardAllowPrivate", true);
+        ReflectionTestUtils.setField(adminNetworkAccessPolicy, "allowPrivateNetworks", true);
         mockMvc = MockMvcBuilders
             .standaloneSetup(new LocalhostFilterTestController())
             .addFilters(filter)
@@ -84,7 +91,8 @@ class LocalhostOnlyFilterTest {
 
     @Test
     void allowsPrivateNetworkWithCookieToken() throws Exception {
-        ReflectionTestUtils.setField(filter, "allowPrivateNetworks", true);
+        ReflectionTestUtils.setField(adminNetworkAccessPolicy, "adminDashboardAllowPrivate", true);
+        ReflectionTestUtils.setField(adminNetworkAccessPolicy, "allowPrivateNetworks", true);
         mockMvc = MockMvcBuilders
             .standaloneSetup(new LocalhostFilterTestController())
             .addFilters(filter)
@@ -98,7 +106,8 @@ class LocalhostOnlyFilterTest {
 
     @Test
     void blocksPrivateNetworkWithoutToken() throws Exception {
-        ReflectionTestUtils.setField(filter, "allowPrivateNetworks", true);
+        ReflectionTestUtils.setField(adminNetworkAccessPolicy, "adminDashboardAllowPrivate", true);
+        ReflectionTestUtils.setField(adminNetworkAccessPolicy, "allowPrivateNetworks", true);
         mockMvc = MockMvcBuilders
             .standaloneSetup(new LocalhostFilterTestController())
             .addFilters(filter)
@@ -110,8 +119,9 @@ class LocalhostOnlyFilterTest {
 
     @Test
     void allowsPrivateNetworkWhenTokenNotRequired() throws Exception {
-        ReflectionTestUtils.setField(filter, "allowPrivateNetworks", true);
-        ReflectionTestUtils.setField(filter, "accessTokenRequired", false);
+        ReflectionTestUtils.setField(adminNetworkAccessPolicy, "adminDashboardAllowPrivate", true);
+        ReflectionTestUtils.setField(adminNetworkAccessPolicy, "allowPrivateNetworks", true);
+        ReflectionTestUtils.setField(adminNetworkAccessPolicy, "accessTokenRequired", false);
         mockMvc = MockMvcBuilders
             .standaloneSetup(new LocalhostFilterTestController())
             .addFilters(filter)

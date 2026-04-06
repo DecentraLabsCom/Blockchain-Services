@@ -417,6 +417,41 @@
                     document.getElementById('publicBaseUrl').value = data.publicBaseUrl;
                 }
 
+                if (data.operatingMode === 'consumer-only' || data.providerRegistrationEnabled === false) {
+                    document.querySelector('.config-header h1').innerHTML = `
+                        <i class="fas fa-wallet"></i>
+                        Consumer-Only Deployment
+                    `;
+                    document.querySelector('.config-header p').textContent =
+                        'This deployment is limited to consumer institutions. Provider registration is disabled here.';
+                    showInfo('Use /wallet-dashboard to create or import the institutional wallet and apply a consumer provisioning token.');
+
+                    const form = document.getElementById('providerConfigForm');
+                    const submitBtn = document.getElementById('saveAndRegisterBtn');
+                    const retryBtn = document.getElementById('retryRegistrationBtn');
+                    if (form) {
+                        Array.from(form.querySelectorAll('input, textarea, button')).forEach((element) => {
+                            if (element.id !== 'continueToDashboardBtn') {
+                                element.disabled = true;
+                            }
+                        });
+                    }
+                    if (submitBtn) {
+                        submitBtn.style.display = 'none';
+                    }
+                    if (retryBtn) {
+                        retryBtn.style.display = 'none';
+                    }
+                    document.getElementById('continueToDashboardBtn').style.display = 'block';
+                    document.getElementById('statusBadge').innerHTML = `
+                        <div class="status-badge not-registered">
+                            <i class="fas fa-info-circle"></i>
+                            Provider Registration Disabled
+                        </div>
+                    `;
+                    return;
+                }
+
                 // Handle provisioning token field
                 const tokenField = document.getElementById('provisioningToken');
                 const tokenHint = tokenField.nextElementSibling;

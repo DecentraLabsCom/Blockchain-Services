@@ -26,7 +26,10 @@ const DashboardState = {
     collectMaxBatch: 50,
     collectLabsRetryTimeout: null,
     collectLabsRetryAttempts: 0,
-    transactionsLimit: 10
+    transactionsLimit: 10,
+    operatingMode: 'unknown',
+    providerRegistrationEnabled: false,
+    registrationRole: null
 };
 
 const INVITE_TOKEN_STORAGE_PREFIX = 'dlabs_invite_token_applied:';
@@ -740,6 +743,7 @@ function updateDashboardAccessNotices(status) {
 
     const localOnly = status.dashboardLocalOnly !== false;
     const privateEnabled = status.allowPrivateNetworks === true && status.dashboardAllowPrivate === true;
+    const configuredCidrs = Array.isArray(status.dashboardAllowedCidrs) ? status.dashboardAllowedCidrs : [];
 
     if (localOnly && !status.allowPrivateNetworks) {
         badge.textContent = 'Localhost Only';
@@ -753,6 +757,149 @@ function updateDashboardAccessNotices(status) {
     } else {
         badge.textContent = 'Localhost Only';
         footer.textContent = '🔒 This dashboard is only accessible internally for security.';
+    }
+}
+
+function updateOperatingModeNotices(providerConfig) {
+    const badge = document.getElementById('operatingModeBadge');
+    const notice = document.getElementById('operatingModeNotice');
+    const welcomeInstruction = document.getElementById('welcomeTokenInstruction');
+    const welcomeHelp = document.getElementById('welcomeTokenHelp');
+    const tokenIntro = document.getElementById('provisioningTokenIntro');
+    const tokenModes = document.getElementById('provisioningTokenModes');
+
+    const operatingMode = providerConfig && providerConfig.operatingMode
+        ? providerConfig.operatingMode
+        : 'provider-consumer';
+    const providerMode = operatingMode === 'provider-consumer';
+
+    DashboardState.operatingMode = operatingMode;
+    DashboardState.providerRegistrationEnabled = providerConfig && providerConfig.providerRegistrationEnabled === true;
+    DashboardState.registrationRole = providerConfig && providerConfig.registrationRole
+        ? providerConfig.registrationRole
+        : null;
+
+    if (badge) {
+        badge.textContent = providerMode ? 'Provider + Consumer Mode' : 'Consumer-Only Mode';
+    }
+
+    if (notice) {
+        notice.textContent = providerMode
+            ? 'Full gateway mode: provider publishing, auth endpoints, and consumer funding flows are available.'
+            : 'Consumer-only mode: this institution can fund reservation and access costs for its own users. Provider publishing and provider auth endpoints are disabled.';
+    }
+
+    if (welcomeInstruction) {
+        welcomeInstruction.innerHTML = providerMode
+            ? 'Next, apply your <strong>provisioning token</strong> from the marketplace.'
+            : 'Next, apply your <strong>consumer provisioning token</strong> from the marketplace.';
+    }
+
+    if (welcomeHelp) {
+        welcomeHelp.textContent = providerMode
+            ? 'If you do not have one yet, request access for your institution.'
+            : 'Request a consumer token if your institution only needs to finance and manage reservation and access costs for its own users.';
+    }
+
+    if (tokenIntro) {
+        tokenIntro.textContent = providerMode
+            ? 'Paste the provisioning token provided by the DecentraLabs marketplace to register your institution on-chain.'
+            : 'Paste the consumer provisioning token provided by the DecentraLabs marketplace to register your institution for reservation and access funding.';
+    }
+
+    if (tokenModes) {
+        tokenModes.innerHTML = providerMode
+            ? 'Supports both <strong>Provider</strong> (publishes labs) and <strong>Consumer</strong> (only reserves labs) tokens.'
+            : 'This deployment is configured for <strong>Consumer</strong> tokens only.';
+    }
+}
+
+// Override the initial notice helpers so access-mode and consumer-only copy stay
+// aligned with the backend security/configuration model.
+function updateDashboardAccessNotices(status) {
+    const badge = document.getElementById('dashboardAccessBadge');
+    const footer = document.getElementById('dashboardSecurityNotice');
+    if (!badge || !footer || !status) {
+        return;
+    }
+
+    const localOnly = status.dashboardLocalOnly !== false;
+    const privateEnabled = status.allowPrivateNetworks === true && status.dashboardAllowPrivate === true;
+    const configuredCidrs = Array.isArray(status.dashboardAllowedCidrs) ? status.dashboardAllowedCidrs : [];
+
+    if (localOnly && !status.allowPrivateNetworks) {
+        badge.textContent = 'Localhost Only';
+        footer.textContent = 'This dashboard is only accessible from localhost.';
+    } else if (localOnly && privateEnabled && configuredCidrs.length > 0) {
+        badge.textContent = 'Private CIDR Allowlist';
+        footer.textContent = `Private access limited to: ${configuredCidrs.join(', ')}.`;
+    } else if (localOnly && privateEnabled) {
+        badge.textContent = 'Any Private Network';
+        footer.textContent = 'Private-network access is enabled for any private range with the admin access token.';
+    } else if (!localOnly) {
+        badge.textContent = 'External Access Allowed';
+        footer.textContent = 'This dashboard may be accessible externally; enforce firewall or proxy restrictions.';
+    } else {
+        badge.textContent = 'Localhost Only';
+        footer.textContent = 'This dashboard is only accessible from localhost.';
+    }
+}
+
+function updateOperatingModeNotices(providerConfig) {
+    const badge = document.getElementById('operatingModeBadge');
+    const notice = document.getElementById('operatingModeNotice');
+    const welcomeInstruction = document.getElementById('welcomeTokenInstruction');
+    const welcomeHelp = document.getElementById('welcomeTokenHelp');
+    const tokenIntro = document.getElementById('provisioningTokenIntro');
+    const tokenModes = document.getElementById('provisioningTokenModes');
+
+    const operatingMode = providerConfig && providerConfig.operatingMode
+        ? providerConfig.operatingMode
+        : 'provider-consumer';
+    const providerMode = operatingMode === 'provider-consumer';
+
+    DashboardState.operatingMode = operatingMode;
+    DashboardState.providerRegistrationEnabled = providerConfig && providerConfig.providerRegistrationEnabled === true;
+    DashboardState.registrationRole = providerConfig && providerConfig.registrationRole
+        ? providerConfig.registrationRole
+        : null;
+
+    if (badge) {
+        badge.textContent = providerMode ? 'Provider + Consumer Mode' : 'Consumer-Only Mode';
+    }
+
+    if (notice) {
+        const roleSuffix = DashboardState.registrationRole
+            ? ` Registered role: ${DashboardState.registrationRole}.`
+            : '';
+        notice.textContent = providerMode
+            ? 'Full gateway mode: provider publishing, auth endpoints, and consumer funding flows are available.'
+            : 'Consumer-only mode: this institution can fund reservation and access costs for its own users. Provider publishing and provider auth endpoints are disabled.';
+        notice.textContent += roleSuffix;
+    }
+
+    if (welcomeInstruction) {
+        welcomeInstruction.innerHTML = providerMode
+            ? 'Next, apply your <strong>provisioning token</strong> from the marketplace.'
+            : 'Next, apply your <strong>consumer provisioning token</strong> from the marketplace.';
+    }
+
+    if (welcomeHelp) {
+        welcomeHelp.textContent = providerMode
+            ? 'If you do not have one yet, request access for your institution.'
+            : 'Request a consumer token if your institution only needs to finance and manage reservation and access costs for its own users.';
+    }
+
+    if (tokenIntro) {
+        tokenIntro.textContent = providerMode
+            ? 'Paste the provisioning token provided by the DecentraLabs marketplace to register your institution on-chain.'
+            : 'Paste the consumer provisioning token provided by the DecentraLabs marketplace to register your institution for reservation and access funding.';
+    }
+
+    if (tokenModes) {
+        tokenModes.innerHTML = providerMode
+            ? 'Supports both <strong>Provider</strong> (publishes labs) and <strong>Consumer</strong> (only reserves labs) tokens.'
+            : 'This deployment is configured for <strong>Consumer</strong> tokens only.';
     }
 }
 
@@ -1090,6 +1237,7 @@ async function loadSystemStatus() {
         if (providerConfig) {
             console.log('[loadSystemStatus] Provider config status:', providerConfig);
         }
+        updateOperatingModeNotices(providerConfig);
         
         if (data.success) {
             const walletConfigured = data.walletConfigured;
@@ -1115,11 +1263,11 @@ async function loadSystemStatus() {
                     DashboardState.walletAddress,
                     DashboardState.contractAddress
                 );
-                const providerApplied = providerConfig && providerConfig.isRegistered === true;
+                const registrationApplied = providerConfig && providerConfig.isRegistered === true;
 
-                DashboardState.inviteTokenApplied = storedInviteApplied || providerApplied;
+                DashboardState.inviteTokenApplied = storedInviteApplied || registrationApplied;
 
-                if (providerApplied) {
+                if (registrationApplied) {
                     persistInviteTokenState(
                         DashboardState.walletAddress,
                         true,

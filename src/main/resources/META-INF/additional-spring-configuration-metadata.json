@@ -370,13 +370,18 @@
     "name": "admin.dashboard.allow-private",
     "type": "java.lang.Boolean",
     "description": "Allow admin dashboard access from private networks.",
-    "defaultValue": true
+    "defaultValue": false
+  },
+  {
+    "name": "admin.dashboard.allowed-cidrs",
+    "type": "java.lang.String",
+    "description": "Optional comma-separated CIDR allowlist for private-network dashboard access. Leave empty to allow any private range."
   },
   {
     "name": "security.allow-private-networks",
     "type": "java.lang.Boolean",
     "description": "Allow connections from private networks.",
-    "defaultValue": true
+    "defaultValue": false
   },
   {
     "name": "security.access-token",

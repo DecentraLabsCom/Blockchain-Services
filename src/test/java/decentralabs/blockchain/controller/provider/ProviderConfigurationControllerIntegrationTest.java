@@ -13,6 +13,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import decentralabs.blockchain.controller.TestSecurityConfig;
 import decentralabs.blockchain.dto.provider.ConsumerProvisioningTokenPayload;
 import decentralabs.blockchain.dto.provider.ProvisioningTokenPayload;
+import decentralabs.blockchain.security.AdminNetworkAccessPolicy;
 import decentralabs.blockchain.security.LocalhostOnlyFilter;
 import decentralabs.blockchain.service.organization.InstitutionRegistrationService;
 import decentralabs.blockchain.service.organization.ProviderConfigurationPersistenceService;
@@ -34,6 +35,8 @@ import org.springframework.web.context.WebApplicationContext;
 
 @SpringBootTest(classes = ProviderConfigurationControllerIntegrationTest.TestApplication.class)
 @TestPropertySource(properties = {
+    "features.providers.enabled=true",
+    "features.providers.registration.enabled=true",
     "spring.autoconfigure.exclude="
         + "org.springframework.boot.jdbc.autoconfigure.DataSourceAutoConfiguration,"
         + "org.springframework.boot.jdbc.autoconfigure.DataSourceTransactionManagerAutoConfiguration,"
@@ -65,6 +68,11 @@ class ProviderConfigurationControllerIntegrationTest {
 
     @BeforeEach
     void setUp() {
+        org.springframework.test.util.ReflectionTestUtils.setField(
+            webApplicationContext.getBean(ProviderConfigurationController.class),
+            "providerRegistrationEnabled",
+            true
+        );
         mockMvc = MockMvcBuilders.webAppContextSetup(webApplicationContext)
             .addFilters(localhostOnlyFilter)
             .build();
@@ -170,10 +178,32 @@ class ProviderConfigurationControllerIntegrationTest {
         verify(registrationService, never()).register(any());
     }
 
+    @Test
+    void providerEndpoints_returnForbiddenWhenProviderRegistrationDisabled() throws Exception {
+        org.springframework.test.util.ReflectionTestUtils.setField(
+            webApplicationContext.getBean(ProviderConfigurationController.class),
+            "providerRegistrationEnabled",
+            false
+        );
+
+        mockMvc.perform(post("/institution-config/apply-provider-token")
+                .with(req -> {
+                    req.setRemoteAddr("127.0.0.1");
+                    return req;
+                })
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {"token":"valid-provider-token"}
+                    """))
+            .andExpect(status().isForbidden())
+            .andExpect(jsonPath("$.success").value(false));
+    }
+
     @SpringBootConfiguration
     @EnableAutoConfiguration
     @Import({
         ProviderConfigurationController.class,
+        AdminNetworkAccessPolicy.class,
         LocalhostOnlyFilter.class
     })
     static class TestApplication {

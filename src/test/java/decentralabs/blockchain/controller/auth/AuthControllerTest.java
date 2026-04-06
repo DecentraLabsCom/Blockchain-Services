@@ -53,7 +53,6 @@ class AuthControllerTest {
 
         // Set configuration values via reflection
         ReflectionTestUtils.setField(authController, "authPath", "/auth");
-        ReflectionTestUtils.setField(authController, "walletAuth2Endpoint", "/auth/wallet/v2");
         ReflectionTestUtils.setField(authController, "samlAuth2Endpoint", "/auth/saml/v2");
         ReflectionTestUtils.setField(authController, "jwksEndpoint", "/auth/jwks");
     }
@@ -83,7 +82,7 @@ class AuthControllerTest {
 
             assertThat(response.getBody()).containsKey("authorization_endpoint");
             assertThat(response.getBody().get("authorization_endpoint"))
-                .isEqualTo("https://backend.example.com/auth/wallet/v2");
+                .isEqualTo("https://backend.example.com/auth/saml/v2");
         }
 
         @Test

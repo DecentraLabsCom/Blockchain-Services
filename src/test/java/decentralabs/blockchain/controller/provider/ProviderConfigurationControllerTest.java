@@ -44,6 +44,8 @@ class ProviderConfigurationControllerTest {
     void setUp() {
         // Set default values for @Value fields
         ReflectionTestUtils.setField(controller, "marketplaceBaseUrl", "https://marketplace.example.com");
+        ReflectionTestUtils.setField(controller, "providersEnabled", true);
+        ReflectionTestUtils.setField(controller, "providerRegistrationEnabled", true);
         ReflectionTestUtils.setField(controller, "providerName", "");
         ReflectionTestUtils.setField(controller, "providerEmail", "");
         ReflectionTestUtils.setField(controller, "providerCountry", "");
@@ -78,6 +80,10 @@ class ProviderConfigurationControllerTest {
         assertTrue(body.isRegistered());
         assertTrue(body.isConfigured());
         assertTrue(body.isFromProvisioningToken());
+        assertTrue(body.isProviderRegistered());
+        assertFalse(body.isConsumerRegistered());
+        assertEquals("provider-consumer", body.getOperatingMode());
+        assertEquals("PROVIDER", body.getRegistrationRole());
         assertEquals("UNED", body.getProviderName());
         assertEquals("test@uned.es", body.getProviderEmail());
         assertEquals("ES", body.getProviderCountry());
@@ -111,6 +117,7 @@ class ProviderConfigurationControllerTest {
         assertFalse(body.isRegistered());
         assertTrue(body.isConfigured());
         assertFalse(body.isFromProvisioningToken());
+        assertTrue(body.isProviderRegistrationEnabled());
     }
 
     @Test
@@ -312,5 +319,60 @@ class ProviderConfigurationControllerTest {
         ProviderConfigurationResponse body = response.getBody();
         assertFalse(body.isRegistered());
         assertFalse(body.isConfigured());
+    }
+
+    @Test
+    @DisplayName("Should report consumer registration as registered in consumer-only mode")
+    void shouldReturnConsumerRegisteredStatus() {
+        ReflectionTestUtils.setField(controller, "providersEnabled", false);
+        ReflectionTestUtils.setField(controller, "providerRegistrationEnabled", false);
+
+        Properties props = new Properties();
+        props.setProperty("marketplace.base-url", "https://marketplace.example.com");
+        props.setProperty("consumer.name", "Consumer University");
+        props.setProperty("provider.organization", "consumer.edu");
+        props.setProperty("provisioning.source", "consumer-token");
+        props.setProperty("consumer.registered", "true");
+
+        when(persistenceService.loadConfigurationSafe()).thenReturn(props);
+
+        ResponseEntity<ProviderConfigurationResponse> response = controller.getConfigurationStatus();
+
+        assertEquals(HttpStatus.OK, response.getStatusCode());
+        assertNotNull(response.getBody());
+        ProviderConfigurationResponse body = response.getBody();
+        assertTrue(body.isRegistered());
+        assertTrue(body.isConsumerRegistered());
+        assertFalse(body.isProviderRegistered());
+        assertTrue(body.isConfigured());
+        assertEquals("consumer-only", body.getOperatingMode());
+        assertEquals("CONSUMER", body.getRegistrationRole());
+        assertFalse(body.isProviderRegistrationEnabled());
+        assertEquals("Consumer University", body.getConsumerName());
+    }
+
+    @Test
+    @DisplayName("Should reject provider registration when provider mode is disabled")
+    void shouldRejectProviderRegistrationWhenDisabled() throws Exception {
+        ReflectionTestUtils.setField(controller, "providerRegistrationEnabled", false);
+
+        ProviderConfigurationRequest request = new ProviderConfigurationRequest();
+        request.setMarketplaceBaseUrl("https://marketplace.example.com");
+        request.setProviderName("Test University");
+        request.setProviderEmail("test@university.edu");
+        request.setProviderCountry("US");
+        request.setProviderOrganization("university.edu");
+        request.setPublicBaseUrl("https://gateway.university.edu");
+        request.setProvisioningToken("valid-token-123");
+
+        ResponseEntity<Map<String, Object>> response = controller.saveAndRegister(request);
+
+        assertEquals(HttpStatus.FORBIDDEN, response.getStatusCode());
+        assertNotNull(response.getBody());
+        assertEquals(false, response.getBody().get("success"));
+        assertTrue(response.getBody().get("error").toString().contains("Provider registration is disabled"));
+
+        verify(persistenceService, never()).saveConfiguration(any());
+        verify(registrationService, never()).register(any());
     }
 }

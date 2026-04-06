@@ -47,6 +47,12 @@ public class ProviderConfigurationController {
     @Value("${marketplace.base-url:}")
     private String marketplaceBaseUrl;
 
+    @Value("${features.providers.enabled:false}")
+    private boolean providersEnabled;
+
+    @Value("${features.providers.registration.enabled:false}")
+    private boolean providerRegistrationEnabled;
+
     @Value("${provider.name:}")
     private String providerName;
 
@@ -73,17 +79,28 @@ public class ProviderConfigurationController {
     public ResponseEntity<ProviderConfigurationResponse> getConfigurationStatus() {
         ConfigSnapshot snapshot = loadSnapshot();
         boolean fromToken = "token".equalsIgnoreCase(snapshot.provisioningSource());
+        boolean fromConsumerToken = "consumer-token".equalsIgnoreCase(snapshot.provisioningSource());
+        boolean registered = snapshot.providerRegistered() || snapshot.consumerRegistered();
+        String registrationRole = snapshot.providerRegistered()
+            ? InstitutionRole.PROVIDER.name()
+            : (snapshot.consumerRegistered() ? InstitutionRole.CONSUMER.name() : null);
 
         ProviderConfigurationResponse response = ProviderConfigurationResponse.builder()
             .marketplaceBaseUrl(snapshot.marketplaceBaseUrl())
+            .consumerName(snapshot.consumerName())
             .providerName(snapshot.providerName())
             .providerEmail(snapshot.providerEmail())
             .providerCountry(snapshot.providerCountry())
             .providerOrganization(snapshot.providerOrganization())
             .publicBaseUrl(snapshot.publicBaseUrl())
-            .isConfigured(isFullyConfigured(snapshot))
-            .isRegistered(isRegistered(snapshot))
-            .fromProvisioningToken(fromToken)
+            .isConfigured(isConfigured(snapshot))
+            .isRegistered(registered)
+            .providerRegistered(snapshot.providerRegistered())
+            .consumerRegistered(snapshot.consumerRegistered())
+            .providerRegistrationEnabled(providerRegistrationEnabled)
+            .operatingMode(providersEnabled ? "provider-consumer" : "consumer-only")
+            .registrationRole(registrationRole)
+            .fromProvisioningToken(fromToken || fromConsumerToken)
             .lockedFields(fromToken ? TOKEN_LOCKED_FIELDS : List.of())
             .build();
 
@@ -101,6 +118,7 @@ public class ProviderConfigurationController {
         Map<String, Object> response = new HashMap<>();
 
         try {
+            ensureProviderRegistrationEnabled();
             log.info("Saving provider configuration...");
 
             // Validate configuration
@@ -144,6 +162,11 @@ public class ProviderConfigurationController {
                 return ResponseEntity.status(HttpStatus.PARTIAL_CONTENT).body(response);
             }
 
+        } catch (IllegalStateException e) {
+            log.warn("Provider registration disabled for this deployment");
+            response.put("success", false);
+            response.put("error", e.getMessage());
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).body(response);
         } catch (IllegalArgumentException e) {
             log.error("Invalid configuration: {}", e.getMessage());
             response.put("success", false);
@@ -168,13 +191,14 @@ public class ProviderConfigurationController {
         Map<String, Object> response = new HashMap<>();
 
         try {
+            ensureProviderRegistrationEnabled();
             ConfigSnapshot snapshot = loadSnapshot();
             String provisioningToken = request == null ? "" : request.get("provisioningToken");
             if (provisioningToken == null) {
                 provisioningToken = "";
             }
 
-            if (!isFullyConfigured(snapshot)) {
+            if (!isConfigured(snapshot)) {
                 response.put("success", false);
                 response.put("error", "Provider configuration is incomplete");
                 return ResponseEntity.badRequest().body(response);
@@ -207,6 +231,10 @@ public class ProviderConfigurationController {
 
             return ResponseEntity.ok(response);
 
+        } catch (IllegalStateException e) {
+            response.put("success", false);
+            response.put("error", e.getMessage());
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).body(response);
         } catch (Exception e) {
             log.error("Failed to retry provider registration", e);
             response.put("success", false);
@@ -223,6 +251,7 @@ public class ProviderConfigurationController {
     public ResponseEntity<Map<String, Object>> applyProvisioningToken(@Valid @RequestBody ProvisioningTokenRequest request) {
         Map<String, Object> response = new HashMap<>();
         try {
+            ensureProviderRegistrationEnabled();
             ConfigSnapshot snapshot = loadSnapshot();
             if (request.getToken() == null || request.getToken().isBlank()) {
                 throw new IllegalArgumentException("Provisioning token is required");
@@ -271,6 +300,10 @@ public class ProviderConfigurationController {
                 ? ResponseEntity.ok(response)
                 : ResponseEntity.status(HttpStatus.PARTIAL_CONTENT).body(response);
 
+        } catch (IllegalStateException e) {
+            response.put("success", false);
+            response.put("error", e.getMessage());
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).body(response);
         } catch (IllegalArgumentException e) {
             response.put("success", false);
             response.put("error", e.getMessage());
@@ -323,6 +356,7 @@ public class ProviderConfigurationController {
             response.put("success", true);
             response.put("registered", registered);
             response.put("consumerMode", true);
+            response.put("registrationRole", InstitutionRole.CONSUMER.name());
             response.put("config", Map.of(
                 "marketplaceBaseUrl", payload.getMarketplaceBaseUrl(),
                 "consumerName", payload.getConsumerName(),
@@ -345,7 +379,13 @@ public class ProviderConfigurationController {
         }
     }
 
-    private boolean isFullyConfigured(ConfigSnapshot snapshot) {
+    private boolean isConfigured(ConfigSnapshot snapshot) {
+        if ("consumer-token".equalsIgnoreCase(snapshot.provisioningSource())) {
+            return !snapshot.marketplaceBaseUrl().isBlank()
+                && !snapshot.consumerName().isBlank()
+                && !snapshot.providerOrganization().isBlank();
+        }
+
         return !snapshot.marketplaceBaseUrl().isBlank()
             && !snapshot.providerName().isBlank()
             && !snapshot.providerEmail().isBlank()
@@ -354,30 +394,30 @@ public class ProviderConfigurationController {
             && !snapshot.publicBaseUrl().isBlank();
     }
 
-    private boolean isRegistered(ConfigSnapshot snapshot) {
-        return snapshot.registered();
-    }
-
     private ConfigSnapshot loadSnapshot() {
         Properties props = persistenceService.loadConfigurationSafe();
         String resolvedMarketplace = firstNonBlank(props.getProperty("marketplace.base-url"), marketplaceBaseUrl);
+        String resolvedConsumerName = firstNonBlank(props.getProperty("consumer.name"), "");
         String resolvedProviderName = firstNonBlank(props.getProperty("provider.name"), providerName);
         String resolvedProviderEmail = firstNonBlank(props.getProperty("provider.email"), providerEmail);
         String resolvedProviderCountry = firstNonBlank(props.getProperty("provider.country"), providerCountry);
         String resolvedProviderOrg = firstNonBlank(props.getProperty("provider.organization"), providerOrganization);
         String resolvedPublicBaseUrl = firstNonBlank(props.getProperty("public.base-url"), publicBaseUrl);
         String source = props.getProperty("provisioning.source", "manual");
-        boolean registered = "true".equalsIgnoreCase(props.getProperty("provider.registered", "false"));
+        boolean providerRegistered = "true".equalsIgnoreCase(props.getProperty("provider.registered", "false"));
+        boolean consumerRegistered = "true".equalsIgnoreCase(props.getProperty("consumer.registered", "false"));
 
         return new ConfigSnapshot(
             resolvedMarketplace,
+            resolvedConsumerName,
             resolvedProviderName,
             resolvedProviderEmail,
             resolvedProviderCountry,
             resolvedProviderOrg,
             resolvedPublicBaseUrl,
             source,
-            registered
+            providerRegistered,
+            consumerRegistered
         );
     }
 
@@ -390,14 +430,24 @@ public class ProviderConfigurationController {
 
     private record ConfigSnapshot(
         String marketplaceBaseUrl,
+        String consumerName,
         String providerName,
         String providerEmail,
         String providerCountry,
         String providerOrganization,
         String publicBaseUrl,
         String provisioningSource,
-        boolean registered
+        boolean providerRegistered,
+        boolean consumerRegistered
     ) {}
+
+    private void ensureProviderRegistrationEnabled() {
+        if (!providerRegistrationEnabled) {
+            throw new IllegalStateException(
+                "Provider registration is disabled in this deployment. Use the consumer provisioning flow from /wallet-dashboard instead."
+            );
+        }
+    }
 
     private void validateConfiguration(ProviderConfigurationRequest request) {
         if (request.getMarketplaceBaseUrl() == null || request.getMarketplaceBaseUrl().isBlank()) {

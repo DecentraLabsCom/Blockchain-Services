@@ -6,6 +6,7 @@ import decentralabs.blockchain.service.health.LabMetadataService;
 import decentralabs.blockchain.service.persistence.AntiReplayService;
 import decentralabs.blockchain.service.wallet.InstitutionalWalletService;
 import decentralabs.blockchain.service.wallet.WalletService;
+import decentralabs.blockchain.security.AdminNetworkAccessPolicy;
 import decentralabs.blockchain.dto.billing.InstitutionalAdminRequest;
 import decentralabs.blockchain.dto.billing.InstitutionalAdminResponse;
 import decentralabs.blockchain.util.CreditUnitConverter;
@@ -64,18 +65,13 @@ public class InstitutionalAdminService {
     private final InstitutionalAnalyticsService analyticsService;
     private final Eip712BillingAdminVerifier adminVerifier;
     private final AntiReplayService antiReplayService;
+    private final AdminNetworkAccessPolicy adminNetworkAccessPolicy;
 
     private static final int LAB_TOKEN_DECIMALS = CreditUnitConverter.CREDIT_DECIMALS;
     private static final long SIGNATURE_MAX_AGE_MS = 5 * 60 * 1000;
 
     @Value("${contract.address}")
     private String contractAddress;
-
-    @Value("${admin.dashboard.allow-private:false}")
-    private boolean adminDashboardAllowPrivate;
-
-    @Value("${security.allow-private-networks:false}")
-    private boolean allowPrivateNetworks;
 
     @Value("${security.access-token:}")
     private String accessToken;
@@ -222,16 +218,9 @@ public class InstitutionalAdminService {
      */
     private boolean isLocalhostRequest() {
         String remoteAddr = request.getRemoteAddr();
-
-        if ("127.0.0.1".equals(remoteAddr) || remoteAddr.startsWith("127.") || "::1".equals(remoteAddr)) {
+        if (adminNetworkAccessPolicy.isRequestAllowed(request, this::hasValidAccessToken)) {
             return true;
         }
-
-        if (adminDashboardAllowPrivate && allowPrivateNetworks && isPrivateAddress(remoteAddr)
-            && (!accessTokenRequired || hasValidAccessToken())) {
-            return true;
-        }
-
         log.warn("Administrative access attempt from non-localhost IP: {}", LogSanitizer.sanitize(remoteAddr));
         return false;
     }
@@ -260,29 +249,6 @@ public class InstitutionalAdminService {
             }
         }
         return false;
-    }
-
-    private boolean isPrivateAddress(String address) {
-        if (address == null || address.isBlank()) {
-            return false;
-        }
-        return address.startsWith("10.")
-            || address.startsWith("192.168.")
-            || (address.startsWith("172.") && isInRange(address, 16, 31))
-            || address.startsWith("169.254.");
-    }
-
-    private boolean isInRange(String address, int start, int end) {
-        try {
-            String[] parts = address.split("\\.");
-            if (parts.length < 2) {
-                return false;
-            }
-            int second = Integer.parseInt(parts[1]);
-            return second >= start && second <= end;
-        } catch (NumberFormatException ex) {
-            return false;
-        }
     }
 
     /**

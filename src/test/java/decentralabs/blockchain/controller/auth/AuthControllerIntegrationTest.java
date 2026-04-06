@@ -9,12 +9,12 @@ import java.security.KeyPair;
 import java.security.KeyPairGenerator;
 import java.security.interfaces.RSAPublicKey;
 
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
-import org.junit.jupiter.api.BeforeEach;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
 import decentralabs.blockchain.service.BackendUrlResolver; 
@@ -26,33 +26,6 @@ import decentralabs.blockchain.service.auth.KeyService;
     "endpoint.jwks=/auth/jwks"
 })
 class AuthControllerIntegrationTest {
-
-    // Provide an ObjectMapper bean in the test context so WebApplicationContext registers JSON converters
-    @org.springframework.boot.test.context.TestConfiguration
-    static class JacksonTestConfig {
-        @org.springframework.context.annotation.Bean
-        public com.fasterxml.jackson.databind.ObjectMapper objectMapper() {
-            return new com.fasterxml.jackson.databind.ObjectMapper();
-        }
-
-        @org.springframework.context.annotation.Bean
-        public decentralabs.blockchain.config.JacksonHttpMessageConverter jacksonConverter(com.fasterxml.jackson.databind.ObjectMapper om) {
-            return new decentralabs.blockchain.config.JacksonHttpMessageConverter(om);
-        }
-
-        @org.springframework.context.annotation.Bean
-        public org.springframework.web.servlet.config.annotation.WebMvcConfigurer testWebMvcConfigurer(decentralabs.blockchain.config.JacksonHttpMessageConverter conv) {
-            return new org.springframework.web.servlet.config.annotation.WebMvcConfigurer() {
-                @Override
-                public void extendMessageConverters(java.util.List<org.springframework.http.converter.HttpMessageConverter<?>> converters) {
-                    // ensure JSON converter has priority
-                    converters.add(0, conv);
-                }
-            };
-        }
-    }
-
-
     private MockMvc mockMvc;
 
     @BeforeEach

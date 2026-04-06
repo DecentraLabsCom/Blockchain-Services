@@ -10,6 +10,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import decentralabs.blockchain.security.AccessTokenAuthenticationFilter;
+import decentralabs.blockchain.security.AdminNetworkAccessPolicy;
 import decentralabs.blockchain.security.LocalhostOnlyFilter;
 import decentralabs.blockchain.security.PublicEndpointRateLimitFilter;
 import decentralabs.blockchain.service.BackendUrlResolver;
@@ -35,6 +36,7 @@ import org.springframework.web.bind.annotation.RestController;
     classes = SecurityConfigIntegrationTest.TestApplication.class
 )
 @TestPropertySource(properties = {
+    "features.providers.enabled=true",
     "allowed-origins=https://app.example/",
     "base.domain=https://gateway.example/",
     "management.health.defaults.enabled=false",
@@ -136,7 +138,7 @@ class SecurityConfigIntegrationTest {
     }
 
     @Test
-    void billingAdmin_requiresInternalRoleWhenTokenMissing() throws Exception {
+    void billingAdmin_requiresInternalRoleInProviderModeWhenTokenMissing() throws Exception {
         mockMvc.perform(get("/billing/admin/test")
                 .with(anonymous())
                 .with(req -> {
@@ -233,6 +235,7 @@ class SecurityConfigIntegrationTest {
         SecurityConfig.class,
         BackendUrlResolver.class,
         AccessTokenAuthenticationFilter.class,
+        AdminNetworkAccessPolicy.class,
         LocalhostOnlyFilter.class,
         PublicEndpointRateLimitFilter.class,
         TestEndpoints.class

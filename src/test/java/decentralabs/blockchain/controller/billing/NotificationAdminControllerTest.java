@@ -1,6 +1,7 @@
 package decentralabs.blockchain.controller.billing;
 
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -26,6 +27,7 @@ import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 
+import decentralabs.blockchain.security.AdminNetworkAccessPolicy;
 import decentralabs.blockchain.notification.MailDriver;
 import decentralabs.blockchain.notification.MailSenderAdapter;
 import decentralabs.blockchain.notification.MailSenderFactory;
@@ -46,6 +48,9 @@ class NotificationAdminControllerTest {
     @Mock
     private MailSenderFactory mailSenderFactory;
 
+    @Mock
+    private AdminNetworkAccessPolicy adminNetworkAccessPolicy;
+
     @InjectMocks
     private NotificationAdminController notificationAdminController;
 
@@ -54,9 +59,7 @@ class NotificationAdminControllerTest {
 
     @BeforeEach
     void setUp() {
-        // Disable localhost-only check for testing
-        ReflectionTestUtils.setField(notificationAdminController, "adminDashboardLocalOnly", false);
-        ReflectionTestUtils.setField(notificationAdminController, "adminDashboardAllowPrivate", true);
+        lenient().when(adminNetworkAccessPolicy.isRequestAllowed(any(), any())).thenReturn(true);
         mockMvc = MockMvcBuilders.standaloneSetup(notificationAdminController).build();
         objectMapper = new ObjectMapper();
     }
@@ -240,9 +243,6 @@ class NotificationAdminControllerTest {
 
         @BeforeEach
         void setUpAccess() {
-            ReflectionTestUtils.setField(notificationAdminController, "adminDashboardLocalOnly", true);
-            ReflectionTestUtils.setField(notificationAdminController, "adminDashboardAllowPrivate", true);
-            ReflectionTestUtils.setField(notificationAdminController, "allowPrivateNetworks", true);
             ReflectionTestUtils.setField(notificationAdminController, "accessToken", "test-token");
             ReflectionTestUtils.setField(notificationAdminController, "accessTokenHeader", "X-Access-Token");
             ReflectionTestUtils.setField(notificationAdminController, "accessTokenCookie", "access_token");
@@ -253,6 +253,7 @@ class NotificationAdminControllerTest {
         @Test
         @DisplayName("Should reject private network without access token")
         void shouldRejectPrivateNetworkWithoutToken() throws Exception {
+            when(adminNetworkAccessPolicy.isRequestAllowed(any(), any())).thenReturn(false);
             mockMvc.perform(get("/billing/admin/notifications")
                     .with(req -> { req.setRemoteAddr("10.0.0.5"); return req; }))
                 .andExpect(status().isForbidden())
@@ -263,6 +264,7 @@ class NotificationAdminControllerTest {
         @DisplayName("Should allow private network with valid access token")
         void shouldAllowPrivateNetworkWithToken() throws Exception {
             when(notificationConfigService.getPublicConfig()).thenReturn(Map.of("enabled", false));
+            when(adminNetworkAccessPolicy.isRequestAllowed(any(), any())).thenReturn(true);
 
             mockMvc.perform(get("/billing/admin/notifications")
                     .header("X-Access-Token", "test-token")

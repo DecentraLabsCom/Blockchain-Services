@@ -6,6 +6,7 @@ import decentralabs.blockchain.notification.NotificationConfigService;
 import decentralabs.blockchain.notification.NotificationMessage;
 import decentralabs.blockchain.notification.NotificationProperties;
 import decentralabs.blockchain.notification.NotificationUpdateRequest;
+import decentralabs.blockchain.security.AdminNetworkAccessPolicy;
 import jakarta.servlet.http.HttpServletRequest;
 import java.util.Map;
 import lombok.RequiredArgsConstructor;
@@ -27,15 +28,7 @@ public class NotificationAdminController {
 
     private final NotificationConfigService notificationConfigService;
     private final MailSenderFactory mailSenderFactory;
-
-    @Value("${admin.dashboard.local-only:true}")
-    private boolean adminDashboardLocalOnly;
-
-    @Value("${admin.dashboard.allow-private:true}")
-    private boolean adminDashboardAllowPrivate;
-
-    @Value("${security.allow-private-networks:false}")
-    private boolean allowPrivateNetworks;
+    private final AdminNetworkAccessPolicy adminNetworkAccessPolicy;
 
     @Value("${security.access-token:}")
     private String accessToken;
@@ -136,54 +129,12 @@ public class NotificationAdminController {
     }
 
     private boolean isLocalhostRequest(HttpServletRequest request) {
-        if (!adminDashboardLocalOnly) {
-            return true;
-        }
-
-        String candidate = request.getRemoteAddr();
-        boolean allowed = isLoopback(candidate)
-            || (adminDashboardAllowPrivate
-                && allowPrivateNetworks
-                && isPrivateAddress(candidate)
-                && (!accessTokenRequired || hasValidAccessToken(request)));
+        boolean allowed = adminNetworkAccessPolicy.isRequestAllowed(request, () -> hasValidAccessToken(request));
 
         if (!allowed) {
             log.warn("Blocked administrative notification access from non-local address.");
         }
         return allowed;
-    }
-
-    private boolean isPrivateAddress(String address) {
-        if (address == null || address.isBlank()) {
-            return false;
-        }
-        return address.startsWith("10.")
-            || address.startsWith("192.168.")
-            || (address.startsWith("172.") && isInRange(address, 16, 31))
-            || address.startsWith("169.254.");
-    }
-
-    private boolean isInRange(String address, int start, int end) {
-        try {
-            String[] parts = address.split("\\.");
-            if (parts.length < 2) {
-                return false;
-            }
-            int second = Integer.parseInt(parts[1]);
-            return second >= start && second <= end;
-        } catch (NumberFormatException ex) {
-            return false;
-        }
-    }
-
-    private boolean isLoopback(String address) {
-        if (address == null || address.isBlank()) {
-            return false;
-        }
-        return address.equals("127.0.0.1")
-            || address.startsWith("127.")
-            || address.equals("0:0:0:0:0:0:0:1")
-            || address.equals("::1");
     }
 
     private boolean hasValidAccessToken(HttpServletRequest request) {
