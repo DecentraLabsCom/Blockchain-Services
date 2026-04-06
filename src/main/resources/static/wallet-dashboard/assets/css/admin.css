@@ -148,7 +148,7 @@ body {
     width: 100%;
     display: flex;
     justify-content: center;
-    margin-top: 0.15rem;
+    margin: -0.35rem 0 var(--spacing-md);
 }
 
 .status-indicator {
