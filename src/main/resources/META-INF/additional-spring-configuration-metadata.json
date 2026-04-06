@@ -243,7 +243,7 @@
     "name": "features.providers.enabled",
     "type": "java.lang.Boolean",
     "description": "Enable provider features.",
-    "defaultValue": true
+    "defaultValue": false
   },
   {
     "name": "features.organizations.enabled",
@@ -404,7 +404,8 @@
   {
     "name": "allowed-origins",
     "type": "java.lang.String",
-    "description": "Comma-separated list of allowed CORS origins."
+    "description": "Comma-separated list of allowed CORS origins.",
+    "defaultValue": "http://localhost:3000,https://marketplace-decentralabs.vercel.app"
   },
   {
     "name": "wallet.address",
@@ -536,6 +537,12 @@
     "defaultValue": 100
   },
   {
+    "name": "billing.admin.transactions.lookback-blocks",
+    "type": "java.lang.Integer",
+    "description": "Lookback block window for treasury admin on-chain transaction history queries.",
+    "defaultValue": 30000
+  },
+  {
     "name": "contract.reservation.reconcile.enabled",
     "type": "java.lang.Boolean",
     "description": "Enable reservation reconciliation job.",
@@ -665,21 +672,6 @@
     "defaultValue": "./data/notifications-config.json"
   },
   {
-    "name": "rpc.url",
-    "type": "java.lang.String",
-    "description": "RPC URL for blockchain connection (used in tests)."
-  },
-  {
-    "name": "institutional.wallet.private.key",
-    "type": "java.lang.String",
-    "description": "Private key for institutional wallet (used in tests only, use encrypted keys in production)."
-  },
-  {
-    "name": "institutional.admin.wallet",
-    "type": "java.lang.String",
-    "description": "Admin wallet address for institutional operations."
-  },
-  {
     "name": "saml.idp.metadata.url",
     "type": "java.lang.String",
     "description": "URL to SAML IdP metadata."
@@ -688,17 +680,6 @@
     "name": "saml.idp.metadata.override",
     "type": "java.lang.String",
     "description": "JSON map of issuer to SAML IdP metadata URL overrides."
-  },
-  {
-    "name": "saml.idp.certificate.path",
-    "type": "java.lang.String",
-    "description": "Path to SAML IdP certificate PEM file."
-  },
-  {
-    "name": "jwt.keys.path",
-    "type": "java.lang.String",
-    "description": "Path to JWT keys directory.",
-    "defaultValue": "./keys"
   },
   {
     "name": "webauthn.base-url",
@@ -818,6 +799,6 @@
   {
     "name": "treasury.admin.domain.verifying-contract",
     "type": "java.lang.String",
-    "description": "Verifying contract address for treasury admin EIP-712 domain"
+    "description": "Verifying contract address for treasury admin EIP-712 domain. Defaults to contract.address."
   }
 ]}

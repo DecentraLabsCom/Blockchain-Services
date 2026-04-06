@@ -36,6 +36,11 @@ public class BillingAdminController {
         log.info("Received institutional admin request: {}", request.getOperation());
         try {
             InstitutionalAdminResponse response = adminService.executeAdminOperation(request);
+            if (response == null) {
+                log.error("Admin service returned null response for operation {}", request.getOperation());
+                return ResponseEntity.internalServerError()
+                    .body(InstitutionalAdminResponse.error("Internal server error: empty service response"));
+            }
             if (response.isSuccess()) {
                 log.info("Admin operation {} completed successfully. Tx: {}",
                     request.getOperation(), response.getTransactionHash());
@@ -65,6 +70,11 @@ public class BillingAdminController {
                 request.getLabId(),
                 request.getMaxBatch()
             );
+            if (response == null) {
+                log.error("Admin service returned null response for payout request on lab {}", request.getLabId());
+                return ResponseEntity.internalServerError()
+                    .body(InstitutionalAdminResponse.error("Internal server error: empty service response"));
+            }
             if (response.isSuccess()) {
                 log.info("Server-side provider payout request completed. Tx: {}", response.getTransactionHash());
                 return ResponseEntity.ok(response);

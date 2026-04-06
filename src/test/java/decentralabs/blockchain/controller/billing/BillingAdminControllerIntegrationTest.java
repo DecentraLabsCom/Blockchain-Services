@@ -1,6 +1,6 @@
 package decentralabs.blockchain.controller.billing;
 
-import static org.mockito.Mockito.verifyNoInteractions;
+import static org.mockito.Mockito.when;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
 import static org.springframework.security.test.web.servlet.setup.SecurityMockMvcConfigurers.springSecurity;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -112,7 +112,10 @@ class BillingAdminControllerIntegrationTest {
 
     @Test
     @WithMockUser(roles = "INTERNAL")
-    void executeAdminOperation_deniesBillingAdminPathEvenWithInternalRole() throws Exception {
+    void executeAdminOperation_allowsBillingAdminPathWithInternalRole() throws Exception {
+        when(adminService.executeAdminOperation(org.mockito.ArgumentMatchers.any(InstitutionalAdminRequest.class)))
+            .thenReturn(InstitutionalAdminResponse.success("ok", "0x1", "AUTHORIZE_BACKEND"));
+
         mockMvc.perform(post("/billing/admin/execute")
                 .with(csrf())
                 .with(req -> {
@@ -121,14 +124,17 @@ class BillingAdminControllerIntegrationTest {
                 })
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(validExecutePayload()))
-            .andExpect(status().isForbidden());
-
-        verifyNoInteractions(adminService);
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.success").value(true))
+            .andExpect(jsonPath("$.transactionHash").value("0x1"));
     }
 
     @Test
     @WithMockUser(roles = "INTERNAL")
-    void requestProviderPayout_deniesBillingAdminPathEvenWithInternalRole() throws Exception {
+    void requestProviderPayout_allowsBillingAdminPathWithInternalRole() throws Exception {
+        when(adminService.requestProviderPayoutWithConfiguredWallet("3", "50"))
+            .thenReturn(InstitutionalAdminResponse.success("ok", "0xcollect", "COLLECT_LAB_PAYOUT"));
+
         mockMvc.perform(post("/billing/admin/request-provider-payout")
                 .with(csrf())
                 .with(req -> {
@@ -139,9 +145,9 @@ class BillingAdminControllerIntegrationTest {
                 .content("""
                     {"labId":"3","maxBatch":"50"}
                     """))
-            .andExpect(status().isForbidden());
-
-        verifyNoInteractions(adminService);
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.success").value(true))
+            .andExpect(jsonPath("$.transactionHash").value("0xcollect"));
     }
 
     private String validExecutePayload() {

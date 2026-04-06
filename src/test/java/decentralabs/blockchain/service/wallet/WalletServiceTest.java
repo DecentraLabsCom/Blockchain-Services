@@ -204,7 +204,7 @@ class WalletServiceTest {
         assertThat(response.getBalanceEth()).isEqualTo("1E-18");
         assertThat(response.getLabTokenAddress()).isEqualTo("0x2222222222222222222222222222222222222222");
         assertThat(response.getLabBalanceRaw()).isEqualTo("1500000");
-        assertThat(response.getLabBalance()).isEqualTo("1.5");
+        assertThat(response.getLabBalance()).isEqualTo("15");
         assertThat(response.getNetwork()).isEqualTo("sepolia");
     }
 

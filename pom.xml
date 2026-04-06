@@ -331,7 +331,7 @@
                         <version>21</version>
                     </jdkToolchain>
                     <!-- Memory settings optimized for Spring tests with limited context cache -->
-                    <argLine>@{argLine} -Xmx1536m -Xms384m -XX:MaxMetaspaceSize=320m -XX:+UseG1GC -XX:+DisableExplicitGC -Dspring.test.context.cache.maxSize=1</argLine>
+                    <argLine>@{argLine} -Xshare:off -javaagent:${settings.localRepository}/org/mockito/mockito-core/${mockito.version}/mockito-core-${mockito.version}.jar -Xmx1536m -Xms384m -XX:MaxMetaspaceSize=320m -XX:+UseG1GC -XX:+DisableExplicitGC -Dspring.test.context.cache.maxSize=1</argLine>
                     <!-- Run each test class in a fresh JVM to prevent context accumulation -->
                     <forkCount>1</forkCount>
                     <reuseForks>false</reuseForks>
