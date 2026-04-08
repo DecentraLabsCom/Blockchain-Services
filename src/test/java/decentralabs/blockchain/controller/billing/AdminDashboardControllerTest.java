@@ -3,6 +3,8 @@ package decentralabs.blockchain.controller.billing;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.Mockito.lenient;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -25,6 +27,7 @@ import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
+import decentralabs.blockchain.dto.billing.InstitutionalUserFinancialStats;
 import decentralabs.blockchain.dto.wallet.NetworkInfo;
 import decentralabs.blockchain.dto.wallet.NetworkResponse;
 import decentralabs.blockchain.dto.wallet.PayoutRequestSimulationResult;
@@ -79,6 +82,10 @@ class AdminDashboardControllerTest {
         ReflectionTestUtils.setField(adminDashboardController, "contractAddress", VALID_ADDRESS);
         ReflectionTestUtils.setField(adminDashboardController, "marketplaceUrl", "https://marketplace.example.com");
         ReflectionTestUtils.setField(adminDashboardController, "collectMaxBatch", 50);
+        ReflectionTestUtils.setField(adminDashboardController, "providerLabsCacheTtlMs", 15_000L);
+        ReflectionTestUtils.setField(adminDashboardController, "recentTransactionsCacheTtlMs", 10_000L);
+        ReflectionTestUtils.setField(adminDashboardController, "providerLabsDefaultPageSize", 20);
+        ReflectionTestUtils.setField(adminDashboardController, "providerLabsMaxPageSize", 100);
         mockMvc = MockMvcBuilders.standaloneSetup(adminDashboardController).build();
     }
 
@@ -206,6 +213,22 @@ class AdminDashboardControllerTest {
         }
 
         @Test
+        @DisplayName("Should reuse cached merged transactions for the same limit")
+        void shouldReuseCachedTransactionsForSameLimit() throws Exception {
+            when(institutionalWalletService.getInstitutionalWalletAddress()).thenReturn(VALID_ADDRESS);
+            when(institutionalAnalyticsService.getRecentTransactions(VALID_ADDRESS, 15))
+                .thenReturn(Collections.emptyList());
+
+            mockMvc.perform(get("/billing/admin/transactions").param("limit", "10"))
+                .andExpect(status().isOk());
+            mockMvc.perform(get("/billing/admin/transactions").param("limit", "10"))
+                .andExpect(status().isOk());
+
+            verify(onChainAdminTransactionService, times(1)).getRecentTransactions(VALID_ADDRESS, 15);
+            verify(institutionalAnalyticsService, times(1)).getRecentTransactions(VALID_ADDRESS, 15);
+        }
+
+        @Test
         @DisplayName("Should reject when wallet not configured")
         void shouldRejectWhenNoWallet() throws Exception {
             when(institutionalWalletService.getInstitutionalWalletAddress()).thenReturn(null);
@@ -312,7 +335,15 @@ class AdminDashboardControllerTest {
                     BigInteger.valueOf(1_000_000),
                     BigInteger.ZERO,
                     BigInteger.valueOf(1_000_000),
-                    BigInteger.ZERO
+                    BigInteger.valueOf(2),
+                    BigInteger.valueOf(250_000),
+                    BigInteger.valueOf(300_000),
+                    BigInteger.valueOf(200_000),
+                    BigInteger.valueOf(150_000),
+                    BigInteger.valueOf(100_000),
+                    BigInteger.ZERO,
+                    BigInteger.ZERO,
+                    BigInteger.valueOf(1_700_000_000L)
                 ))
             );
 
@@ -321,8 +352,13 @@ class AdminDashboardControllerTest {
                 .andExpect(jsonPath("$.success").value(true))
                 .andExpect(jsonPath("$.labs[0].labId").value("3"))
                 .andExpect(jsonPath("$.labs[0].label").value("Quantum Lab"))
-                .andExpect(jsonPath("$.labs[0].eligibleReservationCount").value("0"))
-                .andExpect(jsonPath("$.labs[0].totalReceivableLab").value("10"));
+                .andExpect(jsonPath("$.labs[0].eligibleReservationCount").value("2"))
+                .andExpect(jsonPath("$.labs[0].totalReceivableLab").value("10"))
+                .andExpect(jsonPath("$.labs[0].accruedReceivableLab").value("2.5"))
+                .andExpect(jsonPath("$.labs[0].settlementQueuedLab").value("3"))
+                .andExpect(jsonPath("$.labs[0].invoicedReceivableLab").value("2"))
+                .andExpect(jsonPath("$.labs[0].approvedReceivableLab").value("1.5"))
+                .andExpect(jsonPath("$.labs[0].paidReceivableLab").value("1"));
         }
 
         @Test
@@ -385,6 +421,67 @@ class AdminDashboardControllerTest {
                 .andExpect(jsonPath("$.approvedReceivableLab").value("5"))
                 .andExpect(jsonPath("$.lastAccruedAt").value("1700000000"));
         }
+
+        @Test
+        @DisplayName("Should paginate provider labs and return summary")
+        void shouldPaginateProviderLabsAndReturnSummary() throws Exception {
+            when(institutionalWalletService.getInstitutionalWalletAddress()).thenReturn(VALID_ADDRESS);
+            when(walletService.isLabProvider(VALID_ADDRESS)).thenReturn(true);
+            when(walletService.isDefaultAdmin(VALID_ADDRESS)).thenReturn(false);
+            when(walletService.getLabsOwnedByProvider(VALID_ADDRESS))
+                .thenReturn(List.of(BigInteger.ONE, BigInteger.TWO));
+
+            when(walletService.isLabOwnedByProvider(VALID_ADDRESS, BigInteger.TWO)).thenReturn(true);
+            when(walletService.getLabTokenUri(BigInteger.TWO)).thenReturn(Optional.of("https://example.com/lab-2.json"));
+            when(labMetadataService.getLabMetadata("https://example.com/lab-2.json")).thenReturn(
+                decentralabs.blockchain.dto.health.LabMetadata.builder().name("Lab Two").build()
+            );
+            when(walletService.getProviderReceivableStatus(BigInteger.ONE)).thenReturn(
+                Optional.of(new ProviderReceivableStatus(
+                    BigInteger.valueOf(100_000),
+                    BigInteger.ZERO,
+                    BigInteger.valueOf(100_000),
+                    BigInteger.ONE,
+                    BigInteger.valueOf(100_000),
+                    BigInteger.ZERO,
+                    BigInteger.ZERO,
+                    BigInteger.ZERO,
+                    BigInteger.ZERO,
+                    BigInteger.ZERO,
+                    BigInteger.ZERO,
+                    BigInteger.ZERO
+                ))
+            );
+            when(walletService.getProviderReceivableStatus(BigInteger.TWO)).thenReturn(
+                Optional.of(new ProviderReceivableStatus(
+                    BigInteger.valueOf(200_000),
+                    BigInteger.ZERO,
+                    BigInteger.valueOf(200_000),
+                    BigInteger.ZERO,
+                    BigInteger.ZERO,
+                    BigInteger.valueOf(50_000),
+                    BigInteger.ZERO,
+                    BigInteger.valueOf(150_000),
+                    BigInteger.ZERO,
+                    BigInteger.ZERO,
+                    BigInteger.ZERO,
+                    BigInteger.ZERO
+                ))
+            );
+
+            mockMvc.perform(get("/billing/admin/provider-labs")
+                    .param("offset", "1")
+                    .param("limit", "1")
+                    .param("includeSummary", "true"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.loadedCount").value(1))
+                .andExpect(jsonPath("$.totalLabs").value(2))
+                .andExpect(jsonPath("$.hasMore").value(false))
+                .andExpect(jsonPath("$.labs[0].labId").value("2"))
+                .andExpect(jsonPath("$.summary.pendingLab").value("1"))
+                .andExpect(jsonPath("$.summary.claimedLab").value("2"))
+                .andExpect(jsonPath("$.summary.labCount").value(2));
+        }
     }
 
     @Nested
@@ -400,6 +497,16 @@ class AdminDashboardControllerTest {
             when(walletService.getInstitutionalBillingBalance(VALID_ADDRESS)).thenReturn(BigInteger.valueOf(250_000));
             when(walletService.getServiceCreditBalance(VALID_ADDRESS)).thenReturn(BigInteger.valueOf(750_000));
             when(walletService.isLabProvider(VALID_ADDRESS)).thenReturn(false);
+            when(institutionalAnalyticsService.getKnownUsers(VALID_ADDRESS, 1))
+                .thenReturn(List.of(new InstitutionalAnalyticsService.UserActivity("user-1", 1_700_000_000_000L)));
+            when(walletService.getInstitutionalUserFinancialStats(VALID_ADDRESS, "user-1"))
+                .thenReturn(Optional.of(
+                    InstitutionalUserFinancialStats.builder()
+                        .periodStart(BigInteger.valueOf(1_700_000_000L))
+                        .periodEnd(BigInteger.valueOf(1_700_086_400L))
+                        .periodDuration(BigInteger.valueOf(86_400L))
+                        .build()
+                ));
 
             mockMvc.perform(get("/billing/admin/billing-info"))
                 .andExpect(status().isOk())
@@ -408,7 +515,9 @@ class AdminDashboardControllerTest {
                 .andExpect(jsonPath("$.serviceCreditBalance").value("750000"))
                 .andExpect(jsonPath("$.serviceCreditBalanceFormatted").value("7.5"))
                 .andExpect(jsonPath("$.billingBalance").value("250000"))
-                .andExpect(jsonPath("$.billingBalanceFormatted").value("2.5"));
+                .andExpect(jsonPath("$.billingBalanceFormatted").value("2.5"))
+                .andExpect(jsonPath("$.periodStart").value(1_700_000_000L))
+                .andExpect(jsonPath("$.periodEnd").value(1_700_086_400L));
         }
     }
 

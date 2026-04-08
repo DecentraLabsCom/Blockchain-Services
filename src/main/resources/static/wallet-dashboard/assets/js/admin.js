@@ -24,8 +24,13 @@ const DashboardState = {
     collectLoadingStatus: false,
     collectSubmitting: false,
     collectMaxBatch: 50,
+    collectPageSize: 20,
+    collectOffset: 0,
+    collectHasMore: false,
+    collectTotalLabs: 0,
     collectLabsRetryTimeout: null,
     collectLabsRetryAttempts: 0,
+    collectAggregates: null,
     transactionsLimit: 10,
     operatingMode: 'unknown',
     providerRegistrationEnabled: false,
@@ -327,6 +332,14 @@ function formatAddress(address) {
 // Utility: Format timestamp
 function formatTimestamp(timestamp) {
     return new Date(timestamp).toLocaleString();
+}
+
+function formatOptionalDateFromSeconds(seconds) {
+    const numeric = Number(seconds);
+    if (!Number.isFinite(numeric) || numeric <= 0) {
+        return '--';
+    }
+    return new Date(numeric * 1000).toLocaleDateString();
 }
 
 function formatLabTokenRaw(rawValue) {
@@ -757,6 +770,17 @@ function updateDashboardAccessNotices(status) {
     } else {
         badge.textContent = 'Localhost Only';
         footer.textContent = '🔒 This dashboard is only accessible internally for security.';
+    }
+}
+
+function rawToBigInt(value) {
+    if (value === null || value === undefined || value === '') {
+        return 0n;
+    }
+    try {
+        return BigInt(value.toString());
+    } catch (error) {
+        return 0n;
     }
 }
 
@@ -1837,6 +1861,164 @@ function getSelectedCollectLab() {
     ) || null;
 }
 
+function getLabSettlementBuckets(lab) {
+    const pending = rawToBigInt(lab?.accruedReceivableRaw);
+    const queued = rawToBigInt(lab?.settlementQueuedRaw);
+    const invoiced = rawToBigInt(lab?.invoicedReceivableRaw);
+    const approved = rawToBigInt(lab?.approvedReceivableRaw);
+    const received = rawToBigInt(lab?.paidReceivableRaw);
+    const disputed = rawToBigInt(lab?.disputedReceivableRaw);
+    const reversed = rawToBigInt(lab?.reversedReceivableRaw);
+
+    return {
+        pending,
+        claimed: queued + invoiced + approved,
+        received,
+        disputed,
+        reversed,
+        pendingClosures: rawToBigInt(lab?.eligibleReservationCount)
+    };
+}
+
+function computeCollectAggregates(labs) {
+    const totals = {
+        pending: 0n,
+        claimed: 0n,
+        received: 0n,
+        disputed: 0n,
+        reversed: 0n,
+        pendingClosures: 0n
+    };
+
+    (Array.isArray(labs) ? labs : []).forEach(lab => {
+        const buckets = getLabSettlementBuckets(lab);
+        totals.pending += buckets.pending;
+        totals.claimed += buckets.claimed;
+        totals.received += buckets.received;
+        totals.disputed += buckets.disputed;
+        totals.reversed += buckets.reversed;
+        totals.pendingClosures += buckets.pendingClosures;
+    });
+
+    return totals;
+}
+
+function parseCollectSummary(summary) {
+    if (!summary || typeof summary !== 'object') {
+        return null;
+    }
+    return {
+        pending: rawToBigInt(summary.pendingRaw),
+        claimed: rawToBigInt(summary.claimedRaw),
+        received: rawToBigInt(summary.receivedRaw),
+        disputed: rawToBigInt(summary.disputedRaw),
+        reversed: rawToBigInt(summary.reversedRaw),
+        pendingClosures: rawToBigInt(summary.pendingClosures)
+    };
+}
+
+function formatSettlementRiskValue(disputedRaw, reversedRaw) {
+    const disputed = formatLabTokenRaw(disputedRaw);
+    const reversed = formatLabTokenRaw(reversedRaw);
+    return `${disputed} / ${reversed} credits`;
+}
+
+function getSettlementRowStatus(lab) {
+    const buckets = getLabSettlementBuckets(lab);
+    if (buckets.pending > 0n) {
+        return { label: 'Pending claim', tone: 'ready' };
+    }
+    if (buckets.claimed > 0n) {
+        return { label: 'In process', tone: 'progress' };
+    }
+    if (buckets.disputed > 0n || buckets.reversed > 0n) {
+        return { label: 'Needs review', tone: 'caution' };
+    }
+    if (buckets.received > 0n) {
+        return { label: 'Settled', tone: 'idle' };
+    }
+    return { label: 'No receivable', tone: 'idle' };
+}
+
+function renderCollectSettlementOverview() {
+    const overviewEl = document.getElementById('providerSettlementOverview');
+    const noteEl = document.getElementById('providerSettlementOverviewNote');
+    const loadedCountEl = document.getElementById('providerSettlementLoadedCount');
+    const loadMoreBtn = document.getElementById('providerSettlementLoadMoreBtn');
+    const pendingEl = document.getElementById('settlementSummaryPending');
+    const claimedEl = document.getElementById('settlementSummaryClaimed');
+    const receivedEl = document.getElementById('settlementSummaryReceived');
+    const riskEl = document.getElementById('settlementSummaryRisk');
+    const tableBody = document.getElementById('providerSettlementLabsTableBody');
+
+    if (!overviewEl || !pendingEl || !claimedEl || !receivedEl || !riskEl || !tableBody) {
+        return;
+    }
+
+    const labs = Array.isArray(DashboardState.collectLabs) ? DashboardState.collectLabs : [];
+    const shouldShow = labs.length > 0 && (DashboardState.isProvider || DashboardState.isOperator);
+    overviewEl.classList.toggle('hidden', !shouldShow);
+
+    if (!shouldShow) {
+        tableBody.innerHTML = '<tr><td colspan="6" class="settlement-table-empty">No settlement data available.</td></tr>';
+        if (loadedCountEl) {
+            loadedCountEl.textContent = 'No labs loaded';
+        }
+        if (loadMoreBtn) {
+            loadMoreBtn.classList.add('hidden');
+        }
+        return;
+    }
+
+    const totals = DashboardState.collectAggregates || computeCollectAggregates(labs);
+    DashboardState.collectAggregates = totals;
+    pendingEl.textContent = `${formatLabTokenRaw(totals.pending)} credits`;
+    claimedEl.textContent = `${formatLabTokenRaw(totals.claimed)} credits`;
+    receivedEl.textContent = `${formatLabTokenRaw(totals.received)} credits`;
+    riskEl.textContent = formatSettlementRiskValue(totals.disputed, totals.reversed);
+
+    if (noteEl) {
+        const scope = DashboardState.collectTotalLabs > labs.length
+            ? 'Summary is cached across all visible labs.'
+            : 'Summary loaded from the current lab list.';
+        noteEl.textContent = `${scope} Detailed status is fetched only for the selected lab. Pending closures: ${totals.pendingClosures.toString()}.`;
+    }
+    if (loadedCountEl) {
+        const total = Number.isFinite(Number(DashboardState.collectTotalLabs)) && DashboardState.collectTotalLabs > 0
+            ? DashboardState.collectTotalLabs
+            : labs.length;
+        loadedCountEl.textContent = `Loaded ${labs.length} of ${total} labs`;
+    }
+    if (loadMoreBtn) {
+        loadMoreBtn.classList.toggle('hidden', DashboardState.collectHasMore !== true);
+        loadMoreBtn.disabled = DashboardState.collectLoadingStatus;
+    }
+
+    tableBody.innerHTML = labs.map(lab => {
+        const buckets = getLabSettlementBuckets(lab);
+        const status = getSettlementRowStatus(lab);
+        const labId = String(lab.labId || '');
+        const isSelected = String(DashboardState.selectedCollectLabId || '') === labId;
+        const pending = `${formatLabTokenRaw(buckets.pending)} credits`;
+        const claimed = `${formatLabTokenRaw(buckets.claimed)} credits`;
+        const received = `${formatLabTokenRaw(buckets.received)} credits`;
+        const name = lab.name || lab.label || `Lab #${labId}`;
+        const closures = buckets.pendingClosures.toString();
+        const rowTitle = lab.operatorReviewOnly ? 'Operator review only' : 'Click to inspect this lab';
+
+        return `
+            <tr data-lab-id="${escapeHtml(labId)}" class="${isSelected ? 'selected' : ''}" title="${escapeHtml(rowTitle)}">
+                <td class="settlement-lab-name">${escapeHtml(name)}</td>
+                <td>${escapeHtml(pending)}</td>
+                <td>${escapeHtml(claimed)}</td>
+                <td>${escapeHtml(received)}</td>
+                <td>${escapeHtml(closures)}</td>
+                <td><span class="settlement-status-chip ${escapeHtml(status.tone)}">${escapeHtml(status.label)}</span></td>
+            </tr>
+        `;
+    }).join('');
+}
+
 async function loadCollectLabs() {
     const selectEl = document.getElementById('collectLabSelect');
     const pendingEl = document.getElementById('collectPendingTotal');
@@ -1850,11 +2032,16 @@ async function loadCollectLabs() {
         : [];
     const previousSelection = DashboardState.selectedCollectLabId;
 
+    DashboardState.collectOffset = 0;
+    DashboardState.collectHasMore = false;
+    DashboardState.collectTotalLabs = 0;
     DashboardState.collectLoadingStatus = true;
     DashboardState.collectCanExecute = false;
+    DashboardState.collectAggregates = null;
     DashboardState.selectedCollectLabId = null;
     updateCollectDetailVisibility();
     updateCollectButtonState();
+    renderCollectSettlementOverview();
     setCollectStatusText('Loading labs...');
     setCollectPanelCompact(false);
     pendingEl.textContent = '--';
@@ -1863,7 +2050,11 @@ async function loadCollectLabs() {
     selectEl.innerHTML = '<option value="">Loading labs...</option>';
 
     try {
-        const data = await API.getProviderLabs();
+        const data = await API.getProviderLabs({
+            offset: 0,
+            limit: DashboardState.collectPageSize,
+            includeSummary: true
+        });
         const labs = enrichCollectLabsWithCachedNames(Array.isArray(data.labs) ? data.labs : []);
 
         if (Number.isFinite(Number(data.maxBatch)) && Number(data.maxBatch) > 0) {
@@ -1877,6 +2068,9 @@ async function loadCollectLabs() {
         if (!labs.length) {
             if (previousLabs.length) {
                 DashboardState.collectLabs = previousLabs;
+                DashboardState.collectOffset = previousLabs.length;
+                DashboardState.collectHasMore = false;
+                DashboardState.collectTotalLabs = previousLabs.length;
                 DashboardState.selectedCollectLabId = renderCollectLabOptions(
                     selectEl,
                     previousLabs,
@@ -1894,6 +2088,7 @@ async function loadCollectLabs() {
 
             DashboardState.collectLabs = [];
             DashboardState.selectedCollectLabId = null;
+            DashboardState.collectAggregates = null;
             selectEl.innerHTML = retryScheduled
                 ? '<option value="">Checking labs...</option>'
                 : '<option value="">No labs available</option>';
@@ -1904,6 +2099,7 @@ async function loadCollectLabs() {
             }
             setCollectPanelCompact(true);
             updateCollectDetailVisibility();
+            renderCollectSettlementOverview();
             if (!retryScheduled) {
                 resetCollectLabsRetryState();
             }
@@ -1912,6 +2108,10 @@ async function loadCollectLabs() {
 
         resetCollectLabsRetryState();
         DashboardState.collectLabs = labs;
+        DashboardState.collectOffset = labs.length;
+        DashboardState.collectHasMore = data.hasMore === true;
+        DashboardState.collectTotalLabs = Number.isFinite(Number(data.totalLabs)) ? Number(data.totalLabs) : labs.length;
+        DashboardState.collectAggregates = parseCollectSummary(data.summary);
         DashboardState.selectedCollectLabId = renderCollectLabOptions(
             selectEl,
             labs,
@@ -1920,12 +2120,16 @@ async function loadCollectLabs() {
         selectEl.disabled = false;
         setCollectPanelCompact(false);
         updateCollectDetailVisibility();
+        renderCollectSettlementOverview();
 
         await loadCollectStatusForSelectedLab();
     } catch (error) {
         const retryScheduled = scheduleCollectLabsRetry(error);
         if (previousLabs.length) {
             DashboardState.collectLabs = previousLabs;
+            DashboardState.collectOffset = previousLabs.length;
+            DashboardState.collectHasMore = false;
+            DashboardState.collectTotalLabs = previousLabs.length;
             DashboardState.selectedCollectLabId = renderCollectLabOptions(
                 selectEl,
                 previousLabs,
@@ -1942,6 +2146,10 @@ async function loadCollectLabs() {
 
         DashboardState.collectLabs = [];
         DashboardState.selectedCollectLabId = null;
+        DashboardState.collectOffset = 0;
+        DashboardState.collectHasMore = false;
+        DashboardState.collectTotalLabs = 0;
+        DashboardState.collectAggregates = null;
         DashboardState.collectCanExecute = false;
         selectEl.innerHTML = '<option value="">Failed to load labs</option>';
         pendingEl.textContent = '--';
@@ -1949,12 +2157,60 @@ async function loadCollectLabs() {
         setCollectStatusText('Unavailable', 'error');
         setCollectPanelCompact(true);
         updateCollectDetailVisibility();
+        renderCollectSettlementOverview();
         if (!retryScheduled) {
             resetCollectLabsRetryState();
         }
     } finally {
         DashboardState.collectLoadingStatus = false;
         updateCollectButtonState();
+    }
+}
+
+async function loadMoreCollectLabs() {
+    if (DashboardState.collectLoadingStatus || DashboardState.collectHasMore !== true) {
+        return;
+    }
+
+    const selectEl = document.getElementById('collectLabSelect');
+    if (!selectEl) {
+        return;
+    }
+
+    const previousSelection = DashboardState.selectedCollectLabId;
+    DashboardState.collectLoadingStatus = true;
+    renderCollectSettlementOverview();
+
+    try {
+        const data = await API.getProviderLabs({
+            offset: DashboardState.collectOffset,
+            limit: DashboardState.collectPageSize,
+            includeSummary: false
+        });
+        if (!data.success) {
+            throw new Error(data.error || 'Failed to load additional labs');
+        }
+
+        const nextLabs = enrichCollectLabsWithCachedNames(Array.isArray(data.labs) ? data.labs : []);
+        DashboardState.collectLabs = DashboardState.collectLabs.concat(nextLabs);
+        DashboardState.collectOffset += nextLabs.length;
+        DashboardState.collectHasMore = data.hasMore === true;
+        DashboardState.collectTotalLabs = Number.isFinite(Number(data.totalLabs))
+            ? Number(data.totalLabs)
+            : DashboardState.collectLabs.length;
+        DashboardState.selectedCollectLabId = renderCollectLabOptions(
+            selectEl,
+            DashboardState.collectLabs,
+            previousSelection
+        );
+        renderCollectSettlementOverview();
+    } catch (error) {
+        showToast(`Failed to load more labs: ${error.message}`, 'error');
+        renderCollectSettlementOverview();
+    } finally {
+        DashboardState.collectLoadingStatus = false;
+        updateCollectButtonState();
+        renderCollectSettlementOverview();
     }
 }
 
@@ -1968,6 +2224,7 @@ async function loadCollectStatusForSelectedLab() {
     const selectedLabId = selectEl.value || DashboardState.selectedCollectLabId;
     DashboardState.selectedCollectLabId = selectedLabId || null;
     updateCollectDetailVisibility();
+    renderCollectSettlementOverview();
     if (!selectedLabId) {
         DashboardState.collectCanExecute = false;
         pendingEl.textContent = '0 credits';
@@ -2020,6 +2277,7 @@ async function loadCollectStatusForSelectedLab() {
         DashboardState.collectCanExecute = DashboardState.isProvider
             && payoutEnabledForSelectedLab
             && data.canRequestPayout === true;
+        renderCollectSettlementOverview();
         updateCollectDetailVisibility();
 
         if (DashboardState.collectCanExecute) {
@@ -2048,6 +2306,7 @@ async function loadCollectStatusForSelectedLab() {
         setCollectPendingClosuresText('--');
         setCollectStatusText('Status unavailable', 'error');
         setCollectLifecycleSummaryText('');
+        renderCollectSettlementOverview();
         updateCollectDetailVisibility();
     } finally {
         DashboardState.collectLoadingStatus = false;
@@ -2228,10 +2487,8 @@ async function loadBillingAdminData() {
             document.getElementById('currentPeriod').textContent = `${periodDays} days`;
             
             // Update top ongoing period box
-            const startDate = new Date(data.periodStart * 1000);
-            const endDate = new Date(data.periodEnd * 1000);
-            document.getElementById('periodStartDateTop').textContent = startDate.toLocaleDateString();
-            document.getElementById('periodEndDateTop').textContent = endDate.toLocaleDateString();
+            document.getElementById('periodStartDateTop').textContent = formatOptionalDateFromSeconds(data.periodStart);
+            document.getElementById('periodEndDateTop').textContent = formatOptionalDateFromSeconds(data.periodEnd);
         }
     } catch (error) {
         console.error('Failed to load billing data:', error);
@@ -2616,6 +2873,31 @@ function setupButtonHandlers() {
             DashboardState.selectedCollectLabId = event.target.value || null;
             await loadCollectStatusForSelectedLab();
         });
+    }
+
+    const providerSettlementTableBody = document.getElementById('providerSettlementLabsTableBody');
+    if (providerSettlementTableBody) {
+        providerSettlementTableBody.addEventListener('click', async (event) => {
+            const row = event.target.closest('tr[data-lab-id]');
+            if (!row) {
+                return;
+            }
+            const labId = row.getAttribute('data-lab-id');
+            if (!labId) {
+                return;
+            }
+            const select = document.getElementById('collectLabSelect');
+            if (select) {
+                select.value = labId;
+            }
+            DashboardState.selectedCollectLabId = labId;
+            await loadCollectStatusForSelectedLab();
+        });
+    }
+
+    const providerSettlementLoadMoreBtn = document.getElementById('providerSettlementLoadMoreBtn');
+    if (providerSettlementLoadMoreBtn) {
+        providerSettlementLoadMoreBtn.addEventListener('click', loadMoreCollectLabs);
     }
 
     const collectLabBtn = document.getElementById('collectLabBtn');

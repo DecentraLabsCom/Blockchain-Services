@@ -1,5 +1,7 @@
 package decentralabs.blockchain.controller.billing;
 
+import decentralabs.blockchain.dto.billing.InstitutionalUserFinancialStats;
+import decentralabs.blockchain.dto.billing.InstitutionalUserFinancialStats;
 import decentralabs.blockchain.dto.wallet.PayoutRequestSimulationResult;
 import decentralabs.blockchain.dto.wallet.ProviderReceivableStatus;
 import decentralabs.blockchain.service.billing.OnChainAdminTransactionService;
@@ -24,6 +26,7 @@ import org.springframework.web.bind.annotation.RestController;
 import java.math.BigDecimal;
 import java.math.BigInteger;
 import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
 
 /**
@@ -66,6 +69,22 @@ public class AdminDashboardController {
 
     @Value("${billing.collect.max-batch:50}")
     private int collectMaxBatch;
+
+    @Value("${billing.admin.provider-labs.cache-ttl-ms:15000}")
+    private long providerLabsCacheTtlMs;
+
+    @Value("${billing.admin.transactions.dashboard-cache-ttl-ms:10000}")
+    private long recentTransactionsCacheTtlMs;
+
+    @Value("${billing.admin.provider-labs.default-page-size:20}")
+    private int providerLabsDefaultPageSize;
+
+    @Value("${billing.admin.provider-labs.max-page-size:100}")
+    private int providerLabsMaxPageSize;
+
+    private final Map<String, TimedCacheEntry<List<Map<String, Object>>>> providerLabsPageCache = new ConcurrentHashMap<>();
+    private final Map<String, TimedCacheEntry<Map<String, Object>>> providerLabsSummaryCache = new ConcurrentHashMap<>();
+    private final Map<String, TimedCacheEntry<Map<String, Object>>> recentTransactionsCache = new ConcurrentHashMap<>();
 
     /**
      * GET /billing/admin/status
@@ -200,6 +219,11 @@ public class AdminDashboardController {
             }
 
             int safeLimit = Math.min(Math.max(limit, 1), 50);
+            String cacheKey = providerAddress.toLowerCase(Locale.ROOT) + "|" + safeLimit;
+            Map<String, Object> cached = getCachedValue(recentTransactionsCache, cacheKey, recentTransactionsCacheTtlMs);
+            if (cached != null) {
+                return ResponseEntity.ok(cached);
+            }
             List<InstitutionalAnalyticsService.TransactionRecord> onChainTransactions =
                 onChainAdminTransactionService.getRecentTransactions(providerAddress, Math.min(safeLimit + 5, 50));
             List<InstitutionalAnalyticsService.TransactionRecord> localTransactions =
@@ -232,6 +256,7 @@ public class AdminDashboardController {
                 result.put("note", "No recent on-chain administrative events found in the configured lookback window.");
             }
 
+            putCachedValue(recentTransactionsCache, cacheKey, result);
             return ResponseEntity.ok(result);
         } catch (Exception e) {
             return internalServerError("Failed to retrieve transactions", e);
@@ -271,7 +296,12 @@ public class AdminDashboardController {
      * List labs associated with the institutional provider wallet.
      */
     @GetMapping("/provider-labs")
-    public ResponseEntity<?> getProviderLabs(HttpServletRequest request) {
+    public ResponseEntity<?> getProviderLabs(
+        @RequestParam(required = false) Integer offset,
+        @RequestParam(required = false) Integer limit,
+        @RequestParam(defaultValue = "true") boolean includeSummary,
+        HttpServletRequest request
+    ) {
         if (!isLocalhostRequest(request)) {
             return ResponseEntity.status(403).body(Map.of(
                 "success", false,
@@ -298,36 +328,31 @@ public class AdminDashboardController {
             result.put("isProvider", isProvider);
             result.put("isDefaultAdmin", isDefaultAdmin);
             result.put("operatorControlsEnabled", isDefaultAdmin);
-            List<Map<String, Object>> labs = new ArrayList<>();
             List<BigInteger> visibleLabIds = isDefaultAdmin
                 ? walletService.getAllLabIds()
                 : walletService.getLabsOwnedByProvider(providerAddress);
-            for (BigInteger labId : visibleLabIds) {
-                boolean ownedByInstitutionalProvider = walletService.isLabOwnedByProvider(providerAddress, labId);
-                Map<String, Object> lab = new LinkedHashMap<>();
-                lab.put("labId", labId.toString());
-                String labName = resolveLabDisplayName(labId);
-                lab.put("name", labName);
-                lab.put("label", labName);
-                lab.put("ownedByInstitutionalProvider", ownedByInstitutionalProvider);
-                lab.put("providerPayoutEnabled", ownedByInstitutionalProvider);
-                lab.put("operatorReviewOnly", isDefaultAdmin && !ownedByInstitutionalProvider);
-
-                walletService.getProviderReceivableStatus(labId).ifPresent(status -> {
-                    lab.put("providerReceivableRaw", status.providerReceivable().toString());
-                    lab.put("providerReceivableLab", formatLabTokens(status.providerReceivable()));
-                    lab.put("deferredInstitutionalReceivableRaw", status.deferredInstitutionalReceivable().toString());
-                    lab.put("deferredInstitutionalReceivableLab", formatLabTokens(status.deferredInstitutionalReceivable()));
-                    lab.put("totalReceivableRaw", status.totalReceivable().toString());
-                    lab.put("totalReceivableLab", formatLabTokens(status.totalReceivable()));
-                    lab.put("eligibleReservationCount", status.eligibleReservationCount().toString());
-                    lab.put("hasReceivable", status.totalReceivable().compareTo(BigInteger.ZERO) > 0);
-
-                });
-                labs.add(lab);
-            }
-
+            int safeOffset = Math.max(0, offset == null ? 0 : offset);
+            int safeLimit = resolveProviderLabsPageSize(limit);
+            int totalLabs = visibleLabIds.size();
+            int fromIndex = Math.min(safeOffset, totalLabs);
+            int toIndex = Math.min(fromIndex + safeLimit, totalLabs);
+            List<BigInteger> pagedLabIds = visibleLabIds.subList(fromIndex, toIndex);
+            List<Map<String, Object>> labs = getCachedProviderLabsPage(
+                providerAddress,
+                isDefaultAdmin,
+                pagedLabIds,
+                fromIndex,
+                safeLimit
+            );
             result.put("labs", labs);
+            result.put("offset", fromIndex);
+            result.put("limit", safeLimit);
+            result.put("loadedCount", labs.size());
+            result.put("totalLabs", totalLabs);
+            result.put("hasMore", toIndex < totalLabs);
+            if (includeSummary) {
+                result.put("summary", getCachedProviderLabsSummary(providerAddress, isDefaultAdmin, visibleLabIds));
+            }
             if (isDefaultAdmin && !labs.isEmpty()) {
                 result.put("note", "Operator view: showing all labs for settlement oversight");
             } else if (!isProvider && labs.isEmpty()) {
@@ -689,8 +714,8 @@ public class AdminDashboardController {
                 defaults.put("success", true);
                 defaults.put("userLimit", DEFAULT_USER_LIMIT);
                 defaults.put("periodDuration", DEFAULT_PERIOD_DURATION);
-                defaults.put("periodStart", System.currentTimeMillis() / 1000); // Current timestamp
-                defaults.put("periodEnd", (System.currentTimeMillis() / 1000) + DEFAULT_PERIOD_DURATION);
+                defaults.put("periodStart", null);
+                defaults.put("periodEnd", null);
                 defaults.put("billingBalance", "0"); // 0 credits
                 defaults.put("walletConfigured", false);
                 defaults.put("note", "Showing contract default values - wallet not configured");
@@ -716,13 +741,12 @@ public class AdminDashboardController {
             java.math.BigInteger periodDuration = walletService.getInstitutionalSpendingPeriod(institutionalAddress);
             if (periodDuration != null && periodDuration.compareTo(java.math.BigInteger.ZERO) > 0) {
                 info.put("periodDuration", periodDuration.longValue());
-                info.put("periodStart", System.currentTimeMillis() / 1000);
-                info.put("periodEnd", (System.currentTimeMillis() / 1000) + periodDuration.longValue());
+                applyResolvedPeriodWindow(info, institutionalAddress);
             } else {
                 // If 0 or null, use defaults
                 info.put("periodDuration", DEFAULT_PERIOD_DURATION);
-                info.put("periodStart", System.currentTimeMillis() / 1000);
-                info.put("periodEnd", (System.currentTimeMillis() / 1000) + DEFAULT_PERIOD_DURATION);
+                info.put("periodStart", null);
+                info.put("periodEnd", null);
                 if (!info.containsKey("note")) {
                     info.put("note", "Wallet not registered as provider - showing contract default values");
                 }
@@ -765,6 +789,196 @@ public class AdminDashboardController {
             return ResponseEntity.ok(info);
         } catch (Exception e) {
             return internalServerError("Failed to retrieve billing info", e);
+        }
+    }
+
+    private void applyResolvedPeriodWindow(Map<String, Object> info, String institutionalAddress) {
+        Optional<InstitutionalUserFinancialStats> periodSnapshot = institutionalAnalyticsService
+            .getKnownUsers(institutionalAddress, 1).stream()
+            .findFirst()
+            .flatMap(user -> walletService.getInstitutionalUserFinancialStats(institutionalAddress, user.getPuc()));
+
+        if (periodSnapshot.isPresent()) {
+            BigInteger periodStart = periodSnapshot.get().getPeriodStart();
+            BigInteger periodEnd = periodSnapshot.get().getPeriodEnd();
+            if (periodStart != null
+                && periodEnd != null
+                && periodStart.compareTo(BigInteger.ZERO) > 0
+                && periodEnd.compareTo(BigInteger.ZERO) > 0) {
+                info.put("periodStart", periodStart.longValue());
+                info.put("periodEnd", periodEnd.longValue());
+                return;
+            }
+        }
+
+        info.put("periodStart", null);
+        info.put("periodEnd", null);
+        info.put(
+            "note",
+            "Spending period duration is configured, but the current period window is only shown once on-chain user activity is available."
+        );
+    }
+
+    private int resolveProviderLabsPageSize(Integer requestedLimit) {
+        int defaultSize = Math.max(1, providerLabsDefaultPageSize);
+        int maxSize = Math.max(defaultSize, providerLabsMaxPageSize);
+        if (requestedLimit == null) {
+            return defaultSize;
+        }
+        return Math.min(Math.max(requestedLimit, 1), maxSize);
+    }
+
+    private List<Map<String, Object>> getCachedProviderLabsPage(
+        String providerAddress,
+        boolean isDefaultAdmin,
+        List<BigInteger> labIds,
+        int offset,
+        int limit
+    ) {
+        String cacheKey = providerAddress.toLowerCase(Locale.ROOT)
+            + "|" + isDefaultAdmin
+            + "|" + offset
+            + "|" + limit
+            + "|" + normalizeAddress(contractAddress);
+        List<Map<String, Object>> cached = getCachedValue(providerLabsPageCache, cacheKey, providerLabsCacheTtlMs);
+        if (cached != null) {
+            return cached;
+        }
+
+        List<Map<String, Object>> built = new ArrayList<>();
+        for (BigInteger labId : labIds) {
+            built.add(buildProviderLabPayload(providerAddress, isDefaultAdmin, labId));
+        }
+        putCachedValue(providerLabsPageCache, cacheKey, built);
+        return built;
+    }
+
+    private Map<String, Object> getCachedProviderLabsSummary(
+        String providerAddress,
+        boolean isDefaultAdmin,
+        List<BigInteger> visibleLabIds
+    ) {
+        String cacheKey = providerAddress.toLowerCase(Locale.ROOT)
+            + "|" + isDefaultAdmin
+            + "|" + normalizeAddress(contractAddress)
+            + "|summary";
+        Map<String, Object> cached = getCachedValue(providerLabsSummaryCache, cacheKey, providerLabsCacheTtlMs);
+        if (cached != null) {
+            return cached;
+        }
+
+        BigInteger pending = BigInteger.ZERO;
+        BigInteger claimed = BigInteger.ZERO;
+        BigInteger received = BigInteger.ZERO;
+        BigInteger disputed = BigInteger.ZERO;
+        BigInteger reversed = BigInteger.ZERO;
+        BigInteger pendingClosures = BigInteger.ZERO;
+
+        for (BigInteger labId : visibleLabIds) {
+            Optional<ProviderReceivableStatus> maybeStatus = walletService.getProviderReceivableStatus(labId);
+            if (maybeStatus.isEmpty()) {
+                continue;
+            }
+            ProviderReceivableStatus status = maybeStatus.get();
+            pending = pending.add(status.accruedReceivable());
+            claimed = claimed
+                .add(status.settlementQueued())
+                .add(status.invoicedReceivable())
+                .add(status.approvedReceivable());
+            received = received.add(status.paidReceivable());
+            disputed = disputed.add(status.disputedReceivable());
+            reversed = reversed.add(status.reversedReceivable());
+            pendingClosures = pendingClosures.add(status.eligibleReservationCount());
+        }
+
+        Map<String, Object> summary = new LinkedHashMap<>();
+        summary.put("scope", "all_visible_labs");
+        summary.put("pendingRaw", pending.toString());
+        summary.put("pendingLab", formatLabTokens(pending));
+        summary.put("claimedRaw", claimed.toString());
+        summary.put("claimedLab", formatLabTokens(claimed));
+        summary.put("receivedRaw", received.toString());
+        summary.put("receivedLab", formatLabTokens(received));
+        summary.put("disputedRaw", disputed.toString());
+        summary.put("disputedLab", formatLabTokens(disputed));
+        summary.put("reversedRaw", reversed.toString());
+        summary.put("reversedLab", formatLabTokens(reversed));
+        summary.put("pendingClosures", pendingClosures.toString());
+        summary.put("labCount", visibleLabIds.size());
+
+        putCachedValue(providerLabsSummaryCache, cacheKey, summary);
+        return summary;
+    }
+
+    private Map<String, Object> buildProviderLabPayload(String providerAddress, boolean isDefaultAdmin, BigInteger labId) {
+        boolean ownedByInstitutionalProvider = walletService.isLabOwnedByProvider(providerAddress, labId);
+        Map<String, Object> lab = new LinkedHashMap<>();
+        lab.put("labId", labId.toString());
+        String labName = resolveLabDisplayName(labId);
+        lab.put("name", labName);
+        lab.put("label", labName);
+        lab.put("ownedByInstitutionalProvider", ownedByInstitutionalProvider);
+        lab.put("providerPayoutEnabled", ownedByInstitutionalProvider);
+        lab.put("operatorReviewOnly", isDefaultAdmin && !ownedByInstitutionalProvider);
+
+        walletService.getProviderReceivableStatus(labId).ifPresent(status -> {
+            lab.put("providerReceivableRaw", status.providerReceivable().toString());
+            lab.put("providerReceivableLab", formatLabTokens(status.providerReceivable()));
+            lab.put("deferredInstitutionalReceivableRaw", status.deferredInstitutionalReceivable().toString());
+            lab.put("deferredInstitutionalReceivableLab", formatLabTokens(status.deferredInstitutionalReceivable()));
+            lab.put("totalReceivableRaw", status.totalReceivable().toString());
+            lab.put("totalReceivableLab", formatLabTokens(status.totalReceivable()));
+            lab.put("accruedReceivableRaw", status.accruedReceivable().toString());
+            lab.put("accruedReceivableLab", formatLabTokens(status.accruedReceivable()));
+            lab.put("settlementQueuedRaw", status.settlementQueued().toString());
+            lab.put("settlementQueuedLab", formatLabTokens(status.settlementQueued()));
+            lab.put("invoicedReceivableRaw", status.invoicedReceivable().toString());
+            lab.put("invoicedReceivableLab", formatLabTokens(status.invoicedReceivable()));
+            lab.put("approvedReceivableRaw", status.approvedReceivable().toString());
+            lab.put("approvedReceivableLab", formatLabTokens(status.approvedReceivable()));
+            lab.put("paidReceivableRaw", status.paidReceivable().toString());
+            lab.put("paidReceivableLab", formatLabTokens(status.paidReceivable()));
+            lab.put("reversedReceivableRaw", status.reversedReceivable().toString());
+            lab.put("reversedReceivableLab", formatLabTokens(status.reversedReceivable()));
+            lab.put("disputedReceivableRaw", status.disputedReceivable().toString());
+            lab.put("disputedReceivableLab", formatLabTokens(status.disputedReceivable()));
+            lab.put("eligibleReservationCount", status.eligibleReservationCount().toString());
+            lab.put("hasReceivable", status.totalReceivable().compareTo(BigInteger.ZERO) > 0);
+        });
+
+        return lab;
+    }
+
+    private <T> T getCachedValue(Map<String, TimedCacheEntry<T>> cache, String key, long ttlMs) {
+        if (ttlMs <= 0) {
+            return null;
+        }
+        TimedCacheEntry<T> entry = cache.get(key);
+        if (entry == null) {
+            return null;
+        }
+        if ((System.currentTimeMillis() - entry.cachedAtEpochMs) > ttlMs) {
+            cache.remove(key);
+            return null;
+        }
+        return entry.value;
+    }
+
+    private <T> void putCachedValue(Map<String, TimedCacheEntry<T>> cache, String key, T value) {
+        cache.put(key, new TimedCacheEntry<>(System.currentTimeMillis(), value));
+    }
+
+    private String normalizeAddress(String value) {
+        return value == null ? "" : value.trim().toLowerCase(Locale.ROOT);
+    }
+
+    private static final class TimedCacheEntry<T> {
+        private final long cachedAtEpochMs;
+        private final T value;
+
+        private TimedCacheEntry(long cachedAtEpochMs, T value) {
+            this.cachedAtEpochMs = cachedAtEpochMs;
+            this.value = value;
         }
     }
 

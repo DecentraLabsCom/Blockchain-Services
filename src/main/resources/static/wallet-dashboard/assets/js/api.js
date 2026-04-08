@@ -363,8 +363,22 @@ const API = {
     /**
      * Get labs owned by the institutional provider wallet.
      */
-    async getProviderLabs() {
-        return await this.request('/billing/admin/provider-labs');
+    async getProviderLabs(options = {}) {
+        const params = new URLSearchParams();
+        if (options.offset !== null && options.offset !== undefined) {
+            params.set('offset', String(options.offset));
+        }
+        if (options.limit !== null && options.limit !== undefined) {
+            params.set('limit', String(options.limit));
+        }
+        if (options.includeSummary !== null && options.includeSummary !== undefined) {
+            params.set('includeSummary', String(Boolean(options.includeSummary)));
+        }
+
+        const query = params.toString();
+        return await this.request(query
+            ? `/billing/admin/provider-labs?${query}`
+            : '/billing/admin/provider-labs');
     },
 
     /**

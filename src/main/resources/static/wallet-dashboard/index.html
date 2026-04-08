@@ -205,6 +205,57 @@
                             </button>
                         </div>
                         </div>
+                        <div class="settlement-overview hidden" id="providerSettlementOverview">
+                            <div class="settlement-overview-header">
+                                <h3>Receivables Overview</h3>
+                                <p class="settlement-overview-note" id="providerSettlementOverviewNote">
+                                    Aggregated from the current lab list without extra per-lab RPC calls.
+                                </p>
+                            </div>
+                            <div class="settlement-summary-grid" id="providerSettlementSummaryGrid">
+                                <div class="settlement-summary-card">
+                                    <span class="settlement-summary-label">Pending to claim</span>
+                                    <span class="settlement-summary-value" id="settlementSummaryPending">--</span>
+                                </div>
+                                <div class="settlement-summary-card">
+                                    <span class="settlement-summary-label">Claimed / in process</span>
+                                    <span class="settlement-summary-value" id="settlementSummaryClaimed">--</span>
+                                </div>
+                                <div class="settlement-summary-card">
+                                    <span class="settlement-summary-label">Received</span>
+                                    <span class="settlement-summary-value" id="settlementSummaryReceived">--</span>
+                                </div>
+                                <div class="settlement-summary-card muted">
+                                    <span class="settlement-summary-label">Disputed / reversed</span>
+                                    <span class="settlement-summary-value" id="settlementSummaryRisk">--</span>
+                                </div>
+                            </div>
+                            <div class="settlement-labs-table-wrap">
+                                <table class="settlement-labs-table">
+                                    <thead>
+                                        <tr>
+                                            <th>Lab</th>
+                                            <th>Pending</th>
+                                            <th>Claimed</th>
+                                            <th>Received</th>
+                                            <th>Pending closures</th>
+                                            <th>Status</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="providerSettlementLabsTableBody">
+                                        <tr>
+                                            <td colspan="6" class="settlement-table-empty">Loading settlement overview...</td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                            <div class="settlement-overview-footer">
+                                <span class="settlement-overview-note" id="providerSettlementLoadedCount">Loading labs...</span>
+                                <button type="button" id="providerSettlementLoadMoreBtn" class="btn btn-secondary hidden">
+                                    <i class="fas fa-plus"></i> Load more labs
+                                </button>
+                            </div>
+                        </div>
                         <div class="info-text hidden" id="collectLifecycleSummary"></div>
                         <form id="providerSettlementTransitionForm" class="operation-form hidden" style="margin-top: var(--spacing-lg);">
                             <div class="form-group">

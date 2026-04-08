@@ -211,6 +211,150 @@ body {
     font-weight: 600;
 }
 
+.settlement-overview {
+    margin-top: var(--spacing-md);
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-md);
+}
+
+.settlement-overview-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: var(--spacing-sm);
+    flex-wrap: wrap;
+}
+
+.settlement-overview-header h3 {
+    color: var(--text-primary);
+    font-size: 1rem;
+    font-weight: 600;
+}
+
+.settlement-overview-note {
+    color: var(--text-muted);
+    font-size: 0.85rem;
+}
+
+.settlement-summary-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: var(--spacing-sm);
+}
+
+.settlement-summary-card {
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-md);
+    padding: var(--spacing-sm);
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+}
+
+.settlement-summary-card.muted {
+    background: rgba(255, 255, 255, 0.02);
+}
+
+.settlement-summary-label {
+    color: var(--text-muted);
+    font-size: 0.78rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+
+.settlement-summary-value {
+    color: var(--text-primary);
+    font-size: 1.15rem;
+    font-weight: 600;
+}
+
+.settlement-labs-table-wrap {
+    overflow-x: auto;
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-md);
+    background: var(--bg-secondary);
+}
+
+.settlement-overview-footer {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: var(--spacing-sm);
+    flex-wrap: wrap;
+}
+
+.settlement-labs-table {
+    width: 100%;
+    border-collapse: collapse;
+    min-width: 760px;
+}
+
+.settlement-labs-table th,
+.settlement-labs-table td {
+    padding: 0.8rem 0.9rem;
+    text-align: left;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+}
+
+.settlement-labs-table th {
+    color: var(--text-muted);
+    font-size: 0.78rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+
+.settlement-labs-table tbody tr {
+    transition: background 0.2s ease, border-color 0.2s ease;
+    cursor: pointer;
+}
+
+.settlement-labs-table tbody tr:hover,
+.settlement-labs-table tbody tr.selected {
+    background: rgba(0, 212, 255, 0.08);
+}
+
+.settlement-lab-name {
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.settlement-table-empty {
+    color: var(--text-muted);
+    text-align: center;
+}
+
+.settlement-status-chip {
+    display: inline-flex;
+    align-items: center;
+    padding: 0.2rem 0.55rem;
+    border-radius: 999px;
+    font-size: 0.75rem;
+    border: 1px solid var(--border-color);
+    color: var(--text-secondary);
+    background: rgba(255, 255, 255, 0.03);
+}
+
+.settlement-status-chip.ready {
+    color: var(--neon-green);
+    border-color: rgba(0, 255, 136, 0.35);
+}
+
+.settlement-status-chip.progress {
+    color: var(--neon-blue);
+    border-color: rgba(0, 212, 255, 0.35);
+}
+
+.settlement-status-chip.caution {
+    color: var(--neon-orange);
+    border-color: rgba(255, 140, 0, 0.35);
+}
+
+.settlement-status-chip.idle {
+    color: var(--text-muted);
+}
+
 .card-actions {
     display: flex;
     gap: var(--spacing-sm);
