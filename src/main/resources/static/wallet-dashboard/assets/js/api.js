@@ -137,15 +137,7 @@ const API = {
      * Get overall system status
      */
     async getSystemStatus() {
-        try {
-            return await this.request('/billing/admin/status');
-        } catch (error) {
-            const message = (error && error.message ? error.message : '').toLowerCase();
-            if (message.includes('404')) {
-                return await this.request('/treasury/admin/status');
-            }
-            throw error;
-        }
+        return await this.request('/billing/admin/status');
     },
 
     /**
@@ -392,16 +384,7 @@ const API = {
         if (maxBatch !== null && maxBatch !== undefined) {
             params.set('maxBatch', String(maxBatch));
         }
-
-        try {
-            return await this.request(`/billing/admin/provider-receivable-status?${params.toString()}`);
-        } catch (error) {
-            const message = (error && error.message ? error.message : '').toLowerCase();
-            if (message.includes('404')) {
-                return await this.request(`/treasury/admin/lab-payout-status?${params.toString()}`);
-            }
-            throw error;
-        }
+        return await this.request(`/billing/admin/provider-receivable-status?${params.toString()}`);
     },
 
 };

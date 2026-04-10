@@ -29,7 +29,7 @@ services:
       # Path to wallet storage file (mounted as volume below)
       - WALLET_FILE_PATH=/app/data/wallets.json
       # MySQL datasource for persistence (auth, WebAuthn, intents)
-      - SPRING_DATASOURCE_URL=jdbc:mysql://mysql:3306/${BCHAIN_MYSQL_DATABASE:-blockchain_services}?serverTimezone=UTC&characterEncoding=UTF-8&useSSL=false&allowPublicKeyRetrieval=true
+      - SPRING_DATASOURCE_URL=jdbc:mysql://mysql:3306/${BLOCKCHAIN_MYSQL_DATABASE:-blockchain_services}?serverTimezone=UTC&characterEncoding=UTF-8&useSSL=false&allowPublicKeyRetrieval=true
       - SPRING_DATASOURCE_USERNAME=${BCHAIN_MYSQL_USER:-blockchain}
       - SPRING_DATASOURCE_PASSWORD=${BCHAIN_MYSQL_PASSWORD:-blockchain}
     
@@ -82,7 +82,7 @@ services:
     image: mysql:8.0.41
     environment:
       MYSQL_ROOT_PASSWORD: ${BCHAIN_MYSQL_ROOT_PASSWORD:-change-me}
-      MYSQL_DATABASE: ${BCHAIN_MYSQL_DATABASE:-blockchain_services}
+      MYSQL_DATABASE: ${BLOCKCHAIN_MYSQL_DATABASE:-blockchain_services}
       MYSQL_USER: ${BCHAIN_MYSQL_USER:-blockchain}
       MYSQL_PASSWORD: ${BCHAIN_MYSQL_PASSWORD:-blockchain}
     volumes:

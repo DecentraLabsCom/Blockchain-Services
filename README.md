@@ -127,7 +127,7 @@ Together, they bridge institutional access control systems (such as **Lab Gatewa
 
 These endpoints are only active in `provider+consumer` mode.
 
-### Wallet and treasury
+### Wallet and billing administration
 
 - `POST /wallet/create`
 - `POST /wallet/import`
@@ -137,14 +137,14 @@ These endpoints are only active in `provider+consumer` mode.
 - `GET /wallet/listen-events`
 - `GET /wallet/networks`
 - `POST /wallet/switch-network`
-- `POST /treasury/admin/execute`
-- `GET /treasury/admin/status`
-- `GET /treasury/admin/balance`
-- `GET /treasury/admin/transactions`
-- `GET /treasury/admin/contract-info`
-- `GET /treasury/admin/treasury-info`
-- `GET /treasury/admin/top-spenders`
-- `GET|POST /treasury/admin/notifications`
+- `POST /billing/admin/execute`
+- `GET /billing/admin/status`
+- `GET /billing/admin/balance`
+- `GET /billing/admin/transactions`
+- `GET /billing/admin/contract-info`
+- `GET /billing/admin/treasury-info`
+- `GET /billing/admin/top-spenders`
+- `GET|POST /billing/admin/notifications`
 
 ### Intents and provisioning
 
@@ -290,7 +290,7 @@ src/main/resources/
 ## 🔒 Security Essentials
 
 - Never commit secrets or private keys.
-- Keep wallet/treasury routes behind trusted network/proxy boundaries.
+- Keep wallet/billing routes behind trusted network/proxy boundaries.
 - If private-network access is enabled, enforce `ADMIN_ACCESS_TOKEN`.
 - Keep SAML trust mode on whitelist for production.
 - In `consumer-only` mode, JWT signing keys are not required for readiness because provider auth endpoints are disabled.
@@ -302,7 +302,7 @@ src/main/resources/
 - SMTP driver: configure `NOTIFICATIONS_MAIL_SMTP_HOST`, `PORT`, `USERNAME`, `PASSWORD`, plus `NOTIFICATIONS_MAIL_SMTP_STARTTLS` when required.
 - Microsoft Graph driver: `NOTIFICATIONS_MAIL_GRAPH_TENANT_ID`, `CLIENT_ID`, `CLIENT_SECRET`, `GRAPH_FROM` (UPN/mailbox with Mail.Send app permission).
 - ICS invite attached when start/end are available; subject `Reserva aprobada: <lab>` and body includes lab, window, renter, payer, and tx hash.
-- Runtime config (localhost): `GET/POST /treasury/admin/notifications` to view/update settings; persisted at `./data/notifications-config.json`.
+- Runtime config (localhost): `GET/POST /billing/admin/notifications` to view/update settings; persisted at `./data/notifications-config.json`.
 
 ## 📊 Monitoring & Health Checks
 

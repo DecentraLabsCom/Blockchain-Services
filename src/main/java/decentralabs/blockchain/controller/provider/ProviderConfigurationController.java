@@ -318,7 +318,7 @@ public class ProviderConfigurationController {
 
     /**
      * Apply consumer provisioning token issued by Marketplace (SSO staff) and register as consumer-only institution
-     * Consumer-only institutions only need wallet/treasury for reservations, they don't publish labs or provide auth endpoint
+     * Consumer-only institutions only need wallet/billing flows for reservations, they don't publish labs or provide auth endpoint
      */
     @PostMapping("/apply-consumer-token")
     @ResponseBody
