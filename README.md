@@ -255,6 +255,7 @@ ADMIN_ACCESS_TOKEN=your_strong_token
 ```
 
 Leave `ADMIN_ALLOWED_CIDRS` empty if you want to allow any private range. Set it if you want access limited to specific private subnets only.
+If you disable `ADMIN_DASHBOARD_LOCAL_ONLY`, keep `ADMIN_ACCESS_TOKEN_REQUIRED=true` and send the token via header or cookie, not query string.
 
 ## ⚙️ Configuration Files
 
@@ -314,7 +315,7 @@ Actuator endpoints for monitoring and Kubernetes probes (restrict `/actuator/**`
 - `GET /actuator/metrics` (metrics index)
 - `GET /actuator/info` (service metadata)
 
-Keep `/health` for the detailed, app-specific checks used by Docker and external status pages:
+Use `/actuator/health/readiness` for Docker and orchestrator health checks. Keep `/health` for detailed, app-specific status pages:
 
 Health endpoint available at `/health`:
 
@@ -333,9 +334,9 @@ Health endpoint available at `/health`:
     "saml-auth2": "disabled (providers flag off)",
     "checkin-institutional": "disabled (providers flag off)",
     "jwks": "disabled (providers flag off)",
-    "wallet-create": "available (localhost only)",
-    "wallet-balance": "available (localhost only)",
-    "treasury-reservations": "available (localhost only)",
+    "wallet-create": "available (localhost)",
+    "wallet-balance": "available (localhost)",
+    "billing": "available (localhost)",
     "health": "available"
   }
 }

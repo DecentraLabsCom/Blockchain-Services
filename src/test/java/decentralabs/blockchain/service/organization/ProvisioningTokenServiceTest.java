@@ -22,6 +22,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.mockito.Mockito;
 import org.springframework.http.ResponseEntity;
+import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.web.client.RestTemplate;
 
@@ -45,6 +46,8 @@ class ProvisioningTokenServiceTest {
     void setUp() throws Exception {
         service = new ProvisioningTokenService();
         ReflectionTestUtils.setField(service, "restTemplate", restTemplate);
+        ReflectionTestUtils.setField(service, "connectTimeoutMs", 5_000);
+        ReflectionTestUtils.setField(service, "readTimeoutMs", 10_000);
 
         KeyPairGenerator generator = KeyPairGenerator.getInstance("RSA");
         generator.initialize(2048);
@@ -55,6 +58,20 @@ class ProvisioningTokenServiceTest {
             .thenReturn(ResponseEntity.ok(jwksPayload));
         Mockito.lenient().when(restTemplate.getForEntity(eq(java.net.URI.create(CONSUMER_JWKS_URI)), eq(String.class)))
             .thenReturn(ResponseEntity.ok(jwksPayload));
+    }
+
+    @Test
+    void configureRestTemplate_appliesConfiguredTimeouts() {
+        ReflectionTestUtils.invokeMethod(service, "configureRestTemplate");
+
+        RestTemplate configured = (RestTemplate) ReflectionTestUtils.getField(service, "restTemplate");
+        assertThat(configured).isNotNull();
+        assertThat(configured.getRequestFactory()).isInstanceOf(SimpleClientHttpRequestFactory.class);
+
+        SimpleClientHttpRequestFactory factory =
+            (SimpleClientHttpRequestFactory) configured.getRequestFactory();
+        assertThat(ReflectionTestUtils.getField(factory, "connectTimeout")).isEqualTo(5_000);
+        assertThat(ReflectionTestUtils.getField(factory, "readTimeout")).isEqualTo(10_000);
     }
 
     @Test

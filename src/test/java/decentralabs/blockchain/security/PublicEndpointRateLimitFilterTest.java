@@ -21,10 +21,19 @@ class PublicEndpointRateLimitFilterTest {
 
     private MockMvc mockMvc;
     private PublicEndpointRateLimitFilter filter;
+    private AdminNetworkAccessPolicy adminNetworkAccessPolicy;
 
     @BeforeEach
     void setUp() {
-        filter = new PublicEndpointRateLimitFilter();
+        adminNetworkAccessPolicy = new AdminNetworkAccessPolicy();
+        ReflectionTestUtils.setField(adminNetworkAccessPolicy, "adminDashboardLocalOnly", true);
+        ReflectionTestUtils.setField(adminNetworkAccessPolicy, "adminDashboardAllowPrivate", false);
+        ReflectionTestUtils.setField(adminNetworkAccessPolicy, "allowPrivateNetworks", false);
+        ReflectionTestUtils.setField(adminNetworkAccessPolicy, "accessTokenRequired", true);
+        ReflectionTestUtils.setField(adminNetworkAccessPolicy, "configuredCidrs", "");
+        ReflectionTestUtils.setField(adminNetworkAccessPolicy, "trustedProxyCidrs", "127.0.0.1/8,::1/128,172.16.0.0/12");
+
+        filter = new PublicEndpointRateLimitFilter(adminNetworkAccessPolicy);
         // Configure low limits for testing
         ReflectionTestUtils.setField(filter, "authRequestsPerMinute", 5);
         ReflectionTestUtils.setField(filter, "authRequestsBurst", 3);
@@ -94,7 +103,7 @@ class PublicEndpointRateLimitFilterTest {
     @DisplayName("Rate limiting respects X-Forwarded-For header")
     void rateLimiting_respectsXForwardedFor() throws Exception {
         String realClientIp = "203.0.113.50";
-        String proxyIp = "10.0.0.1";
+        String proxyIp = "172.17.0.10";
         
         // Make requests with X-Forwarded-For
         for (int i = 0; i < 3; i++) {
@@ -125,14 +134,67 @@ class PublicEndpointRateLimitFilterTest {
         for (int i = 0; i < 3; i++) {
             mockMvc.perform(post("/auth/saml-auth")
                     .header("X-Real-IP", realClientIp)
-                    .with(req -> { req.setRemoteAddr("10.0.0.1"); return req; }))
+                    .with(req -> { req.setRemoteAddr("172.17.0.10"); return req; }))
                 .andExpect(status().isOk());
         }
         
         // Should be rate limited based on X-Real-IP
         mockMvc.perform(post("/auth/saml-auth")
                 .header("X-Real-IP", realClientIp)
-                .with(req -> { req.setRemoteAddr("10.0.0.1"); return req; }))
+                .with(req -> { req.setRemoteAddr("172.17.0.10"); return req; }))
+            .andExpect(status().isTooManyRequests());
+    }
+
+    @Test
+    @DisplayName("Rate limiting ignores forwarded headers from untrusted clients")
+    void rateLimiting_ignoresForwardedHeadersFromUntrustedClients() throws Exception {
+        String spoofedClientIp = "203.0.113.50";
+        String directClientIp = "10.0.0.25";
+
+        for (int i = 0; i < 3; i++) {
+            mockMvc.perform(post("/auth/saml-auth")
+                    .header("X-Forwarded-For", spoofedClientIp)
+                    .header("X-Real-IP", spoofedClientIp)
+                    .with(req -> { req.setRemoteAddr(directClientIp); return req; }))
+                .andExpect(status().isOk());
+        }
+
+        mockMvc.perform(post("/auth/saml-auth")
+                .header("X-Forwarded-For", spoofedClientIp)
+                .header("X-Real-IP", spoofedClientIp)
+                .with(req -> { req.setRemoteAddr(directClientIp); return req; }))
+            .andExpect(status().isTooManyRequests());
+
+        mockMvc.perform(post("/auth/saml-auth")
+                .header("X-Forwarded-For", spoofedClientIp)
+                .header("X-Real-IP", spoofedClientIp)
+                .with(req -> { req.setRemoteAddr("10.0.0.26"); return req; }))
+            .andExpect(status().isOk());
+    }
+
+    @Test
+    @DisplayName("Rate limiting follows the real client across trusted proxies")
+    void rateLimiting_followsRealClientAcrossTrustedProxies() throws Exception {
+        String realClientIp = "198.51.100.44";
+
+        mockMvc.perform(post("/auth/saml-auth")
+                .header("X-Forwarded-For", realClientIp + ", 172.17.0.10")
+                .with(req -> { req.setRemoteAddr("172.17.0.10"); return req; }))
+            .andExpect(status().isOk());
+
+        mockMvc.perform(post("/auth/saml-auth")
+                .header("X-Forwarded-For", realClientIp + ", 172.18.0.10")
+                .with(req -> { req.setRemoteAddr("172.18.0.10"); return req; }))
+            .andExpect(status().isOk());
+
+        mockMvc.perform(post("/auth/saml-auth")
+                .header("X-Forwarded-For", realClientIp + ", 172.19.0.10")
+                .with(req -> { req.setRemoteAddr("172.19.0.10"); return req; }))
+            .andExpect(status().isOk());
+
+        mockMvc.perform(post("/auth/saml-auth")
+                .header("X-Forwarded-For", realClientIp + ", 172.20.0.10")
+                .with(req -> { req.setRemoteAddr("172.20.0.10"); return req; }))
             .andExpect(status().isTooManyRequests());
     }
 

@@ -105,6 +105,21 @@ class LocalhostOnlyFilterTest {
     }
 
     @Test
+    void rejectsPrivateNetworkWithQueryToken() throws Exception {
+        ReflectionTestUtils.setField(adminNetworkAccessPolicy, "adminDashboardAllowPrivate", true);
+        ReflectionTestUtils.setField(adminNetworkAccessPolicy, "allowPrivateNetworks", true);
+        mockMvc = MockMvcBuilders
+            .standaloneSetup(new LocalhostFilterTestController())
+            .addFilters(filter)
+            .build();
+
+        mockMvc.perform(post("/wallet/test")
+                .param("token", "test-token")
+                .with(req -> { req.setRemoteAddr("172.17.0.1"); return req; }))
+            .andExpect(status().isForbidden());
+    }
+
+    @Test
     void blocksPrivateNetworkWithoutToken() throws Exception {
         ReflectionTestUtils.setField(adminNetworkAccessPolicy, "adminDashboardAllowPrivate", true);
         ReflectionTestUtils.setField(adminNetworkAccessPolicy, "allowPrivateNetworks", true);

@@ -69,7 +69,7 @@ class AccessTokenAuthenticationFilterTest {
     }
 
     @Test
-    void validQueryToken_setsInternalAuthentication() throws Exception {
+    void queryToken_isIgnoredForAuthentication() throws Exception {
         MockHttpServletRequest request = billingAdminRequest();
         request.setParameter("token", "expected-token");
         MockHttpServletResponse response = new MockHttpServletResponse();
@@ -78,12 +78,7 @@ class AccessTokenAuthenticationFilterTest {
         filter.runFilter(request, response, chain);
 
         verify(chain).doFilter(request, response);
-        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
-        assertThat(authentication).isNotNull();
-        assertThat(authentication.getName()).isEqualTo("internal");
-        assertThat(authentication.getAuthorities())
-            .extracting(Object::toString)
-            .containsExactly("ROLE_INTERNAL");
+        assertThat(SecurityContextHolder.getContext().getAuthentication()).isNull();
     }
 
     @Test
@@ -113,9 +108,9 @@ class AccessTokenAuthenticationFilterTest {
     }
 
     @Test
-    void invalidToken_returnsUnauthorizedAndStopsChain() throws Exception {
+    void invalidHeaderToken_returnsUnauthorizedAndStopsChain() throws Exception {
         MockHttpServletRequest request = billingAdminRequest();
-        request.setParameter("token", "wrong-token");
+        request.addHeader("X-Access-Token", "wrong-token");
         MockHttpServletResponse response = new MockHttpServletResponse();
         FilterChain chain = mock(FilterChain.class);
 
@@ -123,6 +118,20 @@ class AccessTokenAuthenticationFilterTest {
 
         verify(chain, never()).doFilter(request, response);
         assertThat(response.getStatus()).isEqualTo(MockHttpServletResponse.SC_UNAUTHORIZED);
+        assertThat(SecurityContextHolder.getContext().getAuthentication()).isNull();
+    }
+
+    @Test
+    void invalidQueryToken_isIgnored() throws Exception {
+        MockHttpServletRequest request = billingAdminRequest();
+        request.setParameter("token", "wrong-token");
+        MockHttpServletResponse response = new MockHttpServletResponse();
+        FilterChain chain = mock(FilterChain.class);
+
+        filter.runFilter(request, response, chain);
+
+        verify(chain).doFilter(request, response);
+        assertThat(response.getStatus()).isEqualTo(MockHttpServletResponse.SC_OK);
         assertThat(SecurityContextHolder.getContext().getAuthentication()).isNull();
     }
 

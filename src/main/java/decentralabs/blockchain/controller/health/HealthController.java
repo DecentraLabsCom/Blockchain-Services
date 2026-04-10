@@ -18,7 +18,6 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.web.bind.annotation.CrossOrigin;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -51,8 +50,10 @@ public class HealthController {
     @Value("${contract.address:}")
     private String contractAddress;
 
+    @Value("${organization.invite.hmac-secret:}")
+    private String organizationInviteHmacSecret;
+
     @GetMapping
-    @CrossOrigin(origins = "*")
     public ResponseEntity<Map<String, Object>> health() {
         Map<String, Object> healthStatus = new HashMap<>();
 
@@ -83,7 +84,7 @@ public class HealthController {
             healthStatus.put("provider_registered", providerRegistered);
             healthStatus.put("consumer_registered", consumerRegistered);
             healthStatus.put("institution_registered", institutionRegistered);
-            healthStatus.put("invite_token_configured", true);
+            healthStatus.put("invite_token_configured", isInviteTokenConfigured());
             healthStatus.put("endpoints", getEndpointStatus());
 
             return buildResponse(healthStatus);
@@ -108,12 +109,10 @@ public class HealthController {
         boolean treasuryConfigured = Boolean.TRUE.equals(status.get("treasury_configured"));
         boolean providerRegistered = Boolean.TRUE.equals(status.get("provider_registered"));
         boolean consumerRegistered = Boolean.TRUE.equals(status.get("consumer_registered"));
-        boolean inviteConfigured = Boolean.TRUE.equals(status.get("invite_token_configured"));
-
         boolean providerReady = providersEnabled ? providerRegistered : consumerRegistered;
         boolean authSigningReady = !providersEnabled || keyPresent;
 
-        if (!rpcUp || !authSigningReady || !marketplaceReady || !dbUp || !walletConfigured || !treasuryConfigured || !providerReady || !inviteConfigured) {
+        if (!rpcUp || !authSigningReady || !marketplaceReady || !dbUp || !walletConfigured || !treasuryConfigured || !providerReady) {
             status.put("status", "DEGRADED");
             return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).body(status);
         }
@@ -177,11 +176,17 @@ public class HealthController {
         endpoints.put("wallet-networks", "available (localhost)");
         endpoints.put("wallet-switch-network", "available (localhost)");
 
-        endpoints.put("treasury-reservations", "available (localhost)");
-        endpoints.put("treasury-admin", "available (localhost)");
+        endpoints.put("billing", "available (localhost)");
+        endpoints.put("billing-admin", "available (localhost)");
+        endpoints.put("treasury-reservations", "deprecated alias; use billing");
+        endpoints.put("treasury-admin", "deprecated alias; use billing-admin");
 
         endpoints.put("health", "available");
         return endpoints;
+    }
+
+    private boolean isInviteTokenConfigured() {
+        return organizationInviteHmacSecret != null && !organizationInviteHmacSecret.isBlank();
     }
 
     private boolean isDatabaseUp() {

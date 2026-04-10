@@ -51,15 +51,8 @@ public class AccessTokenAuthenticationFilter extends OncePerRequestFilter {
             return;
         }
 
-        // Check query parameter first (for initial page load with ?token=xxx)
-        String provided = request.getParameter("token");
+        String provided = request.getHeader(accessTokenHeader);
         
-        // Then check header
-        if (provided == null || provided.isBlank()) {
-            provided = request.getHeader(accessTokenHeader);
-        }
-        
-        // Finally check cookie
         if (provided == null || provided.isBlank()) {
             provided = readTokenFromCookies(request.getCookies());
         }

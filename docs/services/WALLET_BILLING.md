@@ -14,13 +14,15 @@ Sensitive routes are protected by `LocalhostOnlyFilter`:
 
 Dashboard/admin access is further controlled by these flags:
 
-- `admin.dashboard.local-only=true` — default localhost-only behavior for the dashboard.
-- `admin.dashboard.allow-private=true` — allow private-network access to the dashboard when `security.allow-private-networks=true`.
+- `admin.dashboard.local-only=true` - default localhost-only behavior for the dashboard.
+- `admin.dashboard.allow-private=true` - allow private-network access to the dashboard when `security.allow-private-networks=true`.
+- `admin.dashboard.local-only=false` - removes the network-location restriction, but does not remove token checks when `security.access-token.required=true`.
 
 Private-network access can be enabled with:
 
 - `security.allow-private-networks=true`
 - `security.access-token` (required when `security.access-token.required=true`)
+- Send the token via `X-Access-Token` header or the configured cookie. Query-string tokens are intentionally not accepted.
 
 ## Wallet Endpoints (`/wallet`)
 

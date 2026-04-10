@@ -44,6 +44,7 @@ import org.springframework.web.bind.annotation.RestController;
     "security.access-token=test-token",
     "security.access-token-header=X-Access-Token",
     "security.access-token-cookie=access_token",
+    "security.trusted-proxy-cidrs=127.0.0.1/8,::1/128,172.16.0.0/12",
     "rate.limit.enabled=true",
     "rate.limit.auth.requests.per.minute=2",
     "rate.limit.auth.requests.burst=1",
@@ -68,10 +69,17 @@ class SecurityConfigIntegrationTest {
     @Autowired
     private PublicEndpointRateLimitFilter publicEndpointRateLimitFilter;
 
+    @Autowired
+    private AdminNetworkAccessPolicy adminNetworkAccessPolicy;
+
     private MockMvc mockMvc;
 
     @BeforeEach
     void setUp() {
+        ReflectionTestUtils.setField(adminNetworkAccessPolicy, "adminDashboardLocalOnly", true);
+        ReflectionTestUtils.setField(adminNetworkAccessPolicy, "adminDashboardAllowPrivate", false);
+        ReflectionTestUtils.setField(adminNetworkAccessPolicy, "allowPrivateNetworks", false);
+        ReflectionTestUtils.setField(adminNetworkAccessPolicy, "accessTokenRequired", true);
         ((java.util.Map<?, ?>) ReflectionTestUtils.getField(publicEndpointRateLimitFilter, "authBuckets")).clear();
         ((java.util.Map<?, ?>) ReflectionTestUtils.getField(publicEndpointRateLimitFilter, "jwksBuckets")).clear();
         mockMvc = MockMvcBuilders.webAppContextSetup(webApplicationContext)
@@ -100,6 +108,15 @@ class SecurityConfigIntegrationTest {
     }
 
     @Test
+    void preflightOnHealthEndpoint_allowsConfiguredOriginWithoutWildcard() throws Exception {
+        mockMvc.perform(options("/health")
+                .header("Origin", "https://app.example")
+                .header("Access-Control-Request-Method", "GET"))
+            .andExpect(status().isOk())
+            .andExpect(header().string("Access-Control-Allow-Origin", "https://app.example"));
+    }
+
+    @Test
     void walletEndpoint_blocksNonLocalhostRequests() throws Exception {
         mockMvc.perform(get("/wallet/test")
                 .with(anonymous())
@@ -116,6 +133,47 @@ class SecurityConfigIntegrationTest {
                 .with(anonymous())
                 .with(req -> {
                     req.setRemoteAddr("127.0.0.1");
+                    return req;
+                }))
+            .andExpect(status().isOk())
+            .andExpect(content().string("wallet-ok"));
+    }
+
+    @Test
+    void walletEndpoint_ignoresLoopbackSpoofFromUntrustedPrivateRemote() throws Exception {
+        mockMvc.perform(get("/wallet/test")
+                .with(anonymous())
+                .header("X-Forwarded-For", "127.0.0.1")
+                .header("X-Real-IP", "127.0.0.1")
+                .with(req -> {
+                    req.setRemoteAddr("10.20.1.5");
+                    return req;
+                }))
+            .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void walletEndpoint_requiresTokenWhenLocalOnlyDisabled() throws Exception {
+        ReflectionTestUtils.setField(adminNetworkAccessPolicy, "adminDashboardLocalOnly", false);
+
+        mockMvc.perform(get("/wallet/test")
+                .with(anonymous())
+                .with(req -> {
+                    req.setRemoteAddr("203.0.113.10");
+                    return req;
+                }))
+            .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void walletEndpoint_acceptsHeaderTokenWhenLocalOnlyDisabled() throws Exception {
+        ReflectionTestUtils.setField(adminNetworkAccessPolicy, "adminDashboardLocalOnly", false);
+
+        mockMvc.perform(get("/wallet/test")
+                .with(anonymous())
+                .header("X-Access-Token", "test-token")
+                .with(req -> {
+                    req.setRemoteAddr("203.0.113.10");
                     return req;
                 }))
             .andExpect(status().isOk())
@@ -205,6 +263,29 @@ class SecurityConfigIntegrationTest {
             .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON));
     }
 
+    @Test
+    void publicAuthEndpoint_rateLimitsByForwardedClientAcrossTrustedProxyIps() throws Exception {
+        mockMvc.perform(post("/auth/saml-auth")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{}")
+                .header("X-Forwarded-For", "198.51.100.20, 172.17.0.10")
+                .with(req -> {
+                    req.setRemoteAddr("172.17.0.10");
+                    return req;
+                }))
+            .andExpect(status().isOk());
+
+        mockMvc.perform(post("/auth/saml-auth")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{}")
+                .header("X-Forwarded-For", "198.51.100.20, 172.18.0.10")
+                .with(req -> {
+                    req.setRemoteAddr("172.18.0.10");
+                    return req;
+                }))
+            .andExpect(status().isTooManyRequests());
+    }
+
     @RestController
     static class TestEndpoints {
 
@@ -226,6 +307,11 @@ class SecurityConfigIntegrationTest {
         @GetMapping("/intents/test")
         String intents() {
             return "intents-ok";
+        }
+
+        @GetMapping("/health")
+        String health() {
+            return "health-ok";
         }
     }
 

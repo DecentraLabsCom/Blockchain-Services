@@ -14,9 +14,13 @@ Minimum actions to keep `blockchain-services` safe in production.
 - Sensitive endpoints are behind `LocalhostOnlyFilter`: `/wallet`, `/billing`, `/billing/admin/notifications`, `/wallet-dashboard`, `/institution-config`, and `/onboarding/token`.
 - `/onboarding/token/**` is currently reserved in security filters/CORS; there is no public controller endpoint in this repository version.
 - Keep `security.allow-private-networks=false` unless you run behind a trusted private network and enforce a strong `security.access-token`.
+- Forwarded client IP headers are only trusted from `security.trusted-proxy-cidrs` (default: loopback + Docker-style `172.16.0.0/12`). If your reverse proxy lives on different private ranges, set that property explicitly.
 - The administrative dashboard also observes `admin.dashboard.local-only` and `admin.dashboard.allow-private`.
   - `admin.dashboard.local-only=true` keeps dashboard access limited to localhost by default.
   - `admin.dashboard.allow-private=true` allows private-network access only when `security.allow-private-networks=true` and token rules permit it.
+  - `admin.dashboard.local-only=false` removes the locality check, but a valid admin access token is still required whenever `security.access-token.required=true`.
+- Do not distribute `security.access-token` via query parameters. The backend accepts it only via header/cookie to avoid leaking it into logs, history, and referrers.
+- Provisioning token JWKS fetches should keep bounded network waits; tune `PROVISIONING_TOKEN_HTTP_CONNECT_TIMEOUT_MS` and `PROVISIONING_TOKEN_HTTP_READ_TIMEOUT_MS` for your environment.
 - `/wallet/reveal` exists for break-glass scenarios; leave it reachable only from loopback.
 - `/billing/admin/**` requires a valid access token when `security.access-token.required=true` (default).
 

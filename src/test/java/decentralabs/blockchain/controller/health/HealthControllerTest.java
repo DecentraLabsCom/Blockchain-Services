@@ -9,6 +9,7 @@ import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -90,6 +91,7 @@ class HealthControllerTest {
         ReflectionTestUtils.setField(healthController, "providersEnabled", true);
         ReflectionTestUtils.setField(healthController, "eventListeningEnabled", true);
         ReflectionTestUtils.setField(healthController, "contractAddress", "0xContract");
+        ReflectionTestUtils.setField(healthController, "organizationInviteHmacSecret", "");
 
         mockMvc = MockMvcBuilders.standaloneSetup(healthController).build();
     }
@@ -118,6 +120,16 @@ class HealthControllerTest {
             mockMvc.perform(get("/health"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("UP"));
+        }
+
+        @Test
+        @DisplayName("Should not emit wildcard CORS header directly from controller")
+        void shouldNotEmitWildcardCorsHeader() throws Exception {
+            setupHealthyEnvironment();
+
+            mockMvc.perform(get("/health").header("Origin", "https://app.example"))
+                .andExpect(status().isOk())
+                .andExpect(header().doesNotExist("Access-Control-Allow-Origin"));
         }
     }
 
@@ -281,6 +293,9 @@ class HealthControllerTest {
                 .andExpect(jsonPath("$.endpoints.['saml-auth']").value("available"))
                 .andExpect(jsonPath("$.endpoints.['checkin-institutional']").value("available"))
                 .andExpect(jsonPath("$.endpoints.jwks").value("available"))
+                .andExpect(jsonPath("$.endpoints.billing").value("available (localhost)"))
+                .andExpect(jsonPath("$.endpoints.['billing-admin']").value("available (localhost)"))
+                .andExpect(jsonPath("$.endpoints.['treasury-admin']").value("deprecated alias; use billing-admin"))
                 .andExpect(jsonPath("$.endpoints.health").value("available"));
         }
 
@@ -337,6 +352,17 @@ class HealthControllerTest {
         @DisplayName("Should include invite token configuration status")
         void shouldIncludeInviteTokenConfigurationStatus() throws Exception {
             setupHealthyEnvironment();
+
+            mockMvc.perform(get("/health"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.invite_token_configured").value(false));
+        }
+
+        @Test
+        @DisplayName("Should report invite token configured when secret is present")
+        void shouldReportInviteTokenConfiguredWhenSecretPresent() throws Exception {
+            setupHealthyEnvironment();
+            ReflectionTestUtils.setField(healthController, "organizationInviteHmacSecret", "test-secret");
 
             mockMvc.perform(get("/health"))
                 .andExpect(status().isOk())

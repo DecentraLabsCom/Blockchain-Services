@@ -75,11 +75,6 @@ public class LocalhostOnlyFilter extends OncePerRequestFilter {
             return false;
         }
 
-        String queryToken = request.getParameter("token");
-        if (queryToken != null && !queryToken.isBlank()) {
-            return accessToken.equals(queryToken.trim());
-        }
-
         String headerToken = request.getHeader(accessTokenHeader);
         if (headerToken != null && !headerToken.isBlank()) {
             return accessToken.equals(headerToken.trim());

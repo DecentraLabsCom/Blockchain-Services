@@ -36,6 +36,7 @@ import java.util.concurrent.ConcurrentHashMap;
 @Order(1) // After LocalhostOnlyFilter
 @Slf4j
 public class PublicEndpointRateLimitFilter extends OncePerRequestFilter {
+    private final AdminNetworkAccessPolicy adminNetworkAccessPolicy;
 
     @Value("${rate.limit.auth.requests.per.minute:30}")
     private int authRequestsPerMinute;
@@ -54,6 +55,10 @@ public class PublicEndpointRateLimitFilter extends OncePerRequestFilter {
 
     // Maximum buckets to prevent memory exhaustion
     private static final int MAX_BUCKETS = 50000;
+
+    public PublicEndpointRateLimitFilter(AdminNetworkAccessPolicy adminNetworkAccessPolicy) {
+        this.adminNetworkAccessPolicy = adminNetworkAccessPolicy;
+    }
 
     @Override
     protected void doFilterInternal(
@@ -138,21 +143,8 @@ public class PublicEndpointRateLimitFilter extends OncePerRequestFilter {
     }
 
     private String getClientIp(HttpServletRequest request) {
-        // Check X-Forwarded-For header (set by reverse proxy)
-        String xForwardedFor = request.getHeader("X-Forwarded-For");
-        if (xForwardedFor != null && !xForwardedFor.isEmpty()) {
-            // Take the first IP in the chain (original client)
-            String[] ips = xForwardedFor.split(",");
-            return ips[0].trim();
-        }
-        
-        // Check X-Real-IP header
-        String xRealIp = request.getHeader("X-Real-IP");
-        if (xRealIp != null && !xRealIp.isEmpty()) {
-            return xRealIp.trim();
-        }
-        
-        return request.getRemoteAddr();
+        String resolved = adminNetworkAccessPolicy.resolveClientIp(request);
+        return resolved == null || resolved.isBlank() ? request.getRemoteAddr() : resolved;
     }
 
     private String maskIp(String ip) {

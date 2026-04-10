@@ -27,6 +27,9 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
+import jakarta.annotation.PostConstruct;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.client.SimpleClientHttpRequestFactory;
 
 /**
  * Validates provisioning tokens (RS256) issued by Marketplace and extracts provider config
@@ -36,11 +39,25 @@ import java.util.concurrent.ConcurrentHashMap;
 @Slf4j
 public class ProvisioningTokenService {
 
-    private final RestTemplate restTemplate = new RestTemplate();
+    @Value("${provisioning.token.http.connect-timeout-ms:5000}")
+    private int connectTimeoutMs;
+
+    @Value("${provisioning.token.http.read-timeout-ms:10000}")
+    private int readTimeoutMs;
+
+    private RestTemplate restTemplate = new RestTemplate();
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     // Simple in-memory replay guard keyed by jti with expiration time
     private final Map<String, Instant> usedJti = new ConcurrentHashMap<>();
+
+    @PostConstruct
+    void configureRestTemplate() {
+        SimpleClientHttpRequestFactory requestFactory = new SimpleClientHttpRequestFactory();
+        requestFactory.setConnectTimeout(connectTimeoutMs);
+        requestFactory.setReadTimeout(readTimeoutMs);
+        restTemplate = new RestTemplate(requestFactory);
+    }
 
     /**
      * Validates provider provisioning token and extracts provider configuration

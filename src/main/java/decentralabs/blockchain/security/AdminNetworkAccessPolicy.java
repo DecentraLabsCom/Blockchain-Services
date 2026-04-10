@@ -33,9 +33,12 @@ public class AdminNetworkAccessPolicy {
     @Value("${admin.dashboard.allowed-cidrs:}")
     private String configuredCidrs;
 
+    @Value("${security.trusted-proxy-cidrs:127.0.0.1/8,::1/128,172.16.0.0/12}")
+    private String trustedProxyCidrs;
+
     public boolean isRequestAllowed(HttpServletRequest request, BooleanSupplier validTokenSupplier) {
         if (!adminDashboardLocalOnly) {
-            return true;
+            return !accessTokenRequired || validTokenSupplier.getAsBoolean();
         }
 
         if (matchesLoopback(request)) {
@@ -69,12 +72,8 @@ public class AdminNetworkAccessPolicy {
     }
 
     private boolean matchesLoopback(HttpServletRequest request) {
-        for (String candidate : getTrustedClientCandidates(request)) {
-            if (isLoopback(candidate)) {
-                return true;
-            }
-        }
-        return false;
+        String remoteAddr = sanitizeIp(request.getRemoteAddr());
+        return remoteAddr != null && isLoopback(remoteAddr);
     }
 
     private boolean matchesPrivateAccessNetwork(HttpServletRequest request) {
@@ -96,19 +95,32 @@ public class AdminNetworkAccessPolicy {
         return false;
     }
 
+    public String resolveClientIp(HttpServletRequest request) {
+        List<String> candidates = getTrustedClientCandidates(request);
+        return candidates.isEmpty() ? null : candidates.get(0);
+    }
+
     private List<String> getTrustedClientCandidates(HttpServletRequest request) {
-        Set<String> candidates = new LinkedHashSet<>();
         String remoteAddr = sanitizeIp(request.getRemoteAddr());
-        if (remoteAddr != null) {
-            candidates.add(remoteAddr);
+        if (remoteAddr == null) {
+            return List.of();
         }
 
-        if (remoteAddr != null && (isLoopback(remoteAddr) || isBroadPrivateAddress(remoteAddr))) {
+        if (!isTrustedProxy(remoteAddr)) {
+            return List.of(remoteAddr);
+        }
+
+        Set<String> candidates = new LinkedHashSet<>();
+        if (isTrustedProxy(remoteAddr)) {
             addForwardedCandidates(candidates, request.getHeader("X-Forwarded-For"));
             String realIp = sanitizeIp(request.getHeader("X-Real-IP"));
             if (realIp != null) {
                 candidates.add(realIp);
             }
+        }
+
+        if (candidates.isEmpty()) {
+            candidates.add(remoteAddr);
         }
 
         return new ArrayList<>(candidates);
@@ -158,17 +170,47 @@ public class AdminNetworkAccessPolicy {
         return normalized.startsWith("fc") || normalized.startsWith("fd");
     }
 
+    private boolean isTrustedProxy(String address) {
+        if (address == null || address.isBlank()) {
+            return false;
+        }
+        if (isLoopback(address)) {
+            return true;
+        }
+        return parseCidrs(trustedProxyCidrs, "SECURITY_TRUSTED_PROXY_CIDRS")
+            .stream()
+            .anyMatch(cidr -> cidr.matches(address));
+    }
+
     private List<CidrRange> parseCidrs() {
+        return parseCidrs(configuredCidrs, "ADMIN_ALLOWED_CIDRS");
+    }
+
+    private List<CidrRange> parseCidrs(String rawCidrs, String label) {
         List<CidrRange> ranges = new ArrayList<>();
-        for (String token : getConfiguredCidrs()) {
+        for (String token : splitCidrs(rawCidrs)) {
             CidrRange range = CidrRange.tryParse(token);
             if (range != null) {
                 ranges.add(range);
             } else {
-                log.warn("Ignoring invalid ADMIN_ALLOWED_CIDRS entry: {}", token);
+                log.warn("Ignoring invalid {} entry: {}", label, token);
             }
         }
         return ranges;
+    }
+
+    private List<String> splitCidrs(String rawCidrs) {
+        List<String> cidrs = new ArrayList<>();
+        if (rawCidrs == null || rawCidrs.isBlank()) {
+            return cidrs;
+        }
+        for (String token : rawCidrs.split(",")) {
+            String value = token == null ? "" : token.trim();
+            if (!value.isEmpty()) {
+                cidrs.add(value);
+            }
+        }
+        return cidrs;
     }
 
     private record CidrRange(byte[] networkBytes, int prefixLength) {

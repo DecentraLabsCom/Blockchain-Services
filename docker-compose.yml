@@ -54,8 +54,8 @@ services:
     
     # Health check
     healthcheck:
-      # Accepts 200 (UP) or 503 (DEGRADED when wallet not yet configured)
-      test: ["CMD", "sh", "-c", "code=$$(curl -s -o /dev/null -w '%{http_code}' http://localhost:8080/health) && ([ $$code -eq 200 ] || [ $$code -eq 503 ])"]
+      # Uses readiness probe so degraded detailed health does not appear healthy to the orchestrator.
+      test: ["CMD", "sh", "-c", "code=$$(curl -s -o /dev/null -w '%{http_code}' http://localhost:8080/actuator/health/readiness) && [ $$code -eq 200 ]"]
       interval: 30s
       timeout: 10s
       retries: 5
