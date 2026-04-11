@@ -118,10 +118,11 @@ public class SecurityConfig {
                 authorize.requestMatchers("/wallet-dashboard/**").permitAll();
                 // ALL wallet endpoints - restricted by CORS to localhost
                 authorize.requestMatchers(walletEndpoint + "/**").permitAll();
-                // In provider+consumer deployments, keep the explicit INTERNAL-role barrier.
-                // In consumer-only standalone mode, allow localhost/service-level checks to govern
-                // access so the local dashboard keeps working without injecting an access token.
-                if (providersEnabled && accessTokenRequired) {
+                // In provider+consumer deployments, require the INTERNAL-role barrier regardless
+                // of whether an access token is configured — this prevents any localhost-reachable
+                // caller from hitting admin billing endpoints without a valid token in provider mode.
+                // In consumer-only standalone mode, permit all and rely on LocalhostOnlyFilter.
+                if (providersEnabled) {
                     authorize.requestMatchers(billingEndpoint + "/admin/**").hasRole("INTERNAL");
                 } else {
                     authorize.requestMatchers(billingEndpoint + "/admin/**").permitAll();

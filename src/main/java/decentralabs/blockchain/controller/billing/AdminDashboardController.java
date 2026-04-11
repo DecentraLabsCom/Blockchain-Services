@@ -82,6 +82,8 @@ public class AdminDashboardController {
     @Value("${billing.admin.provider-labs.max-page-size:100}")
     private int providerLabsMaxPageSize;
 
+    private static final int MAX_CACHE_ENTRIES = 500;
+
     private final Map<String, TimedCacheEntry<List<Map<String, Object>>>> providerLabsPageCache = new ConcurrentHashMap<>();
     private final Map<String, TimedCacheEntry<Map<String, Object>>> providerLabsSummaryCache = new ConcurrentHashMap<>();
     private final Map<String, TimedCacheEntry<Map<String, Object>>> recentTransactionsCache = new ConcurrentHashMap<>();
@@ -965,6 +967,13 @@ public class AdminDashboardController {
     }
 
     private <T> void putCachedValue(Map<String, TimedCacheEntry<T>> cache, String key, T value) {
+        if (cache.size() >= MAX_CACHE_ENTRIES) {
+            long now = System.currentTimeMillis();
+            cache.entrySet().removeIf(e -> (now - e.getValue().cachedAtEpochMs) > 0);
+            if (cache.size() >= MAX_CACHE_ENTRIES) {
+                return;
+            }
+        }
         cache.put(key, new TimedCacheEntry<>(System.currentTimeMillis(), value));
     }
 
