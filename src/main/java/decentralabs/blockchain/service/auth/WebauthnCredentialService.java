@@ -7,6 +7,7 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.regex.Pattern;
 import io.micrometer.observation.annotation.Observed;
 import lombok.AllArgsConstructor;
 import lombok.Data;
@@ -31,6 +32,8 @@ import org.springframework.stereotype.Service;
 @Slf4j
 public class WebauthnCredentialService {
 
+    private static final Pattern SAFE_TABLE_NAME = Pattern.compile("^[a-zA-Z_][a-zA-Z0-9_]*$");
+
     @Value("${webauthn.credentials.table:webauthn_credentials}")
     private String credentialsTable;
 
@@ -49,6 +52,14 @@ public class WebauthnCredentialService {
         this.jdbcTemplate = jdbcTemplateProvider.getIfAvailable();
         if (this.jdbcTemplate == null) {
             log.warn("WebauthnCredentialService: No database configured. Credentials will be stored in memory only and lost on restart.");
+        }
+    }
+
+    @jakarta.annotation.PostConstruct
+    void validateTableName() {
+        if (!SAFE_TABLE_NAME.matcher(credentialsTable).matches()) {
+            throw new IllegalStateException(
+                "Invalid webauthn.credentials.table value: must match [a-zA-Z_][a-zA-Z0-9_]*");
         }
     }
 

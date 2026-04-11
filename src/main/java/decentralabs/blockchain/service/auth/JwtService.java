@@ -135,7 +135,7 @@ public class JwtService {
     }
     
     /**
-     * Validates a JWT token
+     * Validates a JWT token (signature and issuer)
      * @param token JWT token to validate
      * @return true if valid, false otherwise
      */
@@ -144,6 +144,7 @@ public class JwtService {
             PublicKey publicKey = keyService.getPublicKey();
             Jwts.parser()
                 .verifyWith(publicKey)
+                .requireIssuer(getIssuerUrl())
                 .build()
                 .parseSignedClaims(token);
             return true;
@@ -172,6 +173,7 @@ public class JwtService {
             PublicKey publicKey = keyService.getPublicKey();
             Claims claims = Jwts.parser()
                 .verifyWith(publicKey)
+                .requireIssuer(getIssuerUrl())
                 .build()
                 .parseSignedClaims(token)
                 .getPayload();

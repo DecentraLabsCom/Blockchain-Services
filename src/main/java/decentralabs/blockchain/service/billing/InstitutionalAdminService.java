@@ -16,6 +16,8 @@ import jakarta.servlet.http.HttpServletRequest;
 import java.math.BigDecimal;
 import java.math.BigInteger;
 import java.math.RoundingMode;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
 import java.util.LinkedHashMap;
 import java.util.Locale;
 import java.util.Map;
@@ -226,29 +228,41 @@ public class InstitutionalAdminService {
     }
 
     private boolean hasValidAccessToken() {
+        // Fast path: if the AccessTokenAuthenticationFilter already granted ROLE_INTERNAL, trust it
+        var auth = org.springframework.security.core.context.SecurityContextHolder.getContext().getAuthentication();
+        if (auth != null && auth.getAuthorities().stream()
+                .anyMatch(a -> "ROLE_INTERNAL".equals(a.getAuthority()))) {
+            return true;
+        }
         if (accessToken == null || accessToken.isBlank()) {
             return false;
         }
         String headerToken = request.getHeader(accessTokenHeader);
         if (headerToken != null && !headerToken.isBlank()) {
-            return accessToken.equals(headerToken.trim());
+            return constantTimeEquals(accessToken, headerToken.trim());
         }
         String authorization = request.getHeader("Authorization");
         if (authorization != null) {
             String lower = authorization.toLowerCase();
             if (lower.startsWith("bearer ")) {
                 String bearer = authorization.substring("bearer ".length()).trim();
-                return accessToken.equals(bearer);
+                return constantTimeEquals(accessToken, bearer);
             }
         }
         if (accessTokenCookie != null && request.getCookies() != null) {
             for (var cookie : request.getCookies()) {
                 if (accessTokenCookie.equals(cookie.getName())) {
-                    return accessToken.equals(cookie.getValue());
+                    return constantTimeEquals(accessToken, cookie.getValue());
                 }
             }
         }
         return false;
+    }
+
+    private static boolean constantTimeEquals(String a, String b) {
+        byte[] aBytes = a.getBytes(StandardCharsets.UTF_8);
+        byte[] bBytes = b.getBytes(StandardCharsets.UTF_8);
+        return MessageDigest.isEqual(aBytes, bBytes);
     }
 
     /**

@@ -839,6 +839,18 @@ public class WebauthnOnboardingService {
         if (removed > 0) {
             log.debug("Cleaned up {} expired WebAuthn onboarding sessions", removed);
         }
+        // Also clean up completed sessions past their TTL
+        Instant completedCutoff = now.minusSeconds(completedSessionTtlSeconds);
+        int completedRemoved = 0;
+        for (var entry : completedSessions.entrySet()) {
+            if (entry.getValue().completedAt() != null && entry.getValue().completedAt().isBefore(completedCutoff)) {
+                completedSessions.remove(entry.getKey());
+                completedRemoved++;
+            }
+        }
+        if (completedRemoved > 0) {
+            log.debug("Cleaned up {} expired completed WebAuthn sessions", completedRemoved);
+        }
     }
 
     private String normalize(String value) {

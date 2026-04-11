@@ -92,8 +92,14 @@ public class AntiReplayService {
         usedTimestamps.entrySet().removeIf(entry -> entry.getValue() < cutoff);
 
         if (usedTimestamps.size() > 10000) {
-            log.warn("Anti-replay cache has {} entries. Consider enabling a shared store such as Redis.",
+            log.warn("Anti-replay cache has {} entries after TTL eviction, evicting oldest quarter",
                 usedTimestamps.size());
+            int toRemove = usedTimestamps.size() / 4;
+            var iterator = usedTimestamps.entrySet().iterator();
+            for (int i = 0; i < toRemove && iterator.hasNext(); i++) {
+                iterator.next();
+                iterator.remove();
+            }
         }
     }
 

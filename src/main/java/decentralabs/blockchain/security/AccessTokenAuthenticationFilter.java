@@ -6,6 +6,8 @@ import jakarta.servlet.http.Cookie;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
 import java.util.List;
 import org.springframework.beans.factory.annotation.Value;
 import jakarta.annotation.Nonnull;
@@ -58,7 +60,7 @@ public class AccessTokenAuthenticationFilter extends OncePerRequestFilter {
         }
 
         if (provided != null && !provided.isBlank()) {
-            if (!accessToken.equals(provided.trim())) {
+            if (!constantTimeEquals(accessToken, provided.trim())) {
                 response.sendError(HttpServletResponse.SC_UNAUTHORIZED, "Unauthorized");
                 return;
             }
@@ -86,5 +88,11 @@ public class AccessTokenAuthenticationFilter extends OncePerRequestFilter {
             }
         }
         return null;
+    }
+
+    private static boolean constantTimeEquals(String a, String b) {
+        byte[] aBytes = a.getBytes(StandardCharsets.UTF_8);
+        byte[] bBytes = b.getBytes(StandardCharsets.UTF_8);
+        return MessageDigest.isEqual(aBytes, bBytes);
     }
 }

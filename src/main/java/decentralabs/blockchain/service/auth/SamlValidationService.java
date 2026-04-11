@@ -199,6 +199,7 @@ public class SamlValidationService {
     }
     
     // Cache for IdP certificates (issuer -> certificates)
+    private static final int MAX_CERTIFICATE_CACHE_SIZE = 500;
     private final Map<String, List<X509Certificate>> certificateCache = new ConcurrentHashMap<>();
     
     /**
@@ -546,6 +547,15 @@ public class SamlValidationService {
         try {
             List<X509Certificate> certs = retrieveCertificatesFromMetadata(metadataUrl);
             if (!certs.isEmpty()) {
+                if (certificateCache.size() >= MAX_CERTIFICATE_CACHE_SIZE) {
+                    logger.warn("Certificate cache reached max size ({}), evicting oldest entries", MAX_CERTIFICATE_CACHE_SIZE);
+                    var iterator = certificateCache.entrySet().iterator();
+                    int toRemove = certificateCache.size() / 4;
+                    for (int i = 0; i < toRemove && iterator.hasNext(); i++) {
+                        iterator.next();
+                        iterator.remove();
+                    }
+                }
                 certificateCache.put(issuer, certs);
                 logger.info("Retrieved and cached certificate from metadata for IdP: {}", issuer);
                 return certs;

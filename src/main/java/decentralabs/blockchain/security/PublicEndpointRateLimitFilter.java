@@ -163,8 +163,13 @@ public class PublicEndpointRateLimitFilter extends OncePerRequestFilter {
 
     private void cleanupBucketsIfNeeded(Map<String, Bucket> buckets) {
         if (buckets.size() > MAX_BUCKETS) {
-            log.info("Cleaning up rate limit buckets, current size: {}", buckets.size());
-            buckets.clear();
+            log.info("Evicting rate limit buckets, current size: {}", buckets.size());
+            int toRemove = buckets.size() / 4;
+            var iterator = buckets.entrySet().iterator();
+            for (int i = 0; i < toRemove && iterator.hasNext(); i++) {
+                iterator.next();
+                iterator.remove();
+            }
         }
     }
 }

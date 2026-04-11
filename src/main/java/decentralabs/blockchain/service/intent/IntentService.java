@@ -259,6 +259,25 @@ public class IntentService {
             });
 
         purgeExpiredAssertions(now * 1000); // convert seconds -> millis
+        evictTerminalIntents();
+    }
+
+    private static final long TERMINAL_INTENT_TTL_SECONDS = 3600; // 1 hour
+
+    private void evictTerminalIntents() {
+        Instant cutoff = Instant.now().minusSeconds(TERMINAL_INTENT_TTL_SECONDS);
+        intents.entrySet().removeIf(entry -> {
+            IntentRecord r = entry.getValue();
+            if (r.getStatus() == IntentStatus.EXECUTED
+                    || r.getStatus() == IntentStatus.FAILED
+                    || r.getStatus() == IntentStatus.REJECTED) {
+                if (r.getUpdatedAt() != null && r.getUpdatedAt().isBefore(cutoff)) {
+                    nonceIndex.remove(buildNonceKey(r.getSigner(), r.getNonce()));
+                    return true;
+                }
+            }
+            return false;
+        });
     }
 
     private IntentAction resolveAction(IntentMeta meta) {

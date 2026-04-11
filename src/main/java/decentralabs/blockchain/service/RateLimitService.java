@@ -103,15 +103,19 @@ public class RateLimitService {
      * Clean up old buckets (should be called periodically)
      */
     public void cleanupOldBuckets() {
-        // Remove buckets that haven't been used (this is a simple cleanup)
-        // In production, you might want to use a more sophisticated eviction policy
-        if (transactionBuckets.size() > 10000) {
-            log.info("Cleaning up transaction buckets, current size: {}", transactionBuckets.size());
-            transactionBuckets.clear();
-        }
-        if (balanceCheckBuckets.size() > 10000) {
-            log.info("Cleaning up balance check buckets, current size: {}", balanceCheckBuckets.size());
-            balanceCheckBuckets.clear();
+        evictIfNeeded(transactionBuckets, "transaction");
+        evictIfNeeded(balanceCheckBuckets, "balance check");
+    }
+
+    private void evictIfNeeded(Map<String, Bucket> buckets, String label) {
+        if (buckets.size() > 10000) {
+            log.info("Evicting {} buckets, current size: {}", label, buckets.size());
+            int toRemove = buckets.size() / 4;
+            var iterator = buckets.entrySet().iterator();
+            for (int i = 0; i < toRemove && iterator.hasNext(); i++) {
+                iterator.next();
+                iterator.remove();
+            }
         }
     }
 }
