@@ -195,8 +195,7 @@ class WalletServiceTest {
         stubGetBalance(walletAddress, BigInteger.ONE);
         stubEthCalls(
             web3j,
-            ethCallResponse(encodeValues(new org.web3j.abi.datatypes.generated.Uint256(BigInteger.valueOf(1_500_000)))),
-            ethCallResponse(encodeValues(new Address("0x3333333333333333333333333333333333333333")))
+            ethCallResponse(encodeValues(new org.web3j.abi.datatypes.generated.Uint256(BigInteger.valueOf(1_500_000))))
         );
 
         BalanceResponse response = spyService.getBalance(walletAddress);
@@ -204,7 +203,7 @@ class WalletServiceTest {
         assertThat(response.isSuccess()).isTrue();
         assertThat(response.getBalanceWei()).isEqualTo("1");
         assertThat(response.getBalanceEth()).isEqualTo("1E-18");
-        assertThat(response.getLabTokenAddress()).isEqualTo("0x3333333333333333333333333333333333333333");
+        assertThat(response.getLabTokenAddress()).isEqualTo("0x2222222222222222222222222222222222222222");
         assertThat(response.getLabBalanceRaw()).isEqualTo("1500000");
         assertThat(response.getLabBalance()).isEqualTo("15");
         assertThat(response.getNetwork()).isEqualTo("sepolia");
@@ -223,19 +222,13 @@ class WalletServiceTest {
     }
 
     @Test
-    void labTokenAndErc20Helpers_decodeAndCacheValues() throws Exception {
+    void labTokenAndErc20Helpers_returnContractAddressAndDecodeBalance() throws Exception {
         WalletService spyService = spy(service);
         ReflectionTestUtils.setField(spyService, "activeNetwork", "sepolia");
-        org.mockito.Mockito.doReturn(web3j).when(spyService).getWeb3jInstanceForNetwork(org.mockito.ArgumentMatchers.anyString());
-        stubEthCalls(web3j, ethCallResponse(encodeValues(new Address("0x3333333333333333333333333333333333333333"))));
 
         String tokenAddress = ReflectionTestUtils.invokeMethod(spyService, "getLabTokenAddress");
 
-        assertThat(tokenAddress).isEqualTo("0x3333333333333333333333333333333333333333");
-        @SuppressWarnings("unchecked")
-        Map<String, String> cachedAddresses =
-            (Map<String, String>) ReflectionTestUtils.getField(spyService, "cachedLabTokenAddresses");
-        assertThat(cachedAddresses).containsEntry("sepolia", "0x3333333333333333333333333333333333333333");
+        assertThat(tokenAddress).isEqualTo("0x2222222222222222222222222222222222222222");
 
         org.mockito.Mockito.reset(web3j);
         org.mockito.Mockito.doReturn(web3j).when(spyService).getWeb3jInstanceForNetwork(org.mockito.ArgumentMatchers.anyString());
@@ -473,15 +466,6 @@ class WalletServiceTest {
             ethCallResponse("0x"),
             ethCallResponse(
                 encodeValues(
-                    new org.web3j.abi.datatypes.generated.Uint256(BigInteger.valueOf(7)),
-                    new org.web3j.abi.datatypes.generated.Uint256(BigInteger.valueOf(8)),
-                    new org.web3j.abi.datatypes.generated.Uint256(BigInteger.valueOf(9)),
-                    new org.web3j.abi.datatypes.generated.Uint256(BigInteger.valueOf(10)),
-                    new Bool(true)
-                )
-            ),
-            ethCallResponse(
-                encodeValues(
                     new org.web3j.abi.datatypes.generated.Uint256(BigInteger.valueOf(11)),
                     new org.web3j.abi.datatypes.generated.Uint256(BigInteger.valueOf(12)),
                     new org.web3j.abi.datatypes.generated.Uint256(BigInteger.valueOf(13)),
@@ -516,8 +500,8 @@ class WalletServiceTest {
         assertThat(receivableStatus.get().disputedReceivable()).isEqualTo(BigInteger.valueOf(27));
         assertThat(receivableStatus.get().lastAccruedAt()).isEqualTo(BigInteger.valueOf(28));
         assertThat(collect.canRequestPayout()).isTrue();
-        assertThat(stakeInfo.getStakedAmount()).isEqualTo(BigInteger.valueOf(7));
-        assertThat(stakeInfo.isCanUnstake()).isTrue();
+        assertThat(stakeInfo.getStakedAmount()).isEqualTo(BigInteger.ZERO);
+        assertThat(stakeInfo.isCanUnstake()).isFalse();
         assertThat(financialStats).isPresent();
         assertThat(financialStats.get().getRemainingAllowance()).isEqualTo(BigInteger.valueOf(14));
         assertThat(spyService.simulateProviderPayoutRequest(" ", BigInteger.ONE, BigInteger.TEN).canRequestPayout()).isFalse();
@@ -530,7 +514,6 @@ class WalletServiceTest {
         stubEthCalls(
             web3j,
             ethCallError("execution reverted: collect disabled"),
-            ethCallError("boom"),
             ethCallError("boom"),
             ethCallError("boom"),
             ethCallError("boom")

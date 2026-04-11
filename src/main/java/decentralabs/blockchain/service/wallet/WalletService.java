@@ -108,9 +108,6 @@ public class WalletService {
     private final Map<String, Integer> currentRpcIndex = new ConcurrentHashMap<>();
     private String activeNetwork;
     
-    // Cache credit-ledger addresses per network because on-chain addresses may differ.
-    private final Map<String, String> cachedLabTokenAddresses = new ConcurrentHashMap<>();
-    
     // Shared OkHttpClient with connection pooling for all Web3j instances
     private OkHttpClient httpClient;
 
@@ -326,57 +323,18 @@ public class WalletService {
     }
 
     /**
-     * Gets the credit-ledger address from the Diamond contract
-     * Caches the result to avoid repeated contract calls
+     * Returns the address used by clients for service-credit contract interactions.
+     *
+     * The current architecture exposes service-credit functions directly in the Diamond,
+     * so this resolves to the configured Diamond address.
      */
     private String getLabTokenAddress() {
         return getLabTokenAddress(activeNetwork);
     }
 
     private String getLabTokenAddress(String networkId) {
-        String resolvedNetwork = resolveNetworkId(networkId);
-        String cached = cachedLabTokenAddresses.get(resolvedNetwork);
-        if (cached != null) {
-            return cached;
-        }
-
-        try {
-            Web3j web3j = getWeb3jInstanceForNetwork(resolvedNetwork);
-            
-            // Call getLabTokenAddress() function on Diamond contract
-            // function getLabTokenAddress() public view returns (address)
-            Function function = new Function(
-                "getLabTokenAddress",
-                Collections.emptyList(),
-                Collections.singletonList(new TypeReference<Address>() {})
-            );
-            
-            String encodedFunction = FunctionEncoder.encode(function);
-            
-            EthCall response = web3j.ethCall(
-                Transaction.createEthCallTransaction(null, contractAddress, encodedFunction),
-                DefaultBlockParameterName.LATEST
-            ).send();
-            
-            if (response.hasError()) {
-                log.warn("Error calling getLabTokenAddress(): {}", LogSanitizer.sanitize(response.getError().getMessage()));
-                return null;
-            }
-            
-            @SuppressWarnings("rawtypes")
-            List<Type> decoded = FunctionReturnDecoder.decode(response.getValue(), function.getOutputParameters());
-            if (!decoded.isEmpty()) {
-                String tokenAddress = decoded.get(0).getValue().toString();
-                cachedLabTokenAddresses.put(resolvedNetwork, tokenAddress);
-                log.info("Credit-ledger address retrieved from Diamond contract");
-                return tokenAddress;
-            }
-            
-            return null;
-        } catch (Exception e) {
-            log.error("Error getting credit-ledger address from Diamond contract", e);
-            return null;
-        }
+        resolveNetworkId(networkId);
+        return contractAddress;
     }
     
     /**
@@ -955,60 +913,19 @@ public class WalletService {
     }
 
     /**
-     * Gets stake information for a provider from the Diamond contract
-     * @param providerAddress The provider address to query
-     * @return StakeInfo DTO with staked amount, slashed amount, timestamps, etc.
+     * Returns provider bond information.
+     *
+     * Staking-related selectors were removed from the current Diamond surface, so
+     * the backend now returns an empty structure instead of attempting a failing call.
      */
     public StakeInfo getStakeInfo(String providerAddress) {
-        if (providerAddress == null || providerAddress.isBlank()) {
-            return StakeInfo.empty();
-        }
-        try {
-            Web3j web3j = getWeb3jInstance();
-            
-            // Call getStakeInfo(address) function on Diamond contract
-            // Returns: (stakedAmount, slashedAmount, lastReservationTimestamp, unlockTimestamp, canUnstake)
-            Function function = new Function(
-                "getStakeInfo",
-                Collections.singletonList(new Address(providerAddress)),
-                Arrays.asList(
-                    new TypeReference<Uint256>() {},  // stakedAmount
-                    new TypeReference<Uint256>() {},  // slashedAmount
-                    new TypeReference<Uint256>() {},  // lastReservationTimestamp
-                    new TypeReference<Uint256>() {},  // unlockTimestamp
-                    new TypeReference<org.web3j.abi.datatypes.Bool>() {}  // canUnstake
-                )
+        if (providerAddress != null && !providerAddress.isBlank()) {
+            log.debug(
+                "Returning empty stake info for {} because staking selectors are not exposed by current Diamond ABI",
+                LogSanitizer.maskIdentifier(providerAddress)
             );
-            
-            String encodedFunction = FunctionEncoder.encode(function);
-            
-            EthCall response = web3j.ethCall(
-                Transaction.createEthCallTransaction(null, contractAddress, encodedFunction),
-                DefaultBlockParameterName.LATEST
-            ).send();
-            
-            if (response.hasError()) {
-                log.warn("Error calling getStakeInfo()");
-                return StakeInfo.empty();
-            }
-            
-            @SuppressWarnings("rawtypes")
-            List<Type> decoded = FunctionReturnDecoder.decode(response.getValue(), function.getOutputParameters());
-            if (decoded.size() >= 5) {
-                return StakeInfo.builder()
-                    .stakedAmount((BigInteger) decoded.get(0).getValue())
-                    .slashedAmount((BigInteger) decoded.get(1).getValue())
-                    .lastReservationTimestamp(((BigInteger) decoded.get(2).getValue()).longValue())
-                    .unlockTimestamp(((BigInteger) decoded.get(3).getValue()).longValue())
-                    .canUnstake((Boolean) decoded.get(4).getValue())
-                    .build();
-            }
-            
-            return StakeInfo.empty();
-        } catch (Exception e) {
-            log.error("Error getting stake info from Diamond contract", e);
-            return StakeInfo.empty();
         }
+        return StakeInfo.empty();
     }
 
     /**
