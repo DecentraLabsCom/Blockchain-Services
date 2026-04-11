@@ -163,9 +163,7 @@ class AdminDashboardControllerTest {
         @DisplayName("Should get balance for specific chain")
         void shouldGetBalanceForSpecificChain() throws Exception {
             when(institutionalWalletService.getInstitutionalWalletAddress()).thenReturn(VALID_ADDRESS);
-            // When chainId is specified, the controller switches network and gets balance
-            // Mock those calls
-            when(walletService.getBalance(VALID_ADDRESS)).thenReturn(
+            when(walletService.getBalance(VALID_ADDRESS, "sepolia")).thenReturn(
                 decentralabs.blockchain.dto.wallet.BalanceResponse.builder()
                     .success(true)
                     .address(VALID_ADDRESS)

@@ -1,23 +1,31 @@
 package decentralabs.blockchain.controller.billing;
 
-import decentralabs.blockchain.domain.*;
+import decentralabs.blockchain.domain.ProviderApproval;
+import decentralabs.blockchain.domain.ProviderInvoiceRecord;
+import decentralabs.blockchain.domain.ProviderNetworkMembership;
+import decentralabs.blockchain.domain.ProviderPayout;
+import decentralabs.blockchain.dto.billing.ActivateProviderRequest;
+import decentralabs.blockchain.dto.billing.ApproveProviderInvoiceRequest;
+import decentralabs.blockchain.dto.billing.RecordProviderPayoutRequest;
+import decentralabs.blockchain.dto.billing.SubmitProviderInvoiceRequest;
+import decentralabs.blockchain.dto.billing.SuspendProviderRequest;
 import decentralabs.blockchain.service.billing.ProviderNetworkService;
 import decentralabs.blockchain.service.billing.ProviderSettlementService;
 import decentralabs.blockchain.util.EthereumAddressValidator;
+import jakarta.validation.Valid;
+import java.math.BigDecimal;
+import java.util.Map;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.*;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RestController;
 
-import java.math.BigDecimal;
-import java.time.LocalDate;
-import java.util.List;
-import java.util.Map;
-
-/**
- * REST endpoints for provider network registry and provider settlement lifecycle.
- * Secured by localhost-only access.
- */
 @RestController
 @RequestMapping("/billing")
 @RequiredArgsConstructor
@@ -26,8 +34,6 @@ public class ProviderBillingController {
 
     private final ProviderNetworkService providerNetworkService;
     private final ProviderSettlementService providerSettlementService;
-
-    // ── Provider Network ────────────────────────────────────────────────
 
     @GetMapping("/provider-network")
     public ResponseEntity<?> listProviderNetwork(@RequestParam(required = false) String status) {
@@ -38,124 +44,100 @@ public class ProviderBillingController {
     }
 
     @PostMapping("/provider-network")
-    public ResponseEntity<?> activateProvider(@RequestBody Map<String, Object> body) {
-        try {
-            String provider = extractString(body, "providerAddress");
-            EthereumAddressValidator.validate(provider, "providerAddress");
-            String contractId = extractString(body, "contractId");
-            String agreementVersion = extractString(body, "agreementVersion");
-            String activatedBy = (String) body.get("activatedBy");
-            LocalDate effective = body.containsKey("effectiveDate")
-                    ? LocalDate.parse(body.get("effectiveDate").toString()) : null;
-            LocalDate expiry = body.containsKey("expiryDate")
-                    ? LocalDate.parse(body.get("expiryDate").toString()) : null;
-
-            ProviderNetworkMembership m = providerNetworkService.activate(
-                    provider, contractId, agreementVersion, effective, expiry, activatedBy);
-            return ResponseEntity.ok(m);
-        } catch (IllegalArgumentException e) {
-            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
-        }
+    public ResponseEntity<ProviderNetworkMembership> activateProvider(
+        @Valid @RequestBody ActivateProviderRequest request
+    ) {
+        EthereumAddressValidator.validate(request.getProviderAddress(), "providerAddress");
+        ProviderNetworkMembership membership = providerNetworkService.activate(
+            request.getProviderAddress(),
+            request.getContractId(),
+            request.getAgreementVersion(),
+            request.getEffectiveDate(),
+            request.getExpiryDate(),
+            request.getActivatedBy()
+        );
+        return ResponseEntity.ok(membership);
     }
 
     @PostMapping("/provider-network/{id}/suspend")
-    public ResponseEntity<?> suspendProvider(@PathVariable long id, @RequestBody Map<String, Object> body) {
-        String reason = (String) body.get("reason");
-        String actionBy = (String) body.get("actionBy");
+    public ResponseEntity<Map<String, String>> suspendProvider(
+        @PathVariable long id,
+        @RequestBody(required = false) SuspendProviderRequest request
+    ) {
+        String reason = request != null ? request.getReason() : null;
+        String actionBy = request != null ? request.getActionBy() : null;
         providerNetworkService.suspend(id, reason, actionBy);
         return ResponseEntity.ok(Map.of("status", "SUSPENDED"));
     }
 
     @PostMapping("/provider-network/{id}/terminate")
-    public ResponseEntity<?> terminateProvider(@PathVariable long id, @RequestBody(required = false) Map<String, Object> body) {
-        String actionBy = body != null ? (String) body.get("actionBy") : null;
+    public ResponseEntity<Map<String, String>> terminateProvider(
+        @PathVariable long id,
+        @RequestBody(required = false) SuspendProviderRequest request
+    ) {
+        String actionBy = request != null ? request.getActionBy() : null;
         providerNetworkService.terminate(id, actionBy);
         return ResponseEntity.ok(Map.of("status", "TERMINATED"));
     }
 
-    // ── Provider Settlement ─────────────────────────────────────────────
-
     @GetMapping("/provider-receivables")
     public ResponseEntity<?> listProviderInvoices(@RequestParam(required = false) String status) {
         if (status != null) {
-            ProviderInvoiceRecord.Status s = ProviderInvoiceRecord.Status.valueOf(status.toUpperCase());
-            return ResponseEntity.ok(providerSettlementService.findInvoicesByStatus(s));
+            ProviderInvoiceRecord.Status resolvedStatus = ProviderInvoiceRecord.Status.valueOf(status.toUpperCase());
+            return ResponseEntity.ok(providerSettlementService.findInvoicesByStatus(resolvedStatus));
         }
-        return ResponseEntity.ok(providerSettlementService.findInvoicesByStatus(ProviderInvoiceRecord.Status.SUBMITTED));
+        return ResponseEntity.ok(
+            providerSettlementService.findInvoicesByStatus(ProviderInvoiceRecord.Status.SUBMITTED)
+        );
     }
 
     @PostMapping("/provider-receivables/{labId}/invoice")
-    public ResponseEntity<?> submitProviderInvoice(@PathVariable String labId, @RequestBody Map<String, Object> body) {
-        try {
-            String provider = extractString(body, "providerAddress");
-            EthereumAddressValidator.validate(provider, "providerAddress");
-            String invoiceRef = extractString(body, "invoiceRef");
-            BigDecimal eurAmount = extractDecimal(body, "eurAmount");
-            BigDecimal creditAmount = body.containsKey("creditAmount")
-                    ? extractDecimal(body, "creditAmount") : null;
-
-            ProviderInvoiceRecord record = providerSettlementService.submitInvoice(
-                    labId, provider, invoiceRef, eurAmount, creditAmount);
-            return ResponseEntity.ok(record);
-        } catch (IllegalArgumentException e) {
-            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
-        }
+    public ResponseEntity<ProviderInvoiceRecord> submitProviderInvoice(
+        @PathVariable String labId,
+        @Valid @RequestBody SubmitProviderInvoiceRequest request
+    ) {
+        EthereumAddressValidator.validate(request.getProviderAddress(), "providerAddress");
+        ProviderInvoiceRecord record = providerSettlementService.submitInvoice(
+            labId,
+            request.getProviderAddress(),
+            request.getInvoiceRef(),
+            request.getEurAmount(),
+            request.getCreditAmount()
+        );
+        return ResponseEntity.ok(record);
     }
 
     @PostMapping("/provider-receivables/invoices/{invoiceId}/approve")
-    public ResponseEntity<?> approveInvoice(@PathVariable long invoiceId, @RequestBody Map<String, Object> body) {
-        try {
-            String approvedBy = extractString(body, "approvedBy");
-            EthereumAddressValidator.validate(approvedBy, "approvedBy");
-            String approvalRef = (String) body.get("approvalRef");
-            BigDecimal eurAmount = extractDecimal(body, "eurAmount");
-
-            ProviderApproval approval = providerSettlementService.approveInvoice(invoiceId, approvedBy, approvalRef, eurAmount);
-            return ResponseEntity.ok(approval);
-        } catch (IllegalArgumentException | IllegalStateException e) {
-            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
-        }
+    public ResponseEntity<ProviderApproval> approveInvoice(
+        @PathVariable long invoiceId,
+        @Valid @RequestBody ApproveProviderInvoiceRequest request
+    ) {
+        EthereumAddressValidator.validate(request.getApprovedBy(), "approvedBy");
+        ProviderApproval approval = providerSettlementService.approveInvoice(
+            invoiceId,
+            request.getApprovedBy(),
+            request.getApprovalRef(),
+            request.getEurAmount()
+        );
+        return ResponseEntity.ok(approval);
     }
 
     @PostMapping("/provider-receivables/{labId}/pay")
-    public ResponseEntity<?> recordPayout(@PathVariable String labId, @RequestBody Map<String, Object> body) {
-        try {
-            String provider = extractString(body, "providerAddress");
-            EthereumAddressValidator.validate(provider, "providerAddress");
-            BigDecimal eurAmount = extractDecimal(body, "eurAmount");
-            BigDecimal creditAmount = body.containsKey("creditAmount")
-                    ? extractDecimal(body, "creditAmount") : BigDecimal.ZERO;
-            String bankRef = (String) body.get("bankRef");
-            String eurcTxHash = (String) body.get("eurcTxHash");
-            String usdcTxHash = (String) body.get("usdcTxHash");
-
-            ProviderPayout payout = providerSettlementService.recordPayout(
-                    labId, provider, eurAmount, creditAmount, bankRef, eurcTxHash, usdcTxHash);
-            return ResponseEntity.ok(payout);
-        } catch (IllegalArgumentException e) {
-            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
-        }
-    }
-
-    // ── Helpers ─────────────────────────────────────────────────────────
-
-    private String extractString(Map<String, Object> body, String key) {
-        Object val = body.get(key);
-        if (val == null || val.toString().isBlank()) {
-            throw new IllegalArgumentException(key + " is required");
-        }
-        return val.toString().trim();
-    }
-
-    private BigDecimal extractDecimal(Map<String, Object> body, String key) {
-        Object val = body.get(key);
-        if (val == null) {
-            throw new IllegalArgumentException(key + " is required");
-        }
-        try {
-            return new BigDecimal(val.toString());
-        } catch (NumberFormatException e) {
-            throw new IllegalArgumentException(key + " must be a valid decimal number");
-        }
+    public ResponseEntity<ProviderPayout> recordPayout(
+        @PathVariable String labId,
+        @Valid @RequestBody RecordProviderPayoutRequest request
+    ) {
+        EthereumAddressValidator.validate(request.getProviderAddress(), "providerAddress");
+        BigDecimal creditAmount = request.getCreditAmount() != null ? request.getCreditAmount() : BigDecimal.ZERO;
+        ProviderPayout payout = providerSettlementService.recordPayout(
+            labId,
+            request.getProviderAddress(),
+            request.getEurAmount(),
+            creditAmount,
+            request.getBankRef(),
+            request.getEurcTxHash(),
+            request.getUsdcTxHash()
+        );
+        return ResponseEntity.ok(payout);
     }
 }

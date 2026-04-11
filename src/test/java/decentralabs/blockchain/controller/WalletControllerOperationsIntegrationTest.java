@@ -11,8 +11,8 @@ import decentralabs.blockchain.dto.wallet.TransactionHistoryResponse;
 import decentralabs.blockchain.dto.wallet.WalletImportRequest;
 import decentralabs.blockchain.dto.wallet.WalletResponse;
 import decentralabs.blockchain.service.RateLimitService;
+import decentralabs.blockchain.service.wallet.WalletAdministrationService;
 import decentralabs.blockchain.service.wallet.WalletService;
-import decentralabs.blockchain.service.wallet.InstitutionalWalletService;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -70,7 +70,7 @@ class WalletControllerOperationsIntegrationTest {
     private RateLimitService rateLimitService;
 
     @MockitoBean
-    private InstitutionalWalletService institutionalWalletService;
+    private WalletAdministrationService walletAdministrationService;
 
     @Test
     void shouldReturnBalanceForValidAddress() throws Exception {
@@ -82,7 +82,7 @@ class WalletControllerOperationsIntegrationTest {
             .balanceEth("1")
             .network("sepolia")
             .build();
-        when(walletService.getBalance(VALID_ADDRESS)).thenReturn(response);
+        when(walletService.getBalance(VALID_ADDRESS, null)).thenReturn(response);
 
         mockMvc.perform(get("/wallet/{address}/balance", VALID_ADDRESS))
             .andExpect(status().isOk())
@@ -90,7 +90,7 @@ class WalletControllerOperationsIntegrationTest {
             .andExpect(jsonPath("$.address").value(VALID_ADDRESS))
             .andExpect(jsonPath("$.balanceEth").value("1"));
 
-        verify(walletService).getBalance(VALID_ADDRESS);
+        verify(walletService).getBalance(VALID_ADDRESS, null);
     }
 
     @Test
@@ -110,7 +110,7 @@ class WalletControllerOperationsIntegrationTest {
             .andExpect(status().isTooManyRequests())
             .andExpect(jsonPath("$.success").value(false));
 
-        verify(walletService, never()).getBalance(any());
+        verify(walletService, never()).getBalance(any(), any());
     }
 
     @Test
@@ -125,7 +125,8 @@ class WalletControllerOperationsIntegrationTest {
             .encryptedPrivateKey("enc")
             .message("Wallet imported successfully")
             .build();
-        when(walletService.importWallet(any(WalletImportRequest.class))).thenReturn(response);
+        when(walletAdministrationService.importAndConfigureInstitutionalWallet(any(WalletImportRequest.class)))
+            .thenReturn(response);
 
         mockMvc.perform(post("/wallet/import")
                 .with(csrf())
@@ -146,7 +147,7 @@ class WalletControllerOperationsIntegrationTest {
             .transactions(List.of())
             .network("sepolia")
             .build();
-        when(walletService.getTransactionHistory(VALID_ADDRESS)).thenReturn(response);
+        when(walletService.getTransactionHistory(VALID_ADDRESS, null)).thenReturn(response);
 
         mockMvc.perform(get("/wallet/{address}/transactions", VALID_ADDRESS))
             .andExpect(status().isOk())
@@ -162,7 +163,7 @@ class WalletControllerOperationsIntegrationTest {
             .network("sepolia")
             .message("ready")
             .build();
-        when(walletService.getEventListenerStatus()).thenReturn(response);
+        when(walletService.getEventListenerStatus(null)).thenReturn(response);
 
         mockMvc.perform(get("/wallet/listen-events"))
             .andExpect(status().isOk())
@@ -189,13 +190,13 @@ class WalletControllerOperationsIntegrationTest {
 
     @Test
     void shouldSwitchNetworks() throws Exception {
-        NetworkSwitchRequest request = new NetworkSwitchRequest("goerli");
+        NetworkSwitchRequest request = new NetworkSwitchRequest("mainnet");
         NetworkResponse response = NetworkResponse.builder()
             .success(true)
-            .activeNetwork("goerli")
+            .activeNetwork("mainnet")
             .networks(List.of())
             .build();
-        when(walletService.switchNetwork(eq("goerli"))).thenReturn(response);
+        when(walletService.switchNetwork(eq("mainnet"))).thenReturn(response);
 
         mockMvc.perform(post("/wallet/switch-network")
                 .with(csrf())
@@ -203,6 +204,6 @@ class WalletControllerOperationsIntegrationTest {
                 .content(objectMapper.writeValueAsString(request)))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.success").value(true))
-            .andExpect(jsonPath("$.activeNetwork").value("goerli"));
+            .andExpect(jsonPath("$.activeNetwork").value("mainnet"));
     }
 }

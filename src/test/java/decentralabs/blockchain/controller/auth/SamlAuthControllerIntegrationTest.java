@@ -47,7 +47,7 @@ class SamlAuthControllerIntegrationTest {
     @BeforeEach
     void setup() {
         mockMvc = MockMvcBuilders.standaloneSetup(samlAuthController)
-            .setControllerAdvice(new GlobalExceptionHandler())
+            .setControllerAdvice(new SamlAuthControllerAdvice(), new GlobalExceptionHandler())
             .build();
     }
 

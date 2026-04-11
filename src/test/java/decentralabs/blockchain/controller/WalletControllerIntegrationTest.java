@@ -5,7 +5,7 @@ import decentralabs.blockchain.controller.wallet.WalletController;
 import decentralabs.blockchain.dto.wallet.WalletCreateRequest;
 import decentralabs.blockchain.dto.wallet.WalletResponse;
 import decentralabs.blockchain.service.RateLimitService;
-import decentralabs.blockchain.service.wallet.InstitutionalWalletService;
+import decentralabs.blockchain.service.wallet.WalletAdministrationService;
 import decentralabs.blockchain.service.wallet.WalletService;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -51,7 +51,7 @@ class WalletControllerIntegrationTest {
     private RateLimitService rateLimitService;
 
     @MockitoBean
-    private InstitutionalWalletService institutionalWalletService;
+    private WalletAdministrationService walletAdministrationService;
 
     @Test
     public void testCreateWallet() throws Exception {
@@ -66,7 +66,7 @@ class WalletControllerIntegrationTest {
             .message("Wallet created successfully")
             .build();
 
-        when(walletService.createWallet("testPassword123")).thenReturn(mockedResponse);
+        when(walletAdministrationService.createAndConfigureInstitutionalWallet("testPassword123")).thenReturn(mockedResponse);
 
         // When
         MvcResult result = mockMvc.perform(post("/wallet/create")

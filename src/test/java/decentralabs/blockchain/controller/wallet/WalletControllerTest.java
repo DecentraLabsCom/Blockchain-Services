@@ -2,7 +2,6 @@ package decentralabs.blockchain.controller.wallet;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
-import static org.mockito.Mockito.doNothing;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -33,7 +32,7 @@ import decentralabs.blockchain.dto.wallet.WalletImportRequest;
 import decentralabs.blockchain.dto.wallet.WalletResponse;
 import decentralabs.blockchain.dto.wallet.WalletRevealRequest;
 import decentralabs.blockchain.service.RateLimitService;
-import decentralabs.blockchain.service.wallet.InstitutionalWalletService;
+import decentralabs.blockchain.service.wallet.WalletAdministrationService;
 import decentralabs.blockchain.service.wallet.WalletService;
 
 /**
@@ -50,7 +49,7 @@ class WalletControllerTest {
     private RateLimitService rateLimitService;
 
     @Mock
-    private InstitutionalWalletService institutionalWalletService;
+    private WalletAdministrationService walletAdministrationService;
 
     @InjectMocks
     private WalletController walletController;
@@ -83,9 +82,8 @@ class WalletControllerTest {
                 .message("Wallet created")
                 .build();
 
-            when(walletService.createWallet("securePassword123")).thenReturn(response);
-            doNothing().when(institutionalWalletService).saveConfigToFile(anyString(), anyString());
-            doNothing().when(institutionalWalletService).initializeInstitutionalWallet();
+            when(walletAdministrationService.createAndConfigureInstitutionalWallet("securePassword123"))
+                .thenReturn(response);
 
             mockMvc.perform(post("/wallet/create")
                     .contentType(MediaType.APPLICATION_JSON)
@@ -119,17 +117,15 @@ class WalletControllerTest {
                 .address(VALID_ADDRESS)
                 .build();
 
-            when(walletService.createWallet(anyString())).thenReturn(response);
-            doNothing().when(institutionalWalletService).saveConfigToFile(anyString(), anyString());
-            doNothing().when(institutionalWalletService).initializeInstitutionalWallet();
+            when(walletAdministrationService.createAndConfigureInstitutionalWallet(anyString()))
+                .thenReturn(response);
 
             mockMvc.perform(post("/wallet/create")
                     .contentType(MediaType.APPLICATION_JSON)
                     .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isOk());
 
-            verify(institutionalWalletService).saveConfigToFile(VALID_ADDRESS, "securePassword123");
-            verify(institutionalWalletService).initializeInstitutionalWallet();
+            verify(walletAdministrationService).createAndConfigureInstitutionalWallet("securePassword123");
         }
     }
 
@@ -150,9 +146,8 @@ class WalletControllerTest {
                 .message("Imported")
                 .build();
 
-            when(walletService.importWallet(any(WalletImportRequest.class))).thenReturn(response);
-            doNothing().when(institutionalWalletService).saveConfigToFile(anyString(), anyString());
-            doNothing().when(institutionalWalletService).initializeInstitutionalWallet();
+            when(walletAdministrationService.importAndConfigureInstitutionalWallet(any(WalletImportRequest.class)))
+                .thenReturn(response);
 
             mockMvc.perform(post("/wallet/import")
                     .contentType(MediaType.APPLICATION_JSON)
@@ -173,9 +168,8 @@ class WalletControllerTest {
                 .address(VALID_ADDRESS)
                 .build();
 
-            when(walletService.importWallet(any(WalletImportRequest.class))).thenReturn(response);
-            doNothing().when(institutionalWalletService).saveConfigToFile(anyString(), anyString());
-            doNothing().when(institutionalWalletService).initializeInstitutionalWallet();
+            when(walletAdministrationService.importAndConfigureInstitutionalWallet(any(WalletImportRequest.class)))
+                .thenReturn(response);
 
             mockMvc.perform(post("/wallet/import")
                     .contentType(MediaType.APPLICATION_JSON)
@@ -257,7 +251,7 @@ class WalletControllerTest {
                 .network("mainnet")
                 .build();
 
-            when(walletService.getBalance(VALID_ADDRESS)).thenReturn(response);
+            when(walletService.getBalance(VALID_ADDRESS, null)).thenReturn(response);
 
             mockMvc.perform(get("/wallet/" + VALID_ADDRESS + "/balance"))
                 .andExpect(status().isOk())
@@ -285,7 +279,7 @@ class WalletControllerTest {
         @DisplayName("Should handle balance check exception")
         void shouldHandleBalanceCheckException() throws Exception {
             when(rateLimitService.allowBalanceCheck(VALID_ADDRESS)).thenReturn(true);
-            when(walletService.getBalance(VALID_ADDRESS))
+            when(walletService.getBalance(VALID_ADDRESS, null))
                 .thenThrow(new RuntimeException("RPC connection failed"));
 
             mockMvc.perform(get("/wallet/" + VALID_ADDRESS + "/balance"))
@@ -305,7 +299,7 @@ class WalletControllerTest {
                 .address(VALID_ADDRESS)
                 .build();
 
-            when(walletService.getTransactionHistory(VALID_ADDRESS)).thenReturn(response);
+            when(walletService.getTransactionHistory(VALID_ADDRESS, null)).thenReturn(response);
 
             mockMvc.perform(get("/wallet/" + VALID_ADDRESS + "/transactions"))
                 .andExpect(status().isOk())
@@ -315,7 +309,7 @@ class WalletControllerTest {
         @Test
         @DisplayName("Should handle transaction history error")
         void shouldHandleTransactionHistoryError() throws Exception {
-            when(walletService.getTransactionHistory(anyString()))
+            when(walletService.getTransactionHistory(anyString(), org.mockito.ArgumentMatchers.isNull()))
                 .thenThrow(new RuntimeException("API unavailable"));
 
             mockMvc.perform(get("/wallet/" + VALID_ADDRESS + "/transactions"))
@@ -337,7 +331,7 @@ class WalletControllerTest {
                 .network("sepolia")
                 .build();
 
-            when(walletService.getEventListenerStatus()).thenReturn(response);
+            when(walletService.getEventListenerStatus(null)).thenReturn(response);
 
             mockMvc.perform(get("/wallet/listen-events"))
                 .andExpect(status().isOk())
@@ -347,7 +341,7 @@ class WalletControllerTest {
         @Test
         @DisplayName("Should handle event listener status error")
         void shouldHandleEventListenerStatusError() throws Exception {
-            when(walletService.getEventListenerStatus())
+            when(walletService.getEventListenerStatus(null))
                 .thenThrow(new RuntimeException("Event service unavailable"));
 
             mockMvc.perform(get("/wallet/listen-events"))

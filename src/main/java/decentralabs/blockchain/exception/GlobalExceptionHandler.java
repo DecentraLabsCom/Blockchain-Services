@@ -120,6 +120,22 @@ public class GlobalExceptionHandler {
     }
 
     /**
+     * Handles illegal state exceptions (e.g. invalid workflow transitions)
+     */
+    @ExceptionHandler(IllegalStateException.class)
+    @ResponseStatus(HttpStatus.BAD_REQUEST)
+    public ResponseEntity<Map<String, Object>> handleIllegalStateException(
+            IllegalStateException ex) {
+
+        Map<String, Object> response = new HashMap<>();
+        response.put("success", false);
+        response.put("message", ex.getMessage());
+
+        log.warn("Illegal state: {}", ex.getMessage());
+        return ResponseEntity.badRequest().body(response);
+    }
+
+    /**
      * Handles security exceptions
      */
     @ExceptionHandler(SecurityException.class)

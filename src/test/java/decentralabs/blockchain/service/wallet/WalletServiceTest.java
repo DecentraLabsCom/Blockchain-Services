@@ -191,11 +191,12 @@ class WalletServiceTest {
         WalletService spyService = spy(service);
         String walletAddress = "0x1111111111111111111111111111111111111111";
         ReflectionTestUtils.setField(spyService, "activeNetwork", "sepolia");
-        org.mockito.Mockito.doReturn(web3j).when(spyService).getWeb3jInstance();
+        org.mockito.Mockito.doReturn(web3j).when(spyService).getWeb3jInstanceForNetwork(org.mockito.ArgumentMatchers.anyString());
         stubGetBalance(walletAddress, BigInteger.ONE);
         stubEthCalls(
             web3j,
-            ethCallResponse(encodeValues(new org.web3j.abi.datatypes.generated.Uint256(BigInteger.valueOf(1_500_000))))
+            ethCallResponse(encodeValues(new org.web3j.abi.datatypes.generated.Uint256(BigInteger.valueOf(1_500_000)))),
+            ethCallResponse(encodeValues(new Address("0x3333333333333333333333333333333333333333")))
         );
 
         BalanceResponse response = spyService.getBalance(walletAddress);
@@ -203,7 +204,7 @@ class WalletServiceTest {
         assertThat(response.isSuccess()).isTrue();
         assertThat(response.getBalanceWei()).isEqualTo("1");
         assertThat(response.getBalanceEth()).isEqualTo("1E-18");
-        assertThat(response.getLabTokenAddress()).isEqualTo("0x2222222222222222222222222222222222222222");
+        assertThat(response.getLabTokenAddress()).isEqualTo("0x3333333333333333333333333333333333333333");
         assertThat(response.getLabBalanceRaw()).isEqualTo("1500000");
         assertThat(response.getLabBalance()).isEqualTo("15");
         assertThat(response.getNetwork()).isEqualTo("sepolia");
@@ -212,7 +213,8 @@ class WalletServiceTest {
     @Test
     void getBalance_returnsErrorWhenRpcFails() {
         WalletService spyService = spy(service);
-        org.mockito.Mockito.doThrow(new RuntimeException("rpc down")).when(spyService).getWeb3jInstance();
+        org.mockito.Mockito.doThrow(new RuntimeException("rpc down"))
+            .when(spyService).getWeb3jInstanceForNetwork(org.mockito.ArgumentMatchers.anyString());
 
         BalanceResponse response = spyService.getBalance("0xwallet");
 
@@ -223,17 +225,20 @@ class WalletServiceTest {
     @Test
     void labTokenAndErc20Helpers_decodeAndCacheValues() throws Exception {
         WalletService spyService = spy(service);
-        org.mockito.Mockito.doReturn(web3j).when(spyService).getWeb3jInstance();
+        ReflectionTestUtils.setField(spyService, "activeNetwork", "sepolia");
+        org.mockito.Mockito.doReturn(web3j).when(spyService).getWeb3jInstanceForNetwork(org.mockito.ArgumentMatchers.anyString());
         stubEthCalls(web3j, ethCallResponse(encodeValues(new Address("0x3333333333333333333333333333333333333333"))));
 
         String tokenAddress = ReflectionTestUtils.invokeMethod(spyService, "getLabTokenAddress");
 
         assertThat(tokenAddress).isEqualTo("0x3333333333333333333333333333333333333333");
-        assertThat(ReflectionTestUtils.getField(spyService, "cachedLabTokenAddress"))
-            .isEqualTo("0x3333333333333333333333333333333333333333");
+        @SuppressWarnings("unchecked")
+        Map<String, String> cachedAddresses =
+            (Map<String, String>) ReflectionTestUtils.getField(spyService, "cachedLabTokenAddresses");
+        assertThat(cachedAddresses).containsEntry("sepolia", "0x3333333333333333333333333333333333333333");
 
         org.mockito.Mockito.reset(web3j);
-        org.mockito.Mockito.doReturn(web3j).when(spyService).getWeb3jInstance();
+        org.mockito.Mockito.doReturn(web3j).when(spyService).getWeb3jInstanceForNetwork(org.mockito.ArgumentMatchers.anyString());
         stubEthCalls(
             web3j,
             ethCallResponse(encodeValues(new org.web3j.abi.datatypes.generated.Uint256(BigInteger.valueOf(12_500_000))))
@@ -253,7 +258,7 @@ class WalletServiceTest {
     void getTransactionHistory_returnsCountAndHandlesErrors() throws Exception {
         WalletService spyService = spy(service);
         ReflectionTestUtils.setField(spyService, "activeNetwork", "sepolia");
-        org.mockito.Mockito.doReturn(web3j).when(spyService).getWeb3jInstance();
+        org.mockito.Mockito.doReturn(web3j).when(spyService).getWeb3jInstanceForNetwork(org.mockito.ArgumentMatchers.anyString());
         stubTransactionCount("0xwallet", BigInteger.valueOf(7));
 
         TransactionHistoryResponse success = spyService.getTransactionHistory("0xwallet");
@@ -263,7 +268,8 @@ class WalletServiceTest {
         assertThat(success.getTransactions()).isEmpty();
         assertThat(success.getNetwork()).isEqualTo("sepolia");
 
-        org.mockito.Mockito.doThrow(new RuntimeException("history down")).when(spyService).getWeb3jInstance();
+        org.mockito.Mockito.doThrow(new RuntimeException("history down"))
+            .when(spyService).getWeb3jInstanceForNetwork(org.mockito.ArgumentMatchers.anyString());
         TransactionHistoryResponse failure = spyService.getTransactionHistory("0xwallet");
 
         assertThat(failure.isSuccess()).isFalse();
@@ -272,6 +278,7 @@ class WalletServiceTest {
 
     @Test
     void getEventListenerStatus_returnsConfiguredSnapshot() {
+        service.init();
         ReflectionTestUtils.setField(service, "activeNetwork", "mainnet");
 
         EventListenerResponse response = service.getEventListenerStatus();
@@ -332,7 +339,7 @@ class WalletServiceTest {
     @Test
     void getServiceCreditBalance_returnsZeroWhenRpcErrors() throws Exception {
         WalletService spyService = spy(service);
-        org.mockito.Mockito.doReturn(web3j).when(spyService).getWeb3jInstance();
+        org.mockito.Mockito.doReturn(web3j).when(spyService).getWeb3jInstanceForNetwork(org.mockito.ArgumentMatchers.anyString());
         stubEthCalls(web3j, ethCallError("boom"));
 
         assertThat(spyService.getServiceCreditBalance("0x1111111111111111111111111111111111111111"))
@@ -588,16 +595,6 @@ class WalletServiceTest {
         assertThatThrownBy(() -> ReflectionTestUtils.invokeMethod(service, "getWeb3jInstanceWithFallback", "sepolia"))
             .isInstanceOf(RuntimeException.class)
             .hasMessageContaining("All RPC endpoints failed for network: sepolia");
-    }
-
-    @Test
-    void getWeb3jInstanceForNetwork_fallsBackForBlankOrUnknownNetwork() {
-        WalletService spyService = spy(service);
-        Web3j expected = mock(Web3j.class);
-        org.mockito.Mockito.doReturn(expected).when(spyService).getWeb3jInstance();
-
-        assertThat(spyService.getWeb3jInstanceForNetwork(" ")).isSameAs(expected);
-        assertThat(spyService.getWeb3jInstanceForNetwork("unknown")).isSameAs(expected);
     }
 
     @SuppressWarnings({"rawtypes", "unchecked"})

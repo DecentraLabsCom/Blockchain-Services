@@ -108,8 +108,8 @@ public class WalletService {
     private final Map<String, Integer> currentRpcIndex = new ConcurrentHashMap<>();
     private String activeNetwork;
     
-    // Cache for credit-ledger address (queried from Diamond contract)
-    private volatile String cachedLabTokenAddress = null;
+    // Cache credit-ledger addresses per network because on-chain addresses may differ.
+    private final Map<String, String> cachedLabTokenAddresses = new ConcurrentHashMap<>();
     
     // Shared OkHttpClient with connection pooling for all Web3j instances
     private OkHttpClient httpClient;
@@ -133,8 +133,8 @@ public class WalletService {
         currentRpcIndex.put("sepolia", 0);
             
         // Use configured default network
-        this.activeNetwork = defaultNetwork;
-        List<String> activeUrls = networkRpcUrls.get(activeNetwork);
+        this.activeNetwork = resolveNetworkId(defaultNetwork);
+        List<String> activeUrls = networkRpcUrls.getOrDefault(activeNetwork, List.of());
         log.info("WalletService initialized with active network: {} using RPC endpoints: {}", 
                  activeNetwork, String.join(", ", activeUrls));
     }
@@ -147,6 +147,16 @@ public class WalletService {
                      .map(String::trim)
                      .filter(url -> !url.isEmpty())
                      .toList();
+    }
+
+    private String resolveNetworkId(String requestedNetwork) {
+        if (requestedNetwork != null && networkRpcUrls.containsKey(requestedNetwork)) {
+            return requestedNetwork;
+        }
+        if (defaultNetwork != null && networkRpcUrls.containsKey(defaultNetwork)) {
+            return defaultNetwork;
+        }
+        return networkRpcUrls.keySet().stream().findFirst().orElse("sepolia");
     }
 
     /**
@@ -282,24 +292,30 @@ public class WalletService {
      * Gets the balance of an address
      */
     public BalanceResponse getBalance(String address) {
+        return getBalance(address, activeNetwork);
+    }
+
+    public BalanceResponse getBalance(String address, String networkId) {
         try {
-            Web3j web3j = getWeb3jInstance();
+            String resolvedNetwork = resolveNetworkId(networkId);
+            Web3j web3j = getWeb3jInstanceForNetwork(resolvedNetwork);
             EthGetBalance balance = web3j.ethGetBalance(address, DefaultBlockParameterName.LATEST).send();
 
             BigDecimal ethBalance = Convert.fromWei(balance.getBalance().toString(), Convert.Unit.ETHER);
 
-            BigInteger serviceCreditBalance = getServiceCreditBalance(address);
+            BigInteger serviceCreditBalance = getServiceCreditBalance(address, resolvedNetwork);
             String labBalance = CreditUnitConverter.formatRawCredits(serviceCreditBalance);
+            String labTokenAddress = getLabTokenAddress(resolvedNetwork);
 
             return BalanceResponse.builder()
                 .success(true)
                 .address(address)
                 .balanceWei(balance.getBalance().toString())
                 .balanceEth(ethBalance.toString())
-                .labTokenAddress(contractAddress)
+                .labTokenAddress(labTokenAddress)
                 .labBalanceRaw(serviceCreditBalance.toString())
                 .labBalance(labBalance)
-                .network(activeNetwork)
+                .network(resolvedNetwork)
                 .build();
 
         } catch (Exception e) {
@@ -314,12 +330,18 @@ public class WalletService {
      * Caches the result to avoid repeated contract calls
      */
     private String getLabTokenAddress() {
-        if (cachedLabTokenAddress != null) {
-            return cachedLabTokenAddress;
+        return getLabTokenAddress(activeNetwork);
+    }
+
+    private String getLabTokenAddress(String networkId) {
+        String resolvedNetwork = resolveNetworkId(networkId);
+        String cached = cachedLabTokenAddresses.get(resolvedNetwork);
+        if (cached != null) {
+            return cached;
         }
-        
+
         try {
-            Web3j web3j = getWeb3jInstance();
+            Web3j web3j = getWeb3jInstanceForNetwork(resolvedNetwork);
             
             // Call getLabTokenAddress() function on Diamond contract
             // function getLabTokenAddress() public view returns (address)
@@ -344,9 +366,10 @@ public class WalletService {
             @SuppressWarnings("rawtypes")
             List<Type> decoded = FunctionReturnDecoder.decode(response.getValue(), function.getOutputParameters());
             if (!decoded.isEmpty()) {
-                cachedLabTokenAddress = decoded.get(0).getValue().toString();
+                String tokenAddress = decoded.get(0).getValue().toString();
+                cachedLabTokenAddresses.put(resolvedNetwork, tokenAddress);
                 log.info("Credit-ledger address retrieved from Diamond contract");
-                return cachedLabTokenAddress;
+                return tokenAddress;
             }
             
             return null;
@@ -1051,12 +1074,17 @@ public class WalletService {
      * Returns the closed service credit balance tracked by the Diamond contract.
      */
     public BigInteger getServiceCreditBalance(String accountAddress) {
+        return getServiceCreditBalance(accountAddress, activeNetwork);
+    }
+
+    public BigInteger getServiceCreditBalance(String accountAddress, String networkId) {
         if (accountAddress == null || accountAddress.isBlank()) {
             return BigInteger.ZERO;
         }
 
         try {
-            Web3j web3j = getWeb3jInstance();
+            String resolvedNetwork = resolveNetworkId(networkId);
+            Web3j web3j = getWeb3jInstanceForNetwork(resolvedNetwork);
             Function function = new Function(
                 "getServiceCreditBalance",
                 Collections.singletonList(new Address(accountAddress)),
@@ -1096,8 +1124,12 @@ public class WalletService {
      * @return Token balance as BigInteger
      */
     private BigInteger getERC20Balance(String walletAddress, String tokenAddress) {
+        return getERC20Balance(walletAddress, tokenAddress, activeNetwork);
+    }
+
+    private BigInteger getERC20Balance(String walletAddress, String tokenAddress, String networkId) {
         try {
-            Web3j web3j = getWeb3jInstance();
+            Web3j web3j = getWeb3jInstanceForNetwork(resolveNetworkId(networkId));
             
             // Call balanceOf(address) function on ERC20 token
             Function function = new Function(
@@ -1172,8 +1204,13 @@ public class WalletService {
      * Gets the transaction history (simplified)
      */
     public TransactionHistoryResponse getTransactionHistory(String address) {
+        return getTransactionHistory(address, activeNetwork);
+    }
+
+    public TransactionHistoryResponse getTransactionHistory(String address, String networkId) {
         try {
-            Web3j web3j = getWeb3jInstance();
+            String resolvedNetwork = resolveNetworkId(networkId);
+            Web3j web3j = getWeb3jInstanceForNetwork(resolvedNetwork);
 
             // Get the number of sent transactions
             EthGetTransactionCount txCount = web3j.ethGetTransactionCount(address, DefaultBlockParameterName.LATEST).send();
@@ -1187,7 +1224,7 @@ public class WalletService {
                 .address(address)
                 .transactionCount(txCount.getTransactionCount().toString())
                 .transactions(transactions)
-                .network(activeNetwork)
+                .network(resolvedNetwork)
                 .build();
 
         } catch (Exception e) {
@@ -1323,11 +1360,16 @@ public class WalletService {
      * Gets the status of configured contract event listeners
      */
     public EventListenerResponse getEventListenerStatus() {
+        return getEventListenerStatus(activeNetwork);
+    }
+
+    public EventListenerResponse getEventListenerStatus(String networkId) {
         try {
+            String resolvedNetwork = resolveNetworkId(networkId);
             return EventListenerResponse.builder()
                 .success(true)
                 .contractAddress(contractAddress)
-                .network(activeNetwork)
+                .network(resolvedNetwork)
                 .message("Event listeners are configured automatically on startup from application.properties")
                 .build();
 
@@ -1359,7 +1401,7 @@ public class WalletService {
      * Switches the active network
      */
     public NetworkResponse switchNetwork(String networkId) {
-        if (!Arrays.asList("mainnet", "sepolia", "goerli").contains(networkId)) {
+        if (!networkRpcUrls.containsKey(networkId)) {
             return NetworkResponse.error("Invalid network: " + networkId);
         }
 
@@ -1380,13 +1422,7 @@ public class WalletService {
     }
 
     public Web3j getWeb3jInstanceForNetwork(String network) {
-        if (network == null || network.isBlank()) {
-            return getWeb3jInstance();
-        }
-        if (!networkRpcUrls.containsKey(network)) {
-            return getWeb3jInstance();
-        }
-        return getWeb3jInstanceWithFallback(network);
+        return getWeb3jInstanceWithFallback(resolveNetworkId(network));
     }
     
     /**

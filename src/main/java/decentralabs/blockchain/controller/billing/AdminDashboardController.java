@@ -568,11 +568,7 @@ public class AdminDashboardController {
         for (var networkInfo : networksResponse.getNetworks()) {
             String networkId = networkInfo.getId();
             try {
-                // Switch to network
-                walletService.switchNetwork(networkId);
-                
-                // Get balance
-                var balanceResponse = walletService.getBalance(walletAddress);
+                var balanceResponse = walletService.getBalance(walletAddress, networkId);
                 
                 Map<String, Object> networkBalance = new LinkedHashMap<>();
                 networkBalance.put("success", balanceResponse.isSuccess());
@@ -601,12 +597,7 @@ public class AdminDashboardController {
         try {
             // Map chainId to network name
             String networkId = mapChainIdToNetworkId(chainId);
-            
-            // Switch to network
-            walletService.switchNetwork(networkId);
-            
-            // Get balance
-            var balanceResponse = walletService.getBalance(walletAddress);
+            var balanceResponse = walletService.getBalance(walletAddress, networkId);
             
             Map<String, Object> result = new LinkedHashMap<>();
             result.put("success", balanceResponse.isSuccess());

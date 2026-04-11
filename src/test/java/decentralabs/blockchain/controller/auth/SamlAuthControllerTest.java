@@ -25,6 +25,7 @@ import decentralabs.blockchain.dto.auth.AuthResponse;
 import decentralabs.blockchain.dto.auth.CheckInResponse;
 import decentralabs.blockchain.dto.auth.InstitutionalCheckInRequest;
 import decentralabs.blockchain.dto.auth.SamlAuthRequest;
+import decentralabs.blockchain.exception.SamlAuthControllerAdvice;
 import decentralabs.blockchain.service.auth.InstitutionalCheckInService;
 import decentralabs.blockchain.service.auth.SamlAuthService;
 
@@ -49,7 +50,9 @@ class SamlAuthControllerTest {
 
     @BeforeEach
     void setUp() {
-        mockMvc = MockMvcBuilders.standaloneSetup(samlAuthController).build();
+        mockMvc = MockMvcBuilders.standaloneSetup(samlAuthController)
+            .setControllerAdvice(new SamlAuthControllerAdvice())
+            .build();
         objectMapper = new ObjectMapper();
     }
 
