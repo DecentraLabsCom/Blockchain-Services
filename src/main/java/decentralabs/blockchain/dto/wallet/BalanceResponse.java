@@ -16,7 +16,7 @@ public class BalanceResponse {
     private String balanceEth;
     private String network;
     private String error;
-    private String labTokenAddress;
+    private String labCreditAddress;
     private String labBalanceRaw;
     private String labBalance;
 

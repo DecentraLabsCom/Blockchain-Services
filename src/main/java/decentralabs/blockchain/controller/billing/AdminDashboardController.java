@@ -175,7 +175,7 @@ public class AdminDashboardController {
                 result.put("institutionalWalletAddress", null);
                 result.put("ethBalance", "0");
                 result.put("ethBalanceFormatted", "0.0");
-                result.put("labTokenAddress", null);
+                result.put("labCreditAddress", null);
                 result.put("labBalanceRaw", "0");
                 result.put("labBalance", "0.0");
                 result.put("note", "Institutional wallet not configured");
@@ -575,7 +575,7 @@ public class AdminDashboardController {
                 networkBalance.put("balanceWei", balanceResponse.getBalanceWei());
                 networkBalance.put("balanceEth", balanceResponse.getBalanceEth());
                 networkBalance.put("network", balanceResponse.getNetwork());
-                networkBalance.put("labTokenAddress", balanceResponse.getLabTokenAddress());
+                networkBalance.put("labCreditAddress", balanceResponse.getLabCreditAddress());
                 networkBalance.put("labBalanceRaw", balanceResponse.getLabBalanceRaw());
                 networkBalance.put("labBalance", balanceResponse.getLabBalance());
                 
@@ -606,6 +606,9 @@ public class AdminDashboardController {
             result.put("balanceEth", balanceResponse.getBalanceEth());
             result.put("network", balanceResponse.getNetwork());
             result.put("chainId", chainId);
+            result.put("labCreditAddress", balanceResponse.getLabCreditAddress());
+            result.put("labBalanceRaw", balanceResponse.getLabBalanceRaw());
+            result.put("labBalance", balanceResponse.getLabBalance());
             
             return ResponseEntity.ok(result);
         } catch (Exception e) {

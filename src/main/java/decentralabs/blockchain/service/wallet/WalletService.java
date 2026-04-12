@@ -302,14 +302,14 @@ public class WalletService {
 
             BigInteger serviceCreditBalance = getServiceCreditBalance(address, resolvedNetwork);
             String labBalance = CreditUnitConverter.formatRawCredits(serviceCreditBalance);
-            String labTokenAddress = getLabTokenAddress(resolvedNetwork);
+            String labCreditAddress = getLabCreditAddress(resolvedNetwork);
 
             return BalanceResponse.builder()
                 .success(true)
                 .address(address)
                 .balanceWei(balance.getBalance().toString())
                 .balanceEth(ethBalance.toString())
-                .labTokenAddress(labTokenAddress)
+                .labCreditAddress(labCreditAddress)
                 .labBalanceRaw(serviceCreditBalance.toString())
                 .labBalance(labBalance)
                 .network(resolvedNetwork)
@@ -328,11 +328,11 @@ public class WalletService {
      * The current architecture exposes service-credit functions directly in the Diamond,
      * so this resolves to the configured Diamond address.
      */
-    private String getLabTokenAddress() {
-        return getLabTokenAddress(activeNetwork);
+    private String getLabCreditAddress() {
+        return getLabCreditAddress(activeNetwork);
     }
 
-    private String getLabTokenAddress(String networkId) {
+    private String getLabCreditAddress(String networkId) {
         resolveNetworkId(networkId);
         return contractAddress;
     }

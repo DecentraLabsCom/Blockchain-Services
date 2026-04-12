@@ -203,7 +203,7 @@ class WalletServiceTest {
         assertThat(response.isSuccess()).isTrue();
         assertThat(response.getBalanceWei()).isEqualTo("1");
         assertThat(response.getBalanceEth()).isEqualTo("1E-18");
-        assertThat(response.getLabTokenAddress()).isEqualTo("0x2222222222222222222222222222222222222222");
+        assertThat(response.getLabCreditAddress()).isEqualTo("0x2222222222222222222222222222222222222222");
         assertThat(response.getLabBalanceRaw()).isEqualTo("1500000");
         assertThat(response.getLabBalance()).isEqualTo("15");
         assertThat(response.getNetwork()).isEqualTo("sepolia");
@@ -222,11 +222,11 @@ class WalletServiceTest {
     }
 
     @Test
-    void labTokenAndErc20Helpers_returnContractAddressAndDecodeBalance() throws Exception {
+    void labCreditAddressAndErc20Helpers_returnContractAddressAndDecodeBalance() throws Exception {
         WalletService spyService = spy(service);
         ReflectionTestUtils.setField(spyService, "activeNetwork", "sepolia");
 
-        String tokenAddress = ReflectionTestUtils.invokeMethod(spyService, "getLabTokenAddress");
+        String tokenAddress = ReflectionTestUtils.invokeMethod(spyService, "getLabCreditAddress");
 
         assertThat(tokenAddress).isEqualTo("0x2222222222222222222222222222222222222222");
 

@@ -74,7 +74,7 @@ Together, they bridge institutional access control systems (such as **Lab Gatewa
 +------------------+     +------------------------+     +--------------------+
 | Marketplace dApp | <-->| Auth Service           | <-->| Smart Contracts    |
 | (User Frontend)  |     | - SAML2 SSO            |     | - Diamond proxy    |
-|                  |     | - JWT generation       |     | - LAB token        |
+|                  |     | - JWT generation       |     | - Credit ledger    |
 |                  |     | - Booking validation   |     | - Reservations     |
 +------------------+     +------------------------+     +--------------------+
          ^                         |                             ^
