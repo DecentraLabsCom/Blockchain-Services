@@ -1,5 +1,6 @@
 package decentralabs.blockchain.dto.intent;
 
+import decentralabs.blockchain.dto.identity.IdentityEvidenceDTO;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
@@ -24,7 +25,11 @@ public class IntentAuthorizationRequest {
     private String signature;
 
     @NotBlank
+    // XXX: Legacy SAML assertion kept for backward compatibility during the transition.
     private String samlAssertion;
+
+    @Valid
+    private IdentityEvidenceDTO identityEvidence;
 
     private String returnUrl;
 
@@ -62,6 +67,14 @@ public class IntentAuthorizationRequest {
 
     public String getSamlAssertion() {
         return samlAssertion;
+    }
+
+    public IdentityEvidenceDTO getIdentityEvidence() {
+        return identityEvidence;
+    }
+
+    public void setIdentityEvidence(IdentityEvidenceDTO identityEvidence) {
+        this.identityEvidence = identityEvidence;
     }
 
     public void setSamlAssertion(String samlAssertion) {

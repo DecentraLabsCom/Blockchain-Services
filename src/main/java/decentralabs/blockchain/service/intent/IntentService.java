@@ -43,6 +43,11 @@ import decentralabs.blockchain.dto.intent.IntentStatus;
 import decentralabs.blockchain.dto.intent.IntentStatusResponse;
 import decentralabs.blockchain.dto.intent.IntentSubmission;
 import decentralabs.blockchain.dto.intent.ReservationIntentPayload;
+import decentralabs.blockchain.dto.identity.IdentityEvidenceDTO;
+import decentralabs.blockchain.dto.identity.IdentityEvidenceMetadata;
+import decentralabs.blockchain.dto.identity.ValidatedIdentity;
+import decentralabs.blockchain.service.auth.IdentityEvidenceHashService;
+import decentralabs.blockchain.service.auth.IdentityValidationStrategy;
 import decentralabs.blockchain.service.auth.SamlValidationService;
 import decentralabs.blockchain.service.auth.WebauthnCredentialService;
 import decentralabs.blockchain.service.auth.WebauthnCredentialService.WebauthnCredential;
@@ -72,10 +77,10 @@ public class IntentService {
 
     private final Map<String, IntentRecord> intents = new ConcurrentHashMap<>();
     private final Map<String, String> nonceIndex = new ConcurrentHashMap<>();
-    private final Map<String, Long> assertionReplayCache = new ConcurrentHashMap<>();
+    private final Map<String, Long> evidenceReplayCache = new ConcurrentHashMap<>();
 
     private final String defaultEta;
-    private final long samlReplayTtlMs;
+    private final long evidenceReplayTtlMs;
     private final Eip712IntentVerifier verifier;
     private final IntentPersistenceService persistenceService;
     private final IntentWebhookService webhookService;
@@ -86,9 +91,14 @@ public class IntentService {
     private final MeterRegistry meterRegistry;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
+    // XXX: LEGACY - Identity validation strategy injection for unified identity model
+    // TODO: Once the new identity flow is validated, remove legacy SAML-only validation
+    private final List<IdentityValidationStrategy> identityStrategies;
+    private final IdentityEvidenceHashService identityHashService;
+
     public IntentService(
         @Value("${intent.default-eta:15s}") String defaultEta,
-        @Value("${intent.saml.replay-ttl-ms:60000}") long samlReplayTtlMs,
+        @Value("${intent.saml.replay-ttl-ms:60000}") long evidenceReplayTtlMs,
         Eip712IntentVerifier verifier,
         IntentPersistenceService persistenceService,
         IntentWebhookService webhookService,
@@ -96,10 +106,13 @@ public class IntentService {
         WebauthnCredentialService webauthnCredentialService,
         WalletService walletService,
         @Value("${contract.address}") String contractAddress,
-        MeterRegistry meterRegistry
+        MeterRegistry meterRegistry,
+        // XXX: LEGACY - These dependencies will replace SAML-only validation once new flow is validated
+        List<IdentityValidationStrategy> identityStrategies,
+        IdentityEvidenceHashService identityHashService
     ) {
         this.defaultEta = defaultEta;
-        this.samlReplayTtlMs = samlReplayTtlMs;
+        this.evidenceReplayTtlMs = evidenceReplayTtlMs;
         this.verifier = verifier;
         this.persistenceService = persistenceService;
         this.webhookService = webhookService;
@@ -108,6 +121,8 @@ public class IntentService {
         this.walletService = walletService;
         this.contractAddress = contractAddress;
         this.meterRegistry = meterRegistry;
+        this.identityStrategies = identityStrategies != null ? identityStrategies : List.of();
+        this.identityHashService = identityHashService;
     }
 
     @PostConstruct
@@ -142,13 +157,22 @@ public class IntentService {
 
         validatePayload(action, meta, actionPayload, reservationPayload);
 
-        String samlAssertion = requireSamlAssertion(submission);
-        String expectedAssertionHash = computeAssertionHash(samlAssertion);
-        ensurePayloadAssertionHash(actionPayload, reservationPayload, expectedAssertionHash);
-        validateSamlAssertion(actionPayload, reservationPayload, samlAssertion);
-        checkAssertionReplay(expectedAssertionHash);
+        // XXX: LEGACY - Unified identity validation with strategy pattern.
+        // This path uses the new ValidatedIdentity model when identityEvidence is present,
+        // and falls back to legacy SAML validation when it's not.
+        // TODO: Remove SAML fallback once the new flow is validated.
+        ValidatedIdentity validatedIdentity = resolveValidatedIdentity(submission);
+        String evidenceHash = validatedIdentity.evidenceHash();
 
-        String puc = resolvePuc(actionPayload, reservationPayload);
+        // Validate evidence hash matches the one in payload
+        ensurePayloadEvidenceHash(actionPayload, reservationPayload, evidenceHash);
+
+        // Anti-replay check using canonical evidence hash
+        checkEvidenceReplay(evidenceHash);
+
+        // Extract PUC from validated identity
+        String puc = resolvePucFromIdentity(validatedIdentity, actionPayload, reservationPayload);
+
         enforceLabCreatorOwnershipPrecheck(action, actionPayload, puc);
         if (action != IntentAction.REQUEST_FUNDS) {
             validateWebauthnAssertion(puc, credentialId, meta, submission);
@@ -173,7 +197,7 @@ public class IntentService {
         if (!verification.valid()) {
             return buildRejectedAck(meta.getRequestId(), "invalid_signature");
         }
-        markAssertionUsed(expectedAssertionHash);
+        markEvidenceUsed(evidenceHash);
 
         // Idempotent behavior: if already stored, return current ack status
         IntentRecord existing = intents.get(meta.getRequestId());
@@ -211,11 +235,12 @@ public class IntentService {
         nonceIndex.put(buildNonceKey(meta), meta.getRequestId());
         persistenceService.upsert(record);
 
-        log.info("Intent {} queued (action={}, provider={}, labId={}, reservationKey={})",
+        log.info("Intent {} queued (action={}, provider={}, labId={}, reservationKey={}, identityType={})",
             LogSanitizer.sanitize(meta.getRequestId()), action.getWireValue(), 
             LogSanitizer.maskIdentifier(meta.getExecutor()), 
             LogSanitizer.sanitize(record.getLabId()), 
-            LogSanitizer.sanitize(record.getReservationKey()));
+            LogSanitizer.sanitize(record.getReservationKey()),
+            validatedIdentity.type());
 
         return buildAcceptedAck(meta.getRequestId());
     }
@@ -260,7 +285,7 @@ public class IntentService {
                 }
             });
 
-        purgeExpiredAssertions(now * 1000); // convert seconds -> millis
+        purgeExpiredEvidence(now * 1000);
     }
 
     private IntentAction resolveAction(IntentMeta meta) {
@@ -502,20 +527,163 @@ public class IntentService {
         return ack;
     }
 
-    private String requireSamlAssertion(IntentSubmission submission) {
+    // =========================================================================
+    // XXX: LEGACY - Unified Identity Validation
+    // These methods implement the strategy pattern for identity validation.
+    // TODO: Remove SAML fallback code once the new flow is validated.
+    // =========================================================================
+
+    /**
+     * Resolves validated identity from submission using the unified identity model.
+     * If identityEvidence is present, uses the strategy pattern for validation.
+     * Otherwise, falls back to legacy SAML validation.
+     *
+     * @param submission the intent submission containing identity evidence
+     * @return ValidatedIdentity containing validated claims, metadata and evidence hash
+     * @throws ResponseStatusException if identity validation fails
+     */
+    private ValidatedIdentity resolveValidatedIdentity(IntentSubmission submission) {
+        IdentityEvidenceDTO identityEvidence = submission.getIdentityEvidence();
+
+        if (identityEvidence != null) {
+            // New unified identity flow: use strategy pattern
+            String evidenceType = identityEvidence.type();
+            if (evidenceType == null || evidenceType.isBlank()) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "identity_evidence_missing_type");
+            }
+
+            IdentityValidationStrategy strategy = findStrategyForType(evidenceType);
+            if (strategy == null) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "unsupported_identity_evidence_type: " + evidenceType);
+            }
+
+            try {
+                ValidatedIdentity validated = strategy.validate(identityEvidence);
+                log.debug("Identity validated via strategy {}: type={}, userId={}",
+                    strategy.getClass().getSimpleName(),
+                    validated.type(),
+                    validated.claims() != null ? validated.claims().stableUserId() : "unknown");
+                return validated;
+            } catch (IllegalArgumentException ex) {
+                log.warn("Identity validation failed for type {}: {}",
+                    evidenceType, ex.getMessage());
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "invalid_identity_evidence: " + ex.getMessage());
+            }
+        }
+
+        // XXX: LEGACY - Fallback to SAML-only validation until new flow is validated.
+        // TODO: This fallback should be removed once the new identityEvidence flow
+        // is proven to work correctly in production.
+        return validateSamlLegacy(submission);
+    }
+
+    /**
+     * Finds an identity validation strategy for the given evidence type.
+     *
+     * @param type the evidence type (e.g., "saml", "openid4vp")
+     * @return the matching strategy, or null if not found
+     */
+    private IdentityValidationStrategy findStrategyForType(String type) {
+        if (identityStrategies == null || identityStrategies.isEmpty()) {
+            return null;
+        }
+        return identityStrategies.stream()
+            .filter(s -> s.supports(type))
+            .findFirst()
+            .orElse(null);
+    }
+
+    /**
+     * Legacy SAML validation that bypasses the strategy pattern.
+     * This method should be removed once all deployments use the new identity flow.
+     *
+     * XXX: LEGACY - Direct SAML validation without strategy pattern.
+     * TODO: Remove this method once all callers migrate to resolveValidatedIdentity().
+     */
+    private ValidatedIdentity validateSamlLegacy(IntentSubmission submission) {
         String samlAssertion = submission.getSamlAssertion();
         if (samlAssertion == null || samlAssertion.isBlank()) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "missing_saml_for_intent");
         }
-        return samlAssertion;
+
+        // Compute evidence hash from SAML assertion using legacy method
+        String evidenceHash = computeLegacyAssertionHash(samlAssertion);
+
+        // Validate SAML and extract claims
+        Map<String, String> samlAttrs;
+        try {
+            samlAttrs = samlValidationService.validateSamlAssertionWithSignature(samlAssertion);
+        } catch (Exception ex) {
+            log.warn("Legacy SAML validation failed: {}", ex.getMessage());
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "invalid_saml");
+        }
+
+        String userId = samlAttrs.get("userid");
+        if (userId == null || userId.isBlank()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "invalid_saml");
+        }
+
+        String puc = resolvePuc(submission.getActionPayload(), submission.getReservationPayload());
+        String normalizedPuc = PucNormalizer.normalize(puc);
+        String normalizedUserId = PucNormalizer.normalize(userId);
+
+        if (normalizedPuc != null && !normalizedPuc.isBlank()
+            && normalizedUserId != null && !normalizedUserId.isBlank()
+            && !normalizedPuc.equals(normalizedUserId)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "puc_saml_mismatch");
+        }
+
+        decentralabs.blockchain.dto.identity.NormalizedClaims claims =
+            decentralabs.blockchain.dto.identity.NormalizedClaims.builder()
+                .stableUserId(userId)
+                .institutionId(samlAttrs.get("schacHomeOrganization"))
+                .role(samlAttrs.get("role"))
+                .scopedRole(samlAttrs.get("scopedRole"))
+                .puc(puc)
+                .email(samlAttrs.get("email"))
+                .name(samlAttrs.get("name"))
+                .build();
+
+        IdentityEvidenceMetadata metadata = new IdentityEvidenceMetadata(
+            samlAttrs.get("issuer"),
+            Instant.now(),
+            null, // expiresAt not computed in legacy path
+            null, // nonce not available
+            null, // audience not available
+            true, // verified by SAML validation
+            "saml"
+        );
+
+        return new ValidatedIdentity("saml", "saml2-base64", claims, metadata, evidenceHash);
     }
 
-    private String computeAssertionHash(String samlAssertion) {
+    // XXX: LEGACY - This method computes hash directly from raw SAML assertion.
+    // TODO: Remove this method once the new identityEvidence flow is validated.
+    // The new flow uses evidenceHash from ValidatedIdentity instead.
+    private String computeLegacyAssertionHash(String samlAssertion) {
         byte[] digest = Hash.sha3(samlAssertion.getBytes(StandardCharsets.UTF_8));
         return normalizeBytes32(Numeric.toHexString(digest));
     }
 
-    private void ensurePayloadAssertionHash(
+    // =========================================================================
+    // End of XXX: LEGACY - Unified Identity Validation
+    // =========================================================================
+
+    /**
+     * Resolves PUC from validated identity or falls back to payload values.
+     */
+    private String resolvePucFromIdentity(ValidatedIdentity identity, ActionIntentPayload actionPayload, ReservationIntentPayload reservationPayload) {
+        // First try to get PUC from validated identity claims
+        if (identity != null && identity.claims() != null && identity.claims().puc() != null && !isBlank(identity.claims().puc())) {
+            return identity.claims().puc();
+        }
+        // Fallback to payload-based PUC
+        return resolvePuc(actionPayload, reservationPayload);
+    }
+
+    private void ensurePayloadEvidenceHash(
         ActionIntentPayload actionPayload,
         ReservationIntentPayload reservationPayload,
         String expectedHash
@@ -523,43 +691,14 @@ public class IntentService {
         if (actionPayload != null) {
             String payloadHash = normalizeBytes32(actionPayload.getAssertionHash());
             if (payloadHash == null || !expectedHash.equalsIgnoreCase(payloadHash)) {
-                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "assertion_hash_mismatch");
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "evidence_hash_mismatch");
             }
         }
         if (reservationPayload != null) {
             String payloadHash = normalizeBytes32(reservationPayload.getAssertionHash());
             if (payloadHash == null || !expectedHash.equalsIgnoreCase(payloadHash)) {
-                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "assertion_hash_mismatch");
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "evidence_hash_mismatch");
             }
-        }
-    }
-
-    private void validateSamlAssertion(
-        ActionIntentPayload actionPayload,
-        ReservationIntentPayload reservationPayload,
-        String samlAssertion
-    ) {
-        try {
-            Map<String, String> samlAttrs = samlValidationService.validateSamlAssertionWithSignature(samlAssertion);
-            String samlUser = samlAttrs.get("userid");
-            if (samlUser == null || samlUser.isBlank()) {
-                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "invalid_saml");
-            }
-            String puc = resolvePuc(actionPayload, reservationPayload);
-            String normalizedPuc = PucNormalizer.normalize(puc);
-            String normalizedSamlUser = PucNormalizer.normalize(samlUser);
-            if (normalizedPuc != null
-                && !normalizedPuc.isBlank()
-                && normalizedSamlUser != null
-                && !normalizedSamlUser.isBlank()
-                && !normalizedPuc.equals(normalizedSamlUser)) {
-                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "puc_saml_mismatch");
-            }
-        } catch (ResponseStatusException ex) {
-            throw ex;
-        } catch (Exception ex) {
-            log.warn("Invalid SAML assertion for intent: {}", ex.getMessage());
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "invalid_saml");
         }
     }
 
@@ -577,29 +716,31 @@ public class IntentService {
         return "0x" + clean;
     }
 
-    private void checkAssertionReplay(String assertionHash) {
-        if (assertionHash == null || assertionHash.isBlank()) {
+    // XXX: LEGACY - These methods use "assertion" naming but now work with evidence hash.
+    // TODO: Rename to evidence-related terms once legacy SAML is removed.
+    private void checkEvidenceReplay(String evidenceHash) {
+        if (evidenceHash == null || evidenceHash.isBlank()) {
             return;
         }
         long nowMs = Instant.now().toEpochMilli();
-        purgeExpiredAssertions(nowMs);
-        Long expiresAt = assertionReplayCache.get(assertionHash);
+        purgeExpiredEvidence(nowMs);
+        Long expiresAt = evidenceReplayCache.get(evidenceHash);
         if (expiresAt != null && expiresAt > nowMs) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "assertion_replay");
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "evidence_replay");
         }
     }
 
-    private void markAssertionUsed(String assertionHash) {
-        if (assertionHash == null || assertionHash.isBlank()) {
+    private void markEvidenceUsed(String evidenceHash) {
+        if (evidenceHash == null || evidenceHash.isBlank()) {
             return;
         }
         long nowMs = Instant.now().toEpochMilli();
-        long ttl = samlReplayTtlMs <= 0 ? 0 : samlReplayTtlMs;
-        assertionReplayCache.put(assertionHash, nowMs + ttl);
+        long ttl = evidenceReplayTtlMs <= 0 ? 0 : evidenceReplayTtlMs;
+        evidenceReplayCache.put(evidenceHash, nowMs + ttl);
     }
 
-    private void purgeExpiredAssertions(long nowMs) {
-        assertionReplayCache.entrySet().removeIf(entry -> entry.getValue() <= nowMs);
+    private void purgeExpiredEvidence(long nowMs) {
+        evidenceReplayCache.entrySet().removeIf(entry -> entry.getValue() <= nowMs);
     }
 
     private String requireWebauthnCredentialId(IntentSubmission submission) {

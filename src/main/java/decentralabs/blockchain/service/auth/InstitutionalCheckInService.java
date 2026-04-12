@@ -3,6 +3,8 @@ package decentralabs.blockchain.service.auth;
 import decentralabs.blockchain.dto.auth.CheckInRequest;
 import decentralabs.blockchain.dto.auth.CheckInResponse;
 import decentralabs.blockchain.dto.auth.InstitutionalCheckInRequest;
+import decentralabs.blockchain.dto.identity.IdentityEvidenceDTO;
+import decentralabs.blockchain.dto.identity.NormalizedClaims;
 import decentralabs.blockchain.service.wallet.BlockchainBookingService;
 import decentralabs.blockchain.service.wallet.InstitutionalWalletService;
 import decentralabs.blockchain.service.wallet.WalletService;
@@ -52,6 +54,14 @@ public class InstitutionalCheckInService {
         }
     }
 
+    private record ResolvedIdentityContext(
+        String userId,
+        String affiliation,
+        String puc,
+        String institutionalProviderWallet,
+        SamlAssertionAttributes samlAttributes
+    ) {}
+
     private final SamlValidationService samlValidationService;
     private final MarketplaceEndpointAuthService marketplaceEndpointAuthService;
     private final BlockchainBookingService bookingService;
@@ -66,12 +76,12 @@ public class InstitutionalCheckInService {
     public CheckInResponse checkIn(InstitutionalCheckInRequest request) {
         validateRequest(request);
 
-        SamlAssertionAttributes saml = validateSaml(request.getSamlAssertion());
-        MarketplaceIdentityClaims marketplaceIdentity = validateMarketplaceToken(request.getMarketplaceToken(), saml);
+        ResolvedIdentityContext identity = resolveIdentityContext(request);
+        MarketplaceIdentityClaims marketplaceIdentity = validateMarketplaceToken(request.getMarketplaceToken(), identity);
 
         String tokenIdentity = PucNormalizer.normalize(firstNonBlank(marketplaceIdentity.puc, marketplaceIdentity.userId));
-        String samlIdentity = PucNormalizer.normalize(saml.userid());
-        String puc = firstNonBlank(tokenIdentity, samlIdentity);
+        String sourceIdentity = PucNormalizer.normalize(firstNonBlank(identity.puc, identity.userId));
+        String puc = firstNonBlank(tokenIdentity, sourceIdentity);
         if (puc == null || puc.isBlank()) {
             throw new IllegalArgumentException("Missing institutional user identifier");
         }
@@ -81,7 +91,7 @@ public class InstitutionalCheckInService {
             throw new SecurityException("Request puc does not match authenticated user");
         }
 
-        String institutionWallet = resolveInstitutionWallet(request, saml);
+        String institutionWallet = resolveInstitutionWallet(request, identity);
         if (institutionWallet == null || institutionWallet.isBlank() || ZERO_ADDRESS.equalsIgnoreCase(institutionWallet)) {
             throw new IllegalArgumentException("Institution wallet could not be resolved");
         }
@@ -128,8 +138,10 @@ public class InstitutionalCheckInService {
         if (request == null) {
             throw new IllegalArgumentException("Missing request");
         }
-        if (request.getSamlAssertion() == null || request.getSamlAssertion().isBlank()) {
-            throw new IllegalArgumentException("Missing samlAssertion");
+        boolean hasSaml = request.getSamlAssertion() != null && !request.getSamlAssertion().isBlank();
+        boolean hasIdentityEvidence = request.getIdentityEvidence() != null || request.getNormalizedClaims() != null;
+        if (!hasSaml && !hasIdentityEvidence) {
+            throw new IllegalArgumentException("Missing identity evidence");
         }
         if (request.getMarketplaceToken() == null || request.getMarketplaceToken().isBlank()) {
             throw new IllegalArgumentException("Missing marketplaceToken");
@@ -149,7 +161,7 @@ public class InstitutionalCheckInService {
         }
     }
 
-    private MarketplaceIdentityClaims validateMarketplaceToken(String marketplaceToken, SamlAssertionAttributes saml) {
+    private MarketplaceIdentityClaims validateMarketplaceToken(String marketplaceToken, ResolvedIdentityContext identity) {
         try {
             Map<String, Object> claims = marketplaceEndpointAuthService.enforceToken(marketplaceToken, null);
             String claimUser = firstClaim(claims, "userid", "sub", "uid");
@@ -159,14 +171,14 @@ public class InstitutionalCheckInService {
                 throw new IllegalArgumentException("Marketplace token missing required claims");
             }
             String normalizedClaimUser = PucNormalizer.normalize(claimUser);
-            String normalizedSamlUser = PucNormalizer.normalize(saml.userid());
-            if (normalizedSamlUser != null
-                && !normalizedSamlUser.isBlank()
+            String normalizedIdentityUser = PucNormalizer.normalize(identity.userId());
+            if (normalizedIdentityUser != null
+                && !normalizedIdentityUser.isBlank()
                 && normalizedClaimUser != null
-                && !normalizedClaimUser.equals(normalizedSamlUser)) {
+                && !normalizedClaimUser.equals(normalizedIdentityUser)) {
                 throw new SecurityException("Marketplace token userid mismatch");
             }
-            if (saml.affiliation() != null && !saml.affiliation().isBlank() && !claimAffiliation.equals(saml.affiliation())) {
+            if (identity.affiliation() != null && !identity.affiliation().isBlank() && !claimAffiliation.equals(identity.affiliation())) {
                 throw new SecurityException("Marketplace token affiliation mismatch");
             }
 
@@ -190,18 +202,21 @@ public class InstitutionalCheckInService {
         }
     }
 
-    private String resolveInstitutionWallet(InstitutionalCheckInRequest request, SamlAssertionAttributes saml) {
+    private String resolveInstitutionWallet(InstitutionalCheckInRequest request, ResolvedIdentityContext identity) {
         String explicit = normalizeAddress(request.getInstitutionalProviderWallet());
         if (explicit != null && !explicit.isBlank()) {
             return explicit;
         }
 
-        String org = null;
-        if (saml.schacHomeOrganizations() != null && !saml.schacHomeOrganizations().isEmpty()) {
-            org = saml.schacHomeOrganizations().get(0);
-        }
-        if (org == null || org.isBlank()) {
-            org = saml.affiliation();
+        String org = identity.affiliation();
+        if ((org == null || org.isBlank()) && identity.samlAttributes() != null) {
+            SamlAssertionAttributes saml = identity.samlAttributes();
+            if (saml.schacHomeOrganizations() != null && !saml.schacHomeOrganizations().isEmpty()) {
+                org = saml.schacHomeOrganizations().get(0);
+            }
+            if (org == null || org.isBlank()) {
+                org = saml.affiliation();
+            }
         }
 
         if (org == null || org.isBlank()) {
@@ -242,6 +257,37 @@ public class InstitutionalCheckInService {
             log.warn("Unable to resolve institution wallet: {}", ex.getMessage());
             return null;
         }
+    }
+
+    private ResolvedIdentityContext resolveIdentityContext(InstitutionalCheckInRequest request) {
+        IdentityEvidenceDTO identityEvidence = request.getIdentityEvidence();
+        NormalizedClaims normalizedClaims = request.getNormalizedClaims();
+        if (normalizedClaims == null && identityEvidence != null) {
+            normalizedClaims = identityEvidence.normalizedClaims();
+        }
+
+        String evidenceUserId = normalizedClaims != null ? normalizedClaims.stableUserId() : null;
+        String evidenceAffiliation = normalizedClaims != null ? normalizedClaims.institutionId() : null;
+        String evidencePuc = normalizedClaims != null ? normalizedClaims.puc() : null;
+
+        if (identityEvidence != null || normalizedClaims != null) {
+            return new ResolvedIdentityContext(
+                firstNonBlank(evidenceUserId, request.getPuc()),
+                evidenceAffiliation,
+                firstNonBlank(evidencePuc, request.getPuc(), evidenceUserId),
+                request.getInstitutionalProviderWallet(),
+                null
+            );
+        }
+
+        SamlAssertionAttributes saml = validateSaml(request.getSamlAssertion());
+        return new ResolvedIdentityContext(
+            saml.userid(),
+            saml.affiliation(),
+            request.getPuc(),
+            request.getInstitutionalProviderWallet(),
+            saml
+        );
     }
 
     private String computePucHash(String puc) {
@@ -303,6 +349,17 @@ public class InstitutionalCheckInService {
         }
         if (second != null && !second.isBlank()) {
             return second;
+        }
+        return null;
+    }
+
+    private String firstNonBlank(String first, String second, String third) {
+        String value = firstNonBlank(first, second);
+        if (value != null) {
+            return value;
+        }
+        if (third != null && !third.isBlank()) {
+            return third;
         }
         return null;
     }

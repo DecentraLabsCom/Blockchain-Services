@@ -4,13 +4,17 @@ import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
 import decentralabs.blockchain.dto.auth.WebauthnOnboardingCompleteRequest;
+import decentralabs.blockchain.dto.auth.WebauthnOnboardingCompleteResponse;
 import decentralabs.blockchain.dto.auth.WebauthnOnboardingOptionsRequest;
 import decentralabs.blockchain.dto.auth.WebauthnOnboardingOptionsResponse;
+import decentralabs.blockchain.dto.identity.IdentityEvidenceDTO;
+import decentralabs.blockchain.dto.identity.NormalizedClaims;
 import decentralabs.blockchain.service.BackendUrlResolver;
 import java.lang.reflect.Field;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.util.Base64;
+import java.util.concurrent.ConcurrentHashMap;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -113,6 +117,218 @@ class WebauthnOnboardingServiceTest {
         request.setStableUserId("user@institution.edu");
 
         assertThrows(ResponseStatusException.class, () -> service.generateOptions(request));
+    }
+
+    @Test
+    void generateOptions_identityEvidenceSetsAssertionReferenceFromEvidenceHash() throws Exception {
+        NormalizedClaims normalizedClaims = NormalizedClaims.builder()
+            .stableUserId("user@institution.edu")
+            .institutionId("institution.edu")
+            .puc("user@institution.edu")
+            .build();
+        IdentityEvidenceDTO identityEvidence = IdentityEvidenceDTO.builder()
+            .type("saml")
+            .format("saml2-base64")
+            .normalizedClaims(normalizedClaims)
+            .evidenceHash("0x" + "d".repeat(64))
+            .build();
+
+        WebauthnOnboardingOptionsRequest request = new WebauthnOnboardingOptionsRequest();
+        request.setStableUserId("user@institution.edu");
+        request.setInstitutionId("institution.edu");
+        request.setIdentityEvidence(identityEvidence);
+        request.setEvidenceHash(identityEvidence.evidenceHash());
+
+        WebauthnOnboardingOptionsResponse response = service.generateOptions(request);
+        assertNotNull(response);
+
+        ConcurrentHashMap<String, Object> sessions = getPendingSessions();
+        Object session = sessions.get(response.getSessionId());
+        assertNotNull(session);
+        assertEquals("sha256:" + identityEvidence.evidenceHash(), readAssertionReference(session));
+    }
+
+    @Test
+    void completeOnboarding_withIdentityEvidence_storesAssertionReferenceInCredential() throws Exception {
+        String evidenceHash = "0x" + "a".repeat(64);
+        WebauthnOnboardingOptionsRequest request = new WebauthnOnboardingOptionsRequest();
+        request.setStableUserId("user@institution.edu");
+        request.setInstitutionId("institution.edu");
+        request.setDisplayName("Test User");
+        request.setAttributes("{\"email\":\"user@institution.edu\",\"name\":\"Test User\"}");
+        request.setIdentityEvidence(buildIdentityEvidence(
+            "saml",
+            evidenceHash,
+            NormalizedClaims.builder()
+                .stableUserId("user@institution.edu")
+                .institutionId("institution.edu")
+                .puc("user@institution.edu")
+                .email("user@institution.edu")
+                .name("Test User")
+                .build()
+        ));
+        request.setEvidenceHash(evidenceHash);
+
+        WebauthnOnboardingOptionsResponse options = service.generateOptions(request);
+        Object session = getPendingSessions().get(options.getSessionId());
+        assertNotNull(session);
+        assertEquals("sha256:" + evidenceHash, readAssertionReference(session));
+
+        String expectedCredentialId = BASE64URL_ENCODER.encodeToString("cred-identity-evidence".getBytes(StandardCharsets.UTF_8));
+        WebauthnOnboardingCompleteResponse response = service.completeOnboarding(
+            buildCompleteRequest(options, "cred-identity-evidence", createValidAttestationObject("cred-identity-evidence"))
+        );
+
+        assertNotNull(response);
+        assertTrue(response.isSuccess());
+        assertEquals(expectedCredentialId, response.getCredentialId());
+        verify(credentialService).register(
+            eq("user@institution.edu"),
+            eq(expectedCredentialId),
+            any(),
+            any(),
+            any(),
+            any(),
+            any(),
+            any()
+        );
+    }
+
+    @Test
+    void completeOnboarding_withVcEvidenceType_doesNotValidateSaml() throws Exception {
+        String evidenceHash = "0x" + "a".repeat(64);
+        WebauthnOnboardingOptionsRequest request = new WebauthnOnboardingOptionsRequest();
+        request.setStableUserId("user@institution.edu");
+        request.setInstitutionId("institution.edu");
+        request.setDisplayName("VC User");
+        request.setIdentityEvidence(buildIdentityEvidence(
+            "openid4vp",
+            evidenceHash,
+            NormalizedClaims.builder()
+                .stableUserId("user@institution.edu")
+                .institutionId("institution.edu")
+                .puc("user@institution.edu")
+                .email("vc.user@institution.edu")
+                .name("VC User")
+                .build()
+        ));
+        request.setEvidenceHash(evidenceHash);
+
+        WebauthnOnboardingOptionsResponse options = service.generateOptions(request);
+        String expectedCredentialId = BASE64URL_ENCODER.encodeToString("cred-vc-evidence".getBytes(StandardCharsets.UTF_8));
+        WebauthnOnboardingCompleteResponse response = service.completeOnboarding(
+            buildCompleteRequest(options, "cred-vc-evidence", createValidAttestationObject("cred-vc-evidence"))
+        );
+
+        assertNotNull(response);
+        assertTrue(response.isSuccess());
+        assertEquals(expectedCredentialId, response.getCredentialId());
+        verify(samlValidationServiceProvider, never()).getObject();
+        verify(credentialService).register(
+            eq("user@institution.edu"),
+            eq(expectedCredentialId),
+            any(),
+            any(),
+            any(),
+            any(),
+            any(),
+            any()
+        );
+    }
+
+    @Test
+    void generateOptions_withNormalizedClaims_includesAllRequiredFields() throws Exception {
+        NormalizedClaims normalizedClaims = NormalizedClaims.builder()
+            .stableUserId("user@institution.edu")
+            .institutionId("institution.edu")
+            .puc("user@institution.edu")
+            .email("user@institution.edu")
+            .name("Test User")
+            .build();
+        IdentityEvidenceDTO identityEvidence = buildIdentityEvidence("saml", "0x" + "c".repeat(64), normalizedClaims);
+
+        WebauthnOnboardingOptionsRequest request = new WebauthnOnboardingOptionsRequest();
+        request.setStableUserId(normalizedClaims.stableUserId());
+        request.setInstitutionId(normalizedClaims.institutionId());
+        request.setDisplayName(normalizedClaims.name());
+        request.setAttributes("{\"email\":\"" + normalizedClaims.email() + "\",\"name\":\"" + normalizedClaims.name() + "\"}");
+        request.setIdentityEvidence(identityEvidence);
+        request.setNormalizedClaims(normalizedClaims);
+        request.setEvidenceHash(identityEvidence.evidenceHash());
+
+        WebauthnOnboardingOptionsResponse response = service.generateOptions(request);
+        assertNotNull(response);
+
+        ConcurrentHashMap<String, Object> sessions = getPendingSessions();
+        Object session = sessions.get(response.getSessionId());
+        assertNotNull(session);
+        assertEquals(normalizedClaims.stableUserId(), readSessionField(session, "getStableUserId"));
+        assertEquals(normalizedClaims.institutionId(), readSessionField(session, "getInstitutionId"));
+        assertEquals(normalizedClaims.name(), readSessionField(session, "getDisplayName"));
+        assertEquals("sha256:" + identityEvidence.evidenceHash(), readAssertionReference(session));
+        assertEquals(request.getAttributes(), readSessionField(session, "getAttributes"));
+
+        String expectedCredentialId = BASE64URL_ENCODER.encodeToString("cred-normalized-claims".getBytes(StandardCharsets.UTF_8));
+        WebauthnOnboardingCompleteResponse completed = service.completeOnboarding(
+            buildCompleteRequest(response, "cred-normalized-claims", createValidAttestationObject("cred-normalized-claims"))
+        );
+
+        assertNotNull(completed);
+        assertTrue(completed.isSuccess());
+        assertEquals(expectedCredentialId, completed.getCredentialId());
+        verify(credentialService).register(
+            eq(normalizedClaims.stableUserId()),
+            eq(expectedCredentialId),
+            any(),
+            any(),
+            any(),
+            any(),
+            any(),
+            any()
+        );
+    }
+
+    @Test
+    void completeOnboarding_derivesAssertionReferenceFromEvidenceHash_notFromRawEvidence() throws Exception {
+        String evidenceHash = "0x" + "b".repeat(64);
+        String rawEvidence = "large-saml-data";
+        NormalizedClaims normalizedClaims = NormalizedClaims.builder()
+            .stableUserId("user@institution.edu")
+            .institutionId("institution.edu")
+            .puc("user@institution.edu")
+            .build();
+        IdentityEvidenceDTO identityEvidence = buildIdentityEvidence("saml", evidenceHash, normalizedClaims, rawEvidence);
+
+        WebauthnOnboardingOptionsRequest request = new WebauthnOnboardingOptionsRequest();
+        request.setStableUserId("user@institution.edu");
+        request.setInstitutionId("institution.edu");
+        request.setIdentityEvidence(identityEvidence);
+        request.setEvidenceHash(evidenceHash);
+
+        WebauthnOnboardingOptionsResponse options = service.generateOptions(request);
+        Object session = getPendingSessions().get(options.getSessionId());
+        assertNotNull(session);
+        assertEquals("sha256:" + evidenceHash, readAssertionReference(session));
+        assertNotEquals("sha256:" + computeSha256Hex(rawEvidence), readAssertionReference(session));
+
+        String expectedCredentialId = BASE64URL_ENCODER.encodeToString("cred-evidence-hash".getBytes(StandardCharsets.UTF_8));
+        WebauthnOnboardingCompleteResponse completed = service.completeOnboarding(
+            buildCompleteRequest(options, "cred-evidence-hash", createValidAttestationObject("cred-evidence-hash"))
+        );
+
+        assertNotNull(completed);
+        assertTrue(completed.isSuccess());
+        assertEquals(expectedCredentialId, completed.getCredentialId());
+        verify(credentialService).register(
+            eq("user@institution.edu"),
+            eq(expectedCredentialId),
+            any(),
+            any(),
+            any(),
+            any(),
+            any(),
+            any()
+        );
     }
 
     @Test
@@ -257,6 +473,103 @@ class WebauthnOnboardingServiceTest {
      *   "attStmt": {}
      * }
      */
+    private ConcurrentHashMap<String, Object> getPendingSessions() throws Exception {
+        Field field = WebauthnOnboardingService.class.getDeclaredField("pendingSessions");
+        field.setAccessible(true);
+        @SuppressWarnings("unchecked")
+        ConcurrentHashMap<String, Object> sessions = (ConcurrentHashMap<String, Object>) field.get(service);
+        return sessions;
+    }
+
+    private String readAssertionReference(Object session) throws Exception {
+        var method = session.getClass().getDeclaredMethod("getAssertionReference");
+        method.setAccessible(true);
+        return (String) method.invoke(session);
+    }
+
+    private String readSessionField(Object session, String getterName) throws Exception {
+        var method = session.getClass().getDeclaredMethod(getterName);
+        method.setAccessible(true);
+        Object value = method.invoke(session);
+        return value != null ? value.toString() : null;
+    }
+
+    private WebauthnOnboardingCompleteRequest buildCompleteRequest(
+        WebauthnOnboardingOptionsResponse options,
+        String credentialId,
+        byte[] attestationObject
+    ) {
+        String clientDataJson = String.format(
+            "{\"type\":\"webauthn.create\",\"challenge\":\"%s\",\"origin\":\"https://localhost\"}",
+            options.getChallenge()
+        );
+
+        WebauthnOnboardingCompleteRequest request = new WebauthnOnboardingCompleteRequest();
+        request.setSessionId(options.getSessionId());
+        request.setCredentialId(BASE64URL_ENCODER.encodeToString(credentialId.getBytes(StandardCharsets.UTF_8)));
+        request.setClientDataJSON(BASE64URL_ENCODER.encodeToString(clientDataJson.getBytes(StandardCharsets.UTF_8)));
+        request.setAttestationObject(BASE64URL_ENCODER.encodeToString(attestationObject));
+        return request;
+    }
+
+    private IdentityEvidenceDTO buildIdentityEvidence(String type, String evidenceHash, NormalizedClaims normalizedClaims) {
+        return buildIdentityEvidence(type, evidenceHash, normalizedClaims, "saml-response-data");
+    }
+
+    private IdentityEvidenceDTO buildIdentityEvidence(String type, String evidenceHash, NormalizedClaims normalizedClaims, String rawEvidence) {
+        IdentityEvidenceDTO.IdentityEvidenceDTOBuilder builder = IdentityEvidenceDTO.builder()
+            .type(type)
+            .format("saml".equals(type) ? "saml2-base64" : "jwt-vp")
+            .normalizedClaims(normalizedClaims)
+            .evidenceHash(evidenceHash);
+        if (rawEvidence != null) {
+            builder.rawEvidence(rawEvidence);
+        }
+        return builder.build();
+    }
+
+    private byte[] createValidAttestationObject(String credentialId) throws Exception {
+        MessageDigest sha256 = MessageDigest.getInstance("SHA-256");
+        byte[] rpIdHash = sha256.digest("localhost".getBytes(StandardCharsets.UTF_8));
+        byte[] credentialIdBytes = credentialId.getBytes(StandardCharsets.UTF_8);
+        byte[] publicKeyCose = new byte[] { (byte) 0xA1, 0x01, 0x02, 0x03 };
+
+        byte[] authData = new byte[32 + 1 + 4 + 16 + 2 + credentialIdBytes.length + publicKeyCose.length];
+        int pos = 0;
+        System.arraycopy(rpIdHash, 0, authData, pos, 32);
+        pos += 32;
+        authData[pos++] = 0x41; // UP + AT
+        authData[pos++] = 0x00;
+        authData[pos++] = 0x00;
+        authData[pos++] = 0x00;
+        authData[pos++] = 0x00;
+        for (int i = 0; i < 16; i++) {
+            authData[pos++] = 0x00;
+        }
+        authData[pos++] = (byte) ((credentialIdBytes.length >> 8) & 0xFF);
+        authData[pos++] = (byte) (credentialIdBytes.length & 0xFF);
+        System.arraycopy(credentialIdBytes, 0, authData, pos, credentialIdBytes.length);
+        pos += credentialIdBytes.length;
+        System.arraycopy(publicKeyCose, 0, authData, pos, publicKeyCose.length);
+
+        byte[] result = new byte[12 + authData.length];
+        pos = 0;
+        result[pos++] = (byte) 0xA1; // CBOR map with 1 item
+        result[pos++] = 0x68; // text string length 8
+        result[pos++] = 'a'; result[pos++] = 'u'; result[pos++] = 't'; result[pos++] = 'h';
+        result[pos++] = 'D'; result[pos++] = 'a'; result[pos++] = 't'; result[pos++] = 'a';
+        result[pos++] = 0x58; // byte string, 1-byte length
+        result[pos++] = (byte) authData.length;
+        System.arraycopy(authData, 0, result, pos, authData.length);
+        return result;
+    }
+
+    private String computeSha256Hex(String value) throws Exception {
+        MessageDigest digest = MessageDigest.getInstance("SHA-256");
+        byte[] hash = digest.digest(value.getBytes(StandardCharsets.UTF_8));
+        return "0x" + java.util.HexFormat.of().formatHex(hash);
+    }
+
     private byte[] createMinimalAttestationObject() throws Exception {
         // Use a simple ByteArrayOutputStream to build valid CBOR manually
         // to avoid memory leaks from malformed CBOR that causes infinite loops

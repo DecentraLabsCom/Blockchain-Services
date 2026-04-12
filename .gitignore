@@ -35,6 +35,10 @@ target/
 *.swp
 *.swo
 *~
+.settings/
+.classpath
+.project
+.factorypath
 
 # contracts
 contracts/

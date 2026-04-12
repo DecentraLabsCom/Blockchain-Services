@@ -6,7 +6,10 @@ import static org.mockito.Mockito.*;
 
 import java.math.BigInteger;
 import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
 import java.time.Instant;
+import java.util.Base64;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 
@@ -30,8 +33,16 @@ import decentralabs.blockchain.dto.intent.IntentStatus;
 import decentralabs.blockchain.dto.intent.IntentStatusResponse;
 import decentralabs.blockchain.dto.intent.IntentSubmission;
 import decentralabs.blockchain.dto.intent.ReservationIntentPayload;
+import decentralabs.blockchain.dto.auth.WebauthnOnboardingCompleteRequest;
+import decentralabs.blockchain.dto.auth.WebauthnOnboardingOptionsResponse;
+import decentralabs.blockchain.dto.identity.IdentityEvidenceDTO;
+import decentralabs.blockchain.dto.identity.ValidatedIdentity;
+import decentralabs.blockchain.dto.identity.NormalizedClaims;
+import decentralabs.blockchain.dto.identity.IdentityEvidenceMetadata;
 import decentralabs.blockchain.service.auth.SamlValidationService;
 import decentralabs.blockchain.service.auth.WebauthnCredentialService;
+import decentralabs.blockchain.service.auth.IdentityValidationStrategy;
+import decentralabs.blockchain.service.auth.IdentityEvidenceHashService;
 import decentralabs.blockchain.service.wallet.WalletService;
 
 @ExtendWith(MockitoExtension.class)
@@ -56,6 +67,14 @@ class IntentServiceTest {
     @Mock
     private WalletService walletService;
 
+    @Mock
+    private IdentityValidationStrategy identityValidationStrategy;
+
+    @Mock
+    private IdentityEvidenceHashService identityEvidenceHashService;
+
+    private static final Base64.Encoder BASE64URL_ENCODER = Base64.getUrlEncoder().withoutPadding();
+
     private IntentService service;
     private String creatorHashToReturn;
     private SimpleMeterRegistry meterRegistry;
@@ -64,6 +83,29 @@ class IntentServiceTest {
     void setUp() {
         creatorHashToReturn = "0x" + "1".repeat(64);
         meterRegistry = new SimpleMeterRegistry();
+
+        // Configure identity strategy mock (lenient because not all tests use identity validation)
+        lenient().when(identityValidationStrategy.supports(anyString())).thenReturn(true);
+        lenient().when(identityValidationStrategy.supports("saml")).thenReturn(true);
+        NormalizedClaims mockClaims = NormalizedClaims.builder()
+            .stableUserId("user@university.edu")
+            .institutionId("university.edu")
+            .puc("user@university.edu")
+            .build();
+        IdentityEvidenceMetadata mockMetadata = new IdentityEvidenceMetadata(
+            "issuer", Instant.now(), null, null, List.of(), true, "saml"
+        );
+        ValidatedIdentity mockValidatedIdentity = ValidatedIdentity.builder()
+            .type("saml")
+            .format("saml2-base64")
+            .claims(mockClaims)
+            .metadata(mockMetadata)
+            .evidenceHash("0x" + "b".repeat(64))
+            .build();
+        lenient().when(identityValidationStrategy.validate(any())).thenReturn(mockValidatedIdentity);
+
+        List<IdentityValidationStrategy> strategies = List.of(identityValidationStrategy);
+
         service = new IntentService(
             "15s",
             60000L,
@@ -74,7 +116,9 @@ class IntentServiceTest {
             webauthnCredentialService,
             walletService,
             "0x0000000000000000000000000000000000000001",
-            meterRegistry
+            meterRegistry,
+            strategies,
+            identityEvidenceHashService
         ) {
             @Override
             String fetchCreatorPucHash(BigInteger labId) {
@@ -82,11 +126,11 @@ class IntentServiceTest {
             }
         };
     }
-
     @Test
     @DisplayName("Assertion replay TTL expires as expected")
     void assertionReplayTtlExpires() throws Exception {
         // Use a short TTL to make the test fast
+        List<IdentityValidationStrategy> strategies = List.of(identityValidationStrategy);
         IntentService shortTtlService = new IntentService(
             "15s",
             100L,
@@ -97,13 +141,15 @@ class IntentServiceTest {
             webauthnCredentialService,
             walletService,
             "0x0000000000000000000000000000000000000001",
-            meterRegistry
+            meterRegistry,
+            strategies,
+            identityEvidenceHashService
         );
 
         String hash = "0x" + "f".repeat(64);
         // Use reflection to invoke private methods
-        var markMethod = IntentService.class.getDeclaredMethod("markAssertionUsed", String.class);
-        var checkMethod = IntentService.class.getDeclaredMethod("checkAssertionReplay", String.class);
+        var markMethod = IntentService.class.getDeclaredMethod("markEvidenceUsed", String.class);
+        var checkMethod = IntentService.class.getDeclaredMethod("checkEvidenceReplay", String.class);
         markMethod.setAccessible(true);
         checkMethod.setAccessible(true);
 
@@ -117,7 +163,7 @@ class IntentServiceTest {
                 throw e.getCause();
             }
         });
-        assertTrue(ex.getReason().equalsIgnoreCase("assertion_replay"));
+        assertTrue(ex.getReason().toLowerCase().contains("evidence_replay"));
 
         // Wait for TTL to expire and then expect no exception
         Thread.sleep(200);
@@ -161,11 +207,9 @@ class IntentServiceTest {
     private IntentSubmission createValidRequestFundsSubmission() {
         String samlAssertion = "valid-request-funds-saml";
         String assertionHash = Numeric.toHexString(Hash.sha3(samlAssertion.getBytes(StandardCharsets.UTF_8)));
-
         IntentMeta meta = createValidMeta();
         meta.setAction(IntentAction.REQUEST_FUNDS.getId());
         meta.setPayloadHash("0x" + "c".repeat(64));
-
         ActionIntentPayload payload = createValidActionPayload();
         payload.setMaxBatch(BigInteger.TEN);
         payload.setAssertionHash(assertionHash);
@@ -178,6 +222,347 @@ class IntentServiceTest {
         return submission;
     }
 
+    private IntentSubmission createIdentityEvidenceRequestFundsSubmission(String evidenceHash) {
+        IntentMeta meta = createValidMeta();
+        meta.setAction(IntentAction.REQUEST_FUNDS.getId());
+        meta.setPayloadHash("0x" + "c".repeat(64));
+
+        ActionIntentPayload payload = createValidActionPayload();
+        payload.setMaxBatch(BigInteger.TEN);
+        payload.setAssertionHash(evidenceHash);
+
+        NormalizedClaims normalizedClaims = NormalizedClaims.builder()
+            .stableUserId(payload.getPuc())
+            .institutionId("university.edu")
+            .puc(payload.getPuc())
+            .build();
+
+        IdentityEvidenceDTO identityEvidence = IdentityEvidenceDTO.builder()
+            .type("saml")
+            .format("saml2-base64")
+            .normalizedClaims(normalizedClaims)
+            .evidenceHash(evidenceHash)
+            .build();
+
+        IntentSubmission submission = new IntentSubmission();
+        submission.setMeta(meta);
+        submission.setActionPayload(payload);
+        submission.setIdentityEvidence(identityEvidence);
+        submission.setWebauthnCredentialId("cred");
+        return submission;
+    }
+
+    @Nested
+    @DisplayName("Unified Identity Validation Tests")
+    class UnifiedIdentityValidationTests {
+
+        @Test
+        @DisplayName("Should accept REQUEST_FUNDS using identityEvidence without SAML fallback")
+        void shouldAcceptRequestFundsUsingIdentityEvidence() throws Exception {
+            String evidenceHash = "0x" + "d".repeat(64);
+            creatorHashToReturn = Numeric.toHexString(
+                Hash.sha3("user@university.edu".getBytes(StandardCharsets.UTF_8))
+            );
+
+            NormalizedClaims normalizedClaims = NormalizedClaims.builder()
+                .stableUserId("user@university.edu")
+                .institutionId("university.edu")
+                .puc("user@university.edu")
+                .build();
+            IdentityEvidenceMetadata metadata = new IdentityEvidenceMetadata(
+                "issuer",
+                Instant.now(),
+                null,
+                null,
+                List.of("backend"),
+                true,
+                "saml"
+            );
+            ValidatedIdentity validatedIdentity = ValidatedIdentity.builder()
+                .type("saml")
+                .format("saml2-base64")
+                .claims(normalizedClaims)
+                .metadata(metadata)
+                .evidenceHash(evidenceHash)
+                .build();
+
+            when(identityValidationStrategy.validate(any())).thenReturn(validatedIdentity);
+            when(verifier.verify(
+                eq(IntentAction.REQUEST_FUNDS),
+                any(IntentMeta.class),
+                any(ActionIntentPayload.class),
+                isNull(),
+                any()
+            )).thenReturn(new Eip712IntentVerifier.VerificationResult(true, null, null, null));
+
+            IntentSubmission submission = createIdentityEvidenceRequestFundsSubmission(evidenceHash);
+
+            IntentAckResponse response = service.processIntent(submission);
+
+            assertEquals("accepted", response.getStatus());
+            verify(identityValidationStrategy).validate(any());
+            verify(samlValidationService, never()).validateSamlAssertionWithSignature(anyString());
+        }
+
+        @Test
+        @DisplayName("Should select VC validation strategy when identityEvidence type is openid4vp")
+        void shouldSelectVcValidationStrategyForOpenid4vpType() throws Exception {
+            String evidenceHash = "0x" + "e".repeat(64);
+            creatorHashToReturn = Numeric.toHexString(
+                Hash.sha3("user@university.edu".getBytes(StandardCharsets.UTF_8))
+            );
+
+            NormalizedClaims normalizedClaims = NormalizedClaims.builder()
+                .stableUserId("user@university.edu")
+                .institutionId("university.edu")
+                .puc("user@university.edu")
+                .build();
+            IdentityEvidenceMetadata metadata = new IdentityEvidenceMetadata(
+                "did:example:issuer",
+                Instant.now(),
+                null,
+                null,
+                List.of("backend"),
+                true,
+                "openid4vp"
+            );
+            ValidatedIdentity validatedIdentity = ValidatedIdentity.builder()
+                .type("openid4vp")
+                .format("jwt-vp")
+                .claims(normalizedClaims)
+                .metadata(metadata)
+                .evidenceHash(evidenceHash)
+                .build();
+
+            when(identityValidationStrategy.supports("openid4vp")).thenReturn(true);
+            when(identityValidationStrategy.validate(any())).thenReturn(validatedIdentity);
+            when(verifier.verify(
+                eq(IntentAction.REQUEST_FUNDS),
+                any(IntentMeta.class),
+                any(ActionIntentPayload.class),
+                isNull(),
+                any()
+            )).thenReturn(new Eip712IntentVerifier.VerificationResult(true, null, null, null));
+
+            IntentSubmission submission = createIdentityEvidenceRequestFundsSubmission(evidenceHash);
+            submission.setIdentityEvidence(buildIdentityEvidence(
+                "openid4vp",
+                evidenceHash,
+                normalizedClaims,
+                "{\"vp\":\"open-id-four-vp\"}"
+            ));
+
+            IntentAckResponse response = service.processIntent(submission);
+
+            assertEquals("accepted", response.getStatus());
+            verify(identityValidationStrategy).supports("openid4vp");
+            verify(identityValidationStrategy).validate(any());
+            verify(samlValidationService, never()).validateSamlAssertionWithSignature(anyString());
+        }
+
+        @Test
+        @DisplayName("Should reject duplicate intent using same evidenceHash (anti-replay)")
+        void shouldUseEvidenceHashForAntiReplay() throws Exception {
+            String evidenceHash = "0x" + "f".repeat(64);
+            creatorHashToReturn = Numeric.toHexString(
+                Hash.sha3("user@university.edu".getBytes(StandardCharsets.UTF_8))
+            );
+
+            List<IdentityValidationStrategy> strategies = List.of(identityValidationStrategy);
+            IntentService shortTtlService = new IntentService(
+                "15s",
+                100L,
+                verifier,
+                persistenceService,
+                webhookService,
+                samlValidationService,
+                webauthnCredentialService,
+                walletService,
+                "0x0000000000000000000000000000000000000001",
+                meterRegistry,
+                strategies,
+                identityEvidenceHashService
+            ) {
+                @Override
+                String fetchCreatorPucHash(BigInteger labId) {
+                    return creatorHashToReturn;
+                }
+            };
+
+            NormalizedClaims normalizedClaims = NormalizedClaims.builder()
+                .stableUserId("user@university.edu")
+                .institutionId("university.edu")
+                .puc("user@university.edu")
+                .build();
+            ValidatedIdentity validatedIdentity = ValidatedIdentity.builder()
+                .type("saml")
+                .format("saml2-base64")
+                .claims(normalizedClaims)
+                .metadata(new IdentityEvidenceMetadata("issuer", Instant.now(), null, null, List.of(), true, "saml"))
+                .evidenceHash(evidenceHash)
+                .build();
+
+            when(identityValidationStrategy.validate(any())).thenReturn(validatedIdentity);
+            when(verifier.verify(any(), any(), any(), isNull(), any()))
+                .thenReturn(new Eip712IntentVerifier.VerificationResult(true, null, null, null));
+
+            IntentSubmission submission = createIdentityEvidenceRequestFundsSubmission(evidenceHash);
+
+            IntentAckResponse firstResponse = shortTtlService.processIntent(submission);
+            assertEquals("accepted", firstResponse.getStatus());
+
+            ResponseStatusException ex = assertThrows(ResponseStatusException.class,
+                () -> shortTtlService.processIntent(submission));
+            assertTrue(ex.getReason().toLowerCase().contains("evidence_replay") ||
+                ex.getReason().toLowerCase().contains("replay"));
+        }
+
+        @Test
+        @DisplayName("Should use puc from ValidatedIdentity claims for creator hash lookup")
+        void shouldConsumeValidatedIdentityClaimsForPucLookup() throws Exception {
+            String specificPuc = "specific@university.edu";
+            String evidenceHash = "0x" + "a".repeat(64);
+            creatorHashToReturn = Numeric.toHexString(
+                Hash.sha3(specificPuc.getBytes(StandardCharsets.UTF_8))
+            );
+
+            NormalizedClaims normalizedClaims = NormalizedClaims.builder()
+                .stableUserId(specificPuc)
+                .institutionId("university.edu")
+                .puc(specificPuc)
+                .build();
+            ValidatedIdentity validatedIdentity = ValidatedIdentity.builder()
+                .type("saml")
+                .format("saml2-base64")
+                .claims(normalizedClaims)
+                .metadata(new IdentityEvidenceMetadata("issuer", Instant.now(), null, null, List.of(), true, "saml"))
+                .evidenceHash(evidenceHash)
+                .build();
+
+            when(identityValidationStrategy.validate(any())).thenReturn(validatedIdentity);
+            when(verifier.verify(
+                eq(IntentAction.REQUEST_FUNDS),
+                any(IntentMeta.class),
+                any(ActionIntentPayload.class),
+                isNull(),
+                any()
+            )).thenReturn(new Eip712IntentVerifier.VerificationResult(true, null, null, null));
+
+            IntentSubmission submission = createIdentityEvidenceRequestFundsSubmission(evidenceHash);
+            submission.getActionPayload().setPuc(specificPuc);
+
+            IntentAckResponse response = service.processIntent(submission);
+
+            assertEquals("accepted", response.getStatus());
+            verify(persistenceService).upsert(argThat(record ->
+                record.getActionId().equals(IntentAction.REQUEST_FUNDS.getId())
+            ));
+        }
+
+        @Test
+        @DisplayName("Should fall back to SAML validation when identityEvidence is null but samlAssertion is present")
+        void shouldFallbackToSamlWhenIdentityEvidenceIsNull() throws Exception {
+            creatorHashToReturn = Numeric.toHexString(
+                Hash.sha3("legacy@university.edu".getBytes(StandardCharsets.UTF_8))
+            );
+            when(samlValidationService.validateSamlAssertionWithSignature("legacy-saml-assertion"))
+                .thenReturn(Map.of("userid", "legacy@university.edu"));
+            when(verifier.verify(
+                eq(IntentAction.REQUEST_FUNDS),
+                any(IntentMeta.class),
+                any(ActionIntentPayload.class),
+                isNull(),
+                any()
+            )).thenReturn(new Eip712IntentVerifier.VerificationResult(true, null, null, null));
+
+            IntentMeta meta = createValidMeta();
+            meta.setAction(IntentAction.REQUEST_FUNDS.getId());
+            meta.setPayloadHash("0x" + "c".repeat(64));
+            ActionIntentPayload payload = createValidActionPayload();
+            payload.setPuc("legacy@university.edu");
+            payload.setMaxBatch(BigInteger.TEN);
+            payload.setAssertionHash(Numeric.toHexString(Hash.sha3("legacy-saml-assertion".getBytes(StandardCharsets.UTF_8))));
+
+            IntentSubmission submission = new IntentSubmission();
+            submission.setMeta(meta);
+            submission.setActionPayload(payload);
+            submission.setSamlAssertion("legacy-saml-assertion");
+            submission.setWebauthnCredentialId("cred");
+
+            IntentAckResponse response = service.processIntent(submission);
+
+            assertEquals("accepted", response.getStatus());
+            verify(samlValidationService).validateSamlAssertionWithSignature("legacy-saml-assertion");
+            verify(identityValidationStrategy, never()).validate(any());
+        }
+    }
+
+    private IdentityEvidenceDTO buildIdentityEvidence(String type, String evidenceHash, NormalizedClaims normalizedClaims, String rawEvidence) {
+        IdentityEvidenceDTO.IdentityEvidenceDTOBuilder builder = IdentityEvidenceDTO.builder()
+            .type(type)
+            .format("openid4vp".equals(type) ? "jwt-vp" : "saml2-base64")
+            .normalizedClaims(normalizedClaims)
+            .evidenceHash(evidenceHash);
+        if (rawEvidence != null) {
+            builder.rawEvidence(rawEvidence);
+        }
+        return builder.build();
+    }
+
+    private WebauthnOnboardingCompleteRequest buildCompleteRequest(
+        WebauthnOnboardingOptionsResponse options,
+        String credentialId,
+        byte[] attestationObject
+    ) {
+        String clientDataJson = String.format(
+            "{\"type\":\"webauthn.create\",\"challenge\":\"%s\",\"origin\":\"https://localhost\"}",
+            options.getChallenge()
+        );
+
+        WebauthnOnboardingCompleteRequest request = new WebauthnOnboardingCompleteRequest();
+        request.setSessionId(options.getSessionId());
+        request.setCredentialId(BASE64URL_ENCODER.encodeToString(credentialId.getBytes(StandardCharsets.UTF_8)));
+        request.setClientDataJSON(BASE64URL_ENCODER.encodeToString(clientDataJson.getBytes(StandardCharsets.UTF_8)));
+        request.setAttestationObject(BASE64URL_ENCODER.encodeToString(attestationObject));
+        return request;
+    }
+
+    private byte[] createValidAttestationObject(String credentialId) throws Exception {
+        MessageDigest sha256 = MessageDigest.getInstance("SHA-256");
+        byte[] rpIdHash = sha256.digest("localhost".getBytes(StandardCharsets.UTF_8));
+        byte[] credentialIdBytes = credentialId.getBytes(StandardCharsets.UTF_8);
+        byte[] publicKeyCose = new byte[] { (byte) 0xA1, 0x01, 0x02, 0x03 };
+
+        byte[] authData = new byte[32 + 1 + 4 + 16 + 2 + credentialIdBytes.length + publicKeyCose.length];
+        int pos = 0;
+        System.arraycopy(rpIdHash, 0, authData, pos, 32);
+        pos += 32;
+        authData[pos++] = 0x41; // UP + AT
+        authData[pos++] = 0x00;
+        authData[pos++] = 0x00;
+        authData[pos++] = 0x00;
+        authData[pos++] = 0x00;
+        for (int i = 0; i < 16; i++) {
+            authData[pos++] = 0x00;
+        }
+        authData[pos++] = (byte) ((credentialIdBytes.length >> 8) & 0xFF);
+        authData[pos++] = (byte) (credentialIdBytes.length & 0xFF);
+        System.arraycopy(credentialIdBytes, 0, authData, pos, credentialIdBytes.length);
+        pos += credentialIdBytes.length;
+        System.arraycopy(publicKeyCose, 0, authData, pos, publicKeyCose.length);
+
+        byte[] result = new byte[12 + authData.length];
+        pos = 0;
+        result[pos++] = (byte) 0xA1;
+        result[pos++] = 0x68;
+        result[pos++] = 'a'; result[pos++] = 'u'; result[pos++] = 't'; result[pos++] = 'h';
+        result[pos++] = 'D'; result[pos++] = 'a'; result[pos++] = 't'; result[pos++] = 'a';
+        result[pos++] = 0x58;
+        result[pos++] = (byte) authData.length;
+        System.arraycopy(authData, 0, result, pos, authData.length);
+        return result;
+    }
+
     @Nested
     @DisplayName("Validation Tests")
     class ValidationTests {
@@ -187,7 +572,6 @@ class IntentServiceTest {
         void shouldRejectNullMeta() {
             IntentSubmission submission = new IntentSubmission();
             submission.setMeta(null);
-
             ResponseStatusException ex = assertThrows(ResponseStatusException.class,
                 () -> service.processIntent(submission));
             assertTrue(ex.getMessage().contains("Missing intent meta"));
@@ -203,12 +587,10 @@ class IntentServiceTest {
             submission.setMeta(meta);
             submission.setActionPayload(createValidActionPayload());
             submission.setWebauthnCredentialId("cred123");
-
             ResponseStatusException ex = assertThrows(ResponseStatusException.class,
                 () -> service.processIntent(submission));
             assertTrue(ex.getReason().contains("requestId") || ex.getReason().contains("Missing"));
         }
-
         @Test
         @DisplayName("Should reject when signer is missing")
         void shouldRejectMissingSigner() {
@@ -224,7 +606,6 @@ class IntentServiceTest {
                 () -> service.processIntent(submission));
             assertTrue(ex.getReason().contains("signer") || ex.getReason().contains("Missing"));
         }
-
         @Test
         @DisplayName("Should allow executor to differ from signer (SAML missing check)")
         void shouldAllowExecutorDifferentFromSigner() {
@@ -244,7 +625,6 @@ class IntentServiceTest {
                 () -> service.processIntent(submission));
             assertTrue(ex.getReason().toLowerCase().contains("saml"));
         }
-
         @Test
         @DisplayName("Should reject unsupported action")
         void shouldRejectUnsupportedAction() {
@@ -259,7 +639,6 @@ class IntentServiceTest {
                 () -> service.processIntent(submission));
             assertTrue(ex.getMessage().contains("Unsupported action"));
         }
-
         @Test
         @DisplayName("Should reject when SAML assertion is missing")
         void shouldRejectMissingSamlAssertion() {
@@ -276,7 +655,6 @@ class IntentServiceTest {
                 () -> service.processIntent(submission));
             assertTrue(ex.getReason().contains("saml"));
         }
-
         @Test
         @DisplayName("Should reject when WebAuthn credential ID is missing")
         void shouldRejectMissingWebauthnCredential() {
@@ -294,11 +672,9 @@ class IntentServiceTest {
             assertTrue(ex.getReason().contains("webauthn"));
         }
     }
-
     @Nested
     @DisplayName("Reservation Payload Validation Tests")
     class ReservationPayloadValidationTests {
-
         @Test
         @DisplayName("Should reject reservation with missing labId")
         void shouldRejectMissingLabId() {
@@ -551,31 +927,23 @@ class IntentServiceTest {
 
         @Test
         @DisplayName("Should reject expired intent during validation")
-        void shouldRejectExpiredIntent() {
-            IntentMeta meta = createValidMeta();
-            meta.setExpiresAt(Instant.now().minusSeconds(10).getEpochSecond()); // Already expired
-            
-            ActionIntentPayload payload = createValidActionPayload();
-            
-            // We need to compute a valid SAML hash that matches the payload's assertionHash
-            String samlAssertion = "valid-saml-assertion";
-            
-            IntentSubmission submission = new IntentSubmission();
-            submission.setMeta(meta);
-            submission.setActionPayload(payload);
-            submission.setSamlAssertion(samlAssertion);
-            submission.setWebauthnCredentialId("cred123");
-            submission.setWebauthnClientDataJSON("Y2xpZW50ZGF0YQ"); // base64
-            submission.setWebauthnAuthenticatorData("YXV0aGRhdGE");
-            submission.setWebauthnSignature("c2lnbmF0dXJl");
+        void shouldRejectExpiredIntent() throws Exception {
+            IntentSubmission submission = createValidRequestFundsSubmission();
+            submission.getMeta()
+                .setExpiresAt(Instant.now().minusSeconds(10).getEpochSecond()); // Already expired
+            creatorHashToReturn = Numeric.toHexString(
+                Hash.sha3(submission.getActionPayload().getPuc().getBytes(StandardCharsets.UTF_8))
+            );
 
-            // The test will fail on assertion hash mismatch before reaching expiration check
-            // This is expected behavior - the system validates hash before checking expiration
-            ResponseStatusException ex = assertThrows(ResponseStatusException.class,
-                () -> service.processIntent(submission));
-            
-            // Fails on hash mismatch - this is a valid validation failure
-            assertTrue(ex.getReason().contains("assertion_hash_mismatch"));
+            // Force valid assertion signature 
+            when(samlValidationService.validateSamlAssertionWithSignature(anyString()))
+                .thenReturn(Map.of("userid", submission.getActionPayload().getPuc()));
+
+            // The intent has valid payload but is invalid due to expiration
+            IntentAckResponse response = service.processIntent(submission);
+
+            assertEquals("rejected", response.getStatus());
+            assertEquals("expired", response.getReason());
         }
     }
 

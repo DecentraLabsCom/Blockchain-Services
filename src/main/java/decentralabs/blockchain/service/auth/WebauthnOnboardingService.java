@@ -12,6 +12,8 @@ import decentralabs.blockchain.dto.auth.WebauthnOnboardingCompleteRequest;
 import decentralabs.blockchain.dto.auth.WebauthnOnboardingCompleteResponse;
 import decentralabs.blockchain.dto.auth.WebauthnOnboardingOptionsRequest;
 import decentralabs.blockchain.dto.auth.WebauthnOnboardingOptionsResponse;
+import decentralabs.blockchain.dto.identity.IdentityEvidenceDTO;
+import decentralabs.blockchain.dto.identity.NormalizedClaims;
 import decentralabs.blockchain.dto.auth.WebauthnOnboardingOptionsResponse.AuthenticatorSelection;
 import decentralabs.blockchain.dto.auth.WebauthnOnboardingOptionsResponse.PubKeyCredParam;
 import decentralabs.blockchain.dto.auth.WebauthnOnboardingOptionsResponse.RelyingParty;
@@ -217,9 +219,29 @@ public class WebauthnOnboardingService {
     public WebauthnOnboardingOptionsResponse generateOptions(WebauthnOnboardingOptionsRequest request) {
         String stableUserId = normalize(request.getStableUserId());
         String institutionId = normalize(request.getInstitutionId());
-        
+        NormalizedClaims normalizedClaims = request.getNormalizedClaims();
+        IdentityEvidenceDTO identityEvidence = request.getIdentityEvidence();
+        if (normalizedClaims == null && identityEvidence != null) {
+            normalizedClaims = identityEvidence.normalizedClaims();
+        }
+
         if (stableUserId.isEmpty() || institutionId.isEmpty()) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "stableUserId and institutionId are required");
+        }
+
+        if (normalizedClaims != null) {
+            if (normalizedClaims.stableUserId() != null && !normalizedClaims.stableUserId().isBlank()) {
+                String normalizedClaimUser = normalize(normalizedClaims.stableUserId());
+                if (!normalizedClaimUser.equals(stableUserId)) {
+                    throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "stableUserId mismatch");
+                }
+            }
+            if (normalizedClaims.institutionId() != null && !normalizedClaims.institutionId().isBlank()) {
+                String normalizedClaimInstitution = normalize(normalizedClaims.institutionId());
+                if (!normalizedClaimInstitution.equals(institutionId)) {
+                    throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "institutionId mismatch");
+                }
+            }
         }
 
         // Validate SAML assertion if provided and validation is enabled
@@ -246,6 +268,12 @@ public class WebauthnOnboardingService {
         Instant expiresAt = Instant.now().plusSeconds(sessionTtlSeconds);
 
         // Store session with TTL
+        String assertionReference = firstNonBlank(
+            request.getAssertionReference(),
+            request.getEvidenceHash() != null && !request.getEvidenceHash().isBlank() ? "sha256:" + request.getEvidenceHash() : null,
+            request.getSamlAssertion() != null && !request.getSamlAssertion().isBlank() ? "sha256:" + computeAssertionHash(request.getSamlAssertion()) : null
+        );
+
         OnboardingSession session = new OnboardingSession(
             sessionId,
             stableUserId,
@@ -254,7 +282,7 @@ public class WebauthnOnboardingService {
             challengeBytes,
             userHandle,
             request.getDisplayName(),
-            request.getAssertionReference(),
+            assertionReference,
             request.getAttributes(),
             request.getCallbackUrl(),
             expiresAt
@@ -843,6 +871,32 @@ public class WebauthnOnboardingService {
 
     private String normalize(String value) {
         return value == null ? "" : value.trim();
+    }
+
+    private String computeAssertionHash(String samlAssertion) {
+        if (samlAssertion == null || samlAssertion.isBlank()) {
+            return null;
+        }
+        try {
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            byte[] hash = digest.digest(samlAssertion.getBytes(StandardCharsets.UTF_8));
+            return "0x" + HexFormat.of().formatHex(hash);
+        } catch (NoSuchAlgorithmException e) {
+            throw new IllegalStateException("SHA-256 not available", e);
+        }
+    }
+
+    private String firstNonBlank(String first, String second, String third) {
+        if (first != null && !first.isBlank()) {
+            return first;
+        }
+        if (second != null && !second.isBlank()) {
+            return second;
+        }
+        if (third != null && !third.isBlank()) {
+            return third;
+        }
+        return null;
     }
 
     /**

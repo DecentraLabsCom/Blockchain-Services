@@ -1,5 +1,7 @@
 package decentralabs.blockchain.dto.auth;
 
+import decentralabs.blockchain.dto.identity.IdentityEvidenceDTO;
+import decentralabs.blockchain.dto.identity.NormalizedClaims;
 import jakarta.validation.constraints.NotBlank;
 import lombok.Data;
 
@@ -33,6 +35,7 @@ public class WebauthnOnboardingOptionsRequest {
      * If provided, the WIB will validate the assertion signature against the IdP.
      * This strengthens the binding between federated identity and WebAuthn credential.
      */
+    // XXX: Legacy SAML assertion kept for compatibility while Marketplace transitions.
     private String samlAssertion;
 
     /**
@@ -53,4 +56,8 @@ public class WebauthnOnboardingOptionsRequest {
      * If provided, the WIB will POST the result to this URL when onboarding completes.
      */
     private String callbackUrl;
+
+    private IdentityEvidenceDTO identityEvidence;
+    private NormalizedClaims normalizedClaims;
+    private String evidenceHash;
 }

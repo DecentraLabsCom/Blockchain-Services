@@ -4,6 +4,7 @@ import java.util.Map;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
 
+import decentralabs.blockchain.dto.identity.IdentityEvidenceDTO;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
@@ -25,7 +26,11 @@ public class IntentSubmission {
     private String signature;
 
     @NotBlank
+    // XXX: Legacy SAML assertion kept for backward compatibility during the transition.
     private String samlAssertion;
+
+    @Valid
+    private IdentityEvidenceDTO identityEvidence;
 
     @NotBlank
     private String webauthnCredentialId; // Credential used for WebAuthn assertion
@@ -79,6 +84,14 @@ public class IntentSubmission {
 
     public void setSamlAssertion(String samlAssertion) {
         this.samlAssertion = samlAssertion;
+    }
+
+    public IdentityEvidenceDTO getIdentityEvidence() {
+        return identityEvidence;
+    }
+
+    public void setIdentityEvidence(IdentityEvidenceDTO identityEvidence) {
+        this.identityEvidence = identityEvidence;
     }
 
     public String getWebauthnCredentialId() {

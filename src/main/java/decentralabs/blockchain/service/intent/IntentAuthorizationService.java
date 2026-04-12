@@ -226,6 +226,8 @@ public class IntentAuthorizationService {
         submission.setActionPayload(request.getActionPayload());
         submission.setReservationPayload(request.getReservationPayload());
         submission.setSignature(request.getSignature());
+        submission.setIdentityEvidence(request.getIdentityEvidence());
+        // XXX: Legacy SAML fallback kept until all callers rely on identityEvidence.
         submission.setSamlAssertion(request.getSamlAssertion());
         return submission;
     }
