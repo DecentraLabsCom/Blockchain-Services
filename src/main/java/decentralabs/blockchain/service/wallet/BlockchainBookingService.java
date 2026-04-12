@@ -177,7 +177,7 @@ public class BlockchainBookingService {
         // 1. Load Diamond contract
         Diamond diamond = loadDiamondContract(wallet);
 
-        // 2. Find active reservation by labId
+        // 2. Find active reservation by labId.
         BigInteger totalReservations = diamond.reservationsOf(wallet).send();
         
         byte[] reservationKeyBytes = resolveActiveReservationKey(diamond, labId, wallet, puc);
@@ -185,12 +185,12 @@ public class BlockchainBookingService {
         byte[] expectedPucHash = (puc == null || puc.isBlank()) ? null : computePucHash(puc);
         
         if (!isValidReservationKey(reservationKeyBytes)) {
-            // Iterate through user's reservations to find active one for this labId (fallback)
+            // Iterate through the wallet's reservations to find the active one for this lab (fallback)
             for (int i = 0; i < totalReservations.intValue(); i++) {
                 byte[] key = diamond.reservationKeyOfUserByIndex(wallet, BigInteger.valueOf(i)).send();
                 Diamond.Reservation res = diamond.getReservation(key).send();
                 
-                // Check if this reservation matches our labId and is currently active
+                // Check if this reservation is for the requested lab and is currently active
                 boolean pucMatches = expectedPucHash == null;
                 if (!pucMatches) {
                     byte[] reservationHash = fetchReservationPucHash(diamond, key);

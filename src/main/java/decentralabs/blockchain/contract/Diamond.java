@@ -267,23 +267,58 @@ public class Diamond extends Contract {
     }
     
     /**
-     * Check if user has active booking by token
+     * Find reservation key for a specific lab token at a given timestamp (ReservationStatsFacet).
      */
     @SuppressWarnings("rawtypes")
-    public RemoteFunctionCall<Boolean> hasActiveBookingByToken(BigInteger tokenId, String user) {
-        final Function function = new Function("hasActiveBookingByToken",
-                Arrays.asList(new Uint256(tokenId), new Address(user)),
-                Arrays.asList(new TypeReference<org.web3j.abi.datatypes.Bool>() {}));
+    public RemoteFunctionCall<BigInteger[]> findReservationAt(BigInteger tokenId, BigInteger timestamp) {
+        final Function function = new Function("findReservationAt",
+                Arrays.asList(new Uint256(tokenId), new Uint32(timestamp)),
+                Arrays.asList(new TypeReference<Uint32>() {}, new TypeReference<Uint32>() {}));
+        return new RemoteFunctionCall<>(function,
+                () -> {
+                    List<Type> results = executeCallMultipleValueReturn(function);
+                    return new BigInteger[] {
+                        ((Uint32) results.get(0)).getValue(),
+                        ((Uint32) results.get(1)).getValue()
+                    };
+                });
+    }
+
+    /**
+     * Get the total number of reservations for a wallet address (ReservationStatsFacet).
+     */
+    @SuppressWarnings("rawtypes")
+    public RemoteFunctionCall<BigInteger> reservationsOf(String user) {
+        final Function function = new Function("reservationsOf",
+                Arrays.asList(new Address(user)),
+                Arrays.asList(new TypeReference<Uint256>() {}));
         return new RemoteFunctionCall<>(function,
                 () -> {
                     Type result = executeCallSingleValueReturn(function);
-                    return (Boolean) result.getValue();
+                    return (BigInteger) result.getValue();
                 });
     }
-    
+
     /**
-     * Get active reservation key for user and lab
-     * Returns bytes32(0) if no active reservation found
+     * Get reservation key at a specific index for a wallet address (ReservationStatsFacet).
+     * Order is NOT stable across mutations — use for snapshot iteration only.
+     */
+    @SuppressWarnings("rawtypes")
+    public RemoteFunctionCall<byte[]> reservationKeyOfUserByIndex(String user, BigInteger index) {
+        final Function function = new Function("reservationKeyOfUserByIndex",
+                Arrays.asList(new Address(user), new Uint256(index)),
+                Arrays.asList(new TypeReference<Bytes32>() {}));
+        return new RemoteFunctionCall<>(function,
+                () -> {
+                    Type result = executeCallSingleValueReturn(function);
+                    return (byte[]) result.getValue();
+                });
+    }
+
+    /**
+     * Get the active reservation key for a (lab token, wallet) pair (ReservationStatsFacet).
+     * O(1) fast path via the dedicated on-chain index; O(≤10) slow path when stale.
+     * Returns bytes32(0) when no active reservation exists.
      */
     @SuppressWarnings("rawtypes")
     public RemoteFunctionCall<byte[]> getActiveReservationKeyForUser(BigInteger tokenId, String user) {
@@ -296,7 +331,37 @@ public class Diamond extends Contract {
                     return (byte[]) result.getValue();
                 });
     }
-    
+
+    /**
+     * Get the total number of reservations for a lab token (InstitutionalReservationQueryFacet).
+     */
+    @SuppressWarnings("rawtypes")
+    public RemoteFunctionCall<BigInteger> getReservationsOfToken(BigInteger tokenId) {
+        final Function function = new Function("getReservationsOfToken",
+                Arrays.asList(new Uint256(tokenId)),
+                Arrays.asList(new TypeReference<Uint256>() {}));
+        return new RemoteFunctionCall<>(function,
+                () -> {
+                    Type result = executeCallSingleValueReturn(function);
+                    return (BigInteger) result.getValue();
+                });
+    }
+
+    /**
+     * Get reservation key at a specific index for a lab token (InstitutionalReservationQueryFacet).
+     */
+    @SuppressWarnings("rawtypes")
+    public RemoteFunctionCall<byte[]> getReservationOfTokenByIndex(BigInteger tokenId, BigInteger index) {
+        final Function function = new Function("getReservationOfTokenByIndex",
+                Arrays.asList(new Uint256(tokenId), new Uint256(index)),
+                Arrays.asList(new TypeReference<Bytes32>() {}));
+        return new RemoteFunctionCall<>(function,
+                () -> {
+                    Type result = executeCallSingleValueReturn(function);
+                    return (byte[]) result.getValue();
+                });
+    }
+
     /**
      * Get active reservation key for an institutional user (provider + PUC)
      */
@@ -389,36 +454,6 @@ public class Diamond extends Contract {
             List.of()
         );
         return executeRemoteCallTransaction(function);
-    }
-
-    /**
-     * Get number of reservations for a user
-     */
-    @SuppressWarnings("rawtypes")
-    public RemoteFunctionCall<BigInteger> reservationsOf(String user) {
-        final Function function = new Function("reservationsOf",
-                Arrays.asList(new Address(user)),
-                Arrays.asList(new TypeReference<Uint256>() {}));
-        return new RemoteFunctionCall<>(function,
-                () -> {
-                    Type result = executeCallSingleValueReturn(function);
-                    return (BigInteger) result.getValue();
-                });
-    }
-    
-    /**
-     * Get reservation key of user by index
-     */
-    @SuppressWarnings("rawtypes")
-    public RemoteFunctionCall<byte[]> reservationKeyOfUserByIndex(String user, BigInteger index) {
-        final Function function = new Function("reservationKeyOfUserByIndex",
-                Arrays.asList(new Address(user), new Uint256(index)),
-                Arrays.asList(new TypeReference<Bytes32>() {}));
-        return new RemoteFunctionCall<>(function,
-                () -> {
-                    Type result = executeCallSingleValueReturn(function);
-                    return (byte[]) result.getValue();
-                });
     }
 
     /**
@@ -686,12 +721,14 @@ public class Diamond extends Contract {
         BigInteger amount,
         byte[] reference
     ) {
+        // fromState and toState are uint8 in the ABI: transitionProviderReceivableState(uint256,uint8,uint8,uint256,bytes32)
+        // Using Uint256 here would produce a different function selector and the call would always revert.
         return new Function(
             "transitionProviderReceivableState",
             Arrays.asList(
                 new Uint256(labId),
-                new Uint256(fromState),
-                new Uint256(toState),
+                new Uint8(fromState.longValue()),
+                new Uint8(toState.longValue()),
                 new Uint256(amount),
                 new Bytes32(reference)
             ),
