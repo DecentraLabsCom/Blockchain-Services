@@ -3110,6 +3110,18 @@ async function initDashboard() {
     console.log('Dashboard initialized successfully');
 }
 
+function cleanTokenQueryFromUrl() {
+    try {
+        const url = new URL(window.location.href);
+        if (url.searchParams.has('token')) {
+            url.searchParams.delete('token');
+            window.history.replaceState({}, '', url.toString());
+        }
+    } catch (error) {
+        console.warn('Unable to clean token query from URL', error);
+    }
+}
+
 // Cleanup on page unload
 window.addEventListener('beforeunload', () => {
     stopAutoRefresh();
@@ -3117,8 +3129,12 @@ window.addEventListener('beforeunload', () => {
 
 // Start the dashboard when DOM is ready
 if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', initDashboard);
+    document.addEventListener('DOMContentLoaded', () => {
+        cleanTokenQueryFromUrl();
+        initDashboard();
+    });
 } else {
+    cleanTokenQueryFromUrl();
     initDashboard();
 }
 
