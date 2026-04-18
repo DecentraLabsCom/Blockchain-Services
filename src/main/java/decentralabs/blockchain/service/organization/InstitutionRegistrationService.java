@@ -1,5 +1,6 @@
 package decentralabs.blockchain.service.organization;
 
+import decentralabs.blockchain.service.billing.InstitutionalAdminService;
 import decentralabs.blockchain.service.wallet.InstitutionalWalletService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -27,6 +28,7 @@ import java.util.Properties;
 @Slf4j
 public class InstitutionRegistrationService {
 
+    private final InstitutionalAdminService institutionalAdminService;
     private final InstitutionalWalletService institutionalWalletService;
     private final ProviderConfigurationPersistenceService configPersistenceService;
     private final RestTemplate restTemplate;
@@ -138,6 +140,7 @@ public class InstitutionRegistrationService {
             );
 
             log.info("Provider registration completed successfully");
+            alignSpendingPeriodWithRegistration(InstitutionRole.PROVIDER);
             markAsRegistered(InstitutionRole.PROVIDER);
             return true;
         } catch (Exception e) {
@@ -172,11 +175,21 @@ public class InstitutionRegistrationService {
             );
 
             log.info("Consumer registration completed successfully");
+            alignSpendingPeriodWithRegistration(InstitutionRole.CONSUMER);
             markAsRegistered(InstitutionRole.CONSUMER);
             return true;
         } catch (Exception e) {
             log.error("Consumer registration failed: {}", e.getMessage(), e);
             return false;
+        }
+    }
+
+    private void alignSpendingPeriodWithRegistration(InstitutionRole role) {
+        try {
+            institutionalAdminService.resetSpendingPeriodAfterRegistration();
+            log.info("Aligned institutional spending period anchor with {} registration", role);
+        } catch (Exception e) {
+            log.warn("{} registration succeeded but spending period anchor reset failed: {}", role, e.getMessage());
         }
     }
 

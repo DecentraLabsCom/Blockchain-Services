@@ -789,29 +789,28 @@ public class AdminDashboardController {
     }
 
     private void applyResolvedPeriodWindow(Map<String, Object> info, String institutionalAddress) {
-        Optional<InstitutionalUserFinancialStats> periodSnapshot = institutionalAnalyticsService
-            .getKnownUsers(institutionalAddress, 1).stream()
-            .findFirst()
-            .flatMap(user -> walletService.getInstitutionalUserFinancialStats(institutionalAddress, user.getPuc()));
+        BigInteger periodDuration = null;
+        Object rawPeriodDuration = info.get("periodDuration");
+        if (rawPeriodDuration instanceof Long value) {
+            periodDuration = BigInteger.valueOf(value);
+        } else if (rawPeriodDuration instanceof Integer value) {
+            periodDuration = BigInteger.valueOf(value.longValue());
+        }
 
-        if (periodSnapshot.isPresent()) {
-            BigInteger periodStart = periodSnapshot.get().getPeriodStart();
-            BigInteger periodEnd = periodSnapshot.get().getPeriodEnd();
-            if (periodStart != null
-                && periodEnd != null
-                && periodStart.compareTo(BigInteger.ZERO) > 0
-                && periodEnd.compareTo(BigInteger.ZERO) > 0) {
-                info.put("periodStart", periodStart.longValue());
-                info.put("periodEnd", periodEnd.longValue());
-                return;
-            }
+        Optional<BigInteger> currentPeriodStart = walletService.getInstitutionalCurrentPeriodStart(institutionalAddress);
+        if (currentPeriodStart.isPresent() && periodDuration != null && periodDuration.compareTo(BigInteger.ZERO) > 0) {
+            BigInteger periodStart = currentPeriodStart.get();
+            BigInteger periodEnd = periodStart.add(periodDuration);
+            info.put("periodStart", periodStart.longValue());
+            info.put("periodEnd", periodEnd.longValue());
+            return;
         }
 
         info.put("periodStart", null);
         info.put("periodEnd", null);
         info.put(
             "note",
-            "Spending period duration is configured, but the current period window is only shown once on-chain user activity is available."
+            "Spending period duration is configured, but the current period window could not be resolved from the contract."
         );
     }
 

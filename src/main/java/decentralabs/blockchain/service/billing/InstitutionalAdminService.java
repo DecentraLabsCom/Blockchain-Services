@@ -539,6 +539,11 @@ public class InstitutionalAdminService {
         );
     }
 
+    public void resetSpendingPeriodAfterRegistration() throws Exception {
+        Credentials credentials = institutionalWalletService.getInstitutionalCredentials();
+        resetSpendingPeriod(credentials);
+    }
+
     private InstitutionalAdminResponse issueServiceCredits(Credentials credentials, InstitutionalAdminRequest request) throws Exception {
         if (request.getCreditAccount() == null || request.getCreditAccount().isBlank()) {
             return InstitutionalAdminResponse.error("Credit account required for service credit issuance");

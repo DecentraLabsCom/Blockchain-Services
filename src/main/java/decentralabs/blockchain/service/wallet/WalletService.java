@@ -988,6 +988,56 @@ public class WalletService {
     }
 
     /**
+     * Returns the current institutional spending period start even when no user has spent yet.
+     */
+    public Optional<BigInteger> getInstitutionalCurrentPeriodStart(String providerAddress) {
+        if (providerAddress == null || providerAddress.isBlank()) {
+            return Optional.empty();
+        }
+        try {
+            Web3j web3j = getWeb3jInstance();
+
+            Function function = new Function(
+                "getInstitutionalUserSpendingData",
+                Arrays.asList(new Address(providerAddress), new Utf8String("")),
+                Arrays.asList(
+                    new TypeReference<Uint256>() {},
+                    new TypeReference<Uint256>() {}
+                )
+            );
+
+            String encodedFunction = FunctionEncoder.encode(function);
+            EthCall response = web3j.ethCall(
+                Transaction.createEthCallTransaction(null, contractAddress, encodedFunction),
+                DefaultBlockParameterName.LATEST
+            ).send();
+
+            if (response.hasError()) {
+                log.warn("Error calling getInstitutionalUserSpendingData()");
+                log.debug("getInstitutionalUserSpendingData() RPC error (details omitted)");
+                return Optional.empty();
+            }
+
+            @SuppressWarnings("rawtypes")
+            List<Type> decoded = FunctionReturnDecoder.decode(response.getValue(), function.getOutputParameters());
+            if (decoded.size() < 2) {
+                return Optional.empty();
+            }
+
+            BigInteger periodStart = (BigInteger) decoded.get(1).getValue();
+            if (periodStart == null || periodStart.compareTo(BigInteger.ZERO) <= 0) {
+                return Optional.empty();
+            }
+
+            return Optional.of(periodStart);
+        } catch (Exception e) {
+            log.error("Error getting institutional current period start");
+            log.debug("Institutional current period start error (context omitted)", e);
+            return Optional.empty();
+        }
+    }
+
+    /**
      * Returns the closed service credit balance tracked by the Diamond contract.
      */
     public BigInteger getServiceCreditBalance(String accountAddress) {
