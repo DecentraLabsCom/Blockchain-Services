@@ -788,8 +788,6 @@ function updateDashboardAccessNotices(status) {
 }
 
 function updateOperatingModeNotices(providerConfig) {
-    const badge = document.getElementById('operatingModeBadge');
-    const notice = document.getElementById('operatingModeNotice');
     const welcomeInstruction = document.getElementById('welcomeTokenInstruction');
     const welcomeHelp = document.getElementById('welcomeTokenHelp');
     const tokenIntro = document.getElementById('provisioningTokenIntro');
@@ -806,18 +804,9 @@ function updateOperatingModeNotices(providerConfig) {
         ? providerConfig.registrationRole
         : null;
 
+    const badge = document.getElementById('operatingModeBadge');
     if (badge) {
         badge.textContent = providerMode ? 'Provider + Consumer Mode' : 'Consumer-Only Mode';
-    }
-
-    if (notice) {
-        const roleSuffix = DashboardState.registrationRole
-            ? ` Registered role: ${DashboardState.registrationRole}.`
-            : '';
-        notice.textContent = providerMode
-            ? 'Full gateway mode: provider publishing, auth endpoints, and consumer funding flows are available.'
-            : 'Consumer-only mode: this institution can fund reservation and access costs for its own users. Provider publishing and provider auth endpoints are disabled.';
-        notice.textContent += roleSuffix;
     }
 
     if (welcomeInstruction) {
