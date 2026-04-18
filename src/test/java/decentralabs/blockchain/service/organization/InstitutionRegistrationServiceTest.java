@@ -1,5 +1,6 @@
 package decentralabs.blockchain.service.organization;
 
+import decentralabs.blockchain.service.billing.InstitutionalAdminService;
 import decentralabs.blockchain.service.wallet.InstitutionalWalletService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -30,6 +31,9 @@ import static org.mockito.Mockito.*;
 class InstitutionRegistrationServiceTest {
 
     @Mock
+    private InstitutionalAdminService institutionalAdminService;
+
+    @Mock
     private InstitutionalWalletService walletService;
 
     @Mock
@@ -43,6 +47,7 @@ class InstitutionRegistrationServiceTest {
     @BeforeEach
     void setUp() {
         service = new InstitutionRegistrationService(
+                institutionalAdminService,
                 walletService,
                 configPersistenceService,
                 restTemplate
