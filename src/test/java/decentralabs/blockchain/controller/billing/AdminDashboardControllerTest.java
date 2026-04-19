@@ -27,7 +27,6 @@ import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
-import decentralabs.blockchain.dto.billing.InstitutionalUserFinancialStats;
 import decentralabs.blockchain.dto.wallet.NetworkInfo;
 import decentralabs.blockchain.dto.wallet.NetworkResponse;
 import decentralabs.blockchain.dto.wallet.PayoutRequestSimulationResult;
@@ -492,19 +491,11 @@ class AdminDashboardControllerTest {
             when(institutionalWalletService.getInstitutionalWalletAddress()).thenReturn(VALID_ADDRESS);
             when(walletService.getInstitutionalUserLimit(VALID_ADDRESS)).thenReturn(BigInteger.valueOf(1_000_000));
             when(walletService.getInstitutionalSpendingPeriod(VALID_ADDRESS)).thenReturn(BigInteger.valueOf(86_400));
+            when(walletService.getInstitutionalCurrentPeriodStart(VALID_ADDRESS))
+                .thenReturn(Optional.of(BigInteger.valueOf(1_700_000_000L)));
             when(walletService.getInstitutionalBillingBalance(VALID_ADDRESS)).thenReturn(BigInteger.valueOf(250_000));
             when(walletService.getServiceCreditBalance(VALID_ADDRESS)).thenReturn(BigInteger.valueOf(750_000));
             when(walletService.isLabProvider(VALID_ADDRESS)).thenReturn(false);
-            when(institutionalAnalyticsService.getKnownUsers(VALID_ADDRESS, 1))
-                .thenReturn(List.of(new InstitutionalAnalyticsService.UserActivity("user-1", 1_700_000_000_000L)));
-            when(walletService.getInstitutionalUserFinancialStats(VALID_ADDRESS, "user-1"))
-                .thenReturn(Optional.of(
-                    InstitutionalUserFinancialStats.builder()
-                        .periodStart(BigInteger.valueOf(1_700_000_000L))
-                        .periodEnd(BigInteger.valueOf(1_700_086_400L))
-                        .periodDuration(BigInteger.valueOf(86_400L))
-                        .build()
-                ));
 
             mockMvc.perform(get("/billing/admin/billing-info"))
                 .andExpect(status().isOk())
