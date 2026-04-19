@@ -37,7 +37,7 @@ jobs:
           mv blockchain-services-1.0-SNAPSHOT.war blockchain-services-${{ steps.version.outputs.VERSION }}.war
       
       - name: Create Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           files: |
             target/blockchain-services-${{ steps.version.outputs.VERSION }}.war
