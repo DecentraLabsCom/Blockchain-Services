@@ -23,6 +23,7 @@ import org.web3j.protocol.core.methods.response.EthChainId;
 import decentralabs.blockchain.dto.intent.ActionIntentPayload;
 import decentralabs.blockchain.dto.intent.ReservationIntentPayload;
 import decentralabs.blockchain.service.intent.IntentOnChainExecutor.ExecutionResult;
+import decentralabs.blockchain.service.intent.Eip712IntentVerifier;
 import decentralabs.blockchain.service.wallet.InstitutionalTxManagerProvider;
 import decentralabs.blockchain.service.wallet.InstitutionalWalletService;
 import decentralabs.blockchain.service.wallet.WalletService;
@@ -40,6 +41,9 @@ class IntentOnChainExecutorTest {
 
     @Mock
     private InstitutionalTxManagerProvider txManagerProvider;
+
+    @Mock
+    private Eip712IntentVerifier intentVerifier;
 
     @Mock
     private Web3j web3j;
@@ -69,7 +73,8 @@ class IntentOnChainExecutorTest {
             GAS_PRICE_GWEI,
             GAS_PRICE_MULTIPLIER,
             GAS_PRICE_MIN_GWEI,
-            txManagerProvider
+            txManagerProvider,
+            intentVerifier
         );
 
         // Create test credentials
@@ -84,8 +89,6 @@ class IntentOnChainExecutorTest {
         @Test
         @DisplayName("Should return unsupported_action for unknown action")
         void shouldReturnUnsupportedActionForUnknownAction() throws Exception {
-            when(institutionalWalletService.getInstitutionalCredentials()).thenReturn(testCredentials);
-
             IntentRecord record = new IntentRecord("req-123", "UNKNOWN_ACTION", "0xprovider");
 
             ExecutionResult result = executor.execute(record);
@@ -98,8 +101,6 @@ class IntentOnChainExecutorTest {
         @Test
         @DisplayName("Should return unsupported_action for null action")
         void shouldReturnUnsupportedActionForNullAction() throws Exception {
-            when(institutionalWalletService.getInstitutionalCredentials()).thenReturn(testCredentials);
-
             IntentRecord record = new IntentRecord("req-123", null, "0xprovider");
 
             ExecutionResult result = executor.execute(record);
