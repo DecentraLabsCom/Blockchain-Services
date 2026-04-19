@@ -172,7 +172,7 @@ public class IntentOnChainExecutor {
                     TransactionReceipt receipt = waitForReceipt(web3j, retryHash);
                     Long blockNumber = receipt.getBlockNumber() != null ? receipt.getBlockNumber().longValue() : null;
                     return new ExecutionResult(receipt.isStatusOK(), retryHash, blockNumber, null, null,
-                        receipt.isStatusOK() ? null : receipt.getStatus());
+                        receipt.isStatusOK() ? null : inferRevertReason(receipt));
                 }
             }
             return new ExecutionResult(false, null, null, null, null, error);
@@ -182,11 +182,24 @@ public class IntentOnChainExecutor {
             TransactionReceipt receipt = waitForReceipt(web3j, txHash);
             Long blockNumber = receipt.getBlockNumber() != null ? receipt.getBlockNumber().longValue() : null;
             return new ExecutionResult(receipt.isStatusOK(), txHash, blockNumber, null, null,
-                receipt.isStatusOK() ? null : "tx_reverted_status_" + receipt.getStatus());
+                receipt.isStatusOK() ? null : inferRevertReason(receipt));
         } catch (Exception ex) {
             log.warn("Failed to get tx receipt for {}: {}", txHash, ex.getMessage());
             return new ExecutionResult(false, txHash, null, null, null, "receipt_error: " + ex.getMessage());
         }
+    }
+
+    private String inferRevertReason(TransactionReceipt receipt) {
+        if (receipt == null) {
+            return "tx_reverted_status_unknown";
+        }
+
+        String status = receipt.getStatus() != null ? receipt.getStatus() : "unknown";
+        if (receipt.getGasUsed() != null && gasLimit != null && receipt.getGasUsed().compareTo(gasLimit) >= 0) {
+            return "tx_out_of_gas: gasUsed=" + receipt.getGasUsed() + " gasLimit=" + gasLimit + " status=" + status;
+        }
+
+        return "tx_reverted_status_" + status;
     }
 
     private Optional<String> validatePayloadHash(IntentRecord record, String action) {
