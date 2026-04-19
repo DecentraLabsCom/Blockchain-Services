@@ -51,10 +51,12 @@ else
 fi
 
 # Ensure keys exist (generate if missing or too old)
-KEY_DIR="./config/keys"
-mkdir -p "$KEY_DIR"
-KEY_FILE="$KEY_DIR/private_key.pem"
-PUB_FILE="$KEY_DIR/public_key.pem"
+# Prefer explicit key paths from env so JWT keys can live outside read-only cert mounts.
+KEY_FILE="${PRIVATE_KEY_PATH:-/app/data/keys/private_key.pem}"
+PUB_FILE="${PUBLIC_KEY_PATH:-/app/data/keys/public_key.pem}"
+KEY_DIR="$(dirname "$KEY_FILE")"
+PUB_DIR="$(dirname "$PUB_FILE")"
+mkdir -p "$KEY_DIR" "$PUB_DIR"
 MAX_KEY_AGE_SECONDS="${JWT_KEY_MAX_AGE_SECONDS:-31536000}" # 12 months por defecto
 
 regen_keys=false
@@ -79,7 +81,7 @@ if [ "$regen_keys" = true ]; then
     openssl genrsa -out "$KEY_FILE" 2048
     openssl rsa -in "$KEY_FILE" -pubout -out "$PUB_FILE"
     chmod 600 "$KEY_FILE"
-    chmod 644 "$PUB_FILE"
+    chmod 600 "$PUB_FILE"
     echo "Generated RSA key pair in $KEY_DIR"
 fi
 
