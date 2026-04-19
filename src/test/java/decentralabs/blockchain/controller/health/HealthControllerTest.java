@@ -349,13 +349,13 @@ class HealthControllerTest {
     class InviteTokenConfigTests {
 
         @Test
-        @DisplayName("Should include invite token configuration status")
-        void shouldIncludeInviteTokenConfigurationStatus() throws Exception {
+        @DisplayName("Should report invite token ready when institution is already registered")
+        void shouldReportInviteTokenReadyWhenInstitutionAlreadyRegistered() throws Exception {
             setupHealthyEnvironment();
 
             mockMvc.perform(get("/health"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.invite_token_configured").value(false));
+                .andExpect(jsonPath("$.invite_token_configured").value(true));
         }
 
         @Test
@@ -367,6 +367,19 @@ class HealthControllerTest {
             mockMvc.perform(get("/health"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.invite_token_configured").value(true));
+        }
+
+        @Test
+        @DisplayName("Should report invite token not configured when institution is not registered and secret is empty")
+        void shouldReportInviteTokenNotConfiguredWhenNotRegisteredAndSecretMissing() throws Exception {
+            setupHealthyEnvironment();
+            ReflectionTestUtils.setField(healthController, "organizationInviteHmacSecret", "");
+            when(institutionRegistrationService.isRegistered(InstitutionRole.PROVIDER)).thenReturn(false);
+
+            mockMvc.perform(get("/health"))
+                .andExpect(status().isServiceUnavailable())
+                .andExpect(jsonPath("$.provider_registered").value(false))
+                .andExpect(jsonPath("$.invite_token_configured").value(false));
         }
 
         @Test

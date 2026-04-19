@@ -84,7 +84,9 @@ public class HealthController {
             healthStatus.put("provider_registered", providerRegistered);
             healthStatus.put("consumer_registered", consumerRegistered);
             healthStatus.put("institution_registered", institutionRegistered);
-            healthStatus.put("invite_token_configured", isInviteTokenConfigured());
+            // Treat invite token capability as ready when a secret is configured
+            // or when the institution has already completed registration.
+            healthStatus.put("invite_token_configured", isInviteTokenConfigured() || institutionRegistered);
             healthStatus.put("endpoints", getEndpointStatus());
 
             return buildResponse(healthStatus);
