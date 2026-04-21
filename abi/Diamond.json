@@ -3983,7 +3983,7 @@
   },
   {
     "type": "function",
-    "name": "getCreatorPucHash",
+    "name": "getPucHash",
     "inputs": [
       {
         "name": "_labId",
@@ -7013,7 +7013,7 @@
         "internalType": "uint256"
       },
       {
-        "name": "creatorPucHash",
+        "name": "PucHash",
         "type": "bytes32",
         "indexed": true,
         "internalType": "bytes32"

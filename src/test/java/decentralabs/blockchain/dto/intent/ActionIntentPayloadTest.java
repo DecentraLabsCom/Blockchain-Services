@@ -104,14 +104,14 @@ class ActionIntentPayloadTest {
         }
 
         @Test
-        @DisplayName("Should get and set puc")
-        void shouldGetSetPuc() {
+        @DisplayName("Should get and set pucHash")
+        void shouldGetSetPucHash() {
             ActionIntentPayload payload = new ActionIntentPayload();
-            String puc = "PUC123";
+            String pucHash = "0x" + "1".repeat(64);
 
-            payload.setPuc(puc);
+            payload.setPucHash(pucHash);
 
-            assertEquals(puc, payload.getPuc());
+            assertEquals(pucHash, payload.getPucHash());
         }
 
         @Test

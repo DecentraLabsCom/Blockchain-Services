@@ -220,7 +220,7 @@ class IntentAuthorizationControllerTest {
     private ActionIntentPayload validActionPayload() {
         ActionIntentPayload payload = new ActionIntentPayload();
         payload.setExecutor("0xexecutor");
-        payload.setPuc("user@example.edu");
+        payload.setPucHash("0x" + "1".repeat(64));
         payload.setLabId(BigInteger.ONE);
         return payload;
     }

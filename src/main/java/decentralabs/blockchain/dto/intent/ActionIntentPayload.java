@@ -17,7 +17,7 @@ public class ActionIntentPayload {
     private String executor;
 
     private String schacHomeOrganization;
-    private String puc;
+    private String pucHash; // bytes32 hex
     private String assertionHash; // bytes32 hex
 
     @NotNull
@@ -48,20 +48,20 @@ public class ActionIntentPayload {
         this.schacHomeOrganization = schacHomeOrganization;
     }
 
-    public String getPuc() {
-        return puc;
-    }
-
-    public void setPuc(String puc) {
-        this.puc = puc;
-    }
-
     public String getAssertionHash() {
         return assertionHash;
     }
 
     public void setAssertionHash(String assertionHash) {
         this.assertionHash = assertionHash;
+    }
+
+    public String getPucHash() {
+        return pucHash;
+    }
+
+    public void setPucHash(String pucHash) {
+        this.pucHash = pucHash;
     }
 
     public BigInteger getLabId() {

@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -15,6 +16,7 @@ import decentralabs.blockchain.dto.intent.IntentAuthorizationStatusResponse;
 import decentralabs.blockchain.dto.intent.IntentMeta;
 import decentralabs.blockchain.dto.intent.IntentSubmission;
 import decentralabs.blockchain.service.BackendUrlResolver;
+import decentralabs.blockchain.service.auth.SamlValidationService;
 import decentralabs.blockchain.service.auth.WebauthnCredentialService;
 import decentralabs.blockchain.service.auth.WebauthnCredentialService.WebauthnCredential;
 import java.math.BigInteger;
@@ -22,6 +24,7 @@ import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.Base64;
 import java.util.List;
+import java.util.Map;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -44,17 +47,21 @@ class IntentAuthorizationServiceTest {
     private WebauthnCredentialService webauthnCredentialService;
 
     @Mock
+    private SamlValidationService samlValidationService;
+
+    @Mock
     private BackendUrlResolver backendUrlResolver;
 
     @InjectMocks
     private IntentAuthorizationService service;
 
     @BeforeEach
-    void setUp() {
+    void setUp() throws Exception {
         ReflectionTestUtils.setField(service, "rpId", "example.com");
         ReflectionTestUtils.setField(service, "baseUrl", "https://backend.example/");
         ReflectionTestUtils.setField(service, "sessionTtlSeconds", 300L);
         ReflectionTestUtils.setField(service, "cleanupIntervalSeconds", 60L);
+        lenient().when(samlValidationService.validateSamlAssertionWithSignature(any())).thenReturn(Map.of("userid", "user@example.edu"));
     }
 
     @AfterEach
@@ -85,11 +92,10 @@ class IntentAuthorizationServiceTest {
     }
 
     @Test
-    void createSession_rejectsMissingPuc() {
-        IntentAuthorizationRequest request = validAuthorizationRequest();
-        request.getActionPayload().setPuc(" ");
+    void createSession_rejectsInvalidSaml() throws Exception {
+        when(samlValidationService.validateSamlAssertionWithSignature(any())).thenReturn(Map.of());
 
-        assertThatThrownBy(() -> service.createSession(request))
+        assertThatThrownBy(() -> service.createSession(validAuthorizationRequest()))
             .isInstanceOf(ResponseStatusException.class)
             .hasMessageContaining("missing_puc_for_webauthn");
     }
@@ -278,7 +284,7 @@ class IntentAuthorizationServiceTest {
     private ActionIntentPayload validActionPayload() {
         ActionIntentPayload payload = new ActionIntentPayload();
         payload.setExecutor("0xexecutor");
-        payload.setPuc("user@example.edu");
+        payload.setPucHash("0x" + "1".repeat(64));
         payload.setLabId(BigInteger.ONE);
         return payload;
     }

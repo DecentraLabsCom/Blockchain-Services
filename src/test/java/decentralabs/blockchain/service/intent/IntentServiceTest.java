@@ -77,7 +77,7 @@ class IntentServiceTest {
             meterRegistry
         ) {
             @Override
-            String fetchCreatorPucHash(BigInteger labId) {
+            String fetchPucHash(BigInteger labId) {
                 return creatorHashToReturn;
             }
         };
@@ -142,7 +142,7 @@ class IntentServiceTest {
         ActionIntentPayload payload = new ActionIntentPayload();
         payload.setLabId(BigInteger.valueOf(42));
         payload.setExecutor("0x1234567890abcdef1234567890abcdef12345678");
-        payload.setPuc("user@university.edu");
+        payload.setPucHash("0x" + "c".repeat(64));
         payload.setAssertionHash("0x" + "b".repeat(64));
         return payload;
     }

@@ -343,7 +343,7 @@ public class IntentOnChainExecutor {
         DynamicStruct struct = new DynamicStruct(
             new Address(payload.getExecutor()),
             new Utf8String(payload.getSchacHomeOrganization() != null ? payload.getSchacHomeOrganization() : ""),
-            new Utf8String(payload.getPuc() != null ? payload.getPuc() : ""),
+            new Bytes32(toBytes32(payload.getPucHash())),
             assertion,
             new Uint256(payload.getLabId()),
             reservationKey,
@@ -378,7 +378,7 @@ public class IntentOnChainExecutor {
         DynamicStruct struct = new DynamicStruct(
             new Address(payload.getExecutor()),
             new Utf8String(payload.getSchacHomeOrganization() != null ? payload.getSchacHomeOrganization() : ""),
-            new Utf8String(payload.getPuc() != null ? payload.getPuc() : ""),
+            new Bytes32(toBytes32(payload.getPucHash())),
             assertion,
             new Uint256(payload.getLabId()),
             reservationKey,
@@ -418,7 +418,7 @@ public class IntentOnChainExecutor {
         DynamicStruct struct = new DynamicStruct(
             new Address(payload.getExecutor()),
             new Utf8String(payload.getSchacHomeOrganization() != null ? payload.getSchacHomeOrganization() : ""),
-            new Utf8String(payload.getPuc() != null ? payload.getPuc() : ""),
+            new Bytes32(toBytes32(payload.getPucHash())),
             new Bytes32(toBytes32(payload.getAssertionHash())),
             new Uint256(payload.getLabId()),
             new Bytes32(toBytes32(payload.getReservationKey())),
@@ -453,7 +453,7 @@ public class IntentOnChainExecutor {
         DynamicStruct struct = new DynamicStruct(
             new Address(payload.getExecutor()),
             new Utf8String(payload.getSchacHomeOrganization() != null ? payload.getSchacHomeOrganization() : ""),
-            new Utf8String(payload.getPuc() != null ? payload.getPuc() : ""),
+            new Bytes32(toBytes32(payload.getPucHash())),
             assertion,
             new Uint256(payload.getLabId()),
             reservationKey,
@@ -486,7 +486,7 @@ public class IntentOnChainExecutor {
         DynamicStruct struct = new DynamicStruct(
             new Address(payload.getExecutor()),
             new Utf8String(payload.getSchacHomeOrganization() != null ? payload.getSchacHomeOrganization() : ""),
-            new Utf8String(payload.getPuc() != null ? payload.getPuc() : ""),
+            new Bytes32(toBytes32(payload.getPucHash())),
             new Bytes32(toBytes32(payload.getAssertionHash())),
             new Uint256(payload.getLabId()),
             new Bytes32(toBytes32(payload.getReservationKey())),
@@ -593,7 +593,7 @@ public class IntentOnChainExecutor {
         DynamicStruct struct = new DynamicStruct(
             new Address(payload.getExecutor()),
             new Utf8String(payload.getSchacHomeOrganization() != null ? payload.getSchacHomeOrganization() : ""),
-            new Utf8String(payload.getPuc() != null ? payload.getPuc() : ""),
+            new Bytes32(toBytes32(payload.getPucHash())),
             new Bytes32(toBytes32(payload.getAssertionHash())),
             new Uint256(payload.getLabId()),
             new Bytes32(toBytes32(payload.getReservationKey())),

@@ -237,7 +237,7 @@ class IntentOnChainExecutorTest {
             ActionIntentPayload payload = new ActionIntentPayload();
             payload.setExecutor("0x1111111111111111111111111111111111111111");
             payload.setSchacHomeOrganization("org-example");
-            payload.setPuc("puc-value");
+            payload.setPucHash("0x" + "1".repeat(64));
             payload.setAssertionHash("0x0000000000000000000000000000000000000000000000000000000000000000");
             payload.setLabId(BigInteger.ZERO);
             payload.setReservationKey("0x0000000000000000000000000000000000000000000000000000000000000000");

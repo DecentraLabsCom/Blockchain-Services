@@ -145,11 +145,11 @@ public class IntentService {
         String samlAssertion = requireSamlAssertion(submission);
         String expectedAssertionHash = computeAssertionHash(samlAssertion);
         ensurePayloadAssertionHash(actionPayload, reservationPayload, expectedAssertionHash);
-        validateSamlAssertion(actionPayload, reservationPayload, samlAssertion);
+        String validatedSamlUser = validateSamlAssertion(actionPayload, reservationPayload, samlAssertion);
         checkAssertionReplay(expectedAssertionHash);
 
-        String puc = resolvePuc(actionPayload, reservationPayload);
-        enforceLabCreatorOwnershipPrecheck(action, actionPayload, puc);
+        String puc = resolvePuc(reservationPayload, validatedSamlUser);
+        enforceLabCreatorOwnershipPrecheck(action, actionPayload);
         validateWebauthnAssertion(puc, credentialId, meta, submission);
 
         if (isExpired(meta.getExpiresAt())) {
@@ -200,7 +200,7 @@ public class IntentService {
             record.setActionPayload(actionPayload);
             record.setReservationKey(normalizeBytes32(actionPayload.getReservationKey()));
             record.setLabId(actionPayload.getLabId() != null ? actionPayload.getLabId().toString() : null);
-            record.setPuc(actionPayload.getPuc());
+            record.setPuc(validatedSamlUser);
         }
 
         record.setPayloadJson(serializePayload(submission));
@@ -352,13 +352,13 @@ public class IntentService {
             if (!meta.getExecutor().equalsIgnoreCase(actionPayload.getExecutor())) {
                 throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "executor mismatch");
             }
-            if (isBlank(actionPayload.getPuc())) {
-                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Missing puc");
-            }
             switch (action) {
-                case LAB_ADD -> {
+                case LAB_ADD, LAB_ADD_AND_LIST -> {
                     if (isBlank(actionPayload.getUri()) || actionPayload.getPrice() == null || isBlank(actionPayload.getAccessURI()) || isBlank(actionPayload.getAccessKey())) {
                         throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Missing lab payload fields");
+                    }
+                    if (isZeroBytes32(actionPayload.getPucHash())) {
+                        throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Missing pucHash");
                     }
                 }
                 case LAB_SET_URI -> {
@@ -378,30 +378,17 @@ public class IntentService {
 
     private void enforceLabCreatorOwnershipPrecheck(
         IntentAction action,
-        ActionIntentPayload actionPayload,
-        String puc
+        ActionIntentPayload actionPayload
     ) {
         if (!requiresLabCreatorOwnershipPrecheck(action) || actionPayload == null || actionPayload.getLabId() == null) {
             return;
         }
 
-        String normalizedPuc = PucNormalizer.normalize(puc);
-        if (normalizedPuc == null || normalizedPuc.isBlank()) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Missing puc");
+        String expectedHash = normalizeBytes32(actionPayload.getPucHash());
+        if (expectedHash == null || Numeric.toBigInt(expectedHash).equals(BigInteger.ZERO)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Missing pucHash");
         }
-
-        String expectedHash = normalizeBytes32(Numeric.toHexString(Hash.sha3(normalizedPuc.getBytes(StandardCharsets.UTF_8))));
-        String storedHash = fetchCreatorPucHash(actionPayload.getLabId());
-
-        if (storedHash == null || Numeric.toBigInt(storedHash).equals(BigInteger.ZERO)) {
-            recordCreatorOwnershipMetric("authorization.lab_legacy_blocked.count", action, actionPayload);
-            log.warn(
-                "Intent rejected: legacy lab blocked (action={}, labId={})",
-                action.getWireValue(),
-                LogSanitizer.sanitize(actionPayload.getLabId().toString())
-            );
-            throw new ResponseStatusException(HttpStatus.CONFLICT, "LAB_LEGACY_BLOCKED");
-        }
+        String storedHash = fetchPucHash(actionPayload.getLabId());
 
         if (!storedHash.equalsIgnoreCase(expectedHash)) {
             recordCreatorOwnershipMetric("authorization.lab_creator_mismatch.count", action, actionPayload);
@@ -448,7 +435,7 @@ public class IntentService {
             || action == IntentAction.LAB_UNLIST;
     }
 
-    String fetchCreatorPucHash(BigInteger labId) {
+    String fetchPucHash(BigInteger labId) {
         try {
             Web3j web3j = walletService.getWeb3jInstance();
             Diamond diamond = Diamond.load(
@@ -457,7 +444,7 @@ public class IntentService {
                 new ReadonlyTransactionManager(web3j, contractAddress),
                 new StaticGasProvider(BigInteger.ZERO, BigInteger.ZERO)
             );
-            return normalizeBytes32(Numeric.toHexString(diamond.getCreatorPucHash(labId).send()));
+            return normalizeBytes32(Numeric.toHexString(diamond.getPucHash(labId).send()));
         } catch (Exception ex) {
             log.warn("Unable to fetch creator hash for lab {}: {}", labId, LogSanitizer.sanitize(ex.getMessage()));
             throw new ResponseStatusException(HttpStatus.BAD_GATEWAY, "creator_hash_lookup_failed");
@@ -541,7 +528,7 @@ public class IntentService {
         }
     }
 
-    private void validateSamlAssertion(
+    private String validateSamlAssertion(
         ActionIntentPayload actionPayload,
         ReservationIntentPayload reservationPayload,
         String samlAssertion
@@ -552,16 +539,21 @@ public class IntentService {
             if (samlUser == null || samlUser.isBlank()) {
                 throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "invalid_saml");
             }
-            String puc = resolvePuc(actionPayload, reservationPayload);
-            String normalizedPuc = PucNormalizer.normalize(puc);
             String normalizedSamlUser = PucNormalizer.normalize(samlUser);
-            if (normalizedPuc != null
-                && !normalizedPuc.isBlank()
-                && normalizedSamlUser != null
-                && !normalizedSamlUser.isBlank()
-                && !normalizedPuc.equals(normalizedSamlUser)) {
-                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "puc_saml_mismatch");
+            if (normalizedSamlUser == null || normalizedSamlUser.isBlank()) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "invalid_saml");
             }
+
+            if (reservationPayload != null && !isBlank(reservationPayload.getPuc())) {
+                String normalizedPuc = PucNormalizer.normalize(reservationPayload.getPuc());
+                if (normalizedPuc != null
+                    && !normalizedPuc.isBlank()
+                    && !normalizedPuc.equals(normalizedSamlUser)) {
+                    throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "puc_saml_mismatch");
+                }
+            }
+
+            return normalizedSamlUser;
         } catch (ResponseStatusException ex) {
             throw ex;
         } catch (Exception ex) {
@@ -582,6 +574,14 @@ public class IntentService {
             clean = "0".repeat(64 - clean.length()) + clean;
         }
         return "0x" + clean;
+    }
+
+    private boolean isZeroBytes32(String value) {
+        String normalized = normalizeBytes32(value);
+        if (normalized == null) {
+            return true;
+        }
+        return Numeric.toBigInt(normalized).equals(BigInteger.ZERO);
     }
 
     private void checkAssertionReplay(String assertionHash) {
@@ -928,14 +928,11 @@ public class IntentService {
         throw new IllegalArgumentException("Unsupported WebAuthn public key algorithm: " + algorithm);
     }
 
-    private String resolvePuc(ActionIntentPayload actionPayload, ReservationIntentPayload reservationPayload) {
+    private String resolvePuc(ReservationIntentPayload reservationPayload, String validatedSamlUser) {
         if (reservationPayload != null && !isBlank(reservationPayload.getPuc())) {
             return reservationPayload.getPuc();
         }
-        if (actionPayload != null) {
-            return actionPayload.getPuc();
-        }
-        return null;
+        return validatedSamlUser;
     }
 
     private boolean isBlank(String value) {

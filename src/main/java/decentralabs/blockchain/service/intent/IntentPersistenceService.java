@@ -212,8 +212,6 @@ public class IntentPersistenceService {
 
             if (record.getReservationPayload() != null) {
                 record.setPuc(record.getReservationPayload().getPuc());
-            } else if (record.getActionPayload() != null) {
-                record.setPuc(record.getActionPayload().getPuc());
             }
 
             if (record.getLabId() == null) {

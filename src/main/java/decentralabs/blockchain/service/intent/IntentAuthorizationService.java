@@ -21,7 +21,6 @@ import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;
 
-import decentralabs.blockchain.dto.intent.ActionIntentPayload;
 import decentralabs.blockchain.dto.intent.IntentAckResponse;
 import decentralabs.blockchain.dto.intent.IntentAuthorizationCompleteRequest;
 import decentralabs.blockchain.dto.intent.IntentAuthorizationRequest;
@@ -30,8 +29,10 @@ import decentralabs.blockchain.dto.intent.IntentMeta;
 import decentralabs.blockchain.dto.intent.IntentSubmission;
 import decentralabs.blockchain.dto.intent.ReservationIntentPayload;
 import decentralabs.blockchain.service.BackendUrlResolver;
+import decentralabs.blockchain.service.auth.SamlValidationService;
 import decentralabs.blockchain.service.auth.WebauthnCredentialService;
 import decentralabs.blockchain.service.auth.WebauthnCredentialService.WebauthnCredential;
+import decentralabs.blockchain.util.PucNormalizer;
 
 @Service
 @Slf4j
@@ -41,6 +42,7 @@ public class IntentAuthorizationService {
 
     private final IntentService intentService;
     private final WebauthnCredentialService webauthnCredentialService;
+    private final SamlValidationService samlValidationService;
     private final BackendUrlResolver backendUrlResolver;
 
     @Value("${webauthn.rp.id:${base.domain:localhost}}")
@@ -62,10 +64,12 @@ public class IntentAuthorizationService {
     public IntentAuthorizationService(
         IntentService intentService,
         WebauthnCredentialService webauthnCredentialService,
+        SamlValidationService samlValidationService,
         BackendUrlResolver backendUrlResolver
     ) {
         this.intentService = intentService;
         this.webauthnCredentialService = webauthnCredentialService;
+        this.samlValidationService = samlValidationService;
         this.backendUrlResolver = backendUrlResolver;
     }
 
@@ -244,13 +248,21 @@ public class IntentAuthorizationService {
 
     private String resolvePuc(IntentSubmission submission) {
         ReservationIntentPayload reservationPayload = submission.getReservationPayload();
-        ActionIntentPayload actionPayload = submission.getActionPayload();
         if (reservationPayload != null && reservationPayload.getPuc() != null) {
             return reservationPayload.getPuc();
         }
-        if (actionPayload != null) {
-            return actionPayload.getPuc();
+
+        try {
+            String samlUser = samlValidationService.validateSamlAssertionWithSignature(submission.getSamlAssertion())
+                .get("userid");
+            String normalized = PucNormalizer.normalize(samlUser);
+            if (normalized != null && !normalized.isBlank()) {
+                return normalized;
+            }
+        } catch (Exception ex) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "invalid_saml");
         }
+
         return null;
     }
 

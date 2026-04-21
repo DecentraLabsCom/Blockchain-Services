@@ -255,8 +255,8 @@ public class Diamond extends Contract {
      * Get creator PUC hash by lab id (bytes32).
      */
     @SuppressWarnings("rawtypes")
-    public RemoteFunctionCall<byte[]> getCreatorPucHash(BigInteger labId) {
-        final Function function = new Function("getCreatorPucHash",
+    public RemoteFunctionCall<byte[]> getPucHash(BigInteger labId) {
+        final Function function = new Function("getPucHash",
                 Arrays.asList(new Uint256(labId)),
                 Arrays.asList(new TypeReference<Bytes32>() {}));
         return new RemoteFunctionCall<>(function,
