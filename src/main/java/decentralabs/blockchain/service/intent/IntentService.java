@@ -546,10 +546,15 @@ public class IntentService {
 
             if (reservationPayload != null && !isBlank(reservationPayload.getPuc())) {
                 String normalizedPuc = PucNormalizer.normalize(reservationPayload.getPuc());
-                if (normalizedPuc != null
-                    && !normalizedPuc.isBlank()
-                    && !normalizedPuc.equals(normalizedSamlUser)) {
-                    throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "puc_saml_mismatch");
+                // normalizedSamlUser may be "eppn|targetedId" while puc is just "eppn".
+                // Accept a match if the SAML user equals the puc exactly, or starts with
+                // "puc|" (i.e. the same principal with an appended targeted ID).
+                if (normalizedPuc != null && !normalizedPuc.isBlank()) {
+                    boolean matches = normalizedSamlUser.equals(normalizedPuc)
+                        || normalizedSamlUser.startsWith(normalizedPuc + "|");
+                    if (!matches) {
+                        throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "puc_saml_mismatch");
+                    }
                 }
             }
 
