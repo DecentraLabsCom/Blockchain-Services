@@ -27,7 +27,6 @@ import decentralabs.blockchain.dto.intent.IntentAuthorizationRequest;
 import decentralabs.blockchain.dto.intent.IntentAuthorizationStatusResponse;
 import decentralabs.blockchain.dto.intent.IntentMeta;
 import decentralabs.blockchain.dto.intent.IntentSubmission;
-import decentralabs.blockchain.dto.intent.ReservationIntentPayload;
 import decentralabs.blockchain.service.BackendUrlResolver;
 import decentralabs.blockchain.service.auth.SamlValidationService;
 import decentralabs.blockchain.service.auth.WebauthnCredentialService;
@@ -247,11 +246,11 @@ public class IntentAuthorizationService {
     }
 
     private String resolvePuc(IntentSubmission submission) {
-        ReservationIntentPayload reservationPayload = submission.getReservationPayload();
-        if (reservationPayload != null && reservationPayload.getPuc() != null) {
-            return reservationPayload.getPuc();
-        }
-
+        // Always derive the WebAuthn credential lookup key from the SAML assertion.
+        // The on-chain puc (reservationPayload.getPuc()) is only the EPPN, but
+        // credentials are stored under stableUserId which may be "eppn|targetedId"
+        // when eduPersonTargetedID is present. Using the SAML-derived userid ensures
+        // the lookup key matches the registration key for all users.
         try {
             String samlUser = samlValidationService.validateSamlAssertionWithSignature(submission.getSamlAssertion())
                 .get("userid");
