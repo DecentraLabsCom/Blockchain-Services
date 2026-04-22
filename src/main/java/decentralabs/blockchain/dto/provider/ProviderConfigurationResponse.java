@@ -1,5 +1,6 @@
 package decentralabs.blockchain.dto.provider;
 
+import com.fasterxml.jackson.annotation.JsonProperty;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -23,7 +24,9 @@ public class ProviderConfigurationResponse {
     private String providerCountry;
     private String providerOrganization;
     private String publicBaseUrl;
+    @JsonProperty("isConfigured")
     private boolean isConfigured;
+    @JsonProperty("isRegistered")
     private boolean isRegistered;
     private boolean providerRegistered;
     private boolean consumerRegistered;

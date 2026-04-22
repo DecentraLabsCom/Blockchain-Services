@@ -1194,7 +1194,7 @@ async function loadSystemStatus() {
                     DashboardState.walletAddress,
                     DashboardState.contractAddress
                 );
-                const registrationApplied = providerConfig && providerConfig.isRegistered === true;
+                const registrationApplied = providerConfig && (providerConfig.registered === true || providerConfig.isRegistered === true);
 
                 DashboardState.inviteTokenApplied = storedInviteApplied || registrationApplied;
 

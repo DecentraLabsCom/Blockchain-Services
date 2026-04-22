@@ -456,7 +456,7 @@
                 const tokenField = document.getElementById('provisioningToken');
                 const tokenHint = tokenField.nextElementSibling;
                 
-                if (data.fromProvisioningToken && data.registered) {
+                if (data.fromProvisioningToken && data.isRegistered) {
                     // Token was used and registration completed
                     tokenField.disabled = true;
                     tokenField.placeholder = "Token already applied ✓";
@@ -464,7 +464,7 @@
                     tokenField.style.color = '#718096';
                     tokenHint.textContent = 'Provisioning token has been applied and registration is complete.';
                     tokenHint.style.color = '#48bb78';
-                } else if (data.configured && !data.registered) {
+                } else if (data.isConfigured && !data.isRegistered) {
                     // Configuration exists but not registered yet
                     tokenField.required = true;
                     tokenHint.textContent = 'Provisioning token required to complete registration.';
@@ -472,7 +472,7 @@
 
                 // Update status badge
                 const statusBadge = document.getElementById('statusBadge');
-                if (data.registered) {
+                if (data.isRegistered) {
                     statusBadge.innerHTML = `
                         <div class="status-badge registered">
                             <i class="fas fa-check-circle"></i>
