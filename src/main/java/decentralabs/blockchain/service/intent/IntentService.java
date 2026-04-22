@@ -353,7 +353,7 @@ public class IntentService {
                 throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "executor mismatch");
             }
             switch (action) {
-                case LAB_ADD, LAB_ADD_AND_LIST -> {
+                case LAB_ADD -> {
                     if (isBlank(actionPayload.getUri()) || actionPayload.getPrice() == null || isBlank(actionPayload.getAccessURI()) || isBlank(actionPayload.getAccessKey())) {
                         throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Missing lab payload fields");
                     }
@@ -388,7 +388,18 @@ public class IntentService {
         if (expectedHash == null || Numeric.toBigInt(expectedHash).equals(BigInteger.ZERO)) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Missing pucHash");
         }
-        String storedHash = fetchPucHash(actionPayload.getLabId());
+
+        String storedHash = fetchCreatorPucHash(actionPayload.getLabId());
+
+        if (storedHash == null || Numeric.toBigInt(storedHash).equals(BigInteger.ZERO)) {
+            recordCreatorOwnershipMetric("authorization.lab_legacy_blocked.count", action, actionPayload);
+            log.warn(
+                "Intent rejected: legacy lab blocked (action={}, labId={})",
+                action.getWireValue(),
+                LogSanitizer.sanitize(actionPayload.getLabId().toString())
+            );
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "LAB_LEGACY_BLOCKED");
+        }
 
         if (!storedHash.equalsIgnoreCase(expectedHash)) {
             recordCreatorOwnershipMetric("authorization.lab_creator_mismatch.count", action, actionPayload);
@@ -435,7 +446,7 @@ public class IntentService {
             || action == IntentAction.LAB_UNLIST;
     }
 
-    String fetchPucHash(BigInteger labId) {
+    String fetchCreatorPucHash(BigInteger labId) {
         try {
             Web3j web3j = walletService.getWeb3jInstance();
             Diamond diamond = Diamond.load(
@@ -543,21 +554,13 @@ public class IntentService {
             if (normalizedSamlUser == null || normalizedSamlUser.isBlank()) {
                 throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "invalid_saml");
             }
-
+            // Validate against reservation payload puc when present (action payloads no longer carry puc)
             if (reservationPayload != null && !isBlank(reservationPayload.getPuc())) {
                 String normalizedPuc = PucNormalizer.normalize(reservationPayload.getPuc());
-                // normalizedSamlUser may be "eppn|targetedId" while puc is just "eppn".
-                // Accept a match if the SAML user equals the puc exactly, or starts with
-                // "puc|" (i.e. the same principal with an appended targeted ID).
-                if (normalizedPuc != null && !normalizedPuc.isBlank()) {
-                    boolean matches = normalizedSamlUser.equals(normalizedPuc)
-                        || normalizedSamlUser.startsWith(normalizedPuc + "|");
-                    if (!matches) {
-                        throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "puc_saml_mismatch");
-                    }
+                if (normalizedPuc != null && !normalizedPuc.isBlank() && !normalizedPuc.equals(normalizedSamlUser)) {
+                    throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "puc_saml_mismatch");
                 }
             }
-
             return normalizedSamlUser;
         } catch (ResponseStatusException ex) {
             throw ex;

@@ -7013,7 +7013,7 @@
         "internalType": "uint256"
       },
       {
-        "name": "PucHash",
+        "name": "pucHash",
         "type": "bytes32",
         "indexed": true,
         "internalType": "bytes32"

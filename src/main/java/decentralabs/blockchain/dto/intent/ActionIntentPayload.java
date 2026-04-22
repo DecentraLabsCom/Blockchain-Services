@@ -48,20 +48,20 @@ public class ActionIntentPayload {
         this.schacHomeOrganization = schacHomeOrganization;
     }
 
-    public String getAssertionHash() {
-        return assertionHash;
-    }
-
-    public void setAssertionHash(String assertionHash) {
-        this.assertionHash = assertionHash;
-    }
-
     public String getPucHash() {
         return pucHash;
     }
 
     public void setPucHash(String pucHash) {
         this.pucHash = pucHash;
+    }
+
+    public String getAssertionHash() {
+        return assertionHash;
+    }
+
+    public void setAssertionHash(String assertionHash) {
+        this.assertionHash = assertionHash;
     }
 
     public BigInteger getLabId() {

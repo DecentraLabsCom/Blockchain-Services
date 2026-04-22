@@ -75,10 +75,7 @@ public class InstitutionalCheckInService {
         }
 
         String requestPuc = PucNormalizer.normalize(request.getPuc());
-        // puc may be "eppn|targetedId" from SAML while requestPuc is just "eppn".
-        if (requestPuc != null && !requestPuc.isBlank()
-            && !requestPuc.equals(puc)
-            && !puc.startsWith(requestPuc + "|")) {
+        if (requestPuc != null && !requestPuc.isBlank() && !requestPuc.equals(puc)) {
             throw new SecurityException("Request puc does not match authenticated user");
         }
 
@@ -162,11 +159,10 @@ public class InstitutionalCheckInService {
             }
             String normalizedClaimUser = PucNormalizer.normalize(claimUser);
             String normalizedSamlUser = PucNormalizer.normalize(saml.userid());
-            // normalizedSamlUser may be "eppn|targetedId" while the JWT claim is just "eppn".
-            if (normalizedSamlUser != null && !normalizedSamlUser.isBlank()
-                && normalizedClaimUser != null && !normalizedClaimUser.isBlank()
-                && !normalizedClaimUser.equals(normalizedSamlUser)
-                && !normalizedSamlUser.startsWith(normalizedClaimUser + "|")) {
+            if (normalizedSamlUser != null
+                && !normalizedSamlUser.isBlank()
+                && normalizedClaimUser != null
+                && !normalizedClaimUser.equals(normalizedSamlUser)) {
                 throw new SecurityException("Marketplace token userid mismatch");
             }
             if (saml.affiliation() != null && !saml.affiliation().isBlank() && !claimAffiliation.equals(saml.affiliation())) {

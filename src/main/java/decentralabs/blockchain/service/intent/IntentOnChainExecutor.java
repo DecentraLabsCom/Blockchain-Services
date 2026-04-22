@@ -1,4 +1,4 @@
-package decentralabs.blockchain.service.intent;
+﻿package decentralabs.blockchain.service.intent;
 
 import java.math.BigDecimal;
 import java.math.BigInteger;

@@ -62,12 +62,7 @@ public class SamlAuthService {
 
         String normalizedJwtUserId = PucNormalizer.normalize(jwtUserId);
         String normalizedSamlUserId = PucNormalizer.normalize(samlUserId);
-        // normalizedSamlUserId may be "eppn|targetedId" while the JWT userid is just "eppn".
-        // Accept a match if they are equal, or if the SAML user starts with "jwtUserId|"
-        // (same principal with an appended targeted ID).
-        if (normalizedJwtUserId == null || normalizedSamlUserId == null
-            || (!normalizedJwtUserId.equals(normalizedSamlUserId)
-                && !normalizedSamlUserId.startsWith(normalizedJwtUserId + "|"))) {
+        if (normalizedJwtUserId == null || !normalizedJwtUserId.equals(normalizedSamlUserId)) {
             throw new SecurityException("JWT and SAML userid mismatch");
         }
 
