@@ -77,7 +77,7 @@ class IntentServiceTest {
             meterRegistry
         ) {
             @Override
-            String fetchPucHash(BigInteger labId) {
+            String fetchCreatorPucHash(BigInteger labId) {
                 return creatorHashToReturn;
             }
         };
