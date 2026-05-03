@@ -104,6 +104,15 @@ class IntentActionTest {
             assertFalse(IntentAction.CANCEL_BOOKING.usesReservationPayload());
         }
 
+        @Test
+        @DisplayName("Should have DIRECT_BOOKING action")
+        void shouldHaveDirectBookingAction() {
+            assertNotNull(IntentAction.DIRECT_BOOKING);
+            assertEquals(11, IntentAction.DIRECT_BOOKING.getId());
+            assertEquals("DIRECT_BOOKING", IntentAction.DIRECT_BOOKING.getWireValue());
+            assertTrue(IntentAction.DIRECT_BOOKING.usesReservationPayload());
+        }
+
     }
 
     @Nested
@@ -221,7 +230,7 @@ class IntentActionTest {
         @DisplayName("Should return all values")
         void shouldReturnAllValues() {
             IntentAction[] values = IntentAction.values();
-            assertEquals(10, values.length);
+            assertEquals(11, values.length);
         }
 
         @Test
@@ -239,6 +248,7 @@ class IntentActionTest {
             assertTrue(containsAction(values, IntentAction.RESERVATION_REQUEST));
             assertTrue(containsAction(values, IntentAction.CANCEL_RESERVATION_REQUEST));
             assertTrue(containsAction(values, IntentAction.CANCEL_BOOKING));
+            assertTrue(containsAction(values, IntentAction.DIRECT_BOOKING));
         }
 
         @Test
@@ -273,11 +283,12 @@ class IntentActionTest {
                 if (action.usesReservationPayload()) {
                     reservationPayloadCount++;
                     assertTrue(action == IntentAction.RESERVATION_REQUEST || 
-                              action == IntentAction.CANCEL_RESERVATION_REQUEST,
+                              action == IntentAction.CANCEL_RESERVATION_REQUEST ||
+                              action == IntentAction.DIRECT_BOOKING,
                         "Unexpected action using reservation payload: " + action.name());
                 }
             }
-            assertEquals(2, reservationPayloadCount);
+            assertEquals(3, reservationPayloadCount);
         }
     }
 }
