@@ -18,6 +18,7 @@ public enum IntentAction {
     LAB_UNLIST(7, "LAB_UNLIST", false),
     RESERVATION_REQUEST(8, "RESERVATION_REQUEST", true),
     CANCEL_RESERVATION_REQUEST(9, "CANCEL_RESERVATION_REQUEST", true),
+    DIRECT_BOOKING(11, "DIRECT_BOOKING", true),
     CANCEL_BOOKING(10, "CANCEL_BOOKING", false);
 
     private final int id;

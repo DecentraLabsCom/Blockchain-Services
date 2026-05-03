@@ -121,6 +121,13 @@ public class IntentOnChainExecutor {
                 }
                 yield result;
             }
+            case "DIRECT_BOOKING" -> {
+                ExecutionResult result = send(buildDirectBooking(record), credentials, record, action);
+                if (result.success()) {
+                    postflightReleaseExpiredInstitutionalReservations(record, credentials);
+                }
+                yield result;
+            }
             case "CANCEL_BOOKING" -> send(buildCancelBooking(record), credentials, record, action);
             default -> new ExecutionResult(false, null, null, null, null, "unsupported_action");
         };
@@ -128,9 +135,9 @@ public class IntentOnChainExecutor {
 
     private boolean isValidAction(String action) {
         return switch (action) {
-            case "LAB_ADD", "LAB_ADD_AND_LIST", "LAB_UPDATE", "LAB_LIST", "LAB_UNLIST", 
-                 "LAB_DELETE", "LAB_SET_URI", "CANCEL_RESERVATION_REQUEST", 
-                 "RESERVATION_REQUEST", "CANCEL_BOOKING" -> true;
+            case "LAB_ADD", "LAB_ADD_AND_LIST", "LAB_UPDATE", "LAB_LIST", "LAB_UNLIST",
+                 "LAB_DELETE", "LAB_SET_URI", "CANCEL_RESERVATION_REQUEST",
+                 "RESERVATION_REQUEST", "DIRECT_BOOKING", "CANCEL_BOOKING" -> true;
             default -> false;
         };
     }
@@ -208,7 +215,8 @@ public class IntentOnChainExecutor {
         }
 
         boolean usesReservationPayload = "RESERVATION_REQUEST".equals(action)
-            || "CANCEL_RESERVATION_REQUEST".equals(action);
+            || "CANCEL_RESERVATION_REQUEST".equals(action)
+            || "DIRECT_BOOKING".equals(action);
 
         String declared = normalizeBytes32(record.getPayloadHash());
         if (declared == null) {
@@ -537,6 +545,40 @@ public class IntentOnChainExecutor {
 
         return Optional.of(new Function(
             "cancelInstitutionalReservationRequestWithIntent",
+            List.of(new Bytes32(requestId), struct),
+            List.of()
+        ));
+    }
+
+    private Optional<Function> buildDirectBooking(IntentRecord record) {
+        ReservationIntentPayload payload = record.getReservationPayload();
+        if (payload == null) {
+            return Optional.empty();
+        }
+        BigInteger start = bigIntVal(payload.getStart());
+        BigInteger end = bigIntVal(payload.getEnd());
+        if (start == null || end == null) {
+            return Optional.empty();
+        }
+        if (payload.getExecutor() == null || payload.getExecutor().isBlank()) {
+            return Optional.empty();
+        }
+        byte[] requestId = toBytes32(record.getRequestId());
+
+        DynamicStruct struct = new DynamicStruct(
+            new Address(payload.getExecutor()),
+            new Utf8String(payload.getSchacHomeOrganization() != null ? payload.getSchacHomeOrganization() : ""),
+            new Utf8String(payload.getPuc() != null ? payload.getPuc() : ""),
+            new Bytes32(toBytes32(payload.getAssertionHash())),
+            new Uint256(payload.getLabId()),
+            new Uint32(BigInteger.valueOf(payload.getStart())),
+            new Uint32(BigInteger.valueOf(payload.getEnd())),
+            new Uint96(payload.getPrice()),
+            new Bytes32(toBytes32(payload.getReservationKey()))
+        );
+
+        return Optional.of(new Function(
+            "institutionalDirectBookingWithIntent",
             List.of(new Bytes32(requestId), struct),
             List.of()
         ));
