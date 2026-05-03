@@ -56,6 +56,9 @@ public class SecurityConfig {
     @Value("${auth.base-path:/auth}")
     private @Nonnull String authBasePath = "/auth";
 
+    @Value("${endpoint.fmu-provider-describe-token:/auth/fmu/provider-describe-token}")
+    private @Nonnull String fmuProviderDescribeTokenEndpoint = "/auth/fmu/provider-describe-token";
+
     @Value("${security.access-token.required:true}")
     private boolean accessTokenRequired;
 
@@ -94,7 +97,8 @@ public class SecurityConfig {
                     "/webauthn/**",
                     intentsEndpoint + "/**",
                     "/onboarding/**",
-                    "/institution-config/**"
+                    "/institution-config/**",
+                    fmuProviderDescribeTokenEndpoint
                 )
             )
             .authorizeHttpRequests(authorize -> {
@@ -105,6 +109,7 @@ public class SecurityConfig {
                 authorize.requestMatchers(samlAuthEndpoint).permitAll();
                 authorize.requestMatchers(samlAuth2Endpoint).permitAll();
                 authorize.requestMatchers(checkinInstitutionalEndpoint).permitAll();
+                authorize.requestMatchers(fmuProviderDescribeTokenEndpoint).permitAll();
                 authorize.requestMatchers(healthEndpoint).permitAll();
                 authorize.requestMatchers("/actuator/health/**").permitAll();
                 authorize.requestMatchers("/actuator/info").permitAll();
@@ -152,6 +157,7 @@ public class SecurityConfig {
         source.registerCorsConfiguration(samlAuthEndpoint, publicConfiguration);
         source.registerCorsConfiguration(samlAuth2Endpoint, publicConfiguration);
         source.registerCorsConfiguration(checkinInstitutionalEndpoint, publicConfiguration);
+        source.registerCorsConfiguration(fmuProviderDescribeTokenEndpoint, publicConfiguration);
         source.registerCorsConfiguration(healthEndpoint, publicConfiguration);
         source.registerCorsConfiguration(intentsEndpoint + "/**", publicConfiguration);
         source.registerCorsConfiguration("/webauthn/**", publicConfiguration);
