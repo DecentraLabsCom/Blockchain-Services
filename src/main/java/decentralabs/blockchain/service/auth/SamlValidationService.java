@@ -223,8 +223,10 @@ public class SamlValidationService {
     }
 
     public SamlAssertionAttributes validateSamlAssertionDetailed(String samlAssertion) throws Exception {
-        // Decode Base64
-        byte[] decodedBytes = Base64.getDecoder().decode(samlAssertion);
+        // Decode Base64 using MIME decoder which is lenient with whitespace.
+        // Some IdPs send SAMLResponse with "+" not percent-encoded; URLSearchParams
+        // in the Marketplace decodes those as spaces. getMimeDecoder() handles them.
+        byte[] decodedBytes = Base64.getMimeDecoder().decode(samlAssertion);
         String xmlContent = new String(decodedBytes);
         
         // Parse XML
@@ -253,6 +255,26 @@ public class SamlValidationService {
         
         // Get or retrieve certificate
         List<X509Certificate> certs = getIdpCertificates(issuer, metadataUrl);
+
+        // If primary metadata URL failed, try common IdP metadata URL patterns
+        if (certs.isEmpty()) {
+            certs = tryAlternativeMetadataUrls(issuer);
+        }
+
+        // Last resort: extract the signing cert embedded inline in the assertion's ds:Signature.
+        // Only safe in 'any' trust mode where the issuer URL is already the trust anchor.
+        if (certs.isEmpty()) {
+            List<X509Certificate> inlineCerts = extractInlineSigningCerts(doc);
+            if (!inlineCerts.isEmpty()) {
+                if ("any".equalsIgnoreCase(trustMode)) {
+                    logger.warn("Could not fetch metadata for IdP '{}'; using inline signing cert from assertion (trust-mode=any)", issuer);
+                    certs = inlineCerts;
+                } else {
+                    logger.warn("Could not fetch metadata for IdP '{}' and trust-mode is '{}'; inline cert fallback disabled", issuer, trustMode);
+                }
+            }
+        }
+
         if (certs.isEmpty()) {
             throw new SecurityException("Could not retrieve certificate for IdP: " + issuer);
         }
@@ -522,6 +544,66 @@ public class SamlValidationService {
         return extractMetadataUrl(doc);
     }
     
+    /**
+     * Tries common metadata URL patterns for well-known IdP types
+     * (Shibboleth IdPv3+, SimpleSAMLphp, ADFS) when the primary URL fails.
+     */
+    private List<X509Certificate> tryAlternativeMetadataUrls(String issuer) {
+        // Strip trailing slash from issuer for consistent construction
+        String base = issuer.endsWith("/") ? issuer.substring(0, issuer.length() - 1) : issuer;
+        // Derive parent path: for SimpleSAMLphp the entityID ends in "/idp" but
+        // the metadata lives at ../saml2/idp/metadata.php (one level up).
+        // e.g. "https://fpp.example.org/tenant/idp" → parent = "https://fpp.example.org/tenant"
+        int lastSlash = base.lastIndexOf('/');
+        String parent = (lastSlash > base.indexOf("://") + 3) ? base.substring(0, lastSlash) : base;
+        List<String> candidates = List.of(
+            base + "/metadata",                                          // direct /metadata suffix
+            base + "/idp/metadata",                                      // Shibboleth IdP short form
+            base + "/idp/profile/Metadata/SAML",                        // Shibboleth IdP v3+
+            parent + "/saml2/idp/metadata.php",                         // SimpleSAMLphp (issuer ends in /idp)
+            parent + "/module.php/saml/idp/metadata",                   // SimpleSAMLphp v2 module endpoint
+            base + "/FederationMetadata/2007-06/FederationMetadata.xml" // ADFS / Azure AD
+        );
+        for (String url : candidates) {
+            try {
+                List<X509Certificate> certs = retrieveCertificatesFromMetadata(url);
+                if (!certs.isEmpty()) {
+                    logger.info("Found metadata at alternative URL {} for IdP: {}", url, issuer);
+                    // Cache under the issuer key for future requests
+                    certificateCache.put(issuer, certs);
+                    return certs;
+                }
+            } catch (Exception e) {
+                logger.debug("Alternative metadata URL {} failed for IdP {}: {}", url, issuer, e.getMessage());
+            }
+        }
+        return Collections.emptyList();
+    }
+
+    /**
+     * Extracts X.509 signing certificates embedded inline inside the
+     * ds:Signature/ds:KeyInfo/ds:X509Data/ds:X509Certificate element(s) of the
+     * SAML document.  Used only as a last-resort fallback when the IdP's
+     * metadata endpoint cannot be reached.
+     */
+    private List<X509Certificate> extractInlineSigningCerts(Document doc) {
+        List<X509Certificate> result = new ArrayList<>();
+        NodeList sigNodes = doc.getElementsByTagNameNS(XMLSignature.XMLNS, "Signature");
+        for (int s = 0; s < sigNodes.getLength(); s++) {
+            Element sigEl = (Element) sigNodes.item(s);
+            NodeList certNodes = sigEl.getElementsByTagNameNS("*", "X509Certificate");
+            for (int c = 0; c < certNodes.getLength(); c++) {
+                String certData = certNodes.item(c).getTextContent().trim().replaceAll("\\s+", "");
+                try {
+                    result.add(parseCertificate(certData));
+                } catch (Exception e) {
+                    logger.debug("Could not parse inline X509Certificate: {}", e.getMessage());
+                }
+            }
+        }
+        return result;
+    }
+
     /**
      * Checks if IdP issuer is in trusted list
      */
