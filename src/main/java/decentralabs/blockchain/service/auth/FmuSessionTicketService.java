@@ -16,6 +16,7 @@ import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.atomic.AtomicBoolean;
+
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Value;
@@ -95,7 +96,7 @@ public class FmuSessionTicketService {
         response.setExpiresAt(ticketExpiry);
         response.setLabId(claimLabId);
         response.setReservationKey(claimReservationKey);
-        response.setOneTimeUse(true);
+        response.setOneTimeUse(false);
         return response;
     }
 
@@ -134,9 +135,6 @@ public class FmuSessionTicketService {
         }
         if (now >= exp) {
             throw new SessionTicketException(HttpStatus.UNAUTHORIZED, "SESSION_EXPIRED", "Reservation window expired");
-        }
-        if (!markTicketUsed(ticket, record)) {
-            throw new SessionTicketException(HttpStatus.UNAUTHORIZED, "SESSION_TICKET_ALREADY_USED", "Session ticket already used");
         }
 
         FmuSessionTicketRedeemResponse response = new FmuSessionTicketRedeemResponse();
@@ -191,7 +189,7 @@ public class FmuSessionTicketService {
         try {
             return jdbcTemplate.query(
                 """
-                SELECT claims_json, UNIX_TIMESTAMP(expires_at), used_at
+                SELECT claims_json, UNIX_TIMESTAMP(expires_at)
                 FROM fmu_session_tickets
                 WHERE session_ticket = ?
                 LIMIT 1
@@ -211,8 +209,7 @@ public class FmuSessionTicketService {
                         throw new IllegalStateException("Failed to deserialize persisted session ticket", e);
                     }
                     long expiresAt = rs.getLong(2);
-                    boolean used = rs.getTimestamp(3) != null;
-                    return new TicketRecord(claims, expiresAt, new AtomicBoolean(used));
+                    return new TicketRecord(claims, expiresAt);
                 }
             );
         } catch (DataAccessException e) {
@@ -231,33 +228,6 @@ public class FmuSessionTicketService {
             }
             throw e;
         }
-    }
-
-    private boolean markTicketUsed(String ticket, TicketRecord record) {
-        if (isPersistentStoreAvailable()) {
-            try {
-                int updated = jdbcTemplate.update(
-                    """
-                    UPDATE fmu_session_tickets
-                    SET used_at = CURRENT_TIMESTAMP
-                    WHERE session_ticket = ?
-                      AND used_at IS NULL
-                      AND expires_at > CURRENT_TIMESTAMP
-                    """,
-                    ticket
-                );
-                if (updated > 0) {
-                    return true;
-                }
-                return false;
-            } catch (DataAccessException e) {
-                handlePersistenceException("redeem", e);
-            }
-        }
-        if (!record.used().compareAndSet(false, true)) {
-            return false;
-        }
-        return true;
     }
 
     private void removeTicket(String ticket) {
@@ -367,9 +337,5 @@ public class FmuSessionTicketService {
         return "st_" + Base64.getUrlEncoder().withoutPadding().encodeToString(bytes);
     }
 
-    private record TicketRecord(Map<String, Object> claims, long expiresAt, AtomicBoolean used) {
-        TicketRecord(Map<String, Object> claims, long expiresAt) {
-            this(claims, expiresAt, new AtomicBoolean(false));
-        }
-    }
+    private record TicketRecord(Map<String, Object> claims, long expiresAt) {}
 }
