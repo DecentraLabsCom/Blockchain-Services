@@ -495,6 +495,12 @@
     "defaultValue": 100000
   },
   {
+    "name": "ethereum.gas.limit.direct.booking",
+    "type": "java.lang.Integer",
+    "description": "Gas limit for direct booking transactions, which atomically execute request+confirm and require more gas.",
+    "defaultValue": 2000000
+  },
+  {
     "name": "contract.events.to.listen",
     "type": "java.lang.String",
     "description": "Comma-separated list of contract events to listen for."

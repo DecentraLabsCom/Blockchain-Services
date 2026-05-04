@@ -55,6 +55,7 @@ class IntentOnChainExecutorTest {
 
     private static final String CONTRACT_ADDRESS = "0x1234567890123456789012345678901234567890";
     private static final BigInteger GAS_LIMIT = BigInteger.valueOf(300000);
+    private static final BigInteger DIRECT_BOOKING_GAS_LIMIT = BigInteger.valueOf(2000000);
     private static final BigInteger GAS_PRICE_GWEI = BigInteger.ONE;
     private static final BigDecimal GAS_PRICE_MULTIPLIER = new BigDecimal("1.2");
     private static final BigDecimal GAS_PRICE_MIN_GWEI = BigDecimal.ONE;
@@ -70,6 +71,7 @@ class IntentOnChainExecutorTest {
             institutionalWalletService,
             CONTRACT_ADDRESS,
             GAS_LIMIT,
+            DIRECT_BOOKING_GAS_LIMIT,
             GAS_PRICE_GWEI,
             GAS_PRICE_MULTIPLIER,
             GAS_PRICE_MIN_GWEI,

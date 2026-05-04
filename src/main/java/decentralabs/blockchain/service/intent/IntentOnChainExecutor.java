@@ -56,6 +56,7 @@ public class IntentOnChainExecutor {
     private final InstitutionalWalletService institutionalWalletService;
     private final String contractAddress;
     private final BigInteger gasLimit;
+    private final BigInteger directBookingGasLimit;
     private final BigInteger defaultGasPriceGwei;
     private final BigDecimal gasPriceMultiplier;
     private final BigDecimal gasPriceMinGwei;
@@ -69,6 +70,7 @@ public class IntentOnChainExecutor {
         InstitutionalWalletService institutionalWalletService,
         @Value("${contract.address}") String contractAddress,
         @Value("${ethereum.gas.limit.contract:300000}") BigInteger gasLimit,
+        @Value("${ethereum.gas.limit.direct.booking:2000000}") BigInteger directBookingGasLimit,
         @Value("${ethereum.gas.price.default:1}") BigInteger gasPriceGwei,
         @Value("${ethereum.gas.price.multiplier:1.2}") BigDecimal gasPriceMultiplier,
         @Value("${ethereum.gas.price.min-gwei:1}") BigDecimal gasPriceMinGwei,
@@ -79,6 +81,7 @@ public class IntentOnChainExecutor {
         this.institutionalWalletService = institutionalWalletService;
         this.contractAddress = contractAddress;
         this.gasLimit = gasLimit;
+        this.directBookingGasLimit = directBookingGasLimit;
         this.defaultGasPriceGwei = gasPriceGwei;
         this.gasPriceMultiplier = gasPriceMultiplier;
         this.gasPriceMinGwei = gasPriceMinGwei;
@@ -123,7 +126,7 @@ public class IntentOnChainExecutor {
                 yield result;
             }
             case "DIRECT_BOOKING" -> {
-                ExecutionResult result = send(buildDirectBooking(record), credentials, record, action);
+                ExecutionResult result = send(buildDirectBooking(record), credentials, record, action, directBookingGasLimit);
                 if (result.success()) {
                     postflightReleaseExpiredInstitutionalReservations(record, credentials);
                 }
@@ -144,6 +147,10 @@ public class IntentOnChainExecutor {
     }
 
     private ExecutionResult send(Optional<Function> functionOpt, Credentials credentials, IntentRecord record, String action) throws Exception {
+        return send(functionOpt, credentials, record, action, gasLimit);
+    }
+
+    private ExecutionResult send(Optional<Function> functionOpt, Credentials credentials, IntentRecord record, String action, BigInteger gas) throws Exception {
         if (functionOpt.isEmpty()) {
             return new ExecutionResult(false, null, null, null, null, "missing_parameters");
         }
@@ -166,14 +173,14 @@ public class IntentOnChainExecutor {
 
         BigInteger gasPriceWei = resolveGasPriceWei(web3j);
 
-        EthSendTransaction tx = txManager.sendTransaction(gasPriceWei, gasLimit, contractAddress, encoded, BigInteger.ZERO);
+        EthSendTransaction tx = txManager.sendTransaction(gasPriceWei, gas, contractAddress, encoded, BigInteger.ZERO);
         String txHash = tx.getTransactionHash();
         if (txHash == null) {
             String error = tx.getError() != null ? tx.getError().getMessage() : "tx_hash_missing";
             if (shouldRetryWithHigherGas(error)) {
                 BigInteger bumpedGasPrice = bumpGasPrice(gasPriceWei);
                 EthSendTransaction retry = txManager.sendTransaction(
-                    bumpedGasPrice, gasLimit, contractAddress, encoded, BigInteger.ZERO
+                    bumpedGasPrice, gas, contractAddress, encoded, BigInteger.ZERO
                 );
                 String retryHash = retry.getTransactionHash();
                 if (retryHash != null) {
@@ -181,7 +188,7 @@ public class IntentOnChainExecutor {
                     Long blockNumber = receipt.getBlockNumber() != null ? receipt.getBlockNumber().longValue() : null;
                     String labId = receipt.isStatusOK() ? extractMintedTokenId(action, receipt) : null;
                     return new ExecutionResult(receipt.isStatusOK(), retryHash, blockNumber, labId, null,
-                        receipt.isStatusOK() ? null : inferRevertReason(receipt));
+                        receipt.isStatusOK() ? null : inferRevertReason(receipt, gas));
                 }
             }
             return new ExecutionResult(false, null, null, null, null, error);
@@ -192,7 +199,7 @@ public class IntentOnChainExecutor {
             Long blockNumber = receipt.getBlockNumber() != null ? receipt.getBlockNumber().longValue() : null;
             String labId = receipt.isStatusOK() ? extractMintedTokenId(action, receipt) : null;
             return new ExecutionResult(receipt.isStatusOK(), txHash, blockNumber, labId, null,
-                receipt.isStatusOK() ? null : inferRevertReason(receipt));
+                receipt.isStatusOK() ? null : inferRevertReason(receipt, gas));
         } catch (Exception ex) {
             log.warn("Failed to get tx receipt for {}: {}", txHash, ex.getMessage());
             return new ExecutionResult(false, txHash, null, null, null, "receipt_error: " + ex.getMessage());
@@ -241,13 +248,17 @@ public class IntentOnChainExecutor {
     }
 
     private String inferRevertReason(TransactionReceipt receipt) {
+        return inferRevertReason(receipt, gasLimit);
+    }
+
+    private String inferRevertReason(TransactionReceipt receipt, BigInteger gas) {
         if (receipt == null) {
             return "tx_reverted_status_unknown";
         }
 
         String status = receipt.getStatus() != null ? receipt.getStatus() : "unknown";
-        if (receipt.getGasUsed() != null && gasLimit != null && receipt.getGasUsed().compareTo(gasLimit) >= 0) {
-            return "tx_out_of_gas: gasUsed=" + receipt.getGasUsed() + " gasLimit=" + gasLimit + " status=" + status;
+        if (receipt.getGasUsed() != null && gas != null && receipt.getGasUsed().compareTo(gas) >= 0) {
+            return "tx_out_of_gas: gasUsed=" + receipt.getGasUsed() + " gasLimit=" + gas + " status=" + status;
         }
 
         return "tx_reverted_status_" + status;
