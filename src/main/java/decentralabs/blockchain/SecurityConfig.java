@@ -59,6 +59,9 @@ public class SecurityConfig {
     @Value("${endpoint.fmu-provider-describe-token:/auth/fmu/provider-describe-token}")
     private @Nonnull String fmuProviderDescribeTokenEndpoint = "/auth/fmu/provider-describe-token";
 
+    @Value("${endpoint.fmu-session-ticket:/auth/fmu/session-ticket}")
+    private @Nonnull String fmuSessionTicketEndpoint = "/auth/fmu/session-ticket";
+
     @Value("${security.access-token.required:true}")
     private boolean accessTokenRequired;
 
@@ -98,7 +101,8 @@ public class SecurityConfig {
                     intentsEndpoint + "/**",
                     "/onboarding/**",
                     "/institution-config/**",
-                    fmuProviderDescribeTokenEndpoint
+                    fmuProviderDescribeTokenEndpoint,
+                    fmuSessionTicketEndpoint + "/**"
                 )
             )
             .authorizeHttpRequests(authorize -> {
@@ -110,6 +114,9 @@ public class SecurityConfig {
                 authorize.requestMatchers(samlAuth2Endpoint).permitAll();
                 authorize.requestMatchers(checkinInstitutionalEndpoint).permitAll();
                 authorize.requestMatchers(fmuProviderDescribeTokenEndpoint).permitAll();
+                // Internal endpoint — only reachable within Docker network; not exposed via nginx.
+                // FmuSessionTicketService validates the FMU JWT supplied in the Authorization header.
+                authorize.requestMatchers(fmuSessionTicketEndpoint + "/**").permitAll();
                 authorize.requestMatchers(healthEndpoint).permitAll();
                 authorize.requestMatchers("/actuator/health/**").permitAll();
                 authorize.requestMatchers("/actuator/info").permitAll();

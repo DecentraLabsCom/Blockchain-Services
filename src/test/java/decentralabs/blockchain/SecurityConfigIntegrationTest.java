@@ -230,6 +230,19 @@ class SecurityConfigIntegrationTest {
     }
 
     @Test
+    void fmuSessionTicketEndpoint_isAccessibleWithoutAuthentication() throws Exception {
+        mockMvc.perform(post("/auth/fmu/session-ticket/issue")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{}")
+                .with(req -> {
+                    req.setRemoteAddr("172.17.0.10");
+                    return req;
+                }))
+            .andExpect(status().isOk())
+            .andExpect(content().string("fmu-session-ticket-ok"));
+    }
+
+    @Test
     void unknownEndpoint_isDeniedByDefault() throws Exception {
         mockMvc.perform(get("/not-mapped")
                 .with(req -> {
