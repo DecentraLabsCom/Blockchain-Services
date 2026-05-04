@@ -148,6 +148,59 @@ class JwtServiceTest {
     }
 
     @Test
+    void testGenerateToken_FmuBooking_IncludesReservationKey() throws Exception {
+        // Given — FMU booking with a reservationKey (the missing claim that blocked proxy.fmu download)
+        String expectedReservationKey = "0x" + "ab".repeat(32);
+        Map<String, Object> bookingInfo = new HashMap<>();
+        bookingInfo.put("lab", BigInteger.valueOf(2));
+        bookingInfo.put("aud", "https://sarlab.dia.uned.es");
+        bookingInfo.put("sub", "BouncingBall.fmu");
+        bookingInfo.put("nbf", BigInteger.valueOf(System.currentTimeMillis() / 1000));
+        bookingInfo.put("exp", BigInteger.valueOf((System.currentTimeMillis() / 1000) + 900));
+        bookingInfo.put("accessKey", "BouncingBall.fmu");
+        bookingInfo.put("resourceType", "fmu");
+        bookingInfo.put("reservationKey", expectedReservationKey);
+
+        // When
+        String token = jwtService.generateToken(null, bookingInfo);
+
+        // Then — reservationKey must be present so the gateway can issue a proxy.fmu
+        assertNotNull(token);
+        Claims claims = Jwts.parser()
+                .verifyWith(mockPublicKey)
+                .build()
+                .parseSignedClaims(token)
+                .getPayload();
+        assertEquals(expectedReservationKey, claims.get("reservationKey", String.class));
+        assertEquals("fmu", claims.get("resourceType", String.class));
+        assertEquals("BouncingBall.fmu", claims.get("accessKey", String.class));
+    }
+
+    @Test
+    void testGenerateToken_NullReservationKey_OmitsClaimGracefully() throws Exception {
+        // Given — booking without reservationKey (physical lab or missing field)
+        Map<String, Object> bookingInfo = new HashMap<>();
+        bookingInfo.put("lab", BigInteger.valueOf(1));
+        bookingInfo.put("aud", "https://lab.example.com");
+        bookingInfo.put("sub", "guacamole-user");
+        bookingInfo.put("nbf", BigInteger.valueOf(System.currentTimeMillis() / 1000));
+        bookingInfo.put("exp", BigInteger.valueOf((System.currentTimeMillis() / 1000) + 3600));
+        bookingInfo.put("resourceType", "lab");
+        // reservationKey intentionally absent
+
+        // When
+        String token = jwtService.generateToken(null, bookingInfo);
+
+        // Then — reservationKey claim must not appear
+        Claims claims = Jwts.parser()
+                .verifyWith(mockPublicKey)
+                .build()
+                .parseSignedClaims(token)
+                .getPayload();
+        assertNull(claims.get("reservationKey"));
+    }
+
+    @Test
     void testGenerateToken_LabBooking_IncludesResourceTypeLab() throws Exception {
         // Given — regular lab booking (accessKey without .fmu)
         Map<String, Object> bookingInfo = new HashMap<>();

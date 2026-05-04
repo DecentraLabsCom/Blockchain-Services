@@ -66,6 +66,11 @@ public class JwtService {
             accessKey = (String) bookingInfo.get("accessKey");
         }
     
+        String reservationKey = null;
+        if (bookingInfo != null) {
+            reservationKey = (String) bookingInfo.get("reservationKey");
+        }
+
         String kid = generateKid(keyService.getPublicKey().getModulus());
         BigInteger iat = BigInteger.valueOf(System.currentTimeMillis() / 1000); // To seconds
         String jti = UUID.randomUUID().toString();
@@ -95,6 +100,9 @@ public class JwtService {
         }
         if (accessKey != null) {
             jwtBuilder.claim("accessKey", accessKey);
+        }
+        if (reservationKey != null && !reservationKey.isBlank()) {
+            jwtBuilder.claim("reservationKey", reservationKey);
         }
     
         PrivateKey privateKey = keyService.loadPrivateKey();
