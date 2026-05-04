@@ -31,6 +31,7 @@ import org.web3j.protocol.core.DefaultBlockParameterName;
 import org.web3j.protocol.core.methods.request.Transaction;
 import org.web3j.protocol.core.methods.response.EthCall;
 import org.web3j.protocol.core.methods.response.EthSendTransaction;
+import org.web3j.protocol.core.methods.response.Log;
 import org.web3j.protocol.core.methods.response.TransactionReceipt;
 import org.web3j.tx.TransactionManager;
 import org.web3j.utils.Numeric;
@@ -178,7 +179,8 @@ public class IntentOnChainExecutor {
                 if (retryHash != null) {
                     TransactionReceipt receipt = waitForReceipt(web3j, retryHash);
                     Long blockNumber = receipt.getBlockNumber() != null ? receipt.getBlockNumber().longValue() : null;
-                    return new ExecutionResult(receipt.isStatusOK(), retryHash, blockNumber, null, null,
+                    String labId = receipt.isStatusOK() ? extractMintedTokenId(action, receipt) : null;
+                    return new ExecutionResult(receipt.isStatusOK(), retryHash, blockNumber, labId, null,
                         receipt.isStatusOK() ? null : inferRevertReason(receipt));
                 }
             }
@@ -188,12 +190,54 @@ public class IntentOnChainExecutor {
         try {
             TransactionReceipt receipt = waitForReceipt(web3j, txHash);
             Long blockNumber = receipt.getBlockNumber() != null ? receipt.getBlockNumber().longValue() : null;
-            return new ExecutionResult(receipt.isStatusOK(), txHash, blockNumber, null, null,
+            String labId = receipt.isStatusOK() ? extractMintedTokenId(action, receipt) : null;
+            return new ExecutionResult(receipt.isStatusOK(), txHash, blockNumber, labId, null,
                 receipt.isStatusOK() ? null : inferRevertReason(receipt));
         } catch (Exception ex) {
             log.warn("Failed to get tx receipt for {}: {}", txHash, ex.getMessage());
             return new ExecutionResult(false, txHash, null, null, null, "receipt_error: " + ex.getMessage());
         }
+    }
+
+    /**
+     * Extracts the minted ERC-721 token ID from a LAB_ADD / LAB_ADD_AND_LIST receipt.
+     * The contract emits a standard ERC-721 Transfer(from=0x0, to, tokenId) event on mint.
+     * topic[0] = keccak256("Transfer(address,address,uint256)")
+     * topic[1] = from (zero address for mints)
+     * topic[2] = to (new owner)
+     * topic[3] = tokenId (the new lab ID)
+     *
+     * Returns null for non-LAB_ADD actions or when no mint event is found.
+     */
+    private String extractMintedTokenId(String action, TransactionReceipt receipt) {
+        if (!"LAB_ADD".equals(action) && !"LAB_ADD_AND_LIST".equals(action)) {
+            return null;
+        }
+        if (receipt == null || receipt.getLogs() == null) {
+            return null;
+        }
+        final String TRANSFER_TOPIC = "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef";
+        for (Log logEntry : receipt.getLogs()) {
+            List<String> topics = logEntry.getTopics();
+            if (topics == null || topics.size() < 4) {
+                continue;
+            }
+            if (!TRANSFER_TOPIC.equalsIgnoreCase(topics.get(0))) {
+                continue;
+            }
+            // topic[1] is the padded 32-byte from address; must be zero address for mints
+            BigInteger fromAddr = Numeric.toBigInt(topics.get(1));
+            if (!BigInteger.ZERO.equals(fromAddr)) {
+                continue;
+            }
+            BigInteger tokenId = Numeric.toBigInt(topics.get(3));
+            if (tokenId != null && tokenId.compareTo(BigInteger.ZERO) > 0) {
+                log.debug("Extracted minted lab tokenId={} from tx receipt", tokenId);
+                return tokenId.toString();
+            }
+        }
+        log.warn("LAB_ADD tx succeeded but no mint Transfer event found in receipt (txHash={})", receipt.getTransactionHash());
+        return null;
     }
 
     private String inferRevertReason(TransactionReceipt receipt) {
