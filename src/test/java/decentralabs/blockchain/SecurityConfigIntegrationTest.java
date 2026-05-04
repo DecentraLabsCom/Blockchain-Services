@@ -326,6 +326,16 @@ class SecurityConfigIntegrationTest {
         String health() {
             return "health-ok";
         }
+
+        @PostMapping("/auth/fmu/session-ticket/issue")
+        String fmuSessionTicketIssue() {
+            return "fmu-session-ticket-ok";
+        }
+
+        @PostMapping("/auth/fmu/session-ticket/redeem")
+        String fmuSessionTicketRedeem() {
+            return "fmu-session-ticket-ok";
+        }
     }
 
     @SpringBootConfiguration
