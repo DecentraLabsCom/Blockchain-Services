@@ -77,11 +77,13 @@ public class FmuSessionTicketService {
             throw new SessionTicketException(HttpStatus.FORBIDDEN, "FORBIDDEN", "Ticket request reservationKey does not match booking token");
         }
 
-        long ttl = defaultTtlSeconds;
+        // Ticket is reusable within the reservation window — expire with the booking, not a short TTL.
+        // If caller explicitly requests a shorter TTL (e.g. for a one-off embed), honour it.
+        long ticketExpiry = exp;
         if (request != null && request.getTtlSeconds() != null) {
-            ttl = Math.max(1, Math.min(maxTtlSeconds, request.getTtlSeconds()));
+            long ttl = Math.max(1, Math.min(maxTtlSeconds, request.getTtlSeconds()));
+            ticketExpiry = Math.min(exp, now + ttl);
         }
-        long ticketExpiry = Math.min(exp, now + ttl);
         if (ticketExpiry <= now) {
             throw new SessionTicketException(HttpStatus.UNAUTHORIZED, "SESSION_EXPIRED", "Reservation window expired");
         }
