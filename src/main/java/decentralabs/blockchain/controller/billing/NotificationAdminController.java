@@ -8,6 +8,7 @@ import decentralabs.blockchain.notification.NotificationProperties;
 import decentralabs.blockchain.notification.NotificationUpdateRequest;
 import decentralabs.blockchain.security.AdminNetworkAccessPolicy;
 import jakarta.servlet.http.HttpServletRequest;
+import java.util.List;
 import java.util.Map;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -117,6 +118,62 @@ public class NotificationAdminController {
             return ResponseEntity.internalServerError().body(Map.of(
                 "success", false,
                 "error", "Failed to send test notification: " + ex.getMessage()
+            ));
+        }
+    }
+
+    @PostMapping("/send")
+    public ResponseEntity<?> sendNotification(
+        @RequestBody NotificationMessage request,
+        HttpServletRequest httpRequest
+    ) {
+        if (!isLocalhostRequest(httpRequest)) {
+            return forbidden();
+        }
+
+        NotificationProperties.Mail mail = notificationConfigService.getMailConfig();
+        if (!mail.isEnabled()) {
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(Map.of(
+                "success", false,
+                "error", "Notification service is disabled"
+            ));
+        }
+
+        List<String> recipients = request.recipients();
+        if (recipients == null || recipients.isEmpty()) {
+            recipients = mail.getDefaultTo();
+        }
+        if (recipients == null || recipients.isEmpty()) {
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(Map.of(
+                "success", false,
+                "error", "No recipients provided and no defaultTo configured"
+            ));
+        }
+
+        var validation = notificationConfigService.validateMailConfig();
+        if (!validation.isEmpty()) {
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(Map.of(
+                "success", false,
+                "error", String.join("; ", validation)
+            ));
+        }
+
+        try {
+            MailSenderAdapter sender = mailSenderFactory.resolve();
+            sender.send(new NotificationMessage(
+                recipients,
+                request.subject(),
+                request.textBody(),
+                request.htmlBody(),
+                request.icsContent(),
+                request.icsFileName()
+            ));
+            return ResponseEntity.ok(Map.of("success", true));
+        } catch (Exception ex) {
+            log.error("Failed to send notification: {}", ex.getMessage(), ex);
+            return ResponseEntity.internalServerError().body(Map.of(
+                "success", false,
+                "error", "Failed to send notification: " + ex.getMessage()
             ));
         }
     }

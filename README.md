@@ -145,6 +145,8 @@ These endpoints are only active in `provider+consumer` mode.
 - `GET /billing/admin/treasury-info`
 - `GET /billing/admin/top-spenders`
 - `GET|POST /billing/admin/notifications`
+- `POST /billing/admin/notifications/send`
+- `POST /billing/admin/notifications/test`
 
 ### Intents and provisioning
 
