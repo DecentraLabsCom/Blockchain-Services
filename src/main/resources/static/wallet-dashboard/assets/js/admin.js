@@ -2169,6 +2169,14 @@ async function loadCollectStatusForSelectedLab() {
         const pendingClosuresRaw = data.eligibleReservationCount ?? '0';
         const pendingClosures = formatPendingClosures(pendingClosuresRaw);
         setCollectPendingClosuresText(pendingClosures);
+
+        // Keep the selected lab row in sync after a payout request so the table reflects
+        // the latest pending closures count immediately.
+        if (selectedLab) {
+            selectedLab.eligibleReservationCount = pendingClosuresRaw;
+            DashboardState.collectAggregates = null;
+        }
+
         setCollectLifecycleSummaryText(buildCollectLifecycleSummary(data));
 
         let hasPendingClosures = false;
