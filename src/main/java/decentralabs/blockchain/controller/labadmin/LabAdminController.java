@@ -1,0 +1,147 @@
+package decentralabs.blockchain.controller.labadmin;
+
+import decentralabs.blockchain.dto.labadmin.LabAdminAssetResponse;
+import decentralabs.blockchain.dto.labadmin.LabAdminPublishRequest;
+import decentralabs.blockchain.dto.labadmin.LabAdminTransactionResponse;
+import decentralabs.blockchain.service.labadmin.LabAdminService;
+import decentralabs.blockchain.util.LogSanitizer;
+import java.io.FileNotFoundException;
+import java.math.BigInteger;
+import java.util.Map;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.core.io.Resource;
+import org.springframework.http.CacheControl;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.multipart.MultipartFile;
+import org.springframework.web.servlet.HandlerMapping;
+
+import jakarta.servlet.http.HttpServletRequest;
+import java.time.Duration;
+
+@RestController
+@RequiredArgsConstructor
+@Slf4j
+public class LabAdminController {
+
+    private final LabAdminService labAdminService;
+
+    @GetMapping("/lab-admin/status")
+    public ResponseEntity<?> status() {
+        return ok(labAdminService.status());
+    }
+
+    @GetMapping("/lab-admin/labs")
+    public ResponseEntity<?> labs() {
+        try {
+            return ok(labAdminService.listLabs());
+        } catch (Exception ex) {
+            return badRequest(ex);
+        }
+    }
+
+    @PostMapping("/lab-admin/assets")
+    public ResponseEntity<?> uploadAsset(
+        @RequestParam(required = false) String contentId,
+        @RequestParam(defaultValue = "images") String kind,
+        @RequestParam MultipartFile file
+    ) {
+        try {
+            LabAdminAssetResponse response = labAdminService.saveAsset(contentId, kind, file);
+            return ResponseEntity.ok(response);
+        } catch (IllegalArgumentException ex) {
+            return badRequest(ex);
+        } catch (Exception ex) {
+            return internal("Failed to store asset", ex);
+        }
+    }
+
+    @PostMapping("/lab-admin/labs")
+    public ResponseEntity<?> publish(@RequestBody LabAdminPublishRequest request) {
+        try {
+            LabAdminTransactionResponse response = labAdminService.publish(request);
+            return ResponseEntity.ok(response);
+        } catch (IllegalArgumentException | IllegalStateException ex) {
+            return badRequest(ex);
+        } catch (Exception ex) {
+            return internal("Failed to publish lab", ex);
+        }
+    }
+
+    @PostMapping("/lab-admin/labs/{labId}/list")
+    public ResponseEntity<?> listLab(@PathVariable BigInteger labId) {
+        try {
+            return ResponseEntity.ok(labAdminService.listLab(labId, true));
+        } catch (IllegalArgumentException | IllegalStateException ex) {
+            return badRequest(ex);
+        } catch (Exception ex) {
+            return internal("Failed to list lab", ex);
+        }
+    }
+
+    @PostMapping("/lab-admin/labs/{labId}/unlist")
+    public ResponseEntity<?> unlistLab(@PathVariable BigInteger labId) {
+        try {
+            return ResponseEntity.ok(labAdminService.listLab(labId, false));
+        } catch (IllegalArgumentException | IllegalStateException ex) {
+            return badRequest(ex);
+        } catch (Exception ex) {
+            return internal("Failed to unlist lab", ex);
+        }
+    }
+
+    @GetMapping("/lab-content/**")
+    public ResponseEntity<Resource> content(HttpServletRequest request) {
+        try {
+            String path = extractWildcardPath(request, "/lab-content/");
+            Resource resource = labAdminService.loadContentResource(path);
+            String contentType = labAdminService.contentTypeFor(path);
+            return ResponseEntity.ok()
+                .contentType(MediaType.parseMediaType(contentType))
+                .cacheControl(CacheControl.maxAge(Duration.ofHours(1)).cachePublic())
+                .header("X-Content-Type-Options", "nosniff")
+                .body(resource);
+        } catch (FileNotFoundException ex) {
+            return ResponseEntity.notFound().build();
+        } catch (Exception ex) {
+            log.warn("Failed to serve lab content: {}", LogSanitizer.sanitize(ex.getMessage()));
+            return ResponseEntity.badRequest().build();
+        }
+    }
+
+    private String extractWildcardPath(HttpServletRequest request, String prefix) {
+        Object pathWithinMapping = request.getAttribute(HandlerMapping.PATH_WITHIN_HANDLER_MAPPING_ATTRIBUTE);
+        String path = pathWithinMapping == null ? request.getRequestURI() : pathWithinMapping.toString();
+        int index = path.indexOf(prefix);
+        if (index >= 0) {
+            return path.substring(index + prefix.length());
+        }
+        return "";
+    }
+
+    private ResponseEntity<Map<String, Object>> ok(Map<String, Object> body) {
+        return ResponseEntity.ok(body);
+    }
+
+    private ResponseEntity<Map<String, Object>> badRequest(Exception ex) {
+        return ResponseEntity.badRequest().body(Map.of(
+            "success", false,
+            "error", ex.getMessage()
+        ));
+    }
+
+    private ResponseEntity<Map<String, Object>> internal(String clientMessage, Exception ex) {
+        log.error("{}: {}", clientMessage, LogSanitizer.sanitize(ex.getMessage()), ex);
+        return ResponseEntity.internalServerError().body(Map.of(
+            "success", false,
+            "error", clientMessage
+        ));
+    }
+}

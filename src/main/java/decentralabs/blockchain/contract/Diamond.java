@@ -457,6 +457,113 @@ public class Diamond extends Contract {
     }
 
     /**
+     * Add a lab owned by the transaction sender.
+     */
+    public RemoteFunctionCall<TransactionReceipt> addLab(
+        String uri,
+        BigInteger price,
+        String accessURI,
+        String accessKey,
+        BigInteger resourceType
+    ) {
+        final Function function = new Function(
+            "addLab",
+            Arrays.asList(
+                new Utf8String(uri),
+                new Uint96(price),
+                new Utf8String(accessURI),
+                new Utf8String(accessKey),
+                new Uint8(resourceType)
+            ),
+            List.of()
+        );
+        return executeRemoteCallTransaction(function);
+    }
+
+    /**
+     * Add and list a lab owned by the transaction sender in one transaction.
+     */
+    public RemoteFunctionCall<TransactionReceipt> addAndListLab(
+        String uri,
+        BigInteger price,
+        String accessURI,
+        String accessKey,
+        BigInteger resourceType
+    ) {
+        final Function function = new Function(
+            "addAndListLab",
+            Arrays.asList(
+                new Utf8String(uri),
+                new Uint96(price),
+                new Utf8String(accessURI),
+                new Utf8String(accessKey),
+                new Uint8(resourceType)
+            ),
+            List.of()
+        );
+        return executeRemoteCallTransaction(function);
+    }
+
+    public RemoteFunctionCall<TransactionReceipt> updateLab(
+        BigInteger labId,
+        String uri,
+        BigInteger price,
+        String accessURI,
+        String accessKey,
+        BigInteger resourceType
+    ) {
+        final Function function = new Function(
+            "updateLab",
+            Arrays.asList(
+                new Uint256(labId),
+                new Utf8String(uri),
+                new Uint96(price),
+                new Utf8String(accessURI),
+                new Utf8String(accessKey),
+                new Uint8(resourceType)
+            ),
+            List.of()
+        );
+        return executeRemoteCallTransaction(function);
+    }
+
+    public RemoteFunctionCall<TransactionReceipt> listLab(BigInteger labId) {
+        final Function function = new Function(
+            "listLab",
+            Arrays.asList(new Uint256(labId)),
+            List.of()
+        );
+        return executeRemoteCallTransaction(function);
+    }
+
+    public RemoteFunctionCall<TransactionReceipt> unlistLab(BigInteger labId) {
+        final Function function = new Function(
+            "unlistLab",
+            Arrays.asList(new Uint256(labId)),
+            List.of()
+        );
+        return executeRemoteCallTransaction(function);
+    }
+
+    public RemoteFunctionCall<TransactionReceipt> deleteLab(BigInteger labId) {
+        final Function function = new Function(
+            "deleteLab",
+            Arrays.asList(new Uint256(labId)),
+            List.of()
+        );
+        return executeRemoteCallTransaction(function);
+    }
+
+    public RemoteFunctionCall<TransactionReceipt> setTokenURI(BigInteger labId, String tokenURI) {
+        final Function function = new Function(
+            "setTokenURI",
+            Arrays.asList(new Uint256(labId), new Utf8String(tokenURI)),
+            List.of()
+        );
+        return executeRemoteCallTransaction(function);
+    }
+
+    /**
      * Get the authentication URI for a provider
      */
     @SuppressWarnings("rawtypes")

@@ -73,7 +73,16 @@ public class AdminNetworkAccessPolicy {
 
     private boolean matchesLoopback(HttpServletRequest request) {
         String remoteAddr = sanitizeIp(request.getRemoteAddr());
-        return remoteAddr != null && isLoopback(remoteAddr);
+        if (remoteAddr == null) {
+            return false;
+        }
+        if (isLoopback(remoteAddr)) {
+            return true;
+        }
+        if (!isTrustedProxy(remoteAddr)) {
+            return false;
+        }
+        return getTrustedClientCandidates(request).stream().anyMatch(this::isLoopback);
     }
 
     private boolean matchesPrivateAccessNetwork(HttpServletRequest request) {

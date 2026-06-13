@@ -101,6 +101,8 @@ public class SecurityConfig {
                     intentsEndpoint + "/**",
                     "/onboarding/**",
                     "/institution-config/**",
+                    "/lab-admin/**",
+                    "/lab-content/**",
                     fmuProviderDescribeTokenEndpoint,
                     fmuSessionTicketEndpoint + "/**"
                 )
@@ -125,6 +127,8 @@ public class SecurityConfig {
                 authorize.requestMatchers("/webauthn/**").permitAll();
                 authorize.requestMatchers("/onboarding/**").permitAll();
                 authorize.requestMatchers("/institution-config/**").permitAll();
+                authorize.requestMatchers("/lab-content/**").permitAll();
+                authorize.requestMatchers("/lab-admin/**").permitAll();
                 authorize.requestMatchers(intentsEndpoint + "/**").permitAll();
                 // Wallet dashboard static resources (HTML/CSS/JS)
                 authorize.requestMatchers("/wallet-dashboard/**").permitAll();
@@ -174,6 +178,8 @@ public class SecurityConfig {
         // ALL wallet endpoints - localhost only
         source.registerCorsConfiguration(walletEndpoint + "/**", walletConfiguration);
         source.registerCorsConfiguration(billingEndpoint + "/**", walletConfiguration);
+        source.registerCorsConfiguration("/lab-admin/**", walletConfiguration);
+        source.registerCorsConfiguration("/lab-content/**", publicConfiguration);
         // Token-based onboarding (invite tokens) - localhost only
         source.registerCorsConfiguration("/onboarding/token/**", walletConfiguration);
 

@@ -117,6 +117,16 @@ class AdminNetworkAccessPolicyTest {
     }
 
     @Test
+    void allowsForwardedLoopbackFromTrustedProxyWithoutToken() {
+        MockHttpServletRequest request = new MockHttpServletRequest();
+        request.setRemoteAddr("172.17.0.10");
+        request.addHeader("X-Forwarded-For", "127.0.0.1");
+        request.addHeader("X-Real-IP", "127.0.0.1");
+
+        assertThat(policy.isRequestAllowed(request, () -> false)).isTrue();
+    }
+
+    @Test
     void resolveClientIp_prefersForwardedClientFromTrustedProxy() {
         MockHttpServletRequest request = new MockHttpServletRequest();
         request.setRemoteAddr("172.17.0.10");
