@@ -3,10 +3,13 @@ package decentralabs.blockchain.controller.labadmin;
 import decentralabs.blockchain.dto.labadmin.LabAdminAssetResponse;
 import decentralabs.blockchain.dto.labadmin.LabAdminPublishRequest;
 import decentralabs.blockchain.dto.labadmin.LabAdminTransactionResponse;
+import decentralabs.blockchain.service.auth.JwtService;
 import decentralabs.blockchain.service.labadmin.LabAdminService;
 import decentralabs.blockchain.util.LogSanitizer;
 import java.io.FileNotFoundException;
 import java.math.BigInteger;
+import java.time.Instant;
+import java.util.HashMap;
 import java.util.Map;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -32,6 +35,7 @@ import java.time.Duration;
 public class LabAdminController {
 
     private final LabAdminService labAdminService;
+    private final JwtService jwtService;
 
     @GetMapping("/lab-admin/status")
     public ResponseEntity<?> status() {
@@ -72,6 +76,32 @@ public class LabAdminController {
             return badRequest(ex);
         } catch (Exception ex) {
             return internal("Failed to publish lab", ex);
+        }
+    }
+
+    @PostMapping("/lab-admin/fmu/provider-describe-token")
+    public ResponseEntity<?> fmuProviderDescribeToken(@RequestBody(required = false) Map<String, String> body) {
+        try {
+            String fmuFileName = body == null ? null : body.get("fmuFileName");
+            if (fmuFileName == null || fmuFileName.isBlank()) {
+                return ResponseEntity.badRequest().body(Map.of("error", "Missing fmuFileName"));
+            }
+            String trimmed = fmuFileName.strip();
+            if (!trimmed.toLowerCase().endsWith(".fmu")) {
+                return ResponseEntity.badRequest().body(Map.of("error", "fmuFileName must end with .fmu"));
+            }
+
+            long ttlSeconds = 60L;
+            long now = Instant.now().getEpochSecond();
+            Map<String, Object> claims = new HashMap<>();
+            claims.put("accessKey", trimmed);
+            claims.put("resourceType", "fmu");
+            claims.put("exp", BigInteger.valueOf(now + ttlSeconds));
+
+            String token = jwtService.generateToken(claims, null);
+            return ResponseEntity.ok(Map.of("token", token, "expiresIn", ttlSeconds));
+        } catch (Exception ex) {
+            return internal("Failed to issue FMU describe token", ex);
         }
     }
 

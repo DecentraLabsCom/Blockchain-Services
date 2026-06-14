@@ -10,6 +10,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import decentralabs.blockchain.dto.labadmin.LabAdminPublishRequest;
+import decentralabs.blockchain.service.auth.JwtService;
 import decentralabs.blockchain.service.labadmin.LabAdminService;
 import java.io.FileNotFoundException;
 import java.math.BigInteger;
@@ -23,13 +24,15 @@ import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 class LabAdminControllerTest {
 
     private LabAdminService labAdminService;
+    private JwtService jwtService;
     private MockMvc mockMvc;
 
     @BeforeEach
     void setUp() {
         labAdminService = mock(LabAdminService.class);
+        jwtService = mock(JwtService.class);
         mockMvc = MockMvcBuilders
-            .standaloneSetup(new LabAdminController(labAdminService))
+            .standaloneSetup(new LabAdminController(labAdminService, jwtService))
             .build();
     }
 
@@ -77,5 +80,17 @@ class LabAdminControllerTest {
             .andExpect(status().isBadRequest())
             .andExpect(jsonPath("$.success").value(false))
             .andExpect(jsonPath("$.error").value("Lab is not owned by this provider wallet"));
+    }
+
+    @Test
+    void fmuProviderDescribeTokenReturnsJwt() throws Exception {
+        when(jwtService.generateToken(any(), any())).thenReturn("token-value");
+
+        mockMvc.perform(post("/lab-admin/fmu/provider-describe-token")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"fmuFileName\":\"spring.fmu\"}"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.token").value("token-value"))
+            .andExpect(jsonPath("$.expiresIn").value(60));
     }
 }
