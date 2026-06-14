@@ -43,7 +43,9 @@ const API = {
                     detailFromMap ||
                     rawBody ||
                     `HTTP ${response.status}${response.statusText ? `: ${response.statusText}` : ''}`;
-                throw new Error(detail);
+                const error = new Error(detail);
+                error.status = response.status;
+                throw error;
             }
             
             return data || {};

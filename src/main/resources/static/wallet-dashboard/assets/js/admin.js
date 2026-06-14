@@ -787,6 +787,25 @@ function updateDashboardAccessNotices(status) {
     }
 }
 
+function updateDashboardAccessError(statusCode) {
+    const badge = document.getElementById('dashboardAccessBadge');
+    const footer = document.getElementById('dashboardSecurityNotice');
+    if (!badge || !footer) {
+        return;
+    }
+
+    if (statusCode === 401) {
+        badge.textContent = 'Access Policy Requires Token';
+        footer.textContent = 'Enter the Wallet & Billing access token to load dashboard access policy.';
+    } else if (statusCode === 403) {
+        badge.textContent = 'Access Policy Blocked';
+        footer.textContent = 'This network is blocked by the dashboard access policy.';
+    } else {
+        badge.textContent = 'Access Policy Unavailable';
+        footer.textContent = 'Dashboard access policy could not be loaded.';
+    }
+}
+
 function updateOperatingModeNotices(providerConfig) {
     const welcomeInstruction = document.getElementById('welcomeTokenInstruction');
     const welcomeHelp = document.getElementById('welcomeTokenHelp');
@@ -1318,6 +1337,7 @@ async function loadSystemStatus() {
         const statusIndicator = document.getElementById('statusIndicator');
         statusIndicator.querySelector('.status-dot').style.background = 'var(--neon-red)';
         statusIndicator.querySelector('.status-text').textContent = 'Disconnected';
+        updateDashboardAccessError(error.status);
     }
 }
 
