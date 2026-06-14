@@ -14,6 +14,7 @@ import decentralabs.blockchain.service.wallet.WalletAdministrationService;
 import decentralabs.blockchain.service.wallet.WalletService;
 import decentralabs.blockchain.util.EthereumAddressValidator;
 import jakarta.validation.Valid;
+import java.util.Map;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -33,6 +34,14 @@ public class WalletController {
     private final WalletAdministrationService walletAdministrationService;
     private final WalletService walletService;
     private final RateLimitService rateLimitService;
+
+    @GetMapping("/health")
+    public ResponseEntity<Map<String, String>> health() {
+        return ResponseEntity.ok(Map.of(
+            "status", "ok",
+            "service", "wallet"
+        ));
+    }
 
     @PostMapping("/create")
     public ResponseEntity<WalletResponse> createWallet(@Valid @RequestBody WalletCreateRequest request) {

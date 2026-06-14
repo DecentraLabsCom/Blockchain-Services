@@ -61,6 +61,9 @@ public class LocalhostOnlyFilter extends OncePerRequestFilter {
 
     private boolean requiresLocalhost(HttpServletRequest request) {
         String path = request.getRequestURI();
+        if (path.equals("/wallet/health") || path.equals("/billing/health")) {
+            return false;
+        }
         // Protect wallet/billing APIs, admin notifications, and the wallet dashboard UI.
         return path.startsWith("/wallet")
             || path.startsWith("/billing")

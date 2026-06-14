@@ -13,6 +13,11 @@ public class LocalhostFilterTestController {
         return ResponseEntity.ok("ok");
     }
 
+    @GetMapping("/wallet/health")
+    public ResponseEntity<String> walletHealth() {
+        return ResponseEntity.ok("ok");
+    }
+
     @GetMapping("/wallet-dashboard/index.html")
     public ResponseEntity<String> walletDashboard() {
         return ResponseEntity.ok("ok");

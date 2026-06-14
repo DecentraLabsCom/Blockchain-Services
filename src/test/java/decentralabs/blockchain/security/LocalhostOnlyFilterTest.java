@@ -42,6 +42,12 @@ class LocalhostOnlyFilterTest {
     }
 
     @Test
+    void walletHealth_allowsPublicIpWithoutToken() throws Exception {
+        mockMvc.perform(get("/wallet/health").with(req -> { req.setRemoteAddr("8.8.8.8"); return req; }))
+            .andExpect(status().isOk());
+    }
+
+    @Test
     void walletEndpoint_allowsLoopback() throws Exception {
         mockMvc.perform(post("/wallet/test").with(req -> { req.setRemoteAddr("127.0.0.1"); return req; }))
             .andExpect(status().isOk());
