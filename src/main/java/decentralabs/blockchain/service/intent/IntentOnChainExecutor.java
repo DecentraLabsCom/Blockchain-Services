@@ -476,6 +476,9 @@ public class IntentOnChainExecutor {
         if (payload.getExecutor() == null || payload.getExecutor().isBlank()) {
             return Optional.empty();
         }
+        if (record.getPuc() == null || record.getPuc().isBlank()) {
+            return Optional.empty();
+        }
         byte[] requestId = toBytes32(record.getRequestId());
 
         DynamicStruct struct = new DynamicStruct(
@@ -496,7 +499,7 @@ public class IntentOnChainExecutor {
 
         return Optional.of(new Function(
             "cancelInstitutionalBookingWithIntent",
-            List.of(new Bytes32(requestId), struct),
+            List.of(new Bytes32(requestId), struct, new Utf8String(record.getPuc())),
             List.of()
         ));
     }

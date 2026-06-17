@@ -76,7 +76,7 @@ Action discriminator:
 1. Validate `meta` and payload shape by action type.
 2. Validate SAML assertion and assertion hash consistency.
 3. Enforce SAML replay protection.
-4. Validate WebAuthn assertion (all actions except `REQUEST_FUNDS`).
+4. Validate WebAuthn assertion.
 5. Reject expired intents (`meta.expiresAt`) and nonce replay.
 6. Verify EIP-712 signature (`Eip712IntentVerifier`) and optional trusted signer policy (`intent.trusted-signer`).
 7. Persist and queue accepted intents.
