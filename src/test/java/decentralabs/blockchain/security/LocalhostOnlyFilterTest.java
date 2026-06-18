@@ -29,6 +29,8 @@ class LocalhostOnlyFilterTest {
         ReflectionTestUtils.setField(filter, "accessToken", "test-token");
         ReflectionTestUtils.setField(filter, "accessTokenHeader", "X-Access-Token");
         ReflectionTestUtils.setField(filter, "accessTokenCookie", "access_token");
+        ReflectionTestUtils.setField(filter, "labManagerToken", "lab-manager-token");
+        ReflectionTestUtils.setField(filter, "labManagerTokenHeader", "X-Lab-Manager-Token");
         mockMvc = MockMvcBuilders
             .standaloneSetup(new LocalhostFilterTestController())
             .addFilters(filter)
@@ -38,6 +40,36 @@ class LocalhostOnlyFilterTest {
     @Test
     void walletEndpoint_blockedFromPrivateNetwork_whenFlagDisabled() throws Exception {
         mockMvc.perform(post("/wallet/test").with(req -> { req.setRemoteAddr("172.17.0.1"); return req; }))
+            .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void labAdminEndpoint_allowsPrivateNetworkWithLabManagerToken() throws Exception {
+        ReflectionTestUtils.setField(adminNetworkAccessPolicy, "adminDashboardAllowPrivate", true);
+        ReflectionTestUtils.setField(adminNetworkAccessPolicy, "allowPrivateNetworks", true);
+        mockMvc = MockMvcBuilders
+            .standaloneSetup(new LocalhostFilterTestController())
+            .addFilters(filter)
+            .build();
+
+        mockMvc.perform(get("/lab-admin/status")
+                .header("X-Lab-Manager-Token", "lab-manager-token")
+                .with(req -> { req.setRemoteAddr("172.17.0.1"); return req; }))
+            .andExpect(status().isOk());
+    }
+
+    @Test
+    void walletEndpoint_rejectsLabManagerToken() throws Exception {
+        ReflectionTestUtils.setField(adminNetworkAccessPolicy, "adminDashboardAllowPrivate", true);
+        ReflectionTestUtils.setField(adminNetworkAccessPolicy, "allowPrivateNetworks", true);
+        mockMvc = MockMvcBuilders
+            .standaloneSetup(new LocalhostFilterTestController())
+            .addFilters(filter)
+            .build();
+
+        mockMvc.perform(post("/wallet/test")
+                .header("X-Lab-Manager-Token", "lab-manager-token")
+                .with(req -> { req.setRemoteAddr("172.17.0.1"); return req; }))
             .andExpect(status().isForbidden());
     }
 

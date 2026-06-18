@@ -27,4 +27,9 @@ public class LocalhostFilterTestController {
     public ResponseEntity<String> onboarding() {
         return ResponseEntity.ok("ok");
     }
+
+    @GetMapping("/lab-admin/status")
+    public ResponseEntity<String> labAdminStatus() {
+        return ResponseEntity.ok("ok");
+    }
 }

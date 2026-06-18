@@ -407,6 +407,17 @@
     "defaultValue": true
   },
   {
+    "name": "gateway.lab-manager.token",
+    "type": "java.lang.String",
+    "description": "Shared Lab Manager token accepted for backend lab-admin routes after OpenResty validation."
+  },
+  {
+    "name": "gateway.lab-manager.token-header",
+    "type": "java.lang.String",
+    "description": "Header name for the Lab Manager token on backend lab-admin routes.",
+    "defaultValue": "X-Lab-Manager-Token"
+  },
+  {
     "name": "allowed-origins",
     "type": "java.lang.String",
     "description": "Comma-separated list of allowed CORS origins.",

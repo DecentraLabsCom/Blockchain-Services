@@ -31,6 +31,12 @@ public class LocalhostOnlyFilter extends OncePerRequestFilter {
     @Value("${security.access-token-cookie:access_token}")
     private String accessTokenCookie;
 
+    @Value("${gateway.lab-manager.token:}")
+    private String labManagerToken;
+
+    @Value("${gateway.lab-manager.token-header:X-Lab-Manager-Token}")
+    private String labManagerTokenHeader;
+
     public LocalhostOnlyFilter(AdminNetworkAccessPolicy adminNetworkAccessPolicy) {
         this.adminNetworkAccessPolicy = adminNetworkAccessPolicy;
     }
@@ -49,7 +55,7 @@ public class LocalhostOnlyFilter extends OncePerRequestFilter {
         
         log.debug("LocalhostOnlyFilter: path={}, clientIp={}", path, clientIp);
         
-        if (requiresLocalhost(request) && !adminNetworkAccessPolicy.isRequestAllowed(request, () -> hasValidAccessToken(request))) {
+        if (requiresLocalhost(request) && !adminNetworkAccessPolicy.isRequestAllowed(request, () -> hasValidRouteToken(request))) {
             log.warn("Blocked non-localhost request: path={}, clientIp={}", path, clientIp);
             response.sendError(HttpServletResponse.SC_FORBIDDEN,
                 "Endpoint is available from localhost only");
@@ -101,5 +107,30 @@ public class LocalhostOnlyFilter extends OncePerRequestFilter {
             }
         }
         return false;
+    }
+
+    private boolean hasValidRouteToken(HttpServletRequest request) {
+        if (hasValidAccessToken(request)) {
+            return true;
+        }
+
+        if (isLabAdminPath(request) && hasValidLabManagerToken(request)) {
+            return true;
+        }
+
+        return false;
+    }
+
+    private boolean isLabAdminPath(HttpServletRequest request) {
+        return request.getRequestURI().startsWith("/lab-admin");
+    }
+
+    private boolean hasValidLabManagerToken(HttpServletRequest request) {
+        if (labManagerToken == null || labManagerToken.isBlank()) {
+            return false;
+        }
+
+        String headerToken = request.getHeader(labManagerTokenHeader);
+        return headerToken != null && labManagerToken.equals(headerToken.trim());
     }
 }
