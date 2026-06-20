@@ -149,6 +149,9 @@ public class LabAdminController {
             return ResponseEntity.ok()
                 .contentType(MediaType.parseMediaType(contentType))
                 .cacheControl(CacheControl.maxAge(Duration.ofHours(1)).cachePublic())
+                .header("Access-Control-Allow-Origin", "*")
+                .header("Access-Control-Allow-Methods", "GET, HEAD, OPTIONS")
+                .header("Access-Control-Allow-Headers", "Content-Type")
                 .header("X-Content-Type-Options", "nosniff")
                 .body(resource);
         } catch (FileNotFoundException ex) {

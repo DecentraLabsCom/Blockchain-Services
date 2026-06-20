@@ -19,6 +19,7 @@ import java.math.BigInteger;
 import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.springframework.core.io.ByteArrayResource;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
@@ -71,6 +72,22 @@ class LabAdminControllerTest {
 
         mockMvc.perform(get("/lab-content/content/demo/missing.pdf"))
             .andExpect(status().isNotFound());
+    }
+
+    @Test
+    void labContentReturnsPublicReadHeaders() throws Exception {
+        when(labAdminService.loadContentResource("content/demo/metadata.json"))
+            .thenReturn(new ByteArrayResource("{\"name\":\"Demo\"}".getBytes()));
+        when(labAdminService.contentTypeFor("content/demo/metadata.json"))
+            .thenReturn("application/json");
+
+        mockMvc.perform(get("/lab-content/content/demo/metadata.json"))
+            .andExpect(status().isOk())
+            .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.header().string("Access-Control-Allow-Origin", "*"))
+            .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.header().string("Access-Control-Allow-Methods", "GET, HEAD, OPTIONS"))
+            .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.header().string("Access-Control-Allow-Headers", "Content-Type"))
+            .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.header().string("X-Content-Type-Options", "nosniff"))
+            .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.header().string("Cache-Control", "max-age=3600, public"));
     }
 
     @Test

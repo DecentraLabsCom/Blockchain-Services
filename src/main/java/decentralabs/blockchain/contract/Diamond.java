@@ -183,6 +183,23 @@ public class Diamond extends Contract {
     }
 
     /**
+     * Get the authorized backend wallet for an institution (InstitutionalTreasuryFacet)
+     */
+    @SuppressWarnings("rawtypes")
+    public RemoteFunctionCall<String> getAuthorizedBackend(String institution) {
+        final Function function = new Function(
+            "getAuthorizedBackend",
+            Arrays.asList(new Address(institution)),
+            Arrays.asList(new TypeReference<Address>() {})
+        );
+        return new RemoteFunctionCall<>(function,
+            () -> {
+                Type result = executeCallSingleValueReturn(function);
+                return (String) result.getValue();
+            });
+    }
+
+    /**
      * Admin helper to grant institution role and register an organization (InstitutionFacet)
      */
     public RemoteFunctionCall<TransactionReceipt> grantInstitutionRole(String institution, String organization) {

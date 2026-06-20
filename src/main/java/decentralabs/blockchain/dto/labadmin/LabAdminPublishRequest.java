@@ -11,5 +11,6 @@ public record LabAdminPublishRequest(
     BigInteger price,
     String accessURI,
     String accessKey,
-    Integer resourceType
+    Integer resourceType,
+    Boolean allowDuplicate
 ) {}

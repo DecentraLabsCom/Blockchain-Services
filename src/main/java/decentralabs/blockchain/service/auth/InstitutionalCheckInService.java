@@ -57,9 +57,14 @@ public class InstitutionalCheckInService {
     private final WalletService walletService;
     private final Eip712CheckInVerifier checkInVerifier;
     private final CheckInOnChainService checkInOnChainService;
+    private final InstitutionalCheckInDirectoryService directoryService;
+    private final RemoteInstitutionalCheckInClient remoteCheckInClient;
 
     @Value("${contract.address}")
     private String contractAddress;
+
+    @Value("${institutional.checkin.delegation.enabled:true}")
+    private boolean delegationEnabled;
 
     public CheckInResponse checkIn(InstitutionalCheckInRequest request) {
         validateRequest(request);
@@ -79,7 +84,8 @@ public class InstitutionalCheckInService {
             throw new SecurityException("Request puc does not match authenticated user");
         }
 
-        String institutionWallet = resolveInstitutionWallet(request, saml);
+        String institutionOrganization = resolveInstitutionOrganization(saml);
+        String institutionWallet = resolveInstitutionWallet(request, institutionOrganization);
         if (institutionWallet == null || institutionWallet.isBlank() || ZERO_ADDRESS.equalsIgnoreCase(institutionWallet)) {
             throw new IllegalArgumentException("Institution wallet could not be resolved");
         }
@@ -101,6 +107,11 @@ public class InstitutionalCheckInService {
             : null;
         if (reservationKey == null || reservationKey.isBlank()) {
             throw new IllegalStateException("Reservation key could not be resolved");
+        }
+
+        String configuredSigner = normalizeAddress(institutionalWalletService.getInstitutionalWalletAddress());
+        if (!directoryService.isAuthorizedCheckInSigner(institutionWallet, configuredSigner)) {
+            return delegateToInstitutionBackend(request, institutionOrganization, institutionWallet);
         }
 
         Credentials credentials = institutionalWalletService.getInstitutionalCredentials();
@@ -188,12 +199,16 @@ public class InstitutionalCheckInService {
         }
     }
 
-    private String resolveInstitutionWallet(InstitutionalCheckInRequest request, SamlAssertionAttributes saml) {
+    private String resolveInstitutionWallet(InstitutionalCheckInRequest request, String organization) {
         String explicit = normalizeAddress(request.getInstitutionalProviderWallet());
         if (explicit != null && !explicit.isBlank()) {
             return explicit;
         }
 
+        return resolveInstitutionAddress(organization);
+    }
+
+    private String resolveInstitutionOrganization(SamlAssertionAttributes saml) {
         String org = null;
         if (saml.schacHomeOrganizations() != null && !saml.schacHomeOrganizations().isEmpty()) {
             org = saml.schacHomeOrganizations().get(0);
@@ -206,7 +221,24 @@ public class InstitutionalCheckInService {
             throw new IllegalArgumentException("Missing institution organization");
         }
 
-        return resolveInstitutionAddress(org);
+        return normalizeOrganization(org);
+    }
+
+    private CheckInResponse delegateToInstitutionBackend(
+        InstitutionalCheckInRequest request,
+        String organization,
+        String institutionWallet
+    ) {
+        if (!delegationEnabled) {
+            throw new IllegalStateException("Local wallet is not authorized for institution check-in");
+        }
+        String backendUrl = directoryService.resolveOrganizationBackendUrl(organization);
+        if (backendUrl == null || backendUrl.isBlank()) {
+            throw new IllegalStateException("No institutional backend registered for organization " + organization);
+        }
+        request.setInstitutionalProviderWallet(institutionWallet);
+        log.info("Delegating institutional check-in for organization {} to registered backend", organization);
+        return remoteCheckInClient.submit(backendUrl, request);
     }
 
     private String resolveInstitutionAddress(String organization) {

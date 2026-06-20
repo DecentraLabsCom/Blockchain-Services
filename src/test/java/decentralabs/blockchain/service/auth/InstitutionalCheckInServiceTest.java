@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -53,6 +54,12 @@ class InstitutionalCheckInServiceTest {
     @Mock
     private CheckInOnChainService checkInOnChainService;
 
+    @Mock
+    private InstitutionalCheckInDirectoryService directoryService;
+
+    @Mock
+    private RemoteInstitutionalCheckInClient remoteCheckInClient;
+
     @InjectMocks
     private InstitutionalCheckInService service;
 
@@ -61,6 +68,7 @@ class InstitutionalCheckInServiceTest {
     @BeforeEach
     void setUp() {
         ReflectionTestUtils.setField(service, "contractAddress", "0x2222222222222222222222222222222222222222");
+        ReflectionTestUtils.setField(service, "delegationEnabled", true);
         credentials = Credentials.create("4f3edf983ac636a65a842ce7c78d9aa706d3b113bce036f7f8f2f0d9f7d4c001");
     }
 
@@ -82,6 +90,9 @@ class InstitutionalCheckInServiceTest {
         ));
         when(bookingService.getBookingInfo("0x1111111111111111111111111111111111111111", "0xabc", "42", "puc-123"))
             .thenReturn(Map.of("reservationKey", "0xabc"));
+        when(institutionalWalletService.getInstitutionalWalletAddress()).thenReturn(credentials.getAddress());
+        when(directoryService.isAuthorizedCheckInSigner("0x1111111111111111111111111111111111111111", credentials.getAddress()))
+            .thenReturn(true);
         when(institutionalWalletService.getInstitutionalCredentials()).thenReturn(credentials);
         when(checkInVerifier.buildDigest(eq(credentials.getAddress()), eq(normalizeBytes32("0xabc")), eq(computePucHash("puc-123")), any(Long.class)))
             .thenReturn(digest);
@@ -101,6 +112,71 @@ class InstitutionalCheckInServiceTest {
         assertThat(checkInRequest.getPuc()).isEqualTo("puc-123");
         assertThat(checkInRequest.getTimestamp()).isNotNull();
         assertThat(checkInRequest.getSignature()).isEqualTo(signatureToHex(Sign.signMessage(digest, credentials.getEcKeyPair(), false)));
+    }
+
+    @Test
+    void checkInShouldKeepLocalFlowWhenPayerAndProviderUseLocalWallet() throws Exception {
+        InstitutionalCheckInRequest request = validRequest();
+        request.setInstitutionalProviderWallet(credentials.getAddress());
+        SamlAssertionAttributes saml = samlAttributes();
+        byte[] digest = Hash.sha3("same-institution-checkin".getBytes(StandardCharsets.UTF_8));
+        CheckInResponse onChainResponse = new CheckInResponse();
+        onChainResponse.setValid(true);
+        onChainResponse.setTxHash("0xsame");
+
+        when(samlValidationService.validateSamlAssertionDetailed("valid-saml")).thenReturn(saml);
+        when(marketplaceEndpointAuthService.enforceToken("market-token", null)).thenReturn(Map.of(
+            "userid", "user-1",
+            "affiliation", "org.example",
+            "puc", "puc-123",
+            "institutionalProviderWallet", credentials.getAddress()
+        ));
+        when(bookingService.getBookingInfo(credentials.getAddress(), "0xabc", "42", "puc-123"))
+            .thenReturn(Map.of("reservationKey", "0xabc"));
+        when(institutionalWalletService.getInstitutionalWalletAddress()).thenReturn(credentials.getAddress());
+        when(directoryService.isAuthorizedCheckInSigner(credentials.getAddress(), credentials.getAddress()))
+            .thenReturn(true);
+        when(institutionalWalletService.getInstitutionalCredentials()).thenReturn(credentials);
+        when(checkInVerifier.buildDigest(eq(credentials.getAddress()), eq(normalizeBytes32("0xabc")), eq(computePucHash("puc-123")), any(Long.class)))
+            .thenReturn(digest);
+        when(checkInOnChainService.verifyAndSubmit(any(CheckInRequest.class))).thenReturn(onChainResponse);
+
+        CheckInResponse response = service.checkIn(request);
+
+        assertThat(response).isSameAs(onChainResponse);
+        verify(remoteCheckInClient, never()).submit(any(), any());
+        verify(checkInOnChainService).verifyAndSubmit(any(CheckInRequest.class));
+    }
+
+    @Test
+    void checkInShouldDelegateToInstitutionBackendWhenLocalWalletIsNotAuthorized() throws Exception {
+        InstitutionalCheckInRequest request = validRequest();
+        SamlAssertionAttributes saml = samlAttributes();
+        CheckInResponse remoteResponse = new CheckInResponse();
+        remoteResponse.setValid(true);
+        remoteResponse.setTxHash("0xremote");
+
+        when(samlValidationService.validateSamlAssertionDetailed("valid-saml")).thenReturn(saml);
+        when(marketplaceEndpointAuthService.enforceToken("market-token", null)).thenReturn(Map.of(
+            "userid", "user-1",
+            "affiliation", "org.example",
+            "puc", "puc-123",
+            "institutionalProviderWallet", "0x1111111111111111111111111111111111111111"
+        ));
+        when(bookingService.getBookingInfo("0x1111111111111111111111111111111111111111", "0xabc", "42", "puc-123"))
+            .thenReturn(Map.of("reservationKey", "0xabc"));
+        when(institutionalWalletService.getInstitutionalWalletAddress()).thenReturn("0x9999999999999999999999999999999999999999");
+        when(directoryService.isAuthorizedCheckInSigner(
+            "0x1111111111111111111111111111111111111111",
+            "0x9999999999999999999999999999999999999999"
+        )).thenReturn(false);
+        when(directoryService.resolveOrganizationBackendUrl("org.example")).thenReturn("https://consumer.example");
+        when(remoteCheckInClient.submit("https://consumer.example", request)).thenReturn(remoteResponse);
+
+        CheckInResponse response = service.checkIn(request);
+
+        assertThat(response).isSameAs(remoteResponse);
+        verify(remoteCheckInClient).submit("https://consumer.example", request);
     }
 
     @Test

@@ -230,6 +230,30 @@ class SecurityConfigIntegrationTest {
     }
 
     @Test
+    void labContentEndpoint_isPubliclyAccessibleFromExternalIp() throws Exception {
+        mockMvc.perform(get("/lab-content/content/demo/metadata.json")
+                .with(anonymous())
+                .with(req -> {
+                    req.setRemoteAddr("203.0.113.10");
+                    return req;
+                }))
+            .andExpect(status().isOk())
+            .andExpect(header().string("Access-Control-Allow-Origin", "*"))
+            .andExpect(content().string("lab-content-ok"));
+    }
+
+    @Test
+    void labContentEndpoint_rejectsUnsafeMethods() throws Exception {
+        mockMvc.perform(post("/lab-content/content/demo/metadata.json")
+                .with(anonymous())
+                .with(req -> {
+                    req.setRemoteAddr("203.0.113.10");
+                    return req;
+                }))
+            .andExpect(status().isMethodNotAllowed());
+    }
+
+    @Test
     void fmuSessionTicketEndpoint_isAccessibleWithoutAuthentication() throws Exception {
         mockMvc.perform(post("/auth/fmu/session-ticket/issue")
                 .contentType(MediaType.APPLICATION_JSON)
@@ -320,6 +344,13 @@ class SecurityConfigIntegrationTest {
         @GetMapping("/intents/test")
         String intents() {
             return "intents-ok";
+        }
+
+        @GetMapping("/lab-content/content/demo/metadata.json")
+        org.springframework.http.ResponseEntity<String> labContent() {
+            return org.springframework.http.ResponseEntity.ok()
+                .header("Access-Control-Allow-Origin", "*")
+                .body("lab-content-ok");
         }
 
         @GetMapping("/health")

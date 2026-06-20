@@ -158,6 +158,11 @@ public class SecurityConfig {
         publicConfiguration.setAllowedMethods(Arrays.asList("GET", "POST"));
         publicConfiguration.addAllowedHeader("*");
 
+        CorsConfiguration labContentConfiguration = new CorsConfiguration();
+        labContentConfiguration.setAllowedOrigins(List.of("*"));
+        labContentConfiguration.setAllowedMethods(Arrays.asList("GET", "HEAD", "OPTIONS"));
+        labContentConfiguration.setAllowedHeaders(List.of("Content-Type"));
+
         CorsConfiguration walletConfiguration = new CorsConfiguration();
         walletConfiguration.setAllowedOrigins(buildWalletAllowedOrigins());
         walletConfiguration.setAllowedMethods(Arrays.asList("GET", "POST"));
@@ -179,7 +184,7 @@ public class SecurityConfig {
         source.registerCorsConfiguration(walletEndpoint + "/**", walletConfiguration);
         source.registerCorsConfiguration(billingEndpoint + "/**", walletConfiguration);
         source.registerCorsConfiguration("/lab-admin/**", walletConfiguration);
-        source.registerCorsConfiguration("/lab-content/**", publicConfiguration);
+        source.registerCorsConfiguration("/lab-content/**", labContentConfiguration);
         // Token-based onboarding (invite tokens) - localhost only
         source.registerCorsConfiguration("/onboarding/token/**", walletConfiguration);
 

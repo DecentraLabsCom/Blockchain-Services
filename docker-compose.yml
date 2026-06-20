@@ -40,7 +40,7 @@ services:
       - ./config:/app/config
       - ./logs:/app/logs
       # Persistent storage for encrypted wallets (survives container restart)
-      - wallet-data:/app/data
+      - /opt/Lab-Gateway/blockchain-data:/app/data
     
     # Expose container port for internal networks; host mapping handled via override
     expose:
@@ -95,16 +95,7 @@ services:
       start_period: 60s
     restart: unless-stopped
 
-# Named volume for wallet persistence
 volumes:
-  wallet-data:
-    driver: local
-    # Optional: Use bind mount for easier backup
-    # driver_opts:
-    #   type: none
-    #   device: /opt/blockchain-services/data
-    #   o: bind
-
   mysql_data:
     driver: local
 

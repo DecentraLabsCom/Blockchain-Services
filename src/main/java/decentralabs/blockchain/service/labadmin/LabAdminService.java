@@ -23,6 +23,8 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -53,6 +55,7 @@ public class LabAdminService {
     private final BackendUrlResolver backendUrlResolver;
     private final ObjectMapper objectMapper;
     private final Web3j web3j;
+    private final ConcurrentMap<String, Long> pendingPublishes = new ConcurrentHashMap<>();
 
     @Value("${contract.address}")
     private String contractAddress;
@@ -65,6 +68,9 @@ public class LabAdminService {
 
     @Value("${ethereum.gas.price.default:1}")
     private BigInteger defaultGasPriceGwei;
+
+    @Value("${ethereum.gas.price.strategy:network}")
+    private String gasPriceStrategy;
 
     @Value("${ethereum.gas.limit.contract:300000}")
     private BigInteger contractGasLimit;
@@ -159,22 +165,46 @@ public class LabAdminService {
         String accessKey = requireText(request.accessKey(), "accessKey", 200);
         BigInteger resourceType = normalizeResourceType(request.resourceType());
         boolean listImmediately = request.listImmediately() == null || request.listImmediately();
+        boolean allowDuplicate = Boolean.TRUE.equals(request.allowDuplicate());
 
         List<BigInteger> before = walletService.getLabsOwnedByProvider(wallet);
-        Diamond diamond = loadWritableDiamond();
-        TransactionReceipt receipt = listImmediately
-            ? diamond.addAndListLab(uri, price, accessURI, accessKey, resourceType).send()
-            : diamond.addLab(uri, price, accessURI, accessKey, resourceType).send();
-        BigInteger labId = inferCreatedLabId(wallet, before);
+        if (!allowDuplicate) {
+            Optional<BigInteger> existingLab = findOwnedLabByUri(wallet, uri, before);
+            if (existingLab.isPresent()) {
+                return existingLabResponse(existingLab.get(), uri);
+            }
+        }
 
-        return new LabAdminTransactionResponse(
-            true,
-            listImmediately ? "addAndListLab" : "addLab",
-            receipt.getTransactionHash(),
-            receipt.getStatus(),
-            labId,
-            uri
-        );
+        String pendingKey = pendingPublishKey(wallet, uri);
+        if (!allowDuplicate && pendingPublishes.putIfAbsent(pendingKey, System.currentTimeMillis()) != null) {
+            return new LabAdminTransactionResponse(
+                true,
+                "pendingPublish",
+                null,
+                "pending",
+                null,
+                uri
+            );
+        }
+
+        try {
+            Diamond diamond = loadWritableDiamond();
+            TransactionReceipt receipt = listImmediately
+                ? diamond.addAndListLab(uri, price, accessURI, accessKey, resourceType).send()
+                : diamond.addLab(uri, price, accessURI, accessKey, resourceType).send();
+            BigInteger labId = inferCreatedLabId(wallet, before);
+
+            return new LabAdminTransactionResponse(
+                true,
+                listImmediately ? "addAndListLab" : "addLab",
+                receipt.getTransactionHash(),
+                receipt.getStatus(),
+                labId,
+                uri
+            );
+        } finally {
+            pendingPublishes.remove(pendingKey);
+        }
     }
 
     public LabAdminTransactionResponse listLab(BigInteger labId, boolean listed) throws Exception {
@@ -221,6 +251,7 @@ public class LabAdminService {
         Map<String, Object> metadata = request.metadata() == null
             ? new LinkedHashMap<>()
             : new LinkedHashMap<>(request.metadata());
+        normalizeGeneratedMetadata(metadata);
         validateGeneratedMetadata(metadata);
         String contentId = normalizeContentId(objectsToString(metadata.get("contentId")));
         metadata.remove("contentId");
@@ -239,6 +270,12 @@ public class LabAdminService {
         Object image = metadata.get("image");
         if (image != null && !objectsToString(image).isBlank()) {
             requireHttpsOrGatewayUrl(objectsToString(image), "image");
+        }
+        for (String url : stringList(metadata.get("images"))) {
+            requireHttpsOrGatewayUrl(url, "images");
+        }
+        for (String url : stringList(metadata.get("docs"))) {
+            requireHttpsOrGatewayUrl(url, "docs");
         }
     }
 
@@ -267,6 +304,32 @@ public class LabAdminService {
         List<BigInteger> after = walletService.getLabsOwnedByProvider(wallet);
         after.removeAll(before);
         return after.stream().max(BigInteger::compareTo).orElse(null);
+    }
+
+    Optional<BigInteger> findOwnedLabByUri(String wallet, String uri, List<BigInteger> ownedLabs) {
+        if (uri == null || uri.isBlank() || ownedLabs == null || ownedLabs.isEmpty()) {
+            return Optional.empty();
+        }
+        return ownedLabs.stream()
+            .filter(labId -> walletService.getLabTokenUri(labId)
+                .map(existingUri -> existingUri.equalsIgnoreCase(uri))
+                .orElse(false))
+            .findFirst();
+    }
+
+    private LabAdminTransactionResponse existingLabResponse(BigInteger labId, String uri) {
+        return new LabAdminTransactionResponse(
+            true,
+            "existingLab",
+            null,
+            "already_exists",
+            labId,
+            uri
+        );
+    }
+
+    private String pendingPublishKey(String wallet, String uri) {
+        return (wallet == null ? "" : wallet.toLowerCase(Locale.ROOT)) + "|" + (uri == null ? "" : uri);
     }
 
     private String requireProviderWallet() {
@@ -309,6 +372,13 @@ public class LabAdminService {
             Optional.ofNullable(defaultGasPriceGwei).orElse(BigInteger.ONE).toString(),
             Convert.Unit.GWEI
         ).toBigInteger();
+        String strategy = Optional.ofNullable(gasPriceStrategy).orElse("network").trim().toLowerCase(Locale.ROOT);
+        if ("fixed".equals(strategy)) {
+            return fallback;
+        }
+        if (!"network".equals(strategy)) {
+            log.warn("Unknown ethereum.gas.price.strategy '{}'; using network gas price with configured fallback", strategy);
+        }
         try {
             var response = web3j.ethGasPrice().send();
             return response != null && response.getGasPrice() != null ? response.getGasPrice() : fallback;
@@ -475,5 +545,95 @@ public class LabAdminService {
 
     private String objectsToString(Object value) {
         return value == null ? "" : String.valueOf(value).trim();
+    }
+
+    void normalizeGeneratedMetadata(Map<String, Object> metadata) {
+        List<String> images = new ArrayList<>();
+        String primaryImage = objectsToString(metadata.get("image"));
+        addDistinct(images, primaryImage);
+        addDistinct(images, stringList(metadata.get("images")));
+
+        List<Map<String, Object>> attributes = metadataAttributes(metadata.get("attributes"));
+        List<String> category = stringList(metadata.get("category"));
+        List<String> keywords = stringList(metadata.get("keywords"));
+        List<String> additionalImages = new ArrayList<>();
+        List<String> docs = stringList(metadata.get("docs"));
+
+        for (Map<String, Object> attribute : attributes) {
+            String traitType = objectsToString(attribute.get("trait_type"));
+            if ("category".equals(traitType)) {
+                addDistinct(category, stringList(attribute.get("value")));
+            } else if ("keywords".equals(traitType)) {
+                addDistinct(keywords, stringList(attribute.get("value")));
+            } else if ("additionalImages".equals(traitType)) {
+                addDistinct(additionalImages, stringList(attribute.get("value")));
+            } else if ("docs".equals(traitType)) {
+                addDistinct(docs, stringList(attribute.get("value")));
+            }
+        }
+
+        addDistinct(images, additionalImages);
+
+        if (!images.isEmpty()) {
+            metadata.put("images", images);
+            metadata.put("image", images.get(0));
+        }
+        if (!category.isEmpty()) {
+            metadata.put("category", category);
+        }
+        if (!keywords.isEmpty()) {
+            metadata.put("keywords", keywords);
+        }
+        if (!docs.isEmpty()) {
+            metadata.put("docs", docs);
+        }
+    }
+
+    private void addDistinct(List<String> target, List<String> values) {
+        for (String value : values) {
+            addDistinct(target, value);
+        }
+    }
+
+    private void addDistinct(List<String> target, String value) {
+        String text = objectsToString(value);
+        if (!text.isBlank() && target.stream().noneMatch(text::equals)) {
+            target.add(text);
+        }
+    }
+
+    private List<Map<String, Object>> metadataAttributes(Object value) {
+        if (!(value instanceof List<?> values)) {
+            return List.of();
+        }
+        List<Map<String, Object>> attributes = new ArrayList<>();
+        for (Object item : values) {
+            if (item instanceof Map<?, ?> map) {
+                Map<String, Object> normalized = new LinkedHashMap<>();
+                for (Map.Entry<?, ?> entry : map.entrySet()) {
+                    normalized.put(String.valueOf(entry.getKey()), entry.getValue());
+                }
+                attributes.add(normalized);
+            }
+        }
+        return attributes;
+    }
+
+    private List<String> stringList(Object value) {
+        List<String> result = new ArrayList<>();
+        if (value instanceof List<?> values) {
+            for (Object item : values) {
+                String text = objectsToString(item);
+                if (!text.isBlank()) {
+                    result.add(text);
+                }
+            }
+            return result;
+        }
+        String text = objectsToString(value);
+        if (!text.isBlank()) {
+            result.add(text);
+        }
+        return result;
     }
 }
