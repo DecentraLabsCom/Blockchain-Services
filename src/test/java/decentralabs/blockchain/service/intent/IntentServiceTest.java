@@ -551,6 +551,25 @@ class IntentServiceTest {
             ));
             verify(webhookService).notify(any());
         }
+
+        @Test
+        @DisplayName("Should keep PUC from on-chain reservation intent event")
+        void shouldKeepPucFromOnChainReservationIntentEvent() {
+            String requestId = "onchain-reservation-req";
+            String reservationKey = "0x" + "12".repeat(32);
+            String puc = "user@example.edu|stable-id";
+
+            service.updateFromOnChain(requestId, "executed", "0xtx", 1000L, null, reservationKey, puc, null);
+
+            assertEquals(Optional.of(puc), service.findPucByReservationKey(reservationKey));
+            verify(persistenceService).upsert(argThat(record ->
+                record.getRequestId().equals(requestId) &&
+                record.getStatus() == IntentStatus.EXECUTED &&
+                reservationKey.equals(record.getReservationKey()) &&
+                puc.equals(record.getPuc())
+            ));
+            verify(webhookService).notify(any());
+        }
     }
 
     @Nested

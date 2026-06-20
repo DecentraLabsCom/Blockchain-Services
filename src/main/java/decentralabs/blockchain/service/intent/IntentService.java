@@ -1016,6 +1016,19 @@ public class IntentService {
     }
 
     public void updateFromOnChain(String requestId, String status, String txHash, Long blockNumber, String labId, String reservationKey, String reason) {
+        updateFromOnChain(requestId, status, txHash, blockNumber, labId, reservationKey, null, reason);
+    }
+
+    public void updateFromOnChain(
+        String requestId,
+        String status,
+        String txHash,
+        Long blockNumber,
+        String labId,
+        String reservationKey,
+        String puc,
+        String reason
+    ) {
         IntentRecord record = intents.computeIfAbsent(requestId, key -> new IntentRecord(requestId, null, null));
         record.setStatus(mapWireStatus(status));
         record.setTxHash(txHash);
@@ -1025,6 +1038,9 @@ public class IntentService {
         }
         if (reservationKey != null) {
             record.setReservationKey(reservationKey);
+        }
+        if (puc != null && !puc.isBlank()) {
+            record.setPuc(puc);
         }
         record.setReason(reason);
         record.setError(reason);

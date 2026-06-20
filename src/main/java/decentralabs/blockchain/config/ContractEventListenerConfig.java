@@ -68,6 +68,7 @@ public class ContractEventListenerConfig {
     private static final String PROVIDER_ADDED = "ProviderAdded";
     private static final String LAB_INTENT_PROCESSED = "LabIntentProcessed";
     private static final String RESERVATION_INTENT_PROCESSED = "ReservationIntentProcessed";
+    private static final String MISSING_PUC_PREFIX = "Missing PUC for reservation ";
     private static final int MAX_RESERVATION_PROCESSING_ATTEMPTS = 3;
     private static final long RESERVATION_RETRY_BACKOFF_MS = 120_000L;
 
@@ -590,6 +591,7 @@ public class ContractEventListenerConfig {
             eventLog.getBlockNumber().longValue(),
             null,
             reservationKey,
+            success ? puc : null,
             success ? null : reason
         );
     }
@@ -777,12 +779,23 @@ public class ContractEventListenerConfig {
                 ex.getMessage()
             );
             recordReservationFailure(payload.reservationKey(), ex.getMessage());
+            if (isRetryablePucFailure(ex)) {
+                log.info(
+                    "Leaving reservation {} pending for retry because the PUC is not available locally yet.",
+                    payload.reservationKey()
+                );
+                return;
+            }
             autoDenyReservation(payload, ex.getMessage());
         }
     }
 
     private boolean isPending(ReservationEventPayload payload) {
         return payload.status().map(status -> status.intValue() == 0).orElse(true);
+    }
+
+    private boolean isRetryablePucFailure(Exception ex) {
+        return ex != null && ex.getMessage() != null && ex.getMessage().startsWith(MISSING_PUC_PREFIX);
     }
 
     private void autoDenyReservation(ReservationEventPayload payload, String reason) {
