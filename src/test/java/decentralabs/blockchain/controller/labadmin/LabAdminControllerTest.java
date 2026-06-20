@@ -4,6 +4,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -12,6 +13,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import decentralabs.blockchain.dto.labadmin.LabAdminPublishRequest;
 import decentralabs.blockchain.service.auth.JwtService;
 import decentralabs.blockchain.service.labadmin.LabAdminService;
+import decentralabs.blockchain.service.labadmin.LabAdminService.LabAdminDeleteAssetResponse;
 import java.io.FileNotFoundException;
 import java.math.BigInteger;
 import java.util.Map;
@@ -92,5 +94,31 @@ class LabAdminControllerTest {
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.token").value("token-value"))
             .andExpect(jsonPath("$.expiresIn").value(60));
+    }
+
+    @Test
+    void deleteAssetReturnsSuccess() throws Exception {
+        when(labAdminService.deleteAsset("/content/lab-demo/images/cover.png"))
+            .thenReturn(new LabAdminDeleteAssetResponse(true, true, "/content/lab-demo/images/cover.png"));
+
+        mockMvc.perform(delete("/lab-admin/assets")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"path\":\"/content/lab-demo/images/cover.png\"}"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.success").value(true))
+            .andExpect(jsonPath("$.deleted").value(true));
+    }
+
+    @Test
+    void deleteAssetValidationErrorsReturnBadRequest() throws Exception {
+        when(labAdminService.deleteAsset("../metadata.json"))
+            .thenThrow(new IllegalArgumentException("Invalid asset path"));
+
+        mockMvc.perform(delete("/lab-admin/assets")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"path\":\"../metadata.json\"}"))
+            .andExpect(status().isBadRequest())
+            .andExpect(jsonPath("$.success").value(false))
+            .andExpect(jsonPath("$.error").value("Invalid asset path"));
     }
 }

@@ -12,6 +12,7 @@ import decentralabs.blockchain.service.wallet.WalletService;
 import decentralabs.blockchain.util.LogSanitizer;
 import java.io.IOException;
 import java.math.BigInteger;
+import java.net.URI;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
@@ -43,6 +44,8 @@ public class LabAdminService {
     private static final long MAX_ASSET_BYTES = 10L * 1024L * 1024L;
     private static final List<String> IMAGE_TYPES = List.of("image/jpeg", "image/png", "image/webp", "image/gif");
     private static final List<String> DOC_TYPES = List.of("application/pdf");
+
+    public record LabAdminDeleteAssetResponse(boolean success, boolean deleted, String path) {}
 
     private final InstitutionalWalletService institutionalWalletService;
     private final InstitutionalTxManagerProvider txManagerProvider;
@@ -138,6 +141,14 @@ public class LabAdminService {
             contentType,
             file.getSize()
         );
+    }
+
+    public LabAdminDeleteAssetResponse deleteAsset(String assetPath) throws IOException {
+        String relative = normalizeUploadedAssetPath(assetPath);
+        Path target = contentRoot().resolve(relative).normalize();
+        ensureWithinContentRoot(target);
+        boolean deleted = Files.deleteIfExists(target);
+        return new LabAdminDeleteAssetResponse(true, deleted, "/" + relative);
     }
 
     public LabAdminTransactionResponse publish(LabAdminPublishRequest request) throws Exception {
@@ -370,6 +381,49 @@ public class LabAdminService {
             throw new IllegalArgumentException("Asset kind must be images or docs");
         }
         return text;
+    }
+
+    private String normalizeUploadedAssetPath(String value) {
+        String text = Optional.ofNullable(value).orElse("").trim();
+        if (text.isBlank()) {
+            throw new IllegalArgumentException("Asset path is required");
+        }
+        if (text.startsWith("http://") || text.startsWith("https://")) {
+            try {
+                text = URI.create(text).getPath();
+            } catch (IllegalArgumentException ex) {
+                throw new IllegalArgumentException("Invalid asset path");
+            }
+        }
+        if (text.startsWith("/lab-content/")) {
+            text = text.substring("/lab-content/".length());
+        } else if (text.startsWith("lab-content/")) {
+            text = text.substring("lab-content/".length());
+        }
+        while (text.startsWith("/")) {
+            text = text.substring(1);
+        }
+        Path normalized = Path.of(text).normalize();
+        if (normalized.isAbsolute() || normalized.startsWith("..")) {
+            throw new IllegalArgumentException("Invalid asset path");
+        }
+        if (!"content".equals(normalized.getName(0).toString())) {
+            throw new IllegalArgumentException("Invalid asset path");
+        }
+        if (normalized.getNameCount() == 3 && "metadata.json".equals(normalized.getName(2).toString())) {
+            throw new IllegalArgumentException("Only uploaded image and document assets can be deleted");
+        }
+        if (normalized.getNameCount() < 4) {
+            throw new IllegalArgumentException("Invalid asset path");
+        }
+        String kind = normalized.getName(2).toString();
+        if (!"images".equals(kind) && !"docs".equals(kind)) {
+            throw new IllegalArgumentException("Only uploaded image and document assets can be deleted");
+        }
+        if (normalized.getNameCount() != 4) {
+            throw new IllegalArgumentException("Invalid asset path");
+        }
+        return normalized.toString().replace('\\', '/');
     }
 
     private String safeFileName(String original, String contentType, String kind) {

@@ -88,4 +88,35 @@ class LabAdminServiceTest {
             .isInstanceOf(IllegalArgumentException.class)
             .hasMessageContaining("Invalid contentId");
     }
+
+    @Test
+    void deleteAssetRemovesUploadedAsset() throws Exception {
+        MockMultipartFile file = new MockMultipartFile(
+            "file",
+            "manual.pdf",
+            "application/pdf",
+            "%PDF".getBytes(StandardCharsets.UTF_8)
+        );
+        var response = service.saveAsset("lab-demo", "docs", file);
+        Path storedPath = tempDir.resolve("lab-content").resolve(response.path().substring(1));
+
+        assertThat(Files.exists(storedPath)).isTrue();
+
+        assertThat(service.deleteAsset(response.path()).deleted()).isTrue();
+        assertThat(Files.exists(storedPath)).isFalse();
+    }
+
+    @Test
+    void deleteAssetRejectsMetadataPath() {
+        assertThatThrownBy(() -> service.deleteAsset("/content/lab-demo/metadata.json"))
+            .isInstanceOf(IllegalArgumentException.class)
+            .hasMessageContaining("Only uploaded image and document assets can be deleted");
+    }
+
+    @Test
+    void deleteAssetRejectsTraversalPath() {
+        assertThatThrownBy(() -> service.deleteAsset("/content/lab-demo/images/../../metadata.json"))
+            .isInstanceOf(IllegalArgumentException.class)
+            .hasMessageContaining("Invalid asset path");
+    }
 }
