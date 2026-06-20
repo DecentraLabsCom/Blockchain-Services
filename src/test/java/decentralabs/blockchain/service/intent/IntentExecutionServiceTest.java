@@ -9,7 +9,9 @@ import java.time.Instant;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Optional;
 
+import decentralabs.blockchain.config.ContractEventListenerConfig;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -19,6 +21,7 @@ import org.mockito.Captor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.beans.factory.ObjectProvider;
 
 import decentralabs.blockchain.dto.intent.IntentStatus;
 import decentralabs.blockchain.service.intent.IntentOnChainExecutor.ExecutionResult;
@@ -36,6 +39,9 @@ class IntentExecutionServiceTest {
     
     @Mock
     private IntentOnChainExecutor onChainExecutor;
+
+    @Mock
+    private ObjectProvider<ContractEventListenerConfig> reservationAutoApprovalProcessor;
     
     @InjectMocks
     private IntentExecutionService executionService;
@@ -194,6 +200,65 @@ class IntentExecutionServiceTest {
             verify(intentService).markInProgress(intent);
             verify(intentService).markExecuted(intent, "0xtxhash", 99999L, "lab-id-123", "res-key-456");
             verify(intentService, never()).markFailed(any(), any());
+        }
+
+        @Test
+        @DisplayName("Should process a queued intent immediately by request id")
+        void shouldProcessQueuedIntentImmediatelyByRequestId() throws Exception {
+            // Given
+            IntentRecord intent = createIntentRecord("req-immediate", IntentStatus.QUEUED);
+            when(intentService.findByRequestId("req-immediate")).thenReturn(Optional.of(intent));
+            when(onChainExecutor.execute(intent))
+                .thenReturn(new ExecutionResult(true, "0ximmediate", 101L, "lab", "key", null));
+
+            // When
+            executionService.processQueuedIntent("req-immediate");
+
+            // Then
+            verify(intentService).markInProgress(intent);
+            verify(onChainExecutor).execute(intent);
+            verify(intentService).markExecuted(intent, "0ximmediate", 101L, "lab", "key");
+            verify(intentService, never()).getQueuedIntents();
+        }
+
+        @Test
+        @DisplayName("Should trigger reservation auto-approval after reservation request execution")
+        void shouldTriggerAutoApprovalAfterReservationRequestExecution() throws Exception {
+            // Given
+            IntentRecord intent = createIntentRecord("req-reservation", "RESERVATION_REQUEST", IntentStatus.QUEUED);
+            intent.setReservationKey("0x" + "12".repeat(32));
+            when(intentService.findByRequestId("req-reservation")).thenReturn(Optional.of(intent));
+            when(onChainExecutor.execute(intent))
+                .thenReturn(new ExecutionResult(true, "0xreservation", 102L, null, "0x" + "34".repeat(32), null));
+            ContractEventListenerConfig processor = mock(ContractEventListenerConfig.class);
+            doAnswer(invocation -> {
+                java.util.function.Consumer<ContractEventListenerConfig> consumer = invocation.getArgument(0);
+                consumer.accept(processor);
+                return null;
+            }).when(reservationAutoApprovalProcessor).ifAvailable(any());
+
+            // When
+            executionService.processQueuedIntent("req-reservation");
+
+            // Then
+            verify(processor).processReservationRequestFromChain("0x" + "34".repeat(32));
+        }
+
+        @Test
+        @DisplayName("Should not auto-approve direct bookings after execution")
+        void shouldNotAutoApproveDirectBookingsAfterExecution() throws Exception {
+            // Given
+            IntentRecord intent = createIntentRecord("req-direct", "DIRECT_BOOKING", IntentStatus.QUEUED);
+            intent.setReservationKey("0x" + "56".repeat(32));
+            when(intentService.findByRequestId("req-direct")).thenReturn(Optional.of(intent));
+            when(onChainExecutor.execute(intent))
+                .thenReturn(new ExecutionResult(true, "0xdirect", 103L, null, "0x" + "56".repeat(32), null));
+
+            // When
+            executionService.processQueuedIntent("req-direct");
+
+            // Then
+            verify(reservationAutoApprovalProcessor, never()).ifAvailable(any());
         }
         
         @Test
@@ -374,7 +439,11 @@ class IntentExecutionServiceTest {
     // =========================================================================
     
     private IntentRecord createIntentRecord(String requestId, IntentStatus status) {
-        IntentRecord record = new IntentRecord(requestId, "LAB_ADD", "test-provider");
+        return createIntentRecord(requestId, "LAB_ADD", status);
+    }
+
+    private IntentRecord createIntentRecord(String requestId, String action, IntentStatus status) {
+        IntentRecord record = new IntentRecord(requestId, action, "test-provider");
         record.setStatus(status);
         record.setExpiresAt(null);
         return record;

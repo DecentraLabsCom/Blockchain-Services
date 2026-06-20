@@ -951,6 +951,23 @@ public class IntentService {
         return intents;
     }
 
+    public Optional<IntentRecord> findByRequestId(String requestId) {
+        if (requestId == null || requestId.isBlank()) {
+            return Optional.empty();
+        }
+        IntentRecord record = intents.get(requestId);
+        if (record == null) {
+            record = persistenceService.findByRequestId(requestId).orElse(null);
+            if (record != null && record.getRequestId() != null) {
+                intents.put(record.getRequestId(), record);
+                if (record.getSigner() != null && record.getNonce() != null) {
+                    nonceIndex.put(buildNonceKey(record.getSigner(), record.getNonce()), record.getRequestId());
+                }
+            }
+        }
+        return Optional.ofNullable(record);
+    }
+
     public Optional<String> findPucByReservationKey(String reservationKey) {
         String normalized = normalizeBytes32(reservationKey);
         if (normalized == null) {

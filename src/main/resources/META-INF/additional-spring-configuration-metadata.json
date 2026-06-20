@@ -172,7 +172,7 @@
     "name": "intent.execution-interval-ms",
     "type": "java.lang.Long",
     "description": "Interval for intent execution in milliseconds.",
-    "defaultValue": 5000
+    "defaultValue": 1000
   },
   {
     "name": "webauthn.credentials.table",

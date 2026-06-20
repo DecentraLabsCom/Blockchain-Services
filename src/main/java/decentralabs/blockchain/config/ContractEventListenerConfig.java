@@ -22,6 +22,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
@@ -679,6 +680,15 @@ public class ContractEventListenerConfig {
         );
     }
 
+    public void processReservationRequestFromChain(String reservationKey) {
+        Optional<ReservationEventPayload> payload = buildPayloadFromChain(reservationKey);
+        if (payload.isEmpty()) {
+            log.warn("Reservation postflight skipped {}: not found on-chain", reservationKey);
+            return;
+        }
+        processReservationRequest(payload.get());
+    }
+
     private void dispatchReservationLifecycleEvent(String action, ReservationEventPayload payload) {
         log.info(
             "Reservation {} | key={} labId={} tx={} block={}",
@@ -799,12 +809,13 @@ public class ContractEventListenerConfig {
     }
 
     private void autoDenyReservation(ReservationEventPayload payload, String reason) {
-        if (!isPending(payload)) {
+        if (!isPending(payload) || !isStillPendingOnChain(payload.reservationKey())) {
             log.info(
                 "Reservation {} already processed on-chain. Skipping auto-denial (reason: {}).",
                 payload.reservationKey(),
                 reason
             );
+            markReservationProcessed(payload.reservationKey());
             return;
         }
         log.info(
@@ -814,6 +825,18 @@ public class ContractEventListenerConfig {
             reason
         );
         denyReservationOnChain(payload.reservationKey(), reason);
+    }
+
+    private boolean isStillPendingOnChain(String reservationKey) {
+        Optional<ReservationDetails> latest = fetchReservationDetails(reservationKey);
+        if (latest.isEmpty()) {
+            log.warn("Unable to revalidate reservation {} before auto-denial; treating as pending", reservationKey);
+            return true;
+        }
+        return latest
+            .flatMap(details -> Optional.ofNullable(details.status()))
+            .map(status -> status.intValue() == 0)
+            .orElse(true);
     }
 
     private void sendReservationApprovedNotification(ReservationEventPayload payload) {
@@ -1014,6 +1037,10 @@ public class ContractEventListenerConfig {
             log.debug("Reservation {} already marked as processed. Skipping retry.", reservationKey);
             return false;
         }
+        if (!state.inProgress.compareAndSet(false, true)) {
+            log.info("Reservation {} is already being auto-processed. Skipping duplicate attempt.", reservationKey);
+            return false;
+        }
         long now = System.currentTimeMillis();
         if (now < state.nextAllowedAtMs) {
             log.info(
@@ -1023,11 +1050,13 @@ public class ContractEventListenerConfig {
                 state.attempts.get(),
                 state.lastError
             );
+            state.inProgress.set(false);
             return false;
         }
         int attempt = state.attempts.incrementAndGet();
         if (attempt > MAX_RESERVATION_PROCESSING_ATTEMPTS) {
             state.completed = true;
+            state.inProgress.set(false);
             log.warn(
                 "Reservation {} reached max auto-processing attempts ({}). Skipping further retries.",
                 reservationKey,
@@ -1048,6 +1077,7 @@ public class ContractEventListenerConfig {
         );
         state.lastError = reason;
         state.nextAllowedAtMs = System.currentTimeMillis() + RESERVATION_RETRY_BACKOFF_MS;
+        state.inProgress.set(false);
     }
 
     private void markReservationProcessed(String reservationKey) {
@@ -1059,10 +1089,12 @@ public class ContractEventListenerConfig {
             key -> new ReservationProcessingState()
         );
         state.completed = true;
+        state.inProgress.set(false);
     }
 
     private static final class ReservationProcessingState {
         private final AtomicInteger attempts = new AtomicInteger(0);
+        private final AtomicBoolean inProgress = new AtomicBoolean(false);
         private volatile boolean completed = false;
         private volatile long nextAllowedAtMs = 0;
         private volatile String lastError = null;

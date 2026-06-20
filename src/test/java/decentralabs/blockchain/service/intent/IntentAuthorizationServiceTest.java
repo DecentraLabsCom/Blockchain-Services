@@ -44,6 +44,9 @@ class IntentAuthorizationServiceTest {
     private IntentService intentService;
 
     @Mock
+    private IntentExecutionService intentExecutionService;
+
+    @Mock
     private WebauthnCredentialService webauthnCredentialService;
 
     @Mock
@@ -171,6 +174,7 @@ class IntentAuthorizationServiceTest {
         IntentAuthorizationStatusResponse status = service.getStatus(session.getSessionId());
         assertThat(status.getStatus()).isEqualTo("SUCCESS");
         assertThat(status.getCompletedAt()).isNotNull();
+        verify(intentExecutionService).processQueuedIntent("request-123");
     }
 
     @Test

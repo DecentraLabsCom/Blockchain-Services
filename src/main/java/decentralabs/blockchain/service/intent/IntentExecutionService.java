@@ -1,11 +1,16 @@
 package decentralabs.blockchain.service.intent;
 
+import decentralabs.blockchain.config.ContractEventListenerConfig;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.stream.Collectors;
 
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.beans.factory.ObjectProvider;
 import io.micrometer.observation.annotation.Observed;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
@@ -21,12 +26,27 @@ public class IntentExecutionService {
 
     private final IntentService intentService;
     private final IntentOnChainExecutor onChainExecutor;
+    private final ObjectProvider<ContractEventListenerConfig> reservationAutoApprovalProcessor;
+    private final ConcurrentHashMap<String, AtomicBoolean> executionGuards = new ConcurrentHashMap<>();
 
-    @Value("${intent.execution-interval-ms:5000}")
+    @Value("${intent.execution-interval-ms:1000}")
     private long executionIntervalMs;
 
+    @Observed(name = "intent.execution", contextualName = "process-queued-intent")
+    public void processQueuedIntent(String requestId) {
+        if (requestId == null || requestId.isBlank()) {
+            return;
+        }
+        Optional<IntentRecord> record = intentService.findByRequestId(requestId);
+        if (record.isEmpty()) {
+            log.warn("Intent {} not found for immediate execution", requestId);
+            return;
+        }
+        processRecord(record.get());
+    }
+
     @Observed(name = "intent.execution", contextualName = "process-queued-intents")
-    @Scheduled(fixedDelayString = "${intent.execution-interval-ms:5000}")
+    @Scheduled(fixedDelayString = "${intent.execution-interval-ms:1000}")
     public void processQueuedIntents() {
         Map<String, IntentRecord> current = intentService.getQueuedIntents();
         List<IntentRecord> pending = current.values().stream()
@@ -39,28 +59,74 @@ public class IntentExecutionService {
 
         log.info("Processing {} queued intents", pending.size());
         for (IntentRecord record : pending) {
-            try {
-                if (record.getExpiresAt() != null && record.getExpiresAt() <= Instant.now().getEpochSecond()) {
-                    intentService.markFailed(record, "expired");
-                    continue;
-                }
-                intentService.markInProgress(record);
-                IntentOnChainExecutor.ExecutionResult result = onChainExecutor.execute(record);
-                if (result.success()) {
-                    intentService.markExecuted(record, result.txHash(), result.blockNumber(), result.labId(), result.reservationKey());
-                } else {
-                    log.warn("Intent {} failed on-chain: reason={} txHash={} blockNumber={}",
-                        record.getRequestId(), result.reason(), result.txHash(), result.blockNumber());
-                    if (result.txHash() == null && result.blockNumber() == null) {
-                        intentService.markFailed(record, result.reason());
-                    } else {
-                        intentService.markFailed(record, result.reason(), result.txHash(), result.blockNumber());
-                    }
-                }
-            } catch (Exception ex) {
-                log.warn("Intent {} failed during execution: {}", record.getRequestId(), ex.getMessage(), ex);
-                intentService.markFailed(record, "execution_error: " + ex.getMessage());
-            }
+            processRecord(record);
         }
+    }
+
+    private void processRecord(IntentRecord record) {
+        if (record == null || record.getRequestId() == null || record.getRequestId().isBlank()) {
+            return;
+        }
+        AtomicBoolean guard = executionGuards.computeIfAbsent(record.getRequestId(), ignored -> new AtomicBoolean(false));
+        if (!guard.compareAndSet(false, true)) {
+            log.info("Intent {} is already being executed. Skipping duplicate attempt.", record.getRequestId());
+            return;
+        }
+        try {
+            if (record.getStatus() != IntentStatus.QUEUED) {
+                log.debug("Intent {} has status {}. Skipping execution.", record.getRequestId(), record.getStatus());
+                return;
+            }
+            if (record.getExpiresAt() != null && record.getExpiresAt() <= Instant.now().getEpochSecond()) {
+                intentService.markFailed(record, "expired");
+                return;
+            }
+            intentService.markInProgress(record);
+            IntentOnChainExecutor.ExecutionResult result = onChainExecutor.execute(record);
+            if (result.success()) {
+                intentService.markExecuted(record, result.txHash(), result.blockNumber(), result.labId(), result.reservationKey());
+                triggerReservationPostflight(record, result);
+            } else {
+                log.warn("Intent {} failed on-chain: reason={} txHash={} blockNumber={}",
+                    record.getRequestId(), result.reason(), result.txHash(), result.blockNumber());
+                if (result.txHash() == null && result.blockNumber() == null) {
+                    intentService.markFailed(record, result.reason());
+                } else {
+                    intentService.markFailed(record, result.reason(), result.txHash(), result.blockNumber());
+                }
+            }
+        } catch (Exception ex) {
+            log.warn("Intent {} failed during execution: {}", record.getRequestId(), ex.getMessage(), ex);
+            intentService.markFailed(record, "execution_error: " + ex.getMessage());
+        } finally {
+            executionGuards.remove(record.getRequestId(), guard);
+        }
+    }
+
+    private void triggerReservationPostflight(IntentRecord record, IntentOnChainExecutor.ExecutionResult result) {
+        if (!"RESERVATION_REQUEST".equalsIgnoreCase(record.getAction())) {
+            return;
+        }
+        String reservationKey = result.reservationKey();
+        if (reservationKey == null || reservationKey.isBlank()) {
+            reservationKey = record.getReservationKey();
+        }
+        if (reservationKey == null || reservationKey.isBlank()) {
+            log.warn("Reservation intent {} executed without reservation key; skipping auto-approval postflight", record.getRequestId());
+            return;
+        }
+        String key = reservationKey;
+        reservationAutoApprovalProcessor.ifAvailable(processor -> {
+            try {
+                processor.processReservationRequestFromChain(key);
+            } catch (Exception ex) {
+                log.warn(
+                    "Reservation postflight failed for intent {} key {}: {}",
+                    record.getRequestId(),
+                    key,
+                    ex.getMessage()
+                );
+            }
+        });
     }
 }

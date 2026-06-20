@@ -42,6 +42,7 @@ public class IntentAuthorizationService {
     private static final SecureRandom RANDOM = new SecureRandom();
 
     private final IntentService intentService;
+    private final IntentExecutionService intentExecutionService;
     private final WebauthnCredentialService webauthnCredentialService;
     private final SamlValidationService samlValidationService;
     private final BackendUrlResolver backendUrlResolver;
@@ -64,11 +65,13 @@ public class IntentAuthorizationService {
 
     public IntentAuthorizationService(
         IntentService intentService,
+        IntentExecutionService intentExecutionService,
         WebauthnCredentialService webauthnCredentialService,
         SamlValidationService samlValidationService,
         BackendUrlResolver backendUrlResolver
     ) {
         this.intentService = intentService;
+        this.intentExecutionService = intentExecutionService;
         this.webauthnCredentialService = webauthnCredentialService;
         this.samlValidationService = samlValidationService;
         this.backendUrlResolver = backendUrlResolver;
@@ -204,6 +207,11 @@ public class IntentAuthorizationService {
 
         if ("accepted".equalsIgnoreCase(ack.getStatus())) {
             storeResult(session, "SUCCESS", null);
+            try {
+                intentExecutionService.processQueuedIntent(ack.getRequestId());
+            } catch (Exception ex) {
+                log.warn("Immediate intent execution failed for {}: {}", ack.getRequestId(), ex.getMessage(), ex);
+            }
         } else {
             storeResult(session, "FAILED", ack.getReason());
         }
