@@ -7,6 +7,7 @@ import decentralabs.blockchain.service.wallet.BlockchainBookingService;
 import decentralabs.blockchain.service.wallet.InstitutionalWalletService;
 import decentralabs.blockchain.service.wallet.WalletService;
 import java.nio.charset.StandardCharsets;
+import java.math.BigInteger;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -37,6 +38,7 @@ import decentralabs.blockchain.util.PucNormalizer;
 @Slf4j
 public class InstitutionalCheckInService {
     private static final String ZERO_ADDRESS = "0x0000000000000000000000000000000000000000";
+    private static final BigInteger STATUS_IN_USE = BigInteger.valueOf(2);
 
     private static final class MarketplaceIdentityClaims {
         private final String userId;
@@ -107,6 +109,15 @@ public class InstitutionalCheckInService {
             : null;
         if (reservationKey == null || reservationKey.isBlank()) {
             throw new IllegalStateException("Reservation key could not be resolved");
+        }
+
+        if (isInUseStatus(bookingInfo.get("reservationStatus"))) {
+            CheckInResponse response = new CheckInResponse();
+            response.setValid(true);
+            response.setReservationKey(reservationKey);
+            response.setReason("Reservation already in use");
+            response.setTimestamp(System.currentTimeMillis() / 1000);
+            return response;
         }
 
         String configuredSigner = normalizeAddress(institutionalWalletService.getInstitutionalWalletAddress());
@@ -315,6 +326,23 @@ public class InstitutionalCheckInService {
         }
         String trimmed = value.trim();
         return trimmed.isEmpty() ? null : trimmed;
+    }
+
+    private boolean isInUseStatus(Object value) {
+        if (value == null) {
+            return false;
+        }
+        if (value instanceof BigInteger status) {
+            return STATUS_IN_USE.equals(status);
+        }
+        if (value instanceof Number status) {
+            return status.longValue() == STATUS_IN_USE.longValue();
+        }
+        try {
+            return STATUS_IN_USE.equals(new BigInteger(value.toString()));
+        } catch (RuntimeException ex) {
+            return false;
+        }
     }
 
     private String firstClaim(Map<String, Object> claims, String... keys) {

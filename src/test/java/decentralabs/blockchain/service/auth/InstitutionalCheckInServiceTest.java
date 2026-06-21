@@ -14,6 +14,7 @@ import decentralabs.blockchain.dto.auth.InstitutionalCheckInRequest;
 import decentralabs.blockchain.service.wallet.BlockchainBookingService;
 import decentralabs.blockchain.service.wallet.InstitutionalWalletService;
 import decentralabs.blockchain.service.wallet.WalletService;
+import java.math.BigInteger;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Map;
@@ -146,6 +147,34 @@ class InstitutionalCheckInServiceTest {
         assertThat(response).isSameAs(onChainResponse);
         verify(remoteCheckInClient, never()).submit(any(), any());
         verify(checkInOnChainService).verifyAndSubmit(any(CheckInRequest.class));
+    }
+
+    @Test
+    void checkInShouldReturnSuccessWhenReservationIsAlreadyInUse() throws Exception {
+        InstitutionalCheckInRequest request = validRequest();
+
+        when(samlValidationService.validateSamlAssertionDetailed("valid-saml")).thenReturn(samlAttributes());
+        when(marketplaceEndpointAuthService.enforceToken("market-token", null)).thenReturn(Map.of(
+            "userid", "user-1",
+            "affiliation", "org.example",
+            "puc", "puc-123",
+            "institutionalProviderWallet", "0x1111111111111111111111111111111111111111"
+        ));
+        when(bookingService.getBookingInfo("0x1111111111111111111111111111111111111111", "0xabc", "42", "puc-123"))
+            .thenReturn(Map.of(
+                "reservationKey", "0xabc",
+                "reservationStatus", BigInteger.valueOf(2)
+            ));
+
+        CheckInResponse response = service.checkIn(request);
+
+        assertThat(response.isValid()).isTrue();
+        assertThat(response.getReservationKey()).isEqualTo("0xabc");
+        assertThat(response.getReason()).isEqualTo("Reservation already in use");
+        assertThat(response.getTimestamp()).isNotNull();
+        verify(checkInOnChainService, never()).verifyAndSubmit(any(CheckInRequest.class));
+        verify(institutionalWalletService, never()).getInstitutionalCredentials();
+        verify(remoteCheckInClient, never()).submit(any(), any());
     }
 
     @Test

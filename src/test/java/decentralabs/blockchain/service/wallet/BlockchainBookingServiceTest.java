@@ -93,6 +93,7 @@ class BlockchainBookingServiceTest {
             assertThat(result).isNotNull();
             assertThat(result.get("lab")).isEqualTo(TEST_LAB_ID);
             assertThat(result.get("reservationKey")).isEqualTo(TEST_RESERVATION_KEY);
+            assertThat(result.get("reservationStatus")).isEqualTo(BigInteger.ONE);
             assertThat(result.get("price")).isEqualTo(BigInteger.valueOf(1000));
             assertThat(result.get("aud")).isEqualTo("https://lab.url");
             assertThat(result.get("sub")).isEqualTo("accessKey123");
@@ -220,6 +221,7 @@ class BlockchainBookingServiceTest {
 
             assertThat(result).isNotNull();
             assertThat(result.get("lab")).isEqualTo(TEST_LAB_ID);
+            assertThat(result.get("reservationStatus")).isEqualTo(BigInteger.valueOf(2));
         }
     }
 

@@ -159,7 +159,8 @@ public class BlockchainBookingService {
 
         // 6. Build and return booking info
         return buildBookingInfo(
-            labId, reservationKeyHex, price, labPrice, 
+            labId, reservationKeyHex, price, labPrice,
+            status,
             start, end,
             accessURI, accessKey, metadata, authURI,
             base.resourceType
@@ -245,6 +246,7 @@ public class BlockchainBookingService {
         // 7. Build and return booking info
         return buildBookingInfo(
             labId, reservationKeyHex, price, labPrice,
+            status,
             start, end,
             accessURI, accessKey, metadata, authURI,
             base.resourceType
@@ -305,6 +307,7 @@ public class BlockchainBookingService {
     private Map<String, Object> buildBookingInfo(
             BigInteger labId, String reservationKeyHex,
             BigInteger price, BigInteger labPrice,
+            BigInteger status,
             BigInteger start, BigInteger end,
             String accessURI, String accessKey, String metadata, String authURI,
             BigInteger onChainResourceType) {
@@ -320,6 +323,7 @@ public class BlockchainBookingService {
         // Custom Claims
         bookingInfo.put("lab", labId);                      // Lab ID
         bookingInfo.put("reservationKey", reservationKeyHex); // For reference
+        bookingInfo.put("reservationStatus", status);         // Raw on-chain status
         bookingInfo.put("price", price);                    // Price paid
         bookingInfo.put("labPrice", labPrice);              // Lab base price
         bookingInfo.put("metadata", metadata);              // Lab metadata URI
