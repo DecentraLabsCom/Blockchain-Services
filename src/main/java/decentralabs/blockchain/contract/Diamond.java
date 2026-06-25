@@ -8,6 +8,7 @@ import org.web3j.abi.TypeReference;
 import org.web3j.abi.datatypes.Function;
 import org.web3j.abi.datatypes.Type;
 import org.web3j.abi.datatypes.Address;
+import org.web3j.abi.datatypes.Bool;
 import org.web3j.abi.datatypes.Utf8String;
 import org.web3j.abi.datatypes.generated.Bytes32;
 import org.web3j.abi.datatypes.generated.Uint32;
@@ -569,6 +570,15 @@ public class Diamond extends Contract {
             List.of()
         );
         return executeRemoteCallTransaction(function);
+    }
+
+    public RemoteFunctionCall<Boolean> isLabListed(BigInteger labId) {
+        final Function function = new Function(
+            "isLabListed",
+            Arrays.asList(new Uint256(labId)),
+            Arrays.asList(new TypeReference<Bool>() {})
+        );
+        return executeRemoteCallSingleValueReturn(function, Boolean.class);
     }
 
     public RemoteFunctionCall<TransactionReceipt> setTokenURI(BigInteger labId, String tokenURI) {

@@ -2,11 +2,13 @@ package decentralabs.blockchain.controller.labadmin;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -96,6 +98,47 @@ class LabAdminControllerTest {
             .thenThrow(new IllegalStateException("Lab is not owned by this provider wallet"));
 
         mockMvc.perform(post("/lab-admin/labs/5/list"))
+            .andExpect(status().isBadRequest())
+            .andExpect(jsonPath("$.success").value(false))
+            .andExpect(jsonPath("$.error").value("Lab is not owned by this provider wallet"));
+    }
+
+    @Test
+    void updateLabDelegatesToService() throws Exception {
+        when(labAdminService.update(eq(BigInteger.valueOf(7)), any(LabAdminPublishRequest.class)))
+            .thenReturn(new decentralabs.blockchain.dto.labadmin.LabAdminTransactionResponse(
+                true,
+                "updateLab",
+                "0xtx",
+                "0x1",
+                BigInteger.valueOf(7),
+                "https://lab.example.edu/metadata.json"
+            ));
+
+        mockMvc.perform(put("/lab-admin/labs/7")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {
+                      "setupMode": "quick",
+                      "metadataUrl": "https://lab.example.edu/metadata.json",
+                      "price": 1,
+                      "accessURI": "https://lab.example.edu/guacamole",
+                      "accessKey": "demo",
+                      "resourceType": 0
+                    }
+                    """))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.success").value(true))
+            .andExpect(jsonPath("$.action").value("updateLab"))
+            .andExpect(jsonPath("$.labId").value(7));
+    }
+
+    @Test
+    void deleteLabValidationErrorsReturnBadRequest() throws Exception {
+        when(labAdminService.deleteLab(BigInteger.valueOf(7)))
+            .thenThrow(new IllegalArgumentException("Lab is not owned by this provider wallet"));
+
+        mockMvc.perform(delete("/lab-admin/labs/7"))
             .andExpect(status().isBadRequest())
             .andExpect(jsonPath("$.success").value(false))
             .andExpect(jsonPath("$.error").value("Lab is not owned by this provider wallet"));

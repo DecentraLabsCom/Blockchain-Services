@@ -105,6 +105,7 @@ public class LabAdminService {
                 item.put("accessURI", lab.base.accessURI);
                 item.put("accessKey", lab.base.accessKey);
                 item.put("resourceType", lab.base.resourceType.intValue());
+                item.put("listed", loadReadonlyDiamond().isLabListed(labId).send());
             } catch (Exception ex) {
                 item.put("error", "Unable to load lab details");
             }
@@ -205,6 +206,41 @@ public class LabAdminService {
         } finally {
             pendingPublishes.remove(pendingKey);
         }
+    }
+
+    public LabAdminTransactionResponse update(BigInteger labId, LabAdminPublishRequest request) throws Exception {
+        requireOwnedLab(labId);
+        String uri = resolveMetadataUri(request);
+        BigInteger price = requireNonNegative(request.price(), "price");
+        String accessURI = requireText(request.accessURI(), "accessURI", 500);
+        String accessKey = requireText(request.accessKey(), "accessKey", 200);
+        BigInteger resourceType = normalizeResourceType(request.resourceType());
+
+        TransactionReceipt receipt = loadWritableDiamond()
+            .updateLab(labId, uri, price, accessURI, accessKey, resourceType)
+            .send();
+        return new LabAdminTransactionResponse(
+            true,
+            "updateLab",
+            receipt.getTransactionHash(),
+            receipt.getStatus(),
+            labId,
+            uri
+        );
+    }
+
+    public LabAdminTransactionResponse deleteLab(BigInteger labId) throws Exception {
+        requireOwnedLab(labId);
+        String uri = walletService.getLabTokenUri(labId).orElse(null);
+        TransactionReceipt receipt = loadWritableDiamond().deleteLab(labId).send();
+        return new LabAdminTransactionResponse(
+            true,
+            "deleteLab",
+            receipt.getTransactionHash(),
+            receipt.getStatus(),
+            labId,
+            uri
+        );
     }
 
     public LabAdminTransactionResponse listLab(BigInteger labId, boolean listed) throws Exception {

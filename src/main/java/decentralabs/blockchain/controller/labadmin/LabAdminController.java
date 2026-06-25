@@ -21,6 +21,7 @@ import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
@@ -89,6 +90,30 @@ public class LabAdminController {
             return badRequest(ex);
         } catch (Exception ex) {
             return internal("Failed to publish lab", ex);
+        }
+    }
+
+    @PutMapping("/lab-admin/labs/{labId}")
+    public ResponseEntity<?> update(@PathVariable BigInteger labId, @RequestBody LabAdminPublishRequest request) {
+        try {
+            LabAdminTransactionResponse response = labAdminService.update(labId, request);
+            return ResponseEntity.ok(response);
+        } catch (IllegalArgumentException | IllegalStateException ex) {
+            return badRequest(ex);
+        } catch (Exception ex) {
+            return internal("Failed to update lab", ex);
+        }
+    }
+
+    @DeleteMapping("/lab-admin/labs/{labId}")
+    public ResponseEntity<?> deleteLab(@PathVariable BigInteger labId) {
+        try {
+            LabAdminTransactionResponse response = labAdminService.deleteLab(labId);
+            return ResponseEntity.ok(response);
+        } catch (IllegalArgumentException | IllegalStateException ex) {
+            return badRequest(ex);
+        } catch (Exception ex) {
+            return internal("Failed to delete lab", ex);
         }
     }
 
