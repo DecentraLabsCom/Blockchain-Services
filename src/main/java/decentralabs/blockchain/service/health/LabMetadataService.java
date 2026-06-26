@@ -77,9 +77,11 @@ public class LabMetadataService {
             .name(rootNode.get("name").asText())
             .description(rootNode.get("description").asText())
             .image(rootNode.get("image").asText());
+        PricingMetadata pricingMetadata = null;
 
         if (rootNode.hasNonNull("pricing")) {
-            builder.pricing(parseObject(rootNode.get("pricing"), PricingMetadata.class));
+            pricingMetadata = parseObject(rootNode.get("pricing"), PricingMetadata.class);
+            builder.pricing(pricingMetadata);
         }
         if (rootNode.hasNonNull("bookingMode")) {
             builder.bookingMode(parseString(rootNode.get("bookingMode")));
@@ -109,8 +111,17 @@ public class LabMetadataService {
                     case "maxconcurrentusers" -> builder.maxConcurrentUsers(valueNode.asInt());
                     case "unavailablewindows" -> builder.unavailableWindows(parseUnavailableWindows(valueNode));
                     case "timezone" -> builder.timezone(parseString(valueNode));
-                    case "pricing" -> builder.pricing(parseObject(valueNode, PricingMetadata.class));
-                    case "pricingunit" -> builder.pricing(PricingMetadata.builder().displayUnit(parseString(valueNode)).build());
+                    case "pricing" -> {
+                        pricingMetadata = parseObject(valueNode, PricingMetadata.class);
+                        builder.pricing(pricingMetadata);
+                    }
+                    case "pricingunit" -> {
+                        if (pricingMetadata == null) {
+                            pricingMetadata = PricingMetadata.builder().build();
+                        }
+                        pricingMetadata.setDisplayUnit(parseString(valueNode));
+                        builder.pricing(pricingMetadata);
+                    }
                     case "bookingmode" -> builder.bookingMode(parseString(valueNode));
                     case "alloweddurations" -> builder.allowedDurations(parseAllowedDurations(valueNode));
                     case "periodrules" -> builder.periodRules(parseObject(valueNode, PeriodRules.class));

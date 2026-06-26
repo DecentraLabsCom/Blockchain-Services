@@ -127,7 +127,7 @@ class LabAdminServiceTest {
     }
 
     @Test
-    void normalizeGeneratedMetadataAddsMarketplaceTopLevelFields() {
+    void normalizeGeneratedMetadataKeepsErc721AttributeShape() {
         Map<String, Object> metadata = new java.util.LinkedHashMap<>();
         metadata.put("name", "Circuit Lab");
         metadata.put("description", "Remote electronics lab");
@@ -141,15 +141,9 @@ class LabAdminServiceTest {
 
         service.normalizeGeneratedMetadata(metadata);
 
-        assertThat(metadata.get("category")).isEqualTo(List.of("Electrical Engineering"));
-        assertThat(metadata.get("keywords")).isEqualTo(List.of("circuits", "remote"));
-        assertThat(metadata.get("images")).isEqualTo(List.of(
-            "https://lab.example.edu/lab-content/content/lab-demo/images/cover.png",
-            "https://lab.example.edu/lab-content/content/lab-demo/images/side.png"
-        ));
-        assertThat(metadata.get("docs")).isEqualTo(List.of(
-            "https://lab.example.edu/lab-content/content/lab-demo/docs/manual.pdf"
-        ));
+        assertThat(metadata).doesNotContainKeys("category", "keywords", "images", "docs");
+        assertThat(metadata.get("image")).isEqualTo("https://lab.example.edu/lab-content/content/lab-demo/images/cover.png");
+        assertThat(metadata.get("attributes")).isNotNull();
     }
 
     @Test

@@ -587,44 +587,24 @@ public class LabAdminService {
     }
 
     void normalizeGeneratedMetadata(Map<String, Object> metadata) {
-        List<String> images = new ArrayList<>();
         String primaryImage = objectsToString(metadata.get("image"));
+        List<String> images = new ArrayList<>();
         addDistinct(images, primaryImage);
-        addDistinct(images, stringList(metadata.get("images")));
 
         List<Map<String, Object>> attributes = metadataAttributes(metadata.get("attributes"));
-        List<String> category = stringList(metadata.get("category"));
-        List<String> keywords = stringList(metadata.get("keywords"));
         List<String> additionalImages = new ArrayList<>();
-        List<String> docs = stringList(metadata.get("docs"));
 
         for (Map<String, Object> attribute : attributes) {
             String traitType = objectsToString(attribute.get("trait_type"));
-            if ("category".equals(traitType)) {
-                addDistinct(category, stringList(attribute.get("value")));
-            } else if ("keywords".equals(traitType)) {
-                addDistinct(keywords, stringList(attribute.get("value")));
-            } else if ("additionalImages".equals(traitType)) {
+            if ("additionalImages".equals(traitType)) {
                 addDistinct(additionalImages, stringList(attribute.get("value")));
-            } else if ("docs".equals(traitType)) {
-                addDistinct(docs, stringList(attribute.get("value")));
             }
         }
 
         addDistinct(images, additionalImages);
 
-        if (!images.isEmpty()) {
-            metadata.put("images", images);
+        if (primaryImage.isBlank() && !images.isEmpty()) {
             metadata.put("image", images.get(0));
-        }
-        if (!category.isEmpty()) {
-            metadata.put("category", category);
-        }
-        if (!keywords.isEmpty()) {
-            metadata.put("keywords", keywords);
-        }
-        if (!docs.isEmpty()) {
-            metadata.put("docs", docs);
         }
     }
 
