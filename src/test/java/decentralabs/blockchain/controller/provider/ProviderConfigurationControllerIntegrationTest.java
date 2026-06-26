@@ -49,11 +49,16 @@ import org.springframework.web.context.WebApplicationContext;
 @Import(TestSecurityConfig.class)
 class ProviderConfigurationControllerIntegrationTest {
 
-    @Autowired
-    private WebApplicationContext webApplicationContext;
+    private final WebApplicationContext webApplicationContext;
+
+    private final LocalhostOnlyFilter localhostOnlyFilter;
 
     @Autowired
-    private LocalhostOnlyFilter localhostOnlyFilter;
+    ProviderConfigurationControllerIntegrationTest(WebApplicationContext webApplicationContext,
+                                                   LocalhostOnlyFilter localhostOnlyFilter) {
+        this.webApplicationContext = webApplicationContext;
+        this.localhostOnlyFilter = localhostOnlyFilter;
+    }
 
     private MockMvc mockMvc;
 

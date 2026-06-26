@@ -213,7 +213,7 @@ public class SamlAuthService {
         if (scopeClaim instanceof Collection<?> collection) {
             return collection.stream()
                 .filter(Objects::nonNull)
-                .map(Object::toString)
+                .map(token -> token.toString())
                 .anyMatch(token -> token.equals(requiredBookingScope));
         }
         return false;

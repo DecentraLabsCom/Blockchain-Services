@@ -341,7 +341,7 @@ public class LabAdminService {
     private BigInteger inferCreatedLabId(String wallet, List<BigInteger> before) {
         List<BigInteger> after = walletService.getLabsOwnedByProvider(wallet);
         after.removeAll(before);
-        return after.stream().max(BigInteger::compareTo).orElse(null);
+        return after.stream().max((left, right) -> left.compareTo(right)).orElse(null);
     }
 
     Optional<BigInteger> findOwnedLabByUri(String uri, List<BigInteger> ownedLabs) {

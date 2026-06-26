@@ -238,7 +238,7 @@ public class AdminDashboardController {
             }
 
             List<InstitutionalAnalyticsService.TransactionRecord> transactions = merged.values().stream()
-                .sorted(Comparator.comparingLong(InstitutionalAnalyticsService.TransactionRecord::getTimestamp).reversed())
+                .sorted(Comparator.comparingLong((InstitutionalAnalyticsService.TransactionRecord record) -> record.getTimestamp()).reversed())
                 .limit(Math.min(safeLimit + 1, 50))
                 .toList();
 

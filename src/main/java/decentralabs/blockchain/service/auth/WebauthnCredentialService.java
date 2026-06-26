@@ -211,7 +211,7 @@ public class WebauthnCredentialService {
     }
 
     public boolean isCredentialActive(String puc, String credentialId) {
-        return findCredential(puc, credentialId).map(WebauthnCredential::isActive).orElse(false);
+        return findCredential(puc, credentialId).map(credential -> credential.isActive()).orElse(false);
     }
 
     public Optional<WebauthnCredential> findCredential(String puc, String credentialId) {
@@ -378,8 +378,8 @@ public class WebauthnCredentialService {
         String transports = normalize(credential.getTransports());
         if (!transports.isEmpty()) {
             List<String> transportList = Arrays.stream(transports.split(","))
-                .map(String::trim)
-                .map(String::toLowerCase)
+                .map(transport -> transport.trim())
+                .map(transport -> transport.toLowerCase())
                 .filter(s -> !s.isEmpty())
                 .toList();
             return transportList.contains("internal");
@@ -395,8 +395,8 @@ public class WebauthnCredentialService {
         String transports = normalize(credential.getTransports());
         if (!transports.isEmpty()) {
             List<String> transportList = Arrays.stream(transports.split(","))
-                .map(String::trim)
-                .map(String::toLowerCase)
+                .map(transport -> transport.trim())
+                .map(transport -> transport.toLowerCase())
                 .filter(s -> !s.isEmpty())
                 .toList();
             return transportList.stream().anyMatch(t -> !"internal".equals(t));

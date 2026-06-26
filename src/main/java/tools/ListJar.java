@@ -2,7 +2,6 @@ package tools;
 
 import java.io.IOException;
 import java.nio.file.Path;
-import java.util.zip.ZipEntry;
 import java.util.zip.ZipFile;
 
 public class ListJar {
@@ -15,7 +14,7 @@ public class ListJar {
         String pattern = args[1];
         try (ZipFile z = new ZipFile(jar.toFile())) {
             z.stream()
-             .map(ZipEntry::getName)
+             .map(entry -> entry.getName())
              .filter(n -> n.contains(pattern))
              .forEach(System.out::println);
         }

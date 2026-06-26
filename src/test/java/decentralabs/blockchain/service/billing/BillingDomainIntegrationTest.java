@@ -106,17 +106,24 @@ class BillingDomainIntegrationTest {
         }
     }
 
-    @Autowired
-    FundingOrderService fundingOrderService;
+    private final FundingOrderService fundingOrderService;
+
+    private final ProviderSettlementService providerSettlementService;
+
+    private final CreditProjectionService creditProjectionService;
+
+    private final JdbcTemplate jdbcTemplate;
 
     @Autowired
-    ProviderSettlementService providerSettlementService;
-
-    @Autowired
-    CreditProjectionService creditProjectionService;
-
-    @Autowired
-    JdbcTemplate jdbcTemplate;
+    BillingDomainIntegrationTest(FundingOrderService fundingOrderService,
+                                 ProviderSettlementService providerSettlementService,
+                                 CreditProjectionService creditProjectionService,
+                                 JdbcTemplate jdbcTemplate) {
+        this.fundingOrderService = fundingOrderService;
+        this.providerSettlementService = providerSettlementService;
+        this.creditProjectionService = creditProjectionService;
+        this.jdbcTemplate = jdbcTemplate;
+    }
 
     @BeforeEach
     void cleanTables() {
@@ -377,7 +384,7 @@ class BillingDomainIntegrationTest {
             // Verify full audit trail — 3 movements: MINT, LOCK, CAPTURE
             List<CreditMovement> allMovements = creditProjectionService.getMovements(INSTITUTION, 20);
             assertThat(allMovements).hasSize(3);
-            assertThat(allMovements).extracting(CreditMovement::getMovementType)
+            assertThat(allMovements).extracting((CreditMovement movement) -> movement.getMovementType())
                     .containsExactly(CreditMovement.Type.CAPTURE, CreditMovement.Type.LOCK, CreditMovement.Type.MINT);
 
             // Verify credit lot remaining
@@ -426,7 +433,7 @@ class BillingDomainIntegrationTest {
             // Verify movement trail: MINT, LOCK, CANCEL (reverse chrono)
             List<CreditMovement> movements = creditProjectionService.getMovements(INSTITUTION, 20);
             assertThat(movements).hasSize(3);
-            assertThat(movements).extracting(CreditMovement::getMovementType)
+            assertThat(movements).extracting((CreditMovement movement) -> movement.getMovementType())
                     .containsExactly(CreditMovement.Type.CANCEL, CreditMovement.Type.LOCK, CreditMovement.Type.MINT);
         }
 
@@ -466,7 +473,7 @@ class BillingDomainIntegrationTest {
 
             // Verify movement trail includes ADJUST
             List<CreditMovement> movements = creditProjectionService.getMovements(INSTITUTION, 20);
-            assertThat(movements).extracting(CreditMovement::getMovementType)
+            assertThat(movements).extracting((CreditMovement movement) -> movement.getMovementType())
                     .containsExactly(
                             CreditMovement.Type.ADJUST, CreditMovement.Type.CAPTURE,
                             CreditMovement.Type.LOCK, CreditMovement.Type.MINT);

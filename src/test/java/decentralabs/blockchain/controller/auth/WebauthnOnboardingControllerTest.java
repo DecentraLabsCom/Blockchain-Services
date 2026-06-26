@@ -44,8 +44,12 @@ import org.springframework.http.HttpStatus;
 @TestPropertySource(properties = "webauthn.rp.id=localhost")
 class WebauthnOnboardingControllerTest {
 
+    private final WebApplicationContext wac;
+
     @Autowired
-    private WebApplicationContext wac;
+    WebauthnOnboardingControllerTest(WebApplicationContext wac) {
+        this.wac = wac;
+    }
 
     private MockMvc mockMvc;
 

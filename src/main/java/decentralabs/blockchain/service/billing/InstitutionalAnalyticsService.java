@@ -76,7 +76,7 @@ public class InstitutionalAnalyticsService {
             return List.of();
         }
         return users.values().stream()
-            .sorted(Comparator.comparingLong(UserActivity::getLastSeenEpochMillis).reversed())
+            .sorted(Comparator.comparingLong((UserActivity user) -> user.getLastSeenEpochMillis()).reversed())
             .limit(Math.max(0, limit))
             .collect(Collectors.toList());
     }

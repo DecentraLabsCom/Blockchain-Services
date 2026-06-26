@@ -60,17 +60,24 @@ import org.springframework.web.bind.annotation.RestController;
 })
 class SecurityConfigIntegrationTest {
 
-    @Autowired
-    private WebApplicationContext webApplicationContext;
+    private final WebApplicationContext webApplicationContext;
+
+    private final LocalhostOnlyFilter localhostOnlyFilter;
+
+    private final PublicEndpointRateLimitFilter publicEndpointRateLimitFilter;
+
+    private final AdminNetworkAccessPolicy adminNetworkAccessPolicy;
 
     @Autowired
-    private LocalhostOnlyFilter localhostOnlyFilter;
-
-    @Autowired
-    private PublicEndpointRateLimitFilter publicEndpointRateLimitFilter;
-
-    @Autowired
-    private AdminNetworkAccessPolicy adminNetworkAccessPolicy;
+    SecurityConfigIntegrationTest(WebApplicationContext webApplicationContext,
+                                  LocalhostOnlyFilter localhostOnlyFilter,
+                                  PublicEndpointRateLimitFilter publicEndpointRateLimitFilter,
+                                  AdminNetworkAccessPolicy adminNetworkAccessPolicy) {
+        this.webApplicationContext = webApplicationContext;
+        this.localhostOnlyFilter = localhostOnlyFilter;
+        this.publicEndpointRateLimitFilter = publicEndpointRateLimitFilter;
+        this.adminNetworkAccessPolicy = adminNetworkAccessPolicy;
+    }
 
     private MockMvc mockMvc;
 

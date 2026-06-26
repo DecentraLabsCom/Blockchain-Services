@@ -141,7 +141,7 @@ public class WalletService {
      */
     private List<String> parseRpcUrls(String rpcUrlConfig) {
         return Arrays.stream(rpcUrlConfig.split(","))
-                     .map(String::trim)
+                     .map(url -> url.trim())
                      .filter(url -> !url.isEmpty())
                      .toList();
     }

@@ -30,8 +30,12 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @WithMockUser
 class BillingAdminControllerTest {
 
+    private final WebApplicationContext wac;
+
     @Autowired
-    private WebApplicationContext wac;
+    BillingAdminControllerTest(WebApplicationContext wac) {
+        this.wac = wac;
+    }
 
     private MockMvc mockMvc;
 

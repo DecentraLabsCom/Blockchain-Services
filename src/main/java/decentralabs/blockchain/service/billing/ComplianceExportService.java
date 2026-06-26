@@ -45,7 +45,7 @@ public class ComplianceExportService {
      */
     public List<CreditLot> exportExpiredLots(String address) {
         return creditPersistence.findCreditLots(address.toLowerCase()).stream()
-                .filter(CreditLot::isExpired)
+                .filter(lot -> lot.isExpired())
                 .collect(Collectors.toList());
     }
 

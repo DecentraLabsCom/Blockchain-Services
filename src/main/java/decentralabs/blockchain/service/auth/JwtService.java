@@ -5,7 +5,6 @@ import io.jsonwebtoken.JwtBuilder;
 import io.jsonwebtoken.Jwts;
 import decentralabs.blockchain.service.BackendUrlResolver;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
@@ -25,14 +24,16 @@ import java.util.UUID;
 @Slf4j
 public class JwtService {
 
+    private final KeyService keyService;
+    private final BackendUrlResolver backendUrlResolver;
+
     @Value("${auth.base-path:/auth}")
     private String authPath;
-    
-    @Autowired
-    private KeyService keyService;
-    
-    @Autowired
-    private BackendUrlResolver backendUrlResolver;
+
+    public JwtService(KeyService keyService, BackendUrlResolver backendUrlResolver) {
+        this.keyService = keyService;
+        this.backendUrlResolver = backendUrlResolver;
+    }
     
     /**
      * Helper method to construct the issuer URL from base domain and context path

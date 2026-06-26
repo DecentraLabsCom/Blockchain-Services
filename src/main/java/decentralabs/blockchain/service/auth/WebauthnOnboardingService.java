@@ -383,8 +383,8 @@ public class WebauthnOnboardingService {
             // Store failure for status polling
             CompletedOnboarding failed = new CompletedOnboarding(
                 "FAILED",
-                session != null ? session.getStableUserId() : null,
-                session != null ? session.getInstitutionId() : null,
+                session.getStableUserId(),
+                session.getInstitutionId(),
                 null,
                 null,
                 null,
@@ -394,7 +394,7 @@ public class WebauthnOnboardingService {
             completedSessions.put(sessionId, failed);
             
             // Send failure callback if URL was provided
-            if (session != null && session.getCallbackUrl() != null && !session.getCallbackUrl().isBlank()) {
+            if (session.getCallbackUrl() != null && !session.getCallbackUrl().isBlank()) {
                 sendCallbackToSp(session.getCallbackUrl(), null, e.getReason());
             }
             
@@ -405,8 +405,8 @@ public class WebauthnOnboardingService {
             // Store failure for status polling
             CompletedOnboarding failed = new CompletedOnboarding(
                 "FAILED",
-                session != null ? session.getStableUserId() : null,
-                session != null ? session.getInstitutionId() : null,
+                session.getStableUserId(),
+                session.getInstitutionId(),
                 null,
                 null,
                 null,
@@ -416,7 +416,7 @@ public class WebauthnOnboardingService {
             completedSessions.put(sessionId, failed);
             
             // Send failure callback if URL was provided
-            if (session != null && session.getCallbackUrl() != null && !session.getCallbackUrl().isBlank()) {
+            if (session.getCallbackUrl() != null && !session.getCallbackUrl().isBlank()) {
                 sendCallbackToSp(session.getCallbackUrl(), null, "Attestation verification failed: " + e.getMessage());
             }
             
@@ -749,7 +749,7 @@ public class WebauthnOnboardingService {
         // 0) Include explicitly configured values (even if they are the defaults)
         if (allowedOriginsConfig != null && !allowedOriginsConfig.trim().isEmpty()) {
             origins.addAll(Arrays.stream(allowedOriginsConfig.split(","))
-                .map(String::trim)
+                .map(origin -> origin.trim())
                 .filter(s -> !s.isEmpty())
                 .toList());
         }

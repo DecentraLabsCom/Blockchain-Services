@@ -230,7 +230,7 @@ public class NotificationConfigService {
         }
         return recipients.stream()
             .filter(Objects::nonNull)
-            .map(String::trim)
+            .map(value -> value.trim())
             .filter(v -> !v.isEmpty())
             .collect(Collectors.toCollection(ArrayList::new));
     }

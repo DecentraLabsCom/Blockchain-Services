@@ -27,8 +27,12 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @SpringBootTest(classes = WalletController.class)
 class WalletControllerIntegrationTest {
 
+    private final WebApplicationContext wac;
+
     @Autowired
-    private WebApplicationContext wac;
+    WalletControllerIntegrationTest(WebApplicationContext wac) {
+        this.wac = wac;
+    }
 
     @BeforeEach
     public void setup() {

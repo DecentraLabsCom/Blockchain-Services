@@ -514,7 +514,7 @@ class WebauthnCredentialServiceTest {
             List<WebauthnCredential> result = inMemoryOnlyService.getCredentials(TEST_PUC);
             
             assertThat(result).hasSize(2);
-            assertThat(result).extracting(WebauthnCredential::getCredentialId)
+            assertThat(result).extracting((WebauthnCredential credential) -> credential.getCredentialId())
                 .containsExactlyInAnyOrder("cred1", "cred2");
         }
 

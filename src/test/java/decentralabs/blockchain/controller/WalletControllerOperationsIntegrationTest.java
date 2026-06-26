@@ -45,8 +45,12 @@ class WalletControllerOperationsIntegrationTest {
 
     private static final String VALID_ADDRESS = "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 
+    private final WebApplicationContext wac;
+
     @Autowired
-    private WebApplicationContext wac;
+    WalletControllerOperationsIntegrationTest(WebApplicationContext wac) {
+        this.wac = wac;
+    }
 
     private MockMvc mockMvc;
 

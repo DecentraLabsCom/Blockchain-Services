@@ -53,11 +53,16 @@ import org.springframework.web.context.WebApplicationContext;
 })
 class BillingAdminControllerIntegrationTest {
 
-    @Autowired
-    private WebApplicationContext webApplicationContext;
+    private final WebApplicationContext webApplicationContext;
+
+    private final LocalhostOnlyFilter localhostOnlyFilter;
 
     @Autowired
-    private LocalhostOnlyFilter localhostOnlyFilter;
+    BillingAdminControllerIntegrationTest(WebApplicationContext webApplicationContext,
+                                          LocalhostOnlyFilter localhostOnlyFilter) {
+        this.webApplicationContext = webApplicationContext;
+        this.localhostOnlyFilter = localhostOnlyFilter;
+    }
 
     private MockMvc mockMvc;
 

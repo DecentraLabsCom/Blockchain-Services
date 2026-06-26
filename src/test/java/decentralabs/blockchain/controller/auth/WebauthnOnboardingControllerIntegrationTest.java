@@ -31,8 +31,12 @@ import decentralabs.blockchain.service.auth.WebauthnOnboardingService;
 @SpringBootTest(classes = WebauthnOnboardingController.class)
 class WebauthnOnboardingControllerIntegrationTest {
 
+    private final WebApplicationContext wac;
+
     @Autowired
-    private WebApplicationContext wac;
+    WebauthnOnboardingControllerIntegrationTest(WebApplicationContext wac) {
+        this.wac = wac;
+    }
 
     private MockMvc mockMvc;
 

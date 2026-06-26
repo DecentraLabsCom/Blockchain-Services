@@ -605,29 +605,31 @@ public class ContractEventListenerConfig {
         Optional<BigInteger> endFromEvent,
         Log eventLog
     ) {
-        Optional<ReservationDetails> details = fetchReservationDetails(reservationKey);
+        ReservationDetails details = fetchReservationDetails(reservationKey).orElse(null);
 
-        BigInteger labId = details.map(ReservationDetails::labId).orElse(labIdFromEvent);
+        BigInteger labId = Optional.ofNullable(details)
+            .map(detail -> detail.labId())
+            .orElse(labIdFromEvent);
 
-        Optional<String> renter = details
-            .map(ReservationDetails::renter)
+        Optional<String> renter = Optional.ofNullable(details)
+            .map(detail -> detail.renter())
             .flatMap(this::normalizeNonEmptyString)
             .or(() -> renterFromEvent.flatMap(this::normalizeNonEmptyString));
 
-        Optional<BigInteger> start = details.map(ReservationDetails::start).or(() -> startFromEvent);
-        Optional<BigInteger> end = details.map(ReservationDetails::end).or(() -> endFromEvent);
-        Optional<BigInteger> status = details.map(ReservationDetails::status);
+        Optional<BigInteger> start = Optional.ofNullable(details).map(detail -> detail.start()).or(() -> startFromEvent);
+        Optional<BigInteger> end = Optional.ofNullable(details).map(detail -> detail.end()).or(() -> endFromEvent);
+        Optional<BigInteger> status = Optional.ofNullable(details).map(detail -> detail.status());
 
-        Optional<String> pucHash = details
-            .map(ReservationDetails::pucHash)
+        Optional<String> pucHash = Optional.ofNullable(details)
+            .map(detail -> detail.pucHash())
             .flatMap(this::normalizeBytes32);
 
-        Optional<String> payerInstitution = details
-            .map(ReservationDetails::payerInstitution)
+        Optional<String> payerInstitution = Optional.ofNullable(details)
+            .map(detail -> detail.payerInstitution())
             .flatMap(this::normalizeAddress);
 
-        Optional<String> collectorInstitution = details
-            .map(ReservationDetails::collectorInstitution)
+        Optional<String> collectorInstitution = Optional.ofNullable(details)
+            .map(detail -> detail.collectorInstitution())
             .flatMap(this::normalizeAddress);
 
         return new ReservationEventPayload(

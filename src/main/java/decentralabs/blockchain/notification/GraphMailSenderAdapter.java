@@ -127,7 +127,7 @@ public class GraphMailSenderAdapter implements MailSenderAdapter {
     private List<Map<String, Object>> toRecipients(List<String> recipients) {
         return recipients.stream()
             .filter(Objects::nonNull)
-            .map(String::trim)
+            .map(value -> value.trim())
             .filter(s -> !s.isEmpty())
             .map(address -> {
                 Map<String, Object> recipient = new HashMap<>();

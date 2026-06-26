@@ -107,7 +107,7 @@ public class IntentAuthorizationService {
         }
 
         List<String> credentialIds = selectCredentials(puc).stream()
-            .map(WebauthnCredential::getCredentialId)
+            .map(credential -> credential.getCredentialId())
             .filter(id -> id != null && !id.isBlank())
             .distinct()
             .toList();
@@ -245,8 +245,11 @@ public class IntentAuthorizationService {
     private List<WebauthnCredential> selectCredentials(String puc) {
         List<WebauthnCredential> credentials = webauthnCredentialService.getCredentials(puc);
         List<WebauthnCredential> activeCredentials = credentials.stream()
-            .filter(WebauthnCredential::isActive)
-            .sorted(Comparator.comparing(WebauthnCredential::getCreatedAt, Comparator.nullsLast(Long::compareTo)).reversed())
+            .filter(credential -> credential.isActive())
+            .sorted(Comparator.comparing(
+                (WebauthnCredential credential) -> credential.getCreatedAt(),
+                Comparator.nullsLast((left, right) -> left.compareTo(right))
+            ).reversed())
             .toList();
         if (activeCredentials.isEmpty()) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "webauthn_credential_not_registered");

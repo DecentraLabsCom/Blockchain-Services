@@ -162,7 +162,7 @@ public class LabMetadataService {
     private List<DayOfWeek> parseDaysOfWeek(JsonNode node) {
         if (node.isArray()) {
             return StreamSupport.stream(node.spliterator(), false)
-                .map(JsonNode::asText)
+                .map(day -> day.asText())
                 .map(day -> DayOfWeek.valueOf(day.toUpperCase()))
                 .collect(Collectors.toList());
         }

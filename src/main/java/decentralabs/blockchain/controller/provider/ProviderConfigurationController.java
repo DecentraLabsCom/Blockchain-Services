@@ -203,7 +203,7 @@ public class ProviderConfigurationController {
                 response.put("error", "Provider configuration is incomplete");
                 return ResponseEntity.badRequest().body(response);
             }
-            if (provisioningToken == null || provisioningToken.isBlank()) {
+            if (provisioningToken.isBlank()) {
                 response.put("success", false);
                 response.put("error", "Provisioning token is required to register");
                 return ResponseEntity.badRequest().body(response);

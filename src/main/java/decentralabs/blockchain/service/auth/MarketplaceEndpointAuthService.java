@@ -108,7 +108,7 @@ public class MarketplaceEndpointAuthService {
         if (scopeClaim instanceof Collection<?> collection) {
             return collection.stream()
                 .filter(Objects::nonNull)
-                .map(Object::toString)
+                .map(token -> token.toString())
                 .filter(token -> !token.isBlank())
                 .anyMatch(token -> token.equals(requiredScope));
         }

@@ -9,7 +9,6 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.http.ResponseEntity;
@@ -27,6 +26,9 @@ import org.springframework.web.bind.annotation.*;
 @Slf4j
 public class AuthController {
 
+    private final KeyService keyService;
+    private final BackendUrlResolver backendUrlResolver;
+
     @Value("${auth.base-path:/auth}")
     private String authPath;
     
@@ -36,11 +38,10 @@ public class AuthController {
     @Value("${endpoint.jwks}")
     private String jwksEndpoint;
 
-    @Autowired
-    private KeyService keyService;
-    
-    @Autowired
-    private BackendUrlResolver backendUrlResolver;
+    public AuthController(KeyService keyService, BackendUrlResolver backendUrlResolver) {
+        this.keyService = keyService;
+        this.backendUrlResolver = backendUrlResolver;
+    }
 
     /**
      * OpenID Connect Discovery endpoint

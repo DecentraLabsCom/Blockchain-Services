@@ -31,9 +31,7 @@ class AuthControllerIntegrationTest {
     @BeforeEach
     public void setup() {
         // Standalone controller with injected mocks (avoids context-level side effects like KeyService PostConstruct)
-        AuthController controller = new AuthController();
-        org.springframework.test.util.ReflectionTestUtils.setField(controller, "keyService", this.keyService);
-        org.springframework.test.util.ReflectionTestUtils.setField(controller, "backendUrlResolver", this.backendUrlResolver);
+        AuthController controller = new AuthController(this.keyService, this.backendUrlResolver);
         // Manually set @Value-injected fields since we instantiate controller directly
         org.springframework.test.util.ReflectionTestUtils.setField(controller, "authPath", "/auth");
         org.springframework.test.util.ReflectionTestUtils.setField(controller, "samlAuth2Endpoint", "/auth/saml-auth2");

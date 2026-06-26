@@ -285,8 +285,8 @@ public class OnChainAdminTransactionService {
 
         return deduped.values().stream()
             .sorted(
-                Comparator.comparing(OnChainEventRecord::blockNumber, Comparator.reverseOrder())
-                    .thenComparing(OnChainEventRecord::logIndex, Comparator.reverseOrder())
+                Comparator.comparing((OnChainEventRecord record) -> record.blockNumber(), Comparator.reverseOrder())
+                    .thenComparing((OnChainEventRecord record) -> record.logIndex(), Comparator.reverseOrder())
             )
             .limit(limit)
             .map(record -> new InstitutionalAnalyticsService.TransactionRecord(
@@ -660,7 +660,7 @@ public class OnChainAdminTransactionService {
         try {
             EthTransaction response = web3j.ethGetTransactionByHash(txHash).send();
             Optional<Transaction> maybeTx = response.getTransaction();
-            String from = maybeTx.map(Transaction::getFrom).orElse("");
+            String from = maybeTx.map(transaction -> transaction.getFrom()).orElse("");
             txFromCache.put(txHash, from);
             return from;
         } catch (Exception ex) {
