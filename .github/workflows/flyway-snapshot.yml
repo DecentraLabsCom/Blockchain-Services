@@ -18,7 +18,7 @@ jobs:
         options: >-
           --health-cmd="mysqladmin ping --silent" --health-interval=10s --health-retries=10
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: Wait for MySQL
         run: |
