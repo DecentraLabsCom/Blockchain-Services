@@ -154,7 +154,6 @@ class FmuProviderDescribeControllerTest {
     void tokenClaimsContainAccessKeyAndResourceType() throws Exception {
         when(authService.enforceAuthorization(any(), isNull())).thenReturn(Collections.emptyMap());
 
-        @SuppressWarnings("unchecked")
         java.util.concurrent.atomic.AtomicReference<Map<String, Object>> capturedClaims =
             new java.util.concurrent.atomic.AtomicReference<>();
 
@@ -180,7 +179,6 @@ class FmuProviderDescribeControllerTest {
     void fmuFileNameIsTrimmedBeforeStoringInClaims() throws Exception {
         when(authService.enforceAuthorization(any(), isNull())).thenReturn(Collections.emptyMap());
 
-        @SuppressWarnings("unchecked")
         java.util.concurrent.atomic.AtomicReference<Map<String, Object>> capturedClaims =
             new java.util.concurrent.atomic.AtomicReference<>();
 

@@ -20,7 +20,6 @@ import java.util.stream.Collectors;
 public class ComplianceExportService {
 
     private final CreditAccountPersistenceService creditPersistence;
-    private final FundingOrderPersistenceService fundingPersistence;
     private final ProviderSettlementPersistenceService settlementPersistence;
     private final ProviderNetworkPersistenceService networkPersistence;
     private final MicaVolumePersistenceService micaPersistence;

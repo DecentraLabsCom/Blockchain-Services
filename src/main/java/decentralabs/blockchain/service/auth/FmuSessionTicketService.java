@@ -173,7 +173,12 @@ public class FmuSessionTicketService {
                 record.expiresAt()
             );
         } catch (JsonProcessingException e) {
-            throw new SessionTicketException(HttpStatus.INTERNAL_SERVER_ERROR, "SESSION_TICKET_PERSISTENCE_ERROR", "Failed to serialize session ticket claims");
+            throw new SessionTicketException(
+                HttpStatus.INTERNAL_SERVER_ERROR,
+                "SESSION_TICKET_PERSISTENCE_ERROR",
+                "Failed to serialize session ticket claims",
+                e
+            );
         } catch (DataAccessException e) {
             handlePersistenceException("persist", e);
         }
@@ -288,7 +293,7 @@ public class FmuSessionTicketService {
         try {
             return jwtService.extractAllClaims(token);
         } catch (RuntimeException e) {
-            throw new SessionTicketException(HttpStatus.UNAUTHORIZED, "UNAUTHORIZED", "Invalid booking token");
+            throw new SessionTicketException(HttpStatus.UNAUTHORIZED, "UNAUTHORIZED", "Invalid booking token", e);
         }
     }
 
@@ -321,7 +326,7 @@ public class FmuSessionTicketService {
         try {
             return Long.parseLong(String.valueOf(value));
         } catch (NumberFormatException e) {
-            throw new SessionTicketException(HttpStatus.UNAUTHORIZED, "UNAUTHORIZED", message);
+            throw new SessionTicketException(HttpStatus.UNAUTHORIZED, "UNAUTHORIZED", message, e);
         }
     }
 

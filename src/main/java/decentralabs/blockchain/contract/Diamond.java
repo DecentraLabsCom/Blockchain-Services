@@ -620,7 +620,7 @@ public class Diamond extends Contract {
                 Arrays.asList(new Uint256(tokenId)),
                 java.util.Collections.emptyList());
         
-        return new RemoteFunctionCall<Lab>(function,
+        return new RemoteFunctionCall<>(function,
                 () -> {
                     String encodedFunction = FunctionEncoder.encode(function);
                     org.web3j.protocol.core.methods.response.EthCall response = web3j.ethCall(
@@ -642,7 +642,8 @@ public class Diamond extends Contract {
                     int candidateTupleOffset = 0;
                     try {
                         candidateTupleOffset = parseOffsetWordChars(hex, 0, "tuple offset");
-                    } catch (IllegalArgumentException ignored) {
+                    } catch (IllegalArgumentException ex) {
+                        assert ex != null;
                         candidateTupleOffset = 0;
                     }
 

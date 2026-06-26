@@ -27,6 +27,10 @@ public class LabMetadata {
 
     // Slot sizes in minutes
     private List<Integer> timeSlots;
+    private PricingMetadata pricing;
+    private String bookingMode;
+    private List<AllowedDuration> allowedDurations;
+    private PeriodRules periodRules;
 
     // Availability configuration
     private List<DayOfWeek> availableDays;

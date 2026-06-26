@@ -430,6 +430,36 @@
     "defaultValue": "X-Lab-Manager-Token"
   },
   {
+    "name": "lab.access.jwt.max-ttl-seconds",
+    "type": "java.lang.Long",
+    "description": "Maximum lifetime in seconds for lab access JWTs issued by blockchain-services after reservation access validation.",
+    "defaultValue": 14400
+  },
+  {
+    "name": "lab.content.base-path",
+    "type": "java.lang.String",
+    "description": "Base directory where Lab Manager stores generated lab metadata, images, and documentation.",
+    "defaultValue": "/app/lab-content"
+  },
+  {
+    "name": "fmu.data.path",
+    "type": "java.lang.String",
+    "description": "Base directory where provisioned FMU files are stored and discovered.",
+    "defaultValue": "/app/fmu-data"
+  },
+  {
+    "name": "provisioning.token.http.connect-timeout-ms",
+    "type": "java.lang.Integer",
+    "description": "HTTP connection timeout in milliseconds for provisioning token JWKS fetches.",
+    "defaultValue": 5000
+  },
+  {
+    "name": "provisioning.token.http.read-timeout-ms",
+    "type": "java.lang.Integer",
+    "description": "HTTP read timeout in milliseconds for provisioning token JWKS fetches.",
+    "defaultValue": 10000
+  },
+  {
     "name": "allowed-origins",
     "type": "java.lang.String",
     "description": "Comma-separated list of allowed CORS origins.",
@@ -822,22 +852,22 @@
     "defaultValue": 25
   },
   {
-    "name": "treasury.admin.domain.name",
+    "name": "billing.admin.domain.name",
     "type": "java.lang.String",
     "description": "EIP-712 domain name for treasury admin signatures"
   },
   {
-    "name": "treasury.admin.domain.version",
+    "name": "billing.admin.domain.version",
     "type": "java.lang.String",
     "description": "EIP-712 domain version for treasury admin signatures"
   },
   {
-    "name": "treasury.admin.domain.chain-id",
+    "name": "billing.admin.domain.chain-id",
     "type": "java.lang.Integer",
     "description": "Chain ID for treasury admin EIP-712 domain"
   },
   {
-    "name": "treasury.admin.domain.verifying-contract",
+    "name": "billing.admin.domain.verifying-contract",
     "type": "java.lang.String",
     "description": "Verifying contract address for treasury admin EIP-712 domain. Defaults to contract.address."
   }

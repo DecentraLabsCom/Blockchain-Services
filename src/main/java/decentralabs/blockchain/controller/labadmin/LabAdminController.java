@@ -180,6 +180,7 @@ public class LabAdminController {
                 .header("X-Content-Type-Options", "nosniff")
                 .body(resource);
         } catch (FileNotFoundException ex) {
+            log.debug("Lab content not found", ex);
             return ResponseEntity.notFound().build();
         } catch (Exception ex) {
             log.warn("Failed to serve lab content: {}", LogSanitizer.sanitize(ex.getMessage()));

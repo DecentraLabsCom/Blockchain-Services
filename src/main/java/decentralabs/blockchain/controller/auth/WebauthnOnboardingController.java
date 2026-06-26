@@ -475,6 +475,7 @@ public class WebauthnOnboardingController {
             }
             return scheme + "://" + host;
         } catch (Exception ex) {
+            log.debug("Invalid parent origin '{}'", candidate, ex);
             return null;
         }
     }

@@ -178,13 +178,7 @@ class SmtpMailSenderAdapterTest {
                 "meeting.ics"
             );
             
-            // This will fail to actually send since we don't have a real SMTP server
-            // but we verify the adapter handles the ICS content structure
-            try {
-                adapter.send(message);
-            } catch (Exception e) {
-                // Expected since no real SMTP server
-            }
+            assertDoesNotThrow(() -> adapter.send(message));
         }
 
         @Test
@@ -201,11 +195,7 @@ class SmtpMailSenderAdapterTest {
                 null // Should default to reservation.ics
             );
             
-            try {
-                adapter.send(message);
-            } catch (Exception e) {
-                // Expected
-            }
+            assertDoesNotThrow(() -> adapter.send(message));
         }
     }
 
@@ -227,11 +217,7 @@ class SmtpMailSenderAdapterTest {
                 null
             );
             
-            try {
-                adapter.send(message);
-            } catch (Exception e) {
-                // Expected
-            }
+            assertDoesNotThrow(() -> adapter.send(message));
         }
 
         @Test
@@ -245,11 +231,7 @@ class SmtpMailSenderAdapterTest {
                 "Body"
             );
             
-            try {
-                adapter.send(message);
-            } catch (Exception e) {
-                // Expected
-            }
+            assertDoesNotThrow(() -> adapter.send(message));
         }
     }
 }

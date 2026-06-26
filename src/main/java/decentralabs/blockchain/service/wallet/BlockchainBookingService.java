@@ -29,6 +29,9 @@ public class BlockchainBookingService {
 
     @Value("${contract.address}")
     private String contractAddress;
+
+    @Value("${lab.access.jwt.max-ttl-seconds:14400}")
+    private long labAccessJwtMaxTtlSeconds;
     
     private final WalletService walletService;
     
@@ -318,7 +321,7 @@ public class BlockchainBookingService {
         bookingInfo.put("aud", accessURI);       // Audience - where token is used (complete URL from contract)
         bookingInfo.put("sub", accessKey);       // Subject - username for access
         bookingInfo.put("nbf", start);           // Not Before - reservation start
-        bookingInfo.put("exp", end);             // Expiration - reservation end
+        bookingInfo.put("exp", resolveAccessJwtExpiration(end)); // Expiration - capped by max JWT TTL
         
         // Custom Claims
         bookingInfo.put("lab", labId);                      // Lab ID
@@ -342,6 +345,15 @@ public class BlockchainBookingService {
         bookingInfo.put("labURL", accessURI);               // Complete URL to access lab
 
         return bookingInfo;
+    }
+
+    private BigInteger resolveAccessJwtExpiration(BigInteger reservationEnd) {
+        if (reservationEnd == null || labAccessJwtMaxTtlSeconds <= 0) {
+            return reservationEnd;
+        }
+        BigInteger now = BigInteger.valueOf(System.currentTimeMillis() / 1000);
+        BigInteger maxJwtEnd = now.add(BigInteger.valueOf(labAccessJwtMaxTtlSeconds));
+        return reservationEnd.min(maxJwtEnd);
     }
 
     /**

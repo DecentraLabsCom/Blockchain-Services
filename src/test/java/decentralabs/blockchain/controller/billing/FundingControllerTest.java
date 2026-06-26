@@ -7,7 +7,6 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import decentralabs.blockchain.domain.FundingOrder;
 import decentralabs.blockchain.exception.GlobalExceptionHandler;
 import decentralabs.blockchain.service.billing.CreditProjectionService;
@@ -39,14 +38,11 @@ class FundingControllerTest {
     private FundingController fundingController;
 
     private MockMvc mockMvc;
-    private ObjectMapper objectMapper;
-
     @BeforeEach
     void setUp() {
         mockMvc = MockMvcBuilders.standaloneSetup(fundingController)
             .setControllerAdvice(new GlobalExceptionHandler())
             .build();
-        objectMapper = new ObjectMapper().findAndRegisterModules();
     }
 
     @Test

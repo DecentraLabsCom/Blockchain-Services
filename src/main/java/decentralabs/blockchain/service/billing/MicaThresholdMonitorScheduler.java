@@ -1,6 +1,5 @@
 package decentralabs.blockchain.service.billing;
 
-import decentralabs.blockchain.domain.MicaOfferVolume;
 import decentralabs.blockchain.service.persistence.MicaVolumePersistenceService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;

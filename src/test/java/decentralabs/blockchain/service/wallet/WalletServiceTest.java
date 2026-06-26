@@ -86,10 +86,8 @@ class WalletServiceTest {
     void init_parsesRpcUrlsAndSetsDefaults() {
         service.init();
 
-        @SuppressWarnings("unchecked")
         Map<String, List<String>> networkRpcUrls =
             (Map<String, List<String>>) ReflectionTestUtils.getField(service, "networkRpcUrls");
-        @SuppressWarnings("unchecked")
         Map<String, Integer> currentRpcIndex =
             (Map<String, Integer>) ReflectionTestUtils.getField(service, "currentRpcIndex");
 
@@ -222,32 +220,6 @@ class WalletServiceTest {
     }
 
     @Test
-    void labCreditAddressAndErc20Helpers_returnContractAddressAndDecodeBalance() throws Exception {
-        WalletService spyService = spy(service);
-        ReflectionTestUtils.setField(spyService, "activeNetwork", "sepolia");
-
-        String tokenAddress = ReflectionTestUtils.invokeMethod(spyService, "getLabCreditAddress");
-
-        assertThat(tokenAddress).isEqualTo("0x2222222222222222222222222222222222222222");
-
-        org.mockito.Mockito.reset(web3j);
-        org.mockito.Mockito.doReturn(web3j).when(spyService).getWeb3jInstanceForNetwork(org.mockito.ArgumentMatchers.anyString());
-        stubEthCalls(
-            web3j,
-            ethCallResponse(encodeValues(new org.web3j.abi.datatypes.generated.Uint256(BigInteger.valueOf(12_500_000))))
-        );
-
-        BigInteger tokenBalance = ReflectionTestUtils.invokeMethod(
-            spyService,
-            "getERC20Balance",
-            "0x1111111111111111111111111111111111111111",
-            "0x3333333333333333333333333333333333333333"
-        );
-
-        assertThat(tokenBalance).isEqualTo(BigInteger.valueOf(12_500_000));
-    }
-
-    @Test
     void getTransactionHistory_returnsCountAndHandlesErrors() throws Exception {
         WalletService spyService = spy(service);
         ReflectionTestUtils.setField(spyService, "activeNetwork", "sepolia");
@@ -349,11 +321,8 @@ class WalletServiceTest {
         assertThat(spyService.isLabOwnedByProvider(" ", BigInteger.ONE)).isFalse();
         assertThat(spyService.isLabOwnedByProvider("0x1111111111111111111111111111111111111111", BigInteger.ZERO)).isFalse();
         assertThat(spyService.getLabTokenUri(BigInteger.ZERO)).isEqualTo(Optional.empty());
-        assertThat((String) ReflectionTestUtils.invokeMethod(spyService, "normalizeUri", " https://example.test/path/// "))
-            .isEqualTo("https://example.test/path");
     }
 
-    @SuppressWarnings("unchecked")
     @Test
     void getLabsOwnedByProvider_returnsOnlyDirectOwnership() throws Exception {
         WalletService spyService = spy(service);
@@ -402,7 +371,6 @@ class WalletServiceTest {
         }
     }
 
-    @SuppressWarnings("unchecked")
     @Test
     void getLabTokenUri_prefersTokenUriAndFallsBackToDiamondBaseUri() throws Exception {
         WalletService spyService = spy(service);
@@ -541,10 +509,8 @@ class WalletServiceTest {
     @Test
     void getWeb3jInstanceWithFallback_switchesToHealthyFallbackAndUpdatesIndex() throws Exception {
         service.init();
-        @SuppressWarnings("unchecked")
         Map<String, Web3j> web3jInstances =
             (Map<String, Web3j>) ReflectionTestUtils.getField(service, "web3jInstances");
-        @SuppressWarnings("unchecked")
         Map<String, Integer> currentRpcIndex =
             (Map<String, Integer>) ReflectionTestUtils.getField(service, "currentRpcIndex");
         Web3j failing = mock(Web3j.class);
@@ -565,7 +531,6 @@ class WalletServiceTest {
     @Test
     void getWeb3jInstanceWithFallback_throwsWhenAllEndpointsFail() throws Exception {
         service.init();
-        @SuppressWarnings("unchecked")
         Map<String, Web3j> web3jInstances =
             (Map<String, Web3j>) ReflectionTestUtils.getField(service, "web3jInstances");
         Web3j first = mock(Web3j.class);
@@ -580,7 +545,7 @@ class WalletServiceTest {
             .hasMessageContaining("All RPC endpoints failed for network: sepolia");
     }
 
-    @SuppressWarnings({"rawtypes", "unchecked"})
+    @SuppressWarnings("rawtypes")
     private void stubGetBalance(String address, BigInteger balance) throws Exception {
         Request request = mock(Request.class);
         EthGetBalance response = new EthGetBalance();
@@ -589,7 +554,7 @@ class WalletServiceTest {
         when(request.send()).thenReturn(response);
     }
 
-    @SuppressWarnings({"rawtypes", "unchecked"})
+    @SuppressWarnings("rawtypes")
     private void stubTransactionCount(String address, BigInteger count) throws Exception {
         Request request = mock(Request.class);
         EthGetTransactionCount response = new EthGetTransactionCount();
@@ -598,7 +563,7 @@ class WalletServiceTest {
         when(request.send()).thenReturn(response);
     }
 
-    @SuppressWarnings({"rawtypes", "unchecked"})
+    @SuppressWarnings("rawtypes")
     private void stubBlockNumber(Web3j target, long blockNumber) throws Exception {
         Request request = mock(Request.class);
         EthBlockNumber response = new EthBlockNumber();
@@ -607,14 +572,13 @@ class WalletServiceTest {
         when(request.send()).thenReturn(response);
     }
 
-    @SuppressWarnings({"rawtypes", "unchecked"})
+    @SuppressWarnings("rawtypes")
     private void stubBlockNumber(Web3j target, RuntimeException error) throws Exception {
         Request request = mock(Request.class);
         when(target.ethBlockNumber()).thenReturn(request);
         when(request.send()).thenThrow(error);
     }
 
-    @SuppressWarnings({"unchecked"})
     private void stubEthCalls(Web3j target, EthCall... responses) throws Exception {
         Request<?, EthCall>[] requests = new Request[responses.length];
         for (int i = 0; i < responses.length; i++) {

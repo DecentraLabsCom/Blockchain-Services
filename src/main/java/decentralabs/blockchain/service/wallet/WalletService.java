@@ -328,10 +328,6 @@ public class WalletService {
      * The current architecture exposes service-credit functions directly in the Diamond,
      * so this resolves to the configured Diamond address.
      */
-    private String getLabCreditAddress() {
-        return getLabCreditAddress(activeNetwork);
-    }
-
     private String getLabCreditAddress(String networkId) {
         resolveNetworkId(networkId);
         return contractAddress;
@@ -739,19 +735,9 @@ public class WalletService {
             String owner = decoded.get(0).getValue().toString();
             return owner == null || owner.isBlank() ? Optional.empty() : Optional.of(owner);
         } catch (Exception e) {
+            log.debug("Unable to resolve owner for lab {}", labId, e);
             return Optional.empty();
         }
-    }
-
-    private String normalizeUri(String uri) {
-        if (uri == null) {
-            return "";
-        }
-        String normalized = uri.trim();
-        while (normalized.endsWith("/") && normalized.length() > 1) {
-            normalized = normalized.substring(0, normalized.length() - 1);
-        }
-        return normalized;
     }
 
     /**
@@ -838,7 +824,7 @@ public class WalletService {
                     }
                 }
             } catch (Exception lifecycleError) {
-                log.warn("Error calling getLabProviderReceivableLifecycle() for lab {}", labId);
+                log.warn("Error calling getLabProviderReceivableLifecycle() for lab {}: {}", labId, lifecycleError.getMessage());
             }
 
             return Optional.of(new ProviderReceivableStatus(
@@ -1083,55 +1069,6 @@ public class WalletService {
             return BigInteger.ZERO;
         }
     }
-    
-    /**
-     * Gets the ERC20 token balance for an address
-     * @param walletAddress The address to check balance for
-     * @param tokenAddress The ERC20 token contract address
-     * @return Token balance as BigInteger
-     */
-    private BigInteger getERC20Balance(String walletAddress, String tokenAddress) {
-        return getERC20Balance(walletAddress, tokenAddress, activeNetwork);
-    }
-
-    private BigInteger getERC20Balance(String walletAddress, String tokenAddress, String networkId) {
-        try {
-            Web3j web3j = getWeb3jInstanceForNetwork(resolveNetworkId(networkId));
-            
-            // Call balanceOf(address) function on ERC20 token
-            Function function = new Function(
-                "balanceOf",
-                Collections.singletonList(new Address(walletAddress)),
-                Collections.singletonList(new TypeReference<Uint256>() {})
-            );
-            
-            String encodedFunction = FunctionEncoder.encode(function);
-            
-            EthCall response = web3j.ethCall(
-                Transaction.createEthCallTransaction(null, tokenAddress, encodedFunction),
-                DefaultBlockParameterName.LATEST
-            ).send();
-            
-            if (response.hasError()) {
-                log.warn("Error calling balanceOf()");
-                log.debug("balanceOf() RPC error (details omitted)");
-                return BigInteger.ZERO;
-            }
-            
-            @SuppressWarnings("rawtypes")
-            List<Type> decoded = FunctionReturnDecoder.decode(response.getValue(), function.getOutputParameters());
-            if (!decoded.isEmpty()) {
-                return (BigInteger) decoded.get(0).getValue();
-            }
-            
-            return BigInteger.ZERO;
-        } catch (Exception e) {
-            log.error("Error getting ERC20 balance");
-            log.debug("ERC20 balance lookup failed (context omitted)", e);
-            return BigInteger.ZERO;
-        }
-    }
-
     private String decodeRevertReason(String returnData) {
         String clean = Numeric.cleanHexPrefix(returnData);
         if (clean == null || clean.length() < 8) {

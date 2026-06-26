@@ -239,6 +239,7 @@ public class InstitutionalWalletService {
                 }
             } catch (UnsupportedOperationException e) {
                 // Windows - ignore
+                log.debug("POSIX permissions not supported for wallet encryption key file", e);
             }
 
             walletConfigEncryptionKey = encryptionKey;
@@ -313,6 +314,7 @@ public class InstitutionalWalletService {
                 }
             } catch (UnsupportedOperationException e) {
                 // Windows - ignore
+                log.debug("POSIX permissions not supported for wallet config file", e);
             }
             
             log.info("Saved wallet configuration to file: {}", walletConfigFile);

@@ -5,7 +5,6 @@ import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
 import java.math.BigInteger;
-import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.Map;
 import java.util.Optional;
@@ -19,12 +18,9 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.springframework.web.server.ResponseStatusException;
-import org.web3j.crypto.Hash;
-import org.web3j.utils.Numeric;
 
 import decentralabs.blockchain.dto.intent.ActionIntentPayload;
 import decentralabs.blockchain.dto.intent.IntentAction;
-import decentralabs.blockchain.dto.intent.IntentAckResponse;
 import decentralabs.blockchain.dto.intent.IntentMeta;
 import decentralabs.blockchain.dto.intent.IntentStatus;
 import decentralabs.blockchain.dto.intent.IntentStatusResponse;
@@ -58,11 +54,13 @@ class IntentServiceTest {
 
     private IntentService service;
     private String creatorHashToReturn;
+    private BigInteger labPriceToReturn;
     private SimpleMeterRegistry meterRegistry;
 
     @BeforeEach
     void setUp() {
         creatorHashToReturn = "0x" + "1".repeat(64);
+        labPriceToReturn = BigInteger.ONE;
         meterRegistry = new SimpleMeterRegistry();
         service = new IntentService(
             "15s",
@@ -79,6 +77,11 @@ class IntentServiceTest {
             @Override
             String fetchCreatorPucHash(BigInteger labId) {
                 return creatorHashToReturn;
+            }
+
+            @Override
+            BigInteger fetchLabPrice(BigInteger labId) {
+                return labPriceToReturn;
             }
         };
     }
@@ -154,6 +157,7 @@ class IntentServiceTest {
         payload.setPuc("user@university.edu");
         payload.setStart(Instant.now().plusSeconds(3600).getEpochSecond());
         payload.setEnd(Instant.now().plusSeconds(7200).getEpochSecond());
+        payload.setPrice(BigInteger.valueOf(payload.getEnd() - payload.getStart()));
         payload.setAssertionHash("0x" + "b".repeat(64));
         return payload;
     }
@@ -338,6 +342,26 @@ class IntentServiceTest {
             ResponseStatusException ex = assertThrows(ResponseStatusException.class,
                 () -> service.processIntent(submission));
             assertTrue(ex.getMessage().contains("Invalid reservation window"));
+        }
+
+        @Test
+        @DisplayName("Should reject reservation when total price is manipulated")
+        void shouldRejectReservationPriceMismatch() {
+            IntentMeta meta = createValidMeta();
+            meta.setAction(IntentAction.RESERVATION_REQUEST.getId());
+
+            ReservationIntentPayload payload = createValidReservationPayload();
+            payload.setPrice(BigInteger.ONE);
+
+            IntentSubmission submission = new IntentSubmission();
+            submission.setMeta(meta);
+            submission.setReservationPayload(payload);
+            submission.setSamlAssertion("saml");
+            submission.setWebauthnCredentialId("cred");
+
+            ResponseStatusException ex = assertThrows(ResponseStatusException.class,
+                () -> service.processIntent(submission));
+            assertTrue(ex.getReason().contains("reservation_price_mismatch"));
         }
 
         @Test

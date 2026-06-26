@@ -974,7 +974,7 @@ public class InstitutionalAdminService {
         try {
             return new BigInteger(value.trim());
         } catch (NumberFormatException ex) {
-            throw new IllegalArgumentException("Invalid " + fieldName + ": " + value);
+            throw new IllegalArgumentException("Invalid " + fieldName + ": " + value, ex);
         }
     }
 

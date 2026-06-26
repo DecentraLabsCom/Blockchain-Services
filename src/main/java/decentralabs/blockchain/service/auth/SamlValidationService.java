@@ -978,7 +978,7 @@ public class SamlValidationService {
             
             logger.debug("Metadata URL validation passed for: {} (resolved to {})", metadataUrl, addr.getHostAddress());
         } catch (java.net.UnknownHostException e) {
-            throw new SecurityException("Cannot resolve metadata URL host: " + host);
+            throw new SecurityException("Cannot resolve metadata URL host: " + host, e);
         }
     }
     

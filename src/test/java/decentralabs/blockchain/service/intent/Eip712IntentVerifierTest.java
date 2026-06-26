@@ -19,10 +19,6 @@ import static org.assertj.core.api.Assertions.assertThat;
 class Eip712IntentVerifierTest {
 
     private Eip712IntentVerifier verifier;
-    @SuppressWarnings("unused")
-    private Eip712IntentVerifier verifierWithTrustedSigner;
-
-    private static final String TRUSTED_SIGNER = "0x1234567890123456789012345678901234567890";
 
     @BeforeEach
     void setUp() {
@@ -32,14 +28,6 @@ class Eip712IntentVerifierTest {
             "1",                      // domain version
             11155111L,                // chain id (sepolia default in props)
             "0x0000000000000000000000000000000000000000" // verifying contract
-        );
-
-        verifierWithTrustedSigner = new Eip712IntentVerifier(
-            TRUSTED_SIGNER,
-            "DecentraLabsIntent",
-            "1",
-            11155111L,
-            "0x0000000000000000000000000000000000000000"
         );
     }
 

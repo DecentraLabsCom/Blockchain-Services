@@ -107,7 +107,7 @@ public class ProvisioningTokenService {
 
             return payload;
         } catch (ExpiredJwtException ex) {
-            throw new IllegalArgumentException("Provisioning token expired");
+            throw new IllegalArgumentException("Provisioning token expired", ex);
         } catch (IllegalArgumentException ex) {
             throw ex;
         } catch (Exception ex) {
@@ -167,7 +167,7 @@ public class ProvisioningTokenService {
 
             return payload;
         } catch (ExpiredJwtException ex) {
-            throw new IllegalArgumentException("Consumer provisioning token expired");
+            throw new IllegalArgumentException("Consumer provisioning token expired", ex);
         } catch (IllegalArgumentException ex) {
             throw ex;
         } catch (Exception ex) {

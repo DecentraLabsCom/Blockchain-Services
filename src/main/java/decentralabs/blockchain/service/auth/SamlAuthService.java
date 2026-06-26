@@ -72,7 +72,7 @@ public class SamlAuthService {
             throw new SecurityException("JWT and SAML affiliation mismatch");
         }
 
-        enforceBookingInfoAccess(includeBookingInfo, marketplaceJWTClaims, jwtUserId);
+        enforceBookingInfoAccess(includeBookingInfo, marketplaceJWTClaims);
         if (includeBookingInfo) {
             return buildBookingInfoResponse(
                 marketplaceJWTClaims,
@@ -178,7 +178,7 @@ public class SamlAuthService {
         log.info("SAML Authentication attempt recorded");
     }
 
-    private void enforceBookingInfoEntitlement(Map<String, Object> marketplaceClaims, String userId) {
+    private void enforceBookingInfoEntitlement(Map<String, Object> marketplaceClaims) {
         if (!requireBookingScope) {
             return;
         }
@@ -197,13 +197,12 @@ public class SamlAuthService {
 
     private void enforceBookingInfoAccess(
         boolean bookingInfoRequested,
-        Map<String, Object> marketplaceClaims,
-        String userId
+        Map<String, Object> marketplaceClaims
     ) {
         if (!bookingInfoRequested) {
             return;
         }
-        enforceBookingInfoEntitlement(marketplaceClaims, userId);
+        enforceBookingInfoEntitlement(marketplaceClaims);
     }
 
     private boolean scopeContainsRequiredScope(Object scopeClaim) {

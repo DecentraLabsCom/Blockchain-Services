@@ -9,6 +9,8 @@ import org.springframework.context.ApplicationEvent;
  */
 @Getter
 public class NetworkSwitchEvent extends ApplicationEvent {
+
+    private static final long serialVersionUID = 1L;
     
     private final String oldNetwork;
     private final String newNetwork;

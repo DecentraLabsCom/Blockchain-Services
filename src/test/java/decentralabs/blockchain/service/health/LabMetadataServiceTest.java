@@ -24,7 +24,9 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.web.client.RestTemplate;
 
+import decentralabs.blockchain.dto.health.AllowedDuration;
 import decentralabs.blockchain.dto.health.LabMetadata;
+import decentralabs.blockchain.dto.health.PeriodRules;
 
 @ExtendWith(MockitoExtension.class)
 class LabMetadataServiceTest {
@@ -217,6 +219,44 @@ class LabMetadataServiceTest {
             assertThat(metadata.getAvailableDays()).contains(DayOfWeek.TUESDAY);
             assertThat(metadata.getMaxConcurrentUsers()).isEqualTo(3);
         }
+
+        @Test
+        @DisplayName("Should parse long-duration pricing and booking metadata")
+        void shouldParseLongDurationPricingAndBookingMetadata() {
+            String json = """
+                {
+                    "name": "Long Lab",
+                    "description": "A long duration lab",
+                    "image": "https://image.url",
+                    "pricing": {
+                        "displayAmount": "25",
+                        "displayUnit": "day",
+                        "rawPricePerSecond": "29",
+                        "roundingMode": "ceil-per-second",
+                        "billingMode": "linear-duration"
+                    },
+                    "bookingMode": "calendar-period",
+                    "allowedDurations": [
+                        { "unit": "day", "value": 1 },
+                        { "unit": "week", "value": 1 }
+                    ],
+                    "periodRules": {
+                        "allowCustomDateRange": true,
+                        "minDurationDays": 1,
+                        "maxDurationDays": 90
+                    },
+                    "attributes": []
+                }
+                """;
+            when(restTemplate.getForObject(anyString(), eq(String.class))).thenReturn(json);
+
+            LabMetadata metadata = metadataService.getLabMetadata("https://example.com/long.json");
+
+            assertThat(metadata.getPricing().getDisplayUnit()).isEqualTo("day");
+            assertThat(metadata.getBookingMode()).isEqualTo("calendar-period");
+            assertThat(metadata.getAllowedDurations()).hasSize(2);
+            assertThat(metadata.getPeriodRules().getMaxDurationDays()).isEqualTo(90);
+        }
     }
 
     @Nested
@@ -281,6 +321,83 @@ class LabMetadataServiceTest {
                 .hasMessageContaining("maintenance");
 
             assertThatThrownBy(() -> metadataService.validateAvailability(metadata, start, end, 1))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("maintenance");
+        }
+
+        @Test
+        @DisplayName("Should allow calendar-period bookings without enforcing daily hours by default")
+        void shouldAllowCalendarPeriodWithoutDailyHoursByDefault() {
+            LabMetadata metadata = LabMetadata.builder()
+                .name("Long duration lab")
+                .timezone("UTC")
+                .bookingMode("calendar-period")
+                .availableHours(new decentralabs.blockchain.dto.health.TimeRange(LocalTime.of(9, 0), LocalTime.of(18, 0)))
+                .allowedDurations(List.of(
+                    AllowedDuration.builder().unit("day").value(1).build()
+                ))
+                .periodRules(PeriodRules.builder()
+                    .allowCustomDateRange(false)
+                    .minDurationDays(1)
+                    .maxDurationDays(90)
+                    .build())
+                .build();
+
+            metadataService.validateAvailability(
+                metadata,
+                Instant.parse("2026-03-02T00:00:00Z"),
+                Instant.parse("2026-03-03T00:00:00Z"),
+                1
+            );
+        }
+
+        @Test
+        @DisplayName("Should reject calendar-period durations outside configured limits")
+        void shouldRejectCalendarPeriodOutsideLimits() {
+            LabMetadata metadata = LabMetadata.builder()
+                .name("Long duration lab")
+                .timezone("UTC")
+                .bookingMode("calendar-period")
+                .periodRules(PeriodRules.builder()
+                    .allowCustomDateRange(true)
+                    .minDurationDays(2)
+                    .maxDurationDays(30)
+                    .build())
+                .build();
+
+            assertThatThrownBy(() -> metadataService.validateAvailability(
+                metadata,
+                Instant.parse("2026-03-02T00:00:00Z"),
+                Instant.parse("2026-03-03T00:00:00Z"),
+                1
+            ))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("minimum");
+        }
+
+        @Test
+        @DisplayName("Should reject calendar-period bookings crossing unavailable windows")
+        void shouldRejectCalendarPeriodUnavailableWindows() {
+            LabMetadata metadata = LabMetadata.builder()
+                .name("Long duration lab")
+                .timezone("UTC")
+                .bookingMode("calendar-period")
+                .periodRules(PeriodRules.builder().allowCustomDateRange(true).build())
+                .unavailableWindows(List.of(
+                    decentralabs.blockchain.dto.health.MaintenanceWindow.builder()
+                        .start(Instant.parse("2026-03-05T00:00:00Z"))
+                        .end(Instant.parse("2026-03-06T00:00:00Z"))
+                        .reason("maintenance")
+                        .build()
+                ))
+                .build();
+
+            assertThatThrownBy(() -> metadataService.validateAvailability(
+                metadata,
+                Instant.parse("2026-03-02T00:00:00Z"),
+                Instant.parse("2026-03-09T00:00:00Z"),
+                1
+            ))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("maintenance");
         }

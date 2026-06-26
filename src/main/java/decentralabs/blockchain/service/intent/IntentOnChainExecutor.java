@@ -247,10 +247,6 @@ public class IntentOnChainExecutor {
         return null;
     }
 
-    private String inferRevertReason(TransactionReceipt receipt) {
-        return inferRevertReason(receipt, gasLimit);
-    }
-
     private String inferRevertReason(TransactionReceipt receipt, BigInteger gas) {
         if (receipt == null) {
             return "tx_reverted_status_unknown";
@@ -353,6 +349,7 @@ public class IntentOnChainExecutor {
             byte[] bytes = Numeric.hexStringToByteArray("0x" + cleaned.substring(dataStart, dataEnd));
             return new String(bytes, StandardCharsets.UTF_8);
         } catch (Exception ignored) {
+            log.debug("Unable to decode revert string", ignored);
             return null;
         }
     }
@@ -366,6 +363,7 @@ public class IntentOnChainExecutor {
             BigInteger code = Numeric.toBigInt("0x" + codeHex);
             return "0x" + code.toString(16);
         } catch (Exception ignored) {
+            log.debug("Unable to decode panic code", ignored);
             return "unknown";
         }
     }
@@ -783,7 +781,7 @@ public class IntentOnChainExecutor {
                     List.of()
                 );
 
-                sendPreflight(function, credentials, "releaseInstitutionalExpiredReservations");
+                sendPreflight(function, "releaseInstitutionalExpiredReservations");
             } catch (Exception ex) {
                 log.warn("Postflight release failed for provider {} labId {}: {}", payload.getExecutor(), payload.getLabId(), ex.getMessage());
             }
@@ -834,7 +832,7 @@ public class IntentOnChainExecutor {
         return Numeric.toHexString(hash);
     }
 
-    private void sendPreflight(Function function, Credentials credentials, String label) throws Exception {
+    private void sendPreflight(Function function, String label) throws Exception {
         Web3j web3j = resolveWeb3j();
         TransactionManager txManager = txManagerProvider.get(web3j);
         String encoded = FunctionEncoder.encode(function);
@@ -917,6 +915,7 @@ public class IntentOnChainExecutor {
         try {
             return new BigInteger(value.toString());
         } catch (NumberFormatException ex) {
+            log.debug("Unable to parse BigInteger value {}", value, ex);
             return null;
         }
     }

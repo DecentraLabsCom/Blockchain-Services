@@ -107,6 +107,7 @@ public class LabAdminService {
                 item.put("resourceType", lab.base.resourceType.intValue());
                 item.put("listed", loadReadonlyDiamond().isLabListed(labId).send());
             } catch (Exception ex) {
+                log.debug("Unable to load details for lab {}", labId, ex);
                 item.put("error", "Unable to load lab details");
             }
             labs.add(item);
@@ -170,7 +171,7 @@ public class LabAdminService {
 
         List<BigInteger> before = walletService.getLabsOwnedByProvider(wallet);
         if (!allowDuplicate) {
-            Optional<BigInteger> existingLab = findOwnedLabByUri(wallet, uri, before);
+            Optional<BigInteger> existingLab = findOwnedLabByUri(uri, before);
             if (existingLab.isPresent()) {
                 return existingLabResponse(existingLab.get(), uri);
             }
@@ -274,6 +275,7 @@ public class LabAdminService {
             String detected = Files.probeContentType(target);
             return detected != null ? detected : MediaType.APPLICATION_OCTET_STREAM_VALUE;
         } catch (Exception ignored) {
+            log.debug("Unable to detect content type for {}", relativePath, ignored);
             return MediaType.APPLICATION_OCTET_STREAM_VALUE;
         }
     }
@@ -342,7 +344,7 @@ public class LabAdminService {
         return after.stream().max(BigInteger::compareTo).orElse(null);
     }
 
-    Optional<BigInteger> findOwnedLabByUri(String wallet, String uri, List<BigInteger> ownedLabs) {
+    Optional<BigInteger> findOwnedLabByUri(String uri, List<BigInteger> ownedLabs) {
         if (uri == null || uri.isBlank() || ownedLabs == null || ownedLabs.isEmpty()) {
             return Optional.empty();
         }
@@ -442,6 +444,7 @@ public class LabAdminService {
                     try {
                         item.put("size", Files.size(path));
                     } catch (IOException ignored) {
+                        log.debug("Unable to determine file size for {}", path, ignored);
                         item.put("size", null);
                     }
                     result.add(item);
@@ -498,7 +501,7 @@ public class LabAdminService {
             try {
                 text = URI.create(text).getPath();
             } catch (IllegalArgumentException ex) {
-                throw new IllegalArgumentException("Invalid asset path");
+                throw new IllegalArgumentException("Invalid asset path", ex);
             }
         }
         if (text.startsWith("/lab-content/")) {

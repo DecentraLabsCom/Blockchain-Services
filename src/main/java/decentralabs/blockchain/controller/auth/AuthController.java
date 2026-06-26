@@ -75,6 +75,7 @@ public class AuthController {
                 .build()
                 .toUriString();
         } catch (Exception e) {
+            log.debug("Unable to resolve request base domain", e);
             return "http://localhost:8080";
         }
     }

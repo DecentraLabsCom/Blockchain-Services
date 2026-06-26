@@ -365,7 +365,7 @@ public class ContractEventListenerConfig {
                         ? new BigInteger(normalized.substring(2), 16)
                         : new BigInteger(normalized);
                 } catch (NumberFormatException ex) {
-                    log.warn("Invalid start block '{}', using lookback", startBlock);
+                    log.warn("Invalid start block '{}', using lookback: {}", startBlock, ex.getMessage());
                     yield null;
                 }
             }
@@ -378,7 +378,7 @@ public class ContractEventListenerConfig {
         }
 
         List<String> parsed = Arrays.stream(eventsToListen.split(","))
-            .map(String::trim)
+            .map(event -> event == null ? "" : event.trim())
             .filter(event -> !event.isEmpty())
             .distinct()
             .collect(Collectors.toList());
@@ -1171,6 +1171,7 @@ public class ContractEventListenerConfig {
         try {
             return Instant.ofEpochSecond(epochSeconds.longValue()).toString();
         } catch (Exception ex) {
+            log.debug("Unable to format epoch seconds {}", epochSeconds, ex);
             return epochSeconds.toString();
         }
     }

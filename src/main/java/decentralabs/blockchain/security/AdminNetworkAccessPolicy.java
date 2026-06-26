@@ -159,6 +159,7 @@ public class AdminNetworkAccessPolicy {
         try {
             return InetAddress.getByName(address).isLoopbackAddress();
         } catch (Exception ex) {
+            log.debug("Unable to parse loopback address {}", address, ex);
             return false;
         }
     }
@@ -170,6 +171,7 @@ public class AdminNetworkAccessPolicy {
                 || inetAddress.isLinkLocalAddress()
                 || isUniqueLocalIpv6(address);
         } catch (Exception ex) {
+            log.debug("Unable to classify private address {}", address, ex);
             return false;
         }
     }
@@ -237,6 +239,7 @@ public class AdminNetworkAccessPolicy {
                 }
                 return new CidrRange(network.getAddress(), prefixLength);
             } catch (Exception ex) {
+                log.debug("Invalid CIDR entry {}", raw, ex);
                 return null;
             }
         }
@@ -257,6 +260,7 @@ public class AdminNetworkAccessPolicy {
                 }
                 return true;
             } catch (Exception ex) {
+                log.debug("Unable to match candidate address {}", candidate, ex);
                 return false;
             }
         }

@@ -6,7 +6,6 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import decentralabs.blockchain.domain.ProviderInvoiceRecord;
 import decentralabs.blockchain.domain.ProviderNetworkMembership;
 import decentralabs.blockchain.exception.GlobalExceptionHandler;
@@ -37,14 +36,11 @@ class ProviderBillingControllerTest {
     private ProviderBillingController providerBillingController;
 
     private MockMvc mockMvc;
-    private ObjectMapper objectMapper;
-
     @BeforeEach
     void setUp() {
         mockMvc = MockMvcBuilders.standaloneSetup(providerBillingController)
             .setControllerAdvice(new GlobalExceptionHandler())
             .build();
-        objectMapper = new ObjectMapper().findAndRegisterModules();
     }
 
     @Test

@@ -349,7 +349,6 @@ class InstitutionalAdminServiceTest {
         }
 
         @Test
-        @SuppressWarnings({"unchecked", "rawtypes"})
         @DisplayName("Should execute COLLECT_LAB_PAYOUT operation successfully")
         void requestProviderPayoutExecutesTransactionWhenValid() throws Exception {
             Credentials credentials = Credentials.create("0x1");
@@ -472,7 +471,6 @@ class InstitutionalAdminServiceTest {
         }
 
         @Test
-        @SuppressWarnings({"unchecked", "rawtypes"})
         @DisplayName("Should execute ISSUE_SERVICE_CREDITS operation successfully")
         void issueServiceCreditsExecutesTransactionWhenValid() throws Exception {
             Credentials credentials = Credentials.create("0x1");
@@ -551,7 +549,6 @@ class InstitutionalAdminServiceTest {
         }
 
         @Test
-        @SuppressWarnings({"unchecked", "rawtypes"})
         @DisplayName("Should execute ADJUST_SERVICE_CREDITS operation successfully")
         void adjustServiceCreditsExecutesTransactionWhenValid() throws Exception {
             Credentials credentials = Credentials.create("0x1");
@@ -582,7 +579,6 @@ class InstitutionalAdminServiceTest {
         }
 
         @Test
-        @SuppressWarnings({"unchecked", "rawtypes"})
         @DisplayName("Should execute TRANSITION_PROVIDER_RECEIVABLE_STATE operation successfully")
         void transitionProviderReceivableStateExecutesTransactionWhenValid() throws Exception {
             Credentials credentials = Credentials.create("0x1");
@@ -746,7 +742,6 @@ class InstitutionalAdminServiceTest {
         }
 
         @Test
-        @SuppressWarnings({"unchecked", "rawtypes"})
         @DisplayName("Should execute SET_USER_LIMIT operation successfully")
         void setUserLimitExecutesTransactionWhenValid() throws Exception {
             Credentials credentials = Credentials.create("0x1");
@@ -792,7 +787,6 @@ class InstitutionalAdminServiceTest {
         }
 
         @Test
-        @SuppressWarnings({"unchecked", "rawtypes"})
         @DisplayName("Should execute SET_SPENDING_PERIOD operation successfully")
         void setSpendingPeriodExecutesTransactionWhenValid() throws Exception {
             Credentials credentials = Credentials.create("0x1");
@@ -838,7 +832,6 @@ class InstitutionalAdminServiceTest {
         }
 
         @Test
-        @SuppressWarnings({"unchecked", "rawtypes"})
         @DisplayName("Should execute RESET_SPENDING_PERIOD operation successfully")
         void resetSpendingPeriodExecutesTransactionWhenValid() throws Exception {
             Credentials credentials = Credentials.create("0x1");
@@ -862,7 +855,6 @@ class InstitutionalAdminServiceTest {
         }
 
         @Test
-        @SuppressWarnings({"unchecked", "rawtypes"})
         @DisplayName("Should execute REVOKE_BACKEND operation successfully")
         void revokeBackendExecutesTransactionWhenValid() throws Exception {
             Credentials credentials = Credentials.create("0x1");
@@ -886,7 +878,6 @@ class InstitutionalAdminServiceTest {
         }
 
         @Test
-        @SuppressWarnings({"unchecked", "rawtypes"})
         @DisplayName("Should execute ADMIN_RESET_BACKEND operation successfully")
         void adminResetBackendExecutesTransactionWhenValid() throws Exception {
             Credentials credentials = Credentials.create("0x1");
@@ -966,7 +957,6 @@ class InstitutionalAdminServiceTest {
 
         // ---- ACCRUED (1) valid transitions ----
         @Test
-        @SuppressWarnings({"unchecked", "rawtypes"})
         @DisplayName("ACCRUED → QUEUED is valid")
         void accruedToQueuedIsValid() throws Exception {
             mockForSuccess();
@@ -974,7 +964,6 @@ class InstitutionalAdminServiceTest {
         }
 
         @Test
-        @SuppressWarnings({"unchecked", "rawtypes"})
         @DisplayName("ACCRUED → DISPUTED is valid")
         void accruedToDisputedIsValid() throws Exception {
             mockForSuccess();
@@ -982,7 +971,6 @@ class InstitutionalAdminServiceTest {
         }
 
         @Test
-        @SuppressWarnings({"unchecked", "rawtypes"})
         @DisplayName("ACCRUED → REVERSED is valid")
         void accruedToReversedIsValid() throws Exception {
             mockForSuccess();
@@ -1005,7 +993,6 @@ class InstitutionalAdminServiceTest {
 
         // ---- QUEUED (2) valid transitions ----
         @Test
-        @SuppressWarnings({"unchecked", "rawtypes"})
         @DisplayName("QUEUED → INVOICED is valid")
         void queuedToInvoicedIsValid() throws Exception {
             mockForSuccess();
@@ -1013,7 +1000,6 @@ class InstitutionalAdminServiceTest {
         }
 
         @Test
-        @SuppressWarnings({"unchecked", "rawtypes"})
         @DisplayName("QUEUED → APPROVED is valid (fast-track)")
         void queuedToApprovedIsValid() throws Exception {
             mockForSuccess();
@@ -1021,7 +1007,6 @@ class InstitutionalAdminServiceTest {
         }
 
         @Test
-        @SuppressWarnings({"unchecked", "rawtypes"})
         @DisplayName("QUEUED → DISPUTED is valid")
         void queuedToDisputedIsValid() throws Exception {
             mockForSuccess();
@@ -1029,7 +1014,6 @@ class InstitutionalAdminServiceTest {
         }
 
         @Test
-        @SuppressWarnings({"unchecked", "rawtypes"})
         @DisplayName("QUEUED → REVERSED is valid")
         void queuedToReversedIsValid() throws Exception {
             mockForSuccess();
@@ -1044,7 +1028,6 @@ class InstitutionalAdminServiceTest {
 
         // ---- INVOICED (3) valid transitions ----
         @Test
-        @SuppressWarnings({"unchecked", "rawtypes"})
         @DisplayName("INVOICED → APPROVED is valid")
         void invoicedToApprovedIsValid() throws Exception {
             mockForSuccess();
@@ -1052,7 +1035,6 @@ class InstitutionalAdminServiceTest {
         }
 
         @Test
-        @SuppressWarnings({"unchecked", "rawtypes"})
         @DisplayName("INVOICED → DISPUTED is valid")
         void invoicedToDisputedIsValid() throws Exception {
             mockForSuccess();
@@ -1060,7 +1042,6 @@ class InstitutionalAdminServiceTest {
         }
 
         @Test
-        @SuppressWarnings({"unchecked", "rawtypes"})
         @DisplayName("INVOICED → REVERSED is valid")
         void invoicedToReversedIsValid() throws Exception {
             mockForSuccess();
@@ -1075,7 +1056,6 @@ class InstitutionalAdminServiceTest {
 
         // ---- APPROVED (4) valid transitions ----
         @Test
-        @SuppressWarnings({"unchecked", "rawtypes"})
         @DisplayName("APPROVED → PAID is valid")
         void approvedToPaidIsValid() throws Exception {
             mockForSuccess();
@@ -1083,7 +1063,6 @@ class InstitutionalAdminServiceTest {
         }
 
         @Test
-        @SuppressWarnings({"unchecked", "rawtypes"})
         @DisplayName("APPROVED → DISPUTED is valid")
         void approvedToDisputedIsValid() throws Exception {
             mockForSuccess();
@@ -1091,7 +1070,6 @@ class InstitutionalAdminServiceTest {
         }
 
         @Test
-        @SuppressWarnings({"unchecked", "rawtypes"})
         @DisplayName("APPROVED → REVERSED is valid")
         void approvedToReversedIsValid() throws Exception {
             mockForSuccess();
@@ -1100,7 +1078,6 @@ class InstitutionalAdminServiceTest {
 
         // ---- DISPUTED (7) valid transitions ----
         @Test
-        @SuppressWarnings({"unchecked", "rawtypes"})
         @DisplayName("DISPUTED → INVOICED is valid (re-invoice)")
         void disputedToInvoicedIsValid() throws Exception {
             mockForSuccess();
@@ -1108,7 +1085,6 @@ class InstitutionalAdminServiceTest {
         }
 
         @Test
-        @SuppressWarnings({"unchecked", "rawtypes"})
         @DisplayName("DISPUTED → APPROVED is valid (resolve)")
         void disputedToApprovedIsValid() throws Exception {
             mockForSuccess();
@@ -1116,7 +1092,6 @@ class InstitutionalAdminServiceTest {
         }
 
         @Test
-        @SuppressWarnings({"unchecked", "rawtypes"})
         @DisplayName("DISPUTED → REVERSED is valid (cancel)")
         void disputedToReversedIsValid() throws Exception {
             mockForSuccess();

@@ -23,7 +23,6 @@ import org.web3j.protocol.core.methods.response.EthChainId;
 import decentralabs.blockchain.dto.intent.ActionIntentPayload;
 import decentralabs.blockchain.dto.intent.ReservationIntentPayload;
 import decentralabs.blockchain.service.intent.IntentOnChainExecutor.ExecutionResult;
-import decentralabs.blockchain.service.intent.Eip712IntentVerifier;
 import decentralabs.blockchain.service.wallet.InstitutionalTxManagerProvider;
 import decentralabs.blockchain.service.wallet.InstitutionalWalletService;
 import decentralabs.blockchain.service.wallet.WalletService;

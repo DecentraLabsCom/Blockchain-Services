@@ -218,7 +218,7 @@ public class WalletPersistenceService {
                 }
             } catch (UnsupportedOperationException e) {
                 // Windows doesn't support POSIX permissions, ignore
-                log.debug("POSIX permissions not supported on this system");
+                log.debug("POSIX permissions not supported on this system: {}", e.getMessage());
             }
             
             log.info("Saved institutional wallet to file: {} (address: {})", 

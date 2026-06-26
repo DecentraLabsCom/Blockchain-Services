@@ -348,7 +348,7 @@ class InstitutionRegistrationServiceTest {
 
     @Test
     @DisplayName("Should normalize backend URL correctly")
-    void shouldNormalizeBackendUrlCorrectly() throws IOException {
+    void shouldNormalizeBackendUrlCorrectly() {
         // Arrange
         InstitutionRegistrationRequest request = InstitutionRegistrationRequest.builder()
                 .role(InstitutionRole.PROVIDER)

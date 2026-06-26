@@ -145,7 +145,7 @@ public class IntentService {
         String samlAssertion = requireSamlAssertion(submission);
         String expectedAssertionHash = computeAssertionHash(samlAssertion);
         ensurePayloadAssertionHash(actionPayload, reservationPayload, expectedAssertionHash);
-        String validatedSamlUser = validateSamlAssertion(actionPayload, reservationPayload, samlAssertion);
+        String validatedSamlUser = validateSamlAssertion(reservationPayload, samlAssertion);
         checkAssertionReplay(expectedAssertionHash);
 
         String puc = resolvePuc(reservationPayload, validatedSamlUser);
@@ -342,6 +342,9 @@ public class IntentService {
             if (reservationPayload.getStart() != null && reservationPayload.getEnd() != null && reservationPayload.getStart() >= reservationPayload.getEnd()) {
                 throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Invalid reservation window");
             }
+            if (action == IntentAction.RESERVATION_REQUEST || action == IntentAction.DIRECT_BOOKING) {
+                validateReservationPrice(reservationPayload);
+            }
         } else {
             if (actionPayload == null) {
                 throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Missing action payload");
@@ -462,6 +465,34 @@ public class IntentService {
         }
     }
 
+    void validateReservationPrice(ReservationIntentPayload payload) {
+        if (payload == null || payload.getPrice() == null || payload.getStart() == null || payload.getEnd() == null) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Missing reservation price");
+        }
+        BigInteger pricePerSecond = fetchLabPrice(payload.getLabId());
+        BigInteger durationSeconds = BigInteger.valueOf(payload.getEnd() - payload.getStart());
+        BigInteger expected = pricePerSecond.multiply(durationSeconds);
+        if (!expected.equals(payload.getPrice())) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "reservation_price_mismatch");
+        }
+    }
+
+    BigInteger fetchLabPrice(BigInteger labId) {
+        try {
+            Web3j web3j = walletService.getWeb3jInstance();
+            Diamond diamond = Diamond.load(
+                contractAddress,
+                web3j,
+                new ReadonlyTransactionManager(web3j, contractAddress),
+                new StaticGasProvider(BigInteger.ZERO, BigInteger.ZERO)
+            );
+            return diamond.getLab(labId).send().base.price;
+        } catch (Exception ex) {
+            log.warn("Unable to fetch lab price for lab {}: {}", labId, LogSanitizer.sanitize(ex.getMessage()));
+            throw new ResponseStatusException(HttpStatus.BAD_GATEWAY, "lab_price_lookup_failed");
+        }
+    }
+
     private boolean isExpired(Long expiresAt) {
         long now = Instant.now().getEpochSecond();
         return expiresAt <= now;
@@ -539,11 +570,7 @@ public class IntentService {
         }
     }
 
-    private String validateSamlAssertion(
-        ActionIntentPayload actionPayload,
-        ReservationIntentPayload reservationPayload,
-        String samlAssertion
-    ) {
+    private String validateSamlAssertion(ReservationIntentPayload reservationPayload, String samlAssertion) {
         try {
             Map<String, String> samlAttrs = samlValidationService.validateSamlAssertionWithSignature(samlAssertion);
             String samlUser = samlAttrs.get("userid");
@@ -711,7 +738,6 @@ public class IntentService {
      * requires the client's assertion to be verified against the server's challenge.
      * Security is ensured by cryptographic signature verification.
      */
-    @SuppressWarnings("java:S2583") // User data flow is intentional for WebAuthn
     private void verifyWebauthnAssertion(
         WebauthnCredential cred,
         String clientDataJSONb64,
@@ -763,7 +789,7 @@ public class IntentService {
             }
             return challenge.toString();
         } catch (IOException ex) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "webauthn_clientdata_invalid");
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "webauthn_clientdata_invalid", ex);
         }
     }
 
@@ -771,7 +797,7 @@ public class IntentService {
         try {
             return MessageDigest.getInstance("SHA-256").digest(data);
         } catch (Exception ex) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "hash_error");
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "hash_error", ex);
         }
     }
 
@@ -807,6 +833,7 @@ public class IntentService {
         try {
             return Base64.getUrlDecoder().decode(padded);
         } catch (IllegalArgumentException ex) {
+            log.debug("Base64url decoding failed, trying standard Base64", ex);
             return Base64.getDecoder().decode(padded);
         }
     }
@@ -841,6 +868,7 @@ public class IntentService {
             }
             return null;
         } catch (CborException ex) {
+            log.debug("Unable to decode COSE public key", ex);
             return null;
         }
     }
@@ -912,11 +940,13 @@ public class IntentService {
         try {
             return KeyFactory.getInstance("EC").generatePublic(spec);
         } catch (Exception ex) {
+            log.debug("Public key is not EC encoded", ex);
             // Fall through and try other key types.
         }
         try {
             return KeyFactory.getInstance("RSA").generatePublic(spec);
         } catch (Exception ex) {
+            log.debug("Public key is not RSA encoded", ex);
             // Fall through to last attempt.
         }
         return KeyFactory.getInstance("Ed25519").generatePublic(spec);
@@ -1083,6 +1113,7 @@ public class IntentService {
         try {
             return objectMapper.writeValueAsString(payload);
         } catch (Exception ex) {
+            log.debug("Unable to serialize intent payload", ex);
             return null;
         }
     }

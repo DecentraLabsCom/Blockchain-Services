@@ -180,7 +180,7 @@ class NotificationConfigServiceTest {
 
         @Test
         @DisplayName("Should persist config to file")
-        void shouldPersistConfigToFile() throws IOException {
+        void shouldPersistConfigToFile() {
             NotificationUpdateRequest request = new NotificationUpdateRequest(
                 true, MailDriver.NOOP, "test@test.com", null, null, null, null, null
             );

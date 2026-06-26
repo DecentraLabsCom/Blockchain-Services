@@ -2,7 +2,6 @@ package decentralabs.blockchain.util;
 
 import java.math.BigInteger;
 import org.web3j.crypto.Keys;
-import org.web3j.utils.Numeric;
 
 /**
  * Utility class for validating Ethereum addresses
@@ -32,10 +31,7 @@ public class EthereumAddressValidator {
             return false;
         }
 
-        // Check if it's valid hex
-        try {
-            Numeric.toBigInt(address);
-        } catch (Exception e) {
+        if (!address.substring(2).matches("[0-9a-fA-F]{40}")) {
             return false;
         }
 
@@ -72,13 +68,9 @@ public class EthereumAddressValidator {
      * Checks if an address has mixed case (indicating it may have a checksum)
      */
     private static boolean matchesChecksum(String address) {
-        try {
-            String normalized = "0x" + address.substring(2).toLowerCase();
-            String checksum = Keys.toChecksumAddress(normalized);
-            return checksum.equals(address);
-        } catch (Exception e) {
-            return false;
-        }
+        String normalized = "0x" + address.substring(2).toLowerCase();
+        String checksum = Keys.toChecksumAddress(normalized);
+        return checksum.equals(address);
     }
 
     public static BigInteger parseBigInteger(String value, String fieldName) {

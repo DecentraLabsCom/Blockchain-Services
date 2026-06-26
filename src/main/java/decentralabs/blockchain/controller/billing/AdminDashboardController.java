@@ -1,7 +1,5 @@
 package decentralabs.blockchain.controller.billing;
 
-import decentralabs.blockchain.dto.billing.InstitutionalUserFinancialStats;
-import decentralabs.blockchain.dto.billing.InstitutionalUserFinancialStats;
 import decentralabs.blockchain.dto.wallet.PayoutRequestSimulationResult;
 import decentralabs.blockchain.dto.wallet.ProviderReceivableStatus;
 import decentralabs.blockchain.service.billing.OnChainAdminTransactionService;
@@ -493,13 +491,6 @@ public class AdminDashboardController {
     @Value("${security.access-token.required:true}")
     private boolean accessTokenRequired;
 
-    private static final Set<String> LOOPBACK_ADDRESSES = Set.of(
-        "127.0.0.1",
-        "0:0:0:0:0:0:0:1",
-        "::1",
-        "::ffff:127.0.0.1"
-    );
-
     /**
      * Check if request comes from localhost (unless explicitly disabled)
      */
@@ -581,7 +572,7 @@ public class AdminDashboardController {
                 
                 balances.put(networkId, networkBalance);
             } catch (Exception e) {
-                log.warn("Failed to get network balance");
+                log.warn("Failed to get network balance for {}: {}", networkId, e.getMessage());
                 balances.put(networkId, Map.of("error", "Failed to retrieve balance"));
             }
         }

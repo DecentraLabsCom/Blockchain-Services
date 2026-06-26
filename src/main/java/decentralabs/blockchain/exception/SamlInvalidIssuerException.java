@@ -4,6 +4,9 @@ package decentralabs.blockchain.exception;
  * Exception thrown when SAML authentication fails due to invalid issuer
  */
 public class SamlInvalidIssuerException extends SamlAuthenticationException {
+
+    private static final long serialVersionUID = 1L;
+
     public SamlInvalidIssuerException(String message) {
         super(message);
     }

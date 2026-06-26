@@ -341,6 +341,7 @@ public class InstitutionalCheckInService {
         try {
             return STATUS_IN_USE.equals(new BigInteger(value.toString()));
         } catch (RuntimeException ex) {
+            log.debug("Unable to parse reservation status '{}'", value, ex);
             return false;
         }
     }

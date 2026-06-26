@@ -21,7 +21,6 @@ import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;
 
-import decentralabs.blockchain.dto.intent.ActionIntentPayload;
 import decentralabs.blockchain.dto.intent.IntentAckResponse;
 import decentralabs.blockchain.dto.intent.IntentAuthorizationCompleteRequest;
 import decentralabs.blockchain.dto.intent.IntentAuthorizationRequest;
@@ -269,7 +268,7 @@ public class IntentAuthorizationService {
                 return normalized;
             }
         } catch (Exception ex) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "invalid_saml");
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "invalid_saml", ex);
         }
         return null;
     }
@@ -338,7 +337,7 @@ public class IntentAuthorizationService {
                 return uri.getHost();
             }
         } catch (Exception e) {
-            // Ignore parsing failures and fall back to string heuristics.
+            log.debug("Unable to parse RP ID host '{}'", value, e);
         }
 
         if (!value.contains("://")) {
@@ -348,7 +347,7 @@ public class IntentAuthorizationService {
                     return uri.getHost();
                 }
             } catch (Exception e) {
-                // Ignore parsing failures and fall back to string heuristics.
+                log.debug("Unable to parse RP ID host with https fallback '{}'", value, e);
             }
         }
 

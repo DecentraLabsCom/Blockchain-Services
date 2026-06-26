@@ -45,6 +45,7 @@ class BlockchainBookingServiceTest {
     void setUp() {
         service = new BlockchainBookingService(walletService);
         ReflectionTestUtils.setField(service, "contractAddress", TEST_CONTRACT_ADDRESS);
+        ReflectionTestUtils.setField(service, "labAccessJwtMaxTtlSeconds", 14_400L);
 
         lenient().when(walletService.getWeb3jInstance()).thenReturn(web3j);
     }
@@ -97,6 +98,78 @@ class BlockchainBookingServiceTest {
             assertThat(result.get("price")).isEqualTo(BigInteger.valueOf(1000));
             assertThat(result.get("aud")).isEqualTo("https://lab.url");
             assertThat(result.get("sub")).isEqualTo("accessKey123");
+        }
+    }
+
+    @Test
+    void shouldKeepJwtExpirationAtReservationEndWhenReservationIsShorterThanMaxTtl() throws Exception {
+        BigInteger now = getCurrentTimestamp();
+        BigInteger end = now.add(BigInteger.valueOf(1800));
+        Diamond.Reservation reservation = createMockReservation(
+                TEST_LAB_ID,
+                TEST_WALLET,
+                BigInteger.valueOf(1000),
+                now.subtract(BigInteger.valueOf(300)),
+                end,
+                BigInteger.ONE
+        );
+        Diamond.Lab lab = createMockLab(
+                "https://lab.url",
+                "accessKey123",
+                "https://metadata.url",
+                BigInteger.valueOf(1000)
+        );
+
+        try (MockedStatic<Diamond> diamondMock = mockStatic(Diamond.class)) {
+            diamondMock.when(() -> Diamond.load(anyString(), any(Web3j.class), any(ReadonlyTransactionManager.class), any(ContractGasProvider.class)))
+                    .thenReturn(diamond);
+
+            when(diamond.getReservation(any(byte[].class))).thenReturn(mockRemoteCall(reservation));
+            when(diamond.getLab(TEST_LAB_ID)).thenReturn(mockRemoteCall(lab));
+
+            Map<String, Object> result = service.getBookingInfo(TEST_WALLET, TEST_RESERVATION_KEY, null);
+
+            assertThat(result.get("exp")).isEqualTo(end);
+        }
+    }
+
+    @Test
+    void shouldCapJwtExpirationForLongReservationsUsingConfiguredMaxTtl() throws Exception {
+        BigInteger now = getCurrentTimestamp();
+        BigInteger reservationEnd = now.add(BigInteger.valueOf(30L * 24L * 60L * 60L));
+        Diamond.Reservation reservation = createMockReservation(
+                TEST_LAB_ID,
+                TEST_WALLET,
+                BigInteger.valueOf(1000),
+                now.subtract(BigInteger.valueOf(300)),
+                reservationEnd,
+                BigInteger.ONE
+        );
+        Diamond.Lab lab = createMockLab(
+                "https://lab.url",
+                "accessKey123",
+                "https://metadata.url",
+                BigInteger.valueOf(1000)
+        );
+
+        try (MockedStatic<Diamond> diamondMock = mockStatic(Diamond.class)) {
+            diamondMock.when(() -> Diamond.load(anyString(), any(Web3j.class), any(ReadonlyTransactionManager.class), any(ContractGasProvider.class)))
+                    .thenReturn(diamond);
+
+            when(diamond.getReservation(any(byte[].class))).thenReturn(mockRemoteCall(reservation));
+            when(diamond.getLab(TEST_LAB_ID)).thenReturn(mockRemoteCall(lab));
+
+            long before = System.currentTimeMillis() / 1000;
+            Map<String, Object> result = service.getBookingInfo(TEST_WALLET, TEST_RESERVATION_KEY, null);
+            long after = System.currentTimeMillis() / 1000;
+
+            assertThat(result.get("exp")).isInstanceOf(BigInteger.class);
+            BigInteger exp = (BigInteger) result.get("exp");
+            assertThat(exp).isBetween(
+                    BigInteger.valueOf(before + 14_400L),
+                    BigInteger.valueOf(after + 14_400L)
+            );
+            assertThat(exp).isLessThan(reservationEnd);
         }
     }
 

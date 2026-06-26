@@ -121,7 +121,7 @@ class MarketplaceKeyServiceTest {
         @DisplayName("Should throw exception for invalid PEM format")
         void shouldThrowExceptionForInvalidPemFormat() {
             when(restTemplate.getForEntity(anyString(), eq(String.class)))
-                .thenReturn(new ResponseEntity<String>("invalid-key-data", HttpStatus.OK));
+                .thenReturn(new ResponseEntity<>("invalid-key-data", HttpStatus.OK));
 
             assertThatThrownBy(() -> keyService.getPublicKey(false))
                 .isInstanceOf(Exception.class);
@@ -270,7 +270,7 @@ class MarketplaceKeyServiceTest {
             String pemWithSpaces = "-----BEGIN PUBLIC KEY-----\n  " + base64Key + "  \n-----END PUBLIC KEY-----";
 
             when(restTemplate.getForEntity(anyString(), eq(String.class)))
-                .thenReturn(new ResponseEntity<String>(pemWithSpaces, HttpStatus.OK));
+                .thenReturn(new ResponseEntity<>(pemWithSpaces, HttpStatus.OK));
 
             PublicKey result = keyService.getPublicKey(false);
 

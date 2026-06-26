@@ -4,6 +4,7 @@ import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.JwtBuilder;
 import io.jsonwebtoken.Jwts;
 import decentralabs.blockchain.service.BackendUrlResolver;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
@@ -21,6 +22,7 @@ import java.util.UUID;
  * Service for JWT token generation and validation
  */
 @Service
+@Slf4j
 public class JwtService {
 
     @Value("${auth.base-path:/auth}")
@@ -157,6 +159,7 @@ public class JwtService {
                 .parseSignedClaims(token);
             return true;
         } catch (Exception e) {
+            log.debug("JWT token validation failed", e);
             return false;
         }
     }

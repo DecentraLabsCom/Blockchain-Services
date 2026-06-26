@@ -83,7 +83,7 @@ public class IntentPersistenceService {
         try {
             return jdbcTemplate.query(
                 "SELECT * FROM intents WHERE request_id = ? LIMIT 1",
-                this::mapRow,
+                (rs, rowNum) -> mapRow(rs),
                 requestId
             ).stream().findFirst();
         } catch (Exception e) {
@@ -99,7 +99,7 @@ public class IntentPersistenceService {
         try {
             return jdbcTemplate.query(
                 "SELECT * FROM intents WHERE status IN ('queued', 'in_progress')",
-                this::mapRow
+                (rs, rowNum) -> mapRow(rs)
             );
         } catch (Exception e) {
             log.warn("Intent pending lookup skipped: {}", LogSanitizer.sanitize(e.getMessage()));
@@ -144,7 +144,7 @@ public class IntentPersistenceService {
         try {
             return jdbcTemplate.query(
                 "SELECT * FROM intents WHERE reservation_key = ? ORDER BY updated_at DESC LIMIT 1",
-                this::mapRow,
+                (rs, rowNum) -> mapRow(rs),
                 reservationKey
             ).stream().findFirst();
         } catch (Exception e) {
@@ -157,7 +157,7 @@ public class IntentPersistenceService {
         }
     }
 
-    private IntentRecord mapRow(ResultSet rs, int rowNum) throws SQLException {
+    private IntentRecord mapRow(ResultSet rs) throws SQLException {
         IntentRecord record = new IntentRecord(
             rs.getString("request_id"),
             rs.getString("action"),

@@ -50,13 +50,6 @@ class GraphMailSenderAdapterTest {
         mailProps.setSmtp(smtp);
     }
 
-    // Helper method to create NotificationMessage (record constructor)
-    @SuppressWarnings("unused")
-    private NotificationMessage createMessage(List<String> recipients, String subject, 
-            String textBody, String htmlBody, String icsContent, String icsFileName) {
-        return new NotificationMessage(recipients, subject, textBody, htmlBody, icsContent, icsFileName);
-    }
-
     private NotificationMessage createSimpleMessage(List<String> recipients, String subject, String textBody) {
         return new NotificationMessage(recipients, subject, textBody, null, null, null);
     }

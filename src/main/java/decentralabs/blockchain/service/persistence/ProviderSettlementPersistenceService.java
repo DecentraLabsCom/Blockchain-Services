@@ -128,16 +128,6 @@ public class ProviderSettlementPersistenceService {
 
     // ── Provider Approvals ──────────────────────────────────────────────
 
-    private static final RowMapper<ProviderApproval> APPROVAL_MAPPER = (rs, rowNum) ->
-        ProviderApproval.builder()
-            .id(rs.getLong("id"))
-            .invoiceRecordId(rs.getLong("invoice_record_id"))
-            .approvedBy(rs.getString("approved_by"))
-            .approvalRef(rs.getString("approval_ref"))
-            .eurAmount(rs.getBigDecimal("eur_amount"))
-            .approvedAt(toInstant(rs.getTimestamp("approved_at")))
-            .build();
-
     @Transactional
     public ProviderApproval createApproval(ProviderApproval approval) {
         if (jdbcTemplate == null) return approval;

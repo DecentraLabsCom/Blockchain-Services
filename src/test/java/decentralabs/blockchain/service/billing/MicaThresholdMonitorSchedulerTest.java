@@ -1,6 +1,5 @@
 package decentralabs.blockchain.service.billing;
 
-import decentralabs.blockchain.domain.MicaOfferVolume;
 import decentralabs.blockchain.service.persistence.MicaVolumePersistenceService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;

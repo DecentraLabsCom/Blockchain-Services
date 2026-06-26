@@ -2,8 +2,11 @@ package decentralabs.blockchain.service.health;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import decentralabs.blockchain.dto.health.AllowedDuration;
 import decentralabs.blockchain.dto.health.LabMetadata;
 import decentralabs.blockchain.dto.health.MaintenanceWindow;
+import decentralabs.blockchain.dto.health.PeriodRules;
+import decentralabs.blockchain.dto.health.PricingMetadata;
 import decentralabs.blockchain.dto.health.TimeRange;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -12,6 +15,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestTemplate;
 
 import java.time.DayOfWeek;
+import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
@@ -74,6 +78,19 @@ public class LabMetadataService {
             .description(rootNode.get("description").asText())
             .image(rootNode.get("image").asText());
 
+        if (rootNode.hasNonNull("pricing")) {
+            builder.pricing(parseObject(rootNode.get("pricing"), PricingMetadata.class));
+        }
+        if (rootNode.hasNonNull("bookingMode")) {
+            builder.bookingMode(parseString(rootNode.get("bookingMode")));
+        }
+        if (rootNode.hasNonNull("allowedDurations")) {
+            builder.allowedDurations(parseAllowedDurations(rootNode.get("allowedDurations")));
+        }
+        if (rootNode.hasNonNull("periodRules")) {
+            builder.periodRules(parseObject(rootNode.get("periodRules"), PeriodRules.class));
+        }
+
         // Parse attributes
         JsonNode attributesNode = rootNode.get("attributes");
         if (attributesNode != null && attributesNode.isArray()) {
@@ -92,6 +109,11 @@ public class LabMetadataService {
                     case "maxconcurrentusers" -> builder.maxConcurrentUsers(valueNode.asInt());
                     case "unavailablewindows" -> builder.unavailableWindows(parseUnavailableWindows(valueNode));
                     case "timezone" -> builder.timezone(parseString(valueNode));
+                    case "pricing" -> builder.pricing(parseObject(valueNode, PricingMetadata.class));
+                    case "pricingunit" -> builder.pricing(PricingMetadata.builder().displayUnit(parseString(valueNode)).build());
+                    case "bookingmode" -> builder.bookingMode(parseString(valueNode));
+                    case "alloweddurations" -> builder.allowedDurations(parseAllowedDurations(valueNode));
+                    case "periodrules" -> builder.periodRules(parseObject(valueNode, PeriodRules.class));
                     case "docs" -> builder.documentation(parseStringList(valueNode));
                     case "additionalimages" -> builder.additionalImages(parseStringList(valueNode));
                     // Backwards compatibility with older casing
@@ -104,6 +126,18 @@ public class LabMetadataService {
         }
 
         return builder.build();
+    }
+
+    private <T> T parseObject(JsonNode node, Class<T> type) {
+        if (node == null || node.isNull() || !node.isObject()) {
+            return null;
+        }
+        try {
+            return objectMapper.treeToValue(node, type);
+        } catch (Exception ex) {
+            log.warn("Unable to parse {} from metadata: {}", type.getSimpleName(), ex.getMessage());
+            return null;
+        }
     }
 
     private String parseString(JsonNode node) {
@@ -120,7 +154,7 @@ public class LabMetadataService {
         try {
             return Long.parseLong(node.asText());
         } catch (NumberFormatException ex) {
-            log.warn("Unable to parse epoch seconds from {}", node);
+            log.warn("Unable to parse epoch seconds from {}: {}", node, ex.getMessage());
             return null;
         }
     }
@@ -153,10 +187,28 @@ public class LabMetadataService {
             try {
                 list.add(item.asInt());
             } catch (Exception ex) {
-                log.warn("Skipping non-integer value in list: {}", item);
+                log.warn("Skipping non-integer value in list {}: {}", item, ex.getMessage());
             }
         }
         return list;
+    }
+
+    private List<AllowedDuration> parseAllowedDurations(JsonNode node) {
+        if (node == null || !node.isArray()) {
+            return List.of();
+        }
+        List<AllowedDuration> durations = new ArrayList<>();
+        for (JsonNode item : node) {
+            if (!item.isObject()) {
+                continue;
+            }
+            String unit = item.hasNonNull("unit") ? item.get("unit").asText() : null;
+            Integer value = item.hasNonNull("value") ? item.get("value").asInt() : null;
+            if (unit != null && value != null && value > 0) {
+                durations.add(AllowedDuration.builder().unit(unit).value(value).build());
+            }
+        }
+        return durations;
     }
 
     private List<String> parseStringList(JsonNode node) {
@@ -261,8 +313,14 @@ public class LabMetadataService {
             throw new IllegalArgumentException("Lab not available on " + dayOfWeek);
         }
 
-        // Check available hours
-        if (metadata.getAvailableHours() != null) {
+        boolean calendarPeriod = isCalendarPeriod(metadata);
+        boolean enforceDailyWindow = calendarPeriod
+            && metadata.getPeriodRules() != null
+            && Boolean.TRUE.equals(metadata.getPeriodRules().getEnforceDailyWindow());
+
+        // Check available hours. Calendar-period bookings are long-running by default;
+        // availableHours only applies when explicitly requested through periodRules.
+        if (metadata.getAvailableHours() != null && (!calendarPeriod || enforceDailyWindow)) {
             TimeRange available = metadata.getAvailableHours();
             if (startTimeOfDay.isBefore(available.getStart()) || endTimeOfDay.isAfter(available.getEnd())) {
                 throw new IllegalArgumentException("Reservation time outside available hours");
@@ -283,11 +341,17 @@ public class LabMetadataService {
             }
         }
 
-        // Check time slots (duration minutes must match one allowed)
-        if (metadata.getTimeSlots() != null && !metadata.getTimeSlots().isEmpty()) {
-            long durationMinutes = java.time.Duration.between(startInstantUtc, endInstantUtc).toMinutes();
+        Duration duration = Duration.between(startInstantUtc, endInstantUtc);
+        if (calendarPeriod) {
+            validateCalendarPeriodDuration(metadata, duration);
+        } else if (metadata.getTimeSlots() != null && !metadata.getTimeSlots().isEmpty()) {
+            long durationMinutes = duration.toMinutes();
             if (durationMinutes <= 0 || metadata.getTimeSlots().stream().noneMatch(slot -> slot == durationMinutes)) {
                 throw new IllegalArgumentException("Reservation duration not allowed by timeSlots");
+            }
+        } else if (metadata.getAllowedDurations() != null && !metadata.getAllowedDurations().isEmpty()) {
+            if (!matchesAllowedDuration(duration, metadata.getAllowedDurations())) {
+                throw new IllegalArgumentException("Reservation duration not allowed by allowedDurations");
             }
         }
 
@@ -315,6 +379,57 @@ public class LabMetadataService {
         }
     }
 
+    private boolean isCalendarPeriod(LabMetadata metadata) {
+        String mode = metadata.getBookingMode();
+        return mode != null && (
+            "calendar-period".equalsIgnoreCase(mode)
+                || "calendar_period".equalsIgnoreCase(mode)
+                || "period".equalsIgnoreCase(mode)
+        );
+    }
+
+    private void validateCalendarPeriodDuration(LabMetadata metadata, Duration duration) {
+        if (duration == null || duration.isZero() || duration.isNegative()) {
+            throw new IllegalArgumentException("Reservation duration must be positive");
+        }
+
+        PeriodRules rules = metadata.getPeriodRules();
+        long durationDays = duration.toDays();
+        if (rules != null) {
+            if (rules.getMinDurationDays() != null && durationDays < rules.getMinDurationDays()) {
+                throw new IllegalArgumentException("Reservation shorter than minimum period");
+            }
+            if (rules.getMaxDurationDays() != null && durationDays > rules.getMaxDurationDays()) {
+                throw new IllegalArgumentException("Reservation longer than maximum period");
+            }
+        }
+
+        List<AllowedDuration> allowed = metadata.getAllowedDurations();
+        if (allowed != null && !allowed.isEmpty() && !matchesAllowedDuration(duration, allowed)) {
+            boolean customRangeAllowed = rules != null && Boolean.TRUE.equals(rules.getAllowCustomDateRange());
+            if (!customRangeAllowed) {
+                throw new IllegalArgumentException("Reservation duration not allowed by allowedDurations");
+            }
+        }
+    }
+
+    private boolean matchesAllowedDuration(Duration duration, List<AllowedDuration> allowedDurations) {
+        return allowedDurations.stream().anyMatch(allowed -> {
+            if (allowed == null || allowed.getValue() == null || allowed.getValue() <= 0 || allowed.getUnit() == null) {
+                return false;
+            }
+            Duration allowedDuration = switch (allowed.getUnit().trim().toLowerCase()) {
+                case "minute", "minutes" -> Duration.ofMinutes(allowed.getValue());
+                case "hour", "hours" -> Duration.ofHours(allowed.getValue());
+                case "day", "days" -> Duration.ofDays(allowed.getValue());
+                case "week", "weeks" -> Duration.ofDays(7L * allowed.getValue());
+                case "month", "months" -> Duration.ofDays(30L * allowed.getValue());
+                default -> null;
+            };
+            return allowedDuration != null && allowedDuration.equals(duration);
+        });
+    }
+
     private ZoneId resolveZone(String timezone) {
         if (timezone == null || timezone.isBlank()) {
             return ZoneOffset.UTC;
@@ -322,7 +437,7 @@ public class LabMetadataService {
         try {
             return ZoneId.of(timezone);
         } catch (Exception ex) {
-            log.warn("Invalid timezone {}. Falling back to UTC.", timezone);
+            log.warn("Invalid timezone {}. Falling back to UTC: {}", timezone, ex.getMessage());
             return ZoneOffset.UTC;
         }
     }

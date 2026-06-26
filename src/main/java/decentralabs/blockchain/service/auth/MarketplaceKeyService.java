@@ -69,6 +69,7 @@ public class MarketplaceKeyService {
                 return true;
             } catch (Exception e) {
                 lastFailureTime = now;
+                log.debug("Marketplace public key availability check failed", e);
                 return false;
             }
         }

@@ -119,7 +119,7 @@ public class ReservationNotificationService {
         try {
             return ZoneId.of(configured);
         } catch (Exception ex) {
-            log.warn("Invalid timezone '{}', falling back to UTC", configured);
+            log.warn("Invalid timezone '{}', falling back to UTC: {}", configured, ex.getMessage());
             return ZoneId.of("UTC");
         }
     }

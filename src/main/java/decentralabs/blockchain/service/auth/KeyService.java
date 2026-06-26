@@ -86,7 +86,7 @@ public class KeyService {
             }
         } catch (UnsupportedOperationException e) {
             // Windows or other non-POSIX system - skip permission check
-            log.debug("Permission validation skipped (non-POSIX file system)");
+            log.debug("Permission validation skipped (non-POSIX file system): {}", e.getMessage());
         }
     }
 

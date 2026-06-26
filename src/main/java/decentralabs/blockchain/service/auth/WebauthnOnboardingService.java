@@ -188,7 +188,7 @@ public class WebauthnOnboardingService {
             String host = uri.getHost();
             return (host != null && !host.isBlank()) ? host : "localhost";
         } catch (Exception e) {
-            log.warn("Failed to extract host from base domain '{}', using 'localhost'", baseDomain);
+            log.warn("Failed to extract host from base domain '{}', using 'localhost': {}", baseDomain, e.getMessage());
             return "localhost";
         }
     }
@@ -202,6 +202,7 @@ public class WebauthnOnboardingService {
                     cleanupScheduler.shutdownNow();
                 }
             } catch (InterruptedException e) {
+                log.debug("Interrupted while stopping WebAuthn cleanup scheduler", e);
                 cleanupScheduler.shutdownNow();
                 Thread.currentThread().interrupt();
             }
@@ -586,9 +587,10 @@ public class WebauthnOnboardingService {
                 );
                 return sanitized.toString();
             }
-        } catch (Exception ignored) {
-            // Fallback below for malformed URLs.
-        }
+            } catch (Exception ignored) {
+                log.debug("Unable to sanitize callback URL '{}'", callbackUrl, ignored);
+                // Fallback below for malformed URLs.
+            }
         int queryIndex = callbackUrl.indexOf('?');
         return queryIndex >= 0 ? callbackUrl.substring(0, queryIndex) : callbackUrl;
     }
@@ -704,7 +706,7 @@ public class WebauthnOnboardingService {
 
         boolean residentKey = (flags & 0x20) != 0;
 
-        return new AttestationData(aaguid, publicKeyCose, signCount, flags, residentKey);
+        return new AttestationData(aaguid, publicKeyCose, signCount, residentKey);
     }
 
     /**
@@ -718,7 +720,7 @@ public class WebauthnOnboardingService {
                 throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "RP ID hash mismatch");
             }
         } catch (NoSuchAlgorithmException e) {
-            throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "SHA-256 not available");
+            throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "SHA-256 not available", e);
         }
     }
 
@@ -778,7 +780,7 @@ public class WebauthnOnboardingService {
                     origins.add("https://" + baseDomain);
                 }
             } catch (Exception e) {
-                log.warn("Failed to parse base domain for WebAuthn origins: {}", baseDomain);
+                log.warn("Failed to parse base domain for WebAuthn origins {}: {}", baseDomain, e.getMessage());
             }
         }
 
@@ -884,6 +886,18 @@ public class WebauthnOnboardingService {
                 log.warn("SAML assertion userid '{}' does not match expected userId '{}'", assertionUserId, expectedUserId);
                 // This is a warning, not an error - the SP may use different identifiers
             }
+            String assertionInstitutionId = attributes.get("institutionId");
+            if (assertionInstitutionId != null
+                && !assertionInstitutionId.isBlank()
+                && expectedInstitutionId != null
+                && !expectedInstitutionId.isBlank()
+                && !assertionInstitutionId.equals(expectedInstitutionId)) {
+                log.warn(
+                    "SAML assertion institutionId '{}' does not match expected institutionId '{}'",
+                    assertionInstitutionId,
+                    expectedInstitutionId
+                );
+            }
 
             log.debug("SAML assertion validated successfully for user: {}", expectedUserId);
             return attributes;
@@ -945,8 +959,6 @@ public class WebauthnOnboardingService {
         private byte[] aaguid;
         private byte[] publicKeyCose;
         private long signCount;
-        @SuppressWarnings("unused")
-        private byte flags;
         private boolean residentKey;
     }
 }

@@ -199,9 +199,7 @@ public class OnChainAdminTransactionService {
             currentBlock,
             BACKEND_AUTHORIZED_EVENT,
             this::mapBackendAuthorized,
-            blockTimestampCache,
-            txFromCache,
-            labNameCache
+            blockTimestampCache
         ));
         candidates.addAll(fetchEventsForIndexedInstitution(
             providerAddress,
@@ -209,29 +207,23 @@ public class OnChainAdminTransactionService {
             currentBlock,
             BACKEND_REVOKED_EVENT,
             this::mapBackendRevoked,
-            blockTimestampCache,
-            txFromCache,
-            labNameCache
+            blockTimestampCache
         ));
         candidates.addAll(fetchEventsForIndexedInstitution(
             providerAddress,
             fromBlock,
             currentBlock,
             INSTITUTIONAL_USER_LIMIT_UPDATED_EVENT,
-            this::mapUserLimitUpdated,
-            blockTimestampCache,
-            txFromCache,
-            labNameCache
+            (logEntry, timestamps) -> mapUserLimitUpdated(logEntry, INSTITUTIONAL_USER_LIMIT_UPDATED_EVENT, timestamps),
+            blockTimestampCache
         ));
         candidates.addAll(fetchEventsForIndexedInstitution(
             providerAddress,
             fromBlock,
             currentBlock,
             INSTITUTIONAL_SPENDING_PERIOD_UPDATED_EVENT,
-            this::mapSpendingPeriodUpdated,
-            blockTimestampCache,
-            txFromCache,
-            labNameCache
+            (logEntry, timestamps) -> mapSpendingPeriodUpdated(logEntry, INSTITUTIONAL_SPENDING_PERIOD_UPDATED_EVENT, timestamps),
+            blockTimestampCache
         ));
         candidates.addAll(fetchEventsForIndexedInstitution(
             providerAddress,
@@ -239,49 +231,51 @@ public class OnChainAdminTransactionService {
             currentBlock,
             INSTITUTIONAL_SPENDING_PERIOD_RESET_EVENT,
             this::mapSpendingPeriodReset,
-            blockTimestampCache,
-            txFromCache,
-            labNameCache
+            blockTimestampCache
         ));
         candidates.addAll(fetchEventsForIndexedProvider(
             providerAddress,
             fromBlock,
             currentBlock,
             PROVIDER_PAYOUT_REQUESTED_EVENT,
-            this::mapProviderPayoutRequested,
-            blockTimestampCache,
-            txFromCache,
-            labNameCache
+            (logEntry, timestamps) -> mapProviderPayoutRequested(
+                logEntry,
+                PROVIDER_PAYOUT_REQUESTED_EVENT,
+                timestamps,
+                labNameCache
+            ),
+            blockTimestampCache
         ));
         candidates.addAll(fetchEventsForIndexedOperator(
             providerAddress,
             fromBlock,
             currentBlock,
             PROVIDER_RECEIVABLE_LIFECYCLE_TRANSITION_EVENT,
-            this::mapReceivableTransition,
-            blockTimestampCache,
-            txFromCache,
-            labNameCache
+            (logEntry, timestamps) -> mapReceivableTransition(
+                logEntry,
+                PROVIDER_RECEIVABLE_LIFECYCLE_TRANSITION_EVENT,
+                timestamps,
+                labNameCache
+            ),
+            blockTimestampCache
         ));
         candidates.addAll(fetchEventsBySender(
             providerAddress,
             fromBlock,
             currentBlock,
             SERVICE_CREDIT_ISSUED_EVENT,
-            this::mapServiceCreditIssued,
+            (logEntry, timestamps) -> mapServiceCreditIssued(logEntry, SERVICE_CREDIT_ISSUED_EVENT, timestamps),
             blockTimestampCache,
-            txFromCache,
-            labNameCache
+            txFromCache
         ));
         candidates.addAll(fetchEventsBySender(
             providerAddress,
             fromBlock,
             currentBlock,
             SERVICE_CREDIT_ADJUSTED_EVENT,
-            this::mapServiceCreditAdjusted,
+            (logEntry, timestamps) -> mapServiceCreditAdjusted(logEntry, SERVICE_CREDIT_ADJUSTED_EVENT, timestamps),
             blockTimestampCache,
-            txFromCache,
-            labNameCache
+            txFromCache
         ));
 
         Map<String, OnChainEventRecord> deduped = new LinkedHashMap<>();
@@ -312,13 +306,11 @@ public class OnChainAdminTransactionService {
         BigInteger toBlock,
         Event event,
         EventMapper mapper,
-        Map<String, Long> blockTimestampCache,
-        Map<String, String> txFromCache,
-        Map<String, String> labNameCache
+        Map<String, Long> blockTimestampCache
     ) throws Exception {
         EthFilter filter = baseFilter(fromBlock, toBlock, event);
         filter.addOptionalTopics(paddedAddressTopic(institutionAddress));
-        return mapLogs(filter, event, mapper, blockTimestampCache, txFromCache, labNameCache);
+        return mapLogs(filter, mapper, blockTimestampCache);
     }
 
     private Collection<OnChainEventRecord> fetchEventsForIndexedProvider(
@@ -327,9 +319,7 @@ public class OnChainAdminTransactionService {
         BigInteger toBlock,
         Event event,
         EventMapper mapper,
-        Map<String, Long> blockTimestampCache,
-        Map<String, String> txFromCache,
-        Map<String, String> labNameCache
+        Map<String, Long> blockTimestampCache
     ) throws Exception {
         return fetchEventsForIndexedInstitution(
             providerAddress,
@@ -337,9 +327,7 @@ public class OnChainAdminTransactionService {
             toBlock,
             event,
             mapper,
-            blockTimestampCache,
-            txFromCache,
-            labNameCache
+            blockTimestampCache
         );
     }
 
@@ -349,9 +337,7 @@ public class OnChainAdminTransactionService {
         BigInteger toBlock,
         Event event,
         EventMapper mapper,
-        Map<String, Long> blockTimestampCache,
-        Map<String, String> txFromCache,
-        Map<String, String> labNameCache
+        Map<String, Long> blockTimestampCache
     ) throws Exception {
         return fetchEventsForIndexedInstitution(
             operatorAddress,
@@ -359,9 +345,7 @@ public class OnChainAdminTransactionService {
             toBlock,
             event,
             mapper,
-            blockTimestampCache,
-            txFromCache,
-            labNameCache
+            blockTimestampCache
         );
     }
 
@@ -372,8 +356,7 @@ public class OnChainAdminTransactionService {
         Event event,
         EventMapper mapper,
         Map<String, Long> blockTimestampCache,
-        Map<String, String> txFromCache,
-        Map<String, String> labNameCache
+        Map<String, String> txFromCache
     ) throws Exception {
         EthFilter filter = baseFilter(fromBlock, toBlock, event);
         List<OnChainEventRecord> records = new ArrayList<>();
@@ -382,7 +365,7 @@ public class OnChainAdminTransactionService {
             if (!normalizeAddress(txSender).equals(senderAddress)) {
                 continue;
             }
-            Optional<OnChainEventRecord> mapped = mapper.map(logEntry, event, blockTimestampCache, txFromCache, labNameCache);
+            Optional<OnChainEventRecord> mapped = mapper.map(logEntry, blockTimestampCache);
             mapped.ifPresent(records::add);
         }
         return records;
@@ -390,15 +373,12 @@ public class OnChainAdminTransactionService {
 
     private Collection<OnChainEventRecord> mapLogs(
         EthFilter filter,
-        Event event,
         EventMapper mapper,
-        Map<String, Long> blockTimestampCache,
-        Map<String, String> txFromCache,
-        Map<String, String> labNameCache
+        Map<String, Long> blockTimestampCache
     ) throws Exception {
         List<OnChainEventRecord> records = new ArrayList<>();
         for (Log logEntry : getLogs(filter)) {
-            Optional<OnChainEventRecord> mapped = mapper.map(logEntry, event, blockTimestampCache, txFromCache, labNameCache);
+            Optional<OnChainEventRecord> mapped = mapper.map(logEntry, blockTimestampCache);
             mapped.ifPresent(records::add);
         }
         return records;
@@ -435,10 +415,9 @@ public class OnChainAdminTransactionService {
         Log logEntry,
         Event event,
         Map<String, Long> blockTimestampCache,
-        Map<String, String> txFromCache,
         Map<String, String> labNameCache
     ) {
-        List<Type> decoded = decodeNonIndexed(logEntry, event);
+        List<Type<?>> decoded = decodeNonIndexed(logEntry, event);
         if (decoded.size() < 2) {
             return Optional.empty();
         }
@@ -462,10 +441,9 @@ public class OnChainAdminTransactionService {
         Log logEntry,
         Event event,
         Map<String, Long> blockTimestampCache,
-        Map<String, String> txFromCache,
         Map<String, String> labNameCache
     ) {
-        List<Type> decoded = decodeNonIndexed(logEntry, event);
+        List<Type<?>> decoded = decodeNonIndexed(logEntry, event);
         if (decoded.size() < 3) {
             return Optional.empty();
         }
@@ -489,10 +467,7 @@ public class OnChainAdminTransactionService {
 
     private Optional<OnChainEventRecord> mapBackendAuthorized(
         Log logEntry,
-        Event event,
-        Map<String, Long> blockTimestampCache,
-        Map<String, String> txFromCache,
-        Map<String, String> labNameCache
+        Map<String, Long> blockTimestampCache
     ) {
         String backendAddress = decodeAddressTopic(logEntry.getTopics(), 2);
         return Optional.of(buildRecord(
@@ -507,10 +482,7 @@ public class OnChainAdminTransactionService {
 
     private Optional<OnChainEventRecord> mapBackendRevoked(
         Log logEntry,
-        Event event,
-        Map<String, Long> blockTimestampCache,
-        Map<String, String> txFromCache,
-        Map<String, String> labNameCache
+        Map<String, Long> blockTimestampCache
     ) {
         String backendAddress = decodeAddressTopic(logEntry.getTopics(), 2);
         return Optional.of(buildRecord(
@@ -526,11 +498,9 @@ public class OnChainAdminTransactionService {
     private Optional<OnChainEventRecord> mapUserLimitUpdated(
         Log logEntry,
         Event event,
-        Map<String, Long> blockTimestampCache,
-        Map<String, String> txFromCache,
-        Map<String, String> labNameCache
+        Map<String, Long> blockTimestampCache
     ) {
-        List<Type> decoded = decodeNonIndexed(logEntry, event);
+        List<Type<?>> decoded = decodeNonIndexed(logEntry, event);
         if (decoded.isEmpty()) {
             return Optional.empty();
         }
@@ -548,11 +518,9 @@ public class OnChainAdminTransactionService {
     private Optional<OnChainEventRecord> mapSpendingPeriodUpdated(
         Log logEntry,
         Event event,
-        Map<String, Long> blockTimestampCache,
-        Map<String, String> txFromCache,
-        Map<String, String> labNameCache
+        Map<String, Long> blockTimestampCache
     ) {
-        List<Type> decoded = decodeNonIndexed(logEntry, event);
+        List<Type<?>> decoded = decodeNonIndexed(logEntry, event);
         if (decoded.isEmpty()) {
             return Optional.empty();
         }
@@ -569,10 +537,7 @@ public class OnChainAdminTransactionService {
 
     private Optional<OnChainEventRecord> mapSpendingPeriodReset(
         Log logEntry,
-        Event event,
-        Map<String, Long> blockTimestampCache,
-        Map<String, String> txFromCache,
-        Map<String, String> labNameCache
+        Map<String, Long> blockTimestampCache
     ) {
         return Optional.of(buildRecord(
             logEntry,
@@ -587,11 +552,9 @@ public class OnChainAdminTransactionService {
     private Optional<OnChainEventRecord> mapServiceCreditIssued(
         Log logEntry,
         Event event,
-        Map<String, Long> blockTimestampCache,
-        Map<String, String> txFromCache,
-        Map<String, String> labNameCache
+        Map<String, Long> blockTimestampCache
     ) {
-        List<Type> decoded = decodeNonIndexed(logEntry, event);
+        List<Type<?>> decoded = decodeNonIndexed(logEntry, event);
         if (decoded.size() < 2) {
             return Optional.empty();
         }
@@ -611,11 +574,9 @@ public class OnChainAdminTransactionService {
     private Optional<OnChainEventRecord> mapServiceCreditAdjusted(
         Log logEntry,
         Event event,
-        Map<String, Long> blockTimestampCache,
-        Map<String, String> txFromCache,
-        Map<String, String> labNameCache
+        Map<String, Long> blockTimestampCache
     ) {
-        List<Type> decoded = decodeNonIndexed(logEntry, event);
+        List<Type<?>> decoded = decodeNonIndexed(logEntry, event);
         if (decoded.size() < 2) {
             return Optional.empty();
         }
@@ -752,8 +713,15 @@ public class OnChainAdminTransactionService {
         }
     }
 
-    private List<Type> decodeNonIndexed(Log logEntry, Event event) {
-        return FunctionReturnDecoder.decode(logEntry.getData(), event.getNonIndexedParameters());
+    private List<Type<?>> decodeNonIndexed(Log logEntry, Event event) {
+        List<?> decoded = FunctionReturnDecoder.decode(logEntry.getData(), event.getNonIndexedParameters());
+        List<Type<?>> typed = new ArrayList<>(decoded.size());
+        for (Object value : decoded) {
+            if (value instanceof Type<?> type) {
+                typed.add(type);
+            }
+        }
+        return typed;
     }
 
     private BigInteger decodeUint256Topic(List<String> topics, int index) {
@@ -772,12 +740,12 @@ public class OnChainAdminTransactionService {
         return "0x" + addressHex;
     }
 
-    private BigInteger asBigInteger(Type decoded) {
+    private BigInteger asBigInteger(Type<?> decoded) {
         Object value = decoded != null ? decoded.getValue() : null;
         return value instanceof BigInteger bigInteger ? bigInteger : BigInteger.ZERO;
     }
 
-    private BigInteger asSignedBigInteger(Type decoded) {
+    private BigInteger asSignedBigInteger(Type<?> decoded) {
         if (decoded instanceof Int intValue && intValue.getValue() instanceof BigInteger bigInteger) {
             return bigInteger;
         }
@@ -837,10 +805,7 @@ public class OnChainAdminTransactionService {
     private interface EventMapper {
         Optional<OnChainEventRecord> map(
             Log logEntry,
-            Event event,
-            Map<String, Long> blockTimestampCache,
-            Map<String, String> txFromCache,
-            Map<String, String> labNameCache
+            Map<String, Long> blockTimestampCache
         );
     }
 

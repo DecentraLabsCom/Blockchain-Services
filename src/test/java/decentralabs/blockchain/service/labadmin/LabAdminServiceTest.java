@@ -158,7 +158,6 @@ class LabAdminServiceTest {
             .thenReturn(Optional.of("https://lab.example.edu/lab-content/content/lab-demo/metadata.json"));
 
         Optional<BigInteger> existing = service.findOwnedLabByUri(
-            "0xprovider",
             "https://lab.example.edu/lab-content/content/lab-demo/metadata.json",
             List.of(BigInteger.valueOf(4), BigInteger.valueOf(5))
         );
