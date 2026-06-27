@@ -195,7 +195,7 @@ public class IntentService {
             record.setReservationPayload(reservationPayload);
             record.setReservationKey(normalizeBytes32(reservationPayload.getReservationKey()));
             record.setLabId(reservationPayload.getLabId() != null ? reservationPayload.getLabId().toString() : null);
-            record.setPuc(reservationPayload.getPuc());
+            record.setPuc(validatedSamlUser);
         } else {
             record.setActionPayload(actionPayload);
             record.setReservationKey(normalizeBytes32(actionPayload.getReservationKey()));
@@ -333,8 +333,8 @@ public class IntentService {
             if (!meta.getExecutor().equalsIgnoreCase(reservationPayload.getExecutor())) {
                 throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "executor mismatch");
             }
-            if (isBlank(reservationPayload.getPuc())) {
-                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Missing puc");
+            if (isZeroBytes32(reservationPayload.getPucHash())) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Missing pucHash");
             }
             if (action == IntentAction.CANCEL_RESERVATION_REQUEST && (reservationPayload.getReservationKey() == null || reservationPayload.getReservationKey().isBlank())) {
                 throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Missing reservationKey");
@@ -581,10 +581,10 @@ public class IntentService {
             if (normalizedSamlUser == null || normalizedSamlUser.isBlank()) {
                 throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "invalid_saml");
             }
-            // Validate against reservation payload puc when present (action payloads no longer carry puc)
-            if (reservationPayload != null && !isBlank(reservationPayload.getPuc())) {
-                String normalizedPuc = PucNormalizer.normalize(reservationPayload.getPuc());
-                if (normalizedPuc != null && !normalizedPuc.isBlank() && !normalizedPuc.equals(normalizedSamlUser)) {
+            if (reservationPayload != null && !isZeroBytes32(reservationPayload.getPucHash())) {
+                String expectedHash = normalizeBytes32(Numeric.toHexString(Hash.sha3(normalizedSamlUser.getBytes(StandardCharsets.UTF_8))));
+                String payloadHash = normalizeBytes32(reservationPayload.getPucHash());
+                if (payloadHash == null || !payloadHash.equalsIgnoreCase(expectedHash)) {
                     throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "puc_saml_mismatch");
                 }
             }
@@ -967,9 +967,6 @@ public class IntentService {
     }
 
     private String resolvePuc(ReservationIntentPayload reservationPayload, String validatedSamlUser) {
-        if (reservationPayload != null && !isBlank(reservationPayload.getPuc())) {
-            return reservationPayload.getPuc();
-        }
         return validatedSamlUser;
     }
 

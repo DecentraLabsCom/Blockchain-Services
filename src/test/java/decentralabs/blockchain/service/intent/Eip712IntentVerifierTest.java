@@ -426,7 +426,7 @@ class Eip712IntentVerifierTest {
         ReservationIntentPayload payload = new ReservationIntentPayload();
         payload.setExecutor("0x1111111111111111111111111111111111111111");
         payload.setSchacHomeOrganization("");
-        payload.setPuc("");
+        payload.setPucHash("0x" + "0".repeat(63) + "1");
         payload.setAssertionHash(null);
         payload.setLabId(BigInteger.ONE);
         payload.setStart(1000L);

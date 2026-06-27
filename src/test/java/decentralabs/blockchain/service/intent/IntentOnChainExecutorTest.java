@@ -482,6 +482,7 @@ class IntentOnChainExecutorTest {
             IntentRecord record = new IntentRecord("req-add", "LAB_ADD", "0xprovider");
             ActionIntentPayload payload = new ActionIntentPayload();
             payload.setExecutor("0x1111111111111111111111111111111111111111");
+            payload.setPucHash("0x" + "1".repeat(64));
             payload.setUri("ipfs://add");
             payload.setPrice(BigInteger.valueOf(50));
             payload.setLabId(BigInteger.ZERO);
@@ -507,6 +508,7 @@ class IntentOnChainExecutorTest {
             IntentRecord record = new IntentRecord("req-add-invalid-rt", "LAB_ADD", "0xprovider");
             ActionIntentPayload payload = new ActionIntentPayload();
             payload.setExecutor("0x1111111111111111111111111111111111111111");
+            payload.setPucHash("0x" + "1".repeat(64));
             payload.setUri("ipfs://add");
             payload.setPrice(BigInteger.valueOf(50));
             payload.setLabId(BigInteger.ZERO);
@@ -653,6 +655,7 @@ class IntentOnChainExecutorTest {
             record.setPuc("alice@institution.example");
             ActionIntentPayload payload = new ActionIntentPayload();
             payload.setExecutor("0x8888888888888888888888888888888888888888");
+            payload.setPucHash("0x" + "1".repeat(64));
             payload.setLabId(BigInteger.valueOf(17));
             payload.setReservationKey("0x0000000000000000000000000000000000000000000000000000000000000000");
             payload.setPrice(BigInteger.valueOf(5));
@@ -665,14 +668,13 @@ class IntentOnChainExecutorTest {
             assertThat(maybe).isPresent();
             org.web3j.abi.datatypes.Function f = maybe.get();
             assertThat(f.getName()).isEqualTo("cancelInstitutionalBookingWithIntent");
-            assertThat(f.getInputParameters()).hasSize(3);
-            assertThat(f.getInputParameters().get(2).getValue()).isEqualTo("alice@institution.example");
+            assertThat(f.getInputParameters()).hasSize(2);
         }
 
         @Test
-        @DisplayName("buildCancelBooking requires resolved PUC for contract refund path")
-        void buildCancelBookingRequiresPuc() throws Exception {
-            IntentRecord record = new IntentRecord("req-cancel-book-missing-puc", "CANCEL_BOOKING", "0xprovider");
+        @DisplayName("buildCancelBooking requires PUC hash for contract refund path")
+        void buildCancelBookingRequiresPucHash() throws Exception {
+            IntentRecord record = new IntentRecord("req-cancel-book-missing-puchash", "CANCEL_BOOKING", "0xprovider");
             ActionIntentPayload payload = new ActionIntentPayload();
             payload.setExecutor("0x8888888888888888888888888888888888888888");
             payload.setLabId(BigInteger.valueOf(17));

@@ -926,7 +926,7 @@ public class WalletService {
 
             Function function = new Function(
                 "getInstitutionalUserFinancialStats",
-                Arrays.asList(new Address(providerAddress), new Utf8String(puc)),
+                Arrays.asList(new Address(providerAddress), new Bytes32(toBytes32(computePucHash(puc)))),
                 Arrays.asList(
                     new TypeReference<Uint256>() {},
                     new TypeReference<Uint256>() {},
@@ -985,7 +985,7 @@ public class WalletService {
 
             Function function = new Function(
                 "getInstitutionalUserSpendingData",
-                Arrays.asList(new Address(providerAddress), new Utf8String("")),
+                Arrays.asList(new Address(providerAddress), new Bytes32(new byte[32])),
                 Arrays.asList(
                     new TypeReference<Uint256>() {},
                     new TypeReference<Uint256>() {}
@@ -1068,6 +1068,32 @@ public class WalletService {
             log.debug("Service credit balance lookup failed (context omitted)", e);
             return BigInteger.ZERO;
         }
+    }
+
+    private String computePucHash(String puc) {
+        if (puc == null || puc.isBlank()) {
+            return "0x" + "0".repeat(64);
+        }
+        byte[] hash = Hash.sha3(puc.trim().toLowerCase(Locale.ROOT).getBytes(StandardCharsets.UTF_8));
+        return Numeric.toHexString(hash);
+    }
+
+    private byte[] toBytes32(String hex) {
+        if (hex == null || hex.isBlank()) {
+            return new byte[32];
+        }
+        byte[] raw = Numeric.hexStringToByteArray(hex);
+        if (raw.length == 32) {
+            return raw;
+        }
+        byte[] out = new byte[32];
+        int start = 32 - raw.length;
+        if (start < 0) {
+            System.arraycopy(raw, raw.length - 32, out, 0, 32);
+        } else {
+            System.arraycopy(raw, 0, out, start, raw.length);
+        }
+        return out;
     }
     private String decodeRevertReason(String returnData) {
         String clean = Numeric.cleanHexPrefix(returnData);

@@ -25,7 +25,6 @@ import org.web3j.abi.datatypes.generated.Uint256;
 import org.web3j.abi.TypeReference; 
 import org.web3j.abi.FunctionReturnDecoder;
 import org.web3j.crypto.Credentials;
-import org.web3j.crypto.Hash;
 import org.web3j.protocol.Web3j;
 import org.web3j.protocol.core.DefaultBlockParameterName;
 import org.web3j.protocol.core.methods.request.Transaction;
@@ -397,6 +396,9 @@ public class IntentOnChainExecutor {
         if (payload.getExecutor() == null || payload.getExecutor().isBlank()) {
             return Optional.empty();
         }
+        if (isZeroBytes32(payload.getPucHash())) {
+            return Optional.empty();
+        }
         byte[] requestId = toBytes32(record.getRequestId());
         Bytes32 assertion = new Bytes32(toBytes32(payload.getAssertionHash()));
         Bytes32 reservationKey = new Bytes32(toBytes32(payload.getReservationKey()));
@@ -430,6 +432,9 @@ public class IntentOnChainExecutor {
             return Optional.empty();
         }
         if (payload.getExecutor() == null || payload.getExecutor().isBlank()) {
+            return Optional.empty();
+        }
+        if (isZeroBytes32(payload.getPucHash())) {
             return Optional.empty();
         }
         byte[] requestId = toBytes32(record.getRequestId());
@@ -474,7 +479,7 @@ public class IntentOnChainExecutor {
         if (payload.getExecutor() == null || payload.getExecutor().isBlank()) {
             return Optional.empty();
         }
-        if (record.getPuc() == null || record.getPuc().isBlank()) {
+        if (isZeroBytes32(payload.getPucHash())) {
             return Optional.empty();
         }
         byte[] requestId = toBytes32(record.getRequestId());
@@ -497,7 +502,7 @@ public class IntentOnChainExecutor {
 
         return Optional.of(new Function(
             "cancelInstitutionalBookingWithIntent",
-            List.of(new Bytes32(requestId), struct, new Utf8String(record.getPuc())),
+            List.of(new Bytes32(requestId), struct),
             List.of()
         ));
     }
@@ -590,7 +595,7 @@ public class IntentOnChainExecutor {
         DynamicStruct struct = new DynamicStruct(
             new Address(payload.getExecutor()),
             new Utf8String(payload.getSchacHomeOrganization() != null ? payload.getSchacHomeOrganization() : ""),
-            new Utf8String(payload.getPuc() != null ? payload.getPuc() : ""),
+            new Bytes32(toBytes32(payload.getPucHash())),
             new Bytes32(toBytes32(payload.getAssertionHash())),
             new Uint256(payload.getLabId()),
             new Uint32(BigInteger.valueOf(payload.getStart())),
@@ -624,7 +629,7 @@ public class IntentOnChainExecutor {
         DynamicStruct struct = new DynamicStruct(
             new Address(payload.getExecutor()),
             new Utf8String(payload.getSchacHomeOrganization() != null ? payload.getSchacHomeOrganization() : ""),
-            new Utf8String(payload.getPuc() != null ? payload.getPuc() : ""),
+            new Bytes32(toBytes32(payload.getPucHash())),
             new Bytes32(toBytes32(payload.getAssertionHash())),
             new Uint256(payload.getLabId()),
             new Uint32(BigInteger.valueOf(payload.getStart())),
@@ -658,7 +663,7 @@ public class IntentOnChainExecutor {
         DynamicStruct struct = new DynamicStruct(
             new Address(payload.getExecutor()),
             new Utf8String(payload.getSchacHomeOrganization() != null ? payload.getSchacHomeOrganization() : ""),
-            new Utf8String(payload.getPuc() != null ? payload.getPuc() : ""),
+            new Bytes32(toBytes32(payload.getPucHash())),
             new Bytes32(toBytes32(payload.getAssertionHash())),
             new Uint256(payload.getLabId()),
             new Uint32(BigInteger.valueOf(payload.getStart())),
@@ -745,7 +750,7 @@ public class IntentOnChainExecutor {
         if (payload.getExecutor() == null || payload.getExecutor().isBlank()) {
             return;
         }
-        if (payload.getPuc() == null || payload.getPuc().isBlank()) {
+        if (payload.getPucHash() == null || payload.getPucHash().isBlank()) {
             return;
         }
         if (payload.getLabId() == null) {
@@ -754,11 +759,10 @@ public class IntentOnChainExecutor {
 
         cleanupExecutor.submit(() -> {
             try {
-                String pucHash = computePucHash(payload.getPuc());
                 Optional<BigInteger> activeCountOpt = fetchInstitutionalUserActiveCount(
                     credentials.getAddress(),
                     payload.getExecutor(),
-                    pucHash,
+                    payload.getPucHash(),
                     payload.getLabId()
                 );
                 if (activeCountOpt.isEmpty()) {
@@ -774,7 +778,7 @@ public class IntentOnChainExecutor {
                     "releaseInstitutionalExpiredReservations",
                     List.of(
                         new Address(payload.getExecutor()),
-                        new Bytes32(toBytes32(pucHash)),
+                        new Bytes32(toBytes32(payload.getPucHash())),
                         new Uint256(payload.getLabId()),
                         new Uint256(PRE_RELEASE_BATCH)
                     ),
@@ -802,7 +806,7 @@ public class IntentOnChainExecutor {
         try {
             Web3j web3j = resolveWeb3j();
             Function fn = new Function(
-                "getInstitutionalUserActiveCountByHash",
+                "getInstitutionalUserActiveCount",
                 List.of(new Address(provider), new Bytes32(toBytes32(pucHash)), new Uint256(labId)),
                 List.of(new TypeReference<Uint256>() {})
             );
@@ -822,14 +826,6 @@ public class IntentOnChainExecutor {
             log.warn("Unable to fetch institutional active count for provider {}: {}", provider, ex.getMessage());
             return Optional.empty();
         }
-    }
-
-    private String computePucHash(String puc) {
-        if (puc == null || puc.isBlank()) {
-            return "0x" + "0".repeat(64);
-        }
-        byte[] hash = Hash.sha3(puc.getBytes(StandardCharsets.UTF_8));
-        return Numeric.toHexString(hash);
     }
 
     private void sendPreflight(Function function, String label) throws Exception {
@@ -946,6 +942,11 @@ public class IntentOnChainExecutor {
             System.arraycopy(raw, 0, out, start, raw.length);
         }
         return out;
+    }
+
+    private boolean isZeroBytes32(String value) {
+        String normalized = normalizeBytes32(value);
+        return normalized == null || Numeric.toBigInt(normalized).equals(BigInteger.ZERO);
     }
 
     private String normalizeBytes32(String value) {

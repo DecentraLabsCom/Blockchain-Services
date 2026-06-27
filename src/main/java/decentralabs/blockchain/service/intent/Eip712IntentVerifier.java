@@ -32,7 +32,7 @@ public class Eip712IntentVerifier {
     private static final String INTENT_META_TYPE =
         "IntentMeta(bytes32 requestId,address signer,address executor,uint8 action,bytes32 payloadHash,uint256 nonce,uint64 requestedAt,uint64 expiresAt)";
     private static final String RESERVATION_PAYLOAD_TYPE =
-        "ReservationIntentPayload(address executor,string schacHomeOrganization,string puc,bytes32 assertionHash,uint256 labId,uint32 start,uint32 end,uint96 price,bytes32 reservationKey)";
+        "ReservationIntentPayload(address executor,string schacHomeOrganization,bytes32 pucHash,bytes32 assertionHash,uint256 labId,uint32 start,uint32 end,uint96 price,bytes32 reservationKey)";
     private static final String ACTION_PAYLOAD_TYPE =
         "ActionIntentPayload(address executor,string schacHomeOrganization,bytes32 pucHash,bytes32 assertionHash,uint256 labId,bytes32 reservationKey,string uri,uint96 price,uint96 maxBatch,string accessURI,string accessKey,string tokenURI,uint8 resourceType)";
 
@@ -140,7 +140,7 @@ public class Eip712IntentVerifier {
             new Bytes32(RESERVATION_PAYLOAD_TYPEHASH),
             new Address(normalizeAddress(payload.getExecutor())),
             new Bytes32(keccakString(payload.getSchacHomeOrganization())),
-            new Bytes32(keccakString(payload.getPuc())),
+            new Bytes32(toBytes32(payload.getPucHash())),
             new Bytes32(toBytes32(payload.getAssertionHash())),
             new Uint256(nullSafe(payload.getLabId())),
             new Uint256(nullSafe(payload.getStart())),

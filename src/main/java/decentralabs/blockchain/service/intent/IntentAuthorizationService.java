@@ -27,7 +27,6 @@ import decentralabs.blockchain.dto.intent.IntentAuthorizationRequest;
 import decentralabs.blockchain.dto.intent.IntentAuthorizationStatusResponse;
 import decentralabs.blockchain.dto.intent.IntentMeta;
 import decentralabs.blockchain.dto.intent.IntentSubmission;
-import decentralabs.blockchain.dto.intent.ReservationIntentPayload;
 import decentralabs.blockchain.service.BackendUrlResolver;
 import decentralabs.blockchain.service.auth.SamlValidationService;
 import decentralabs.blockchain.service.auth.WebauthnCredentialService;
@@ -258,11 +257,7 @@ public class IntentAuthorizationService {
     }
 
     private String resolvePuc(IntentSubmission submission) {
-        ReservationIntentPayload reservationPayload = submission.getReservationPayload();
-        if (reservationPayload != null && reservationPayload.getPuc() != null) {
-            return reservationPayload.getPuc();
-        }
-        // Action payloads no longer carry puc; derive from SAML assertion.
+        // Intent payloads do not carry raw PUC; derive it from the SAML assertion.
         try {
             String samlUser = samlValidationService.validateSamlAssertionWithSignature(submission.getSamlAssertion())
                 .get("userid");

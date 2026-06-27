@@ -395,7 +395,7 @@ public class BlockchainBookingService {
         try {
             byte[] key;
             if (puc != null && !puc.isBlank()) {
-                key = diamond.getInstitutionalUserActiveReservationKey(wallet, puc, labId).send();
+                key = diamond.getInstitutionalUserActiveReservationKey(wallet, computePucHash(puc), labId).send();
             } else {
                 key = diamond.getActiveReservationKeyForUser(labId, wallet).send();
             }

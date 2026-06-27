@@ -154,7 +154,7 @@ class IntentServiceTest {
         ReservationIntentPayload payload = new ReservationIntentPayload();
         payload.setLabId(BigInteger.valueOf(42));
         payload.setExecutor("0x1234567890abcdef1234567890abcdef12345678");
-        payload.setPuc("user@university.edu");
+        payload.setPucHash("0x" + "c".repeat(64));
         payload.setStart(Instant.now().plusSeconds(3600).getEpochSecond());
         payload.setEnd(Instant.now().plusSeconds(7200).getEpochSecond());
         payload.setPrice(BigInteger.valueOf(payload.getEnd() - payload.getStart()));

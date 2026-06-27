@@ -17,7 +17,7 @@ public class ReservationIntentPayload {
     private String executor;
 
     private String schacHomeOrganization;
-    private String puc;
+    private String pucHash; // bytes32 hex
     private String assertionHash; // bytes32 hex
 
     @NotNull
@@ -48,12 +48,12 @@ public class ReservationIntentPayload {
         this.schacHomeOrganization = schacHomeOrganization;
     }
 
-    public String getPuc() {
-        return puc;
+    public String getPucHash() {
+        return pucHash;
     }
 
-    public void setPuc(String puc) {
-        this.puc = puc;
+    public void setPucHash(String pucHash) {
+        this.pucHash = pucHash;
     }
 
     public String getAssertionHash() {

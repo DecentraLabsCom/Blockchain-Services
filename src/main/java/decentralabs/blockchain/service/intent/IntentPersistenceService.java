@@ -210,10 +210,6 @@ public class IntentPersistenceService {
                 record.setExpiresAt(submission.getMeta().getExpiresAt());
             }
 
-            if (record.getReservationPayload() != null) {
-                record.setPuc(record.getReservationPayload().getPuc());
-            }
-
             if (record.getLabId() == null) {
                 if (record.getReservationPayload() != null && record.getReservationPayload().getLabId() != null) {
                     record.setLabId(record.getReservationPayload().getLabId().toString());

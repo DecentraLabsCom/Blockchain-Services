@@ -622,7 +622,7 @@ class ContractEventListenerConfigTest {
     }
 
     @Test
-    void shouldLeaveInstitutionalReservationPendingWhenPucIsNotAvailableYet() throws Exception {
+    void shouldConfirmInstitutionalReservationWithStoredPucHash() throws Exception {
         ReflectionTestUtils.setField(config, "eventListeningEnabled", true);
 
         var diamond = mock(decentralabs.blockchain.contract.Diamond.class);
@@ -644,7 +644,8 @@ class ContractEventListenerConfigTest {
         );
         when(reservationCall.send()).thenReturn(reservation);
         when(diamond.getReservation(any(byte[].class))).thenReturn(reservationCall);
-        stubReservationPucHash(diamond, "0x" + "12".repeat(32));
+        String storedPucHash = "0x" + "12".repeat(32);
+        stubReservationPucHash(diamond, storedPucHash);
 
         @SuppressWarnings("unchecked")
         var labCall = (org.web3j.protocol.core.RemoteFunctionCall<decentralabs.blockchain.contract.Diamond.Lab>) mock(org.web3j.protocol.core.RemoteFunctionCall.class);
@@ -661,6 +662,10 @@ class ContractEventListenerConfigTest {
 
         var writableDiamond = mock(decentralabs.blockchain.contract.Diamond.class);
         ReflectionTestUtils.setField(config, "writableDiamond", writableDiamond);
+        @SuppressWarnings("unchecked")
+        var confirmCall = (org.web3j.protocol.core.RemoteFunctionCall<org.web3j.protocol.core.methods.response.TransactionReceipt>) mock(org.web3j.protocol.core.RemoteFunctionCall.class);
+        when(confirmCall.send()).thenReturn(new org.web3j.protocol.core.methods.response.TransactionReceipt());
+        when(writableDiamond.confirmInstitutionalReservationRequestWithPucHash(any(), any(), any())).thenReturn(confirmCall);
 
         LabMetadata metadata = new LabMetadata();
         metadata.setName("Institutional Test Lab");
@@ -683,12 +688,16 @@ class ContractEventListenerConfigTest {
         Log eventLog = new Log();
         eventLog.setTopics(List.of(signature, renterTopic, labIdTopic, "0x" + reservationKeyTopic));
         eventLog.setData(data);
-        eventLog.setTransactionHash("0xmissingpuc");
+        eventLog.setTransactionHash("0xstoredpuchash");
         eventLog.setBlockNumber("0x301");
 
         ReflectionTestUtils.invokeMethod(config, "handleContractEvent", "ReservationRequested", eventDefinition, eventLog);
 
-        verify(writableDiamond, never()).confirmInstitutionalReservationRequestWithPuc(any(), any(), any());
+        verify(writableDiamond).confirmInstitutionalReservationRequestWithPucHash(
+            eq("0x00000000000000000000000000000000000000cc"),
+            any(byte[].class),
+            eq(storedPucHash)
+        );
         verify(writableDiamond, never()).denyReservationRequest(any(byte[].class));
     }
 }

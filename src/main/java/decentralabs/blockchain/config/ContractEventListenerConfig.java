@@ -13,7 +13,6 @@ import decentralabs.blockchain.service.wallet.InstitutionalTxManagerProvider;
 import decentralabs.blockchain.service.wallet.WalletService;
 import java.math.BigDecimal;
 import java.math.BigInteger;
-import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.Arrays;
 import java.util.LinkedHashSet;
@@ -42,7 +41,6 @@ import org.web3j.abi.datatypes.generated.Bytes32;
 import org.web3j.abi.datatypes.generated.Uint256;
 import org.web3j.abi.datatypes.generated.Uint8;
 import org.web3j.abi.datatypes.Utf8String;
-import org.web3j.crypto.Hash;
 import org.web3j.protocol.Web3j;
 import org.web3j.protocol.core.methods.response.Log;
 import org.web3j.protocol.core.methods.response.TransactionReceipt;
@@ -580,11 +578,11 @@ public class ContractEventListenerConfig {
         String requestId = toHex((Bytes32) eventValues.getIndexedValues().get(0));
         String reservationKey = toHex((Bytes32) eventValues.getNonIndexedValues().get(0));
         String action = ((Utf8String) eventValues.getNonIndexedValues().get(1)).getValue();
-        String puc = ((Utf8String) eventValues.getNonIndexedValues().get(2)).getValue();
+        String pucHash = toHex((Bytes32) eventValues.getNonIndexedValues().get(2));
         boolean success = ((org.web3j.abi.datatypes.Bool) eventValues.getNonIndexedValues().get(4)).getValue();
         String reason = ((Utf8String) eventValues.getNonIndexedValues().get(5)).getValue();
 
-        log.info("ReservationIntentProcessed requestId={} action={} reservationKey={} puc={} success={} tx={}", requestId, action, reservationKey, puc, success, eventLog.getTransactionHash());
+        log.info("ReservationIntentProcessed requestId={} action={} reservationKey={} pucHash={} success={} tx={}", requestId, action, reservationKey, pucHash, success, eventLog.getTransactionHash());
         intentService.updateFromOnChain(
             requestId,
             success ? "executed" : "failed",
@@ -592,7 +590,7 @@ public class ContractEventListenerConfig {
             eventLog.getBlockNumber().longValue(),
             null,
             reservationKey,
-            success ? puc : null,
+            null,
             success ? null : reason
         );
     }
@@ -953,19 +951,10 @@ public class ContractEventListenerConfig {
         String onchainHash = payload.pucHash()
             .orElseThrow(() -> new IllegalStateException("Missing on-chain PUC hash for " + reservationKey));
 
-        String puc = intentService.findPucByReservationKey(reservationKey)
-            .orElseThrow(() -> new IllegalStateException("Missing PUC for reservation " + reservationKey));
-        String computedHash = normalizeBytes32(computePucHash(puc))
-            .orElseThrow(() -> new IllegalStateException("Invalid PUC hash for reservation " + reservationKey));
-
-        if (!computedHash.equalsIgnoreCase(onchainHash)) {
-            throw new IllegalStateException("PUC hash mismatch for reservation " + reservationKey);
-        }
-
         byte[] keyBytes = reservationKeyToBytes(reservationKey);
         TransactionReceipt receipt = executeWithGasRetry(
-            "confirmInstitutionalReservationRequestWithPuc",
-            contract -> contract.confirmInstitutionalReservationRequestWithPuc(payerInstitution, keyBytes, puc).send()
+            "confirmInstitutionalReservationRequestWithPucHash",
+            contract -> contract.confirmInstitutionalReservationRequestWithPucHash(payerInstitution, keyBytes, onchainHash).send()
         );
         log.info("Institutional reservation {} confirmed on-chain (tx={})", reservationKey, receipt.getTransactionHash());
     }
@@ -1196,11 +1185,6 @@ public class ContractEventListenerConfig {
             return normalized;
         }
         return isZeroBytes32(normalized.get()) ? Optional.empty() : normalized;
-    }
-
-    private String computePucHash(String puc) {
-        byte[] digest = Hash.sha3(puc.getBytes(StandardCharsets.UTF_8));
-        return Numeric.toHexString(digest);
     }
 
     private Optional<String> normalizeAddress(String address) {

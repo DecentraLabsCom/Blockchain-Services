@@ -23,6 +23,7 @@ import org.web3j.protocol.core.methods.response.TransactionReceipt;
 import org.web3j.tx.Contract;
 import org.web3j.tx.TransactionManager;
 import org.web3j.tx.gas.ContractGasProvider;
+import org.web3j.utils.Numeric;
 
 /**
  * Auto-generated wrapper for Diamond contract
@@ -381,12 +382,12 @@ public class Diamond extends Contract {
     }
 
     /**
-     * Get active reservation key for an institutional user (provider + PUC)
+     * Get active reservation key for an institutional user (provider + PUC hash)
      */
     @SuppressWarnings("rawtypes")
-    public RemoteFunctionCall<byte[]> getInstitutionalUserActiveReservationKey(String provider, String puc, BigInteger tokenId) {
+    public RemoteFunctionCall<byte[]> getInstitutionalUserActiveReservationKey(String provider, byte[] pucHash, BigInteger tokenId) {
         final Function function = new Function("getInstitutionalUserActiveReservationKey",
-                Arrays.asList(new Address(provider), new Utf8String(puc), new Uint256(tokenId)),
+                Arrays.asList(new Address(provider), new Bytes32(pucHash), new Uint256(tokenId)),
                 Arrays.asList(new TypeReference<Bytes32>() {}));
         return new RemoteFunctionCall<>(function,
                 () -> {
@@ -400,7 +401,7 @@ public class Diamond extends Contract {
      */
     public RemoteFunctionCall<TransactionReceipt> institutionalReservationRequest(
         String institutionalProvider,
-        String puc,
+        String pucHash,
         BigInteger labId,
         BigInteger start,
         BigInteger end
@@ -408,7 +409,7 @@ public class Diamond extends Contract {
         final Function function = new Function("institutionalReservationRequest",
             Arrays.asList(
                 new Address(institutionalProvider),
-                new Utf8String(puc),
+                new Bytes32(toBytes32(pucHash)),
                 new Uint256(labId),
                 new Uint32(start),
                 new Uint32(end)
@@ -419,16 +420,16 @@ public class Diamond extends Contract {
     }
 
     /**
-     * Confirm an institutional reservation request with PUC.
+     * Confirm an institutional reservation request with PUC hash.
      */
-    public RemoteFunctionCall<TransactionReceipt> confirmInstitutionalReservationRequestWithPuc(
+    public RemoteFunctionCall<TransactionReceipt> confirmInstitutionalReservationRequestWithPucHash(
         String institutionalProvider,
         byte[] reservationKey,
-        String puc
+        String pucHash
     ) {
         final Function function = new Function(
-            "confirmInstitutionalReservationRequestWithPuc",
-            Arrays.asList(new Address(institutionalProvider), new Bytes32(reservationKey), new Utf8String(puc)),
+            "confirmInstitutionalReservationRequestWithPucHash",
+            Arrays.asList(new Address(institutionalProvider), new Bytes32(reservationKey), new Bytes32(toBytes32(pucHash))),
             List.of()
         );
         return executeRemoteCallTransaction(function);
@@ -447,16 +448,16 @@ public class Diamond extends Contract {
     }
 
     /**
-     * Cancel an institutional booking with PUC.
+     * Cancel an institutional booking with PUC hash.
      */
-    public RemoteFunctionCall<TransactionReceipt> cancelInstitutionalBookingWithPuc(
+    public RemoteFunctionCall<TransactionReceipt> cancelInstitutionalBookingWithPucHash(
         String institutionalProvider,
         byte[] reservationKey,
-        String puc
+        String pucHash
     ) {
         final Function function = new Function(
-            "cancelInstitutionalBookingWithPuc",
-            Arrays.asList(new Address(institutionalProvider), new Bytes32(reservationKey), new Utf8String(puc)),
+            "cancelInstitutionalBookingWithPucHash",
+            Arrays.asList(new Address(institutionalProvider), new Bytes32(reservationKey), new Bytes32(toBytes32(pucHash))),
             List.of()
         );
         return executeRemoteCallTransaction(function);
@@ -869,6 +870,24 @@ public class Diamond extends Contract {
             ),
             List.of()
         );
+    }
+
+    private static byte[] toBytes32(String hex) {
+        if (hex == null || hex.isBlank()) {
+            return new byte[32];
+        }
+        byte[] raw = Numeric.hexStringToByteArray(hex);
+        if (raw.length == 32) {
+            return raw;
+        }
+        byte[] out = new byte[32];
+        int start = 32 - raw.length;
+        if (start < 0) {
+            System.arraycopy(raw, raw.length - 32, out, 0, 32);
+        } else {
+            System.arraycopy(raw, 0, out, start, raw.length);
+        }
+        return out;
     }
     
     /**
