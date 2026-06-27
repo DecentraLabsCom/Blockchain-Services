@@ -59,6 +59,20 @@ class LocalhostOnlyFilterTest {
     }
 
     @Test
+    void labAdminEndpoint_allowsPublicNetworkWithLabManagerToken_whenExternalDashboardAccessEnabled() throws Exception {
+        ReflectionTestUtils.setField(adminNetworkAccessPolicy, "adminDashboardLocalOnly", false);
+        mockMvc = MockMvcBuilders
+            .standaloneSetup(new LocalhostFilterTestController())
+            .addFilters(filter)
+            .build();
+
+        mockMvc.perform(get("/lab-admin/status")
+                .header("X-Lab-Manager-Token", "lab-manager-token")
+                .with(req -> { req.setRemoteAddr("8.8.8.8"); return req; }))
+            .andExpect(status().isOk());
+    }
+
+    @Test
     void walletEndpoint_rejectsLabManagerToken() throws Exception {
         ReflectionTestUtils.setField(adminNetworkAccessPolicy, "adminDashboardAllowPrivate", true);
         ReflectionTestUtils.setField(adminNetworkAccessPolicy, "allowPrivateNetworks", true);
