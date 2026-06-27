@@ -21,6 +21,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
@@ -217,6 +218,22 @@ public class LabAdminService {
         String accessKey = requireText(request.accessKey(), "accessKey", 200);
         BigInteger resourceType = normalizeResourceType(request.resourceType());
 
+        try {
+            Diamond.Lab current = loadReadonlyDiamond().getLab(labId).send();
+            if (isOnChainLabUnchanged(current.base, uri, price, accessURI, accessKey, resourceType)) {
+                return new LabAdminTransactionResponse(
+                    true,
+                    "metadataOnly",
+                    null,
+                    "offchain_updated",
+                    labId,
+                    uri
+                );
+            }
+        } catch (Exception ex) {
+            log.debug("Unable to compare current on-chain lab state for lab {}; proceeding with updateLab", labId, ex);
+        }
+
         TransactionReceipt receipt = loadWritableDiamond()
             .updateLab(labId, uri, price, accessURI, accessKey, resourceType)
             .send();
@@ -353,6 +370,24 @@ public class LabAdminService {
                 .map(existingUri -> existingUri.equalsIgnoreCase(uri))
                 .orElse(false))
             .findFirst();
+    }
+
+    boolean isOnChainLabUnchanged(
+        Diamond.LabBase current,
+        String uri,
+        BigInteger price,
+        String accessURI,
+        String accessKey,
+        BigInteger resourceType
+    ) {
+        if (current == null) {
+            return false;
+        }
+        return Objects.equals(current.uri, uri)
+            && Objects.equals(current.price, price)
+            && Objects.equals(current.accessURI, accessURI)
+            && Objects.equals(current.accessKey, accessKey)
+            && Objects.equals(current.resourceType, resourceType);
     }
 
     private LabAdminTransactionResponse existingLabResponse(BigInteger labId, String uri) {

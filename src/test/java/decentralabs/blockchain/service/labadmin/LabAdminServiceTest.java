@@ -6,6 +6,7 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import decentralabs.blockchain.contract.Diamond;
 import decentralabs.blockchain.service.BackendUrlResolver;
 import decentralabs.blockchain.service.wallet.InstitutionalTxManagerProvider;
 import decentralabs.blockchain.service.wallet.InstitutionalWalletService;
@@ -157,5 +158,35 @@ class LabAdminServiceTest {
         );
 
         assertThat(existing).contains(BigInteger.valueOf(4));
+    }
+
+    @Test
+    void unchangedOnChainLabComparisonPreservesRawRoundedPrice() {
+        Diamond.LabBase current = new Diamond.LabBase(
+            "https://lab.example.edu/lab-content/content/lab-demo/metadata.json",
+            BigInteger.valueOf(8),
+            "https://lab.example.edu/fmu",
+            "BouncingBall.fmu",
+            BigInteger.ZERO,
+            BigInteger.ONE
+        );
+
+        assertThat(service.isOnChainLabUnchanged(
+            current,
+            "https://lab.example.edu/lab-content/content/lab-demo/metadata.json",
+            BigInteger.valueOf(8),
+            "https://lab.example.edu/fmu",
+            "BouncingBall.fmu",
+            BigInteger.ONE
+        )).isTrue();
+
+        assertThat(service.isOnChainLabUnchanged(
+            current,
+            "https://lab.example.edu/lab-content/content/lab-demo/metadata.json",
+            BigInteger.valueOf(9),
+            "https://lab.example.edu/fmu",
+            "BouncingBall.fmu",
+            BigInteger.ONE
+        )).isFalse();
     }
 }
