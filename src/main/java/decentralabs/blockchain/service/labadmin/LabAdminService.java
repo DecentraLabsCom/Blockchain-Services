@@ -55,7 +55,6 @@ public class LabAdminService {
     private final WalletService walletService;
     private final BackendUrlResolver backendUrlResolver;
     private final ObjectMapper objectMapper;
-    private final Web3j web3j;
     private final ConcurrentMap<String, Long> pendingPublishes = new ConcurrentHashMap<>();
 
     @Value("${contract.address}")
@@ -427,20 +426,27 @@ public class LabAdminService {
     }
 
     private Diamond loadReadonlyDiamond() {
+        Web3j currentWeb3j = walletService.getWeb3jInstance();
         return Diamond.load(
             contractAddress,
-            web3j,
-            new org.web3j.tx.ReadonlyTransactionManager(web3j, contractAddress),
+            currentWeb3j,
+            new org.web3j.tx.ReadonlyTransactionManager(currentWeb3j, contractAddress),
             new StaticGasProvider(BigInteger.ZERO, BigInteger.ZERO)
         );
     }
 
     private Diamond loadWritableDiamond() {
-        TransactionManager txManager = txManagerProvider.get(web3j);
-        return Diamond.load(contractAddress, web3j, txManager, new StaticGasProvider(resolveGasPriceWei(), contractGasLimit));
+        Web3j currentWeb3j = walletService.getWeb3jInstance();
+        TransactionManager txManager = txManagerProvider.get(currentWeb3j);
+        return Diamond.load(
+            contractAddress,
+            currentWeb3j,
+            txManager,
+            new StaticGasProvider(resolveGasPriceWei(currentWeb3j), contractGasLimit)
+        );
     }
 
-    private BigInteger resolveGasPriceWei() {
+    private BigInteger resolveGasPriceWei(Web3j currentWeb3j) {
         BigInteger fallback = Convert.toWei(
             Optional.ofNullable(defaultGasPriceGwei).orElse(BigInteger.ONE).toString(),
             Convert.Unit.GWEI
@@ -453,7 +459,7 @@ public class LabAdminService {
             log.warn("Unknown ethereum.gas.price.strategy '{}'; using network gas price with configured fallback", strategy);
         }
         try {
-            var response = web3j.ethGasPrice().send();
+            var response = currentWeb3j.ethGasPrice().send();
             return response != null && response.getGasPrice() != null ? response.getGasPrice() : fallback;
         } catch (Exception ex) {
             log.warn("Unable to resolve gas price, using default: {}", LogSanitizer.sanitize(ex.getMessage()));

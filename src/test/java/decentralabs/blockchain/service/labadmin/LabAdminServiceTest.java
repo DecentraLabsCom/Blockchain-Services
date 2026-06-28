@@ -23,7 +23,6 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.test.util.ReflectionTestUtils;
-import org.web3j.protocol.Web3j;
 
 class LabAdminServiceTest {
 
@@ -44,8 +43,7 @@ class LabAdminServiceTest {
             mock(InstitutionalTxManagerProvider.class),
             walletService,
             resolver,
-            new ObjectMapper(),
-            mock(Web3j.class)
+            new ObjectMapper()
         );
         ReflectionTestUtils.setField(service, "contentBasePath", tempDir.resolve("lab-content").toString());
         ReflectionTestUtils.setField(service, "fmuDataPath", tempDir.resolve("fmu-data").toString());

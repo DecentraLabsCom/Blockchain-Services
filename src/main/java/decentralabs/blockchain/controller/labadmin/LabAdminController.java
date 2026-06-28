@@ -210,10 +210,12 @@ public class LabAdminController {
     }
 
     private ResponseEntity<Map<String, Object>> internal(String clientMessage, Exception ex) {
-        log.error("{}: {}", clientMessage, LogSanitizer.sanitize(ex.getMessage()), ex);
+        String detail = LogSanitizer.sanitize(ex.getMessage());
+        log.error("{}: {}", clientMessage, detail, ex);
         return ResponseEntity.internalServerError().body(Map.of(
             "success", false,
-            "error", clientMessage
+            "error", clientMessage,
+            "details", detail
         ));
     }
 }
