@@ -700,4 +700,86 @@ class ContractEventListenerConfigTest {
         );
         verify(writableDiamond, never()).denyReservationRequest(any(byte[].class));
     }
+
+    @Test
+    void shouldConfirmCrossInstitutionalReservationWithPayerInstitution() throws Exception {
+        ReflectionTestUtils.setField(config, "eventListeningEnabled", true);
+
+        String payerInstitution = "0x00000000000000000000000000000000000000cc";
+        String providerInstitution = "0x00000000000000000000000000000000000000dd";
+
+        var diamond = mock(decentralabs.blockchain.contract.Diamond.class);
+        @SuppressWarnings("unchecked")
+        var reservationCall = (org.web3j.protocol.core.RemoteFunctionCall<decentralabs.blockchain.contract.Diamond.Reservation>) mock(org.web3j.protocol.core.RemoteFunctionCall.class);
+        var reservation = new decentralabs.blockchain.contract.Diamond.Reservation(
+            BigInteger.valueOf(18),
+            payerInstitution,
+            BigInteger.valueOf(3600),
+            providerInstitution,
+            BigInteger.ZERO,
+            BigInteger.valueOf(1000),
+            BigInteger.valueOf(2000),
+            BigInteger.ZERO,
+            BigInteger.ZERO,
+            payerInstitution,
+            providerInstitution,
+            BigInteger.ZERO
+        );
+        when(reservationCall.send()).thenReturn(reservation);
+        when(diamond.getReservation(any(byte[].class))).thenReturn(reservationCall);
+        String storedPucHash = "0x" + "34".repeat(32);
+        stubReservationPucHash(diamond, storedPucHash);
+
+        @SuppressWarnings("unchecked")
+        var labCall = (org.web3j.protocol.core.RemoteFunctionCall<decentralabs.blockchain.contract.Diamond.Lab>) mock(org.web3j.protocol.core.RemoteFunctionCall.class);
+        decentralabs.blockchain.contract.Diamond.LabBase base =
+            new decentralabs.blockchain.contract.Diamond.LabBase(
+                "ipfs://cross-institutional-lab", BigInteger.ONE, "", "", BigInteger.ZERO
+            );
+        decentralabs.blockchain.contract.Diamond.Lab lab =
+            new decentralabs.blockchain.contract.Diamond.Lab(BigInteger.valueOf(18), base);
+        when(labCall.send()).thenReturn(lab);
+        when(diamond.getLab(any(BigInteger.class))).thenReturn(labCall);
+        ReflectionTestUtils.setField(config, "cachedDiamond", diamond);
+
+        var writableDiamond = mock(decentralabs.blockchain.contract.Diamond.class);
+        ReflectionTestUtils.setField(config, "writableDiamond", writableDiamond);
+        @SuppressWarnings("unchecked")
+        var confirmCall = (org.web3j.protocol.core.RemoteFunctionCall<org.web3j.protocol.core.methods.response.TransactionReceipt>) mock(org.web3j.protocol.core.RemoteFunctionCall.class);
+        when(confirmCall.send()).thenReturn(new org.web3j.protocol.core.methods.response.TransactionReceipt());
+        when(writableDiamond.confirmInstitutionalReservationRequestWithPucHash(any(), any(), any())).thenReturn(confirmCall);
+
+        LabMetadata metadata = new LabMetadata();
+        metadata.setName("Cross Institutional Lab");
+        when(labMetadataService.getLabMetadata("ipfs://cross-institutional-lab")).thenReturn(metadata);
+        doNothing().when(labMetadataService).validateAvailability(any(), any(), any(), anyInt());
+
+        Map<String, Event> supported = getSupportedEvents();
+        Event eventDefinition = supported.get("ReservationRequested");
+        String signature = EventEncoder.encode(eventDefinition);
+        String renterTopic = encodeAddressTopic(payerInstitution);
+        String labIdTopic = encodeUintTopic(BigInteger.valueOf(18));
+        String reservationKey = "0x" + "aa".repeat(32);
+        String reservationKeyTopic = Numeric.toHexStringNoPrefixZeroPadded(
+            Numeric.toBigInt(reservationKey), 64
+        );
+        String data = "0x"
+            + encodeUintData(BigInteger.valueOf(1000))
+            + encodeUintData(BigInteger.valueOf(2000));
+
+        Log eventLog = new Log();
+        eventLog.setTopics(List.of(signature, renterTopic, labIdTopic, "0x" + reservationKeyTopic));
+        eventLog.setData(data);
+        eventLog.setTransactionHash("0xcrossinstitutional");
+        eventLog.setBlockNumber("0x401");
+
+        ReflectionTestUtils.invokeMethod(config, "handleContractEvent", "ReservationRequested", eventDefinition, eventLog);
+
+        verify(writableDiamond).confirmInstitutionalReservationRequestWithPucHash(
+            eq(payerInstitution),
+            any(byte[].class),
+            eq(storedPucHash)
+        );
+        verify(writableDiamond, never()).denyReservationRequest(any(byte[].class));
+    }
 }
