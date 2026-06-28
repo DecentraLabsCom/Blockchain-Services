@@ -25,6 +25,7 @@ class LocalhostOnlyFilterTest {
         ReflectionTestUtils.setField(adminNetworkAccessPolicy, "allowPrivateNetworks", false);
         ReflectionTestUtils.setField(adminNetworkAccessPolicy, "accessTokenRequired", true);
         ReflectionTestUtils.setField(adminNetworkAccessPolicy, "configuredCidrs", "");
+        ReflectionTestUtils.setField(adminNetworkAccessPolicy, "labManagerAllowedCidrs", "");
         filter = new LocalhostOnlyFilter(adminNetworkAccessPolicy);
         ReflectionTestUtils.setField(filter, "accessToken", "test-token");
         ReflectionTestUtils.setField(filter, "accessTokenHeader", "X-Access-Token");
@@ -69,6 +70,36 @@ class LocalhostOnlyFilterTest {
         mockMvc.perform(get("/lab-admin/status")
                 .header("X-Lab-Manager-Token", "lab-manager-token")
                 .with(req -> { req.setRemoteAddr("8.8.8.8"); return req; }))
+            .andExpect(status().isOk());
+    }
+
+    @Test
+    void labAdminEndpoint_blocksLabManagerTokenOutsideAllowedCidrs() throws Exception {
+        ReflectionTestUtils.setField(adminNetworkAccessPolicy, "adminDashboardLocalOnly", false);
+        ReflectionTestUtils.setField(adminNetworkAccessPolicy, "labManagerAllowedCidrs", "203.0.113.20/32");
+        mockMvc = MockMvcBuilders
+            .standaloneSetup(new LocalhostFilterTestController())
+            .addFilters(filter)
+            .build();
+
+        mockMvc.perform(get("/lab-admin/status")
+                .header("X-Lab-Manager-Token", "lab-manager-token")
+                .with(req -> { req.setRemoteAddr("198.51.100.25"); return req; }))
+            .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void labAdminEndpoint_allowsLabManagerTokenInsideAllowedCidrs() throws Exception {
+        ReflectionTestUtils.setField(adminNetworkAccessPolicy, "adminDashboardLocalOnly", false);
+        ReflectionTestUtils.setField(adminNetworkAccessPolicy, "labManagerAllowedCidrs", "203.0.113.20/32");
+        mockMvc = MockMvcBuilders
+            .standaloneSetup(new LocalhostFilterTestController())
+            .addFilters(filter)
+            .build();
+
+        mockMvc.perform(get("/lab-admin/status")
+                .header("X-Lab-Manager-Token", "lab-manager-token")
+                .with(req -> { req.setRemoteAddr("203.0.113.20"); return req; }))
             .andExpect(status().isOk());
     }
 

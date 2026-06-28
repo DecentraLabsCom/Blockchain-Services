@@ -20,6 +20,7 @@ class AdminNetworkAccessPolicyTest {
         ReflectionTestUtils.setField(policy, "allowPrivateNetworks", false);
         ReflectionTestUtils.setField(policy, "accessTokenRequired", true);
         ReflectionTestUtils.setField(policy, "configuredCidrs", "");
+        ReflectionTestUtils.setField(policy, "labManagerAllowedCidrs", "");
         ReflectionTestUtils.setField(policy, "trustedProxyCidrs", "127.0.0.1/8,::1/128,172.16.0.0/12");
     }
 
@@ -159,6 +160,51 @@ class AdminNetworkAccessPolicyTest {
             return false;
         })).isTrue();
         assertThat(invoked.get()).isFalse();
+    }
+
+    @Test
+    void labManagerRequestAllowedWhenNoCidrsConfigured() {
+        MockHttpServletRequest request = new MockHttpServletRequest();
+        request.setRemoteAddr("203.0.113.20");
+
+        assertThat(policy.isLabManagerRequestAllowed(request)).isTrue();
+    }
+
+    @Test
+    void labManagerRequestAllowedFromConfiguredCidr() {
+        ReflectionTestUtils.setField(policy, "labManagerAllowedCidrs", "203.0.113.20/32,10.20.0.0/16");
+        MockHttpServletRequest request = new MockHttpServletRequest();
+        request.setRemoteAddr("10.20.1.5");
+
+        assertThat(policy.isLabManagerRequestAllowed(request)).isTrue();
+    }
+
+    @Test
+    void labManagerRequestBlockedOutsideConfiguredCidr() {
+        ReflectionTestUtils.setField(policy, "labManagerAllowedCidrs", "203.0.113.20/32");
+        MockHttpServletRequest request = new MockHttpServletRequest();
+        request.setRemoteAddr("198.51.100.25");
+
+        assertThat(policy.isLabManagerRequestAllowed(request)).isFalse();
+    }
+
+    @Test
+    void labManagerRequestBlockedWhenConfiguredCidrsAreInvalid() {
+        ReflectionTestUtils.setField(policy, "labManagerAllowedCidrs", "not-a-cidr");
+        MockHttpServletRequest request = new MockHttpServletRequest();
+        request.setRemoteAddr("203.0.113.20");
+
+        assertThat(policy.isLabManagerRequestAllowed(request)).isFalse();
+    }
+
+    @Test
+    void labManagerRequestUsesForwardedClientOnlyFromTrustedProxy() {
+        ReflectionTestUtils.setField(policy, "labManagerAllowedCidrs", "203.0.113.20/32");
+        MockHttpServletRequest request = new MockHttpServletRequest();
+        request.setRemoteAddr("172.17.0.10");
+        request.addHeader("X-Forwarded-For", "203.0.113.20");
+
+        assertThat(policy.isLabManagerRequestAllowed(request)).isTrue();
     }
 
     @Test

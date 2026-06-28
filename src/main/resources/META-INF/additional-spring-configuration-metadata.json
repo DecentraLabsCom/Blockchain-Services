@@ -430,6 +430,11 @@
     "defaultValue": "X-Lab-Manager-Token"
   },
   {
+    "name": "gateway.lab-manager.allowed-cidrs",
+    "type": "java.lang.String",
+    "description": "Optional comma-separated CIDR allowlist for requests authenticated with the Lab Manager token on /lab-admin routes."
+  },
+  {
     "name": "lab.access.jwt.max-ttl-seconds",
     "type": "java.lang.Long",
     "description": "Maximum lifetime in seconds for lab access JWTs issued by blockchain-services after reservation access validation.",

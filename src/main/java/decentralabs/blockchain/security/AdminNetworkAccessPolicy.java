@@ -33,6 +33,9 @@ public class AdminNetworkAccessPolicy {
     @Value("${admin.dashboard.allowed-cidrs:}")
     private String configuredCidrs;
 
+    @Value("${gateway.lab-manager.allowed-cidrs:}")
+    private String labManagerAllowedCidrs;
+
     @Value("${security.trusted-proxy-cidrs:127.0.0.1/8,::1/128,172.16.0.0/12}")
     private String trustedProxyCidrs;
 
@@ -69,6 +72,18 @@ public class AdminNetworkAccessPolicy {
             }
         }
         return cidrs;
+    }
+
+    public boolean isLabManagerRequestAllowed(HttpServletRequest request) {
+        if (splitCidrs(labManagerAllowedCidrs).isEmpty()) {
+            return true;
+        }
+        List<CidrRange> cidrs = parseCidrs(labManagerAllowedCidrs, "LAB_MANAGER_ALLOWED_CIDRS");
+        if (cidrs.isEmpty()) {
+            return false;
+        }
+        return getTrustedClientCandidates(request).stream()
+            .anyMatch(candidate -> cidrs.stream().anyMatch(cidr -> cidr.matches(candidate)));
     }
 
     private boolean matchesLoopback(HttpServletRequest request) {

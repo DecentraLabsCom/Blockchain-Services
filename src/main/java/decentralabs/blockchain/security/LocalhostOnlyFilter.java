@@ -114,7 +114,7 @@ public class LocalhostOnlyFilter extends OncePerRequestFilter {
             return true;
         }
 
-        if (isLabAdminPath(request) && hasValidLabManagerToken(request)) {
+        if (isLabAdminPath(request) && hasValidLabManagerToken(request) && adminNetworkAccessPolicy.isLabManagerRequestAllowed(request)) {
             return true;
         }
 
