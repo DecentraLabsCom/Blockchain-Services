@@ -308,7 +308,7 @@ class SamlAuthServiceTest {
                 ));
             when(samlValidationService.validateSamlAssertionWithSignature(anyString()))
                 .thenReturn(Map.of("userid", TEST_USER_ID, "affiliation", TEST_AFFILIATION));
-            when(blockchainService.getBookingInfo(anyString(), anyString(), any(), anyString()))
+            when(blockchainService.getCheckedInBookingInfo(anyString(), anyString(), any(), anyString()))
                 .thenReturn(Map.of("labURL", "https://lab.example.com"));
             when(jwtService.generateToken(eq(null), any())).thenReturn("booking-token");
 
@@ -334,7 +334,7 @@ class SamlAuthServiceTest {
                 ));
             when(samlValidationService.validateSamlAssertionWithSignature(anyString()))
                 .thenReturn(Map.of("userid", TEST_USER_ID, "affiliation", TEST_AFFILIATION));
-            when(blockchainService.getBookingInfo(anyString(), anyString(), any(), anyString()))
+            when(blockchainService.getCheckedInBookingInfo(anyString(), anyString(), any(), anyString()))
                 .thenReturn(Map.of("labURL", "https://lab.example.com"));
             when(jwtService.generateToken(eq(null), any())).thenReturn("booking-token");
 
@@ -359,7 +359,7 @@ class SamlAuthServiceTest {
                 ));
             when(samlValidationService.validateSamlAssertionWithSignature(anyString()))
                 .thenReturn(Map.of("userid", TEST_USER_ID, "affiliation", TEST_AFFILIATION));
-            when(blockchainService.getBookingInfo(anyString(), anyString(), any(), anyString()))
+            when(blockchainService.getCheckedInBookingInfo(anyString(), anyString(), any(), anyString()))
                 .thenReturn(Map.of("labURL", "https://lab.example.com"));
             when(jwtService.generateToken(eq(null), any())).thenReturn("booking-token");
 
@@ -385,7 +385,7 @@ class SamlAuthServiceTest {
                 ));
             when(samlValidationService.validateSamlAssertionWithSignature(anyString()))
                 .thenReturn(Map.of("userid", TEST_USER_ID, "affiliation", TEST_AFFILIATION));
-            when(blockchainService.getBookingInfo(anyString(), anyString(), any(), anyString()))
+            when(blockchainService.getCheckedInBookingInfo(anyString(), anyString(), any(), anyString()))
                 .thenReturn(Map.of("labURL", "https://lab.example.com"));
             when(jwtService.generateToken(eq(null), any())).thenReturn("booking-token");
 

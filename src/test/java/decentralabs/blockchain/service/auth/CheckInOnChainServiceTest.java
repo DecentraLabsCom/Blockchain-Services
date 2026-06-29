@@ -32,7 +32,9 @@ import org.web3j.protocol.core.DefaultBlockParameterName;
 import org.web3j.protocol.core.Request;
 import org.web3j.protocol.core.methods.response.EthChainId;
 import org.web3j.protocol.core.methods.response.EthGetTransactionCount;
+import org.web3j.protocol.core.methods.response.EthGetTransactionReceipt;
 import org.web3j.protocol.core.methods.response.EthSendTransaction;
+import org.web3j.protocol.core.methods.response.TransactionReceipt;
 import org.web3j.tx.FastRawTransactionManager;
 import org.web3j.utils.Numeric;
 
@@ -62,6 +64,8 @@ class CheckInOnChainServiceTest {
         ReflectionTestUtils.setField(service, "contractAddress", "0x2222222222222222222222222222222222222222");
         ReflectionTestUtils.setField(service, "gasLimit", BigInteger.valueOf(300000));
         ReflectionTestUtils.setField(service, "gasPriceGwei", BigInteger.valueOf(2));
+        ReflectionTestUtils.setField(service, "receiptMaxAttempts", 3);
+        ReflectionTestUtils.setField(service, "receiptPollIntervalMs", 1L);
     }
 
     @Test
@@ -82,6 +86,7 @@ class CheckInOnChainServiceTest {
         EthSendTransaction sendTransaction = mock(EthSendTransaction.class);
         when(sendTransaction.getTransactionHash()).thenReturn("0xtx123");
         when(sendTransaction.hasError()).thenReturn(false);
+        stubReceipt("0xtx123", true);
 
         try (MockedConstruction<FastRawTransactionManager> ignored =
                  mockConstruction(FastRawTransactionManager.class, (mock, context) ->
@@ -98,6 +103,66 @@ class CheckInOnChainServiceTest {
             assertThat(response).isSameAs(authResponse);
             assertThat(response.getTxHash()).isEqualTo("0xtx123");
             verify(checkInAuthService).verifyCheckIn(request);
+        }
+    }
+
+    @Test
+    void verifyAndSubmit_rejectsFailedMinedReceipt() throws Exception {
+        CheckInRequest request = validRequest();
+        CheckInResponse authResponse = new CheckInResponse();
+        authResponse.setValid(true);
+        authResponse.setSigner(credentials.getAddress());
+        authResponse.setReservationKey("0xabc");
+        authResponse.setTimestamp(1234L);
+
+        when(checkInAuthService.verifyCheckIn(request)).thenReturn(authResponse);
+        when(institutionalWalletService.getInstitutionalCredentials()).thenReturn(credentials);
+        when(walletService.getWeb3jInstance()).thenReturn(web3j);
+        stubNonceChecks(BigInteger.ONE, BigInteger.ONE);
+        stubChainId(11155111L);
+
+        EthSendTransaction sendTransaction = mock(EthSendTransaction.class);
+        when(sendTransaction.getTransactionHash()).thenReturn("0xtxfailed");
+        when(sendTransaction.hasError()).thenReturn(false);
+        stubReceipt("0xtxfailed", false);
+
+        try (MockedConstruction<FastRawTransactionManager> ignored =
+                 mockConstruction(FastRawTransactionManager.class, (mock, context) ->
+                     when(mock.sendTransaction(any(), any(), any(), any(), any())).thenReturn(sendTransaction))) {
+
+            assertThatThrownBy(() -> service.verifyAndSubmit(request))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("Check-in transaction was mined but failed");
+        }
+    }
+
+    @Test
+    void verifyAndSubmit_rejectsReceiptTimeout() throws Exception {
+        CheckInRequest request = validRequest();
+        CheckInResponse authResponse = new CheckInResponse();
+        authResponse.setValid(true);
+        authResponse.setSigner(credentials.getAddress());
+        authResponse.setReservationKey("0xabc");
+        authResponse.setTimestamp(1234L);
+
+        when(checkInAuthService.verifyCheckIn(request)).thenReturn(authResponse);
+        when(institutionalWalletService.getInstitutionalCredentials()).thenReturn(credentials);
+        when(walletService.getWeb3jInstance()).thenReturn(web3j);
+        stubNonceChecks(BigInteger.ONE, BigInteger.ONE);
+        stubChainId(11155111L);
+
+        EthSendTransaction sendTransaction = mock(EthSendTransaction.class);
+        when(sendTransaction.getTransactionHash()).thenReturn("0xtimeout");
+        when(sendTransaction.hasError()).thenReturn(false);
+        stubMissingReceipt("0xtimeout");
+
+        try (MockedConstruction<FastRawTransactionManager> ignored =
+                 mockConstruction(FastRawTransactionManager.class, (mock, context) ->
+                     when(mock.sendTransaction(any(), any(), any(), any(), any())).thenReturn(sendTransaction))) {
+
+            assertThatThrownBy(() -> service.verifyAndSubmit(request))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("Check-in transaction was not confirmed");
         }
     }
 
@@ -147,6 +212,7 @@ class CheckInOnChainServiceTest {
         EthSendTransaction sendTransaction = mock(EthSendTransaction.class);
         when(sendTransaction.getTransactionHash()).thenReturn("0xtx123");
         when(sendTransaction.hasError()).thenReturn(false);
+        stubReceipt("0xtx123", true);
 
         try (MockedConstruction<FastRawTransactionManager> construction =
                  mockConstruction(FastRawTransactionManager.class, (mock, context) ->
@@ -262,6 +328,31 @@ class CheckInOnChainServiceTest {
         when(web3j.ethChainId()).thenAnswer(invocation -> request);
         when(request.send()).thenReturn(response);
         when(response.getChainId()).thenReturn(BigInteger.valueOf(chainId));
+    }
+
+    private void stubReceipt(String txHash, boolean statusOk) throws Exception {
+        @SuppressWarnings("unchecked")
+        Request<?, EthGetTransactionReceipt> receiptRequest = (Request<?, EthGetTransactionReceipt>) mock(Request.class);
+        EthGetTransactionReceipt receiptResponse = mock(EthGetTransactionReceipt.class);
+        TransactionReceipt receipt = mock(TransactionReceipt.class);
+
+        when(web3j.ethGetTransactionReceipt(txHash)).thenAnswer(invocation -> receiptRequest);
+        when(receiptRequest.send()).thenReturn(receiptResponse);
+        when(receiptResponse.getTransactionReceipt()).thenReturn(java.util.Optional.of(receipt));
+        when(receipt.isStatusOK()).thenReturn(statusOk);
+        if (!statusOk) {
+            when(receipt.getStatus()).thenReturn("0x0");
+        }
+    }
+
+    private void stubMissingReceipt(String txHash) throws Exception {
+        @SuppressWarnings("unchecked")
+        Request<?, EthGetTransactionReceipt> receiptRequest = (Request<?, EthGetTransactionReceipt>) mock(Request.class);
+        EthGetTransactionReceipt receiptResponse = mock(EthGetTransactionReceipt.class);
+
+        when(web3j.ethGetTransactionReceipt(txHash)).thenAnswer(invocation -> receiptRequest);
+        when(receiptRequest.send()).thenReturn(receiptResponse);
+        when(receiptResponse.getTransactionReceipt()).thenReturn(java.util.Optional.empty());
     }
 
     private CheckInRequest validRequest() {

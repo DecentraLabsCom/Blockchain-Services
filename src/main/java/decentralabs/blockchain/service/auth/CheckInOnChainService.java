@@ -23,6 +23,7 @@ import org.web3j.crypto.Hash;
 import org.web3j.protocol.Web3j;
 import org.web3j.protocol.core.methods.response.EthChainId;
 import org.web3j.protocol.core.methods.response.EthSendTransaction;
+import org.web3j.protocol.core.methods.response.TransactionReceipt;
 import org.web3j.tx.FastRawTransactionManager;
 import org.web3j.tx.TransactionManager;
 import org.web3j.utils.Numeric;
@@ -43,6 +44,12 @@ public class CheckInOnChainService {
 
     @Value("${ethereum.gas.price.default:1}")
     private BigInteger gasPriceGwei;
+
+    @Value("${checkin.receipt.max-attempts:40}")
+    private int receiptMaxAttempts;
+
+    @Value("${checkin.receipt.poll-interval-ms:1500}")
+    private long receiptPollIntervalMs;
 
     public CheckInResponse verifyAndSubmit(CheckInRequest request) {
         CheckInResponse response = checkInAuthService.verifyCheckIn(request);
@@ -101,7 +108,42 @@ public class CheckInOnChainService {
             String error = tx.getError() != null ? tx.getError().getMessage() : "tx_hash_missing";
             throw new IllegalStateException("Check-in transaction failed: " + error);
         }
+
+        TransactionReceipt receipt = waitForReceipt(web3j, txHash);
+        if (!receipt.isStatusOK()) {
+            String status = receipt.getStatus() != null ? receipt.getStatus() : "unknown";
+            throw new IllegalStateException("Check-in transaction was mined but failed. Status: " + status);
+        }
         return txHash;
+    }
+
+    private TransactionReceipt waitForReceipt(Web3j web3j, String txHash) {
+        int attempts = Math.max(1, receiptMaxAttempts);
+        long pollInterval = Math.max(0L, receiptPollIntervalMs);
+
+        for (int attempt = 1; attempt <= attempts; attempt++) {
+            try {
+                var response = web3j.ethGetTransactionReceipt(txHash).send();
+                if (response != null && response.getTransactionReceipt().isPresent()) {
+                    return response.getTransactionReceipt().get();
+                }
+            } catch (Exception e) {
+                throw new IllegalStateException("Failed to confirm check-in transaction: " + e.getMessage(), e);
+            }
+
+            if (attempt < attempts && pollInterval > 0L) {
+                try {
+                    Thread.sleep(pollInterval);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    throw new IllegalStateException("Interrupted while waiting for check-in transaction confirmation", e);
+                }
+            }
+        }
+
+        throw new IllegalStateException(
+            "Check-in transaction was not confirmed after " + attempts + " receipt poll attempts: " + txHash
+        );
     }
 
     private void checkForPendingTransactions(Web3j web3j, String address) {

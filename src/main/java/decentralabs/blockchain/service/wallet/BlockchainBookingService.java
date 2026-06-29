@@ -63,14 +63,27 @@ public class BlockchainBookingService {
      * @return Map containing booking information
      */
     public Map<String, Object> getBookingInfo(String wallet, String reservationKey, String labId, String puc) {
+        return getBookingInfo(wallet, reservationKey, labId, puc, false);
+    }
+
+    public Map<String, Object> getCheckedInBookingInfo(String wallet, String reservationKey, String labId, String puc) {
+        return getBookingInfo(wallet, reservationKey, labId, puc, true);
+    }
+
+    private Map<String, Object> getBookingInfo(
+            String wallet,
+            String reservationKey,
+            String labId,
+            String puc,
+            boolean requireCheckedIn) {
         try {           
             // Determine which method to use based on available parameters
             if (reservationKey != null && !reservationKey.isEmpty()) {
                 // OPTIMAL PATH: Use reservationKey for direct O(1) access
-                return getBookingInfoByReservationKey(wallet, reservationKey, puc);
+                return getBookingInfoByReservationKey(wallet, reservationKey, puc, requireCheckedIn);
             } else if (labId != null && !labId.isEmpty()) {
                 // FALLBACK PATH: Search by labId (requires iteration)
-                return getBookingInfoByLabId(wallet, labId, puc);
+                return getBookingInfoByLabId(wallet, labId, puc, requireCheckedIn);
             } else {
                 throw new IllegalArgumentException(
                     "Must provide either 'reservationKey' (recommended) or 'labId'"
@@ -121,7 +134,11 @@ public class BlockchainBookingService {
      * Retrieves booking info using reservationKey directly (OPTIMAL - 2 blockchain calls)
      * Call flow: getReservation(key) → getLab(tokenId)
      */
-    private Map<String, Object> getBookingInfoByReservationKey(String wallet, String reservationKeyHex, String expectedPuc) 
+    private Map<String, Object> getBookingInfoByReservationKey(
+            String wallet,
+            String reservationKeyHex,
+            String expectedPuc,
+            boolean requireCheckedIn)
             throws Exception {
         
         // 1. Convert reservationKey from hex to bytes32
@@ -149,7 +166,7 @@ public class BlockchainBookingService {
         }
 
         // 4. Validate reservation
-        validateReservation(wallet, renter, status, start, end);
+        validateReservation(wallet, renter, status, start, end, requireCheckedIn);
 
         // 5. Get lab information (ONE CALL)
         Diamond.Lab lab = diamond.getLab(labId).send();
@@ -174,7 +191,11 @@ public class BlockchainBookingService {
      * Retrieves booking info by labId using direct contract lookup
      * Call flow: find active reservation for user by labId → getLab(tokenId)
      */
-    private Map<String, Object> getBookingInfoByLabId(String wallet, String labIdStr, String puc) throws Exception {
+    private Map<String, Object> getBookingInfoByLabId(
+            String wallet,
+            String labIdStr,
+            String puc,
+            boolean requireCheckedIn) throws Exception {
         
         BigInteger labId = EthereumAddressValidator.parseBigInteger(labIdStr, "labId");
 
@@ -202,7 +223,7 @@ public class BlockchainBookingService {
                 }
 
                 if (res.labId.equals(labId) && 
-                    (STATUS_CONFIRMED.equals(res.status) || STATUS_IN_USE.equals(res.status)) &&
+                    matchesRequiredReservationStatus(res.status, requireCheckedIn) &&
                     pucMatches &&
                     currentTime.compareTo(res.start) >= 0 &&
                     currentTime.compareTo(res.end) <= 0) {
@@ -232,7 +253,7 @@ public class BlockchainBookingService {
         String authURI = resolveProviderAuthURI(diamond, reservation.labProvider);
 
         // 4. Validate reservation
-        validateReservation(wallet, renter, status, start, end);
+        validateReservation(wallet, renter, status, start, end, requireCheckedIn);
 
         // 5. Get lab information
         Diamond.Lab lab = diamond.getLab(labId).send();
@@ -259,8 +280,8 @@ public class BlockchainBookingService {
     /**
      * Validates reservation ownership, status, and time validity
      */
-    private void validateReservation(String wallet, String renter, BigInteger status, 
-                                     BigInteger start, BigInteger end) {
+    private void validateReservation(String wallet, String renter, BigInteger status,
+                                     BigInteger start, BigInteger end, boolean requireCheckedIn) {
         // Validate ownership
         if (!renter.equalsIgnoreCase(wallet)) {
             throw new SecurityException(
@@ -268,8 +289,7 @@ public class BlockchainBookingService {
             );
         }
 
-        // Validate status (CONFIRMED or IN_USE are considered active)
-        if (!STATUS_CONFIRMED.equals(status) && !STATUS_IN_USE.equals(status)) {
+        if (!matchesRequiredReservationStatus(status, requireCheckedIn)) {
             throw new IllegalStateException("Reservation is not active. Status: " + describeStatus(status));
         }
 
@@ -287,6 +307,13 @@ public class BlockchainBookingService {
                 "Reservation has expired. End: " + end + ", Current: " + currentTime
             );
         }
+    }
+
+    private boolean matchesRequiredReservationStatus(BigInteger status, boolean requireCheckedIn) {
+        if (requireCheckedIn) {
+            return STATUS_IN_USE.equals(status);
+        }
+        return STATUS_CONFIRMED.equals(status) || STATUS_IN_USE.equals(status);
     }
 
     private String describeStatus(BigInteger status) {

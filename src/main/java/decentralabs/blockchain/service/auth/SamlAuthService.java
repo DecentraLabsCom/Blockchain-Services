@@ -144,7 +144,7 @@ public class SamlAuthService {
         try {
             String institutionalProviderWallet = (String) marketplaceJWTClaims.get("institutionalProviderWallet");
             String puc = (String) marketplaceJWTClaims.get("puc");
-            Map<String, Object> bookingInfo = blockchainService.getBookingInfo(
+            Map<String, Object> bookingInfo = blockchainService.getCheckedInBookingInfo(
                 institutionalProviderWallet,
                 reservationKey,
                 labId,
