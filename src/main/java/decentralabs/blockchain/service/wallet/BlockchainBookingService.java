@@ -324,9 +324,8 @@ public class BlockchainBookingService {
             case 0 -> "PENDING";
             case 1 -> "CONFIRMED";
             case 2 -> "IN_USE";
-            case 3 -> "COMPLETED";
-            case 4 -> "COLLECTED";
-            case 5 -> "CANCELLED";
+            case 3 -> "COLLECTED";
+            case 4 -> "CANCELLED";
             default -> "UNKNOWN(" + status + ")";
         };
     }
