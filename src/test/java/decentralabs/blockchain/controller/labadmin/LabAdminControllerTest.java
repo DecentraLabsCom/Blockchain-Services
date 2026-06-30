@@ -7,6 +7,7 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -17,12 +18,14 @@ import decentralabs.blockchain.service.auth.JwtService;
 import decentralabs.blockchain.service.labadmin.LabAdminService;
 import decentralabs.blockchain.service.labadmin.LabAdminService.LabAdminDeleteAssetResponse;
 import java.io.FileNotFoundException;
+import java.io.IOException;
 import java.math.BigInteger;
 import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.core.io.ByteArrayResource;
 import org.springframework.http.MediaType;
+import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
@@ -180,5 +183,26 @@ class LabAdminControllerTest {
             .andExpect(status().isBadRequest())
             .andExpect(jsonPath("$.success").value(false))
             .andExpect(jsonPath("$.error").value("Invalid asset path"));
+    }
+
+    @Test
+    void uploadAssetStorageIoErrorsReturnActionableMessage() throws Exception {
+        MockMultipartFile file = new MockMultipartFile(
+            "file",
+            "cover.png",
+            "image/png",
+            "png".getBytes()
+        );
+        when(labAdminService.saveAsset(eq("lab-demo"), eq("images"), any()))
+            .thenThrow(new IOException("Permission denied"));
+
+        mockMvc.perform(multipart("/lab-admin/assets")
+                .file(file)
+                .param("contentId", "lab-demo")
+                .param("kind", "images"))
+            .andExpect(status().isInternalServerError())
+            .andExpect(jsonPath("$.success").value(false))
+            .andExpect(jsonPath("$.error").value("Lab content storage is not writable. Check LAB_CONTENT_BASE_PATH and lab-content volume permissions."))
+            .andExpect(jsonPath("$.details").value("Permission denied"));
     }
 }

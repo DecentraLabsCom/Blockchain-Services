@@ -7,6 +7,7 @@ import decentralabs.blockchain.service.auth.JwtService;
 import decentralabs.blockchain.service.labadmin.LabAdminService;
 import decentralabs.blockchain.util.LogSanitizer;
 import java.io.FileNotFoundException;
+import java.io.IOException;
 import java.math.BigInteger;
 import java.time.Instant;
 import java.util.HashMap;
@@ -64,6 +65,8 @@ public class LabAdminController {
             return ResponseEntity.ok(response);
         } catch (IllegalArgumentException ex) {
             return badRequest(ex);
+        } catch (IOException ex) {
+            return internal("Lab content storage is not writable. Check LAB_CONTENT_BASE_PATH and lab-content volume permissions.", ex);
         } catch (Exception ex) {
             return internal("Failed to store asset", ex);
         }
