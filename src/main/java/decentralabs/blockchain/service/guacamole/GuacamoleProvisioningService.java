@@ -17,6 +17,7 @@ import java.util.Optional;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.core.env.Environment;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
@@ -63,6 +64,7 @@ public class GuacamoleProvisioningService {
         }
     }
 
+    @Autowired
     public GuacamoleProvisioningService(Environment environment, ObjectMapper objectMapper) {
         this(
             HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(5)).build(),
