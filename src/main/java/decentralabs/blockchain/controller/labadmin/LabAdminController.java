@@ -54,6 +54,17 @@ public class LabAdminController {
         }
     }
 
+    @GetMapping("/lab-admin/guacamole/connections")
+    public ResponseEntity<?> guacamoleConnections() {
+        try {
+            return ok(labAdminService.guacamoleConnections());
+        } catch (IllegalArgumentException | IllegalStateException ex) {
+            return badRequest(ex);
+        } catch (Exception ex) {
+            return internal("Failed to list Guacamole connections", ex);
+        }
+    }
+
     @PostMapping("/lab-admin/assets")
     public ResponseEntity<?> uploadAsset(
         @RequestParam(required = false) String contentId,

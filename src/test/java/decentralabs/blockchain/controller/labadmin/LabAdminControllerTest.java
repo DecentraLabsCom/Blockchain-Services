@@ -126,7 +126,7 @@ class LabAdminControllerTest {
                       "metadataUrl": "https://lab.example.edu/metadata.json",
                       "price": 1,
                       "accessURI": "https://lab.example.edu/guacamole",
-                      "accessKey": "demo",
+                      "accessKey": "guac:id:42",
                       "resourceType": 0
                     }
                     """))

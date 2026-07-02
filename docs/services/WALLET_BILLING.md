@@ -52,6 +52,25 @@ Endpoint:
 
 Security requirements:
 
+```mermaid
+sequenceDiagram
+    participant Admin as Institution admin
+    participant Dashboard as Wallet dashboard
+    participant Billing as Billing admin API
+    participant Wallet as Institutional wallet
+    participant Chain as Smart contracts
+
+    Admin->>Dashboard: choose billing operation
+    Dashboard->>Wallet: sign EIP-712 request
+    Dashboard->>Billing: POST /billing/admin/execute
+    Billing->>Billing: check network policy and access token
+    Billing->>Billing: verify wallet address, timestamp, and replay
+    Billing->>Wallet: verify signature
+    Billing->>Chain: send admin transaction
+    Chain-->>Billing: tx hash / receipt
+    Billing-->>Dashboard: operation result
+```
+
 1. Request must pass localhost/private-network restrictions.
 2. `adminWalletAddress` must match configured institutional wallet.
 3. EIP-712 signature is mandatory (`timestamp` + `signature` fields).

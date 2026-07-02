@@ -226,6 +226,30 @@ class JwtServiceTest {
     }
 
     @Test
+    void testGenerateToken_GuacamoleBooking_UsesSessionIdAsJti() throws Exception {
+        Map<String, Object> bookingInfo = new HashMap<>();
+        bookingInfo.put("lab", BigInteger.valueOf(42));
+        bookingInfo.put("aud", "https://lab.example.com/guacamole");
+        bookingInfo.put("sub", "dlabs-res-session-123");
+        bookingInfo.put("nbf", BigInteger.valueOf(System.currentTimeMillis() / 1000));
+        bookingInfo.put("exp", BigInteger.valueOf((System.currentTimeMillis() / 1000) + 3600));
+        bookingInfo.put("accessKey", "guac:id:42");
+        bookingInfo.put("resourceType", "lab");
+        bookingInfo.put("guacSessionId", "session-123");
+
+        String token = jwtService.generateToken(null, bookingInfo);
+
+        Claims claims = Jwts.parser()
+                .verifyWith(mockPublicKey)
+                .build()
+                .parseSignedClaims(token)
+                .getPayload();
+        assertEquals("session-123", claims.get("jti", String.class));
+        assertEquals("dlabs-res-session-123", claims.get("sub", String.class));
+        assertEquals("guac:id:42", claims.get("accessKey", String.class));
+    }
+
+    @Test
     void testGenerateToken_NoBooking_OmitsResourceType() throws Exception {
         // Given — wallet-only auth (no booking)
         Map<String, Object> claims = new HashMap<>();

@@ -70,45 +70,19 @@ Together, they bridge institutional access control systems (such as **Lab Gatewa
 
 ## 🏗️ Architecture Overview
 
-```
-+------------------+     +------------------------+     +--------------------+
-| Marketplace dApp | <-->| Auth Service           | <-->| Smart Contracts    |
-| (User Frontend)  |     | - SAML2 SSO            |     | - Diamond proxy    |
-|                  |     | - JWT generation       |     | - Credit ledger    |
-|                  |     | - Booking validation   |     | - Reservations     |
-+------------------+     +------------------------+     +--------------------+
-         ^                         |                             ^
-         |                         |                             |
-    End Users                      v                             |
-                        +------------------------+               |
-                        | Wallet & Treasury      |---------------+
-                        | - Wallet management    |
-                        | - Treasury operations  |
-                        | - Contract queries     |
-                        | - Auto-approval engine |
-                        +------------------------+
-                                   |
-                                   v
-                        +------------------------+
-                        | Intents                |
-                        | - Intent intake        |
-                        | - WebAuthn ceremony    |
-                        | - Status and execution |
-                        +------------------------+
-                                   |
-                                   v
-                        +------------------------+
-                        | Institution Config     |
-                        | - Provider token apply |
-                        | - Consumer token apply |
-                        | - Registration flows   |
-                        +------------------------+
-                                   |
-                                   v
-                        +------------------------+
-                        | Lab Gateway            |
-                        | (Provider Access)      |
-                        +------------------------+
+```mermaid
+flowchart LR
+    Users["End users"] --> Marketplace["Marketplace dApp"]
+    Marketplace <--> Auth["Auth Service<br/>SAML / JWT / booking checks"]
+    Auth <--> Contracts["Smart Contracts<br/>reservations / credits"]
+
+    Auth --> Wallet["Wallet and Treasury<br/>wallets / billing / events"]
+    Wallet --> Contracts
+    Marketplace --> Intents["Intents<br/>submit / authorize / execute"]
+    Intents --> Contracts
+    Marketplace --> Config["Institution Config<br/>provider / consumer tokens"]
+    Config --> Contracts
+    Auth --> Gateway["Lab Gateway<br/>Guacamole / FMU access"]
 ```
 
 ## 🔌 API Overview

@@ -76,7 +76,13 @@ public class JwtService {
 
         String kid = generateKid(keyService.getPublicKey().getModulus());
         BigInteger iat = BigInteger.valueOf(System.currentTimeMillis() / 1000); // To seconds
-        String jti = UUID.randomUUID().toString();
+        String jti = null;
+        if (bookingInfo != null && bookingInfo.get("guacSessionId") != null) {
+            jti = String.valueOf(bookingInfo.get("guacSessionId"));
+        }
+        if (jti == null || jti.isBlank()) {
+            jti = UUID.randomUUID().toString();
+        }
     
         JwtBuilder jwtBuilder = Jwts.builder()
                 .header()
@@ -223,4 +229,3 @@ public class JwtService {
         return expiration != null && expiration.before(new Date());
     }
 }
-

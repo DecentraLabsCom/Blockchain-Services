@@ -8,6 +8,7 @@ import static org.mockito.Mockito.when;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import decentralabs.blockchain.contract.Diamond;
 import decentralabs.blockchain.service.BackendUrlResolver;
+import decentralabs.blockchain.service.guacamole.GuacamoleProvisioningService;
 import decentralabs.blockchain.service.wallet.InstitutionalTxManagerProvider;
 import decentralabs.blockchain.service.wallet.InstitutionalWalletService;
 import decentralabs.blockchain.service.wallet.WalletService;
@@ -43,7 +44,8 @@ class LabAdminServiceTest {
             mock(InstitutionalTxManagerProvider.class),
             walletService,
             resolver,
-            new ObjectMapper()
+            new ObjectMapper(),
+            mock(GuacamoleProvisioningService.class)
         );
         ReflectionTestUtils.setField(service, "contentBasePath", tempDir.resolve("lab-content").toString());
         ReflectionTestUtils.setField(service, "fmuDataPath", tempDir.resolve("fmu-data").toString());

@@ -1,6 +1,7 @@
 package decentralabs.blockchain.service.wallet;
 
 import decentralabs.blockchain.contract.Diamond;
+import decentralabs.blockchain.service.guacamole.GuacamoleProvisioningService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -34,6 +35,9 @@ class BlockchainBookingServiceTest {
     @Mock
     private Diamond diamond;
 
+    @Mock
+    private GuacamoleProvisioningService guacamoleProvisioningService;
+
     private BlockchainBookingService service;
 
     private static final String TEST_WALLET = "0x1234567890abcdef1234567890abcdef12345678";
@@ -43,11 +47,29 @@ class BlockchainBookingServiceTest {
 
     @BeforeEach
     void setUp() {
-        service = new BlockchainBookingService(walletService);
+        service = new BlockchainBookingService(walletService, guacamoleProvisioningService);
         ReflectionTestUtils.setField(service, "contractAddress", TEST_CONTRACT_ADDRESS);
         ReflectionTestUtils.setField(service, "labAccessJwtMaxTtlSeconds", 14_400L);
 
         lenient().when(walletService.getWeb3jInstance()).thenReturn(web3j);
+        lenient().when(guacamoleProvisioningService.provisionTemporaryUser(anyString(), anyString(), any(), anyString()))
+                .thenAnswer(invocation -> {
+                    String selector = invocation.getArgument(0);
+                    String sessionId = invocation.getArgument(1);
+                    long connectionId = GuacamoleProvisioningService.parseConnectionId(selector);
+                    return new GuacamoleProvisioningService.ProvisioningResult(
+                            sessionId,
+                            "dlabs-res-" + sessionId,
+                            new GuacamoleProvisioningService.ConnectionMetadata(
+                                    connectionId,
+                                    selector,
+                                    "RDP Lab",
+                                    "rdp",
+                                    "lab-ws-01",
+                                    "3389"
+                            )
+                    );
+                });
     }
 
     @Test
@@ -73,7 +95,7 @@ class BlockchainBookingServiceTest {
         // Setup mock lab
         Diamond.Lab lab = createMockLab(
                 "https://lab.url",
-                "accessKey123",
+                "guac:id:123",
                 "https://metadata.url",
                 BigInteger.valueOf(1000)
         );
@@ -97,7 +119,11 @@ class BlockchainBookingServiceTest {
             assertThat(result.get("reservationStatus")).isEqualTo(BigInteger.ONE);
             assertThat(result.get("price")).isEqualTo(BigInteger.valueOf(1000));
             assertThat(result.get("aud")).isEqualTo("https://lab.url");
-            assertThat(result.get("sub")).isEqualTo("accessKey123");
+            assertThat(result.get("sub")).asString().startsWith("dlabs-res-");
+            assertThat(result.get("accessKey")).isEqualTo("guac:id:123");
+            assertThat(result.get("guacSessionId")).isNotNull();
+            assertThat(result.get("guacamoleConnectionId")).isEqualTo(BigInteger.valueOf(123));
+            verify(guacamoleProvisioningService).provisionTemporaryUser(eq("guac:id:123"), anyString(), any(), eq("https://lab.url"));
         }
     }
 
@@ -115,7 +141,7 @@ class BlockchainBookingServiceTest {
         );
         Diamond.Lab lab = createMockLab(
                 "https://lab.url",
-                "accessKey123",
+                "guac:id:123",
                 "https://metadata.url",
                 BigInteger.valueOf(1000)
         );
@@ -147,7 +173,7 @@ class BlockchainBookingServiceTest {
         );
         Diamond.Lab lab = createMockLab(
                 "https://lab.url",
-                "accessKey123",
+                "guac:id:123",
                 "https://metadata.url",
                 BigInteger.valueOf(1000)
         );
@@ -278,7 +304,7 @@ class BlockchainBookingServiceTest {
 
         Diamond.Lab lab = createMockLab(
                 "https://lab.url",
-                "accessKey123",
+                "guac:id:123",
                 "https://metadata.url",
                 BigInteger.valueOf(1000)
         );
@@ -401,7 +427,7 @@ class BlockchainBookingServiceTest {
                 getCurrentTimestamp().add(BigInteger.valueOf(3600)),
                 BigInteger.ONE
         );
-        Diamond.Lab lab = createMockLab("https://lab.url", "guacamole-user", "https://meta.url", BigInteger.valueOf(500));
+        Diamond.Lab lab = createMockLab("https://lab.url", "guac:id:77", "https://meta.url", BigInteger.valueOf(500));
 
         try (MockedStatic<Diamond> dm = mockStatic(Diamond.class)) {
             dm.when(() -> Diamond.load(anyString(), any(Web3j.class), any(ReadonlyTransactionManager.class), any(ContractGasProvider.class)))
@@ -412,7 +438,8 @@ class BlockchainBookingServiceTest {
             Map<String, Object> result = service.getBookingInfo(TEST_WALLET, TEST_RESERVATION_KEY, null);
 
             assertThat(result.get("resourceType")).isEqualTo("lab");
-            assertThat(result.get("accessKey")).isEqualTo("guacamole-user");
+            assertThat(result.get("accessKey")).isEqualTo("guac:id:77");
+            assertThat(result.get("sub")).asString().startsWith("dlabs-res-");
         }
     }
 
@@ -441,7 +468,7 @@ class BlockchainBookingServiceTest {
     }
 
     @Test
-    void shouldSetResourceTypeLabEvenWhenAccessKeyLooksLikeFmu() throws Exception {
+    void shouldRejectPhysicalLabWithUnprefixedAccessKey() throws Exception {
         Diamond.Reservation reservation = createMockReservation(
                 TEST_LAB_ID, TEST_WALLET,
                 BigInteger.valueOf(500),
@@ -457,10 +484,9 @@ class BlockchainBookingServiceTest {
             when(diamond.getReservation(any(byte[].class))).thenReturn(mockRemoteCall(reservation));
             when(diamond.getLab(TEST_LAB_ID)).thenReturn(mockRemoteCall(lab));
 
-            Map<String, Object> result = service.getBookingInfo(TEST_WALLET, TEST_RESERVATION_KEY, null);
-
-            assertThat(result.get("resourceType")).isEqualTo("lab");
-            assertThat(result.get("accessKey")).isEqualTo("spring-damper.fmu");
+            assertThatThrownBy(() -> service.getBookingInfo(TEST_WALLET, TEST_RESERVATION_KEY, null))
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessageContaining("guac:id");
         }
     }
 

@@ -73,6 +73,19 @@ Action discriminator:
 
 ## Validation Pipeline (IntentService)
 
+```mermaid
+flowchart TD
+    Submit["POST /intents"] --> Shape["Validate meta and payload shape"]
+    Shape --> Saml["Validate SAML assertion and assertion hash"]
+    Saml --> Replay["Enforce SAML replay protection"]
+    Replay --> WebAuthn["Validate WebAuthn assertion"]
+    WebAuthn --> Expiry["Reject expired intents and nonce replay"]
+    Expiry --> Eip712["Verify EIP-712 signature"]
+    Eip712 --> Policy["Apply trusted signer policy"]
+    Policy --> Queue["Persist and queue accepted intent"]
+    Queue --> Execute["Execute on-chain operation"]
+```
+
 1. Validate `meta` and payload shape by action type.
 2. Validate SAML assertion and assertion hash consistency.
 3. Enforce SAML replay protection.
@@ -97,6 +110,23 @@ These endpoints are localhost-restricted by `LocalhostOnlyFilter`.
 - `POST /institution-config/apply-consumer-token`
 
 Current recommended flow:
+
+```mermaid
+sequenceDiagram
+    participant Admin as Institution admin
+    participant Dashboard as Wallet dashboard
+    participant Backend as blockchain-services
+    participant Marketplace
+    participant Chain as Smart contracts
+
+    Admin->>Dashboard: paste provisioning token
+    Dashboard->>Backend: POST /institution-config/apply-*-token
+    Backend->>Marketplace: fetch JWKS and validate token
+    Backend->>Backend: persist institution configuration
+    Backend->>Marketplace: register provider or consumer
+    Marketplace->>Chain: execute registration transaction
+    Backend-->>Dashboard: applied or saved status
+```
 
 1. Apply provisioning token from Marketplace:
    - provider mode: `/apply-provider-token`

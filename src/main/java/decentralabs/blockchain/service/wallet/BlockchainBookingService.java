@@ -1,5 +1,6 @@
 package decentralabs.blockchain.service.wallet;
 
+import decentralabs.blockchain.service.guacamole.GuacamoleProvisioningService;
 import decentralabs.blockchain.util.EthereumAddressValidator;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -17,6 +18,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.UUID;
 
 /**
  * Service for handling blockchain booking operations
@@ -34,6 +36,7 @@ public class BlockchainBookingService {
     private long labAccessJwtMaxTtlSeconds;
     
     private final WalletService walletService;
+    private final GuacamoleProvisioningService guacamoleProvisioningService;
     
     private static final BigInteger STATUS_CONFIRMED = BigInteger.ONE;
     private static final BigInteger STATUS_IN_USE = BigInteger.valueOf(2);
@@ -343,11 +346,25 @@ public class BlockchainBookingService {
         
         Map<String, Object> bookingInfo = new HashMap<>();
         
+        boolean physicalLab = onChainResourceType == null || onChainResourceType.intValue() == 0;
+        BigInteger expiresAt = resolveAccessJwtExpiration(end);
+        String subject = accessKey;
+        if (physicalLab) {
+            if (!GuacamoleProvisioningService.isGuacamoleSelector(accessKey)) {
+                throw new IllegalArgumentException("Physical Guacamole labs require accessKey format guac:id:<connection_id>");
+            }
+            String sessionId = UUID.randomUUID().toString();
+            var provisioned = guacamoleProvisioningService.provisionTemporaryUser(accessKey, sessionId, expiresAt, accessURI);
+            subject = provisioned.username();
+            bookingInfo.put("guacSessionId", sessionId);
+            bookingInfo.put("guacamoleConnectionId", BigInteger.valueOf(provisioned.connection().id()));
+        }
+
         // JWT Standard Claims
         bookingInfo.put("aud", accessURI);       // Audience - where token is used (complete URL from contract)
-        bookingInfo.put("sub", accessKey);       // Subject - username for access
+        bookingInfo.put("sub", subject);         // Subject - temporary Guacamole user or FMU key
         bookingInfo.put("nbf", start);           // Not Before - reservation start
-        bookingInfo.put("exp", resolveAccessJwtExpiration(end)); // Expiration - capped by max JWT TTL
+        bookingInfo.put("exp", expiresAt);       // Expiration - capped by max JWT TTL
         
         // Custom Claims
         bookingInfo.put("lab", labId);                      // Lab ID
@@ -357,7 +374,7 @@ public class BlockchainBookingService {
         bookingInfo.put("labPrice", labPrice);              // Lab base price
         bookingInfo.put("metadata", metadata);              // Lab metadata URI
         bookingInfo.put("authURI", authURI);                // This auth service
-        bookingInfo.put("accessKey", accessKey);            // Raw access key (FMU filename or Guacamole user)
+        bookingInfo.put("accessKey", accessKey);            // Raw access key (FMU filename or Guacamole selector)
         
         // Resource type: read from on-chain LabBase.resourceType (#27)
         // 0 = physical lab, 1 = FMU simulation

@@ -3,6 +3,24 @@
 `SamlValidationService` validates SAML assertions without manual certificate configuration. It discovers the IdP metadata URL, downloads the signing certificate, caches it, and verifies the XML signature before returning attributes.
 
 ## Validation pipeline
+
+```mermaid
+flowchart TD
+    Decode["Decode and parse assertion"] --> Issuer["Extract Issuer"]
+    Issuer --> Trust{"Issuer trusted?"}
+    Trust -- "no" --> Reject["Reject assertion"]
+    Trust -- "yes" --> Resolve["Resolve metadata URL"]
+    Resolve --> Harden{"URL allowed?"}
+    Harden -- "no" --> Reject
+    Harden -- "yes" --> Metadata["Download metadata"]
+    Metadata --> Certs["Extract signing certificates"]
+    Certs --> Cache["Cache certificate per issuer"]
+    Cache --> Signature{"Signature valid?"}
+    Signature -- "no" --> Reject
+    Signature -- "yes" --> Attributes["Extract required attributes"]
+    Attributes --> Return["Return attributes and issuer"]
+```
+
 1) Base64 decode the assertion and parse XML with XXE protections.
 2) Extract `<Issuer>`; reject if missing.
 3) Trust check:

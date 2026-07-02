@@ -6,6 +6,7 @@ import decentralabs.blockchain.dto.labadmin.LabAdminAssetResponse;
 import decentralabs.blockchain.dto.labadmin.LabAdminPublishRequest;
 import decentralabs.blockchain.dto.labadmin.LabAdminTransactionResponse;
 import decentralabs.blockchain.service.BackendUrlResolver;
+import decentralabs.blockchain.service.guacamole.GuacamoleProvisioningService;
 import decentralabs.blockchain.service.wallet.InstitutionalTxManagerProvider;
 import decentralabs.blockchain.service.wallet.InstitutionalWalletService;
 import decentralabs.blockchain.service.wallet.WalletService;
@@ -55,6 +56,7 @@ public class LabAdminService {
     private final WalletService walletService;
     private final BackendUrlResolver backendUrlResolver;
     private final ObjectMapper objectMapper;
+    private final GuacamoleProvisioningService guacamoleProvisioningService;
     private final ConcurrentMap<String, Long> pendingPublishes = new ConcurrentHashMap<>();
 
     @Value("${contract.address}")
@@ -89,7 +91,15 @@ public class LabAdminService {
         result.put("recommendedRemoteAccessURI", publicBaseUrl() + "/guacamole");
         result.put("recommendedFmuAccessURI", publicBaseUrl() + "/fmu");
         result.put("fmuInventory", listFmus());
+        result.put("guacamoleCatalogAvailable", guacamoleProvisioningService.isConfigured());
         return result;
+    }
+
+    public Map<String, Object> guacamoleConnections() {
+        return Map.of(
+            "success", true,
+            "connections", guacamoleProvisioningService.listSafeConnections()
+        );
     }
 
     public Map<String, Object> listLabs() {
@@ -166,6 +176,7 @@ public class LabAdminService {
         String accessURI = requireText(request.accessURI(), "accessURI", 500);
         String accessKey = requireText(request.accessKey(), "accessKey", 200);
         BigInteger resourceType = normalizeResourceType(request.resourceType());
+        validatePhysicalAccessKey(accessKey, resourceType);
         boolean listImmediately = request.listImmediately() == null || request.listImmediately();
         boolean allowDuplicate = Boolean.TRUE.equals(request.allowDuplicate());
 
@@ -216,6 +227,7 @@ public class LabAdminService {
         String accessURI = requireText(request.accessURI(), "accessURI", 500);
         String accessKey = requireText(request.accessKey(), "accessKey", 200);
         BigInteger resourceType = normalizeResourceType(request.resourceType());
+        validatePhysicalAccessKey(accessKey, resourceType);
 
         try {
             Diamond.Lab current = loadReadonlyDiamond().getLab(labId).send();
@@ -621,6 +633,13 @@ public class LabAdminService {
             throw new IllegalArgumentException("resourceType must be 0 or 1");
         }
         return BigInteger.valueOf(type);
+    }
+
+    private void validatePhysicalAccessKey(String accessKey, BigInteger resourceType) {
+        if (BigInteger.ONE.equals(resourceType)) {
+            return;
+        }
+        GuacamoleProvisioningService.parseConnectionId(accessKey);
     }
 
     private String objectsToString(Object value) {

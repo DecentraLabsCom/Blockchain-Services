@@ -26,6 +26,25 @@ Request body:
 }
 ```
 
+```mermaid
+sequenceDiagram
+    participant Browser
+    participant Marketplace
+    participant Auth as blockchain-services auth
+    participant Saml as SamlValidationService
+    participant Chain as Smart contracts
+    participant Gateway as Lab Gateway
+
+    Browser->>Marketplace: user login + reservation context
+    Marketplace-->>Browser: marketplace JWT + SAML assertion
+    Browser->>Auth: POST /auth/saml-auth2
+    Auth->>Marketplace: validate marketplace JWT key
+    Auth->>Saml: validate assertion and attributes
+    Auth->>Chain: check reservation entitlement
+    Auth-->>Gateway: signed lab-access JWT
+    Gateway-->>Browser: authenticated Guacamole/FMU session
+```
+
 Validation pipeline:
 
 1. Validate marketplace JWT signature using key from `marketplace.public-key-url`.
