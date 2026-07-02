@@ -62,21 +62,30 @@ public class MarketplaceEndpointAuthService {
 
     private Claims validateToken(String token) {
         try {
-            PublicKey marketplacePublicKey = marketplaceKeyService.getPublicKey(false);
-            JwtParser parser = Jwts.parser()
-                .verifyWith(marketplacePublicKey)
-                .requireIssuer(issuer)
-                .requireAudience(audience)
-                .clockSkewSeconds(clockSkewSeconds)
-                .build();
-            Jws<Claims> jws = parser.parseSignedClaims(token);
-            return jws.getPayload();
+            return parseTokenWithKey(token, marketplaceKeyService.getPublicKey(false));
         } catch (ResponseStatusException ex) {
             throw ex;
-        } catch (Exception ex) {
-            log.warn("Marketplace endpoint JWT validation failed: {}", ex.getMessage());
+        } catch (Exception firstFailure) {
+            try {
+                return parseTokenWithKey(token, marketplaceKeyService.getPublicKey(true));
+            } catch (Exception refreshFailure) {
+                log.warn("Marketplace endpoint JWT validation failed after key refresh: {}",
+                    refreshFailure.getMessage());
+                log.debug("Initial marketplace endpoint JWT validation failure: {}", firstFailure.getMessage());
+            }
             throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "invalid_marketplace_token");
         }
+    }
+
+    private Claims parseTokenWithKey(String token, PublicKey marketplacePublicKey) {
+        JwtParser parser = Jwts.parser()
+            .verifyWith(marketplacePublicKey)
+            .requireIssuer(issuer)
+            .requireAudience(audience)
+            .clockSkewSeconds(clockSkewSeconds)
+            .build();
+        Jws<Claims> jws = parser.parseSignedClaims(token);
+        return jws.getPayload();
     }
 
     private String extractBearerToken(String authorizationHeader) {
