@@ -1,0 +1,165 @@
+package decentralabs.blockchain.service.auth;
+
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
+
+import decentralabs.blockchain.dto.auth.CheckInResponse;
+import decentralabs.blockchain.dto.auth.InstitutionalCheckInRequest;
+import decentralabs.blockchain.dto.auth.SamlAuthRequest;
+import decentralabs.blockchain.service.wallet.InstitutionalWalletService;
+import decentralabs.blockchain.util.PucHashUtil;
+import java.math.BigInteger;
+import java.util.Map;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.test.util.ReflectionTestUtils;
+
+@ExtendWith(MockitoExtension.class)
+class InstitutionalAccessCheckInCoordinatorTest {
+    @Mock
+    private InstitutionalCheckInOutboxService outboxService;
+
+    @Mock
+    private InstitutionalWalletService institutionalWalletService;
+
+    @Mock
+    private InstitutionalCheckInDirectoryService directoryService;
+
+    @Mock
+    private RemoteInstitutionalCheckInClient remoteCheckInClient;
+
+    private InstitutionalAccessCheckInCoordinator coordinator;
+
+    @BeforeEach
+    void setUp() {
+        coordinator = new InstitutionalAccessCheckInCoordinator(
+            outboxService,
+            institutionalWalletService,
+            directoryService,
+            remoteCheckInClient
+        );
+        ReflectionTestUtils.setField(coordinator, "delegationEnabled", true);
+    }
+
+    @Test
+    void enqueuesDurableCheckInWhenLocalSignerIsAuthorized() {
+        when(institutionalWalletService.getInstitutionalWalletAddress())
+            .thenReturn("0x9999999999999999999999999999999999999999");
+        when(directoryService.isAuthorizedCheckInSigner(
+            "0x1111111111111111111111111111111111111111",
+            "0x9999999999999999999999999999999999999999"
+        )).thenReturn(true);
+
+        coordinator.recordAccessGranted(
+            request(),
+            claims(),
+            Map.of(
+                "reservationKey", "0xabc",
+                "lab", BigInteger.valueOf(42),
+                "reservationStatus", BigInteger.ONE,
+                "guacSessionId", "session-1"
+            )
+        );
+
+        verify(outboxService).enqueueAccessGranted(
+            "0xabc",
+            "42",
+            "0x1111111111111111111111111111111111111111",
+            PucHashUtil.hashPuc("puc-123"),
+            "session-1"
+        );
+        verify(remoteCheckInClient, never()).submit(any(), any());
+    }
+
+    @Test
+    void skipsCheckInWhenReservationIsAlreadyInUse() {
+        coordinator.recordAccessGranted(
+            request(),
+            claims(),
+            Map.of(
+                "reservationKey", "0xabc",
+                "lab", BigInteger.valueOf(42),
+                "reservationStatus", BigInteger.valueOf(2)
+            )
+        );
+
+        verify(outboxService, never()).enqueueAccessGranted(any(), any(), any(), any(), any());
+        verify(remoteCheckInClient, never()).submit(any(), any());
+    }
+
+    @Test
+    void delegatesSynchronouslyWhenLocalSignerIsNotAuthorized() {
+        when(institutionalWalletService.getInstitutionalWalletAddress())
+            .thenReturn("0x9999999999999999999999999999999999999999");
+        when(directoryService.isAuthorizedCheckInSigner(
+            "0x1111111111111111111111111111111111111111",
+            "0x9999999999999999999999999999999999999999"
+        )).thenReturn(false);
+        when(directoryService.resolveOrganizationBackendUrl("org.example"))
+            .thenReturn("https://consumer.example");
+        CheckInResponse response = new CheckInResponse();
+        response.setValid(true);
+        when(remoteCheckInClient.submit(eq("https://consumer.example"), any(InstitutionalCheckInRequest.class)))
+            .thenReturn(response);
+
+        coordinator.recordAccessGranted(
+            request(),
+            claims(),
+            Map.of(
+                "reservationKey", "0xabc",
+                "lab", BigInteger.valueOf(42),
+                "reservationStatus", BigInteger.ONE
+            )
+        );
+
+        ArgumentCaptor<InstitutionalCheckInRequest> captor = ArgumentCaptor.forClass(InstitutionalCheckInRequest.class);
+        verify(remoteCheckInClient).submit(eq("https://consumer.example"), captor.capture());
+        verify(outboxService, never()).enqueueAccessGranted(any(), any(), any(), any(), any());
+        InstitutionalCheckInRequest delegated = captor.getValue();
+        org.assertj.core.api.Assertions.assertThat(delegated.getReservationKey()).isEqualTo("0xabc");
+        org.assertj.core.api.Assertions.assertThat(delegated.getLabId()).isEqualTo("42");
+        org.assertj.core.api.Assertions.assertThat(delegated.getPuc()).isEqualTo("puc-123");
+    }
+
+    @Test
+    void rejectsAccessWhenPucClaimIsMissingForPendingCheckIn() {
+        assertThatThrownBy(() -> coordinator.recordAccessGranted(
+            request(),
+            Map.of(
+                "affiliation", "org.example",
+                "institutionalProviderWallet", "0x1111111111111111111111111111111111111111"
+            ),
+            Map.of(
+                "reservationKey", "0xabc",
+                "lab", BigInteger.valueOf(42),
+                "reservationStatus", BigInteger.ONE
+            )
+        ))
+            .isInstanceOf(IllegalStateException.class)
+            .hasMessageContaining("Missing PUC");
+    }
+
+    private SamlAuthRequest request() {
+        SamlAuthRequest request = new SamlAuthRequest();
+        request.setMarketplaceToken("market-token");
+        request.setSamlAssertion("saml");
+        request.setReservationKey("0xabc");
+        return request;
+    }
+
+    private Map<String, Object> claims() {
+        return Map.of(
+            "affiliation", "org.example",
+            "institutionalProviderWallet", "0x1111111111111111111111111111111111111111",
+            "puc", "puc-123"
+        );
+    }
+}

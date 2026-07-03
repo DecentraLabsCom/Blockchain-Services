@@ -18,7 +18,6 @@ import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.Map;
-import java.util.UUID;
 
 /**
  * Service for handling blockchain booking operations
@@ -70,7 +69,11 @@ public class BlockchainBookingService {
     }
 
     public Map<String, Object> getCheckedInBookingInfo(String wallet, String reservationKey, String labId, String puc) {
-        return getBookingInfo(wallet, reservationKey, labId, puc, true);
+        return getBookingInfo(wallet, reservationKey, labId, puc, true, true);
+    }
+
+    public Map<String, Object> getCheckInBookingInfo(String wallet, String reservationKey, String labId, String puc) {
+        return getBookingInfo(wallet, reservationKey, labId, puc, false, false);
     }
 
     private Map<String, Object> getBookingInfo(
@@ -79,14 +82,24 @@ public class BlockchainBookingService {
             String labId,
             String puc,
             boolean requireCheckedIn) {
+        return getBookingInfo(wallet, reservationKey, labId, puc, requireCheckedIn, true);
+    }
+
+    private Map<String, Object> getBookingInfo(
+            String wallet,
+            String reservationKey,
+            String labId,
+            String puc,
+            boolean requireCheckedIn,
+            boolean includeAccessInfo) {
         try {           
             // Determine which method to use based on available parameters
             if (reservationKey != null && !reservationKey.isEmpty()) {
                 // OPTIMAL PATH: Use reservationKey for direct O(1) access
-                return getBookingInfoByReservationKey(wallet, reservationKey, puc, requireCheckedIn);
+                return getBookingInfoByReservationKey(wallet, reservationKey, puc, requireCheckedIn, includeAccessInfo);
             } else if (labId != null && !labId.isEmpty()) {
                 // FALLBACK PATH: Search by labId (requires iteration)
-                return getBookingInfoByLabId(wallet, labId, puc, requireCheckedIn);
+                return getBookingInfoByLabId(wallet, labId, puc, requireCheckedIn, includeAccessInfo);
             } else {
                 throw new IllegalArgumentException(
                     "Must provide either 'reservationKey' (recommended) or 'labId'"
@@ -141,7 +154,8 @@ public class BlockchainBookingService {
             String wallet,
             String reservationKeyHex,
             String expectedPuc,
-            boolean requireCheckedIn)
+            boolean requireCheckedIn,
+            boolean includeAccessInfo)
             throws Exception {
         
         // 1. Convert reservationKey from hex to bytes32
@@ -159,7 +173,6 @@ public class BlockchainBookingService {
         BigInteger start = reservation.start;
         BigInteger end = reservation.end;
         BigInteger status = reservation.status;
-        String authURI = resolveProviderAuthURI(diamond, reservation.labProvider);
         if (expectedPuc != null && !expectedPuc.isBlank()) {
             byte[] expectedHash = computePucHash(expectedPuc);
             byte[] reservationHash = fetchReservationPucHash(diamond, reservationKeyBytes);
@@ -171,7 +184,12 @@ public class BlockchainBookingService {
         // 4. Validate reservation
         validateReservation(wallet, renter, status, start, end, requireCheckedIn);
 
+        if (!includeAccessInfo) {
+            return buildReservationInfo(labId, reservationKeyHex, price, status, start, end);
+        }
+
         // 5. Get lab information (ONE CALL)
+        String authURI = resolveProviderAuthURI(diamond, reservation.labProvider);
         Diamond.Lab lab = diamond.getLab(labId).send();
         Diamond.LabBase base = lab.base;
         
@@ -198,7 +216,8 @@ public class BlockchainBookingService {
             String wallet,
             String labIdStr,
             String puc,
-            boolean requireCheckedIn) throws Exception {
+            boolean requireCheckedIn,
+            boolean includeAccessInfo) throws Exception {
         
         BigInteger labId = EthereumAddressValidator.parseBigInteger(labIdStr, "labId");
 
@@ -253,12 +272,19 @@ public class BlockchainBookingService {
         BigInteger start = reservation.start;
         BigInteger end = reservation.end;
         BigInteger status = reservation.status;
-        String authURI = resolveProviderAuthURI(diamond, reservation.labProvider);
 
         // 4. Validate reservation
         validateReservation(wallet, renter, status, start, end, requireCheckedIn);
 
+        // 5. Convert reservationKey to hex for response
+        String reservationKeyHex = bytesToHex(reservationKeyBytes);
+
+        if (!includeAccessInfo) {
+            return buildReservationInfo(labId, reservationKeyHex, price, status, start, end);
+        }
+
         // 5. Get lab information
+        String authURI = resolveProviderAuthURI(diamond, reservation.labProvider);
         Diamond.Lab lab = diamond.getLab(labId).send();
         Diamond.LabBase base = lab.base;
         
@@ -266,9 +292,6 @@ public class BlockchainBookingService {
         BigInteger labPrice = base.price;
         String accessURI = base.accessURI;
         String accessKey = base.accessKey;
-
-        // 6. Convert reservationKey to hex for response
-        String reservationKeyHex = bytesToHex(reservationKeyBytes);
 
         // 7. Build and return booking info
         return buildBookingInfo(
@@ -353,7 +376,7 @@ public class BlockchainBookingService {
             if (!GuacamoleProvisioningService.isGuacamoleSelector(accessKey)) {
                 throw new IllegalArgumentException("Physical Guacamole labs require accessKey format guac:id:<connection_id>");
             }
-            String sessionId = UUID.randomUUID().toString();
+            String sessionId = guacamoleSessionId(reservationKeyHex);
             var provisioned = guacamoleProvisioningService.provisionTemporaryUser(accessKey, sessionId, expiresAt, accessURI);
             subject = provisioned.username();
             bookingInfo.put("guacSessionId", sessionId);
@@ -387,6 +410,38 @@ public class BlockchainBookingService {
         // labURL for JSON response
         bookingInfo.put("labURL", accessURI);               // Complete URL to access lab
 
+        return bookingInfo;
+    }
+
+    private String guacamoleSessionId(String reservationKeyHex) {
+        String clean = reservationKeyHex == null ? "" : reservationKeyHex.trim();
+        if (clean.startsWith("0x") || clean.startsWith("0X")) {
+            clean = clean.substring(2);
+        }
+        clean = clean.replaceAll("[^A-Za-z0-9_.-]", "");
+        if (clean.isBlank()) {
+            throw new IllegalArgumentException("Missing reservation key for Guacamole session");
+        }
+        if (clean.length() > 120) {
+            clean = clean.substring(clean.length() - 120);
+        }
+        return "res-" + clean.toLowerCase();
+    }
+
+    private Map<String, Object> buildReservationInfo(
+            BigInteger labId,
+            String reservationKeyHex,
+            BigInteger price,
+            BigInteger status,
+            BigInteger start,
+            BigInteger end) {
+        Map<String, Object> bookingInfo = new HashMap<>();
+        bookingInfo.put("lab", labId);
+        bookingInfo.put("reservationKey", reservationKeyHex);
+        bookingInfo.put("reservationStatus", status);
+        bookingInfo.put("price", price);
+        bookingInfo.put("nbf", start);
+        bookingInfo.put("exp", end);
         return bookingInfo;
     }
 

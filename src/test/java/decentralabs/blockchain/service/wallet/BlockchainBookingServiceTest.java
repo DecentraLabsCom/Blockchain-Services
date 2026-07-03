@@ -119,11 +119,45 @@ class BlockchainBookingServiceTest {
             assertThat(result.get("reservationStatus")).isEqualTo(BigInteger.ONE);
             assertThat(result.get("price")).isEqualTo(BigInteger.valueOf(1000));
             assertThat(result.get("aud")).isEqualTo("https://lab.url");
-            assertThat(result.get("sub")).asString().startsWith("dlabs-res-");
+            String expectedSessionId = "res-" + TEST_RESERVATION_KEY.substring(2);
+            assertThat(result.get("sub")).isEqualTo("dlabs-res-" + expectedSessionId);
             assertThat(result.get("accessKey")).isEqualTo("guac:id:123");
-            assertThat(result.get("guacSessionId")).isNotNull();
+            assertThat(result.get("guacSessionId")).isEqualTo(expectedSessionId);
             assertThat(result.get("guacamoleConnectionId")).isEqualTo(BigInteger.valueOf(123));
-            verify(guacamoleProvisioningService).provisionTemporaryUser(eq("guac:id:123"), anyString(), any(), eq("https://lab.url"));
+            verify(guacamoleProvisioningService).provisionTemporaryUser(eq("guac:id:123"), eq(expectedSessionId), any(), eq("https://lab.url"));
+        }
+    }
+
+    @Test
+    void shouldRetrieveCheckInBookingInfoWithoutProvisioningGuacamoleAccess() throws Exception {
+        Diamond.Reservation reservation = createMockReservation(
+                TEST_LAB_ID,
+                TEST_WALLET,
+                BigInteger.valueOf(1000),
+                getCurrentTimestamp().subtract(BigInteger.valueOf(3600)),
+                getCurrentTimestamp().add(BigInteger.valueOf(3600)),
+                BigInteger.ONE
+        );
+
+        try (MockedStatic<Diamond> diamondMock = mockStatic(Diamond.class)) {
+            diamondMock.when(() -> Diamond.load(
+                    anyString(),
+                    any(Web3j.class),
+                    any(ReadonlyTransactionManager.class),
+                    any(ContractGasProvider.class)))
+                    .thenReturn(diamond);
+
+            when(diamond.getReservation(any(byte[].class))).thenReturn(mockRemoteCall(reservation));
+
+            Map<String, Object> result = service.getCheckInBookingInfo(TEST_WALLET, TEST_RESERVATION_KEY, null, null);
+
+            assertThat(result).isNotNull();
+            assertThat(result.get("lab")).isEqualTo(TEST_LAB_ID);
+            assertThat(result.get("reservationKey")).isEqualTo(TEST_RESERVATION_KEY);
+            assertThat(result.get("reservationStatus")).isEqualTo(BigInteger.ONE);
+            assertThat(result.get("price")).isEqualTo(BigInteger.valueOf(1000));
+            verify(diamond, never()).getLab(any());
+            verify(guacamoleProvisioningService, never()).provisionTemporaryUser(anyString(), anyString(), any(), anyString());
         }
     }
 

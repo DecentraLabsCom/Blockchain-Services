@@ -31,6 +31,7 @@ public class SamlAuthService {
     private final JwtService jwtService;
     private final MarketplaceEndpointAuthService marketplaceEndpointAuthService;
     private final SamlValidationService samlValidationService;
+    private final InstitutionalAccessCheckInCoordinator accessCheckInCoordinator;
 
     @Value("${auth.saml.require-booking-scope:true}")
     private boolean requireBookingScope;
@@ -75,6 +76,7 @@ public class SamlAuthService {
         enforceBookingInfoAccess(includeBookingInfo, marketplaceJWTClaims);
         if (includeBookingInfo) {
             return buildBookingInfoResponse(
+                request,
                 marketplaceJWTClaims,
                 request.getReservationKey(),
                 request.getLabId()
@@ -137,6 +139,7 @@ public class SamlAuthService {
     }
 
     private AuthResponse buildBookingInfoResponse(
+        SamlAuthRequest request,
         Map<String, Object> marketplaceJWTClaims,
         String reservationKey,
         String labId
@@ -144,12 +147,13 @@ public class SamlAuthService {
         try {
             String institutionalProviderWallet = (String) marketplaceJWTClaims.get("institutionalProviderWallet");
             String puc = (String) marketplaceJWTClaims.get("puc");
-            Map<String, Object> bookingInfo = blockchainService.getCheckedInBookingInfo(
+            Map<String, Object> bookingInfo = blockchainService.getBookingInfo(
                 institutionalProviderWallet,
                 reservationKey,
                 labId,
                 puc
             );
+            accessCheckInCoordinator.recordAccessGranted(request, marketplaceJWTClaims, bookingInfo);
             String token = jwtService.generateToken(null, bookingInfo);
             return new AuthResponse(token, (String) bookingInfo.get("labURL"));
         } catch (RuntimeException ex) {

@@ -97,7 +97,7 @@ public class InstitutionalCheckInService {
             throw new SecurityException("Marketplace token institutionalProviderWallet mismatch");
         }
 
-        Map<String, Object> bookingInfo = bookingService.getBookingInfo(
+        Map<String, Object> bookingInfo = bookingService.getCheckInBookingInfo(
             institutionWallet,
             request.getReservationKey(),
             request.getLabId(),

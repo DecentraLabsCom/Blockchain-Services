@@ -4,9 +4,9 @@ import decentralabs.blockchain.dto.auth.CheckInRequest;
 import decentralabs.blockchain.dto.auth.CheckInResponse;
 import decentralabs.blockchain.service.wallet.InstitutionalWalletService;
 import decentralabs.blockchain.service.wallet.WalletService;
+import decentralabs.blockchain.util.PucHashUtil;
 import java.io.IOException;
 import java.math.BigInteger;
-import java.nio.charset.StandardCharsets;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -19,7 +19,6 @@ import org.web3j.abi.datatypes.Function;
 import org.web3j.abi.datatypes.generated.Bytes32;
 import org.web3j.abi.datatypes.generated.Uint64;
 import org.web3j.crypto.Credentials;
-import org.web3j.crypto.Hash;
 import org.web3j.protocol.Web3j;
 import org.web3j.protocol.core.methods.response.EthChainId;
 import org.web3j.protocol.core.methods.response.EthSendTransaction;
@@ -53,12 +52,26 @@ public class CheckInOnChainService {
 
     public CheckInResponse verifyAndSubmit(CheckInRequest request) {
         CheckInResponse response = checkInAuthService.verifyCheckIn(request);
-        String txHash = submitOnChain(request, response);
+        String pucHash = computePucHash(request.getPuc());
+        long timestamp = response.getTimestamp() != null ? response.getTimestamp() : 0L;
+        String txHash = submitSignedCheckIn(
+            response.getSigner(),
+            response.getReservationKey(),
+            pucHash,
+            timestamp,
+            request.getSignature()
+        );
         response.setTxHash(txHash);
         return response;
     }
 
-    private String submitOnChain(CheckInRequest request, CheckInResponse response) {
+    public String submitSignedCheckIn(
+        String signer,
+        String reservationKey,
+        String pucHash,
+        long timestamp,
+        String signature
+    ) {
         Credentials credentials = institutionalWalletService.getInstitutionalCredentials();
         Web3j web3j = walletService.getWeb3jInstance();
         
@@ -68,14 +81,12 @@ public class CheckInOnChainService {
         long chainId = getChainId(web3j);
         TransactionManager txManager = new FastRawTransactionManager(web3j, credentials, chainId);
 
-        String signer = response.getSigner();
-        String reservationKey = normalizeBytes32(response.getReservationKey());
-        String pucHash = computePucHash(request.getPuc());
-        long timestamp = response.getTimestamp() != null ? response.getTimestamp() : 0L;
+        String normalizedReservationKey = normalizeBytes32(reservationKey);
+        String normalizedPucHash = normalizeBytes32(pucHash);
 
-        byte[] reservationKeyBytes = Numeric.hexStringToByteArray(reservationKey);
-        byte[] pucHashBytes = Numeric.hexStringToByteArray(pucHash);
-        byte[] signatureBytes = Numeric.hexStringToByteArray(request.getSignature());
+        byte[] reservationKeyBytes = Numeric.hexStringToByteArray(normalizedReservationKey);
+        byte[] pucHashBytes = Numeric.hexStringToByteArray(normalizedPucHash);
+        byte[] signatureBytes = Numeric.hexStringToByteArray(signature);
 
         Function function = new Function(
             "checkInReservationWithSignature",
@@ -195,11 +206,7 @@ public class CheckInOnChainService {
     }
 
     private String computePucHash(String puc) {
-        if (puc == null || puc.isBlank()) {
-            return "0x" + "0".repeat(64);
-        }
-        byte[] hash = Hash.sha3(puc.getBytes(StandardCharsets.UTF_8));
-        return normalizeBytes32(Numeric.toHexString(hash));
+        return PucHashUtil.hashPuc(puc);
     }
 
     private String normalizeBytes32(String value) {

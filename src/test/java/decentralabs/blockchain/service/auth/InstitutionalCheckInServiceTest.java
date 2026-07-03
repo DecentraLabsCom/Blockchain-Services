@@ -89,7 +89,7 @@ class InstitutionalCheckInServiceTest {
             "puc", "puc-123",
             "institutionalProviderWallet", "0x1111111111111111111111111111111111111111"
         ));
-        when(bookingService.getBookingInfo("0x1111111111111111111111111111111111111111", "0xabc", "42", "puc-123"))
+        when(bookingService.getCheckInBookingInfo("0x1111111111111111111111111111111111111111", "0xabc", "42", "puc-123"))
             .thenReturn(Map.of("reservationKey", "0xabc"));
         when(institutionalWalletService.getInstitutionalWalletAddress()).thenReturn(credentials.getAddress());
         when(directoryService.isAuthorizedCheckInSigner("0x1111111111111111111111111111111111111111", credentials.getAddress()))
@@ -102,7 +102,7 @@ class InstitutionalCheckInServiceTest {
         CheckInResponse response = service.checkIn(request);
 
         assertThat(response).isSameAs(onChainResponse);
-        verify(bookingService).getBookingInfo("0x1111111111111111111111111111111111111111", "0xabc", "42", "puc-123");
+        verify(bookingService).getCheckInBookingInfo("0x1111111111111111111111111111111111111111", "0xabc", "42", "puc-123");
 
         ArgumentCaptor<CheckInRequest> captor = ArgumentCaptor.forClass(CheckInRequest.class);
         verify(checkInOnChainService).verifyAndSubmit(captor.capture());
@@ -132,7 +132,7 @@ class InstitutionalCheckInServiceTest {
             "puc", "puc-123",
             "institutionalProviderWallet", credentials.getAddress()
         ));
-        when(bookingService.getBookingInfo(credentials.getAddress(), "0xabc", "42", "puc-123"))
+        when(bookingService.getCheckInBookingInfo(credentials.getAddress(), "0xabc", "42", "puc-123"))
             .thenReturn(Map.of("reservationKey", "0xabc"));
         when(institutionalWalletService.getInstitutionalWalletAddress()).thenReturn(credentials.getAddress());
         when(directoryService.isAuthorizedCheckInSigner(credentials.getAddress(), credentials.getAddress()))
@@ -160,7 +160,7 @@ class InstitutionalCheckInServiceTest {
             "puc", "puc-123",
             "institutionalProviderWallet", "0x1111111111111111111111111111111111111111"
         ));
-        when(bookingService.getBookingInfo("0x1111111111111111111111111111111111111111", "0xabc", "42", "puc-123"))
+        when(bookingService.getCheckInBookingInfo("0x1111111111111111111111111111111111111111", "0xabc", "42", "puc-123"))
             .thenReturn(Map.of(
                 "reservationKey", "0xabc",
                 "reservationStatus", BigInteger.valueOf(2)
@@ -192,7 +192,7 @@ class InstitutionalCheckInServiceTest {
             "puc", "puc-123",
             "institutionalProviderWallet", "0x1111111111111111111111111111111111111111"
         ));
-        when(bookingService.getBookingInfo("0x1111111111111111111111111111111111111111", "0xabc", "42", "puc-123"))
+        when(bookingService.getCheckInBookingInfo("0x1111111111111111111111111111111111111111", "0xabc", "42", "puc-123"))
             .thenReturn(Map.of("reservationKey", "0xabc"));
         when(institutionalWalletService.getInstitutionalWalletAddress()).thenReturn("0x9999999999999999999999999999999999999999");
         when(directoryService.isAuthorizedCheckInSigner(
@@ -253,7 +253,7 @@ class InstitutionalCheckInServiceTest {
             "puc", "puc-123",
             "institutionalProviderWallet", "0x1111111111111111111111111111111111111111"
         ));
-        when(bookingService.getBookingInfo("0x1111111111111111111111111111111111111111", "0xabc", "42", "puc-123"))
+        when(bookingService.getCheckInBookingInfo("0x1111111111111111111111111111111111111111", "0xabc", "42", "puc-123"))
             .thenReturn(Map.of());
 
         assertThatThrownBy(() -> service.checkIn(request))

@@ -1,0 +1,141 @@
+package decentralabs.blockchain.service.auth;
+
+import decentralabs.blockchain.dto.auth.CheckInResponse;
+import decentralabs.blockchain.dto.auth.InstitutionalCheckInRequest;
+import decentralabs.blockchain.dto.auth.SamlAuthRequest;
+import decentralabs.blockchain.service.wallet.InstitutionalWalletService;
+import decentralabs.blockchain.util.PucHashUtil;
+import decentralabs.blockchain.util.PucNormalizer;
+import java.math.BigInteger;
+import java.util.Locale;
+import java.util.Map;
+import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.stereotype.Service;
+
+@Service
+@RequiredArgsConstructor
+public class InstitutionalAccessCheckInCoordinator {
+    private static final BigInteger STATUS_IN_USE = BigInteger.valueOf(2);
+
+    private final InstitutionalCheckInOutboxService outboxService;
+    private final InstitutionalWalletService institutionalWalletService;
+    private final InstitutionalCheckInDirectoryService directoryService;
+    private final RemoteInstitutionalCheckInClient remoteCheckInClient;
+
+    @Value("${institutional.checkin.delegation.enabled:true}")
+    private boolean delegationEnabled;
+
+    public void recordAccessGranted(
+        SamlAuthRequest request,
+        Map<String, Object> marketplaceClaims,
+        Map<String, Object> bookingInfo
+    ) {
+        if (isInUseStatus(bookingInfo.get("reservationStatus"))) {
+            return;
+        }
+
+        String reservationKey = stringValue(bookingInfo.get("reservationKey"));
+        String institutionalWallet = stringValue(marketplaceClaims.get("institutionalProviderWallet"));
+        String puc = PucNormalizer.normalize(stringValue(marketplaceClaims.get("puc")));
+        String labId = stringValue(bookingInfo.get("lab"));
+        String accessSessionId = firstNonBlank(
+            stringValue(bookingInfo.get("guacSessionId")),
+            stringValue(bookingInfo.get("reservationKey"))
+        );
+
+        if (!hasText(reservationKey) || !hasText(institutionalWallet)) {
+            throw new IllegalStateException("Missing reservation or institution data for check-in outbox");
+        }
+        if (!hasText(puc)) {
+            throw new IllegalStateException("Missing PUC claim for institutional check-in");
+        }
+
+        String configuredSigner = normalizeAddress(institutionalWalletService.getInstitutionalWalletAddress());
+        if (directoryService.isAuthorizedCheckInSigner(institutionalWallet, configuredSigner)) {
+            outboxService.enqueueAccessGranted(
+                reservationKey,
+                labId,
+                institutionalWallet,
+                PucHashUtil.hashPuc(puc),
+                accessSessionId
+            );
+            return;
+        }
+
+        delegateSynchronously(request, marketplaceClaims, reservationKey, institutionalWallet, puc, labId);
+    }
+
+    private void delegateSynchronously(
+        SamlAuthRequest request,
+        Map<String, Object> marketplaceClaims,
+        String reservationKey,
+        String institutionalWallet,
+        String puc,
+        String resolvedLabId
+    ) {
+        if (!delegationEnabled) {
+            throw new IllegalStateException("Local wallet is not authorized for institution check-in");
+        }
+        String organization = normalizeOrganization(stringValue(marketplaceClaims.get("affiliation")));
+        String backendUrl = directoryService.resolveOrganizationBackendUrl(organization);
+        if (!hasText(backendUrl)) {
+            throw new IllegalStateException("No institutional backend registered for organization " + organization);
+        }
+
+        InstitutionalCheckInRequest checkInRequest = new InstitutionalCheckInRequest();
+        checkInRequest.setMarketplaceToken(request.getMarketplaceToken());
+        checkInRequest.setSamlAssertion(request.getSamlAssertion());
+        checkInRequest.setReservationKey(reservationKey);
+        checkInRequest.setLabId(firstNonBlank(request.getLabId(), resolvedLabId));
+        checkInRequest.setInstitutionalProviderWallet(institutionalWallet);
+        checkInRequest.setPuc(puc);
+
+        CheckInResponse response = remoteCheckInClient.submit(backendUrl, checkInRequest);
+        if (response == null || !response.isValid()) {
+            String reason = response != null ? response.getReason() : "no response";
+            throw new IllegalStateException("Delegated institutional check-in failed: " + reason);
+        }
+    }
+
+    private boolean isInUseStatus(Object value) {
+        if (value instanceof BigInteger status) {
+            return STATUS_IN_USE.equals(status);
+        }
+        if (value instanceof Number status) {
+            return status.longValue() == STATUS_IN_USE.longValue();
+        }
+        if (value != null) {
+            try {
+                return STATUS_IN_USE.equals(new BigInteger(value.toString()));
+            } catch (RuntimeException ignored) {
+                return false;
+            }
+        }
+        return false;
+    }
+
+    private String normalizeAddress(String value) {
+        if (value == null) {
+            return null;
+        }
+        String trimmed = value.trim();
+        return trimmed.isEmpty() ? null : trimmed;
+    }
+
+    private String normalizeOrganization(String value) {
+        return value == null ? "" : value.trim().toLowerCase(Locale.ROOT);
+    }
+
+    private boolean hasText(String value) {
+        return value != null && !value.isBlank();
+    }
+
+    private String firstNonBlank(String first, String second) {
+        return hasText(first) ? first : second;
+    }
+
+    private String stringValue(Object value) {
+        return value == null ? null : String.valueOf(value);
+    }
+}

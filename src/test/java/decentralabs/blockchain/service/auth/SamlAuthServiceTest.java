@@ -6,6 +6,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.lenient;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import java.util.List;
@@ -41,6 +42,9 @@ class SamlAuthServiceTest {
 
     @Mock
     private SamlValidationService samlValidationService;
+
+    @Mock
+    private InstitutionalAccessCheckInCoordinator accessCheckInCoordinator;
 
     @InjectMocks
     private SamlAuthService samlAuthService;
@@ -308,14 +312,83 @@ class SamlAuthServiceTest {
                 ));
             when(samlValidationService.validateSamlAssertionWithSignature(anyString()))
                 .thenReturn(Map.of("userid", TEST_USER_ID, "affiliation", TEST_AFFILIATION));
-            when(blockchainService.getCheckedInBookingInfo(anyString(), anyString(), any(), anyString()))
-                .thenReturn(Map.of("labURL", "https://lab.example.com"));
+            Map<String, Object> bookingInfo = Map.of(
+                "labURL", "https://lab.example.com",
+                "reservationKey", "0xreservation",
+                "reservationStatus", java.math.BigInteger.ONE
+            );
+            when(blockchainService.getBookingInfo(anyString(), anyString(), any(), anyString()))
+                .thenReturn(bookingInfo);
             when(jwtService.generateToken(eq(null), any())).thenReturn("booking-token");
 
             AuthResponse response = samlAuthService.handleAuthentication(request, true);
 
             assertThat(response).isNotNull();
             assertThat(response.getToken()).isEqualTo("booking-token");
+            verify(accessCheckInCoordinator).recordAccessGranted(eq(request), any(), eq(bookingInfo));
+        }
+
+        @Test
+        @DisplayName("Should allow booking info when reservation is already in use")
+        void shouldAllowBookingInfoWhenReservationAlreadyInUse() throws Exception {
+            SamlAuthRequest request = createValidRequest();
+            request.setReservationKey("0xreservation");
+            request.setMarketplaceToken("jwt-booking-in-use");
+            when(marketplaceEndpointAuthService.enforceToken(eq("jwt-booking-in-use"), eq(null)))
+                .thenReturn(Map.of(
+                    "userid", TEST_USER_ID,
+                    "affiliation", TEST_AFFILIATION,
+                    "bookingInfoAllowed", true,
+                    "institutionalProviderWallet", "0xwallet",
+                    "puc", "puc123"
+                ));
+            when(samlValidationService.validateSamlAssertionWithSignature(anyString()))
+                .thenReturn(Map.of("userid", TEST_USER_ID, "affiliation", TEST_AFFILIATION));
+            Map<String, Object> bookingInfo = Map.of(
+                "labURL", "https://lab.example.com",
+                "reservationKey", "0xreservation",
+                "reservationStatus", java.math.BigInteger.valueOf(2)
+            );
+            when(blockchainService.getBookingInfo(anyString(), anyString(), any(), anyString()))
+                .thenReturn(bookingInfo);
+            when(jwtService.generateToken(eq(null), any())).thenReturn("booking-token");
+
+            AuthResponse response = samlAuthService.handleAuthentication(request, true);
+
+            assertThat(response).isNotNull();
+            assertThat(response.getToken()).isEqualTo("booking-token");
+            verify(accessCheckInCoordinator).recordAccessGranted(eq(request), any(), eq(bookingInfo));
+        }
+
+        @Test
+        @DisplayName("Should not issue JWT if durable check-in coordination fails")
+        void shouldNotIssueJwtWhenCheckInCoordinationFails() throws Exception {
+            SamlAuthRequest request = createValidRequest();
+            request.setReservationKey("0xreservation");
+            request.setMarketplaceToken("jwt-outbox-fail");
+            when(marketplaceEndpointAuthService.enforceToken(eq("jwt-outbox-fail"), eq(null)))
+                .thenReturn(Map.of(
+                    "userid", TEST_USER_ID,
+                    "affiliation", TEST_AFFILIATION,
+                    "bookingInfoAllowed", true,
+                    "institutionalProviderWallet", "0xwallet",
+                    "puc", "puc123"
+                ));
+            when(samlValidationService.validateSamlAssertionWithSignature(anyString()))
+                .thenReturn(Map.of("userid", TEST_USER_ID, "affiliation", TEST_AFFILIATION));
+            Map<String, Object> bookingInfo = Map.of(
+                "labURL", "https://lab.example.com",
+                "reservationKey", "0xreservation",
+                "reservationStatus", java.math.BigInteger.ONE
+            );
+            when(blockchainService.getBookingInfo(anyString(), anyString(), any(), anyString()))
+                .thenReturn(bookingInfo);
+            org.mockito.Mockito.doThrow(new IllegalStateException("outbox unavailable"))
+                .when(accessCheckInCoordinator).recordAccessGranted(eq(request), any(), any());
+
+            assertThatThrownBy(() -> samlAuthService.handleAuthentication(request, true))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("outbox unavailable");
         }
 
         @Test
@@ -334,7 +407,7 @@ class SamlAuthServiceTest {
                 ));
             when(samlValidationService.validateSamlAssertionWithSignature(anyString()))
                 .thenReturn(Map.of("userid", TEST_USER_ID, "affiliation", TEST_AFFILIATION));
-            when(blockchainService.getCheckedInBookingInfo(anyString(), anyString(), any(), anyString()))
+            when(blockchainService.getBookingInfo(anyString(), anyString(), any(), anyString()))
                 .thenReturn(Map.of("labURL", "https://lab.example.com"));
             when(jwtService.generateToken(eq(null), any())).thenReturn("booking-token");
 
@@ -359,7 +432,7 @@ class SamlAuthServiceTest {
                 ));
             when(samlValidationService.validateSamlAssertionWithSignature(anyString()))
                 .thenReturn(Map.of("userid", TEST_USER_ID, "affiliation", TEST_AFFILIATION));
-            when(blockchainService.getCheckedInBookingInfo(anyString(), anyString(), any(), anyString()))
+            when(blockchainService.getBookingInfo(anyString(), anyString(), any(), anyString()))
                 .thenReturn(Map.of("labURL", "https://lab.example.com"));
             when(jwtService.generateToken(eq(null), any())).thenReturn("booking-token");
 
@@ -385,7 +458,7 @@ class SamlAuthServiceTest {
                 ));
             when(samlValidationService.validateSamlAssertionWithSignature(anyString()))
                 .thenReturn(Map.of("userid", TEST_USER_ID, "affiliation", TEST_AFFILIATION));
-            when(blockchainService.getCheckedInBookingInfo(anyString(), anyString(), any(), anyString()))
+            when(blockchainService.getBookingInfo(anyString(), anyString(), any(), anyString()))
                 .thenReturn(Map.of("labURL", "https://lab.example.com"));
             when(jwtService.generateToken(eq(null), any())).thenReturn("booking-token");
 
