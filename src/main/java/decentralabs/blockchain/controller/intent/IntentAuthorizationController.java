@@ -74,6 +74,22 @@ public class IntentAuthorizationController {
         return ResponseEntity.ok(response);
     }
 
+    @PostMapping("/authorize/client-error")
+    public ResponseEntity<Map<String, String>> reportClientError(@RequestBody Map<String, Object> payload) {
+        log.warn(
+            "Intent authorization client error. sessionId={} requestId={} name={} message={} rpId={} origin={} allowCredentials={} userAgent={}",
+            sanitizeLogValue(payload.get("sessionId"), 80),
+            sanitizeLogValue(payload.get("requestId"), 100),
+            sanitizeLogValue(payload.get("name"), 80),
+            sanitizeLogValue(payload.get("message"), 240),
+            sanitizeLogValue(payload.get("rpId"), 120),
+            sanitizeLogValue(payload.get("origin"), 160),
+            sanitizeLogValue(payload.get("allowCredentials"), 20),
+            sanitizeLogValue(payload.get("userAgent"), 240)
+        );
+        return ResponseEntity.ok(Map.of("status", "logged"));
+    }
+
     private String generateCeremonyHtml(IntentAuthorizationService.AuthorizationSession session) {
         Map<String, Object> options = new HashMap<>();
         options.put("sessionId", session.getSessionId());
@@ -231,6 +247,31 @@ public class IntentAuthorizationController {
       notifyParent('CANCELLED', 'Authorization window closed');
     }
 
+    function reportClientError(err, stage) {
+      try {
+        const payload = {
+          sessionId: options.sessionId || null,
+          requestId: options.requestId || null,
+          stage: stage || 'webauthn',
+          name: err?.name || 'Error',
+          message: err?.message || String(err || 'Authorization failed'),
+          code: err?.code || null,
+          rpId: options.rpId || null,
+          origin: window.location.origin,
+          allowCredentials: Array.isArray(options.allowCredentials) ? options.allowCredentials.length : 0,
+          userAgent: navigator.userAgent,
+        };
+        fetch('/intents/authorize/client-error', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+          keepalive: true,
+        }).catch(() => {});
+      } catch {
+        // ignore diagnostic reporting errors
+      }
+    }
+
     function closeOrFallbackAfterSuccess() {
       if (window.opener && !window.opener.closed) {
         // Browser will only allow this for script-opened windows.
@@ -294,10 +335,12 @@ public class IntentAuthorizationController {
         if (err && err.name === 'NotAllowedError') {
           const message = 'You cancelled the request or it timed out';
           showStatus('error', message);
+          reportClientError(err, 'navigator.credentials.get');
           notifyParent('CANCELLED', message);
         } else {
           const message = err?.message || 'Authorization failed';
           showStatus('error', message);
+          reportClientError(err, 'navigator.credentials.get');
           notifyParent('FAILED', message);
         }
       }
@@ -326,5 +369,20 @@ public class IntentAuthorizationController {
             log.error("Failed to serialize intent authorization options", e);
             throw new RuntimeException("Failed to serialize intent authorization options", e);
         }
+    }
+
+    private String sanitizeLogValue(Object value, int maxLength) {
+        if (value == null) {
+            return "n/a";
+        }
+        String text = String.valueOf(value)
+            .replace('\n', ' ')
+            .replace('\r', ' ')
+            .replace('\t', ' ')
+            .trim();
+        if (text.length() <= maxLength) {
+            return text;
+        }
+        return text.substring(0, maxLength) + "...";
     }
 }

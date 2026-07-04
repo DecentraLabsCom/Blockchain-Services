@@ -150,7 +150,8 @@ class IntentAuthorizationControllerTest {
             .andExpect(content().string(org.hamcrest.Matchers.containsString("\"sessionId\":\"session-abc\"")))
             .andExpect(content().string(org.hamcrest.Matchers.containsString("\"requestId\":\"request-xyz\"")))
             .andExpect(content().string(org.hamcrest.Matchers.containsString("\"allowCredentials\":[\"cred-1\",\"cred-2\"]")))
-            .andExpect(content().string(org.hamcrest.Matchers.containsString("\"rpId\":\"example.com\"")));
+            .andExpect(content().string(org.hamcrest.Matchers.containsString("\"rpId\":\"example.com\"")))
+            .andExpect(content().string(org.hamcrest.Matchers.containsString("/intents/authorize/client-error")));
     }
 
     @Test
@@ -182,6 +183,28 @@ class IntentAuthorizationControllerTest {
             .andExpect(status().isBadRequest())
             .andExpect(jsonPath("$.message").value("Invalid or expired session"))
             .andExpect(jsonPath("$.status").value(400));
+    }
+
+    @Test
+    void reportClientError_acceptsWebauthnFailureDiagnostics() throws Exception {
+        String body = """
+            {
+              "sessionId": "session-123",
+              "requestId": "request-123",
+              "name": "NotAllowedError",
+              "message": "The operation either timed out or was not allowed.",
+              "rpId": "example.com",
+              "origin": "https://example.com",
+              "allowCredentials": 1,
+              "userAgent": "test-agent"
+            }
+            """;
+
+        mockMvc.perform(post("/intents/authorize/client-error")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(body))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.status").value("logged"));
     }
 
     private IntentAuthorizationRequest validAuthorizationRequest() {
