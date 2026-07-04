@@ -119,7 +119,7 @@ class BlockchainBookingServiceTest {
             assertThat(result.get("reservationStatus")).isEqualTo(BigInteger.ONE);
             assertThat(result.get("price")).isEqualTo(BigInteger.valueOf(1000));
             assertThat(result.get("aud")).isEqualTo("https://lab.url");
-            String expectedSessionId = "res-" + TEST_RESERVATION_KEY.substring(2);
+            String expectedSessionId = TEST_RESERVATION_KEY.substring(2);
             assertThat(result.get("sub")).isEqualTo("dlabs-res-" + expectedSessionId);
             assertThat(result.get("accessKey")).isEqualTo("guac:id:123");
             assertThat(result.get("guacSessionId")).isEqualTo(expectedSessionId);

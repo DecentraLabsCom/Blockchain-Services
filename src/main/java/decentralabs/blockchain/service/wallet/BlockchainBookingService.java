@@ -425,7 +425,7 @@ public class BlockchainBookingService {
         if (clean.length() > 120) {
             clean = clean.substring(clean.length() - 120);
         }
-        return "res-" + clean.toLowerCase();
+        return clean.toLowerCase();
     }
 
     private Map<String, Object> buildReservationInfo(
