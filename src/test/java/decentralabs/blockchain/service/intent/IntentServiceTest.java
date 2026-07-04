@@ -29,6 +29,7 @@ import decentralabs.blockchain.dto.intent.ReservationIntentPayload;
 import decentralabs.blockchain.service.auth.SamlValidationService;
 import decentralabs.blockchain.service.auth.WebauthnCredentialService;
 import decentralabs.blockchain.service.wallet.WalletService;
+import decentralabs.blockchain.util.PucHashUtil;
 
 @ExtendWith(MockitoExtension.class)
 @DisplayName("IntentService Tests")
@@ -84,6 +85,7 @@ class IntentServiceTest {
                 return labPriceToReturn;
             }
         };
+        lenient().when(samlValidationService.resolveStableUserId(any(), any(), any())).thenCallRealMethod();
     }
 
     @Test
@@ -126,6 +128,37 @@ class IntentServiceTest {
         Thread.sleep(200);
         // should not throw
         checkMethod.invoke(shortTtlService, hash);
+    }
+
+    @Test
+    @DisplayName("SAML validation resolves action pucHash with principal mode")
+    void validateSamlAssertionResolvesActionPayloadPucHashWithPrincipalMode() throws Exception {
+        when(samlValidationService.validateSamlAssertionWithSignature("saml")).thenReturn(Map.of(
+            "userid", "user@example.edu|targeted-user",
+            "eduPersonPrincipalName", "user@example.edu",
+            "eduPersonTargetedID", "targeted-user"
+        ));
+        ActionIntentPayload payload = createValidActionPayload();
+        payload.setPucHash(PucHashUtil.hashPuc("user@example.edu"));
+
+        var method = IntentService.class.getDeclaredMethod(
+            "validateSamlAssertion",
+            ActionIntentPayload.class,
+            ReservationIntentPayload.class,
+            String.class,
+            String.class
+        );
+        method.setAccessible(true);
+
+        String resolved = (String) method.invoke(
+            service,
+            payload,
+            null,
+            "saml",
+            SamlValidationService.STABLE_USER_ID_MODE_PRINCIPAL
+        );
+
+        assertEquals("user@example.edu", resolved);
     }
 
     private IntentMeta createValidMeta() {

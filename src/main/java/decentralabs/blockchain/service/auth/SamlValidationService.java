@@ -43,11 +43,13 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Locale;
+import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
 import java.security.PublicKey;
 import java.security.interfaces.ECPublicKey;
 import java.security.interfaces.RSAPublicKey;
+import decentralabs.blockchain.util.PucHashUtil;
 import decentralabs.blockchain.util.PucNormalizer;
 
 /**
@@ -63,6 +65,8 @@ import decentralabs.blockchain.util.PucNormalizer;
 public class SamlValidationService {
     
     private static final Logger logger = LoggerFactory.getLogger(SamlValidationService.class);
+    public static final String STABLE_USER_ID_MODE_PRINCIPAL = "principal";
+    public static final String STABLE_USER_ID_MODE_PRINCIPAL_TARGETED_ID = "principal_targeted_id";
 
     private static final String[] EDU_PERSON_TARGETED_ID_ATTRIBUTE_ALIASES = new String[] {
         "edupersontargetedid",
@@ -218,8 +222,52 @@ public class SamlValidationService {
         if (attrs.email() != null) {
             attributes.put("email", attrs.email());
         }
+        firstAttribute(attrs, "eduPersonPrincipalName").ifPresent(value -> attributes.put("eduPersonPrincipalName", value));
+        firstAttribute(attrs, "eduPersonTargetedID").ifPresent(value -> attributes.put("eduPersonTargetedID", value));
         attributes.put("issuer", attrs.issuer());
         return attributes;
+    }
+
+    public String resolveStableUserId(
+        Map<String, String> samlAttributes,
+        String stableUserIdMode,
+        String expectedPucHash
+    ) {
+        if (samlAttributes == null || samlAttributes.isEmpty()) {
+            return null;
+        }
+
+        String principal = normalizeIdentifier(samlAttributes.get("eduPersonPrincipalName"));
+        String targetedId = normalizeIdentifier(samlAttributes.get("eduPersonTargetedID"));
+        String currentUserId = normalizeIdentifier(samlAttributes.get("userid"));
+        String email = normalizeIdentifier(samlAttributes.get("email"));
+
+        String composite = resolveStableUserId(
+            principal,
+            targetedId,
+            email,
+            null,
+            currentUserId,
+            null
+        );
+        String requestedMode = normalizeStableUserIdMode(stableUserIdMode);
+
+        if (STABLE_USER_ID_MODE_PRINCIPAL.equals(requestedMode) && principal != null) {
+            return principal;
+        }
+        if (STABLE_USER_ID_MODE_PRINCIPAL_TARGETED_ID.equals(requestedMode) && composite != null) {
+            return composite;
+        }
+
+        String expectedHash = normalizeExpectedPucHash(expectedPucHash);
+        if (expectedHash != null) {
+            String matching = firstMatchingPucHash(expectedHash, principal, composite, currentUserId, targetedId, email);
+            if (matching != null) {
+                return matching;
+            }
+        }
+
+        return firstNonBlank(currentUserId, composite, principal, targetedId, email);
     }
 
     public SamlAssertionAttributes validateSamlAssertionDetailed(String samlAssertion) throws Exception {
@@ -382,6 +430,56 @@ public class SamlValidationService {
         for (String value : values) {
             if (value != null && !value.isBlank()) {
                 return value;
+            }
+        }
+        return null;
+    }
+
+    private Optional<String> firstAttribute(SamlAssertionAttributes attrs, String name) {
+        if (attrs == null || attrs.attributes() == null || name == null) {
+            return Optional.empty();
+        }
+        List<String> values = attrs.attributes().get(name);
+        if (values == null || values.isEmpty()) {
+            return Optional.empty();
+        }
+        String normalized = normalizeIdentifier(values.get(0));
+        return normalized == null ? Optional.empty() : Optional.of(normalized);
+    }
+
+    private String normalizeStableUserIdMode(String value) {
+        if (value == null || value.isBlank()) {
+            return null;
+        }
+        String normalized = value.trim().toLowerCase(Locale.ROOT);
+        if (STABLE_USER_ID_MODE_PRINCIPAL.equals(normalized)) {
+            return STABLE_USER_ID_MODE_PRINCIPAL;
+        }
+        if (STABLE_USER_ID_MODE_PRINCIPAL_TARGETED_ID.equals(normalized)
+            || "principal-targeted-id".equals(normalized)
+            || "principal+targeted_id".equals(normalized)
+            || "principal_targetedid".equals(normalized)) {
+            return STABLE_USER_ID_MODE_PRINCIPAL_TARGETED_ID;
+        }
+        return null;
+    }
+
+    private String normalizeExpectedPucHash(String value) {
+        if (value == null || value.isBlank()) {
+            return null;
+        }
+        String normalized = PucHashUtil.normalizeBytes32(value);
+        return PucHashUtil.zeroHash().equalsIgnoreCase(normalized) ? null : normalized;
+    }
+
+    private String firstMatchingPucHash(String expectedHash, String... candidates) {
+        if (expectedHash == null || candidates == null) {
+            return null;
+        }
+        for (String candidate : candidates) {
+            String normalized = normalizeIdentifier(candidate);
+            if (normalized != null && expectedHash.equalsIgnoreCase(PucHashUtil.hashPuc(normalized))) {
+                return normalized;
             }
         }
         return null;
@@ -660,6 +758,10 @@ public class SamlValidationService {
         validateMetadataUrl(metadataUrl);
         
         String metadataXml = downloadMetadataXml(metadataUrl);
+        return parseCertificatesFromMetadataXml(metadataXml);
+    }
+
+    List<X509Certificate> parseCertificatesFromMetadataXml(String metadataXml) throws Exception {
         Document metadataDoc = parseXML(metadataXml);
         
         // Find X509Certificate element in metadata

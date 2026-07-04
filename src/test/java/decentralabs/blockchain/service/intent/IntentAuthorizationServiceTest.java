@@ -65,6 +65,7 @@ class IntentAuthorizationServiceTest {
         ReflectionTestUtils.setField(service, "sessionTtlSeconds", 300L);
         ReflectionTestUtils.setField(service, "cleanupIntervalSeconds", 60L);
         lenient().when(samlValidationService.validateSamlAssertionWithSignature(any())).thenReturn(Map.of("userid", "user@example.edu"));
+        lenient().when(samlValidationService.resolveStableUserId(any(), any(), any())).thenCallRealMethod();
     }
 
     @AfterEach
@@ -92,6 +93,25 @@ class IntentAuthorizationServiceTest {
         IntentAuthorizationStatusResponse status = service.getStatus(session.getSessionId());
         assertThat(status.getStatus()).isEqualTo("PENDING");
         assertThat(status.getRequestId()).isEqualTo("request-123");
+    }
+
+    @Test
+    void createSession_usesDeclaredPrincipalModeWhenSamlAlsoContainsTargetedId() throws Exception {
+        when(samlValidationService.validateSamlAssertionWithSignature(any())).thenReturn(Map.of(
+            "userid", "user@example.edu|targeted-user",
+            "eduPersonPrincipalName", "user@example.edu",
+            "eduPersonTargetedID", "targeted-user"
+        ));
+        when(webauthnCredentialService.getCredentials("user@example.edu"))
+            .thenReturn(List.of(credential("cred-1", true, 100L)));
+        IntentAuthorizationRequest request = validAuthorizationRequest();
+        request.setStableUserIdMode(SamlValidationService.STABLE_USER_ID_MODE_PRINCIPAL);
+
+        IntentAuthorizationService.AuthorizationSession session = service.createSession(request);
+
+        verify(webauthnCredentialService).getCredentials("user@example.edu");
+        assertThat(new String(Base64.getUrlDecoder().decode(session.getChallenge()), StandardCharsets.UTF_8))
+            .startsWith("user@example.edu|request-123|");
     }
 
     @Test

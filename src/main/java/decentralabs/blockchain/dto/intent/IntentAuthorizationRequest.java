@@ -26,6 +26,8 @@ public class IntentAuthorizationRequest {
     @NotBlank
     private String samlAssertion;
 
+    private String stableUserIdMode;
+
     private String returnUrl;
 
     public IntentMeta getMeta() {
@@ -66,6 +68,14 @@ public class IntentAuthorizationRequest {
 
     public void setSamlAssertion(String samlAssertion) {
         this.samlAssertion = samlAssertion;
+    }
+
+    public String getStableUserIdMode() {
+        return stableUserIdMode;
+    }
+
+    public void setStableUserIdMode(String stableUserIdMode) {
+        this.stableUserIdMode = stableUserIdMode;
     }
 
     public String getReturnUrl() {

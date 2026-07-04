@@ -7,21 +7,67 @@ import org.w3c.dom.Document;
 
 import javax.xml.parsers.DocumentBuilder;
 import javax.xml.parsers.DocumentBuilderFactory;
+import javax.xml.crypto.dsig.CanonicalizationMethod;
+import javax.xml.crypto.dsig.DigestMethod;
+import javax.xml.crypto.dsig.Reference;
+import javax.xml.crypto.dsig.SignatureMethod;
+import javax.xml.crypto.dsig.SignedInfo;
+import javax.xml.crypto.dsig.Transform;
+import javax.xml.crypto.dsig.XMLSignatureFactory;
+import javax.xml.crypto.dsig.dom.DOMSignContext;
+import javax.xml.crypto.dsig.keyinfo.KeyInfo;
+import javax.xml.crypto.dsig.keyinfo.KeyInfoFactory;
+import javax.xml.crypto.dsig.spec.C14NMethodParameterSpec;
+import javax.xml.crypto.dsig.spec.TransformParameterSpec;
+import javax.xml.transform.OutputKeys;
+import javax.xml.transform.TransformerFactory;
+import javax.xml.transform.dom.DOMSource;
+import javax.xml.transform.stream.StreamResult;
 import java.io.ByteArrayInputStream;
+import java.io.StringWriter;
+import java.math.BigInteger;
+import java.security.KeyFactory;
+import java.security.PrivateKey;
 import java.security.cert.X509Certificate;
+import java.security.spec.RSAPrivateCrtKeySpec;
 import java.util.Base64;
+import java.util.List;
 import java.util.Map;
+
+import decentralabs.blockchain.util.PucHashUtil;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class SamlValidationServiceTest {
 
+    private static final String TEST_ISSUER = "https://idp.test.example";
+    private static final String TEST_CERTIFICATE = """
+        -----BEGIN CERTIFICATE-----
+        MIICwTCCAamgAwIBAgIJAOCS6GnJozZdMA0GCSqGSIb3DQEBCwUAMCAxHjAcBgNV
+        BAMTFURlY2VudHJhTGFicyBUZXN0IElkUDAeFw0yNjA3MDMxNzA3MTVaFw0zMTA3
+        MDQxNzA3MTVaMCAxHjAcBgNVBAMTFURlY2VudHJhTGFicyBUZXN0IElkUDCCASIw
+        DQYJKoZIhvcNAQEBBQADggEPADCCAQoCggEBANr1oNz3grhr9FplwGYD0oosLP0X
+        X5JUlYPqa8FXHrnmx/K0Qtb3Gg6+IdxPcJllGpbJ7JWY8wZipNNDEE+CiTx/fQFT
+        0iE1X5tPzEj6l677U1BBijyoziL47e8Z8voJ068aIXL7dDmpe/S7u9RavL3aQtfI
+        gzd3M/AVu/M2BBX+j7u0p8LGCeKIEItwqRHI440dt8TYr/Ia3F+dv7Y5GtgtzUu7
+        7j91jNMcYapnHtPJBd3fCevv/nOgpj0QOB6yOgLPW4EjLM9TCmmZ/8Qk1VlUZX7p
+        /VmaMEn+FgmpxWveXXRt89h7sR7vAfjt7Xxkp48WSqOLMQjw0euFl4NYlJECAwEA
+        ATANBgkqhkiG9w0BAQsFAAOCAQEAtSLy7RipWYhwLrGDlZOnNC9m832QhzibKP59
+        Jn7IQaVumyflMpS6Y7TF3PNInrO7UJIirOpKYXPYoBurQoZv074G9KEG2cz1vlqZ
+        UXokPBvRLObiJazK1waJz8z0fCV440aOOm2r7GPwxCgSkUr+M6CSvv2vcoAedhgB
+        AeTAdWvvKOntYT5kl9XsigRP9CfsPCgPoiZtfgi5CTOJ2Wc4p32rSEb0+I7oJ4yK
+        mhi+LjFhmuzezugwVrGH+UG5p03JGw8FgBusEyCLShJUc0FNgmXB+oBgTQ4gM6+x
+        WFNKJemb0h0gzccExT9mjTwEwwvaXoZf/SGaORrLA5fv3khDyQ==
+        -----END CERTIFICATE-----
+        """;
+
     private SamlValidationService samlValidationService;
 
     @BeforeEach
-    void setUp() {
+    void setUp() throws Exception {
         samlValidationService = new SamlValidationService();
+        seedTestMetadataCertificate();
     }
 
     @Test
@@ -63,7 +109,7 @@ class SamlValidationServiceTest {
         Map<String, X509Certificate> cache = (Map<String, X509Certificate>) 
                 ReflectionTestUtils.getField(samlValidationService, "certificateCache");
         
-        assertThat(cache).isEmpty();
+        assertThat(cache).containsKey(TEST_ISSUER);
 
         samlValidationService.clearCertificateCache();
 
@@ -100,7 +146,7 @@ class SamlValidationServiceTest {
 
     @Test
     void shouldRejectSamlAssertionWithoutSignature() {
-        String samlWithoutSignature = createMinimalSamlAssertion("https://idp.uned.es");
+        String samlWithoutSignature = createMinimalSamlAssertion(TEST_ISSUER);
         String encodedSaml = Base64.getEncoder().encodeToString(samlWithoutSignature.getBytes());
 
         ReflectionTestUtils.setField(samlValidationService, "trustMode", "any");
@@ -111,7 +157,7 @@ class SamlValidationServiceTest {
 
     @Test
     void shouldRejectSamlAssertionWithoutUserid() {
-        String samlWithoutUserid = createSamlAssertionWithAttributes("https://idp.uned.es", Map.of(
+        String samlWithoutUserid = createSamlAssertionWithAttributes(TEST_ISSUER, Map.of(
                 "affiliation", "student@uned.es"
         ));
         String encodedSaml = Base64.getEncoder().encodeToString(samlWithoutUserid.getBytes());
@@ -124,7 +170,7 @@ class SamlValidationServiceTest {
 
     @Test
     void shouldRejectSamlAssertionWithoutAffiliation() {
-        String samlWithoutAffiliation = createSamlAssertionWithAttributes("https://idp.uned.es", Map.of(
+        String samlWithoutAffiliation = createSamlAssertionWithAttributes(TEST_ISSUER, Map.of(
                 "userid", "user123"
         ));
         String encodedSaml = Base64.getEncoder().encodeToString(samlWithoutAffiliation.getBytes());
@@ -212,6 +258,67 @@ class SamlValidationServiceTest {
         assertThat(stableUserId).isEqualTo("user@university.edu");
     }
 
+    @Test
+    void shouldValidateSignedAssertionUsingGeneratedMetadataCertificate() throws Exception {
+        String signedAssertion = createSignedSamlAssertionWithAttributes(Map.of(
+                "eduPersonPrincipalName", "user@university.edu",
+                "eduPersonTargetedID", "targeted-user-1",
+                "affiliation", "student@university.edu"
+        ));
+
+        Map<String, String> attributes = samlValidationService.validateSamlAssertionWithSignature(signedAssertion);
+
+        assertThat(attributes)
+                .containsEntry("userid", "user@university.edu|targeted-user-1")
+                .containsEntry("eduPersonPrincipalName", "user@university.edu")
+                .containsEntry("eduPersonTargetedID", "targeted-user-1");
+    }
+
+    @Test
+    void shouldResolvePrincipalModeFromValidatedAttributes() {
+        String stableUserId = samlValidationService.resolveStableUserId(
+                Map.of(
+                        "userid", "user@university.edu|targeted-user-1",
+                        "eduPersonPrincipalName", "user@university.edu",
+                        "eduPersonTargetedID", "targeted-user-1"
+                ),
+                SamlValidationService.STABLE_USER_ID_MODE_PRINCIPAL,
+                null
+        );
+
+        assertThat(stableUserId).isEqualTo("user@university.edu");
+    }
+
+    @Test
+    void shouldResolveCompositeModeFromValidatedAttributes() {
+        String stableUserId = samlValidationService.resolveStableUserId(
+                Map.of(
+                        "userid", "user@university.edu|targeted-user-1",
+                        "eduPersonPrincipalName", "user@university.edu",
+                        "eduPersonTargetedID", "targeted-user-1"
+                ),
+                SamlValidationService.STABLE_USER_ID_MODE_PRINCIPAL_TARGETED_ID,
+                null
+        );
+
+        assertThat(stableUserId).isEqualTo("user@university.edu|targeted-user-1");
+    }
+
+    @Test
+    void shouldInferStableUserIdFromExpectedPucHashWhenModeMissing() {
+        String stableUserId = samlValidationService.resolveStableUserId(
+                Map.of(
+                        "userid", "user@university.edu|targeted-user-1",
+                        "eduPersonPrincipalName", "user@university.edu",
+                        "eduPersonTargetedID", "targeted-user-1"
+                ),
+                null,
+                PucHashUtil.hashPuc("user@university.edu")
+        );
+
+        assertThat(stableUserId).isEqualTo("user@university.edu");
+    }
+
     // Helper methods
 
     private String createMinimalSamlAssertion(String issuer) {
@@ -240,6 +347,88 @@ class SamlValidationServiceTest {
         sb.append("</saml:Assertion>");
         
         return sb.toString();
+    }
+
+    private String createSignedSamlAssertionWithAttributes(Map<String, String> attributes) throws Exception {
+        String xml = createSamlAssertionWithAttributes(TEST_ISSUER, attributes)
+                .replace("ID=\"_test123\"", "ID=\"_signed123\"");
+        Document doc = parseXML(xml);
+        doc.getDocumentElement().setIdAttribute("ID", true);
+
+        XMLSignatureFactory signatureFactory = XMLSignatureFactory.getInstance("DOM");
+        Reference reference = signatureFactory.newReference(
+                "#_signed123",
+                signatureFactory.newDigestMethod(DigestMethod.SHA256, null),
+                List.of(signatureFactory.newTransform(Transform.ENVELOPED, (TransformParameterSpec) null)),
+                null,
+                null
+        );
+        SignedInfo signedInfo = signatureFactory.newSignedInfo(
+                signatureFactory.newCanonicalizationMethod(CanonicalizationMethod.INCLUSIVE, (C14NMethodParameterSpec) null),
+                signatureFactory.newSignatureMethod(SignatureMethod.RSA_SHA256, null),
+                List.of(reference)
+        );
+        List<X509Certificate> certificates = samlValidationService.parseCertificatesFromMetadataXml(testMetadataXml());
+        KeyInfoFactory keyInfoFactory = signatureFactory.getKeyInfoFactory();
+        KeyInfo keyInfo = keyInfoFactory.newKeyInfo(List.of(
+                keyInfoFactory.newX509Data(List.of(certificates.get(0)))
+        ));
+        DOMSignContext signContext = new DOMSignContext(testPrivateKey(), doc.getDocumentElement());
+        signatureFactory.newXMLSignature(signedInfo, keyInfo).sign(signContext);
+
+        TransformerFactory transformerFactory = TransformerFactory.newInstance();
+        transformerFactory.setAttribute("http://javax.xml.XMLConstants/property/accessExternalDTD", "");
+        transformerFactory.setAttribute("http://javax.xml.XMLConstants/property/accessExternalStylesheet", "");
+        var transformer = transformerFactory.newTransformer();
+        transformer.setOutputProperty(OutputKeys.OMIT_XML_DECLARATION, "yes");
+        StringWriter writer = new StringWriter();
+        transformer.transform(new DOMSource(doc), new StreamResult(writer));
+        return Base64.getEncoder().encodeToString(writer.toString().getBytes());
+    }
+
+    private void seedTestMetadataCertificate() throws Exception {
+        @SuppressWarnings("unchecked")
+        Map<String, List<X509Certificate>> cache = (Map<String, List<X509Certificate>>)
+                ReflectionTestUtils.getField(samlValidationService, "certificateCache");
+        cache.put(TEST_ISSUER, samlValidationService.parseCertificatesFromMetadataXml(testMetadataXml()));
+    }
+
+    private String testMetadataXml() {
+        String certBody = TEST_CERTIFICATE
+                .replace("-----BEGIN CERTIFICATE-----", "")
+                .replace("-----END CERTIFICATE-----", "")
+                .replaceAll("\\s+", "");
+        return """
+                <md:EntityDescriptor xmlns:md="urn:oasis:names:tc:SAML:2.0:metadata" entityID="%s">
+                  <md:IDPSSODescriptor protocolSupportEnumeration="urn:oasis:names:tc:SAML:2.0:protocol">
+                    <md:KeyDescriptor use="signing">
+                      <ds:KeyInfo xmlns:ds="http://www.w3.org/2000/09/xmldsig#">
+                        <ds:X509Data>
+                          <ds:X509Certificate>%s</ds:X509Certificate>
+                        </ds:X509Data>
+                      </ds:KeyInfo>
+                    </md:KeyDescriptor>
+                  </md:IDPSSODescriptor>
+                </md:EntityDescriptor>
+                """.formatted(TEST_ISSUER, certBody);
+    }
+
+    private PrivateKey testPrivateKey() throws Exception {
+        RSAPrivateCrtKeySpec spec = new RSAPrivateCrtKeySpec(
+                positive("2vWg3PeCuGv0WmXAZgPSiiws/RdfklSVg+prwVceuebH8rRC1vcaDr4h3E9wmWUalsnslZjzBmKk00MQT4KJPH99AVPSITVfm0/MSPqXrvtTUEGKPKjOIvjt7xny+gnTrxohcvt0Oal79Lu71Fq8vdpC18iDN3cz8BW78zYEFf6Pu7SnwsYJ4ogQi3CpEcjjjR23xNiv8hrcX52/tjka2C3NS7vuP3WM0xxhqmce08kF3d8J6+/+c6CmPRA4HrI6As9bgSMsz1MKaZn/xCTVWVRlfun9WZowSf4WCanFa95ddG3z2HuxHu8B+O3tfGSnjxZKo4sxCPDR64WXg1iUkQ=="),
+                positive("AQAB"),
+                positive("dFqWsxVsB6iGXws3JH7fgMFc3tlu1gnQshr+S+2JzGwQ0K5t3mHNHQx4XeRxB3KsoHiJGi3+5uPAhutaXYYWe2mb+fqa7T65oYTUH+vacwfnC/zoArgJYpg5iBeYALr8HE6ce8eXyZSA5Fpmw7+8EH9NifFpmS3lEa3bBLEtlqmFXScduz1UUeRgr1VKapRy5Aip6F6iXVGGtmeofDNDV2JJrZGflzskMaiGZ6vfxY1CRStLd3Asgv3PFnG8qSSvClEfVLbhVGB5lvEjNpXT7jfBKP1+NpkShYeH8gD1wiISIMu/fjRb517FO5JjjT8oIrXamnATmGKaugXue6uuCQ=="),
+                positive("3FbpIuDVdfBRFOdwuG6aaIvFBez8uPurkSFrAHCPzCz9Dwu8HcJIYsz60qbGUWHww2JMNeWhBN6YJcNVJqjOQvfdRm1BSHblF+Zz2WcTrNsCQQerhfGcu9DyDtb/fj9b1w5dvY77g41jozIrsJ7p0UL9VMwnm5uzF0FO+GGmm2s="),
+                positive("/mWKj4YigguVr9OHyQCxRTVVte/3Sijgfxih/PJVjikRmOTl8hc3DEMMqsi+9a/3ZizZb4TKHcxpeTJCiS8x7TMylMNFihyytQyH2x9bQ/SvrdFjyPwsX9tP/2yVQaNUdnhtNm856wBcTkdT2XSIv9lK1Vk6o6tTJCyRcdp6qvM="),
+                positive("VMtpmw+VdnbObVIIEiIWcCdh4j7qnzHTO931dMzcugGSPakRcw5ilws1d73Q0l7zre11UMSXK+2R9e5vJZqPDjyfPkwrdHy0+3annMHLU5lRC7+s5bYu0CTAEq/w0SAG8wNHVfzhlCXkc1iKccUmTG8QWQLcN0k7KbbrcjD6UhM="),
+                positive("3LEOMVB2I0cVhkEFrPQy1Q1d28XfS7CGgPvHm35HhlpOb8szSH+nO7X3CTm5n74V68fAoaQbCxrH7WISopwUvegKW0/Dxfr7dWD3grqDHELrHOlnnXZWsJm7nqR+H0EoBtaWOADpx9q6ORZbwWv9LiG9b7RG0LHSILGhQ5n7jM0="),
+                positive("XTxRvwGFvTvqbiL6UsNtelJM1/Qycz+oW80/aAcgMj4ljJ+g0KHt+04eafr8Mdx4Ppcv5bFUxaxDE5J5fsRZkJvhXQTuMrrZEEHkYSzialH7US217JwnzsGrYS1FOs1cY+5Up10ZKfCWvvrgOKgHUbt0pib0oq1TXy42IcKlsPk=")
+        );
+        return KeyFactory.getInstance("RSA").generatePrivate(spec);
+    }
+
+    private BigInteger positive(String base64) {
+        return new BigInteger(1, Base64.getDecoder().decode(base64));
     }
 
     private Document parseXML(String xml) throws Exception {

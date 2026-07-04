@@ -27,6 +27,8 @@ public class IntentSubmission {
     @NotBlank
     private String samlAssertion;
 
+    private String stableUserIdMode;
+
     @NotBlank
     private String webauthnCredentialId; // Credential used for WebAuthn assertion
 
@@ -79,6 +81,14 @@ public class IntentSubmission {
 
     public void setSamlAssertion(String samlAssertion) {
         this.samlAssertion = samlAssertion;
+    }
+
+    public String getStableUserIdMode() {
+        return stableUserIdMode;
+    }
+
+    public void setStableUserIdMode(String stableUserIdMode) {
+        this.stableUserIdMode = stableUserIdMode;
     }
 
     public String getWebauthnCredentialId() {

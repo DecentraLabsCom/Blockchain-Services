@@ -145,7 +145,12 @@ public class IntentService {
         String samlAssertion = requireSamlAssertion(submission);
         String expectedAssertionHash = computeAssertionHash(samlAssertion);
         ensurePayloadAssertionHash(actionPayload, reservationPayload, expectedAssertionHash);
-        String validatedSamlUser = validateSamlAssertion(reservationPayload, samlAssertion);
+        String validatedSamlUser = validateSamlAssertion(
+            actionPayload,
+            reservationPayload,
+            samlAssertion,
+            submission.getStableUserIdMode()
+        );
         checkAssertionReplay(expectedAssertionHash);
 
         String puc = resolvePuc(reservationPayload, validatedSamlUser);
@@ -570,10 +575,20 @@ public class IntentService {
         }
     }
 
-    private String validateSamlAssertion(ReservationIntentPayload reservationPayload, String samlAssertion) {
+    private String validateSamlAssertion(
+        ActionIntentPayload actionPayload,
+        ReservationIntentPayload reservationPayload,
+        String samlAssertion,
+        String stableUserIdMode
+    ) {
         try {
             Map<String, String> samlAttrs = samlValidationService.validateSamlAssertionWithSignature(samlAssertion);
-            String samlUser = samlAttrs.get("userid");
+            String expectedPucHash = expectedPucHash(actionPayload, reservationPayload);
+            String samlUser = samlValidationService.resolveStableUserId(
+                samlAttrs,
+                stableUserIdMode,
+                expectedPucHash
+            );
             if (samlUser == null || samlUser.isBlank()) {
                 throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "invalid_saml");
             }
@@ -581,9 +596,9 @@ public class IntentService {
             if (normalizedSamlUser == null || normalizedSamlUser.isBlank()) {
                 throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "invalid_saml");
             }
-            if (reservationPayload != null && !isZeroBytes32(reservationPayload.getPucHash())) {
+            if (expectedPucHash != null && !isZeroBytes32(expectedPucHash)) {
                 String expectedHash = normalizeBytes32(Numeric.toHexString(Hash.sha3(normalizedSamlUser.getBytes(StandardCharsets.UTF_8))));
-                String payloadHash = normalizeBytes32(reservationPayload.getPucHash());
+                String payloadHash = normalizeBytes32(expectedPucHash);
                 if (payloadHash == null || !payloadHash.equalsIgnoreCase(expectedHash)) {
                     throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "puc_saml_mismatch");
                 }
@@ -595,6 +610,16 @@ public class IntentService {
             log.warn("Invalid SAML assertion for intent: {}", ex.getMessage());
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "invalid_saml");
         }
+    }
+
+    private String expectedPucHash(ActionIntentPayload actionPayload, ReservationIntentPayload reservationPayload) {
+        if (reservationPayload != null && reservationPayload.getPucHash() != null && !reservationPayload.getPucHash().isBlank()) {
+            return reservationPayload.getPucHash();
+        }
+        if (actionPayload != null && actionPayload.getPucHash() != null && !actionPayload.getPucHash().isBlank()) {
+            return actionPayload.getPucHash();
+        }
+        return null;
     }
 
     private String normalizeBytes32(String hex) {
