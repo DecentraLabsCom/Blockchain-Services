@@ -13,6 +13,7 @@ import java.util.HashMap;
 import java.util.Map;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -33,6 +34,9 @@ public class IntentAuthorizationController {
     private final IntentAuthorizationService authorizationService;
     private final IntentAuthService intentAuthService;
     private final ObjectMapper objectMapper = new ObjectMapper();
+
+    @Value("${webauthn.user-verification:preferred}")
+    private String userVerification;
 
     @PostMapping("/authorize")
     public ResponseEntity<IntentAuthorizationSessionResponse> authorizeIntent(
@@ -97,7 +101,7 @@ public class IntentAuthorizationController {
         options.put("allowCredentials", session.getCredentialIds());
         options.put("rpId", authorizationService.getRelyingPartyId());
         options.put("timeout", DEFAULT_TIMEOUT_MS);
-        options.put("userVerification", "required");
+        options.put("userVerification", normalizeUserVerification(userVerification));
         options.put("returnUrl", session.getReturnUrl());
         options.put("requestId", session.getSubmission().getMeta().getRequestId());
 
@@ -384,5 +388,16 @@ public class IntentAuthorizationController {
             return text;
         }
         return text.substring(0, maxLength) + "...";
+    }
+
+    private String normalizeUserVerification(String configured) {
+        if (configured == null || configured.isBlank()) {
+            return "preferred";
+        }
+        String normalized = configured.trim().toLowerCase();
+        return switch (normalized) {
+            case "required", "preferred", "discouraged" -> normalized;
+            default -> "preferred";
+        };
     }
 }

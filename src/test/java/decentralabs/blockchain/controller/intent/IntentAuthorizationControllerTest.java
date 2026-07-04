@@ -151,6 +151,7 @@ class IntentAuthorizationControllerTest {
             .andExpect(content().string(org.hamcrest.Matchers.containsString("\"requestId\":\"request-xyz\"")))
             .andExpect(content().string(org.hamcrest.Matchers.containsString("\"allowCredentials\":[\"cred-1\",\"cred-2\"]")))
             .andExpect(content().string(org.hamcrest.Matchers.containsString("\"rpId\":\"example.com\"")))
+            .andExpect(content().string(org.hamcrest.Matchers.containsString("\"userVerification\":\"preferred\"")))
             .andExpect(content().string(org.hamcrest.Matchers.containsString("/intents/authorize/client-error")));
     }
 
