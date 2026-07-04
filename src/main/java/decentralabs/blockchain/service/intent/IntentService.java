@@ -47,6 +47,7 @@ import decentralabs.blockchain.service.auth.SamlValidationService;
 import decentralabs.blockchain.service.auth.WebauthnCredentialService;
 import decentralabs.blockchain.service.auth.WebauthnCredentialService.WebauthnCredential;
 import decentralabs.blockchain.service.wallet.WalletService;
+import decentralabs.blockchain.util.PucHashUtil;
 import decentralabs.blockchain.util.PucNormalizer;
 import decentralabs.blockchain.util.LogSanitizer;
 import lombok.extern.slf4j.Slf4j;
@@ -150,6 +151,14 @@ public class IntentService {
             reservationPayload,
             samlAssertion,
             submission.getStableUserIdMode()
+        );
+        log.info(
+            "Intent SAML identity resolved. requestId={} stableUserIdMode={} resolvedPucHash={} payloadPucHash={} action={}",
+            meta.getRequestId(),
+            submission.getStableUserIdMode(),
+            PucHashUtil.hashPuc(validatedSamlUser),
+            expectedPucHash(actionPayload, reservationPayload),
+            action.getWireValue()
         );
         checkAssertionReplay(expectedAssertionHash);
 
@@ -679,19 +688,37 @@ public class IntentService {
 
     private void validateWebauthnAssertion(String puc, String credentialId, IntentMeta meta, IntentSubmission submission) {
         if (isBlank(puc)) {
+            log.warn("WebAuthn validation failed. requestId={} reason=missing_puc_for_webauthn", meta.getRequestId());
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "missing_puc_for_webauthn");
         }
         if (isBlank(submission.getWebauthnClientDataJSON()) || isBlank(submission.getWebauthnAuthenticatorData()) || isBlank(submission.getWebauthnSignature())) {
+            log.warn("WebAuthn validation failed. requestId={} resolvedPucHash={} reason=missing_webauthn_assertion", meta.getRequestId(), PucHashUtil.hashPuc(puc));
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "missing_webauthn_assertion");
         }
         WebauthnCredential cred = webauthnCredentialService.findCredential(puc, credentialId)
-            .orElseThrow(() -> new ResponseStatusException(HttpStatus.BAD_REQUEST, "webauthn_credential_not_registered"));
+            .orElseThrow(() -> {
+                log.warn(
+                    "WebAuthn validation failed. requestId={} resolvedPucHash={} reason=webauthn_credential_not_registered credentialIdPresent={}",
+                    meta.getRequestId(),
+                    PucHashUtil.hashPuc(puc),
+                    !isBlank(credentialId)
+                );
+                return new ResponseStatusException(HttpStatus.BAD_REQUEST, "webauthn_credential_not_registered");
+            });
         if (!cred.isActive()) {
+            log.warn("WebAuthn validation failed. requestId={} resolvedPucHash={} reason=webauthn_credential_revoked", meta.getRequestId(), PucHashUtil.hashPuc(puc));
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "webauthn_credential_revoked");
         }
 
         String expectedChallenge = buildWebauthnChallenge(puc, meta);
         String legacyExpectedChallenge = buildLegacyWebauthnChallenge(puc, credentialId, meta);
+        log.info(
+            "WebAuthn validation started. requestId={} resolvedPucHash={} credentialIdPresent={} expectedChallengeHash={}",
+            meta.getRequestId(),
+            PucHashUtil.hashPuc(puc),
+            !isBlank(credentialId),
+            PucHashUtil.hashPuc(expectedChallenge)
+        );
         
         // WebAuthn assertion verification requires user-provided data by design.
         // This is NOT a security bypass because:
@@ -783,6 +810,12 @@ public class IntentService {
             boolean matchesCurrent = expectedChallengeB64.equals(challengeFromClient);
             boolean matchesLegacy = legacyExpectedChallengeB64 != null && legacyExpectedChallengeB64.equals(challengeFromClient);
             if (!matchesCurrent && !matchesLegacy) {
+                log.warn(
+                    "WebAuthn challenge mismatch. expectedChallengeHash={} legacyExpectedChallengeHash={} clientChallengeHash={}",
+                    PucHashUtil.hashPuc(expectedChallengeB64),
+                    legacyExpectedChallengeB64 == null ? null : PucHashUtil.hashPuc(legacyExpectedChallengeB64),
+                    PucHashUtil.hashPuc(challengeFromClient)
+                );
                 throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "webauthn_challenge_mismatch");
             }
 
@@ -795,8 +828,16 @@ public class IntentService {
             sig.initVerify(publicKey);
             sig.update(signed);
             if (!sig.verify(signature)) {
+                log.warn(
+                    "WebAuthn signature invalid. publicKeyAlgorithm={} authenticatorDataBytes={} clientDataBytes={} signatureBytes={}",
+                    publicKey.getAlgorithm(),
+                    authenticatorData.length,
+                    clientData.length,
+                    signature.length
+                );
                 throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "webauthn_signature_invalid");
             }
+            log.info("WebAuthn assertion verified. publicKeyAlgorithm={}", publicKey.getAlgorithm());
         } catch (ResponseStatusException ex) {
             throw ex;
         } catch (Exception ex) {
