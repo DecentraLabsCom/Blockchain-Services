@@ -33,12 +33,16 @@ import decentralabs.blockchain.service.intent.IntentOnChainExecutor.ExecutionRes
 @ExtendWith(MockitoExtension.class)
 @DisplayName("IntentExecutionService Tests")
 class IntentExecutionServiceTest {
+    private static final String REGISTRATION_TX_HASH = "0x" + "a".repeat(64);
 
     @Mock
     private IntentService intentService;
     
     @Mock
     private IntentOnChainExecutor onChainExecutor;
+
+    @Mock
+    private IntentRegistrationVerifier registrationVerifier;
 
     @Mock
     private ObjectProvider<ContractEventListenerConfig> reservationAutoApprovalProcessor;
@@ -86,10 +90,12 @@ class IntentExecutionServiceTest {
             IntentRecord inProgressIntent = createIntentRecord("req-1", IntentStatus.IN_PROGRESS);
             IntentRecord executedIntent = createIntentRecord("req-2", IntentStatus.EXECUTED);
             IntentRecord failedIntent = createIntentRecord("req-3", IntentStatus.FAILED);
+            IntentRecord pendingRegistrationIntent = createIntentRecord("req-4", IntentStatus.AUTHORIZED_PENDING_REGISTRATION);
             
             intents.put("req-1", inProgressIntent);
             intents.put("req-2", executedIntent);
             intents.put("req-3", failedIntent);
+            intents.put("req-4", pendingRegistrationIntent);
             
             when(intentService.getQueuedIntents()).thenReturn(intents);
             
@@ -99,6 +105,120 @@ class IntentExecutionServiceTest {
             // Then
             verifyNoInteractions(onChainExecutor);
             verify(intentService, never()).markInProgress(any());
+        }
+    }
+
+    @Nested
+    @DisplayName("Registration Gate")
+    class RegistrationGateTests {
+
+        @Test
+        @DisplayName("Should keep authorized intent pending when registration is not mined yet")
+        void shouldKeepAuthorizedIntentPendingWhenRegistrationMissing() throws Exception {
+            IntentRecord intent = createIntentRecord("req-auth-pending", IntentStatus.AUTHORIZED_PENDING_REGISTRATION);
+            when(intentService.findByRequestId("req-auth-pending")).thenReturn(Optional.of(intent));
+            when(registrationVerifier.verifyRegistration(intent))
+                .thenReturn(IntentRegistrationVerifier.RegistrationVerificationResult.retryable("intent_not_registered"));
+
+            executionService.processQueuedIntent("req-auth-pending");
+
+            verify(registrationVerifier).verifyRegistration(intent);
+            verify(intentService, never()).markQueued(any());
+            verifyNoInteractions(onChainExecutor);
+        }
+
+        @Test
+        @DisplayName("Should execute after on-chain registration verifies")
+        void shouldExecuteAfterRegistrationVerifies() throws Exception {
+            IntentRecord intent = createIntentRecord("req-auth-ready", IntentStatus.AUTHORIZED_PENDING_REGISTRATION);
+            when(intentService.findByRequestId("req-auth-ready")).thenReturn(Optional.of(intent));
+            when(registrationVerifier.verifyRegistration(intent))
+                .thenReturn(IntentRegistrationVerifier.RegistrationVerificationResult.success());
+            when(onChainExecutor.execute(intent))
+                .thenReturn(new ExecutionResult(true, "0xexec", 777L, "lab", "key", null));
+
+            executionService.processQueuedIntent("req-auth-ready");
+
+            verify(registrationVerifier).verifyRegistration(intent);
+            verify(intentService).markQueued(intent);
+            verify(onChainExecutor).execute(intent);
+            verify(intentService).markExecuted(intent, "0xexec", 777L, "lab", "key");
+        }
+
+        @Test
+        @DisplayName("Should fail authorized intent when registered payload mismatches")
+        void shouldFailAuthorizedIntentOnRegistrationMismatch() throws Exception {
+            IntentRecord intent = createIntentRecord("req-mismatch", IntentStatus.AUTHORIZED_PENDING_REGISTRATION);
+            when(intentService.findByRequestId("req-mismatch")).thenReturn(Optional.of(intent));
+            when(registrationVerifier.verifyRegistration(intent))
+                .thenReturn(IntentRegistrationVerifier.RegistrationVerificationResult.terminalFailure("payload_hash_mismatch"));
+
+            executionService.processQueuedIntent("req-mismatch");
+
+            verify(intentService).markFailed(intent, "payload_hash_mismatch");
+            verifyNoInteractions(onChainExecutor);
+        }
+
+        @Test
+        @DisplayName("Should process pending registrations during scheduled polling")
+        void shouldProcessPendingRegistrationsDuringPolling() throws Exception {
+            IntentRecord intent = createIntentRecord("req-lost-signal", IntentStatus.AUTHORIZED_PENDING_REGISTRATION);
+            when(intentService.getQueuedIntents()).thenReturn(Map.of("req-lost-signal", intent));
+            when(registrationVerifier.verifyRegistration(intent))
+                .thenReturn(IntentRegistrationVerifier.RegistrationVerificationResult.success());
+            when(onChainExecutor.execute(intent))
+                .thenReturn(new ExecutionResult(true, "0xlost", 778L, "lab", "key", null));
+
+            executionService.processPendingRegistrations();
+
+            verify(intentService).markQueued(intent);
+            verify(intentService).markExecuted(intent, "0xlost", 778L, "lab", "key");
+        }
+
+        @Test
+        @DisplayName("Should treat duplicate mined signals idempotently after execution")
+        void shouldTreatDuplicateRegistrationSignalIdempotentlyAfterExecution() throws Exception {
+            IntentRecord intent = createIntentRecord("req-dup", IntentStatus.EXECUTED);
+            when(intentService.findByRequestId("req-dup")).thenReturn(Optional.of(intent));
+
+            executionService.handleRegistrationSignal("req-dup", "registration_mined", REGISTRATION_TX_HASH, 100L, null);
+            executionService.handleRegistrationSignal("req-dup", "registration_mined", REGISTRATION_TX_HASH, 100L, null);
+
+            verify(intentService, times(2)).findByRequestId("req-dup");
+            verifyNoInteractions(registrationVerifier);
+            verifyNoInteractions(onChainExecutor);
+        }
+
+        @Test
+        @DisplayName("Should remember registration failure received before WebAuthn")
+        void shouldRememberRegistrationFailureBeforeWebauthn() throws Exception {
+            executionService.handleRegistrationSignal("req-failed-before-auth", "registration_failed", REGISTRATION_TX_HASH, null, "tx_reverted");
+
+            IntentRecord intent = createIntentRecord("req-failed-before-auth", IntentStatus.AUTHORIZED_PENDING_REGISTRATION);
+            when(intentService.findByRequestId("req-failed-before-auth")).thenReturn(Optional.of(intent));
+
+            executionService.processQueuedIntent("req-failed-before-auth");
+
+            verify(intentService).markFailed(intent, "tx_reverted");
+            verifyNoInteractions(registrationVerifier);
+            verifyNoInteractions(onChainExecutor);
+        }
+
+        @Test
+        @DisplayName("Should persist registration submission tx hash without executing")
+        void shouldPersistRegistrationSubmittedSignal() {
+            Map<String, String> response = executionService.handleRegistrationSignal(
+                "req-submitted",
+                "registration_submitted",
+                REGISTRATION_TX_HASH,
+                null,
+                null
+            );
+
+            assertThat(response).containsEntry("status", "accepted");
+            verify(intentService).recordRegistrationSignal("req-submitted", REGISTRATION_TX_HASH, null);
+            verifyNoInteractions(registrationVerifier);
+            verifyNoInteractions(onChainExecutor);
         }
     }
 

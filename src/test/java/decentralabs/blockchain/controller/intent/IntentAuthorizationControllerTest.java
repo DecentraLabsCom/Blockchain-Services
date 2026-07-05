@@ -1,6 +1,7 @@
 package decentralabs.blockchain.controller.intent;
 
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doNothing;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -18,6 +19,7 @@ import decentralabs.blockchain.dto.intent.IntentAuthorizationCompleteRequest;
 import decentralabs.blockchain.dto.intent.IntentAuthorizationRequest;
 import decentralabs.blockchain.dto.intent.IntentAuthorizationStatusResponse;
 import decentralabs.blockchain.dto.intent.IntentMeta;
+import decentralabs.blockchain.dto.intent.IntentRegistrationSignalRequest;
 import decentralabs.blockchain.dto.intent.IntentSubmission;
 import decentralabs.blockchain.exception.GlobalExceptionHandler;
 import decentralabs.blockchain.service.intent.IntentAuthService;
@@ -25,6 +27,7 @@ import decentralabs.blockchain.service.intent.IntentAuthorizationService;
 import java.math.BigInteger;
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -206,6 +209,29 @@ class IntentAuthorizationControllerTest {
                 .content(body))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.status").value("logged"));
+    }
+
+    @Test
+    void registrationSignal_requiresSubmitAuthAndTriggersProcessing() throws Exception {
+        IntentRegistrationSignalRequest request = new IntentRegistrationSignalRequest();
+        request.setEvent("registration_mined");
+        request.setTxHash("0x" + "a".repeat(64));
+        request.setBlockNumber(99L);
+
+        doNothing().when(intentAuthService).enforceSubmitAuthorization("Bearer jwt");
+        when(authorizationService.handleRegistrationSignal(eq("request-123"), any(IntentRegistrationSignalRequest.class)))
+            .thenReturn(Map.of("status", "accepted", "requestId", "request-123"));
+
+        mockMvc.perform(post("/intents/request-123/registration")
+                .header("Authorization", "Bearer jwt")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(request)))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.status").value("accepted"))
+            .andExpect(jsonPath("$.requestId").value("request-123"));
+
+        verify(intentAuthService).enforceSubmitAuthorization("Bearer jwt");
+        verify(authorizationService).handleRegistrationSignal(eq("request-123"), any(IntentRegistrationSignalRequest.class));
     }
 
     private IntentAuthorizationRequest validAuthorizationRequest() {

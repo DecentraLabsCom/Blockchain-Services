@@ -39,13 +39,15 @@ public class IntentPersistenceService {
                 """
                 INSERT INTO intents (
                     request_id, status, action, provider, lab_id, reservation_key,
-                    tx_hash, block_number, error, reason, updated_at, created_at,
+                    tx_hash, block_number, registration_tx_hash, registration_block_number, error, reason, updated_at, created_at,
                     nonce, expires_at, payload_json
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON DUPLICATE KEY UPDATE
                     status = VALUES(status),
                     tx_hash = VALUES(tx_hash),
                     block_number = VALUES(block_number),
+                    registration_tx_hash = VALUES(registration_tx_hash),
+                    registration_block_number = VALUES(registration_block_number),
                     error = VALUES(error),
                     reason = VALUES(reason),
                     updated_at = VALUES(updated_at),
@@ -63,6 +65,8 @@ public class IntentPersistenceService {
                 record.getReservationKey(),
                 record.getTxHash(),
                 record.getBlockNumber(),
+                record.getRegistrationTxHash(),
+                record.getRegistrationBlockNumber(),
                 record.getError(),
                 record.getReason(),
                 Timestamp.from(record.getUpdatedAt()),
@@ -98,7 +102,7 @@ public class IntentPersistenceService {
         }
         try {
             return jdbcTemplate.query(
-                "SELECT * FROM intents WHERE status IN ('queued', 'in_progress')",
+                "SELECT * FROM intents WHERE status IN ('queued', 'authorized_pending_registration', 'in_progress')",
                 (rs, rowNum) -> mapRow(rs)
             );
         } catch (Exception e) {
@@ -163,11 +167,13 @@ public class IntentPersistenceService {
             rs.getString("action"),
             rs.getString("provider")
         );
-        record.setStatus(IntentStatus.valueOf(rs.getString("status").toUpperCase()));
+        record.setStatus(IntentStatus.valueOf(rs.getString("status").toUpperCase().replace('-', '_')));
         record.setLabId(rs.getString("lab_id"));
         record.setReservationKey(rs.getString("reservation_key"));
         record.setTxHash(rs.getString("tx_hash"));
         record.setBlockNumber(rs.getObject("block_number", Long.class));
+        record.setRegistrationTxHash(readOptionalString(rs, "registration_tx_hash"));
+        record.setRegistrationBlockNumber(readOptionalLong(rs, "registration_block_number"));
         record.setError(rs.getString("error"));
         record.setReason(rs.getString("reason"));
 
@@ -187,6 +193,22 @@ public class IntentPersistenceService {
             record.setUpdatedAt(createdAt.toInstant());
         }
         return record;
+    }
+
+    private String readOptionalString(ResultSet rs, String column) {
+        try {
+            return rs.getString(column);
+        } catch (SQLException ignored) {
+            return null;
+        }
+    }
+
+    private Long readOptionalLong(ResultSet rs, String column) {
+        try {
+            return rs.getObject(column, Long.class);
+        } catch (SQLException ignored) {
+            return null;
+        }
     }
 
     private void hydrateFromPayloadJson(IntentRecord record) {

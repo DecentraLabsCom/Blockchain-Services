@@ -8,6 +8,8 @@ public class IntentStatusResponse {
     private String status;
     private String txHash;
     private Long blockNumber;
+    private String registrationTxHash;
+    private Long registrationBlockNumber;
     private String labId;
     private String reservationKey;
     private String error;
@@ -43,6 +45,22 @@ public class IntentStatusResponse {
 
     public void setBlockNumber(Long blockNumber) {
         this.blockNumber = blockNumber;
+    }
+
+    public String getRegistrationTxHash() {
+        return registrationTxHash;
+    }
+
+    public void setRegistrationTxHash(String registrationTxHash) {
+        this.registrationTxHash = registrationTxHash;
+    }
+
+    public Long getRegistrationBlockNumber() {
+        return registrationBlockNumber;
+    }
+
+    public void setRegistrationBlockNumber(Long registrationBlockNumber) {
+        this.registrationBlockNumber = registrationBlockNumber;
     }
 
     public String getLabId() {

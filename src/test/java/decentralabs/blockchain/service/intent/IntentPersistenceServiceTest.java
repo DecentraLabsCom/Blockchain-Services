@@ -71,6 +71,8 @@ class IntentPersistenceServiceTest {
             record.setLabId("lab-42");
             record.setTxHash("0xabc123");
             record.setBlockNumber(12345L);
+            record.setRegistrationTxHash("0xreg123");
+            record.setRegistrationBlockNumber(12340L);
             record.setNonce(1L);
             record.setExpiresAt(System.currentTimeMillis() / 1000 + 3600);
             record.setPayloadJson("{\"test\":true}");
@@ -87,6 +89,8 @@ class IntentPersistenceServiceTest {
                 any(), // reservation key
                 eq("0xabc123"),
                 eq(12345L),
+                eq("0xreg123"),
+                eq(12340L),
                 any(), // error
                 any(), // reason
                 any(Timestamp.class), // updated_at
