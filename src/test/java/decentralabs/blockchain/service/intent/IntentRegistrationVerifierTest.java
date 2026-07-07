@@ -141,10 +141,9 @@ class IntentRegistrationVerifierTest {
             new Uint8(1)
         );
 
-        @SuppressWarnings({ "rawtypes", "unchecked" })
-        List<TypeReference<Type>> outputParameters = (List) List.of(new TypeReference<IntentMetaStruct>() { });
+        var outputParameters = intentMetaOutputParameters();
 
-        List<Type> decoded = FunctionReturnDecoder.decode(
+        var decoded = FunctionReturnDecoder.decode(
             "0x" + TypeEncoder.encode(encodedStruct),
             outputParameters
         );
@@ -165,6 +164,11 @@ class IntentRegistrationVerifierTest {
                 return onChain;
             }
         };
+    }
+
+    @SuppressWarnings({ "rawtypes", "unchecked" })
+    private List<TypeReference<Type>> intentMetaOutputParameters() {
+        return (List<TypeReference<Type>>) (List<?>) List.of(new TypeReference<IntentMetaStruct>() { });
     }
 
     private IntentRecord validRecord() {

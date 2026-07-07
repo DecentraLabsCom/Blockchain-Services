@@ -297,7 +297,6 @@ public class Diamond extends Contract {
     /**
      * Get registered intent metadata by request id (IntentRegistryFacet).
      */
-    @SuppressWarnings("rawtypes")
     public RemoteFunctionCall<IntentMetaStruct> getIntent(byte[] requestId) {
         final Function function = new Function(
             "getIntent",
