@@ -32,6 +32,7 @@ public class SamlAuthService {
     private final MarketplaceEndpointAuthService marketplaceEndpointAuthService;
     private final SamlValidationService samlValidationService;
     private final InstitutionalAccessCheckInCoordinator accessCheckInCoordinator;
+    private final AccessCredentialAuditService accessCredentialAuditService;
 
     @Value("${auth.saml.require-booking-scope:true}")
     private boolean requireBookingScope;
@@ -154,8 +155,9 @@ public class SamlAuthService {
                 puc
             );
             accessCheckInCoordinator.recordAccessGranted(request, marketplaceJWTClaims, bookingInfo);
-            String token = jwtService.generateToken(null, bookingInfo);
-            return new AuthResponse(token, (String) bookingInfo.get("labURL"));
+            JwtService.IssuedToken issuedToken = jwtService.generateIssuedToken(null, bookingInfo);
+            accessCredentialAuditService.recordJwtIssued(request, marketplaceJWTClaims, bookingInfo, issuedToken);
+            return new AuthResponse(issuedToken.token(), (String) bookingInfo.get("labURL"));
         } catch (RuntimeException ex) {
             throw ex;
         } catch (Exception ex) {

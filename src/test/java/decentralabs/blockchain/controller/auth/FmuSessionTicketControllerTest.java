@@ -9,6 +9,7 @@ import decentralabs.blockchain.dto.auth.FmuSessionTicketIssueRequest;
 import decentralabs.blockchain.dto.auth.FmuSessionTicketIssueResponse;
 import decentralabs.blockchain.dto.auth.FmuSessionTicketRedeemRequest;
 import decentralabs.blockchain.dto.auth.FmuSessionTicketRedeemResponse;
+import decentralabs.blockchain.service.auth.AccessCredentialAuditService;
 import decentralabs.blockchain.service.auth.FmuSessionTicketService;
 import decentralabs.blockchain.service.auth.JwtService;
 import decentralabs.blockchain.service.auth.SessionTicketException;
@@ -76,16 +77,21 @@ class FmuSessionTicketControllerTest {
         FmuSessionTicketRedeemResponse response = new FmuSessionTicketRedeemResponse();
         response.setClaims(Map.of("resourceType", "fmu", "accessKey", "test.fmu"));
         response.setExpiresAt(12345);
+        response.setSessionId("sess-fmu-1");
+        response.setSessionObserved(true);
         sessionTicketService.redeemResponse = response;
 
         FmuSessionTicketRedeemRequest request = new FmuSessionTicketRedeemRequest();
         request.setSessionTicket("st_test");
+        request.setSessionId("sess-fmu-1");
 
         mockMvc.perform(post("/auth/fmu/session-ticket/redeem")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(objectMapper.writeValueAsString(request)))
             .andExpect(status().isOk())
-            .andExpect(jsonPath("$.claims.resourceType").value("fmu"));
+            .andExpect(jsonPath("$.claims.resourceType").value("fmu"))
+            .andExpect(jsonPath("$.sessionId").value("sess-fmu-1"))
+            .andExpect(jsonPath("$.sessionObserved").value(true));
     }
 
     private static final class StubFmuSessionTicketService extends FmuSessionTicketService {
@@ -98,7 +104,8 @@ class FmuSessionTicketControllerTest {
         private StubFmuSessionTicketService() {
             super(
                 Mockito.mock(JwtService.class),
-                new StaticListableBeanFactory().getBeanProvider(org.springframework.jdbc.core.JdbcTemplate.class)
+                new StaticListableBeanFactory().getBeanProvider(org.springframework.jdbc.core.JdbcTemplate.class),
+                Mockito.mock(AccessCredentialAuditService.class)
             );
         }
 

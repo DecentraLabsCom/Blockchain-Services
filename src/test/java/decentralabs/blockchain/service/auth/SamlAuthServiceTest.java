@@ -46,6 +46,9 @@ class SamlAuthServiceTest {
     @Mock
     private InstitutionalAccessCheckInCoordinator accessCheckInCoordinator;
 
+    @Mock
+    private AccessCredentialAuditService accessCredentialAuditService;
+
     @InjectMocks
     private SamlAuthService samlAuthService;
 
@@ -53,11 +56,13 @@ class SamlAuthServiceTest {
     private static final String TEST_AFFILIATION = "test-university";
 
     @BeforeEach
-    void setUp() {
+    void setUp() throws Exception {
         ReflectionTestUtils.setField(samlAuthService, "requireBookingScope", true);
         ReflectionTestUtils.setField(samlAuthService, "requiredBookingScope", "booking:read");
         lenient().when(marketplaceEndpointAuthService.enforceToken(anyString(), eq(null)))
             .thenReturn(Map.of("userid", TEST_USER_ID, "affiliation", TEST_AFFILIATION));
+        lenient().when(jwtService.generateIssuedToken(eq(null), any()))
+            .thenReturn(new JwtService.IssuedToken("booking-token", "jwt-jti-default", 1_700_000_000L, null));
     }
 
     @Nested
@@ -319,13 +324,16 @@ class SamlAuthServiceTest {
             );
             when(blockchainService.getBookingInfo(anyString(), anyString(), any(), anyString()))
                 .thenReturn(bookingInfo);
-            when(jwtService.generateToken(eq(null), any())).thenReturn("booking-token");
+            when(jwtService.generateIssuedToken(eq(null), any())).thenReturn(
+                new JwtService.IssuedToken("booking-token", "jwt-jti-1", 1_700_000_000L, null)
+            );
 
             AuthResponse response = samlAuthService.handleAuthentication(request, true);
 
             assertThat(response).isNotNull();
             assertThat(response.getToken()).isEqualTo("booking-token");
             verify(accessCheckInCoordinator).recordAccessGranted(eq(request), any(), eq(bookingInfo));
+            verify(accessCredentialAuditService).recordJwtIssued(eq(request), any(), eq(bookingInfo), any());
         }
 
         @Test
@@ -351,7 +359,9 @@ class SamlAuthServiceTest {
             );
             when(blockchainService.getBookingInfo(anyString(), anyString(), any(), anyString()))
                 .thenReturn(bookingInfo);
-            when(jwtService.generateToken(eq(null), any())).thenReturn("booking-token");
+            when(jwtService.generateIssuedToken(eq(null), any())).thenReturn(
+                new JwtService.IssuedToken("booking-token", "jwt-jti-in-use", 1_700_000_000L, null)
+            );
 
             AuthResponse response = samlAuthService.handleAuthentication(request, true);
 
@@ -409,7 +419,9 @@ class SamlAuthServiceTest {
                 .thenReturn(Map.of("userid", TEST_USER_ID, "affiliation", TEST_AFFILIATION));
             when(blockchainService.getBookingInfo(anyString(), anyString(), any(), anyString()))
                 .thenReturn(Map.of("labURL", "https://lab.example.com"));
-            when(jwtService.generateToken(eq(null), any())).thenReturn("booking-token");
+            when(jwtService.generateIssuedToken(eq(null), any())).thenReturn(
+                new JwtService.IssuedToken("booking-token", "jwt-jti-scope", 1_700_000_000L, null)
+            );
 
             AuthResponse response = samlAuthService.handleAuthentication(request, true);
 
@@ -434,7 +446,9 @@ class SamlAuthServiceTest {
                 .thenReturn(Map.of("userid", TEST_USER_ID, "affiliation", TEST_AFFILIATION));
             when(blockchainService.getBookingInfo(anyString(), anyString(), any(), anyString()))
                 .thenReturn(Map.of("labURL", "https://lab.example.com"));
-            when(jwtService.generateToken(eq(null), any())).thenReturn("booking-token");
+            when(jwtService.generateIssuedToken(eq(null), any())).thenReturn(
+                new JwtService.IssuedToken("booking-token", "jwt-jti-scopes", 1_700_000_000L, null)
+            );
 
             AuthResponse response = samlAuthService.handleAuthentication(request, true);
 
@@ -460,7 +474,9 @@ class SamlAuthServiceTest {
                 .thenReturn(Map.of("userid", TEST_USER_ID, "affiliation", TEST_AFFILIATION));
             when(blockchainService.getBookingInfo(anyString(), anyString(), any(), anyString()))
                 .thenReturn(Map.of("labURL", "https://lab.example.com"));
-            when(jwtService.generateToken(eq(null), any())).thenReturn("booking-token");
+            when(jwtService.generateIssuedToken(eq(null), any())).thenReturn(
+                new JwtService.IssuedToken("booking-token", "jwt-jti-no-scope-required", 1_700_000_000L, null)
+            );
 
             AuthResponse response = samlAuthService.handleAuthentication(request, true);
 

@@ -51,6 +51,10 @@ public class JwtService {
      * @throws Exception if key operations fail
      */
     public String generateToken(Map<String, Object> claims, Map<String, Object> bookingInfo) throws Exception {
+        return generateIssuedToken(claims, bookingInfo).token();
+    }
+
+    public IssuedToken generateIssuedToken(Map<String, Object> claims, Map<String, Object> bookingInfo) throws Exception {
         String aud = null;
         BigInteger labId = null;
         String sub = null;
@@ -115,8 +119,12 @@ public class JwtService {
         }
     
         PrivateKey privateKey = keyService.loadPrivateKey();
-        return jwtBuilder.signWith(privateKey).compact();
+        String token = jwtBuilder.signWith(privateKey).compact();
+        Long expiresAt = exp != null ? exp.longValue() : null;
+        return new IssuedToken(token, jti, iat.longValue(), expiresAt);
     }
+
+    public record IssuedToken(String token, String jti, Long issuedAt, Long expiresAt) { }
 
     /**
      * Generates a Key ID (kid) from the RSA modulus

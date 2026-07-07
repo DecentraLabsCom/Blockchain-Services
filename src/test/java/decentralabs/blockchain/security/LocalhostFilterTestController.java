@@ -32,4 +32,9 @@ public class LocalhostFilterTestController {
     public ResponseEntity<String> labAdminStatus() {
         return ResponseEntity.ok("ok");
     }
+
+    @PostMapping("/access-audit/internal/session-observed")
+    public ResponseEntity<String> accessAuditSessionObserved() {
+        return ResponseEntity.ok("ok");
+    }
 }

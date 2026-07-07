@@ -77,6 +77,7 @@ public class LocalhostOnlyFilter extends OncePerRequestFilter {
             || path.startsWith("/wallet-dashboard")
             || path.startsWith("/institution-config")
             || path.startsWith("/lab-admin")
+            || path.startsWith("/access-audit/internal")
             || path.startsWith("/onboarding/token");
     }
 

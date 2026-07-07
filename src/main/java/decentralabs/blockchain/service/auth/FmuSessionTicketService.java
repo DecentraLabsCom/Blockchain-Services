@@ -35,6 +35,7 @@ public class FmuSessionTicketService {
 
     private final JwtService jwtService;
     private final JdbcTemplate jdbcTemplate;
+    private final AccessCredentialAuditService accessCredentialAuditService;
     private final ObjectMapper objectMapper = new ObjectMapper();
     private final SecureRandom random = new SecureRandom();
     private final ConcurrentMap<String, TicketRecord> tickets = new ConcurrentHashMap<>();
@@ -46,9 +47,14 @@ public class FmuSessionTicketService {
     @Value("${auth.fmu.session-ticket.max-ttl-seconds:300}")
     private long maxTtlSeconds = 300;
 
-    public FmuSessionTicketService(JwtService jwtService, ObjectProvider<JdbcTemplate> jdbcTemplateProvider) {
+    public FmuSessionTicketService(
+        JwtService jwtService,
+        ObjectProvider<JdbcTemplate> jdbcTemplateProvider,
+        AccessCredentialAuditService accessCredentialAuditService
+    ) {
         this.jwtService = jwtService;
         this.jdbcTemplate = jdbcTemplateProvider.getIfAvailable();
+        this.accessCredentialAuditService = accessCredentialAuditService;
     }
 
     public FmuSessionTicketIssueResponse issue(String bearerToken, FmuSessionTicketIssueRequest request) {
@@ -92,6 +98,7 @@ public class FmuSessionTicketService {
         TicketRecord record = new TicketRecord(claims, ticketExpiry);
         tickets.put(ticket, record);
         persistTicket(ticket, record);
+        accessCredentialAuditService.recordFmuTicketIssued(ticket, claims, ticketExpiry);
 
         FmuSessionTicketIssueResponse response = new FmuSessionTicketIssueResponse();
         response.setSessionTicket(ticket);
@@ -142,6 +149,14 @@ public class FmuSessionTicketService {
         FmuSessionTicketRedeemResponse response = new FmuSessionTicketRedeemResponse();
         response.setClaims(claims);
         response.setExpiresAt(Math.min(record.expiresAt(), exp));
+        response.setSessionId(request.getSessionId());
+        response.setSessionObserved(accessCredentialAuditService.recordFmuTicketRedeemed(
+            ticket,
+            claims,
+            request.getSessionId(),
+            request.getGatewayId(),
+            request.getObservedAt()
+        ));
         return response;
     }
 

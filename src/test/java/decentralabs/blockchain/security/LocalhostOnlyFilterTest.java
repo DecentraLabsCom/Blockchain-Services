@@ -45,6 +45,42 @@ class LocalhostOnlyFilterTest {
     }
 
     @Test
+    void accessAuditInternalEndpoint_allowsLoopback() throws Exception {
+        mockMvc.perform(post("/access-audit/internal/session-observed")
+                .with(req -> { req.setRemoteAddr("127.0.0.1"); return req; }))
+            .andExpect(status().isOk());
+    }
+
+    @Test
+    void accessAuditInternalEndpoint_blocksPrivateNetworkWithoutToken() throws Exception {
+        ReflectionTestUtils.setField(adminNetworkAccessPolicy, "adminDashboardAllowPrivate", true);
+        ReflectionTestUtils.setField(adminNetworkAccessPolicy, "allowPrivateNetworks", true);
+        mockMvc = MockMvcBuilders
+            .standaloneSetup(new LocalhostFilterTestController())
+            .addFilters(filter)
+            .build();
+
+        mockMvc.perform(post("/access-audit/internal/session-observed")
+                .with(req -> { req.setRemoteAddr("172.17.0.1"); return req; }))
+            .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void accessAuditInternalEndpoint_allowsPrivateNetworkWithAccessToken() throws Exception {
+        ReflectionTestUtils.setField(adminNetworkAccessPolicy, "adminDashboardAllowPrivate", true);
+        ReflectionTestUtils.setField(adminNetworkAccessPolicy, "allowPrivateNetworks", true);
+        mockMvc = MockMvcBuilders
+            .standaloneSetup(new LocalhostFilterTestController())
+            .addFilters(filter)
+            .build();
+
+        mockMvc.perform(post("/access-audit/internal/session-observed")
+                .header("X-Access-Token", "test-token")
+                .with(req -> { req.setRemoteAddr("172.17.0.1"); return req; }))
+            .andExpect(status().isOk());
+    }
+
+    @Test
     void labAdminEndpoint_allowsPrivateNetworkWithLabManagerToken() throws Exception {
         ReflectionTestUtils.setField(adminNetworkAccessPolicy, "adminDashboardAllowPrivate", true);
         ReflectionTestUtils.setField(adminNetworkAccessPolicy, "allowPrivateNetworks", true);
