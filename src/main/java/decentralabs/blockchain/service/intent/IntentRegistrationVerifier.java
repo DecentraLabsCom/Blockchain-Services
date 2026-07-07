@@ -1,27 +1,17 @@
 package decentralabs.blockchain.service.intent;
 
+import decentralabs.blockchain.contract.Diamond;
 import decentralabs.blockchain.service.wallet.WalletService;
 import java.math.BigInteger;
 import java.time.Instant;
-import java.util.List;
 import java.util.Locale;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
-import org.web3j.abi.FunctionEncoder;
-import org.web3j.abi.FunctionReturnDecoder;
-import org.web3j.abi.TypeReference;
-import org.web3j.abi.datatypes.Address;
-import org.web3j.abi.datatypes.DynamicStruct;
-import org.web3j.abi.datatypes.Function;
 import org.web3j.abi.datatypes.generated.Bytes32;
-import org.web3j.abi.datatypes.generated.Uint256;
-import org.web3j.abi.datatypes.generated.Uint64;
-import org.web3j.abi.datatypes.generated.Uint8;
 import org.web3j.protocol.Web3j;
-import org.web3j.protocol.core.DefaultBlockParameterName;
-import org.web3j.protocol.core.methods.request.Transaction;
-import org.web3j.protocol.core.methods.response.EthCall;
+import org.web3j.tx.ReadonlyTransactionManager;
+import org.web3j.tx.gas.StaticGasProvider;
 import org.web3j.utils.Numeric;
 
 @Service
@@ -115,43 +105,27 @@ public class IntentRegistrationVerifier {
 
     protected OnChainIntent fetchIntent(String requestId) throws Exception {
         Web3j web3j = walletService.getWeb3jInstanceForNetwork(activeNetwork);
-        Function function = new Function(
-            "getIntent",
-            List.of(new Bytes32(toBytes32(requestId))),
-            List.of(new TypeReference<DynamicStruct>() { })
+        Diamond diamond = Diamond.load(
+            contractAddress,
+            web3j,
+            new ReadonlyTransactionManager(web3j, contractAddress),
+            new StaticGasProvider(BigInteger.ZERO, BigInteger.ZERO)
         );
-        String encoded = FunctionEncoder.encode(function);
-        EthCall response = web3j.ethCall(
-            Transaction.createEthCallTransaction(null, contractAddress, encoded),
-            DefaultBlockParameterName.LATEST
-        ).send();
-        if (response == null) {
-            throw new IllegalStateException("empty_eth_call_response");
-        }
-        if (response.hasError()) {
-            String message = response.getError() != null ? response.getError().getMessage() : "unknown_eth_call_error";
-            throw new IllegalStateException(message);
-        }
-
-        var decoded = FunctionReturnDecoder.decode(response.getValue(), function.getOutputParameters());
-        if (decoded.isEmpty() || !(decoded.get(0) instanceof DynamicStruct struct)) {
-            throw new IllegalStateException("getIntent_decode_failed");
-        }
-        var values = struct.getValue();
-        if (values.size() < 9) {
-            throw new IllegalStateException("getIntent_tuple_incomplete");
+        Diamond.IntentMetaStruct struct = diamond.getIntent(toBytes32(requestId)).send();
+        if (struct == null) {
+            throw new IllegalStateException("getIntent_empty_result");
         }
 
         return new OnChainIntent(
-            toHex32((Bytes32) values.get(0)),
-            ((Address) values.get(1)).getValue(),
-            ((Address) values.get(2)).getValue(),
-            ((Uint8) values.get(3)).getValue().intValue(),
-            toHex32((Bytes32) values.get(4)),
-            ((Uint256) values.get(5)).getValue(),
-            ((Uint64) values.get(6)).getValue(),
-            ((Uint64) values.get(7)).getValue(),
-            ((Uint8) values.get(8)).getValue().intValue()
+            toHex32(struct.requestId),
+            struct.signer.getValue(),
+            struct.executor.getValue(),
+            struct.action.getValue().intValue(),
+            toHex32(struct.payloadHash),
+            struct.nonce.getValue(),
+            struct.requestedAt.getValue(),
+            struct.expiresAt.getValue(),
+            struct.state.getValue().intValue()
         );
     }
 

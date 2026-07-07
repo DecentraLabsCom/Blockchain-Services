@@ -6,6 +6,7 @@ import java.util.List;
 import org.web3j.abi.FunctionEncoder;
 import org.web3j.abi.TypeReference;
 import org.web3j.abi.datatypes.Function;
+import org.web3j.abi.datatypes.StaticStruct;
 import org.web3j.abi.datatypes.Type;
 import org.web3j.abi.datatypes.Address;
 import org.web3j.abi.datatypes.Bool;
@@ -124,6 +125,44 @@ public class Diamond extends Contract {
         public Lab(BigInteger labId, LabBase base) {
             this.labId = labId;
             this.base = base;
+        }
+    }
+
+    /**
+     * IntentMeta struct returned by IntentRegistryFacet.getIntent(bytes32).
+     */
+    public static class IntentMetaStruct extends StaticStruct {
+        public final Bytes32 requestId;
+        public final Address signer;
+        public final Address executor;
+        public final Uint8 action;
+        public final Bytes32 payloadHash;
+        public final Uint256 nonce;
+        public final Uint64 requestedAt;
+        public final Uint64 expiresAt;
+        public final Uint8 state;
+
+        public IntentMetaStruct(
+            Bytes32 requestId,
+            Address signer,
+            Address executor,
+            Uint8 action,
+            Bytes32 payloadHash,
+            Uint256 nonce,
+            Uint64 requestedAt,
+            Uint64 expiresAt,
+            Uint8 state
+        ) {
+            super(requestId, signer, executor, action, payloadHash, nonce, requestedAt, expiresAt, state);
+            this.requestId = requestId;
+            this.signer = signer;
+            this.executor = executor;
+            this.action = action;
+            this.payloadHash = payloadHash;
+            this.nonce = nonce;
+            this.requestedAt = requestedAt;
+            this.expiresAt = expiresAt;
+            this.state = state;
         }
     }
 
@@ -253,6 +292,20 @@ public class Diamond extends Contract {
                         ((Uint96) results.get(11)).getValue()
                     );
                 });
+    }
+
+    /**
+     * Get registered intent metadata by request id (IntentRegistryFacet).
+     */
+    @SuppressWarnings("rawtypes")
+    public RemoteFunctionCall<IntentMetaStruct> getIntent(byte[] requestId) {
+        final Function function = new Function(
+            "getIntent",
+            Arrays.asList(new Bytes32(requestId)),
+            Arrays.asList(new TypeReference<IntentMetaStruct>() {})
+        );
+        return new RemoteFunctionCall<>(function,
+            () -> (IntentMetaStruct) executeCallSingleValueReturn(function));
     }
 
     /**

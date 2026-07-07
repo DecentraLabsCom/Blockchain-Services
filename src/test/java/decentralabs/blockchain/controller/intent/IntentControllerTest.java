@@ -15,9 +15,11 @@ import decentralabs.blockchain.dto.intent.IntentAckResponse;
 import decentralabs.blockchain.dto.intent.IntentMeta;
 import decentralabs.blockchain.dto.intent.IntentStatusResponse;
 import decentralabs.blockchain.dto.intent.IntentSubmission;
+import decentralabs.blockchain.service.intent.IntentRecord;
 import decentralabs.blockchain.service.intent.IntentAuthService;
 import decentralabs.blockchain.service.intent.IntentExecutionService;
 import decentralabs.blockchain.service.intent.IntentService;
+import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -150,6 +152,9 @@ class IntentControllerTest {
         @Test
         @DisplayName("Should accept mined signal and trigger immediate processing")
         void shouldAcceptMinedSignalAndTriggerProcessing() throws Exception {
+            when(intentService.findByRequestId("req-123"))
+                .thenReturn(Optional.of(new IntentRecord("req-123", "RESERVATION_REQUEST", "provider")));
+
             mockMvc.perform(post("/intents/req-123/registration-mined")
                     .header("Authorization", VALID_BEARER)
                     .contentType(MediaType.APPLICATION_JSON)
@@ -160,6 +165,22 @@ class IntentControllerTest {
 
             verify(intentAuthService).enforceSubmitAuthorization(VALID_BEARER);
             verify(intentExecutionService).processQueuedIntent("req-123");
+        }
+
+        @Test
+        @DisplayName("Should accept mined signal before WebAuthn stores the intent")
+        void shouldAcceptMinedSignalBeforeIntentExists() throws Exception {
+            when(intentService.findByRequestId("req-early")).thenReturn(Optional.empty());
+
+            mockMvc.perform(post("/intents/req-early/registration-mined")
+                    .header("Authorization", VALID_BEARER)
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content("{\"event\":\"registration_mined\"}"))
+                .andExpect(status().isAccepted())
+                .andExpect(jsonPath("$.requestId").value("req-early"))
+                .andExpect(jsonPath("$.status").value("accepted"));
+
+            verify(intentExecutionService, org.mockito.Mockito.never()).processQueuedIntent("req-early");
         }
 
         @Test

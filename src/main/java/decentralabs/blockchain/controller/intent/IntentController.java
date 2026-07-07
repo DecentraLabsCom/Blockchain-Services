@@ -54,7 +54,11 @@ public class IntentController {
         @RequestHeader(value = "Authorization", required = false) String authorizationHeader
     ) {
         intentAuthService.enforceSubmitAuthorization(authorizationHeader);
-        intentExecutionService.processQueuedIntent(requestId);
+        if (intentService.findByRequestId(requestId).isPresent()) {
+            intentExecutionService.processQueuedIntent(requestId);
+        } else {
+            log.info("Registration mined signal accepted before WebAuthn completion. requestId={}", requestId);
+        }
         IntentAckResponse ack = new IntentAckResponse();
         ack.setRequestId(requestId);
         ack.setStatus("accepted");

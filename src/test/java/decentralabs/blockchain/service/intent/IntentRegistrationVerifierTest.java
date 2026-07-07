@@ -2,9 +2,21 @@ package decentralabs.blockchain.service.intent;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import decentralabs.blockchain.contract.Diamond.IntentMetaStruct;
 import decentralabs.blockchain.service.intent.IntentRegistrationVerifier.OnChainIntent;
 import java.math.BigInteger;
 import java.time.Instant;
+import java.util.List;
+import org.web3j.abi.FunctionReturnDecoder;
+import org.web3j.abi.TypeEncoder;
+import org.web3j.abi.TypeReference;
+import org.web3j.abi.datatypes.Address;
+import org.web3j.abi.datatypes.Type;
+import org.web3j.abi.datatypes.generated.Bytes32;
+import org.web3j.abi.datatypes.generated.Uint256;
+import org.web3j.abi.datatypes.generated.Uint64;
+import org.web3j.abi.datatypes.generated.Uint8;
+import org.web3j.utils.Numeric;
 import org.junit.jupiter.api.Test;
 
 class IntentRegistrationVerifierTest {
@@ -112,6 +124,38 @@ class IntentRegistrationVerifierTest {
         assertThat(result.verified()).isFalse();
         assertThat(result.retryable()).isFalse();
         assertThat(result.reason()).isEqualTo("intent_cancelled");
+    }
+
+    @Test
+    void decodesGetIntentTupleWithTypedStruct() {
+        IntentRecord record = validRecord();
+        IntentMetaStruct encodedStruct = new IntentMetaStruct(
+            new Bytes32(Numeric.hexStringToByteArray(record.getRequestId())),
+            new Address(record.getSigner()),
+            new Address(record.getExecutor()),
+            new Uint8(record.getActionId()),
+            new Bytes32(Numeric.hexStringToByteArray(record.getPayloadHash())),
+            new Uint256(BigInteger.valueOf(record.getNonce())),
+            new Uint64(BigInteger.valueOf(record.getRequestedAt())),
+            new Uint64(BigInteger.valueOf(record.getExpiresAt())),
+            new Uint8(1)
+        );
+
+        @SuppressWarnings({ "rawtypes", "unchecked" })
+        List<TypeReference<Type>> outputParameters = (List) List.of(new TypeReference<IntentMetaStruct>() { });
+
+        List<Type> decoded = FunctionReturnDecoder.decode(
+            "0x" + TypeEncoder.encode(encodedStruct),
+            outputParameters
+        );
+
+        assertThat(decoded).hasSize(1);
+        assertThat(decoded.get(0)).isInstanceOf(IntentMetaStruct.class);
+        IntentMetaStruct struct = (IntentMetaStruct) decoded.get(0);
+        assertThat(Numeric.toHexString(struct.requestId.getValue())).isEqualToIgnoringCase(record.getRequestId());
+        assertThat(struct.executor.getValue()).isEqualToIgnoringCase(record.getExecutor());
+        assertThat(Numeric.toHexString(struct.payloadHash.getValue())).isEqualToIgnoringCase(record.getPayloadHash());
+        assertThat(struct.state.getValue()).isEqualTo(BigInteger.ONE);
     }
 
     private IntentRegistrationVerifier verifier(OnChainIntent onChain) {
