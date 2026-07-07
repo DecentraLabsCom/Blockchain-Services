@@ -28,12 +28,17 @@ import org.springframework.stereotype.Service;
 public class AccessCredentialAuditService {
 
     private final JdbcTemplate jdbcTemplate;
+    private final ObjectProvider<SessionStartedAttestationService> sessionStartedAttestationServiceProvider;
 
     @Value("${access.audit.issuer-backend-id:blockchain-services}")
     private String issuerBackendId;
 
-    public AccessCredentialAuditService(ObjectProvider<JdbcTemplate> jdbcTemplateProvider) {
+    public AccessCredentialAuditService(
+        ObjectProvider<JdbcTemplate> jdbcTemplateProvider,
+        ObjectProvider<SessionStartedAttestationService> sessionStartedAttestationServiceProvider
+    ) {
         this.jdbcTemplate = jdbcTemplateProvider.getIfAvailable();
+        this.sessionStartedAttestationServiceProvider = sessionStartedAttestationServiceProvider;
     }
 
     public void recordJwtIssued(
@@ -158,13 +163,32 @@ public class AccessCredentialAuditService {
                 blankToNull(request.getFmuTicketId()),
                 blankToNull(request.getFmuTicketId())
             );
-            return updated > 0;
+            if (updated > 0) {
+                recordSessionStartedAttestation(request, observedAt, observationType);
+                return true;
+            }
         } catch (BadSqlGrammarException ex) {
             log.warn("Access credential audit table unavailable for session observation: {}", LogSanitizer.sanitize(ex.getMessage()));
         } catch (DataAccessException ex) {
             log.warn("Access credential session observation failed: {}", LogSanitizer.sanitize(ex.getMessage()));
         }
         return false;
+    }
+
+    private void recordSessionStartedAttestation(
+        AccessCredentialSessionObservedRequest request,
+        long observedAt,
+        String observationType
+    ) {
+        try {
+            SessionStartedAttestationService attestationService =
+                sessionStartedAttestationServiceProvider.getIfAvailable();
+            if (attestationService != null) {
+                attestationService.recordSessionStarted(request, observedAt, observationType);
+            }
+        } catch (RuntimeException ex) {
+            log.warn("SessionStarted attestation was not recorded: {}", LogSanitizer.sanitize(ex.getMessage()));
+        }
     }
 
     public List<AuditEntry> findByReservationKey(String reservationKey) {

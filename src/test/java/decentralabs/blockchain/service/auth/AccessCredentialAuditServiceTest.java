@@ -32,6 +32,12 @@ class AccessCredentialAuditServiceTest {
     private ObjectProvider<JdbcTemplate> jdbcTemplateProvider;
 
     @Mock
+    private ObjectProvider<SessionStartedAttestationService> sessionStartedAttestationServiceProvider;
+
+    @Mock
+    private SessionStartedAttestationService sessionStartedAttestationService;
+
+    @Mock
     private JdbcTemplate jdbcTemplate;
 
     @Test
@@ -108,6 +114,7 @@ class AccessCredentialAuditServiceTest {
     void shouldMarkSessionObservedByJwtJti() {
         AccessCredentialAuditService service = buildService(jdbcTemplate);
         when(jdbcTemplate.update(anyString(), any(Object[].class))).thenReturn(1);
+        when(sessionStartedAttestationServiceProvider.getIfAvailable()).thenReturn(sessionStartedAttestationService);
 
         AccessCredentialSessionObservedRequest request = new AccessCredentialSessionObservedRequest();
         request.setReservationKey("0xabc");
@@ -125,6 +132,7 @@ class AccessCredentialAuditServiceTest {
         org.assertj.core.api.Assertions.assertThat(args.getValue())
             .contains("guac-session-1", "gateway-a", "guacamole", "0xabc", "jwt-jti")
             .doesNotContain("secret.jwt.value");
+        verify(sessionStartedAttestationService).recordSessionStarted(request, 1_700_010_000L, "guacamole");
     }
 
     @Test
@@ -182,7 +190,10 @@ class AccessCredentialAuditServiceTest {
 
     private AccessCredentialAuditService buildService(JdbcTemplate template) {
         when(jdbcTemplateProvider.getIfAvailable()).thenReturn(template);
-        AccessCredentialAuditService service = new AccessCredentialAuditService(jdbcTemplateProvider);
+        AccessCredentialAuditService service = new AccessCredentialAuditService(
+            jdbcTemplateProvider,
+            sessionStartedAttestationServiceProvider
+        );
         ReflectionTestUtils.setField(service, "issuerBackendId", "test-backend");
         return service;
     }

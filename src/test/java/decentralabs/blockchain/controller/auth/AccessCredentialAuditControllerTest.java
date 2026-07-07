@@ -12,6 +12,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import com.fasterxml.jackson.databind.ObjectMapper;
 import decentralabs.blockchain.dto.auth.AccessCredentialSessionObservedRequest;
 import decentralabs.blockchain.service.auth.AccessCredentialAuditService;
+import decentralabs.blockchain.service.auth.SessionStartedAttestationService;
 import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -23,14 +24,16 @@ import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 class AccessCredentialAuditControllerTest {
 
     private AccessCredentialAuditService auditService;
+    private SessionStartedAttestationService sessionStartedAttestationService;
     private MockMvc mockMvc;
     private ObjectMapper objectMapper;
 
     @BeforeEach
     void setUp() {
         auditService = Mockito.mock(AccessCredentialAuditService.class);
+        sessionStartedAttestationService = Mockito.mock(SessionStartedAttestationService.class);
         mockMvc = MockMvcBuilders
-            .standaloneSetup(new AccessCredentialAuditController(auditService))
+            .standaloneSetup(new AccessCredentialAuditController(auditService, sessionStartedAttestationService))
             .build();
         objectMapper = new ObjectMapper();
     }
@@ -99,6 +102,25 @@ class AccessCredentialAuditControllerTest {
             "a".repeat(64)
         );
         when(auditService.findByReservationKey("0xabc")).thenReturn(List.of(entry));
+        when(sessionStartedAttestationService.findByReservationKey("0xabc")).thenReturn(List.of(
+            new SessionStartedAttestationService.SessionStartedAttestationEntry(
+                "0xabc",
+                "42",
+                "0xpuc",
+                "0x1111111111111111111111111111111111111111",
+                "gateway-a",
+                "guac-session-1",
+                "guacamole",
+                1_700_010_000L,
+                "0x" + "b".repeat(64),
+                "a".repeat(64),
+                null,
+                "0x" + "c".repeat(64),
+                "0x" + "d".repeat(130),
+                "jwt_jti",
+                "jwt-jti"
+            )
+        ));
 
         mockMvc.perform(get("/access-audit/internal/reservations/{reservationKey}", "0xabc"))
             .andExpect(status().isOk())
@@ -106,8 +128,10 @@ class AccessCredentialAuditControllerTest {
             .andExpect(jsonPath("$.credentialIssued").value(true))
             .andExpect(jsonPath("$.sessionObserved").value(true))
             .andExpect(jsonPath("$.entries[0].credentialHash").value("a".repeat(64)))
-            .andExpect(jsonPath("$.entries[0].sessionId").value("guac-session-1"));
+            .andExpect(jsonPath("$.entries[0].sessionId").value("guac-session-1"))
+            .andExpect(jsonPath("$.sessionStartedAttestations[0].signature").value("0x" + "d".repeat(130)));
 
         verify(auditService).findByReservationKey(eq("0xabc"));
+        verify(sessionStartedAttestationService).findByReservationKey(eq("0xabc"));
     }
 }

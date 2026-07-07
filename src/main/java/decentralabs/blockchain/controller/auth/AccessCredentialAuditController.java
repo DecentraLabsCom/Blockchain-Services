@@ -2,6 +2,7 @@ package decentralabs.blockchain.controller.auth;
 
 import decentralabs.blockchain.dto.auth.AccessCredentialSessionObservedRequest;
 import decentralabs.blockchain.service.auth.AccessCredentialAuditService;
+import decentralabs.blockchain.service.auth.SessionStartedAttestationService;
 import java.util.List;
 import java.util.Map;
 import lombok.RequiredArgsConstructor;
@@ -19,6 +20,7 @@ import org.springframework.web.bind.annotation.RestController;
 public class AccessCredentialAuditController {
 
     private final AccessCredentialAuditService auditService;
+    private final SessionStartedAttestationService sessionStartedAttestationService;
 
     @PostMapping("/session-observed")
     public ResponseEntity<?> recordSessionObserved(
@@ -41,7 +43,9 @@ public class AccessCredentialAuditController {
         @PathVariable String reservationKey
     ) {
         List<AccessCredentialAuditService.AuditEntry> entries = auditService.findByReservationKey(reservationKey);
-        return ResponseEntity.ok(AccessCredentialAuditSummaryResponse.from(reservationKey, entries));
+        List<SessionStartedAttestationService.SessionStartedAttestationEntry> attestations =
+            sessionStartedAttestationService.findByReservationKey(reservationKey);
+        return ResponseEntity.ok(AccessCredentialAuditSummaryResponse.from(reservationKey, entries, attestations));
     }
 
     private String validateObservation(AccessCredentialSessionObservedRequest request) {
@@ -67,18 +71,21 @@ public class AccessCredentialAuditController {
         String reservationKey,
         boolean credentialIssued,
         boolean sessionObserved,
-        List<AccessCredentialAuditService.AuditEntry> entries
+        List<AccessCredentialAuditService.AuditEntry> entries,
+        List<SessionStartedAttestationService.SessionStartedAttestationEntry> sessionStartedAttestations
     ) {
         static AccessCredentialAuditSummaryResponse from(
             String reservationKey,
-            List<AccessCredentialAuditService.AuditEntry> entries
+            List<AccessCredentialAuditService.AuditEntry> entries,
+            List<SessionStartedAttestationService.SessionStartedAttestationEntry> sessionStartedAttestations
         ) {
             boolean observed = entries.stream().anyMatch(entry -> entry != null && entry.sessionObserved());
             return new AccessCredentialAuditSummaryResponse(
                 reservationKey,
                 !entries.isEmpty(),
                 observed,
-                entries
+                entries,
+                sessionStartedAttestations
             );
         }
     }

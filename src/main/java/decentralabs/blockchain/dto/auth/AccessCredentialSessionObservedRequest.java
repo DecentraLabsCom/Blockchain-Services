@@ -9,6 +9,7 @@ public class AccessCredentialSessionObservedRequest {
     private String gatewayId;
     private String accessType;
     private Long observedAt;
+    private String clientProofHash;
 
     public String getReservationKey() {
         return reservationKey;
@@ -72,5 +73,13 @@ public class AccessCredentialSessionObservedRequest {
 
     public void setObservedAt(Long observedAt) {
         this.observedAt = observedAt;
+    }
+
+    public String getClientProofHash() {
+        return clientProofHash;
+    }
+
+    public void setClientProofHash(String clientProofHash) {
+        this.clientProofHash = clientProofHash;
     }
 }
