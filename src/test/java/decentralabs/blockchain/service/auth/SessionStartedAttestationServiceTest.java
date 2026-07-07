@@ -8,6 +8,8 @@ import static org.mockito.Mockito.when;
 
 import decentralabs.blockchain.dto.auth.AccessCredentialSessionObservedRequest;
 import decentralabs.blockchain.service.wallet.InstitutionalWalletService;
+import decentralabs.blockchain.service.wallet.WalletService;
+import java.math.BigInteger;
 import java.sql.ResultSet;
 import java.util.List;
 import org.junit.jupiter.api.Test;
@@ -33,11 +35,15 @@ class SessionStartedAttestationServiceTest {
     @Mock
     private InstitutionalWalletService institutionalWalletService;
 
+    @Mock
+    private WalletService walletService;
+
     @Test
     void shouldSignAndPersistSessionStartedAttestation() throws Exception {
         Credentials credentials = Credentials.create("4f3edf983ac636a65a842ce7c78d9aa706d3b113bce036f7f8f2f0d9f7d4c001");
         SessionStartedAttestationService service = buildService(jdbcTemplate);
         when(institutionalWalletService.getInstitutionalCredentials()).thenReturn(credentials);
+        when(walletService.isLabOwnedByProvider(credentials.getAddress(), BigInteger.valueOf(42))).thenReturn(true);
         when(jdbcTemplate.query(anyString(), anyAuditCredentialRowMapper(), any(Object[].class)))
             .thenAnswer(invocation -> {
                 RowMapper<?> mapper = invocation.getArgument(1);
@@ -73,6 +79,39 @@ class SessionStartedAttestationServiceTest {
     }
 
     @Test
+    void shouldSkipWhenLocalWalletDoesNotOwnLabOnChain() throws Exception {
+        Credentials credentials = Credentials.create("4f3edf983ac636a65a842ce7c78d9aa706d3b113bce036f7f8f2f0d9f7d4c001");
+        SessionStartedAttestationService service = buildService(jdbcTemplate);
+        when(institutionalWalletService.getInstitutionalCredentials()).thenReturn(credentials);
+        when(walletService.isLabOwnedByProvider(credentials.getAddress(), BigInteger.valueOf(42))).thenReturn(false);
+        when(jdbcTemplate.query(anyString(), anyAuditCredentialRowMapper(), any(Object[].class)))
+            .thenAnswer(invocation -> {
+                RowMapper<?> mapper = invocation.getArgument(1);
+                ResultSet rs = org.mockito.Mockito.mock(ResultSet.class);
+                when(rs.getString("reservation_key")).thenReturn("0xabc");
+                when(rs.getString("lab_id")).thenReturn("42");
+                when(rs.getString("puc_hash")).thenReturn("0x" + "1".repeat(64));
+                when(rs.getString("access_type")).thenReturn("guacamole");
+                when(rs.getString("jwt_jti")).thenReturn("jwt-jti");
+                when(rs.getString("fmu_ticket_id")).thenReturn(null);
+                when(rs.getString("credential_hash")).thenReturn("a".repeat(64));
+                return List.of(mapper.mapRow(rs, 0));
+            });
+
+        AccessCredentialSessionObservedRequest request = new AccessCredentialSessionObservedRequest();
+        request.setReservationKey("0xabc");
+        request.setJwtJti("jwt-jti");
+        request.setSessionId("guac-session-1");
+        request.setGatewayId("gateway-a");
+        request.setAccessType("guacamole");
+
+        boolean recorded = service.recordSessionStarted(request, 1_700_010_000L, "guacamole");
+
+        org.assertj.core.api.Assertions.assertThat(recorded).isFalse();
+        verify(jdbcTemplate, never()).update(ArgumentMatchers.contains("INSERT INTO session_started_attestations"), any(Object[].class));
+    }
+
+    @Test
     void shouldSkipWhenDatasourceIsUnavailable() {
         SessionStartedAttestationService service = buildService(null);
         AccessCredentialSessionObservedRequest request = new AccessCredentialSessionObservedRequest();
@@ -91,6 +130,7 @@ class SessionStartedAttestationServiceTest {
         return new SessionStartedAttestationService(
             jdbcTemplateProvider,
             institutionalWalletService,
+            walletService,
             new SessionStartedAttestationSigner(
                 "DecentraLabsSession",
                 "1",

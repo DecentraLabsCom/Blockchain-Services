@@ -4,7 +4,9 @@ import decentralabs.blockchain.dto.auth.AccessCredentialSessionObservedRequest;
 import decentralabs.blockchain.service.auth.SessionStartedAttestationSigner.SessionStartedAttestationPayload;
 import decentralabs.blockchain.service.auth.SessionStartedAttestationSigner.SignedSessionStartedAttestation;
 import decentralabs.blockchain.service.wallet.InstitutionalWalletService;
+import decentralabs.blockchain.service.wallet.WalletService;
 import decentralabs.blockchain.util.LogSanitizer;
+import java.math.BigInteger;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
@@ -27,15 +29,18 @@ public class SessionStartedAttestationService {
 
     private final JdbcTemplate jdbcTemplate;
     private final InstitutionalWalletService institutionalWalletService;
+    private final WalletService walletService;
     private final SessionStartedAttestationSigner signer;
 
     public SessionStartedAttestationService(
         ObjectProvider<JdbcTemplate> jdbcTemplateProvider,
         InstitutionalWalletService institutionalWalletService,
+        WalletService walletService,
         SessionStartedAttestationSigner signer
     ) {
         this.jdbcTemplate = jdbcTemplateProvider.getIfAvailable();
         this.institutionalWalletService = institutionalWalletService;
+        this.walletService = walletService;
         this.signer = signer;
     }
 
@@ -68,6 +73,14 @@ public class SessionStartedAttestationService {
 
             Credentials credentials = institutionalWalletService.getInstitutionalCredentials();
             String signerAddress = credentials.getAddress();
+            if (!isProviderSignerForLab(signerAddress, credential.labId())) {
+                log.warn(
+                    "SessionStarted attestation skipped: signer {} is not the on-chain provider for lab {}",
+                    LogSanitizer.maskIdentifier(signerAddress),
+                    LogSanitizer.sanitize(credential.labId())
+                );
+                return false;
+            }
             String normalizedAccessType = normalizeAccessType(firstNonBlank(accessType, credential.accessType()));
             String nonce = buildNonce(
                 credential.reservationKey(),
@@ -244,6 +257,30 @@ public class SessionStartedAttestationService {
         return hasText(request.getCredentialHash())
             || hasText(request.getJwtJti())
             || hasText(request.getFmuTicketId());
+    }
+
+    private boolean isProviderSignerForLab(String signerAddress, String labId) {
+        BigInteger parsedLabId = parseLabId(labId);
+        if (parsedLabId == null) {
+            log.warn("SessionStarted attestation skipped: cannot resolve numeric labId {}", LogSanitizer.sanitize(labId));
+            return false;
+        }
+        return walletService.isLabOwnedByProvider(signerAddress, parsedLabId);
+    }
+
+    private BigInteger parseLabId(String labId) {
+        if (!hasText(labId)) {
+            return null;
+        }
+        String trimmed = labId.trim();
+        try {
+            if (trimmed.startsWith("0x") || trimmed.startsWith("0X")) {
+                return new BigInteger(trimmed.substring(2), 16);
+            }
+            return new BigInteger(trimmed);
+        } catch (NumberFormatException ex) {
+            return null;
+        }
     }
 
     private String buildNonce(
