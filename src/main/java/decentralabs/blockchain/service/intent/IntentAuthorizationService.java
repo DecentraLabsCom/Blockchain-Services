@@ -6,7 +6,6 @@ import java.time.Instant;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
-import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
@@ -28,7 +27,6 @@ import decentralabs.blockchain.dto.intent.IntentAuthorizationCompleteRequest;
 import decentralabs.blockchain.dto.intent.IntentAuthorizationRequest;
 import decentralabs.blockchain.dto.intent.IntentAuthorizationStatusResponse;
 import decentralabs.blockchain.dto.intent.IntentMeta;
-import decentralabs.blockchain.dto.intent.IntentRegistrationSignalRequest;
 import decentralabs.blockchain.dto.intent.IntentSubmission;
 import decentralabs.blockchain.dto.intent.ReservationIntentPayload;
 import decentralabs.blockchain.service.BackendUrlResolver;
@@ -189,19 +187,6 @@ public class IntentAuthorizationService {
         }
 
         throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Session not found");
-    }
-
-    public Map<String, String> handleRegistrationSignal(String requestId, IntentRegistrationSignalRequest request) {
-        if (request == null) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Missing registration signal");
-        }
-        return intentExecutionService.handleRegistrationSignal(
-            requestId,
-            request.getEvent(),
-            request.getTxHash(),
-            request.getBlockNumber(),
-            request.getReason()
-        );
     }
 
     public IntentAckResponse completeAuthorization(IntentAuthorizationCompleteRequest request) {

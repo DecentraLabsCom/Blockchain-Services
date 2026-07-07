@@ -196,9 +196,6 @@ public class IntentService {
         }
 
         IntentRecord record = new IntentRecord(meta.getRequestId(), action.getWireValue(), meta.getExecutor());
-        if (action.usesReservationPayload()) {
-            record.setStatus(IntentStatus.AUTHORIZED_PENDING_REGISTRATION);
-        }
         record.setSigner(meta.getSigner());
         record.setExecutor(meta.getExecutor());
         record.setActionId(meta.getAction());
@@ -226,10 +223,8 @@ public class IntentService {
         nonceIndex.put(buildNonceKey(meta), meta.getRequestId());
         persistenceService.upsert(record);
 
-        log.info("Intent {} accepted (status={}, action={}, provider={}, labId={}, reservationKey={})",
-            LogSanitizer.sanitize(meta.getRequestId()),
-            record.getStatus().getWireValue(),
-            action.getWireValue(),
+        log.info("Intent {} queued (action={}, provider={}, labId={}, reservationKey={})",
+            LogSanitizer.sanitize(meta.getRequestId()), action.getWireValue(), 
             LogSanitizer.maskIdentifier(meta.getExecutor()), 
             LogSanitizer.sanitize(record.getLabId()), 
             LogSanitizer.sanitize(record.getReservationKey()));
@@ -254,8 +249,6 @@ public class IntentService {
         response.setStatus(record.getStatus().getWireValue());
         response.setTxHash(record.getTxHash());
         response.setBlockNumber(record.getBlockNumber());
-        response.setRegistrationTxHash(record.getRegistrationTxHash());
-        response.setRegistrationBlockNumber(record.getRegistrationBlockNumber());
         response.setLabId(record.getLabId());
         response.setReservationKey(record.getReservationKey());
         response.setError(record.getError() != null ? record.getError() : record.getReason());
@@ -268,9 +261,7 @@ public class IntentService {
     public void reconcile() {
         long now = Instant.now().getEpochSecond();
         intents.values().stream()
-            .filter(r -> r.getStatus() == IntentStatus.QUEUED
-                || r.getStatus() == IntentStatus.AUTHORIZED_PENDING_REGISTRATION
-                || r.getStatus() == IntentStatus.IN_PROGRESS)
+            .filter(r -> r.getStatus() == IntentStatus.QUEUED || r.getStatus() == IntentStatus.IN_PROGRESS)
             .forEach(record -> {
                 if (record.getExpiresAt() != null && record.getExpiresAt() <= now) {
                     record.setStatus(IntentStatus.REJECTED);
@@ -1102,27 +1093,6 @@ public class IntentService {
         persistenceService.upsert(record);
     }
 
-    public void markQueued(IntentRecord record) {
-        record.setStatus(IntentStatus.QUEUED);
-        persistenceService.upsert(record);
-    }
-
-    public boolean recordRegistrationSignal(String requestId, String txHash, Long blockNumber) {
-        Optional<IntentRecord> maybeRecord = findByRequestId(requestId);
-        if (maybeRecord.isEmpty()) {
-            return false;
-        }
-        IntentRecord record = maybeRecord.get();
-        if (txHash != null && !txHash.isBlank()) {
-            record.setRegistrationTxHash(txHash);
-        }
-        if (blockNumber != null) {
-            record.setRegistrationBlockNumber(blockNumber);
-        }
-        persistenceService.upsert(record);
-        return true;
-    }
-
     public void markExecuted(IntentRecord record, String txHash, Long blockNumber, String labId, String reservationKey) {
         record.setStatus(IntentStatus.EXECUTED);
         record.setTxHash(txHash);
@@ -1194,7 +1164,6 @@ public class IntentService {
         }
         return switch (status.toLowerCase()) {
             case "queued" -> IntentStatus.QUEUED;
-            case "authorized_pending_registration" -> IntentStatus.AUTHORIZED_PENDING_REGISTRATION;
             case "in_progress" -> IntentStatus.IN_PROGRESS;
             case "executed" -> IntentStatus.EXECUTED;
             case "failed" -> IntentStatus.FAILED;

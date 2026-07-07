@@ -6,7 +6,6 @@ import decentralabs.blockchain.dto.intent.IntentAuthorizationCompleteRequest;
 import decentralabs.blockchain.dto.intent.IntentAuthorizationRequest;
 import decentralabs.blockchain.dto.intent.IntentAuthorizationSessionResponse;
 import decentralabs.blockchain.dto.intent.IntentAuthorizationStatusResponse;
-import decentralabs.blockchain.dto.intent.IntentRegistrationSignalRequest;
 import decentralabs.blockchain.service.intent.IntentAuthService;
 import decentralabs.blockchain.service.intent.IntentAuthorizationService;
 import jakarta.validation.Valid;
@@ -62,16 +61,6 @@ public class IntentAuthorizationController {
     ) {
         intentAuthService.enforceStatusAuthorization(authorizationHeader);
         return ResponseEntity.ok(authorizationService.getStatus(sessionId));
-    }
-
-    @PostMapping("/{requestId}/registration")
-    public ResponseEntity<Map<String, String>> registrationSignal(
-        @PathVariable String requestId,
-        @RequestBody @Valid IntentRegistrationSignalRequest request,
-        @RequestHeader(value = "Authorization", required = false) String authorizationHeader
-    ) {
-        intentAuthService.enforceSubmitAuthorization(authorizationHeader);
-        return ResponseEntity.ok(authorizationService.handleRegistrationSignal(requestId, request));
     }
 
     @GetMapping(value = "/authorize/ceremony/{sessionId}", produces = "text/html")
