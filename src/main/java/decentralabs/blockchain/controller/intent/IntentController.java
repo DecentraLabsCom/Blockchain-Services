@@ -4,6 +4,7 @@ import decentralabs.blockchain.dto.intent.IntentAckResponse;
 import decentralabs.blockchain.dto.intent.IntentStatusResponse;
 import decentralabs.blockchain.dto.intent.IntentSubmission;
 import decentralabs.blockchain.service.intent.IntentAuthService;
+import decentralabs.blockchain.service.intent.IntentExecutionService;
 import decentralabs.blockchain.service.intent.IntentService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -25,6 +26,7 @@ public class IntentController {
 
     private final IntentService intentService;
     private final IntentAuthService intentAuthService;
+    private final IntentExecutionService intentExecutionService;
 
     @PostMapping
     public ResponseEntity<IntentAckResponse> submitIntent(
@@ -44,5 +46,18 @@ public class IntentController {
     ) {
         intentAuthService.enforceStatusAuthorization(authorizationHeader);
         return ResponseEntity.ok(intentService.getStatus(requestId));
+    }
+
+    @PostMapping("/{requestId}/registration-mined")
+    public ResponseEntity<IntentAckResponse> notifyRegistrationMined(
+        @PathVariable String requestId,
+        @RequestHeader(value = "Authorization", required = false) String authorizationHeader
+    ) {
+        intentAuthService.enforceSubmitAuthorization(authorizationHeader);
+        intentExecutionService.processQueuedIntent(requestId);
+        IntentAckResponse ack = new IntentAckResponse();
+        ack.setRequestId(requestId);
+        ack.setStatus("accepted");
+        return ResponseEntity.accepted().body(ack);
     }
 }

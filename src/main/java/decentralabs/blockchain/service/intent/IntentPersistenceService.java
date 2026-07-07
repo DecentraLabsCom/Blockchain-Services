@@ -98,7 +98,7 @@ public class IntentPersistenceService {
         }
         try {
             return jdbcTemplate.query(
-                "SELECT * FROM intents WHERE status IN ('queued', 'in_progress')",
+                "SELECT * FROM intents WHERE status IN ('queued', 'authorized_pending_registration', 'in_progress')",
                 (rs, rowNum) -> mapRow(rs)
             );
         } catch (Exception e) {
@@ -163,7 +163,7 @@ public class IntentPersistenceService {
             rs.getString("action"),
             rs.getString("provider")
         );
-        record.setStatus(IntentStatus.valueOf(rs.getString("status").toUpperCase()));
+        record.setStatus(IntentStatus.valueOf(rs.getString("status").toUpperCase().replace('-', '_')));
         record.setLabId(rs.getString("lab_id"));
         record.setReservationKey(rs.getString("reservation_key"));
         record.setTxHash(rs.getString("tx_hash"));

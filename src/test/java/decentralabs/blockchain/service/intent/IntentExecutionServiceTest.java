@@ -41,6 +41,9 @@ class IntentExecutionServiceTest {
     private IntentOnChainExecutor onChainExecutor;
 
     @Mock
+    private IntentRegistrationVerifier registrationVerifier;
+
+    @Mock
     private ObjectProvider<ContractEventListenerConfig> reservationAutoApprovalProcessor;
     
     @InjectMocks
@@ -86,10 +89,12 @@ class IntentExecutionServiceTest {
             IntentRecord inProgressIntent = createIntentRecord("req-1", IntentStatus.IN_PROGRESS);
             IntentRecord executedIntent = createIntentRecord("req-2", IntentStatus.EXECUTED);
             IntentRecord failedIntent = createIntentRecord("req-3", IntentStatus.FAILED);
+            IntentRecord pendingRegistrationIntent = createIntentRecord("req-4", IntentStatus.AUTHORIZED_PENDING_REGISTRATION);
             
             intents.put("req-1", inProgressIntent);
             intents.put("req-2", executedIntent);
             intents.put("req-3", failedIntent);
+            intents.put("req-4", pendingRegistrationIntent);
             
             when(intentService.getQueuedIntents()).thenReturn(intents);
             
@@ -99,6 +104,88 @@ class IntentExecutionServiceTest {
             // Then
             verifyNoInteractions(onChainExecutor);
             verify(intentService, never()).markInProgress(any());
+        }
+    }
+
+    @Nested
+    @DisplayName("Registration Gate")
+    class RegistrationGateTests {
+
+        @Test
+        @DisplayName("Should keep authorized reservation pending when registration is not mined yet")
+        void shouldKeepAuthorizedIntentPendingWhenRegistrationMissing() {
+            IntentRecord intent = createIntentRecord("req-auth-pending", "RESERVATION_REQUEST", IntentStatus.AUTHORIZED_PENDING_REGISTRATION);
+            when(intentService.findByRequestId("req-auth-pending")).thenReturn(Optional.of(intent));
+            when(registrationVerifier.verifyRegistration(intent))
+                .thenReturn(IntentRegistrationVerifier.RegistrationVerificationResult.retryable("intent_not_registered"));
+
+            executionService.processQueuedIntent("req-auth-pending");
+
+            verify(registrationVerifier).verifyRegistration(intent);
+            verify(intentService, never()).markQueued(any());
+            verifyNoInteractions(onChainExecutor);
+        }
+
+        @Test
+        @DisplayName("Should execute after on-chain registration verifies")
+        void shouldExecuteAfterRegistrationVerifies() throws Exception {
+            IntentRecord intent = createIntentRecord("req-auth-ready", "RESERVATION_REQUEST", IntentStatus.AUTHORIZED_PENDING_REGISTRATION);
+            when(intentService.findByRequestId("req-auth-ready")).thenReturn(Optional.of(intent));
+            when(registrationVerifier.verifyRegistration(intent))
+                .thenReturn(IntentRegistrationVerifier.RegistrationVerificationResult.success());
+            when(onChainExecutor.execute(intent))
+                .thenReturn(new ExecutionResult(true, "0xexec", 777L, "lab", "key", null));
+
+            executionService.processQueuedIntent("req-auth-ready");
+
+            verify(registrationVerifier).verifyRegistration(intent);
+            verify(intentService).markQueued(intent);
+            verify(onChainExecutor).execute(intent);
+            verify(intentService).markExecuted(intent, "0xexec", 777L, "lab", "key");
+        }
+
+        @Test
+        @DisplayName("Should fail authorized reservation when registered payload mismatches")
+        void shouldFailAuthorizedIntentOnRegistrationMismatch() {
+            IntentRecord intent = createIntentRecord("req-mismatch", "RESERVATION_REQUEST", IntentStatus.AUTHORIZED_PENDING_REGISTRATION);
+            when(intentService.findByRequestId("req-mismatch")).thenReturn(Optional.of(intent));
+            when(registrationVerifier.verifyRegistration(intent))
+                .thenReturn(IntentRegistrationVerifier.RegistrationVerificationResult.terminalFailure("payload_hash_mismatch"));
+
+            executionService.processQueuedIntent("req-mismatch");
+
+            verify(intentService).markFailed(intent, "payload_hash_mismatch");
+            verifyNoInteractions(onChainExecutor);
+        }
+
+        @Test
+        @DisplayName("Should process pending registrations during scheduled polling")
+        void shouldProcessPendingRegistrationsDuringPolling() throws Exception {
+            IntentRecord intent = createIntentRecord("req-lost-signal", "RESERVATION_REQUEST", IntentStatus.AUTHORIZED_PENDING_REGISTRATION);
+            when(intentService.getQueuedIntents()).thenReturn(Map.of("req-lost-signal", intent));
+            when(registrationVerifier.verifyRegistration(intent))
+                .thenReturn(IntentRegistrationVerifier.RegistrationVerificationResult.success());
+            when(onChainExecutor.execute(intent))
+                .thenReturn(new ExecutionResult(true, "0xlost", 778L, "lab", "key", null));
+
+            executionService.processPendingRegistrations();
+
+            verify(intentService).markQueued(intent);
+            verify(intentService).markExecuted(intent, "0xlost", 778L, "lab", "key");
+        }
+
+        @Test
+        @DisplayName("Should fail pending reservation when on-chain intent is already executed")
+        void shouldFailWhenOnChainIntentAlreadyExecuted() {
+            IntentRecord intent = createIntentRecord("req-executed-onchain", "RESERVATION_REQUEST", IntentStatus.AUTHORIZED_PENDING_REGISTRATION);
+            when(intentService.findByRequestId("req-executed-onchain")).thenReturn(Optional.of(intent));
+            when(registrationVerifier.verifyRegistration(intent))
+                .thenReturn(IntentRegistrationVerifier.RegistrationVerificationResult.terminalFailure("intent_already_executed"));
+
+            executionService.processQueuedIntent("req-executed-onchain");
+
+            verify(intentService).markFailed(intent, "intent_already_executed");
+            verifyNoInteractions(onChainExecutor);
         }
     }
 

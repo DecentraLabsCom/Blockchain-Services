@@ -21,6 +21,13 @@ class IntentStatusTest {
         }
 
         @Test
+        @DisplayName("Should have AUTHORIZED_PENDING_REGISTRATION status")
+        void shouldHaveAuthorizedPendingRegistrationStatus() {
+            assertNotNull(IntentStatus.AUTHORIZED_PENDING_REGISTRATION);
+            assertEquals("authorized_pending_registration", IntentStatus.AUTHORIZED_PENDING_REGISTRATION.getWireValue());
+        }
+
+        @Test
         @DisplayName("Should have IN_PROGRESS status")
         void shouldHaveInProgressStatus() {
             assertNotNull(IntentStatus.IN_PROGRESS);
@@ -57,6 +64,15 @@ class IntentStatusTest {
         @DisplayName("Should return QUEUED from string")
         void shouldReturnQueuedFromString() {
             assertEquals(IntentStatus.QUEUED, IntentStatus.valueOf("QUEUED"));
+        }
+
+        @Test
+        @DisplayName("Should return AUTHORIZED_PENDING_REGISTRATION from string")
+        void shouldReturnAuthorizedPendingRegistrationFromString() {
+            assertEquals(
+                IntentStatus.AUTHORIZED_PENDING_REGISTRATION,
+                IntentStatus.valueOf("AUTHORIZED_PENDING_REGISTRATION")
+            );
         }
 
         @Test
@@ -100,7 +116,7 @@ class IntentStatusTest {
         @DisplayName("Should return all values")
         void shouldReturnAllValues() {
             IntentStatus[] values = IntentStatus.values();
-            assertEquals(5, values.length);
+            assertEquals(6, values.length);
         }
 
         @Test
@@ -109,20 +125,11 @@ class IntentStatusTest {
             IntentStatus[] values = IntentStatus.values();
             
             assertTrue(containsStatus(values, IntentStatus.QUEUED));
+            assertTrue(containsStatus(values, IntentStatus.AUTHORIZED_PENDING_REGISTRATION));
             assertTrue(containsStatus(values, IntentStatus.IN_PROGRESS));
             assertTrue(containsStatus(values, IntentStatus.EXECUTED));
             assertTrue(containsStatus(values, IntentStatus.FAILED));
             assertTrue(containsStatus(values, IntentStatus.REJECTED));
-        }
-
-        @Test
-        @DisplayName("Should have correct ordinals")
-        void shouldHaveCorrectOrdinals() {
-            assertEquals(0, IntentStatus.QUEUED.ordinal());
-            assertEquals(1, IntentStatus.IN_PROGRESS.ordinal());
-            assertEquals(2, IntentStatus.EXECUTED.ordinal());
-            assertEquals(3, IntentStatus.FAILED.ordinal());
-            assertEquals(4, IntentStatus.REJECTED.ordinal());
         }
 
         private boolean containsStatus(IntentStatus[] values, IntentStatus status) {

@@ -3,6 +3,7 @@ package decentralabs.blockchain.controller.intent;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -15,6 +16,7 @@ import decentralabs.blockchain.dto.intent.IntentMeta;
 import decentralabs.blockchain.dto.intent.IntentStatusResponse;
 import decentralabs.blockchain.dto.intent.IntentSubmission;
 import decentralabs.blockchain.service.intent.IntentAuthService;
+import decentralabs.blockchain.service.intent.IntentExecutionService;
 import decentralabs.blockchain.service.intent.IntentService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -42,6 +44,9 @@ class IntentControllerTest {
 
     @Mock
     private IntentAuthService intentAuthService;
+
+    @Mock
+    private IntentExecutionService intentExecutionService;
 
     @InjectMocks
     private IntentController intentController;
@@ -135,6 +140,38 @@ class IntentControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("FAILED"))
                 .andExpect(jsonPath("$.error").value("Insufficient balance"));
+        }
+    }
+
+    @Nested
+    @DisplayName("Registration Mined Signal Tests")
+    class RegistrationMinedSignalTests {
+
+        @Test
+        @DisplayName("Should accept mined signal and trigger immediate processing")
+        void shouldAcceptMinedSignalAndTriggerProcessing() throws Exception {
+            mockMvc.perform(post("/intents/req-123/registration-mined")
+                    .header("Authorization", VALID_BEARER)
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content("{\"event\":\"registration_mined\",\"txHash\":\"0xabc\"}"))
+                .andExpect(status().isAccepted())
+                .andExpect(jsonPath("$.requestId").value("req-123"))
+                .andExpect(jsonPath("$.status").value("accepted"));
+
+            verify(intentAuthService).enforceSubmitAuthorization(VALID_BEARER);
+            verify(intentExecutionService).processQueuedIntent("req-123");
+        }
+
+        @Test
+        @DisplayName("Should reject mined signal without Authorization")
+        void shouldRejectMinedSignalWithoutAuthorization() throws Exception {
+            doThrow(new ResponseStatusException(HttpStatus.UNAUTHORIZED))
+                .when(intentAuthService).enforceSubmitAuthorization(eq(null));
+
+            mockMvc.perform(post("/intents/req-123/registration-mined")
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content("{\"event\":\"registration_mined\"}"))
+                .andExpect(status().isUnauthorized());
         }
     }
 

@@ -26,6 +26,7 @@ public class IntentExecutionService {
 
     private final IntentService intentService;
     private final IntentOnChainExecutor onChainExecutor;
+    private final IntentRegistrationVerifier registrationVerifier;
     private final ObjectProvider<ContractEventListenerConfig> reservationAutoApprovalProcessor;
     private final ConcurrentHashMap<String, AtomicBoolean> executionGuards = new ConcurrentHashMap<>();
 
@@ -63,6 +64,19 @@ public class IntentExecutionService {
         }
     }
 
+    @Observed(name = "intent.registration", contextualName = "process-pending-registrations")
+    @Scheduled(fixedDelayString = "${intent.registration-poll-interval-ms:5000}")
+    public void processPendingRegistrations() {
+        Map<String, IntentRecord> current = intentService.getQueuedIntents();
+        List<IntentRecord> pending = current.values().stream()
+            .filter(r -> r.getStatus() == IntentStatus.AUTHORIZED_PENDING_REGISTRATION)
+            .collect(Collectors.toList());
+
+        for (IntentRecord record : pending) {
+            processRecord(record);
+        }
+    }
+
     private void processRecord(IntentRecord record) {
         if (record == null || record.getRequestId() == null || record.getRequestId().isBlank()) {
             return;
@@ -73,6 +87,20 @@ public class IntentExecutionService {
             return;
         }
         try {
+            if (record.getStatus() == IntentStatus.AUTHORIZED_PENDING_REGISTRATION) {
+                IntentRegistrationVerifier.RegistrationVerificationResult verification =
+                    registrationVerifier.verifyRegistration(record);
+                if (!verification.verified()) {
+                    if (!verification.retryable()) {
+                        intentService.markFailed(record, verification.reason());
+                    } else {
+                        log.info("Intent {} remains pending registration: {}", record.getRequestId(), verification.reason());
+                    }
+                    return;
+                }
+                record.setStatus(IntentStatus.QUEUED);
+                intentService.markQueued(record);
+            }
             if (record.getStatus() != IntentStatus.QUEUED) {
                 log.debug("Intent {} has status {}. Skipping execution.", record.getRequestId(), record.getStatus());
                 return;
