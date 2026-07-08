@@ -38,7 +38,7 @@ public class BlockchainBookingService {
     private final GuacamoleProvisioningService guacamoleProvisioningService;
     
     private static final BigInteger STATUS_CONFIRMED = BigInteger.ONE;
-    private static final BigInteger STATUS_IN_USE = BigInteger.valueOf(2);
+    private static final BigInteger STATUS_ACCESS_AUTHORIZED = BigInteger.valueOf(2);
 
     /**
      * Retrieves booking information from blockchain for a wallet
@@ -337,9 +337,9 @@ public class BlockchainBookingService {
 
     private boolean matchesRequiredReservationStatus(BigInteger status, boolean requireAccessAuthorized) {
         if (requireAccessAuthorized) {
-            return STATUS_IN_USE.equals(status);
+            return STATUS_ACCESS_AUTHORIZED.equals(status);
         }
-        return STATUS_CONFIRMED.equals(status) || STATUS_IN_USE.equals(status);
+        return STATUS_CONFIRMED.equals(status) || STATUS_ACCESS_AUTHORIZED.equals(status);
     }
 
     private String describeStatus(BigInteger status) {
@@ -349,7 +349,7 @@ public class BlockchainBookingService {
         return switch (status.intValue()) {
             case 0 -> "PENDING";
             case 1 -> "CONFIRMED";
-            case 2 -> "IN_USE";
+            case 2 -> "ACCESS_AUTHORIZED";
             case 3 -> "COLLECTED";
             case 4 -> "CANCELLED";
             default -> "UNKNOWN(" + status + ")";

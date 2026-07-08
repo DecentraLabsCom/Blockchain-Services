@@ -326,14 +326,14 @@ class BlockchainBookingServiceTest {
     }
 
     @Test
-    void shouldAcceptReservationWithInUseStatus() throws Exception {
+    void shouldAcceptReservationWithAccessAuthorizedStatus() throws Exception {
         Diamond.Reservation reservation = createMockReservation(
                 TEST_LAB_ID,
                 TEST_WALLET,
                 BigInteger.valueOf(1000),
                 getCurrentTimestamp().subtract(BigInteger.valueOf(3600)),
                 getCurrentTimestamp().add(BigInteger.valueOf(3600)),
-                BigInteger.valueOf(2) // IN_USE
+                BigInteger.valueOf(2) // ACCESS_AUTHORIZED
         );
 
         Diamond.Lab lab = createMockLab(

@@ -38,7 +38,7 @@ import decentralabs.blockchain.util.PucNormalizer;
 @Slf4j
 public class InstitutionalCheckInService {
     private static final String ZERO_ADDRESS = "0x0000000000000000000000000000000000000000";
-    private static final BigInteger STATUS_IN_USE = BigInteger.valueOf(2);
+    private static final BigInteger STATUS_ACCESS_AUTHORIZED = BigInteger.valueOf(2);
 
     private static final class MarketplaceIdentityClaims {
         private final String userId;
@@ -111,7 +111,7 @@ public class InstitutionalCheckInService {
             throw new IllegalStateException("Reservation key could not be resolved");
         }
 
-        if (isInUseStatus(bookingInfo.get("reservationStatus"))) {
+        if (isAccessAuthorizedStatus(bookingInfo.get("reservationStatus"))) {
             CheckInResponse response = new CheckInResponse();
             response.setValid(true);
             response.setReservationKey(reservationKey);
@@ -328,18 +328,18 @@ public class InstitutionalCheckInService {
         return trimmed.isEmpty() ? null : trimmed;
     }
 
-    private boolean isInUseStatus(Object value) {
+    private boolean isAccessAuthorizedStatus(Object value) {
         if (value == null) {
             return false;
         }
         if (value instanceof BigInteger status) {
-            return STATUS_IN_USE.equals(status);
+            return STATUS_ACCESS_AUTHORIZED.equals(status);
         }
         if (value instanceof Number status) {
-            return status.longValue() == STATUS_IN_USE.longValue();
+            return status.longValue() == STATUS_ACCESS_AUTHORIZED.longValue();
         }
         try {
-            return STATUS_IN_USE.equals(new BigInteger(value.toString()));
+            return STATUS_ACCESS_AUTHORIZED.equals(new BigInteger(value.toString()));
         } catch (RuntimeException ex) {
             log.debug("Unable to parse reservation status '{}'", value, ex);
             return false;

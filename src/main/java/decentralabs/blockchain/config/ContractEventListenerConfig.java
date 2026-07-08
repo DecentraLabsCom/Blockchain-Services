@@ -1150,7 +1150,7 @@ public class ContractEventListenerConfig {
         return switch (status.intValue()) {
             case 0 -> "PENDING";
             case 1 -> "CONFIRMED";
-            case 2 -> "IN_USE";
+            case 2 -> "ACCESS_AUTHORIZED";
             case 3 -> "COLLECTED";
             case 4 -> "CANCELLED";
             default -> "UNKNOWN(" + status + ")";

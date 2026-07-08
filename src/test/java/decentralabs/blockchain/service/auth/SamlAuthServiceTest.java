@@ -341,8 +341,8 @@ class SamlAuthServiceTest {
         void shouldAllowBookingInfoWhenReservationAccessAlreadyAuthorized() throws Exception {
             SamlAuthRequest request = createValidRequest();
             request.setReservationKey("0xreservation");
-            request.setMarketplaceToken("jwt-booking-in-use");
-            when(marketplaceEndpointAuthService.enforceToken(eq("jwt-booking-in-use"), eq(null)))
+            request.setMarketplaceToken("jwt-booking-access-authorized");
+            when(marketplaceEndpointAuthService.enforceToken(eq("jwt-booking-access-authorized"), eq(null)))
                 .thenReturn(Map.of(
                     "userid", TEST_USER_ID,
                     "affiliation", TEST_AFFILIATION,
@@ -360,7 +360,7 @@ class SamlAuthServiceTest {
             when(blockchainService.getBookingInfo(anyString(), anyString(), any(), anyString()))
                 .thenReturn(bookingInfo);
             when(jwtService.generateIssuedToken(eq(null), any())).thenReturn(
-                new JwtService.IssuedToken("booking-token", "jwt-jti-in-use", 1_700_000_000L, null)
+                new JwtService.IssuedToken("booking-token", "jwt-jti-access-authorized", 1_700_000_000L, null)
             );
 
             AuthResponse response = samlAuthService.handleAuthentication(request, true);
