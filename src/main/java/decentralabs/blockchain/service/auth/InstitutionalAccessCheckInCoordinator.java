@@ -31,6 +31,8 @@ public class InstitutionalAccessCheckInCoordinator {
         Map<String, Object> marketplaceClaims,
         Map<String, Object> bookingInfo
     ) {
+        // AccessGranted/IN_USE is a payer-side on-chain authorization. It is
+        // distinct from the provider-issued JWT/ticket returned by /auth/saml-auth2.
         if (isInUseStatus(bookingInfo.get("reservationStatus"))) {
             return;
         }

@@ -154,6 +154,8 @@ public class SamlAuthService {
                 labId,
                 puc
             );
+            // The provider backend issues the technical access credential only after
+            // coordinating the payer-side on-chain AccessAuthorized check-in.
             accessCheckInCoordinator.recordAccessGranted(request, marketplaceJWTClaims, bookingInfo);
             JwtService.IssuedToken issuedToken = jwtService.generateIssuedToken(null, bookingInfo);
             accessCredentialAuditService.recordJwtIssued(request, marketplaceJWTClaims, bookingInfo, issuedToken);
