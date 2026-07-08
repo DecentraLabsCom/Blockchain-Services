@@ -350,6 +350,8 @@ class AdminDashboardControllerTest {
                 .andExpect(jsonPath("$.labs[0].labId").value("3"))
                 .andExpect(jsonPath("$.labs[0].label").value("Quantum Lab"))
                 .andExpect(jsonPath("$.labs[0].eligibleReservationCount").value("2"))
+                .andExpect(jsonPath("$.labs[0].doubleAttestedReservationCount").value("2"))
+                .andExpect(jsonPath("$.labs[0].settlementEligibilityRule").value("ACCESS_AUTHORIZED_AND_SESSION_STARTED"))
                 .andExpect(jsonPath("$.labs[0].totalReceivableLab").value("10"))
                 .andExpect(jsonPath("$.labs[0].accruedReceivableLab").value("2.5"))
                 .andExpect(jsonPath("$.labs[0].settlementQueuedLab").value("3"))
@@ -411,6 +413,8 @@ class AdminDashboardControllerTest {
                 .andExpect(jsonPath("$.labId").value("3"))
                 .andExpect(jsonPath("$.canRequestPayout").value(true))
                 .andExpect(jsonPath("$.eligibleReservationCount").value("0"))
+                .andExpect(jsonPath("$.doubleAttestedReservationCount").value("0"))
+                .andExpect(jsonPath("$.settlementEligibilityRule").value("ACCESS_AUTHORIZED_AND_SESSION_STARTED"))
                 .andExpect(jsonPath("$.totalReceivableLab").value("20"))
                 .andExpect(jsonPath("$.accruedReceivableLab").value("5"))
                 .andExpect(jsonPath("$.settlementQueuedLab").value("7.5"))
@@ -477,6 +481,8 @@ class AdminDashboardControllerTest {
                 .andExpect(jsonPath("$.labs[0].labId").value("2"))
                 .andExpect(jsonPath("$.summary.pendingLab").value("1"))
                 .andExpect(jsonPath("$.summary.claimedLab").value("2"))
+                .andExpect(jsonPath("$.summary.doubleAttestedReservationCount").value("1"))
+                .andExpect(jsonPath("$.summary.settlementEligibilityRule").value("ACCESS_AUTHORIZED_AND_SESSION_STARTED"))
                 .andExpect(jsonPath("$.summary.labCount").value(2));
         }
     }
