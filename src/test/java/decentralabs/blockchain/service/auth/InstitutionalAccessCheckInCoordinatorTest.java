@@ -80,7 +80,7 @@ class InstitutionalAccessCheckInCoordinatorTest {
     }
 
     @Test
-    void skipsCheckInWhenReservationIsAlreadyInUse() {
+    void skipsCheckInWhenReservationAccessAlreadyAuthorized() {
         coordinator.recordAccessGranted(
             request(),
             claims(),

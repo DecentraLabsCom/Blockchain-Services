@@ -337,8 +337,8 @@ class SamlAuthServiceTest {
         }
 
         @Test
-        @DisplayName("Should allow booking info when reservation is already in use")
-        void shouldAllowBookingInfoWhenReservationAlreadyInUse() throws Exception {
+        @DisplayName("Should allow booking info when reservation access is already authorized")
+        void shouldAllowBookingInfoWhenReservationAccessAlreadyAuthorized() throws Exception {
             SamlAuthRequest request = createValidRequest();
             request.setReservationKey("0xreservation");
             request.setMarketplaceToken("jwt-booking-in-use");

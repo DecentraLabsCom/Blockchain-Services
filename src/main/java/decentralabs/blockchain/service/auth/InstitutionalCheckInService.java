@@ -115,7 +115,7 @@ public class InstitutionalCheckInService {
             CheckInResponse response = new CheckInResponse();
             response.setValid(true);
             response.setReservationKey(reservationKey);
-            response.setReason("Reservation already in use");
+            response.setReason("Access already authorized");
             response.setTimestamp(System.currentTimeMillis() / 1000);
             return response;
         }

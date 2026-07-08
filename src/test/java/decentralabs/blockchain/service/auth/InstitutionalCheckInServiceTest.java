@@ -150,7 +150,7 @@ class InstitutionalCheckInServiceTest {
     }
 
     @Test
-    void checkInShouldReturnSuccessWhenReservationIsAlreadyInUse() throws Exception {
+    void checkInShouldReturnSuccessWhenReservationAccessAlreadyAuthorized() throws Exception {
         InstitutionalCheckInRequest request = validRequest();
 
         when(samlValidationService.validateSamlAssertionDetailed("valid-saml")).thenReturn(samlAttributes());
@@ -170,7 +170,7 @@ class InstitutionalCheckInServiceTest {
 
         assertThat(response.isValid()).isTrue();
         assertThat(response.getReservationKey()).isEqualTo("0xabc");
-        assertThat(response.getReason()).isEqualTo("Reservation already in use");
+        assertThat(response.getReason()).isEqualTo("Access already authorized");
         assertThat(response.getTimestamp()).isNotNull();
         verify(checkInOnChainService, never()).verifyAndSubmit(any(CheckInRequest.class));
         verify(institutionalWalletService, never()).getInstitutionalCredentials();

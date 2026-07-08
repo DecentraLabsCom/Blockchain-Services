@@ -57,7 +57,7 @@ public class InstitutionalCheckInOutboxProcessor {
         }
 
         try {
-            if (isAlreadyInUse(record)) {
+            if (isAccessAlreadyAuthorized(record)) {
                 outboxService.markSucceeded(record.id(), null);
                 return;
             }
@@ -69,7 +69,7 @@ public class InstitutionalCheckInOutboxProcessor {
         }
     }
 
-    private boolean isAlreadyInUse(InstitutionalCheckInOutboxRecord record) {
+    private boolean isAccessAlreadyAuthorized(InstitutionalCheckInOutboxRecord record) {
         Map<String, Object> bookingInfo = bookingService.getCheckInBookingInfo(
             record.institutionalWallet(),
             record.reservationKey(),

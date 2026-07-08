@@ -68,7 +68,7 @@ public class BlockchainBookingService {
         return getBookingInfo(wallet, reservationKey, labId, puc, false);
     }
 
-    public Map<String, Object> getCheckedInBookingInfo(String wallet, String reservationKey, String labId, String puc) {
+    public Map<String, Object> getAccessAuthorizedBookingInfo(String wallet, String reservationKey, String labId, String puc) {
         return getBookingInfo(wallet, reservationKey, labId, puc, true, true);
     }
 
@@ -81,8 +81,8 @@ public class BlockchainBookingService {
             String reservationKey,
             String labId,
             String puc,
-            boolean requireCheckedIn) {
-        return getBookingInfo(wallet, reservationKey, labId, puc, requireCheckedIn, true);
+            boolean requireAccessAuthorized) {
+        return getBookingInfo(wallet, reservationKey, labId, puc, requireAccessAuthorized, true);
     }
 
     private Map<String, Object> getBookingInfo(
@@ -90,16 +90,16 @@ public class BlockchainBookingService {
             String reservationKey,
             String labId,
             String puc,
-            boolean requireCheckedIn,
+            boolean requireAccessAuthorized,
             boolean includeAccessInfo) {
         try {           
             // Determine which method to use based on available parameters
             if (reservationKey != null && !reservationKey.isEmpty()) {
                 // OPTIMAL PATH: Use reservationKey for direct O(1) access
-                return getBookingInfoByReservationKey(wallet, reservationKey, puc, requireCheckedIn, includeAccessInfo);
+                return getBookingInfoByReservationKey(wallet, reservationKey, puc, requireAccessAuthorized, includeAccessInfo);
             } else if (labId != null && !labId.isEmpty()) {
                 // FALLBACK PATH: Search by labId (requires iteration)
-                return getBookingInfoByLabId(wallet, labId, puc, requireCheckedIn, includeAccessInfo);
+                return getBookingInfoByLabId(wallet, labId, puc, requireAccessAuthorized, includeAccessInfo);
             } else {
                 throw new IllegalArgumentException(
                     "Must provide either 'reservationKey' (recommended) or 'labId'"
@@ -154,7 +154,7 @@ public class BlockchainBookingService {
             String wallet,
             String reservationKeyHex,
             String expectedPuc,
-            boolean requireCheckedIn,
+            boolean requireAccessAuthorized,
             boolean includeAccessInfo)
             throws Exception {
         
@@ -182,7 +182,7 @@ public class BlockchainBookingService {
         }
 
         // 4. Validate reservation
-        validateReservation(wallet, renter, status, start, end, requireCheckedIn);
+        validateReservation(wallet, renter, status, start, end, requireAccessAuthorized);
 
         if (!includeAccessInfo) {
             return buildReservationInfo(labId, reservationKeyHex, price, status, start, end);
@@ -216,7 +216,7 @@ public class BlockchainBookingService {
             String wallet,
             String labIdStr,
             String puc,
-            boolean requireCheckedIn,
+            boolean requireAccessAuthorized,
             boolean includeAccessInfo) throws Exception {
         
         BigInteger labId = EthereumAddressValidator.parseBigInteger(labIdStr, "labId");
@@ -245,7 +245,7 @@ public class BlockchainBookingService {
                 }
 
                 if (res.labId.equals(labId) && 
-                    matchesRequiredReservationStatus(res.status, requireCheckedIn) &&
+                    matchesRequiredReservationStatus(res.status, requireAccessAuthorized) &&
                     pucMatches &&
                     currentTime.compareTo(res.start) >= 0 &&
                     currentTime.compareTo(res.end) <= 0) {
@@ -274,7 +274,7 @@ public class BlockchainBookingService {
         BigInteger status = reservation.status;
 
         // 4. Validate reservation
-        validateReservation(wallet, renter, status, start, end, requireCheckedIn);
+        validateReservation(wallet, renter, status, start, end, requireAccessAuthorized);
 
         // 5. Convert reservationKey to hex for response
         String reservationKeyHex = bytesToHex(reservationKeyBytes);
@@ -307,7 +307,7 @@ public class BlockchainBookingService {
      * Validates reservation ownership, status, and time validity
      */
     private void validateReservation(String wallet, String renter, BigInteger status,
-                                     BigInteger start, BigInteger end, boolean requireCheckedIn) {
+                                     BigInteger start, BigInteger end, boolean requireAccessAuthorized) {
         // Validate ownership
         if (!renter.equalsIgnoreCase(wallet)) {
             throw new SecurityException(
@@ -315,7 +315,7 @@ public class BlockchainBookingService {
             );
         }
 
-        if (!matchesRequiredReservationStatus(status, requireCheckedIn)) {
+        if (!matchesRequiredReservationStatus(status, requireAccessAuthorized)) {
             throw new IllegalStateException("Reservation is not active. Status: " + describeStatus(status));
         }
 
@@ -335,8 +335,8 @@ public class BlockchainBookingService {
         }
     }
 
-    private boolean matchesRequiredReservationStatus(BigInteger status, boolean requireCheckedIn) {
-        if (requireCheckedIn) {
+    private boolean matchesRequiredReservationStatus(BigInteger status, boolean requireAccessAuthorized) {
+        if (requireAccessAuthorized) {
             return STATUS_IN_USE.equals(status);
         }
         return STATUS_CONFIRMED.equals(status) || STATUS_IN_USE.equals(status);
