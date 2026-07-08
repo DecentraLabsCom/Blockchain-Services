@@ -22,6 +22,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
+import org.springframework.test.util.ReflectionTestUtils;
 
 @ExtendWith(MockitoExtension.class)
 class SessionStartedOnChainPublisherServiceTest {
@@ -85,6 +86,25 @@ class SessionStartedOnChainPublisherServiceTest {
             eq("contract rejected"),
             eq(7L)
         );
+    }
+
+    @Test
+    void queryExcludesAttestationsAtMaxPublishAttempts() {
+        SessionStartedOnChainPublisherService service = buildService(jdbcTemplate);
+        ReflectionTestUtils.setField(service, "maxAttempts", 3);
+        when(jdbcTemplate.query(anyString(), anySubmissionRowMapper(), any(Object[].class))).thenReturn(List.of());
+
+        int published = service.publishPending(10);
+
+        assertThat(published).isZero();
+        verify(jdbcTemplate).query(
+            contains("onchain_publish_attempts < ?"),
+            anySubmissionRowMapper(),
+            eq(3),
+            any(Timestamp.class),
+            eq(10)
+        );
+        verify(onChainClient, never()).hasSessionStarted(anyString());
     }
 
     @Test

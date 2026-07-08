@@ -56,6 +56,11 @@ class SessionStartedAttestationSignerTest {
             .isNotEqualTo(Numeric.toHexString(signer.buildDigest(payloadC)));
     }
 
+    @Test
+    void exposesConfiguredDomainChainIdForPublisherValidation() {
+        assertThat(signer.getDomainChainId()).isEqualTo(11155111L);
+    }
+
     private SessionStartedAttestationPayload payload(long startedAt) {
         return new SessionStartedAttestationPayload(
             credentials.getAddress(),

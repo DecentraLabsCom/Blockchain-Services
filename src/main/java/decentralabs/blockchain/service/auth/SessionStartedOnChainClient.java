@@ -40,6 +40,7 @@ public class SessionStartedOnChainClient {
 
     private final WalletService walletService;
     private final InstitutionalWalletService institutionalWalletService;
+    private final SessionStartedAttestationSigner signer;
 
     @Value("${contract.address}")
     private String contractAddress;
@@ -75,7 +76,11 @@ public class SessionStartedOnChainClient {
             if (response.hasError()) {
                 throw new IllegalStateException(response.getError().getMessage());
             }
-            List<Type> decoded = FunctionReturnDecoder.decode(response.getValue(), function.getOutputParameters());
+            @SuppressWarnings("unchecked")
+            List<Type<?>> decoded = (List<Type<?>>) (List<?>) FunctionReturnDecoder.decode(
+                response.getValue(),
+                function.getOutputParameters()
+            );
             return !decoded.isEmpty() && Boolean.TRUE.equals(decoded.getFirst().getValue());
         } catch (IOException ex) {
             throw new IllegalStateException("Failed to query SessionStarted status: " + ex.getMessage(), ex);
@@ -88,6 +93,7 @@ public class SessionStartedOnChainClient {
         Credentials credentials = institutionalWalletService.getInstitutionalCredentials();
         Web3j web3j = walletService.getWeb3jInstance();
         long chainId = getChainId(web3j);
+        validateDomainChainId(chainId);
         TransactionManager txManager = new FastRawTransactionManager(web3j, credentials, chainId);
 
         Function function = new Function(
@@ -176,6 +182,19 @@ public class SessionStartedOnChainClient {
         } catch (Exception ex) {
             log.warn("Unable to resolve chainId for SessionStarted publication: {}", ex.getMessage());
             return 0L;
+        }
+    }
+
+    private void validateDomainChainId(long connectedChainId) {
+        if (connectedChainId <= 0L) {
+            throw new IllegalStateException("Unable to verify connected chainId for SessionStarted publication");
+        }
+        long domainChainId = signer.getDomainChainId();
+        if (domainChainId != connectedChainId) {
+            throw new IllegalStateException(
+                "SessionStarted domain chainId " + domainChainId
+                    + " does not match connected chainId " + connectedChainId
+            );
         }
     }
 

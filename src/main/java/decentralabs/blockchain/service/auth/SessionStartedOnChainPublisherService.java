@@ -29,6 +29,9 @@ public class SessionStartedOnChainPublisherService {
     @Value("${session.attestation.publisher.lock-timeout-seconds:300}")
     private long lockTimeoutSeconds;
 
+    @Value("${session.attestation.publisher.max-attempts:5}")
+    private int maxAttempts;
+
     public SessionStartedOnChainPublisherService(
         ObjectProvider<JdbcTemplate> jdbcTemplateProvider,
         SessionStartedOnChainClient onChainClient
@@ -59,6 +62,7 @@ public class SessionStartedOnChainPublisherService {
                        client_proof_hash, signature
                 FROM session_started_attestations
                 WHERE onchain_published_at IS NULL
+                  AND onchain_publish_attempts < ?
                   AND (
                     onchain_publish_locked_at IS NULL
                     OR onchain_publish_locked_at < ?
@@ -67,6 +71,7 @@ public class SessionStartedOnChainPublisherService {
                 LIMIT ?
                 """,
                 rowMapper(),
+                maxPublishAttempts(),
                 lockThreshold(),
                 Math.max(1, limit)
             );
@@ -119,12 +124,14 @@ public class SessionStartedOnChainPublisherService {
                 updated_at = CURRENT_TIMESTAMP
             WHERE id = ?
               AND onchain_published_at IS NULL
+              AND onchain_publish_attempts < ?
               AND (
                 onchain_publish_locked_at IS NULL
                 OR onchain_publish_locked_at < ?
               )
             """,
             id,
+            maxPublishAttempts(),
             lockThreshold()
         );
         return updated == 1;
@@ -179,6 +186,10 @@ public class SessionStartedOnChainPublisherService {
     private Timestamp lockThreshold() {
         long seconds = Math.max(1L, lockTimeoutSeconds);
         return Timestamp.from(Instant.now().minusSeconds(seconds));
+    }
+
+    private int maxPublishAttempts() {
+        return Math.max(1, maxAttempts);
     }
 
     private RowMapper<SessionStartedOnChainSubmission> rowMapper() {

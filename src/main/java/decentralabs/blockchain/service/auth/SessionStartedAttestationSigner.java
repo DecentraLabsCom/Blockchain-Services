@@ -71,6 +71,10 @@ public class SessionStartedAttestationSigner {
         return Hash.sha3(digestInput);
     }
 
+    public long getDomainChainId() {
+        return domainChainId;
+    }
+
     private byte[] hashSessionStarted(SessionStartedAttestationPayload payload) {
         String encodedHex = encodeTypes(
             new Bytes32(SESSION_STARTED_TYPEHASH),

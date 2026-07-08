@@ -191,10 +191,10 @@ public class InstitutionalCheckInService {
             if (saml.affiliation() != null && !saml.affiliation().isBlank() && !claimAffiliation.equals(saml.affiliation())) {
                 throw new SecurityException("Marketplace token affiliation mismatch");
             }
-            enforceOptionalClaim(claims, "purpose", "lab_access");
-            enforceOptionalClaim(claims, "reservationKey", request.getReservationKey());
-            enforceOptionalClaim(claims, "labId", request.getLabId());
-            enforceSamlAssertionHash(claims, request.getSamlAssertion());
+            enforceRequiredClaim(claims, "purpose", "lab_access");
+            enforceBoundClaim(claims, "reservationKey", request.getReservationKey());
+            enforceBoundClaim(claims, "labId", request.getLabId());
+            enforceRequiredSamlAssertionHash(claims, request.getSamlAssertion());
 
             String claimPuc = firstClaim(claims, "puc");
             String claimInstitutionalProviderWallet = firstClaim(claims, "institutionalProviderWallet");
@@ -351,10 +351,10 @@ public class InstitutionalCheckInService {
         }
     }
 
-    private void enforceSamlAssertionHash(Map<String, Object> claims, String samlAssertion) {
+    private void enforceRequiredSamlAssertionHash(Map<String, Object> claims, String samlAssertion) {
         String expectedHash = firstClaim(claims, "samlAssertionHash");
         if (expectedHash == null || expectedHash.isBlank()) {
-            return;
+            throw new SecurityException("Marketplace token samlAssertionHash is required");
         }
         String actualHash = Numeric.toHexString(Hash.sha3(samlAssertion.getBytes(StandardCharsets.UTF_8)));
         if (!expectedHash.equalsIgnoreCase(actualHash)) {
@@ -362,10 +362,17 @@ public class InstitutionalCheckInService {
         }
     }
 
-    private void enforceOptionalClaim(Map<String, Object> claims, String claim, String expected) {
-        String value = firstClaim(claims, claim);
-        if (value == null || value.isBlank() || expected == null || expected.isBlank()) {
+    private void enforceBoundClaim(Map<String, Object> claims, String claim, String expected) {
+        if (expected == null || expected.isBlank()) {
             return;
+        }
+        enforceRequiredClaim(claims, claim, expected);
+    }
+
+    private void enforceRequiredClaim(Map<String, Object> claims, String claim, String expected) {
+        String value = firstClaim(claims, claim);
+        if (value == null || value.isBlank()) {
+            throw new SecurityException("Marketplace token " + claim + " is required");
         }
         if (!value.equals(expected)) {
             throw new SecurityException("Marketplace token " + claim + " mismatch");
