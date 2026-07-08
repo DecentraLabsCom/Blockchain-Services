@@ -24,6 +24,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import decentralabs.blockchain.dto.auth.AuthResponse;
 import decentralabs.blockchain.dto.auth.CheckInResponse;
 import decentralabs.blockchain.dto.auth.InstitutionalCheckInRequest;
+import decentralabs.blockchain.dto.auth.ProviderAccessCredentialRequest;
 import decentralabs.blockchain.dto.auth.SamlAuthRequest;
 import decentralabs.blockchain.exception.SamlAuthControllerAdvice;
 import decentralabs.blockchain.service.auth.InstitutionalCheckInService;
@@ -268,6 +269,30 @@ class SamlAuthControllerTest {
                 .andExpect(status().isUnauthorized())
                 .andExpect(jsonPath("$.valid").value(false))
                 .andExpect(jsonPath("$.reason").value("Invalid SAML assertion"));
+        }
+    }
+
+    @Nested
+    @DisplayName("Provider Access Credential Endpoint Tests")
+    class ProviderAccessCredentialTests {
+
+        @Test
+        @DisplayName("Should issue provider access credential")
+        void shouldIssueProviderAccessCredential() throws Exception {
+            ProviderAccessCredentialRequest request = new ProviderAccessCredentialRequest();
+            request.setMarketplaceToken("marketplace-token");
+            request.setReservationKey("0x" + "a".repeat(64));
+
+            AuthResponse response = new AuthResponse("provider-jwt", "https://lab.example.com");
+            when(samlAuthService.issueAccessCredential(any(ProviderAccessCredentialRequest.class)))
+                .thenReturn(response);
+
+            mockMvc.perform(post("/auth/access-credential")
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.token").value("provider-jwt"))
+                .andExpect(jsonPath("$.labURL").value("https://lab.example.com"));
         }
     }
 

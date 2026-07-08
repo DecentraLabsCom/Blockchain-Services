@@ -243,6 +243,24 @@ class InstitutionalCheckInServiceTest {
     }
 
     @Test
+    void checkInShouldRejectMarketplaceSamlAssertionHashMismatch() throws Exception {
+        InstitutionalCheckInRequest request = validRequest();
+
+        when(samlValidationService.validateSamlAssertionDetailed("valid-saml")).thenReturn(samlAttributes());
+        when(marketplaceEndpointAuthService.enforceToken("market-token", null)).thenReturn(Map.of(
+            "userid", "user-1",
+            "affiliation", "org.example",
+            "puc", "puc-123",
+            "institutionalProviderWallet", "0x1111111111111111111111111111111111111111",
+            "samlAssertionHash", "0x" + "0".repeat(64)
+        ));
+
+        assertThatThrownBy(() -> service.checkIn(request))
+            .isInstanceOf(SecurityException.class)
+            .hasMessageContaining("samlAssertionHash mismatch");
+    }
+
+    @Test
     void checkInShouldRejectMissingResolvedReservationKey() throws Exception {
         InstitutionalCheckInRequest request = validRequest();
 

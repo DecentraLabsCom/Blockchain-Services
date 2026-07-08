@@ -1,6 +1,7 @@
 package decentralabs.blockchain.service.auth;
 
 import decentralabs.blockchain.dto.auth.AuthResponse;
+import decentralabs.blockchain.dto.auth.ProviderAccessCredentialRequest;
 import decentralabs.blockchain.dto.auth.SamlAuthRequest;
 import decentralabs.blockchain.exception.SamlAuthenticationException;
 import decentralabs.blockchain.exception.SamlExpiredAssertionException;
@@ -39,6 +40,42 @@ public class SamlAuthService {
 
     @Value("${auth.saml.required-booking-scope:booking:read}")
     private String requiredBookingScope;
+
+    public AuthResponse issueAccessCredential(ProviderAccessCredentialRequest request) {
+        validateProviderAccessCredentialRequest(request);
+
+        Map<String, Object> marketplaceJWTClaims = validateMarketplaceJWTBasic(request.getMarketplaceToken());
+        enforceBookingInfoEntitlement(marketplaceJWTClaims);
+        enforceLabAccessPurpose(marketplaceJWTClaims);
+        enforceClaimEquals(marketplaceJWTClaims, "reservationKey", request.getReservationKey());
+        enforceClaimEquals(marketplaceJWTClaims, "labId", request.getLabId());
+
+        String institutionalProviderWallet = stringClaim(marketplaceJWTClaims, "institutionalProviderWallet");
+        if (institutionalProviderWallet == null || institutionalProviderWallet.isBlank()) {
+            throw new SecurityException("Marketplace token missing institutionalProviderWallet");
+        }
+
+        try {
+            Map<String, Object> bookingInfo = blockchainService.getAccessAuthorizedBookingInfo(
+                institutionalProviderWallet,
+                request.getReservationKey(),
+                request.getLabId(),
+                stringClaim(marketplaceJWTClaims, "puc")
+            );
+            JwtService.IssuedToken issuedToken = jwtService.generateIssuedToken(null, bookingInfo);
+            SamlAuthRequest auditRequest = new SamlAuthRequest();
+            auditRequest.setMarketplaceToken(request.getMarketplaceToken());
+            auditRequest.setReservationKey(request.getReservationKey());
+            auditRequest.setLabId(request.getLabId());
+            auditRequest.setTimestamp(System.currentTimeMillis() / 1000);
+            accessCredentialAuditService.recordJwtIssued(auditRequest, marketplaceJWTClaims, bookingInfo, issuedToken);
+            return new AuthResponse(issuedToken.token(), (String) bookingInfo.get("labURL"));
+        } catch (RuntimeException ex) {
+            throw ex;
+        } catch (Exception ex) {
+            throw new IllegalStateException("Failed to issue access credential", ex);
+        }
+    }
 
     public AuthResponse handleAuthentication(SamlAuthRequest request, boolean includeBookingInfo)
             throws SamlAuthenticationException {
@@ -211,6 +248,45 @@ public class SamlAuthService {
             return;
         }
         enforceBookingInfoEntitlement(marketplaceClaims);
+    }
+
+    private void validateProviderAccessCredentialRequest(ProviderAccessCredentialRequest request) {
+        if (request == null) {
+            throw new IllegalArgumentException("Missing request");
+        }
+        if (request.getMarketplaceToken() == null || request.getMarketplaceToken().isBlank()) {
+            throw new IllegalArgumentException("Missing marketplaceToken");
+        }
+        boolean hasReservationKey = request.getReservationKey() != null && !request.getReservationKey().isBlank();
+        boolean hasLabId = request.getLabId() != null && !request.getLabId().isBlank();
+        if (!hasReservationKey && !hasLabId) {
+            throw new IllegalArgumentException("Missing reservationKey or labId");
+        }
+    }
+
+    private void enforceLabAccessPurpose(Map<String, Object> marketplaceClaims) {
+        String purpose = stringClaim(marketplaceClaims, "purpose");
+        if (!"lab_access".equals(purpose)) {
+            throw new SecurityException("Marketplace token purpose is not lab_access");
+        }
+    }
+
+    private void enforceClaimEquals(Map<String, Object> marketplaceClaims, String claim, String expected) {
+        if (expected == null || expected.isBlank()) {
+            return;
+        }
+        String value = stringClaim(marketplaceClaims, claim);
+        if (value == null || !expected.equals(value)) {
+            throw new SecurityException("Marketplace token " + claim + " mismatch");
+        }
+    }
+
+    private String stringClaim(Map<String, Object> claims, String key) {
+        if (claims == null || key == null || !claims.containsKey(key)) {
+            return null;
+        }
+        Object value = claims.get(key);
+        return value == null ? null : value.toString();
     }
 
     private boolean scopeContainsRequiredScope(Object scopeClaim) {

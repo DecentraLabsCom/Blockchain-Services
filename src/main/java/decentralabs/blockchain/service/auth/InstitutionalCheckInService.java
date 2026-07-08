@@ -72,7 +72,7 @@ public class InstitutionalCheckInService {
         validateRequest(request);
 
         SamlAssertionAttributes saml = validateSaml(request.getSamlAssertion());
-        MarketplaceIdentityClaims marketplaceIdentity = validateMarketplaceToken(request.getMarketplaceToken(), saml);
+        MarketplaceIdentityClaims marketplaceIdentity = validateMarketplaceToken(request, saml);
 
         String tokenIdentity = PucNormalizer.normalize(firstNonBlank(marketplaceIdentity.puc, marketplaceIdentity.userId));
         String samlIdentity = PucNormalizer.normalize(saml.userid());
@@ -169,8 +169,9 @@ public class InstitutionalCheckInService {
         }
     }
 
-    private MarketplaceIdentityClaims validateMarketplaceToken(String marketplaceToken, SamlAssertionAttributes saml) {
+    private MarketplaceIdentityClaims validateMarketplaceToken(InstitutionalCheckInRequest request, SamlAssertionAttributes saml) {
         try {
+            String marketplaceToken = request.getMarketplaceToken();
             Map<String, Object> claims = marketplaceEndpointAuthService.enforceToken(marketplaceToken, null);
             String claimUser = firstClaim(claims, "userid", "sub", "uid");
             // affiliation is validated above but not retained in the return object
@@ -190,6 +191,10 @@ public class InstitutionalCheckInService {
             if (saml.affiliation() != null && !saml.affiliation().isBlank() && !claimAffiliation.equals(saml.affiliation())) {
                 throw new SecurityException("Marketplace token affiliation mismatch");
             }
+            enforceOptionalClaim(claims, "purpose", "lab_access");
+            enforceOptionalClaim(claims, "reservationKey", request.getReservationKey());
+            enforceOptionalClaim(claims, "labId", request.getLabId());
+            enforceSamlAssertionHash(claims, request.getSamlAssertion());
 
             String claimPuc = firstClaim(claims, "puc");
             String claimInstitutionalProviderWallet = firstClaim(claims, "institutionalProviderWallet");
@@ -343,6 +348,27 @@ public class InstitutionalCheckInService {
         } catch (RuntimeException ex) {
             log.debug("Unable to parse reservation status '{}'", value, ex);
             return false;
+        }
+    }
+
+    private void enforceSamlAssertionHash(Map<String, Object> claims, String samlAssertion) {
+        String expectedHash = firstClaim(claims, "samlAssertionHash");
+        if (expectedHash == null || expectedHash.isBlank()) {
+            return;
+        }
+        String actualHash = Numeric.toHexString(Hash.sha3(samlAssertion.getBytes(StandardCharsets.UTF_8)));
+        if (!expectedHash.equalsIgnoreCase(actualHash)) {
+            throw new SecurityException("Marketplace token samlAssertionHash mismatch");
+        }
+    }
+
+    private void enforceOptionalClaim(Map<String, Object> claims, String claim, String expected) {
+        String value = firstClaim(claims, claim);
+        if (value == null || value.isBlank() || expected == null || expected.isBlank()) {
+            return;
+        }
+        if (!value.equals(expected)) {
+            throw new SecurityException("Marketplace token " + claim + " mismatch");
         }
     }
 
