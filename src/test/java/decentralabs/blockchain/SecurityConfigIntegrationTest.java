@@ -274,6 +274,43 @@ class SecurityConfigIntegrationTest {
     }
 
     @Test
+    void accessCredentialEndpoint_isAccessibleWithoutSpringAuthentication() throws Exception {
+        mockMvc.perform(post("/auth/access-credential")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{}")
+                .with(req -> {
+                    req.setRemoteAddr("198.51.100.30");
+                    return req;
+                }))
+            .andExpect(status().isOk())
+            .andExpect(content().string("access-credential-ok"));
+    }
+
+    @Test
+    void accessCredentialEndpoint_isRateLimitedPerIp() throws Exception {
+        mockMvc.perform(post("/auth/access-credential")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{}")
+                .with(req -> {
+                    req.setRemoteAddr("198.51.100.40");
+                    return req;
+                }))
+            .andExpect(status().isOk())
+            .andExpect(content().string("access-credential-ok"));
+
+        mockMvc.perform(post("/auth/access-credential")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{}")
+                .with(req -> {
+                    req.setRemoteAddr("198.51.100.40");
+                    return req;
+                }))
+            .andExpect(status().isTooManyRequests())
+            .andExpect(header().string("Retry-After", "60"))
+            .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON));
+    }
+
+    @Test
     void unknownEndpoint_isDeniedByDefault() throws Exception {
         mockMvc.perform(get("/not-mapped")
                 .with(req -> {
@@ -373,6 +410,11 @@ class SecurityConfigIntegrationTest {
         @PostMapping("/auth/fmu/session-ticket/redeem")
         String fmuSessionTicketRedeem() {
             return "fmu-session-ticket-ok";
+        }
+
+        @PostMapping("/auth/access-credential")
+        String accessCredential() {
+            return "access-credential-ok";
         }
     }
 

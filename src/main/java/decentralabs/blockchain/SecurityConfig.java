@@ -40,6 +40,9 @@ public class SecurityConfig {
 
     @Value("${endpoint.checkin-institutional:/auth/checkin-institutional}")
     private @Nonnull String checkinInstitutionalEndpoint = "/auth/checkin-institutional";
+
+    @Value("${endpoint.access-credential:/auth/access-credential}")
+    private @Nonnull String accessCredentialEndpoint = "/auth/access-credential";
     
     @Value("${endpoint.health:/health}")
     private @Nonnull String healthEndpoint = "/health";
@@ -90,6 +93,7 @@ public class SecurityConfig {
                     samlAuthEndpoint,
                     samlAuth2Endpoint,
                     checkinInstitutionalEndpoint,
+                    accessCredentialEndpoint,
                     healthEndpoint,
                     "/actuator/health/**",
                     "/actuator/info",
@@ -116,6 +120,7 @@ public class SecurityConfig {
                 authorize.requestMatchers(samlAuthEndpoint).permitAll();
                 authorize.requestMatchers(samlAuth2Endpoint).permitAll();
                 authorize.requestMatchers(checkinInstitutionalEndpoint).permitAll();
+                authorize.requestMatchers(accessCredentialEndpoint).permitAll();
                 authorize.requestMatchers(fmuProviderDescribeTokenEndpoint).permitAll();
                 // Internal endpoint — only reachable within Docker network; not exposed via nginx.
                 // FmuSessionTicketService validates the FMU JWT supplied in the Authorization header.
@@ -175,6 +180,7 @@ public class SecurityConfig {
         source.registerCorsConfiguration(samlAuthEndpoint, publicConfiguration);
         source.registerCorsConfiguration(samlAuth2Endpoint, publicConfiguration);
         source.registerCorsConfiguration(checkinInstitutionalEndpoint, publicConfiguration);
+        source.registerCorsConfiguration(accessCredentialEndpoint, publicConfiguration);
         source.registerCorsConfiguration(fmuProviderDescribeTokenEndpoint, publicConfiguration);
         source.registerCorsConfiguration(healthEndpoint, publicConfiguration);
         source.registerCorsConfiguration(intentsEndpoint + "/**", publicConfiguration);
