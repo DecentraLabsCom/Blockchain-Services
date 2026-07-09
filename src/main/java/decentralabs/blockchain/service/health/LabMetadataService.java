@@ -86,6 +86,9 @@ public class LabMetadataService {
         if (rootNode.hasNonNull("bookingMode")) {
             builder.bookingMode(parseString(rootNode.get("bookingMode")));
         }
+        if (rootNode.hasNonNull("resourceType")) {
+            builder.resourceType(parseString(rootNode.get("resourceType")));
+        }
         if (rootNode.hasNonNull("allowedDurations")) {
             builder.allowedDurations(parseAllowedDurations(rootNode.get("allowedDurations")));
         }
@@ -122,6 +125,7 @@ public class LabMetadataService {
                         pricingMetadata.setDisplayUnit(parseString(valueNode));
                         builder.pricing(pricingMetadata);
                     }
+                    case "resourcetype" -> builder.resourceType(parseString(valueNode));
                     case "bookingmode" -> builder.bookingMode(parseString(valueNode));
                     case "alloweddurations" -> builder.allowedDurations(parseAllowedDurations(valueNode));
                     case "periodrules" -> builder.periodRules(parseObject(valueNode, PeriodRules.class));

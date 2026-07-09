@@ -29,6 +29,7 @@ public class LabMetadata {
     private List<Integer> timeSlots;
     private PricingMetadata pricing;
     private String bookingMode;
+    private String resourceType;
     private List<AllowedDuration> allowedDurations;
     private PeriodRules periodRules;
 

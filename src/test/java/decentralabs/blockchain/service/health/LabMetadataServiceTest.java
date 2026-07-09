@@ -257,6 +257,28 @@ class LabMetadataServiceTest {
             assertThat(metadata.getAllowedDurations()).hasSize(2);
             assertThat(metadata.getPeriodRules().getMaxDurationDays()).isEqualTo(90);
         }
+
+        @Test
+        @DisplayName("Should parse explicit resource type from generated attributes")
+        void shouldParseExplicitResourceTypeFromGeneratedAttributes() {
+            String json = """
+                {
+                    "name": "FMU Lab",
+                    "description": "A generated FMU lab",
+                    "image": "https://image.url",
+                    "attributes": [
+                        { "trait_type": "resourceType", "value": "fmu" },
+                        { "trait_type": "bookingMode", "value": "calendar-period" }
+                    ]
+                }
+                """;
+            when(restTemplate.getForObject(anyString(), eq(String.class))).thenReturn(json);
+
+            LabMetadata metadata = metadataService.getLabMetadata("https://example.com/fmu.json");
+
+            assertThat(metadata.getResourceType()).isEqualTo("fmu");
+            assertThat(metadata.getBookingMode()).isEqualTo("calendar-period");
+        }
     }
 
     @Nested
