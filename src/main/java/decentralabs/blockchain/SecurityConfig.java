@@ -103,6 +103,7 @@ public class SecurityConfig {
                     "/institution-config/**",
                     "/lab-admin/**",
                     "/lab-content/**",
+                    "/access-audit/internal/**",
                     fmuProviderDescribeTokenEndpoint,
                     fmuSessionTicketEndpoint + "/**"
                 )
@@ -129,6 +130,7 @@ public class SecurityConfig {
                 authorize.requestMatchers("/institution-config/**").permitAll();
                 authorize.requestMatchers("/lab-content/**").permitAll();
                 authorize.requestMatchers("/lab-admin/**").permitAll();
+                authorize.requestMatchers("/access-audit/internal/**").hasRole("INTERNAL");
                 authorize.requestMatchers(intentsEndpoint + "/**").permitAll();
                 // Wallet dashboard static resources (HTML/CSS/JS)
                 authorize.requestMatchers("/wallet-dashboard/**").permitAll();

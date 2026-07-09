@@ -40,7 +40,7 @@ class AccessTokenAuthenticationFilterTest {
     }
 
     @Test
-    void shouldNotFilter_nonBillingPath() {
+    void shouldNotFilter_nonProtectedPath() {
         MockHttpServletRequest request = new MockHttpServletRequest();
         request.setRequestURI("/auth/saml-auth");
 
@@ -51,6 +51,14 @@ class AccessTokenAuthenticationFilterTest {
     void shouldFilter_billingAdminPath() {
         MockHttpServletRequest request = new MockHttpServletRequest();
         request.setRequestURI("/billing/admin/payouts");
+
+        assertThat(filter.shouldSkip(request)).isFalse();
+    }
+
+    @Test
+    void shouldFilter_accessAuditInternalPath() {
+        MockHttpServletRequest request = new MockHttpServletRequest();
+        request.setRequestURI("/access-audit/internal/session-observed");
 
         assertThat(filter.shouldSkip(request)).isFalse();
     }

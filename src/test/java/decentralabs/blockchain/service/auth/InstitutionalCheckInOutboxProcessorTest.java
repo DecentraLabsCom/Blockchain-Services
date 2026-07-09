@@ -60,7 +60,7 @@ class InstitutionalCheckInOutboxProcessorTest {
     }
 
     @Test
-    void marksSuccessWithoutSubmittingWhenReservationAlreadyInUse() {
+    void marksSuccessWithoutSubmittingWhenReservationAccessAlreadyAuthorized() {
         var record = record(0);
         when(outboxService.claim(1L)).thenReturn(true);
         when(bookingService.getCheckInBookingInfo(any(), any(), any(), eq(null)))

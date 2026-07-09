@@ -37,9 +37,9 @@ public class AccessTokenAuthenticationFilter extends OncePerRequestFilter {
     @Override
     protected boolean shouldNotFilter(@Nonnull HttpServletRequest request) {
         String path = request.getRequestURI();
-        // Run for all /billing/** so the SecurityConfig hasRole rules can enforce ROLE_INTERNAL
-        // on settlement and network write operations as well as /billing/admin/**
-        return path == null || !path.startsWith("/billing");
+        // Run for routes where SecurityConfig hasRole rules enforce ROLE_INTERNAL.
+        return path == null
+            || (!path.startsWith("/billing") && !path.startsWith("/access-audit/internal"));
     }
 
     @Override

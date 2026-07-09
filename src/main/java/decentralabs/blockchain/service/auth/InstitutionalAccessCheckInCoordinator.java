@@ -16,7 +16,7 @@ import org.springframework.stereotype.Service;
 @Service
 @RequiredArgsConstructor
 public class InstitutionalAccessCheckInCoordinator {
-    private static final BigInteger STATUS_IN_USE = BigInteger.valueOf(2);
+    private static final BigInteger STATUS_ACCESS_AUTHORIZED = BigInteger.valueOf(2);
 
     private final InstitutionalCheckInOutboxService outboxService;
     private final InstitutionalWalletService institutionalWalletService;
@@ -31,7 +31,9 @@ public class InstitutionalAccessCheckInCoordinator {
         Map<String, Object> marketplaceClaims,
         Map<String, Object> bookingInfo
     ) {
-        if (isInUseStatus(bookingInfo.get("reservationStatus"))) {
+        // AccessGranted/ACCESS_AUTHORIZED is a payer-side on-chain authorization. It is
+        // distinct from the provider-issued JWT/ticket returned by /auth/saml-auth2.
+        if (isAccessAuthorizedStatus(bookingInfo.get("reservationStatus"))) {
             return;
         }
 
@@ -98,16 +100,16 @@ public class InstitutionalAccessCheckInCoordinator {
         }
     }
 
-    private boolean isInUseStatus(Object value) {
+    private boolean isAccessAuthorizedStatus(Object value) {
         if (value instanceof BigInteger status) {
-            return STATUS_IN_USE.equals(status);
+            return STATUS_ACCESS_AUTHORIZED.equals(status);
         }
         if (value instanceof Number status) {
-            return status.longValue() == STATUS_IN_USE.longValue();
+            return status.longValue() == STATUS_ACCESS_AUTHORIZED.longValue();
         }
         if (value != null) {
             try {
-                return STATUS_IN_USE.equals(new BigInteger(value.toString()));
+                return STATUS_ACCESS_AUTHORIZED.equals(new BigInteger(value.toString()));
             } catch (RuntimeException ignored) {
                 return false;
             }

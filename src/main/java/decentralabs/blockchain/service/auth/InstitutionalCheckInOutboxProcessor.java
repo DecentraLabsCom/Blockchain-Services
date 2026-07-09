@@ -16,7 +16,7 @@ import org.springframework.stereotype.Service;
 @RequiredArgsConstructor
 @Slf4j
 public class InstitutionalCheckInOutboxProcessor {
-    private static final BigInteger STATUS_IN_USE = BigInteger.valueOf(2);
+    private static final BigInteger STATUS_ACCESS_AUTHORIZED = BigInteger.valueOf(2);
 
     private final InstitutionalCheckInOutboxService outboxService;
     private final BlockchainBookingService bookingService;
@@ -57,7 +57,7 @@ public class InstitutionalCheckInOutboxProcessor {
         }
 
         try {
-            if (isAlreadyInUse(record)) {
+            if (isAccessAlreadyAuthorized(record)) {
                 outboxService.markSucceeded(record.id(), null);
                 return;
             }
@@ -69,26 +69,26 @@ public class InstitutionalCheckInOutboxProcessor {
         }
     }
 
-    private boolean isAlreadyInUse(InstitutionalCheckInOutboxRecord record) {
+    private boolean isAccessAlreadyAuthorized(InstitutionalCheckInOutboxRecord record) {
         Map<String, Object> bookingInfo = bookingService.getCheckInBookingInfo(
             record.institutionalWallet(),
             record.reservationKey(),
             record.labId(),
             null
         );
-        return isInUseStatus(bookingInfo.get("reservationStatus"));
+        return isAccessAuthorizedStatus(bookingInfo.get("reservationStatus"));
     }
 
-    private boolean isInUseStatus(Object value) {
+    private boolean isAccessAuthorizedStatus(Object value) {
         if (value instanceof BigInteger status) {
-            return STATUS_IN_USE.equals(status);
+            return STATUS_ACCESS_AUTHORIZED.equals(status);
         }
         if (value instanceof Number status) {
-            return status.longValue() == STATUS_IN_USE.longValue();
+            return status.longValue() == STATUS_ACCESS_AUTHORIZED.longValue();
         }
         if (value != null) {
             try {
-                return STATUS_IN_USE.equals(new BigInteger(value.toString()));
+                return STATUS_ACCESS_AUTHORIZED.equals(new BigInteger(value.toString()));
             } catch (RuntimeException ignored) {
                 return false;
             }

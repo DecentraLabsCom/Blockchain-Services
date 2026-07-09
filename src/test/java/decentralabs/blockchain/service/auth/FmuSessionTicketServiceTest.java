@@ -35,6 +35,9 @@ class FmuSessionTicketServiceTest {
     @Mock
     private JdbcTemplate jdbcTemplate;
 
+    @Mock
+    private AccessCredentialAuditService accessCredentialAuditService;
+
     private FmuSessionTicketService service;
 
     @BeforeEach
@@ -57,15 +60,28 @@ class FmuSessionTicketServiceTest {
         assertThat(issueResponse.getSessionTicket()).startsWith("st_");
         assertThat(issueResponse.getLabId()).isEqualTo("42");
         assertThat(issueResponse.isOneTimeUse()).isFalse();
+        org.mockito.Mockito.verify(accessCredentialAuditService)
+            .recordFmuTicketIssued(org.mockito.Mockito.eq(issueResponse.getSessionTicket()), org.mockito.Mockito.eq(claims), org.mockito.Mockito.anyLong());
 
         FmuSessionTicketRedeemRequest redeemRequest = new FmuSessionTicketRedeemRequest();
         redeemRequest.setSessionTicket(issueResponse.getSessionTicket());
         redeemRequest.setLabId("42");
         redeemRequest.setReservationKey("0xabc");
+        redeemRequest.setSessionId("sess-fmu-1");
+        redeemRequest.setGatewayId("gateway-a");
         var redeemResponse = service.redeem(redeemRequest);
 
         assertThat(redeemResponse.getClaims()).containsEntry("resourceType", "fmu");
         assertThat(redeemResponse.getClaims()).containsEntry("accessKey", "test.fmu");
+        assertThat(redeemResponse.getSessionId()).isEqualTo("sess-fmu-1");
+        org.mockito.Mockito.verify(accessCredentialAuditService)
+            .recordFmuTicketRedeemed(
+                org.mockito.Mockito.eq(issueResponse.getSessionTicket()),
+                org.mockito.Mockito.eq(claims),
+                org.mockito.Mockito.eq("sess-fmu-1"),
+                org.mockito.Mockito.eq("gateway-a"),
+                org.mockito.Mockito.isNull()
+            );
 
         // Second redeem should also succeed — ticket is reusable within validity period
         var redeemResponse2 = service.redeem(redeemRequest);
@@ -121,9 +137,11 @@ class FmuSessionTicketServiceTest {
         redeemRequest.setSessionTicket("st_test");
         redeemRequest.setLabId("42");
         redeemRequest.setReservationKey("0xabc");
+        redeemRequest.setSessionId("sess-fmu-persisted");
 
         var redeemResponse = service.redeem(redeemRequest);
         assertThat(redeemResponse.getClaims()).containsEntry("resourceType", "fmu");
+        assertThat(redeemResponse.getSessionId()).isEqualTo("sess-fmu-persisted");
 
         // Second redeem should also succeed — ticket is reusable within validity period
         var redeemResponse2 = service.redeem(redeemRequest);
@@ -154,7 +172,11 @@ class FmuSessionTicketServiceTest {
 
     private FmuSessionTicketService buildService(JdbcTemplate template) {
         when(jdbcTemplateProvider.getIfAvailable()).thenReturn(template);
-        FmuSessionTicketService candidate = new FmuSessionTicketService(jwtService, jdbcTemplateProvider);
+        FmuSessionTicketService candidate = new FmuSessionTicketService(
+            jwtService,
+            jdbcTemplateProvider,
+            accessCredentialAuditService
+        );
         ReflectionTestUtils.setField(candidate, "defaultTtlSeconds", 120L);
         ReflectionTestUtils.setField(candidate, "maxTtlSeconds", 300L);
         return candidate;

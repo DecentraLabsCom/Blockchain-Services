@@ -462,6 +462,8 @@ public class AdminDashboardController {
             result.put("disputedReceivableLab", formatLabTokens(receivable.disputedReceivable()));
             result.put("lastAccruedAt", receivable.lastAccruedAt().toString());
             result.put("eligibleReservationCount", receivable.eligibleReservationCount().toString());
+            result.put("doubleAttestedReservationCount", receivable.eligibleReservationCount().toString());
+            result.put("settlementEligibilityRule", "ACCESS_AUTHORIZED_AND_SESSION_STARTED");
             result.put("hasReceivable", receivable.totalReceivable().compareTo(BigInteger.ZERO) > 0);
             result.put("canRequestPayout", simulation.canRequestPayout());
             result.put("payoutRequestReason", simulation.reason());
@@ -890,6 +892,8 @@ public class AdminDashboardController {
         summary.put("reversedRaw", reversed.toString());
         summary.put("reversedLab", formatLabTokens(reversed));
         summary.put("pendingClosures", pendingClosures.toString());
+        summary.put("doubleAttestedReservationCount", pendingClosures.toString());
+        summary.put("settlementEligibilityRule", "ACCESS_AUTHORIZED_AND_SESSION_STARTED");
         summary.put("labCount", visibleLabIds.size());
 
         putCachedValue(providerLabsSummaryCache, cacheKey, summary);
@@ -929,6 +933,8 @@ public class AdminDashboardController {
             lab.put("disputedReceivableRaw", status.disputedReceivable().toString());
             lab.put("disputedReceivableLab", formatLabTokens(status.disputedReceivable()));
             lab.put("eligibleReservationCount", status.eligibleReservationCount().toString());
+            lab.put("doubleAttestedReservationCount", status.eligibleReservationCount().toString());
+            lab.put("settlementEligibilityRule", "ACCESS_AUTHORIZED_AND_SESSION_STARTED");
             lab.put("hasReceivable", status.totalReceivable().compareTo(BigInteger.ZERO) > 0);
         });
 

@@ -16,6 +16,7 @@ import decentralabs.blockchain.service.wallet.InstitutionalWalletService;
 import decentralabs.blockchain.service.wallet.WalletService;
 import java.math.BigInteger;
 import java.nio.charset.StandardCharsets;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
@@ -83,12 +84,7 @@ class InstitutionalCheckInServiceTest {
         onChainResponse.setTxHash("0xtx123");
 
         when(samlValidationService.validateSamlAssertionDetailed("valid-saml")).thenReturn(saml);
-        when(marketplaceEndpointAuthService.enforceToken("market-token", null)).thenReturn(Map.of(
-            "userid", "user-1",
-            "affiliation", "org.example",
-            "puc", "puc-123",
-            "institutionalProviderWallet", "0x1111111111111111111111111111111111111111"
-        ));
+        when(marketplaceEndpointAuthService.enforceToken("market-token", null)).thenReturn(marketplaceClaims());
         when(bookingService.getCheckInBookingInfo("0x1111111111111111111111111111111111111111", "0xabc", "42", "puc-123"))
             .thenReturn(Map.of("reservationKey", "0xabc"));
         when(institutionalWalletService.getInstitutionalWalletAddress()).thenReturn(credentials.getAddress());
@@ -126,12 +122,8 @@ class InstitutionalCheckInServiceTest {
         onChainResponse.setTxHash("0xsame");
 
         when(samlValidationService.validateSamlAssertionDetailed("valid-saml")).thenReturn(saml);
-        when(marketplaceEndpointAuthService.enforceToken("market-token", null)).thenReturn(Map.of(
-            "userid", "user-1",
-            "affiliation", "org.example",
-            "puc", "puc-123",
-            "institutionalProviderWallet", credentials.getAddress()
-        ));
+        when(marketplaceEndpointAuthService.enforceToken("market-token", null))
+            .thenReturn(marketplaceClaims(Map.of("institutionalProviderWallet", credentials.getAddress())));
         when(bookingService.getCheckInBookingInfo(credentials.getAddress(), "0xabc", "42", "puc-123"))
             .thenReturn(Map.of("reservationKey", "0xabc"));
         when(institutionalWalletService.getInstitutionalWalletAddress()).thenReturn(credentials.getAddress());
@@ -150,16 +142,11 @@ class InstitutionalCheckInServiceTest {
     }
 
     @Test
-    void checkInShouldReturnSuccessWhenReservationIsAlreadyInUse() throws Exception {
+    void checkInShouldReturnSuccessWhenReservationAccessAlreadyAuthorized() throws Exception {
         InstitutionalCheckInRequest request = validRequest();
 
         when(samlValidationService.validateSamlAssertionDetailed("valid-saml")).thenReturn(samlAttributes());
-        when(marketplaceEndpointAuthService.enforceToken("market-token", null)).thenReturn(Map.of(
-            "userid", "user-1",
-            "affiliation", "org.example",
-            "puc", "puc-123",
-            "institutionalProviderWallet", "0x1111111111111111111111111111111111111111"
-        ));
+        when(marketplaceEndpointAuthService.enforceToken("market-token", null)).thenReturn(marketplaceClaims());
         when(bookingService.getCheckInBookingInfo("0x1111111111111111111111111111111111111111", "0xabc", "42", "puc-123"))
             .thenReturn(Map.of(
                 "reservationKey", "0xabc",
@@ -170,7 +157,7 @@ class InstitutionalCheckInServiceTest {
 
         assertThat(response.isValid()).isTrue();
         assertThat(response.getReservationKey()).isEqualTo("0xabc");
-        assertThat(response.getReason()).isEqualTo("Reservation already in use");
+        assertThat(response.getReason()).isEqualTo("Access already authorized");
         assertThat(response.getTimestamp()).isNotNull();
         verify(checkInOnChainService, never()).verifyAndSubmit(any(CheckInRequest.class));
         verify(institutionalWalletService, never()).getInstitutionalCredentials();
@@ -186,12 +173,7 @@ class InstitutionalCheckInServiceTest {
         remoteResponse.setTxHash("0xremote");
 
         when(samlValidationService.validateSamlAssertionDetailed("valid-saml")).thenReturn(saml);
-        when(marketplaceEndpointAuthService.enforceToken("market-token", null)).thenReturn(Map.of(
-            "userid", "user-1",
-            "affiliation", "org.example",
-            "puc", "puc-123",
-            "institutionalProviderWallet", "0x1111111111111111111111111111111111111111"
-        ));
+        when(marketplaceEndpointAuthService.enforceToken("market-token", null)).thenReturn(marketplaceClaims());
         when(bookingService.getCheckInBookingInfo("0x1111111111111111111111111111111111111111", "0xabc", "42", "puc-123"))
             .thenReturn(Map.of("reservationKey", "0xabc"));
         when(institutionalWalletService.getInstitutionalWalletAddress()).thenReturn("0x9999999999999999999999999999999999999999");
@@ -214,11 +196,7 @@ class InstitutionalCheckInServiceTest {
         request.setPuc("other-puc");
 
         when(samlValidationService.validateSamlAssertionDetailed("valid-saml")).thenReturn(samlAttributes());
-        when(marketplaceEndpointAuthService.enforceToken("market-token", null)).thenReturn(Map.of(
-            "userid", "user-1",
-            "affiliation", "org.example",
-            "puc", "puc-123"
-        ));
+        when(marketplaceEndpointAuthService.enforceToken("market-token", null)).thenReturn(marketplaceClaims());
 
         assertThatThrownBy(() -> service.checkIn(request))
             .isInstanceOf(SecurityException.class)
@@ -230,12 +208,8 @@ class InstitutionalCheckInServiceTest {
         InstitutionalCheckInRequest request = validRequest();
 
         when(samlValidationService.validateSamlAssertionDetailed("valid-saml")).thenReturn(samlAttributes());
-        when(marketplaceEndpointAuthService.enforceToken("market-token", null)).thenReturn(Map.of(
-            "userid", "user-1",
-            "affiliation", "org.example",
-            "puc", "puc-123",
-            "institutionalProviderWallet", "0x9999999999999999999999999999999999999999"
-        ));
+        when(marketplaceEndpointAuthService.enforceToken("market-token", null))
+            .thenReturn(marketplaceClaims(Map.of("institutionalProviderWallet", "0x9999999999999999999999999999999999999999")));
 
         assertThatThrownBy(() -> service.checkIn(request))
             .isInstanceOf(SecurityException.class)
@@ -243,16 +217,66 @@ class InstitutionalCheckInServiceTest {
     }
 
     @Test
+    void checkInShouldRejectMarketplaceSamlAssertionHashMismatch() throws Exception {
+        InstitutionalCheckInRequest request = validRequest();
+
+        when(samlValidationService.validateSamlAssertionDetailed("valid-saml")).thenReturn(samlAttributes());
+        when(marketplaceEndpointAuthService.enforceToken("market-token", null))
+            .thenReturn(marketplaceClaims(Map.of("samlAssertionHash", "0x" + "0".repeat(64))));
+
+        assertThatThrownBy(() -> service.checkIn(request))
+            .isInstanceOf(SecurityException.class)
+            .hasMessageContaining("samlAssertionHash mismatch");
+    }
+
+    @Test
+    void checkInShouldRejectMarketplaceTokenWithoutLabAccessPurpose() throws Exception {
+        InstitutionalCheckInRequest request = validRequest();
+        Map<String, Object> claims = marketplaceClaims();
+        claims.remove("purpose");
+
+        when(samlValidationService.validateSamlAssertionDetailed("valid-saml")).thenReturn(samlAttributes());
+        when(marketplaceEndpointAuthService.enforceToken("market-token", null)).thenReturn(claims);
+
+        assertThatThrownBy(() -> service.checkIn(request))
+            .isInstanceOf(SecurityException.class)
+            .hasMessageContaining("purpose is required");
+    }
+
+    @Test
+    void checkInShouldRejectMarketplaceTokenWithoutReservationBinding() throws Exception {
+        InstitutionalCheckInRequest request = validRequest();
+        Map<String, Object> claims = marketplaceClaims();
+        claims.remove("reservationKey");
+
+        when(samlValidationService.validateSamlAssertionDetailed("valid-saml")).thenReturn(samlAttributes());
+        when(marketplaceEndpointAuthService.enforceToken("market-token", null)).thenReturn(claims);
+
+        assertThatThrownBy(() -> service.checkIn(request))
+            .isInstanceOf(SecurityException.class)
+            .hasMessageContaining("reservationKey is required");
+    }
+
+    @Test
+    void checkInShouldRejectMarketplaceTokenWithoutSamlAssertionHash() throws Exception {
+        InstitutionalCheckInRequest request = validRequest();
+        Map<String, Object> claims = marketplaceClaims();
+        claims.remove("samlAssertionHash");
+
+        when(samlValidationService.validateSamlAssertionDetailed("valid-saml")).thenReturn(samlAttributes());
+        when(marketplaceEndpointAuthService.enforceToken("market-token", null)).thenReturn(claims);
+
+        assertThatThrownBy(() -> service.checkIn(request))
+            .isInstanceOf(SecurityException.class)
+            .hasMessageContaining("samlAssertionHash is required");
+    }
+
+    @Test
     void checkInShouldRejectMissingResolvedReservationKey() throws Exception {
         InstitutionalCheckInRequest request = validRequest();
 
         when(samlValidationService.validateSamlAssertionDetailed("valid-saml")).thenReturn(samlAttributes());
-        when(marketplaceEndpointAuthService.enforceToken("market-token", null)).thenReturn(Map.of(
-            "userid", "user-1",
-            "affiliation", "org.example",
-            "puc", "puc-123",
-            "institutionalProviderWallet", "0x1111111111111111111111111111111111111111"
-        ));
+        when(marketplaceEndpointAuthService.enforceToken("market-token", null)).thenReturn(marketplaceClaims());
         when(bookingService.getCheckInBookingInfo("0x1111111111111111111111111111111111111111", "0xabc", "42", "puc-123"))
             .thenReturn(Map.of());
 
@@ -281,6 +305,28 @@ class InstitutionalCheckInServiceTest {
             List.of("org.example"),
             Map.of()
         );
+    }
+
+    private Map<String, Object> marketplaceClaims() {
+        return marketplaceClaims(Map.of());
+    }
+
+    private Map<String, Object> marketplaceClaims(Map<String, Object> overrides) {
+        Map<String, Object> claims = new HashMap<>();
+        claims.put("userid", "user-1");
+        claims.put("affiliation", "org.example");
+        claims.put("puc", "puc-123");
+        claims.put("institutionalProviderWallet", "0x1111111111111111111111111111111111111111");
+        claims.put("purpose", "lab_access");
+        claims.put("reservationKey", "0xabc");
+        claims.put("labId", "42");
+        claims.put("samlAssertionHash", samlAssertionHash("valid-saml"));
+        claims.putAll(overrides);
+        return claims;
+    }
+
+    private static String samlAssertionHash(String samlAssertion) {
+        return Numeric.toHexString(Hash.sha3(samlAssertion.getBytes(StandardCharsets.UTF_8)));
     }
 
     private static String computePucHash(String puc) {

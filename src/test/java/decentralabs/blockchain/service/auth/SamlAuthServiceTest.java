@@ -6,6 +6,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.lenient;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -25,6 +26,7 @@ import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.web.server.ResponseStatusException;
 
 import decentralabs.blockchain.dto.auth.AuthResponse;
+import decentralabs.blockchain.dto.auth.ProviderAccessCredentialRequest;
 import decentralabs.blockchain.dto.auth.SamlAuthRequest;
 import decentralabs.blockchain.service.wallet.BlockchainBookingService;
 
@@ -46,6 +48,9 @@ class SamlAuthServiceTest {
     @Mock
     private InstitutionalAccessCheckInCoordinator accessCheckInCoordinator;
 
+    @Mock
+    private AccessCredentialAuditService accessCredentialAuditService;
+
     @InjectMocks
     private SamlAuthService samlAuthService;
 
@@ -53,11 +58,13 @@ class SamlAuthServiceTest {
     private static final String TEST_AFFILIATION = "test-university";
 
     @BeforeEach
-    void setUp() {
+    void setUp() throws Exception {
         ReflectionTestUtils.setField(samlAuthService, "requireBookingScope", true);
         ReflectionTestUtils.setField(samlAuthService, "requiredBookingScope", "booking:read");
         lenient().when(marketplaceEndpointAuthService.enforceToken(anyString(), eq(null)))
             .thenReturn(Map.of("userid", TEST_USER_ID, "affiliation", TEST_AFFILIATION));
+        lenient().when(jwtService.generateIssuedToken(eq(null), any()))
+            .thenReturn(new JwtService.IssuedToken("booking-token", "jwt-jti-default", 1_700_000_000L, null));
     }
 
     @Nested
@@ -319,22 +326,25 @@ class SamlAuthServiceTest {
             );
             when(blockchainService.getBookingInfo(anyString(), anyString(), any(), anyString()))
                 .thenReturn(bookingInfo);
-            when(jwtService.generateToken(eq(null), any())).thenReturn("booking-token");
+            when(jwtService.generateIssuedToken(eq(null), any())).thenReturn(
+                new JwtService.IssuedToken("booking-token", "jwt-jti-1", 1_700_000_000L, null)
+            );
 
             AuthResponse response = samlAuthService.handleAuthentication(request, true);
 
             assertThat(response).isNotNull();
             assertThat(response.getToken()).isEqualTo("booking-token");
             verify(accessCheckInCoordinator).recordAccessGranted(eq(request), any(), eq(bookingInfo));
+            verify(accessCredentialAuditService).recordJwtIssued(eq(request), any(), eq(bookingInfo), any());
         }
 
         @Test
-        @DisplayName("Should allow booking info when reservation is already in use")
-        void shouldAllowBookingInfoWhenReservationAlreadyInUse() throws Exception {
+        @DisplayName("Should allow booking info when reservation access is already authorized")
+        void shouldAllowBookingInfoWhenReservationAccessAlreadyAuthorized() throws Exception {
             SamlAuthRequest request = createValidRequest();
             request.setReservationKey("0xreservation");
-            request.setMarketplaceToken("jwt-booking-in-use");
-            when(marketplaceEndpointAuthService.enforceToken(eq("jwt-booking-in-use"), eq(null)))
+            request.setMarketplaceToken("jwt-booking-access-authorized");
+            when(marketplaceEndpointAuthService.enforceToken(eq("jwt-booking-access-authorized"), eq(null)))
                 .thenReturn(Map.of(
                     "userid", TEST_USER_ID,
                     "affiliation", TEST_AFFILIATION,
@@ -351,7 +361,9 @@ class SamlAuthServiceTest {
             );
             when(blockchainService.getBookingInfo(anyString(), anyString(), any(), anyString()))
                 .thenReturn(bookingInfo);
-            when(jwtService.generateToken(eq(null), any())).thenReturn("booking-token");
+            when(jwtService.generateIssuedToken(eq(null), any())).thenReturn(
+                new JwtService.IssuedToken("booking-token", "jwt-jti-access-authorized", 1_700_000_000L, null)
+            );
 
             AuthResponse response = samlAuthService.handleAuthentication(request, true);
 
@@ -409,7 +421,9 @@ class SamlAuthServiceTest {
                 .thenReturn(Map.of("userid", TEST_USER_ID, "affiliation", TEST_AFFILIATION));
             when(blockchainService.getBookingInfo(anyString(), anyString(), any(), anyString()))
                 .thenReturn(Map.of("labURL", "https://lab.example.com"));
-            when(jwtService.generateToken(eq(null), any())).thenReturn("booking-token");
+            when(jwtService.generateIssuedToken(eq(null), any())).thenReturn(
+                new JwtService.IssuedToken("booking-token", "jwt-jti-scope", 1_700_000_000L, null)
+            );
 
             AuthResponse response = samlAuthService.handleAuthentication(request, true);
 
@@ -434,7 +448,9 @@ class SamlAuthServiceTest {
                 .thenReturn(Map.of("userid", TEST_USER_ID, "affiliation", TEST_AFFILIATION));
             when(blockchainService.getBookingInfo(anyString(), anyString(), any(), anyString()))
                 .thenReturn(Map.of("labURL", "https://lab.example.com"));
-            when(jwtService.generateToken(eq(null), any())).thenReturn("booking-token");
+            when(jwtService.generateIssuedToken(eq(null), any())).thenReturn(
+                new JwtService.IssuedToken("booking-token", "jwt-jti-scopes", 1_700_000_000L, null)
+            );
 
             AuthResponse response = samlAuthService.handleAuthentication(request, true);
 
@@ -460,11 +476,79 @@ class SamlAuthServiceTest {
                 .thenReturn(Map.of("userid", TEST_USER_ID, "affiliation", TEST_AFFILIATION));
             when(blockchainService.getBookingInfo(anyString(), anyString(), any(), anyString()))
                 .thenReturn(Map.of("labURL", "https://lab.example.com"));
-            when(jwtService.generateToken(eq(null), any())).thenReturn("booking-token");
+            when(jwtService.generateIssuedToken(eq(null), any())).thenReturn(
+                new JwtService.IssuedToken("booking-token", "jwt-jti-no-scope-required", 1_700_000_000L, null)
+            );
 
             AuthResponse response = samlAuthService.handleAuthentication(request, true);
 
             assertThat(response).isNotNull();
+        }
+    }
+
+    @Nested
+    @DisplayName("Provider Access Credential Tests")
+    class ProviderAccessCredentialTests {
+
+        @Test
+        @DisplayName("Should issue provider credential only after access is authorized")
+        void shouldIssueProviderCredentialOnlyAfterAccessIsAuthorized() throws Exception {
+            ProviderAccessCredentialRequest request = new ProviderAccessCredentialRequest();
+            request.setMarketplaceToken("provider-token");
+            request.setReservationKey("0xreservation");
+            request.setLabId("42");
+
+            when(marketplaceEndpointAuthService.enforceToken(eq("provider-token"), eq(null)))
+                .thenReturn(Map.of(
+                    "userid", TEST_USER_ID,
+                    "affiliation", TEST_AFFILIATION,
+                    "bookingInfoAllowed", true,
+                    "purpose", "lab_access",
+                    "reservationKey", "0xreservation",
+                    "labId", "42",
+                    "institutionalProviderWallet", "0xwallet",
+                    "puc", "puc123"
+                ));
+            Map<String, Object> bookingInfo = Map.of(
+                "labURL", "https://lab.example.com",
+                "reservationKey", "0xreservation",
+                "reservationStatus", java.math.BigInteger.valueOf(2)
+            );
+            when(blockchainService.getAccessAuthorizedBookingInfo("0xwallet", "0xreservation", "42", "puc123"))
+                .thenReturn(bookingInfo);
+            when(jwtService.generateIssuedToken(eq(null), any())).thenReturn(
+                new JwtService.IssuedToken("booking-token", "jwt-jti-provider", 1_700_000_000L, null)
+            );
+
+            AuthResponse response = samlAuthService.issueAccessCredential(request);
+
+            assertThat(response).isNotNull();
+            assertThat(response.getToken()).isEqualTo("booking-token");
+            assertThat(response.getLabURL()).isEqualTo("https://lab.example.com");
+            verify(accessCheckInCoordinator, never()).recordAccessGranted(any(), any(), any());
+            verify(accessCredentialAuditService).recordJwtIssued(any(), any(), eq(bookingInfo), any());
+        }
+
+        @Test
+        @DisplayName("Should reject provider credential token with mismatched reservation key")
+        void shouldRejectProviderCredentialTokenWithMismatchedReservationKey() {
+            ProviderAccessCredentialRequest request = new ProviderAccessCredentialRequest();
+            request.setMarketplaceToken("provider-token-mismatch");
+            request.setReservationKey("0xreservation");
+
+            when(marketplaceEndpointAuthService.enforceToken(eq("provider-token-mismatch"), eq(null)))
+                .thenReturn(Map.of(
+                    "userid", TEST_USER_ID,
+                    "affiliation", TEST_AFFILIATION,
+                    "bookingInfoAllowed", true,
+                    "purpose", "lab_access",
+                    "reservationKey", "0xother",
+                    "institutionalProviderWallet", "0xwallet"
+                ));
+
+            assertThatThrownBy(() -> samlAuthService.issueAccessCredential(request))
+                .isInstanceOf(SecurityException.class)
+                .hasMessageContaining("reservationKey mismatch");
         }
     }
 

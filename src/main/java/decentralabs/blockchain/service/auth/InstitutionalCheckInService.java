@@ -38,7 +38,7 @@ import decentralabs.blockchain.util.PucNormalizer;
 @Slf4j
 public class InstitutionalCheckInService {
     private static final String ZERO_ADDRESS = "0x0000000000000000000000000000000000000000";
-    private static final BigInteger STATUS_IN_USE = BigInteger.valueOf(2);
+    private static final BigInteger STATUS_ACCESS_AUTHORIZED = BigInteger.valueOf(2);
 
     private static final class MarketplaceIdentityClaims {
         private final String userId;
@@ -72,7 +72,7 @@ public class InstitutionalCheckInService {
         validateRequest(request);
 
         SamlAssertionAttributes saml = validateSaml(request.getSamlAssertion());
-        MarketplaceIdentityClaims marketplaceIdentity = validateMarketplaceToken(request.getMarketplaceToken(), saml);
+        MarketplaceIdentityClaims marketplaceIdentity = validateMarketplaceToken(request, saml);
 
         String tokenIdentity = PucNormalizer.normalize(firstNonBlank(marketplaceIdentity.puc, marketplaceIdentity.userId));
         String samlIdentity = PucNormalizer.normalize(saml.userid());
@@ -111,11 +111,11 @@ public class InstitutionalCheckInService {
             throw new IllegalStateException("Reservation key could not be resolved");
         }
 
-        if (isInUseStatus(bookingInfo.get("reservationStatus"))) {
+        if (isAccessAuthorizedStatus(bookingInfo.get("reservationStatus"))) {
             CheckInResponse response = new CheckInResponse();
             response.setValid(true);
             response.setReservationKey(reservationKey);
-            response.setReason("Reservation already in use");
+            response.setReason("Access already authorized");
             response.setTimestamp(System.currentTimeMillis() / 1000);
             return response;
         }
@@ -169,8 +169,9 @@ public class InstitutionalCheckInService {
         }
     }
 
-    private MarketplaceIdentityClaims validateMarketplaceToken(String marketplaceToken, SamlAssertionAttributes saml) {
+    private MarketplaceIdentityClaims validateMarketplaceToken(InstitutionalCheckInRequest request, SamlAssertionAttributes saml) {
         try {
+            String marketplaceToken = request.getMarketplaceToken();
             Map<String, Object> claims = marketplaceEndpointAuthService.enforceToken(marketplaceToken, null);
             String claimUser = firstClaim(claims, "userid", "sub", "uid");
             // affiliation is validated above but not retained in the return object
@@ -190,6 +191,10 @@ public class InstitutionalCheckInService {
             if (saml.affiliation() != null && !saml.affiliation().isBlank() && !claimAffiliation.equals(saml.affiliation())) {
                 throw new SecurityException("Marketplace token affiliation mismatch");
             }
+            enforceRequiredClaim(claims, "purpose", "lab_access");
+            enforceBoundClaim(claims, "reservationKey", request.getReservationKey());
+            enforceBoundClaim(claims, "labId", request.getLabId());
+            enforceRequiredSamlAssertionHash(claims, request.getSamlAssertion());
 
             String claimPuc = firstClaim(claims, "puc");
             String claimInstitutionalProviderWallet = firstClaim(claims, "institutionalProviderWallet");
@@ -328,21 +333,49 @@ public class InstitutionalCheckInService {
         return trimmed.isEmpty() ? null : trimmed;
     }
 
-    private boolean isInUseStatus(Object value) {
+    private boolean isAccessAuthorizedStatus(Object value) {
         if (value == null) {
             return false;
         }
         if (value instanceof BigInteger status) {
-            return STATUS_IN_USE.equals(status);
+            return STATUS_ACCESS_AUTHORIZED.equals(status);
         }
         if (value instanceof Number status) {
-            return status.longValue() == STATUS_IN_USE.longValue();
+            return status.longValue() == STATUS_ACCESS_AUTHORIZED.longValue();
         }
         try {
-            return STATUS_IN_USE.equals(new BigInteger(value.toString()));
+            return STATUS_ACCESS_AUTHORIZED.equals(new BigInteger(value.toString()));
         } catch (RuntimeException ex) {
             log.debug("Unable to parse reservation status '{}'", value, ex);
             return false;
+        }
+    }
+
+    private void enforceRequiredSamlAssertionHash(Map<String, Object> claims, String samlAssertion) {
+        String expectedHash = firstClaim(claims, "samlAssertionHash");
+        if (expectedHash == null || expectedHash.isBlank()) {
+            throw new SecurityException("Marketplace token samlAssertionHash is required");
+        }
+        String actualHash = Numeric.toHexString(Hash.sha3(samlAssertion.getBytes(StandardCharsets.UTF_8)));
+        if (!expectedHash.equalsIgnoreCase(actualHash)) {
+            throw new SecurityException("Marketplace token samlAssertionHash mismatch");
+        }
+    }
+
+    private void enforceBoundClaim(Map<String, Object> claims, String claim, String expected) {
+        if (expected == null || expected.isBlank()) {
+            return;
+        }
+        enforceRequiredClaim(claims, claim, expected);
+    }
+
+    private void enforceRequiredClaim(Map<String, Object> claims, String claim, String expected) {
+        String value = firstClaim(claims, claim);
+        if (value == null || value.isBlank()) {
+            throw new SecurityException("Marketplace token " + claim + " is required");
+        }
+        if (!value.equals(expected)) {
+            throw new SecurityException("Marketplace token " + claim + " mismatch");
         }
     }
 

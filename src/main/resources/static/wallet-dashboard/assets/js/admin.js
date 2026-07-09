@@ -1764,9 +1764,9 @@ function updateCollectButtonState() {
         const pendingTotal = BigInt(decimalToRawUnits(pendingTotalText || '0', CREDIT_DECIMALS));
 
         if (pendingClosures > 0n && pendingTotal > 0n) {
-            buttonLabel = 'Close Reservations & Queue Payout';
+            buttonLabel = 'Claim Attested Sessions';
         } else if (pendingClosures > 0n) {
-            buttonLabel = 'Close Reservations';
+            buttonLabel = 'Close Attested Sessions';
         }
     } catch (error) {
         buttonLabel = 'Request Payout';
@@ -1803,7 +1803,7 @@ function getLabSettlementBuckets(lab) {
         received,
         disputed,
         reversed,
-        pendingClosures: rawToBigInt(lab?.eligibleReservationCount)
+        pendingClosures: rawToBigInt(lab?.doubleAttestedReservationCount ?? lab?.eligibleReservationCount)
     };
 }
 
@@ -1908,7 +1908,7 @@ function renderCollectSettlementOverview() {
         const scope = DashboardState.collectTotalLabs > labs.length
             ? 'Summary is cached across all visible labs.'
             : 'Summary loaded from the current lab list.';
-        noteEl.textContent = `${scope} Detailed status is fetched only for the selected lab. Pending closures: ${totals.pendingClosures.toString()}.`;
+        noteEl.textContent = `${scope} Detailed status is fetched only for the selected lab. Attested closures: ${totals.pendingClosures.toString()}.`;
     }
     if (loadedCountEl) {
         const total = Number.isFinite(Number(DashboardState.collectTotalLabs)) && DashboardState.collectTotalLabs > 0
@@ -2186,7 +2186,7 @@ async function loadCollectStatusForSelectedLab() {
 
         const totalLab = data.totalReceivableLab || formatLabTokenRaw(data.totalReceivableRaw);
         pendingEl.textContent = `${totalLab} credits`;
-        const pendingClosuresRaw = data.eligibleReservationCount ?? '0';
+        const pendingClosuresRaw = data.doubleAttestedReservationCount ?? data.eligibleReservationCount ?? '0';
         const pendingClosures = formatPendingClosures(pendingClosuresRaw);
         setCollectPendingClosuresText(pendingClosures);
 
@@ -2194,6 +2194,7 @@ async function loadCollectStatusForSelectedLab() {
         // the latest pending closures count immediately.
         if (selectedLab) {
             selectedLab.eligibleReservationCount = pendingClosuresRaw;
+            selectedLab.doubleAttestedReservationCount = pendingClosuresRaw;
             DashboardState.collectAggregates = null;
         }
 
