@@ -18,6 +18,11 @@ public class WebauthnOnboardingOptionsRequest {
     private String stableUserId;
 
     /**
+     * PUC derivation mode used by Marketplace for stableUserId.
+     */
+    private String stableUserIdMode;
+
+    /**
      * Institution identifier from the federated assertion (e.g., schacHomeOrganization).
      */
     @NotBlank(message = "institutionId is required")

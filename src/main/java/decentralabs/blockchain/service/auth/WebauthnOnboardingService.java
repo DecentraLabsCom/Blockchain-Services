@@ -225,7 +225,12 @@ public class WebauthnOnboardingService {
 
         // Validate SAML assertion if provided and validation is enabled
         if (validateSaml && request.getSamlAssertion() != null && !request.getSamlAssertion().isEmpty()) {
-            validateSamlAssertion(request.getSamlAssertion(), stableUserId, institutionId);
+            validateSamlAssertion(
+                request.getSamlAssertion(),
+                stableUserId,
+                request.getStableUserIdMode(),
+                institutionId
+            );
             log.debug("SAML assertion validated for user: {}", stableUserId);
         }
 
@@ -865,11 +870,16 @@ public class WebauthnOnboardingService {
      * 
      * @param samlAssertion Base64-encoded SAML assertion
      * @param expectedPuc Expected PUC from the request
+     * @param stableUserIdMode PUC derivation mode used by Marketplace
      * @param expectedInstitutionId Expected institution ID from the request
      * @return Map of validated attributes from the assertion
      * @throws ResponseStatusException if validation fails
      */
-    private java.util.Map<String, String> validateSamlAssertion(String samlAssertion, String expectedPuc, String expectedInstitutionId) {
+    private java.util.Map<String, String> validateSamlAssertion(
+            String samlAssertion,
+            String expectedPuc,
+            String stableUserIdMode,
+            String expectedInstitutionId) {
         if (samlValidationService == null) {
             log.warn("SAML validation requested but SamlValidationService is not available. Skipping validation.");
             return java.util.Collections.emptyMap();
@@ -880,7 +890,7 @@ public class WebauthnOnboardingService {
             // validateSamlAssertionWithSignature expects Base64-encoded assertion and handles decoding internally
             java.util.Map<String, String> attributes = samlValidationService.validateSamlAssertionWithSignature(samlAssertion);
             
-            String assertionPuc = attributes.get("puc");
+            String assertionPuc = samlValidationService.resolveStableUserId(attributes, stableUserIdMode, null);
             if (assertionPuc != null && !assertionPuc.isBlank() && !assertionPuc.equals(expectedPuc)) {
                 log.warn("SAML assertion PUC '{}' does not match expected PUC '{}'", assertionPuc, expectedPuc);
                 throw new ResponseStatusException(HttpStatus.FORBIDDEN, "saml_puc_mismatch");
@@ -907,6 +917,8 @@ public class WebauthnOnboardingService {
         } catch (SecurityException e) {
             log.error("SAML assertion validation failed: {}", e.getMessage());
             throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Invalid SAML assertion: " + e.getMessage());
+        } catch (ResponseStatusException e) {
+            throw e;
         } catch (Exception e) {
             log.error("SAML assertion validation failed", e);
             throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Failed to validate SAML assertion: " + e.getMessage());
