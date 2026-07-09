@@ -324,7 +324,7 @@ public class IntentAuthorizationService {
                     "Resolved intent authorization PUC. requestId={} stableUserIdMode={} samlUserHash={} resolvedPucHash={} payloadPucHash={}",
                     submission.getMeta().getRequestId(),
                     submission.getStableUserIdMode(),
-                    PucHashUtil.hashPuc(samlAttributes.get("userid")),
+                    PucHashUtil.hashPuc(samlAttributes.get("puc")),
                     PucHashUtil.hashPuc(normalized),
                     expectedPucHash
                 );

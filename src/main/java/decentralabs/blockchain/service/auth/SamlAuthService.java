@@ -94,15 +94,15 @@ public class SamlAuthService {
         Map<String, Object> marketplaceJWTClaims = validateMarketplaceJWTBasic(marketplaceToken);
         Map<String, String> samlAttributes = validateSAMLAssertion(samlAssertion);
 
-        String jwtUserId = (String) marketplaceJWTClaims.get("userid");
+        String jwtPuc = stringClaim(marketplaceJWTClaims, "puc");
         String jwtAffiliation = (String) marketplaceJWTClaims.get("affiliation");
-        String samlUserId = samlAttributes.get("userid");
+        String samlPuc = samlAttributes.get("puc");
         String samlAffiliation = samlAttributes.get("affiliation");
 
-        String normalizedJwtUserId = PucNormalizer.normalize(jwtUserId);
-        String normalizedSamlUserId = PucNormalizer.normalize(samlUserId);
-        if (normalizedJwtUserId == null || !normalizedJwtUserId.equals(normalizedSamlUserId)) {
-            throw new SecurityException("JWT and SAML userid mismatch");
+        String normalizedJwtPuc = PucNormalizer.normalize(jwtPuc);
+        String normalizedSamlPuc = PucNormalizer.normalize(samlPuc);
+        if (normalizedJwtPuc == null || !normalizedJwtPuc.equals(normalizedSamlPuc)) {
+            throw new SecurityException("JWT and SAML puc mismatch");
         }
 
         String normalizedJwtAffiliation = normalizeAffiliation(jwtAffiliation);
@@ -120,7 +120,7 @@ public class SamlAuthService {
                 request.getLabId()
             );
         }
-        return buildJwtOnlyResponse(jwtUserId, jwtAffiliation);
+        return buildJwtOnlyResponse(jwtPuc, jwtAffiliation);
     }
 
     private Map<String, Object> validateMarketplaceJWTBasic(String marketplaceToken) {
@@ -153,7 +153,7 @@ public class SamlAuthService {
                     throw new SamlMalformedResponseException("Invalid SAML response format: " + errorMessage, e);
                 }
                 if (errorMessage.contains("missing")
-                    && (errorMessage.contains("userid") || errorMessage.contains("affiliation"))) {
+                    && (errorMessage.contains("PUC") || errorMessage.contains("puc") || errorMessage.contains("affiliation"))) {
                     throw new SamlMissingAttributesException(
                         "SAML assertion missing required attributes: " + errorMessage,
                         e
@@ -204,10 +204,10 @@ public class SamlAuthService {
         }
     }
 
-    private AuthResponse buildJwtOnlyResponse(String jwtUserId, String jwtAffiliation) {
+    private AuthResponse buildJwtOnlyResponse(String jwtPuc, String jwtAffiliation) {
         try {
             Map<String, Object> claims = Map.of(
-                "userid", jwtUserId,
+                "puc", jwtPuc,
                 "affiliation", jwtAffiliation
             );
             String token = jwtService.generateToken(claims, null);

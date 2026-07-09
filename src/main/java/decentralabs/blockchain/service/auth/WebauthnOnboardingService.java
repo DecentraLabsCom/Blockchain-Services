@@ -864,12 +864,12 @@ public class WebauthnOnboardingService {
      * Extracts and verifies attributes from the assertion.
      * 
      * @param samlAssertion Base64-encoded SAML assertion
-     * @param expectedUserId Expected stable user ID from the request
+     * @param expectedPuc Expected PUC from the request
      * @param expectedInstitutionId Expected institution ID from the request
      * @return Map of validated attributes from the assertion
      * @throws ResponseStatusException if validation fails
      */
-    private java.util.Map<String, String> validateSamlAssertion(String samlAssertion, String expectedUserId, String expectedInstitutionId) {
+    private java.util.Map<String, String> validateSamlAssertion(String samlAssertion, String expectedPuc, String expectedInstitutionId) {
         if (samlValidationService == null) {
             log.warn("SAML validation requested but SamlValidationService is not available. Skipping validation.");
             return java.util.Collections.emptyMap();
@@ -880,11 +880,10 @@ public class WebauthnOnboardingService {
             // validateSamlAssertionWithSignature expects Base64-encoded assertion and handles decoding internally
             java.util.Map<String, String> attributes = samlValidationService.validateSamlAssertionWithSignature(samlAssertion);
             
-            // Optionally verify that the assertion's userid matches the expected user
-            String assertionUserId = attributes.get("userid");
-            if (assertionUserId != null && !assertionUserId.isEmpty() && !assertionUserId.equals(expectedUserId)) {
-                log.warn("SAML assertion userid '{}' does not match expected userId '{}'", assertionUserId, expectedUserId);
-                // This is a warning, not an error - the SP may use different identifiers
+            String assertionPuc = attributes.get("puc");
+            if (assertionPuc != null && !assertionPuc.isBlank() && !assertionPuc.equals(expectedPuc)) {
+                log.warn("SAML assertion PUC '{}' does not match expected PUC '{}'", assertionPuc, expectedPuc);
+                throw new ResponseStatusException(HttpStatus.FORBIDDEN, "saml_puc_mismatch");
             }
             String assertionInstitutionId = attributes.get("institutionId");
             if (assertionInstitutionId != null
@@ -899,7 +898,7 @@ public class WebauthnOnboardingService {
                 );
             }
 
-            log.debug("SAML assertion validated successfully for user: {}", expectedUserId);
+            log.debug("SAML assertion validated successfully for PUC: {}", expectedPuc);
             return attributes;
 
         } catch (IllegalArgumentException e) {

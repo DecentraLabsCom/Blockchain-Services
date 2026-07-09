@@ -64,7 +64,7 @@ class IntentAuthorizationServiceTest {
         ReflectionTestUtils.setField(service, "baseUrl", "https://backend.example/");
         ReflectionTestUtils.setField(service, "sessionTtlSeconds", 300L);
         ReflectionTestUtils.setField(service, "cleanupIntervalSeconds", 60L);
-        lenient().when(samlValidationService.validateSamlAssertionWithSignature(any())).thenReturn(Map.of("userid", "user@example.edu"));
+        lenient().when(samlValidationService.validateSamlAssertionWithSignature(any())).thenReturn(Map.of("puc", "user@example.edu"));
         lenient().when(samlValidationService.resolveStableUserId(any(), any(), any())).thenCallRealMethod();
     }
 
@@ -98,7 +98,7 @@ class IntentAuthorizationServiceTest {
     @Test
     void createSession_usesDeclaredPrincipalModeWhenSamlAlsoContainsTargetedId() throws Exception {
         when(samlValidationService.validateSamlAssertionWithSignature(any())).thenReturn(Map.of(
-            "userid", "user@example.edu|targeted-user",
+            "puc", "user@example.edu|targeted-user",
             "eduPersonPrincipalName", "user@example.edu",
             "eduPersonTargetedID", "targeted-user"
         ));

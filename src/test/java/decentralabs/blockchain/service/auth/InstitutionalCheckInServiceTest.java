@@ -217,6 +217,19 @@ class InstitutionalCheckInServiceTest {
     }
 
     @Test
+    void checkInShouldRejectMarketplaceTokenWhenPucDoesNotMatchSamlUser() throws Exception {
+        InstitutionalCheckInRequest request = validRequest();
+
+        when(samlValidationService.validateSamlAssertionDetailed("valid-saml")).thenReturn(samlAttributes());
+        when(marketplaceEndpointAuthService.enforceToken("market-token", null))
+            .thenReturn(marketplaceClaims(Map.of("puc", "other-user")));
+
+        assertThatThrownBy(() -> service.checkIn(request))
+            .isInstanceOf(SecurityException.class)
+            .hasMessageContaining("Marketplace token puc mismatch");
+    }
+
+    @Test
     void checkInShouldRejectMarketplaceSamlAssertionHashMismatch() throws Exception {
         InstitutionalCheckInRequest request = validRequest();
 
@@ -298,7 +311,7 @@ class InstitutionalCheckInServiceTest {
     private SamlAssertionAttributes samlAttributes() {
         return new SamlAssertionAttributes(
             "issuer",
-            "user-1",
+            "puc-123",
             "org.example",
             "user@example.org",
             "User Example",
@@ -313,7 +326,6 @@ class InstitutionalCheckInServiceTest {
 
     private Map<String, Object> marketplaceClaims(Map<String, Object> overrides) {
         Map<String, Object> claims = new HashMap<>();
-        claims.put("userid", "user-1");
         claims.put("affiliation", "org.example");
         claims.put("puc", "puc-123");
         claims.put("institutionalProviderWallet", "0x1111111111111111111111111111111111111111");

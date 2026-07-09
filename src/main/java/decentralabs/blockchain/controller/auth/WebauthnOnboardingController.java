@@ -46,7 +46,7 @@ import org.springframework.http.HttpStatus;
  * Security:
  * - Challenges are single-use and time-limited
  * - Origin verification is performed on attestation
- * - Credentials are bound to stable user identifiers from federated assertions
+ * - Credentials are bound to the PUC from federated assertions
  * - The SP does not see or relay the challenge or user signature
  */
 @RestController
@@ -65,7 +65,7 @@ public class WebauthnOnboardingController {
      * Called by the SP to determine if onboarding is needed before requesting an action.
      * This allows the SP to skip the onboarding flow for users who already have credentials.
      * 
-     * @param stableUserId The stable user identifier (e.g., SAML NameID, uid)
+     * @param stableUserId The PUC from the federated assertion
      * @param institutionId Optional institution filter (for future multi-institution support)
      * @return Key status including whether credentials exist and count
      */
@@ -106,7 +106,7 @@ public class WebauthnOnboardingController {
      * Called by the SP after validating the federated assertion.
      * Returns a challenge and options for navigator.credentials.create().
      * 
-     * @param request Contains stable user ID and institution from assertion
+     * @param request Contains PUC and institution from assertion
      * @return Credential creation options including challenge
      */
     @PostMapping("/options")
@@ -517,12 +517,12 @@ public class WebauthnOnboardingController {
         if (claims == null || claims.isEmpty() || stableUserId == null || stableUserId.isBlank()) {
             return;
         }
-        String claimUser = firstClaim(claims, "userid", "sub", "uid", "puc");
-        if (claimUser == null || claimUser.isBlank()) {
+        String claimPuc = firstClaim(claims, "puc");
+        if (claimPuc == null || claimPuc.isBlank()) {
             return;
         }
-        if (!claimUser.trim().equals(stableUserId.trim())) {
-            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "marketplace_user_mismatch");
+        if (!claimPuc.trim().equals(stableUserId.trim())) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "marketplace_puc_mismatch");
         }
     }
 

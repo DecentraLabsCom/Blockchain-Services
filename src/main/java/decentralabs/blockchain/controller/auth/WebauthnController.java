@@ -39,13 +39,13 @@ public class WebauthnController {
             authorizationHeader,
             "webauthn:manage"
         );
-        String userId = request.getEffectiveUserId();
-        if (userId == null || userId.isBlank()) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Missing user identifier (puc or userId)");
+        String puc = request.getPuc();
+        if (puc == null || puc.isBlank()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Missing puc");
         }
-        enforceUserScope(claims, userId);
+        enforceUserScope(claims, puc);
         credentialService.register(
-            userId,
+            puc,
             request.getCredentialId(),
             request.getPublicKey(),
             request.getAaguid(),
@@ -75,12 +75,12 @@ public class WebauthnController {
         if (claims == null || claims.isEmpty() || expectedUserId == null || expectedUserId.isBlank()) {
             return;
         }
-        String claimUser = firstClaim(claims, "userid", "sub", "uid", "puc");
-        if (claimUser == null || claimUser.isBlank()) {
+        String claimPuc = firstClaim(claims, "puc");
+        if (claimPuc == null || claimPuc.isBlank()) {
             return;
         }
-        if (!claimUser.trim().equals(expectedUserId.trim())) {
-            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "marketplace_user_mismatch");
+        if (!claimPuc.trim().equals(expectedUserId.trim())) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "marketplace_puc_mismatch");
         }
     }
 

@@ -134,7 +134,7 @@ class IntentServiceTest {
     @DisplayName("SAML validation resolves action pucHash with principal mode")
     void validateSamlAssertionResolvesActionPayloadPucHashWithPrincipalMode() throws Exception {
         when(samlValidationService.validateSamlAssertionWithSignature("saml")).thenReturn(Map.of(
-            "userid", "user@example.edu|targeted-user",
+            "puc", "user@example.edu|targeted-user",
             "eduPersonPrincipalName", "user@example.edu",
             "eduPersonTargetedID", "targeted-user"
         ));

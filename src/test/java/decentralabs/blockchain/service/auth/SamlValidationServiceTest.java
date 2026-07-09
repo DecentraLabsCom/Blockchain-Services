@@ -156,11 +156,11 @@ class SamlValidationServiceTest {
     }
 
     @Test
-    void shouldRejectSamlAssertionWithoutUserid() {
-        String samlWithoutUserid = createSamlAssertionWithAttributes(TEST_ISSUER, Map.of(
+    void shouldRejectSamlAssertionWithoutPucIdentityAttributes() {
+        String samlWithoutPuc = createSamlAssertionWithAttributes(TEST_ISSUER, Map.of(
                 "affiliation", "student@uned.es"
         ));
-        String encodedSaml = Base64.getEncoder().encodeToString(samlWithoutUserid.getBytes());
+        String encodedSaml = Base64.getEncoder().encodeToString(samlWithoutPuc.getBytes());
 
         ReflectionTestUtils.setField(samlValidationService, "trustMode", "any");
 
@@ -171,7 +171,7 @@ class SamlValidationServiceTest {
     @Test
     void shouldRejectSamlAssertionWithoutAffiliation() {
         String samlWithoutAffiliation = createSamlAssertionWithAttributes(TEST_ISSUER, Map.of(
-                "userid", "user123"
+                "eduPersonPrincipalName", "user123"
         ));
         String encodedSaml = Base64.getEncoder().encodeToString(samlWithoutAffiliation.getBytes());
 
@@ -234,11 +234,7 @@ class SamlValidationServiceTest {
     void shouldResolveStableUserIdWithCombinedEppnAndTargetedId() {
         String stableUserId = samlValidationService.resolveStableUserId(
                 "user@university.edu",
-                "targeted-user-1",
-                "user@example.com",
-                "legacy-uid",
-                "legacy-user",
-                "name-id"
+                "targeted-user-1"
         );
 
         assertThat(stableUserId).isEqualTo("user@university.edu|targeted-user-1");
@@ -248,11 +244,7 @@ class SamlValidationServiceTest {
     void shouldResolveStableUserIdWithOnlyEppnWhenTargetedIdMissing() {
         String stableUserId = samlValidationService.resolveStableUserId(
                 "user@university.edu",
-                null,
-                "user@example.com",
-                "legacy-uid",
-                "legacy-user",
-                "name-id"
+                null
         );
 
         assertThat(stableUserId).isEqualTo("user@university.edu");
@@ -269,7 +261,7 @@ class SamlValidationServiceTest {
         Map<String, String> attributes = samlValidationService.validateSamlAssertionWithSignature(signedAssertion);
 
         assertThat(attributes)
-                .containsEntry("userid", "user@university.edu|targeted-user-1")
+                .containsEntry("puc", "user@university.edu|targeted-user-1")
                 .containsEntry("eduPersonPrincipalName", "user@university.edu")
                 .containsEntry("eduPersonTargetedID", "targeted-user-1");
     }
@@ -278,7 +270,7 @@ class SamlValidationServiceTest {
     void shouldResolvePrincipalModeFromValidatedAttributes() {
         String stableUserId = samlValidationService.resolveStableUserId(
                 Map.of(
-                        "userid", "user@university.edu|targeted-user-1",
+                        "puc", "user@university.edu|targeted-user-1",
                         "eduPersonPrincipalName", "user@university.edu",
                         "eduPersonTargetedID", "targeted-user-1"
                 ),
@@ -293,7 +285,7 @@ class SamlValidationServiceTest {
     void shouldResolveCompositeModeFromValidatedAttributes() {
         String stableUserId = samlValidationService.resolveStableUserId(
                 Map.of(
-                        "userid", "user@university.edu|targeted-user-1",
+                        "puc", "user@university.edu|targeted-user-1",
                         "eduPersonPrincipalName", "user@university.edu",
                         "eduPersonTargetedID", "targeted-user-1"
                 ),
@@ -308,7 +300,7 @@ class SamlValidationServiceTest {
     void shouldInferStableUserIdFromExpectedPucHashWhenModeMissing() {
         String stableUserId = samlValidationService.resolveStableUserId(
                 Map.of(
-                        "userid", "user@university.edu|targeted-user-1",
+                        "puc", "user@university.edu|targeted-user-1",
                         "eduPersonPrincipalName", "user@university.edu",
                         "eduPersonTargetedID", "targeted-user-1"
                 ),

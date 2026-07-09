@@ -90,9 +90,9 @@ class MarketplaceEndpointAuthServiceTest {
 
     @Test
     void shouldRejectWhenScopeMissing() {
-        String jwt = makeJwt(Map.of("userid", "u1", "scope", "read write"));
+        String jwt = makeJwt(Map.of("puc", "u1", "scope", "read write"));
         Map<String, Object> claims = service.enforceToken(jwt, null);
-        assertThat(claims).containsEntry("userid", "u1");
+        assertThat(claims).containsEntry("puc", "u1");
 
         assertThatThrownBy(() -> service.enforceToken(jwt, "admin:manage"))
                 .isInstanceOf(ResponseStatusException.class)
@@ -101,9 +101,9 @@ class MarketplaceEndpointAuthServiceTest {
 
     @Test
     void shouldReturnClaimsWhenValidAndScopePresent() {
-        String jwt = makeJwt(Map.of("userid", "u1", "scope", "foo bar"));
+        String jwt = makeJwt(Map.of("puc", "u1", "scope", "foo bar"));
         Map<String, Object> claims = service.enforceToken(jwt, "bar");
-        assertThat(claims).containsEntry("userid", "u1");
+        assertThat(claims).containsEntry("puc", "u1");
     }
 
     @Test
@@ -115,22 +115,22 @@ class MarketplaceEndpointAuthServiceTest {
         when(marketplaceKeyService.getPublicKey(false)).thenReturn(keyPair.getPublic());
         when(marketplaceKeyService.getPublicKey(true)).thenReturn(rotatedKeyPair.getPublic());
 
-        String jwt = makeJwt(Map.of("userid", "u-rotated", "scope", "onboarding:webauthn"),
+        String jwt = makeJwt(Map.of("puc", "u-rotated", "scope", "onboarding:webauthn"),
             rotatedKeyPair.getPrivate());
 
         Map<String, Object> claims = service.enforceToken(jwt, "onboarding:webauthn");
 
-        assertThat(claims).containsEntry("userid", "u-rotated");
+        assertThat(claims).containsEntry("puc", "u-rotated");
         verify(marketplaceKeyService).getPublicKey(false);
         verify(marketplaceKeyService).getPublicKey(true);
     }
 
     @Test
     void enforceAuthorizationShouldHandleBearerHeader() {
-        String jwt = makeJwt(Map.of("userid", "u2"));
+        String jwt = makeJwt(Map.of("puc", "u2"));
         String header = "Bearer " + jwt;
         Map<String, Object> claims = service.enforceAuthorization(header, null);
-        assertThat(claims).containsEntry("userid", "u2");
+        assertThat(claims).containsEntry("puc", "u2");
     }
 
     @Test
@@ -143,8 +143,8 @@ class MarketplaceEndpointAuthServiceTest {
 
     @Test
     void scopeClaimAsCollectionShouldWork() {
-        String jwt = makeJwt(Map.of("userid", "u3", "scopes", java.util.List.of("a", "b")));
+        String jwt = makeJwt(Map.of("puc", "u3", "scopes", java.util.List.of("a", "b")));
         Map<String, Object> claims = service.enforceToken(jwt, "b");
-        assertThat(claims).containsEntry("userid", "u3");
+        assertThat(claims).containsEntry("puc", "u3");
     }
 }

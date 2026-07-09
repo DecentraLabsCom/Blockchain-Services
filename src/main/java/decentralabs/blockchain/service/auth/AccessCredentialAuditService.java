@@ -297,7 +297,7 @@ public class AccessCredentialAuditService {
         if (hasText(existing)) {
             return existing;
         }
-        String puc = PucNormalizer.normalize(firstNonBlank(stringValue(claims, "puc"), stringValue(claims, "userid")));
+        String puc = PucNormalizer.normalize(stringValue(claims, "puc"));
         return hasText(puc) ? PucHashUtil.hashPuc(puc) : null;
     }
 

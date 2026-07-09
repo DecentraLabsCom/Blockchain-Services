@@ -41,12 +41,10 @@ public class InstitutionalCheckInService {
     private static final BigInteger STATUS_ACCESS_AUTHORIZED = BigInteger.valueOf(2);
 
     private static final class MarketplaceIdentityClaims {
-        private final String userId;
         private final String puc;
         private final String institutionalProviderWallet;
 
-        MarketplaceIdentityClaims(String userId, String puc, String institutionalProviderWallet) {
-            this.userId = userId;
+        MarketplaceIdentityClaims(String puc, String institutionalProviderWallet) {
             this.puc = puc;
             this.institutionalProviderWallet = institutionalProviderWallet;
         }
@@ -74,12 +72,15 @@ public class InstitutionalCheckInService {
         SamlAssertionAttributes saml = validateSaml(request.getSamlAssertion());
         MarketplaceIdentityClaims marketplaceIdentity = validateMarketplaceToken(request, saml);
 
-        String tokenIdentity = PucNormalizer.normalize(firstNonBlank(marketplaceIdentity.puc, marketplaceIdentity.userId));
-        String samlIdentity = PucNormalizer.normalize(saml.userid());
-        String puc = firstNonBlank(tokenIdentity, samlIdentity);
-        if (puc == null || puc.isBlank()) {
-            throw new IllegalArgumentException("Missing institutional user identifier");
+        String tokenIdentity = PucNormalizer.normalize(marketplaceIdentity.puc);
+        String samlIdentity = PucNormalizer.normalize(saml.puc());
+        if (tokenIdentity == null || tokenIdentity.isBlank()) {
+            throw new IllegalArgumentException("Missing institutional user puc");
         }
+        if (samlIdentity != null && !samlIdentity.isBlank() && !tokenIdentity.equals(samlIdentity)) {
+            throw new SecurityException("Marketplace token puc mismatch");
+        }
+        String puc = tokenIdentity;
 
         String requestPuc = PucNormalizer.normalize(request.getPuc());
         if (requestPuc != null && !requestPuc.isBlank() && !requestPuc.equals(puc)) {
@@ -173,20 +174,19 @@ public class InstitutionalCheckInService {
         try {
             String marketplaceToken = request.getMarketplaceToken();
             Map<String, Object> claims = marketplaceEndpointAuthService.enforceToken(marketplaceToken, null);
-            String claimUser = firstClaim(claims, "userid", "sub", "uid");
+            String claimPuc = firstClaim(claims, "puc");
             // affiliation is validated above but not retained in the return object
             String claimAffiliation = firstClaim(claims, "affiliation", "schacHomeOrganization");
 
-            if (claimUser == null || claimUser.isBlank() || claimAffiliation == null || claimAffiliation.isBlank()) {
+            if (claimPuc == null || claimPuc.isBlank() || claimAffiliation == null || claimAffiliation.isBlank()) {
                 throw new IllegalArgumentException("Marketplace token missing required claims");
             }
-            String normalizedClaimUser = PucNormalizer.normalize(claimUser);
-            String normalizedSamlUser = PucNormalizer.normalize(saml.userid());
-            if (normalizedSamlUser != null
-                && !normalizedSamlUser.isBlank()
-                && normalizedClaimUser != null
-                && !normalizedClaimUser.equals(normalizedSamlUser)) {
-                throw new SecurityException("Marketplace token userid mismatch");
+            String normalizedSamlPuc = PucNormalizer.normalize(saml.puc());
+            String normalizedClaimPuc = PucNormalizer.normalize(claimPuc);
+            if (normalizedSamlPuc != null
+                && !normalizedSamlPuc.isBlank()
+                && !normalizedSamlPuc.equals(normalizedClaimPuc)) {
+                throw new SecurityException("Marketplace token puc mismatch");
             }
             if (saml.affiliation() != null && !saml.affiliation().isBlank() && !claimAffiliation.equals(saml.affiliation())) {
                 throw new SecurityException("Marketplace token affiliation mismatch");
@@ -196,10 +196,8 @@ public class InstitutionalCheckInService {
             enforceBoundClaim(claims, "labId", request.getLabId());
             enforceRequiredSamlAssertionHash(claims, request.getSamlAssertion());
 
-            String claimPuc = firstClaim(claims, "puc");
             String claimInstitutionalProviderWallet = firstClaim(claims, "institutionalProviderWallet");
             return new MarketplaceIdentityClaims(
-                claimUser,
                 claimPuc,
                 claimInstitutionalProviderWallet
             );
@@ -389,13 +387,4 @@ public class InstitutionalCheckInService {
         return null;
     }
 
-    private String firstNonBlank(String first, String second) {
-        if (first != null && !first.isBlank()) {
-            return first;
-        }
-        if (second != null && !second.isBlank()) {
-            return second;
-        }
-        return null;
-    }
 }

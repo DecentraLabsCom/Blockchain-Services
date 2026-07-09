@@ -11,7 +11,7 @@ import lombok.Data;
 public class WebauthnOnboardingOptionsRequest {
 
     /**
-     * Stable user identifier from the federated assertion (e.g., NameID, uid).
+     * PUC from the federated assertion.
      * This is the PUC (Principal User Claim) that binds the user to their signing key.
      */
     @NotBlank(message = "stableUserId is required")

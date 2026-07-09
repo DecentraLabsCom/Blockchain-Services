@@ -85,37 +85,6 @@ public class SamlValidationService {
         "urn:oid:1.3.6.1.4.1.5923.1.1.1.6"
     };
 
-    private static final String[] UID_ATTRIBUTE_ALIASES = new String[] {
-        "uid",
-        "userid",
-        "urn:mace:dir:attribute-def:uid",
-        "urn:oid:0.9.2342.19200300.100.1.1"
-    };
-
-    private static final String[] LEGACY_USERID_ATTRIBUTE_ALIASES = new String[] {
-        "userid",
-        "uid",
-        "eppn",
-        "edupersonprincipalname",
-        "edupersonuniqueid",
-        "edupersontargetedid",
-        "schacpersonaluniquecode",
-        "persistent-id",
-        "pairwise-id",
-        "subject-id",
-        "urn:oasis:names:tc:saml:attribute:subject-id",
-        "urn:mace:dir:attribute-def:uid",
-        "urn:mace:dir:attribute-def:edupersonprincipalname",
-        "urn:mace:dir:attribute-def:edupersonuniqueid",
-        "urn:mace:dir:attribute-def:edupersontargetedid",
-        "urn:mace:dir:attribute-def:schacpersonaluniquecode",
-        "urn:oid:0.9.2342.19200300.100.1.1",
-        "urn:oid:1.3.6.1.4.1.5923.1.1.1.6",
-        "urn:oid:1.3.6.1.4.1.5923.1.1.1.13",
-        "urn:oid:1.3.6.1.4.1.5923.1.1.1.10",
-        "urn:oid:1.3.6.1.4.1.25178.1.2.19"
-    };
-
     private static final String[] SCOPED_AFFILIATION_ATTRIBUTE_ALIASES = new String[] {
         "edupersonscopedaffiliation",
         "urn:mace:dir:attribute-def:edupersonscopedaffiliation",
@@ -211,13 +180,13 @@ public class SamlValidationService {
      * Automatically discovers IdP metadata and retrieves certificate
      * 
      * @param samlAssertion Base64-encoded SAML assertion XML
-     * @return Map of SAML attributes (userid, affiliation, etc.)
+     * @return Map of SAML attributes (puc, affiliation, etc.)
      * @throws Exception if validation fails or signature is invalid
      */
     public Map<String, String> validateSamlAssertionWithSignature(String samlAssertion) throws Exception {
         SamlAssertionAttributes attrs = validateSamlAssertionDetailed(samlAssertion);
         Map<String, String> attributes = new LinkedHashMap<>();
-        attributes.put("userid", attrs.userid());
+        attributes.put("puc", attrs.puc());
         attributes.put("affiliation", attrs.affiliation());
         if (attrs.email() != null) {
             attributes.put("email", attrs.email());
@@ -237,19 +206,10 @@ public class SamlValidationService {
             return null;
         }
 
+        String explicitPuc = normalizeIdentifier(samlAttributes.get("puc"));
         String principal = normalizeIdentifier(samlAttributes.get("eduPersonPrincipalName"));
         String targetedId = normalizeIdentifier(samlAttributes.get("eduPersonTargetedID"));
-        String currentUserId = normalizeIdentifier(samlAttributes.get("userid"));
-        String email = normalizeIdentifier(samlAttributes.get("email"));
-
-        String composite = resolveStableUserId(
-            principal,
-            targetedId,
-            email,
-            null,
-            currentUserId,
-            null
-        );
+        String composite = resolveStableUserId(principal, targetedId);
         String requestedMode = normalizeStableUserIdMode(stableUserIdMode);
 
         if (STABLE_USER_ID_MODE_PRINCIPAL.equals(requestedMode) && principal != null) {
@@ -261,13 +221,13 @@ public class SamlValidationService {
 
         String expectedHash = normalizeExpectedPucHash(expectedPucHash);
         if (expectedHash != null) {
-            String matching = firstMatchingPucHash(expectedHash, principal, composite, currentUserId, targetedId, email);
+            String matching = firstMatchingPucHash(expectedHash, explicitPuc, principal, composite);
             if (matching != null) {
                 return matching;
             }
         }
 
-        return firstNonBlank(currentUserId, composite, principal, targetedId, email);
+        return firstNonBlank(composite, principal, explicitPuc);
     }
 
     public SamlAssertionAttributes validateSamlAssertionDetailed(String samlAssertion) throws Exception {
@@ -334,13 +294,11 @@ public class SamlValidationService {
         }
         
         // Extract attributes after signature validation.
-        // Keep alignment with Marketplace stable-id resolution:
+        // Keep alignment with Marketplace PUC resolution:
         // if both ePPN and eduPersonTargetedID exist, use "ePPN|targetedID";
-        // if only ePPN exists, use ePPN; otherwise fall back to legacy identifiers.
+        // if only ePPN exists, use ePPN.
         String eduPersonTargetedId = extractSamlAttributeValueByAliases(doc, EDU_PERSON_TARGETED_ID_ATTRIBUTE_ALIASES);
         String eduPersonPrincipalName = extractSamlAttributeValueByAliases(doc, EDU_PERSON_PRINCIPAL_NAME_ATTRIBUTE_ALIASES);
-        String uid = extractSamlAttributeValueByAliases(doc, UID_ATTRIBUTE_ALIASES);
-        String legacyUserId = extractSamlAttributeValueByAliases(doc, LEGACY_USERID_ATTRIBUTE_ALIASES);
         String email = extractSamlAttributeValueByAliases(doc, EMAIL_ATTRIBUTE_ALIASES);
         String displayName = extractSamlAttributeValueByAliases(doc, DISPLAY_NAME_ATTRIBUTE_ALIASES);
         List<String> schacHomeOrganizations = normalizeOrganizationDomains(
@@ -355,22 +313,10 @@ public class SamlValidationService {
 
         String normalizedEduPersonTargetedId = normalizeIdentifier(eduPersonTargetedId);
         String normalizedEduPersonPrincipalName = normalizeIdentifier(eduPersonPrincipalName);
-        String normalizedEmail = normalizeIdentifier(email);
-        String normalizedUid = normalizeIdentifier(uid);
-        String normalizedLegacyUserId = normalizeIdentifier(legacyUserId);
-        String normalizedNameId = normalizeIdentifier(nameId);
+        String puc = resolveStableUserId(normalizedEduPersonPrincipalName, normalizedEduPersonTargetedId);
 
-        String userid = resolveStableUserId(
-            normalizedEduPersonPrincipalName,
-            normalizedEduPersonTargetedId,
-            normalizedEmail,
-            normalizedUid,
-            normalizedLegacyUserId,
-            normalizedNameId
-        );
-
-        if (userid == null || userid.isBlank()) {
-            throw new SecurityException("SAML assertion missing 'userid' attribute");
+        if (puc == null || puc.isBlank()) {
+            throw new SecurityException("SAML assertion missing PUC identity attributes");
         }
 
         String affiliation = resolveInstitutionDomain(
@@ -382,23 +328,22 @@ public class SamlValidationService {
             schacHomeOrganizations = List.of(affiliation);
         }
 
-        logger.info("✅ SAML assertion validated WITH SIGNATURE for user: {}", userid);
+        logger.info("SAML assertion validated WITH SIGNATURE for PUC: {}", puc);
 
         Map<String, List<String>> capturedAttributes = new LinkedHashMap<>();
-        putAttribute(capturedAttributes, "userid", userid);
+        putAttribute(capturedAttributes, "puc", puc);
         putAttribute(capturedAttributes, "affiliation", affiliation);
         putAttribute(capturedAttributes, "email", email);
         putAttribute(capturedAttributes, "displayName", displayName);
         putAttribute(capturedAttributes, "eduPersonTargetedID", normalizedEduPersonTargetedId);
         putAttribute(capturedAttributes, "eduPersonPrincipalName", normalizedEduPersonPrincipalName);
-        putAttribute(capturedAttributes, "uid", normalizedUid);
         if (!schacHomeOrganizations.isEmpty()) {
             capturedAttributes.put("schacHomeOrganization", schacHomeOrganizations);
         }
 
         return new SamlAssertionAttributes(
             issuer,
-            userid,
+            puc,
             affiliation,
             email,
             displayName,
@@ -503,11 +448,7 @@ public class SamlValidationService {
 
     String resolveStableUserId(
         String eduPersonPrincipalName,
-        String eduPersonTargetedId,
-        String email,
-        String uid,
-        String legacyUserId,
-        String nameId
+        String eduPersonTargetedId
     ) {
         if (eduPersonPrincipalName != null && !eduPersonPrincipalName.isBlank()) {
             if (eduPersonTargetedId != null && !eduPersonTargetedId.isBlank()) {
@@ -516,13 +457,7 @@ public class SamlValidationService {
             return eduPersonPrincipalName;
         }
 
-        return firstNonBlank(
-            eduPersonTargetedId,
-            email,
-            uid,
-            legacyUserId,
-            nameId
-        );
+        return null;
     }
 
     private List<String> normalizeOrganizationDomains(List<String> candidates) {

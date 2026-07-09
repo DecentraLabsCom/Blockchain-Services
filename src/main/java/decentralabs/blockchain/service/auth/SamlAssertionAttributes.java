@@ -6,7 +6,7 @@ import java.util.Map;
 
 public record SamlAssertionAttributes(
     String issuer,
-    String userid,
+    String puc,
     String affiliation,
     String email,
     String displayName,
