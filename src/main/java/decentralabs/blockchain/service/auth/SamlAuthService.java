@@ -96,7 +96,10 @@ public class SamlAuthService {
 
         String jwtPuc = stringClaim(marketplaceJWTClaims, "puc");
         String jwtAffiliation = (String) marketplaceJWTClaims.get("affiliation");
-        String samlPuc = samlAttributes.get("puc");
+        String samlPuc = resolveSamlPucForMarketplaceToken(
+            samlAttributes,
+            stringClaim(marketplaceJWTClaims, "stableUserIdMode")
+        );
         String samlAffiliation = samlAttributes.get("affiliation");
 
         String normalizedJwtPuc = PucNormalizer.normalize(jwtPuc);
@@ -174,6 +177,16 @@ public class SamlAuthService {
             }
             throw new SamlMalformedResponseException("Invalid SAML response format: " + errorMessage, e);
         }
+    }
+
+    private String resolveSamlPucForMarketplaceToken(
+        Map<String, String> samlAttributes,
+        String stableUserIdMode
+    ) {
+        if (stableUserIdMode == null || stableUserIdMode.isBlank()) {
+            return samlAttributes == null ? null : samlAttributes.get("puc");
+        }
+        return samlValidationService.resolveStableUserId(samlAttributes, stableUserIdMode, null);
     }
 
     private AuthResponse buildBookingInfoResponse(

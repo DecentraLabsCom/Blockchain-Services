@@ -165,6 +165,49 @@ class InstitutionalCheckInServiceTest {
     }
 
     @Test
+    void checkInShouldResolveSamlIdentityWithMarketplaceStableUserIdMode() throws Exception {
+        InstitutionalCheckInRequest request = validRequest();
+        request.setPuc("user@university.edu");
+        SamlAssertionAttributes saml = new SamlAssertionAttributes(
+            "issuer",
+            "user@university.edu|targeted-user",
+            "org.example",
+            "user@example.org",
+            "User Example",
+            List.of("org.example"),
+            Map.of(
+                "puc", List.of("user@university.edu|targeted-user"),
+                "eduPersonPrincipalName", List.of("user@university.edu"),
+                "eduPersonTargetedID", List.of("targeted-user")
+            )
+        );
+
+        when(samlValidationService.validateSamlAssertionDetailed("valid-saml")).thenReturn(saml);
+        when(marketplaceEndpointAuthService.enforceToken("market-token", null))
+            .thenReturn(marketplaceClaims(Map.of(
+                "puc", "user@university.edu",
+                "stableUserIdMode", "principal"
+            )));
+        when(samlValidationService.resolveStableUserId(any(), eq("principal"), eq(null)))
+            .thenReturn("user@university.edu");
+        when(bookingService.getCheckInBookingInfo("0x1111111111111111111111111111111111111111", "0xabc", "42", "user@university.edu"))
+            .thenReturn(Map.of(
+                "reservationKey", "0xabc",
+                "reservationStatus", BigInteger.valueOf(2)
+            ));
+
+        CheckInResponse response = service.checkIn(request);
+
+        assertThat(response.isValid()).isTrue();
+        verify(bookingService).getCheckInBookingInfo(
+            "0x1111111111111111111111111111111111111111",
+            "0xabc",
+            "42",
+            "user@university.edu"
+        );
+    }
+
+    @Test
     void checkInShouldDelegateToInstitutionBackendWhenLocalWalletIsNotAuthorized() throws Exception {
         InstitutionalCheckInRequest request = validRequest();
         SamlAssertionAttributes saml = samlAttributes();

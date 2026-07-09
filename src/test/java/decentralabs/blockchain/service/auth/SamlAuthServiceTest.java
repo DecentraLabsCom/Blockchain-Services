@@ -266,6 +266,37 @@ class SamlAuthServiceTest {
             assertThat(response).isNotNull();
             assertThat(response.getToken()).isEqualTo("generated-token");
         }
+
+        @Test
+        @DisplayName("Should accept ePPN-only puc when Marketplace signs principal mode")
+        void shouldAcceptEppnOnlyPucWhenMarketplaceSignsPrincipalMode() throws Exception {
+            SamlAuthRequest request = createValidRequest();
+            String eppnOnlyPuc = "user@university.edu";
+            String compositePuc = "user@university.edu|targeted-user";
+            request.setMarketplaceToken("jwt-principal-mode");
+            when(marketplaceEndpointAuthService.enforceToken(eq("jwt-principal-mode"), eq(null)))
+                .thenReturn(Map.of(
+                    "puc", eppnOnlyPuc,
+                    "affiliation", TEST_AFFILIATION,
+                    "stableUserIdMode", "principal"
+                ));
+            Map<String, String> samlAttributes = Map.of(
+                "puc", compositePuc,
+                "eduPersonPrincipalName", eppnOnlyPuc,
+                "eduPersonTargetedID", "targeted-user",
+                "affiliation", TEST_AFFILIATION
+            );
+            when(samlValidationService.validateSamlAssertionWithSignature(anyString()))
+                .thenReturn(samlAttributes);
+            when(samlValidationService.resolveStableUserId(eq(samlAttributes), eq("principal"), eq(null)))
+                .thenReturn(eppnOnlyPuc);
+            when(jwtService.generateToken(any(), eq(null))).thenReturn("generated-token");
+
+            AuthResponse response = samlAuthService.handleAuthentication(request, false);
+
+            assertThat(response).isNotNull();
+            assertThat(response.getToken()).isEqualTo("generated-token");
+        }
     }
 
     @Nested

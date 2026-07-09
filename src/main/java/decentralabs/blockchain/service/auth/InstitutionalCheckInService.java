@@ -8,6 +8,7 @@ import decentralabs.blockchain.service.wallet.InstitutionalWalletService;
 import decentralabs.blockchain.service.wallet.WalletService;
 import java.nio.charset.StandardCharsets;
 import java.math.BigInteger;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -73,12 +74,8 @@ public class InstitutionalCheckInService {
         MarketplaceIdentityClaims marketplaceIdentity = validateMarketplaceToken(request, saml);
 
         String tokenIdentity = PucNormalizer.normalize(marketplaceIdentity.puc);
-        String samlIdentity = PucNormalizer.normalize(saml.puc());
         if (tokenIdentity == null || tokenIdentity.isBlank()) {
             throw new IllegalArgumentException("Missing institutional user puc");
-        }
-        if (samlIdentity != null && !samlIdentity.isBlank() && !tokenIdentity.equals(samlIdentity)) {
-            throw new SecurityException("Marketplace token puc mismatch");
         }
         String puc = tokenIdentity;
 
@@ -183,9 +180,19 @@ public class InstitutionalCheckInService {
             }
             String normalizedSamlPuc = PucNormalizer.normalize(saml.puc());
             String normalizedClaimPuc = PucNormalizer.normalize(claimPuc);
-            if (normalizedSamlPuc != null
-                && !normalizedSamlPuc.isBlank()
-                && !normalizedSamlPuc.equals(normalizedClaimPuc)) {
+            String stableUserIdMode = firstClaim(claims, "stableUserIdMode");
+            if (stableUserIdMode != null && !stableUserIdMode.isBlank()) {
+                normalizedSamlPuc = PucNormalizer.normalize(
+                    samlValidationService.resolveStableUserId(
+                        toSamlAttributeMap(saml),
+                        stableUserIdMode,
+                        null
+                    )
+                );
+            }
+            if (normalizedSamlPuc == null
+                || normalizedSamlPuc.isBlank()
+                || !normalizedSamlPuc.equals(normalizedClaimPuc)) {
                 throw new SecurityException("Marketplace token puc mismatch");
             }
             if (saml.affiliation() != null && !saml.affiliation().isBlank() && !claimAffiliation.equals(saml.affiliation())) {
@@ -385,6 +392,27 @@ public class InstitutionalCheckInService {
             }
         }
         return null;
+    }
+
+    private Map<String, String> toSamlAttributeMap(SamlAssertionAttributes saml) {
+        Map<String, String> values = new LinkedHashMap<>();
+        putIfPresent(values, "puc", saml.puc());
+        putIfPresent(values, "affiliation", saml.affiliation());
+        if (saml.attributes() != null) {
+            saml.attributes().forEach((key, attributeValues) -> {
+                if (attributeValues != null && !attributeValues.isEmpty()) {
+                    putIfPresent(values, key, attributeValues.get(0));
+                }
+            });
+        }
+        return values;
+    }
+
+    private void putIfPresent(Map<String, String> values, String key, String value) {
+        if (key == null || value == null || value.isBlank()) {
+            return;
+        }
+        values.put(key, value);
     }
 
 }
