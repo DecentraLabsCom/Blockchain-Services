@@ -158,14 +158,12 @@ public class HealthController {
         Map<String, String> endpoints = new HashMap<>();
 
         if (providersEnabled) {
-            endpoints.put("saml-auth", "available");
-            endpoints.put("saml-auth2", "available");
+            endpoints.put("authorize-and-issue", "available");
             endpoints.put("checkin-institutional", "available");
             endpoints.put("jwks", "available");
         } else {
             String disabled = "disabled (providers flag off)";
-            endpoints.put("saml-auth", disabled);
-            endpoints.put("saml-auth2", disabled);
+            endpoints.put("authorize-and-issue", disabled);
             endpoints.put("checkin-institutional", disabled);
             endpoints.put("jwks", disabled);
         }

@@ -135,7 +135,7 @@ class InstitutionalAccessCheckInCoordinatorTest {
             request(),
             Map.of(
                 "affiliation", "org.example",
-                "institutionalProviderWallet", "0x1111111111111111111111111111111111111111"
+                "payerInstitutionWallet", "0x1111111111111111111111111111111111111111"
             ),
             Map.of(
                 "reservationKey", "0xabc",
@@ -158,7 +158,7 @@ class InstitutionalAccessCheckInCoordinatorTest {
     private Map<String, Object> claims() {
         return Map.of(
             "affiliation", "org.example",
-            "institutionalProviderWallet", "0x1111111111111111111111111111111111111111",
+            "payerInstitutionWallet", "0x1111111111111111111111111111111111111111",
             "puc", "puc-123"
         );
     }

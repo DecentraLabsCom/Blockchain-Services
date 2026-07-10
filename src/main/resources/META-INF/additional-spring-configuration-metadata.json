@@ -16,18 +16,22 @@
     "description": "Health endpoint path.",
     "defaultValue": "/health"
   },
-  {
-    "name": "endpoint.saml-auth",
+    {
+      "name": "endpoint.authorize-and-issue",
     "type": "java.lang.String",
-    "description": "SAML auth endpoint path.",
-    "defaultValue": "/auth/saml-auth"
-  },
-  {
-    "name": "endpoint.saml-auth2",
-    "type": "java.lang.String",
-    "description": "SAML auth2 endpoint path.",
-    "defaultValue": "/auth/saml-auth2"
-  },
+    "description": "Combined marketplace authorization and provider credential endpoint path.",
+    "defaultValue": "/auth/authorize-and-issue"
+    },
+    {
+      "name": "endpoint.access-code",
+      "type": "java.lang.String",
+      "defaultValue": "/auth/access-code"
+    },
+    {
+      "name": "auth.access-code.ttl-seconds",
+      "type": "java.lang.Long",
+      "defaultValue": 60
+    },
   {
     "name": "endpoint.checkin-institutional",
     "type": "java.lang.String",
@@ -59,6 +63,18 @@
     "defaultValue": "/intents"
   },
   {
+    "name": "auth.access-authorization.wait-timeout-ms",
+    "type": "java.lang.Long",
+    "description": "Maximum time the provider waits for on-chain ACCESS_AUTHORIZED before removing prepared Guacamole access.",
+    "defaultValue": 27000
+  },
+  {
+    "name": "auth.access-authorization.poll-interval-ms",
+    "type": "java.lang.Long",
+    "description": "Delay between provider checks of the on-chain reservation status.",
+    "defaultValue": 500
+  },
+  {
     "name": "institutional.checkin.delegation.enabled",
     "type": "java.lang.Boolean",
     "description": "Delegate institutional check-in to the payer institution backend when the local wallet is not an authorized check-in signer.",
@@ -69,6 +85,24 @@
     "type": "java.lang.String",
     "description": "Endpoint path used when delegating check-in to a remote institutional backend.",
     "defaultValue": "/auth/checkin-institutional"
+  },
+  {
+    "name": "institutional.checkin.outbox.receipt-interval-ms",
+    "type": "java.lang.Long",
+    "description": "Interval for the worker that monitors submitted institutional check-in receipts.",
+    "defaultValue": 5000
+  },
+  {
+    "name": "institutional.checkin.outbox.stuck-transaction-ms",
+    "type": "java.lang.Long",
+    "description": "Age after which a pending institutional check-in is retried with its reserved nonce.",
+    "defaultValue": 120000
+  },
+  {
+    "name": "institutional.checkin.outbox.nonce-replacement-gas-bump-percent",
+    "type": "java.lang.Integer",
+    "description": "Percentage gas-price bump for each retry of a pending transaction using the same nonce.",
+    "defaultValue": 15
   },
   {
     "name": "checkin.receipt.max-attempts",

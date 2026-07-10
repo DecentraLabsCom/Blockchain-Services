@@ -20,7 +20,7 @@ public class InstitutionalCheckInOutboxProcessor {
 
     private final InstitutionalCheckInOutboxService outboxService;
     private final BlockchainBookingService bookingService;
-    private final InstitutionalCheckInSubmissionService submissionService;
+    private final InstitutionalWalletNonceDispatcher nonceDispatcher;
 
     @Value("${institutional.checkin.outbox.enabled:true}")
     private boolean enabled;
@@ -58,12 +58,11 @@ public class InstitutionalCheckInOutboxProcessor {
 
         try {
             if (isAccessAlreadyAuthorized(record)) {
-                outboxService.markSucceeded(record.id(), null);
+                outboxService.markMinedSuccess(record.id(), null);
                 return;
             }
 
-            var response = submissionService.submit(record.reservationKey(), record.pucHash());
-            outboxService.markSucceeded(record.id(), response.getTxHash());
+            nonceDispatcher.dispatch(record);
         } catch (Exception ex) {
             handleFailure(record, ex);
         }

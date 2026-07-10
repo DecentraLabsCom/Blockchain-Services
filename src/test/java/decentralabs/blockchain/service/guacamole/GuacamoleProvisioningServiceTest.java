@@ -85,6 +85,22 @@ class GuacamoleProvisioningServiceTest {
     }
 
     @Test
+    void deletesTemporaryUserThroughGatewayProvisioner() throws Exception {
+        server = startServer();
+        server.createContext("/internal/guacamole/provision/session-1", exchange -> {
+            assertThat(exchange.getRequestMethod()).isEqualTo("DELETE");
+            assertThat(exchange.getRequestHeaders().getFirst("X-Guacamole-Provisioner-Token")).isEqualTo("secret");
+            byte[] response = "{\"success\":true,\"deleted\":true}".getBytes(StandardCharsets.UTF_8);
+            exchange.sendResponseHeaders(200, response.length);
+            exchange.getResponseBody().write(response);
+            exchange.close();
+        });
+
+        service(server, "/internal/guacamole/provision", "/internal/guacamole/connections")
+            .deleteTemporaryUser("session-1", null);
+    }
+
+    @Test
     void listsConnectionsThroughGatewayProvisioner() throws Exception {
         server = startServer();
         server.createContext("/internal/guacamole/connections", exchange -> {

@@ -32,13 +32,13 @@ public class InstitutionalAccessCheckInCoordinator {
         Map<String, Object> bookingInfo
     ) {
         // AccessGranted/ACCESS_AUTHORIZED is a payer-side on-chain authorization. It is
-        // distinct from the provider-issued JWT/ticket returned by /auth/saml-auth2.
+        // distinct from the provider-issued JWT/ticket returned by /auth/authorize-and-issue.
         if (isAccessAuthorizedStatus(bookingInfo.get("reservationStatus"))) {
             return;
         }
 
         String reservationKey = stringValue(bookingInfo.get("reservationKey"));
-        String institutionalWallet = stringValue(marketplaceClaims.get("institutionalProviderWallet"));
+        String institutionalWallet = stringValue(marketplaceClaims.get("payerInstitutionWallet"));
         String puc = PucNormalizer.normalize(stringValue(marketplaceClaims.get("puc")));
         String labId = stringValue(bookingInfo.get("lab"));
         String accessSessionId = firstNonBlank(
@@ -90,7 +90,7 @@ public class InstitutionalAccessCheckInCoordinator {
         checkInRequest.setSamlAssertion(request.getSamlAssertion());
         checkInRequest.setReservationKey(reservationKey);
         checkInRequest.setLabId(firstNonBlank(request.getLabId(), resolvedLabId));
-        checkInRequest.setInstitutionalProviderWallet(institutionalWallet);
+        checkInRequest.setPayerInstitutionWallet(institutionalWallet);
         checkInRequest.setPuc(puc);
 
         CheckInResponse response = remoteCheckInClient.submit(backendUrl, checkInRequest);

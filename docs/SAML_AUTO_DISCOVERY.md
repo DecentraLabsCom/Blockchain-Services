@@ -63,6 +63,6 @@ saml.metadata.allow-http=false
 - Missing required attributes (`userid` / `affiliation`).
 
 ## Where it is used
-- `POST /auth/saml-auth` and `/auth/saml-auth2` (3-layer validation).
+- `POST /auth/authorize-and-issue` (3-layer validation).
 - `POST /auth/checkin-institutional`.
 - Intent submission flow (`POST /intents`) when SAML assertions are provided.

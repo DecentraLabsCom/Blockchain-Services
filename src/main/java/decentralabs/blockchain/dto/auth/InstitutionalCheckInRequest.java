@@ -10,6 +10,6 @@ public class InstitutionalCheckInRequest {
     private String samlAssertion;
     private String reservationKey;
     private String labId;
-    private String institutionalProviderWallet;
+    private String payerInstitutionWallet;
     private String puc;
 }

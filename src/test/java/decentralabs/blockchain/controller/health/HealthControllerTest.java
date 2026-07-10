@@ -290,7 +290,7 @@ class HealthControllerTest {
 
             mockMvc.perform(get("/health"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.endpoints.['saml-auth']").value("available"))
+                .andExpect(jsonPath("$.endpoints.['authorize-and-issue']").value("available"))
                 .andExpect(jsonPath("$.endpoints.['checkin-institutional']").value("available"))
                 .andExpect(jsonPath("$.endpoints.jwks").value("available"))
                 .andExpect(jsonPath("$.endpoints.billing").value("available (localhost)"))
@@ -313,7 +313,7 @@ class HealthControllerTest {
                 .andExpect(jsonPath("$.operating_mode").value("consumer-only"))
                 .andExpect(jsonPath("$.consumer_registered").value(true))
                 .andExpect(jsonPath("$.institution_registered").value(true))
-                .andExpect(jsonPath("$.endpoints.['saml-auth']").value("disabled (providers flag off)"))
+                .andExpect(jsonPath("$.endpoints.['authorize-and-issue']").value("disabled (providers flag off)"))
                 .andExpect(jsonPath("$.endpoints.['checkin-institutional']").value("disabled (providers flag off)"));
         }
     }

@@ -4,6 +4,7 @@ import decentralabs.blockchain.util.LogSanitizer;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Timestamp;
+import java.math.BigInteger;
 import java.time.Instant;
 import java.util.List;
 import lombok.extern.slf4j.Slf4j;
@@ -22,7 +23,7 @@ public class InstitutionalCheckInOutboxService {
         this.jdbcTemplate = jdbcTemplateProvider.getIfAvailable();
     }
 
-    public void enqueueAccessGranted(
+    public InstitutionalCheckInOutboxRecord enqueueAccessGranted(
         String reservationKey,
         String labId,
         String institutionalWallet,
@@ -36,25 +37,46 @@ public class InstitutionalCheckInOutboxService {
         jdbcTemplate.update(
             """
             INSERT INTO institutional_checkin_outbox (
-                reservation_key, lab_id, institutional_wallet, puc_hash, access_session_id,
+                reservation_key, lab_id, institutional_wallet, wallet_address, puc_hash, access_session_id,
                 status, attempts, next_attempt_at, created_at, updated_at
-            ) VALUES (?, ?, ?, ?, ?, 'PENDING', 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            ) VALUES (?, ?, ?, ?, ?, ?, 'PENDING', 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
             ON DUPLICATE KEY UPDATE
+                id = LAST_INSERT_ID(id),
                 lab_id = VALUES(lab_id),
                 institutional_wallet = VALUES(institutional_wallet),
+                wallet_address = IF(institutional_checkin_outbox.status = 'MINED_SUCCESS', institutional_checkin_outbox.wallet_address, VALUES(wallet_address)),
                 puc_hash = VALUES(puc_hash),
                 access_session_id = VALUES(access_session_id),
-                status = IF(institutional_checkin_outbox.status = 'SUCCEEDED', institutional_checkin_outbox.status, 'PENDING'),
-                attempts = IF(institutional_checkin_outbox.status = 'SUCCEEDED', institutional_checkin_outbox.attempts, 0),
-                next_attempt_at = IF(institutional_checkin_outbox.status = 'SUCCEEDED', institutional_checkin_outbox.next_attempt_at, CURRENT_TIMESTAMP),
-                last_error = IF(institutional_checkin_outbox.status = 'SUCCEEDED', institutional_checkin_outbox.last_error, NULL),
+                status = IF(institutional_checkin_outbox.status = 'MINED_SUCCESS', institutional_checkin_outbox.status, 'PENDING'),
+                attempts = IF(institutional_checkin_outbox.status = 'MINED_SUCCESS', institutional_checkin_outbox.attempts, 0),
+                next_attempt_at = IF(institutional_checkin_outbox.status = 'MINED_SUCCESS', institutional_checkin_outbox.next_attempt_at, CURRENT_TIMESTAMP),
+                last_error = IF(institutional_checkin_outbox.status = 'MINED_SUCCESS', institutional_checkin_outbox.last_error, NULL),
                 updated_at = CURRENT_TIMESTAMP
             """,
             reservationKey,
             labId,
             institutionalWallet,
+            institutionalWallet,
             pucHash,
             accessSessionId
+        );
+        Long id = jdbcTemplate.queryForObject("SELECT LAST_INSERT_ID()", Long.class);
+        if (id == null) {
+            throw new IllegalStateException("Could not resolve check-in outbox record");
+        }
+        return findById(id);
+    }
+
+    public InstitutionalCheckInOutboxRecord findById(long id) {
+        requireConfigured();
+        return jdbcTemplate.queryForObject(
+            """
+            SELECT id, reservation_key, lab_id, institutional_wallet, puc_hash,
+                   access_session_id, status, attempts, next_attempt_at, tx_hash, wallet_address, nonce, submitted_at
+            FROM institutional_checkin_outbox WHERE id = ?
+            """,
+            (rs, rowNum) -> mapRow(rs),
+            id
         );
     }
 
@@ -67,10 +89,10 @@ public class InstitutionalCheckInOutboxService {
             return jdbcTemplate.query(
                 """
                 SELECT id, reservation_key, lab_id, institutional_wallet, puc_hash,
-                       access_session_id, status, attempts, next_attempt_at
+                       access_session_id, status, attempts, next_attempt_at, tx_hash, wallet_address, nonce, submitted_at
                 FROM institutional_checkin_outbox
                 WHERE (status IN ('PENDING', 'RETRY') AND next_attempt_at <= ?)
-                   OR (status = 'PROCESSING' AND updated_at <= ?)
+                   OR (status = 'SUBMITTING' AND updated_at <= ?)
                 ORDER BY next_attempt_at ASC, id ASC
                 LIMIT ?
                 """,
@@ -92,11 +114,11 @@ public class InstitutionalCheckInOutboxService {
         int updated = jdbcTemplate.update(
             """
             UPDATE institutional_checkin_outbox
-            SET status = 'PROCESSING', updated_at = CURRENT_TIMESTAMP
+            SET status = 'SUBMITTING', updated_at = CURRENT_TIMESTAMP
             WHERE id = ?
               AND (
                 status IN ('PENDING', 'RETRY')
-                OR (status = 'PROCESSING' AND updated_at <= DATE_SUB(CURRENT_TIMESTAMP, INTERVAL 15 MINUTE))
+                OR (status = 'SUBMITTING' AND updated_at <= DATE_SUB(CURRENT_TIMESTAMP, INTERVAL 15 MINUTE))
               )
             """,
             id
@@ -104,20 +126,123 @@ public class InstitutionalCheckInOutboxService {
         return updated > 0;
     }
 
-    public void markSucceeded(long id, String txHash) {
+    /**
+     * Allocates a unique nonce while the caller holds the database transaction
+     * that serializes this wallet's signing and broadcast section.
+     */
+    public BigInteger reserveNextNonce(String walletAddress, BigInteger nodePendingNonce) {
+        requireConfigured();
+        if (!hasText(walletAddress) || nodePendingNonce == null || nodePendingNonce.signum() < 0) {
+            throw new IllegalArgumentException("Missing wallet address or pending nonce");
+        }
+        jdbcTemplate.update(
+            "INSERT INTO institutional_wallet_nonce (wallet_address, next_nonce) VALUES (?, ?) "
+                + "ON DUPLICATE KEY UPDATE wallet_address = VALUES(wallet_address)",
+            walletAddress,
+            nodePendingNonce
+        );
+        BigInteger storedNext = jdbcTemplate.queryForObject(
+            "SELECT next_nonce FROM institutional_wallet_nonce WHERE wallet_address = ? FOR UPDATE",
+            BigInteger.class,
+            walletAddress
+        );
+        BigInteger nonce = storedNext.max(nodePendingNonce);
+        jdbcTemplate.update(
+            "UPDATE institutional_wallet_nonce SET next_nonce = ?, updated_at = CURRENT_TIMESTAMP WHERE wallet_address = ?",
+            nonce.add(BigInteger.ONE),
+            walletAddress
+        );
+        return nonce;
+    }
+
+    public void markNonceReserved(long id, String walletAddress, BigInteger nonce) {
+        if (jdbcTemplate == null) {
+            return;
+        }
+        jdbcTemplate.update(
+            "UPDATE institutional_checkin_outbox SET wallet_address = ?, nonce = ?, updated_at = CURRENT_TIMESTAMP "
+                + "WHERE id = ? AND status = 'SUBMITTING'",
+            walletAddress,
+            nonce,
+            id
+        );
+    }
+
+    public List<InstitutionalCheckInOutboxRecord> findSubmitted(Instant now, int limit) {
+        if (jdbcTemplate == null || now == null || limit <= 0) {
+            return List.of();
+        }
+        try {
+            return jdbcTemplate.query(
+                """
+                SELECT id, reservation_key, lab_id, institutional_wallet, puc_hash,
+                       access_session_id, status, attempts, next_attempt_at, tx_hash, wallet_address, nonce, submitted_at
+                FROM institutional_checkin_outbox
+                WHERE status = 'SUBMITTED'
+                ORDER BY updated_at ASC, id ASC
+                LIMIT ?
+                """,
+                (rs, rowNum) -> mapRow(rs),
+                limit
+            );
+        } catch (Exception ex) {
+            log.warn("Institutional check-in receipt lookup skipped: {}", LogSanitizer.sanitize(ex.getMessage()));
+            return List.of();
+        }
+    }
+
+    public void markSubmitted(long id, String txHash) {
         if (jdbcTemplate == null) {
             return;
         }
         jdbcTemplate.update(
             """
             UPDATE institutional_checkin_outbox
-            SET status = 'SUCCEEDED',
+            SET status = 'SUBMITTED',
                 tx_hash = ?,
+                submitted_at = CURRENT_TIMESTAMP,
                 last_error = NULL,
                 updated_at = CURRENT_TIMESTAMP
             WHERE id = ?
             """,
             txHash,
+            id
+        );
+    }
+
+    public void markMinedSuccess(long id, String txHash) {
+        if (jdbcTemplate == null) {
+            return;
+        }
+        jdbcTemplate.update(
+            """
+            UPDATE institutional_checkin_outbox
+            SET status = 'MINED_SUCCESS',
+                tx_hash = COALESCE(?, tx_hash),
+                mined_at = CURRENT_TIMESTAMP,
+                last_error = NULL,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE id = ? AND status IN ('SUBMITTING', 'SUBMITTED')
+            """,
+            txHash,
+            id
+        );
+    }
+
+    public void markMinedFailed(long id, String error) {
+        if (jdbcTemplate == null) {
+            return;
+        }
+        jdbcTemplate.update(
+            """
+            UPDATE institutional_checkin_outbox
+            SET status = 'MINED_FAILED',
+                mined_at = CURRENT_TIMESTAMP,
+                last_error = ?,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE id = ? AND status = 'SUBMITTED'
+            """,
+            truncate(error),
             id
         );
     }
@@ -173,7 +298,11 @@ public class InstitutionalCheckInOutboxService {
             rs.getString("access_session_id"),
             rs.getString("status"),
             rs.getInt("attempts"),
-            nextAttempt != null ? nextAttempt.toInstant() : null
+            nextAttempt != null ? nextAttempt.toInstant() : null,
+            rs.getString("tx_hash"),
+            rs.getString("wallet_address"),
+            rs.getObject("nonce", BigInteger.class),
+            rs.getTimestamp("submitted_at") != null ? rs.getTimestamp("submitted_at").toInstant() : null
         );
     }
 

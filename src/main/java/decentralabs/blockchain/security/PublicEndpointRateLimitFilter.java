@@ -22,10 +22,10 @@ import java.util.concurrent.ConcurrentHashMap;
 /**
  * Rate limiting filter for public authentication endpoints.
  * Protects against brute force and DoS attacks on:
- * - /auth/saml-auth
- * - /auth/saml-auth2
+ * - /auth/authorize-and-issue
  * - /auth/checkin-institutional
  * - /auth/access-credential
+ * - /auth/access-code/*
  * - /onboarding/webauthn/*
  * - /webauthn/*
  * - /auth/jwks
@@ -95,9 +95,10 @@ public class PublicEndpointRateLimitFilter extends OncePerRequestFilter {
     }
 
     private boolean isAuthEndpoint(String path) {
-        return path.startsWith("/auth/saml-auth")
+        return path.startsWith("/auth/authorize-and-issue")
                 || path.startsWith("/auth/checkin-institutional")
                 || path.startsWith("/auth/access-credential")
+                || path.startsWith("/auth/access-code")
                 || path.startsWith("/onboarding/webauthn")
                 || path.startsWith("/webauthn");
     }

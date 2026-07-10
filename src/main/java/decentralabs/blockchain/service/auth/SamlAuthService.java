@@ -3,6 +3,8 @@ package decentralabs.blockchain.service.auth;
 import decentralabs.blockchain.dto.auth.AuthResponse;
 import decentralabs.blockchain.dto.auth.ProviderAccessCredentialRequest;
 import decentralabs.blockchain.dto.auth.SamlAuthRequest;
+import decentralabs.blockchain.exception.AccessAuthorizationPendingException;
+import decentralabs.blockchain.exception.AccessAuthorizationRejectedException;
 import decentralabs.blockchain.exception.SamlAuthenticationException;
 import decentralabs.blockchain.exception.SamlExpiredAssertionException;
 import decentralabs.blockchain.exception.SamlInvalidIssuerException;
@@ -34,12 +36,20 @@ public class SamlAuthService {
     private final SamlValidationService samlValidationService;
     private final InstitutionalAccessCheckInCoordinator accessCheckInCoordinator;
     private final AccessCredentialAuditService accessCredentialAuditService;
+    private final AccessAuthorizationProvisioningService accessAuthorizationProvisioningService;
+    private final CheckInOnChainService checkInOnChainService;
 
     @Value("${auth.saml.require-booking-scope:true}")
     private boolean requireBookingScope;
 
     @Value("${auth.saml.required-booking-scope:booking:read}")
     private String requiredBookingScope;
+
+    @Value("${auth.access-authorization.wait-timeout-ms:27000}")
+    private long accessAuthorizationWaitTimeoutMs;
+
+    @Value("${auth.access-authorization.poll-interval-ms:500}")
+    private long accessAuthorizationPollIntervalMs;
 
     public AuthResponse issueAccessCredential(ProviderAccessCredentialRequest request) {
         validateProviderAccessCredentialRequest(request);
@@ -50,18 +60,38 @@ public class SamlAuthService {
         enforceClaimEquals(marketplaceJWTClaims, "reservationKey", request.getReservationKey());
         enforceClaimEquals(marketplaceJWTClaims, "labId", request.getLabId());
 
-        String institutionalProviderWallet = stringClaim(marketplaceJWTClaims, "institutionalProviderWallet");
-        if (institutionalProviderWallet == null || institutionalProviderWallet.isBlank()) {
-            throw new SecurityException("Marketplace token missing institutionalProviderWallet");
+        String payerInstitutionWallet = stringClaim(marketplaceJWTClaims, "payerInstitutionWallet");
+        if (payerInstitutionWallet == null || payerInstitutionWallet.isBlank()) {
+            throw new SecurityException("Marketplace token missing payerInstitutionWallet");
         }
 
+        Map<String, Object> bookingInfo = null;
+        boolean provisionalLease = false;
         try {
-            Map<String, Object> bookingInfo = blockchainService.getAccessAuthorizedBookingInfo(
-                institutionalProviderWallet,
+            bookingInfo = blockchainService.getBookingInfoForCredentialPreparation(
+                payerInstitutionWallet,
                 request.getReservationKey(),
                 request.getLabId(),
                 stringClaim(marketplaceJWTClaims, "puc")
             );
+            String puc = stringClaim(marketplaceJWTClaims, "puc");
+            String txHash = request.getAccessAuthorizationTxHash();
+            if (isAccessAuthorized(bookingInfo)) {
+                blockchainService.provisionGuacamoleAccess(bookingInfo);
+            } else {
+                validatePendingTransaction(txHash);
+                provisionalLease = acquireProvisioningLease(request.getReservationKey(), txHash);
+                blockchainService.provisionGuacamoleAccess(bookingInfo, false);
+                accessAuthorizationProvisioningService.markWaiting(request.getReservationKey());
+                awaitAccessAuthorization(payerInstitutionWallet, request.getReservationKey(), request.getLabId(), puc, bookingInfo, txHash);
+                blockchainService.validateAccessAuthorizedReservation(
+                    payerInstitutionWallet,
+                    reservationKeyFromBooking(bookingInfo, request.getReservationKey()),
+                    request.getLabId(),
+                    puc
+                );
+                blockchainService.activatePreparedGuacamoleAccess(bookingInfo);
+            }
             JwtService.IssuedToken issuedToken = jwtService.generateIssuedToken(null, bookingInfo);
             SamlAuthRequest auditRequest = new SamlAuthRequest();
             auditRequest.setMarketplaceToken(request.getMarketplaceToken());
@@ -69,61 +99,197 @@ public class SamlAuthService {
             auditRequest.setLabId(request.getLabId());
             auditRequest.setTimestamp(System.currentTimeMillis() / 1000);
             accessCredentialAuditService.recordJwtIssued(auditRequest, marketplaceJWTClaims, bookingInfo, issuedToken);
+            if (provisionalLease) {
+                accessAuthorizationProvisioningService.markDelivered(request.getReservationKey());
+            }
             return new AuthResponse(issuedToken.token(), (String) bookingInfo.get("labURL"));
+        } catch (AccessAuthorizationPendingException ex) {
+            rollbackPreparedGuacamoleAccess(bookingInfo, request.getReservationKey(), provisionalLease);
+            throw ex;
         } catch (RuntimeException ex) {
+            rollbackPreparedGuacamoleAccess(bookingInfo, request.getReservationKey(), provisionalLease);
             throw ex;
         } catch (Exception ex) {
+            rollbackPreparedGuacamoleAccess(bookingInfo, request.getReservationKey(), provisionalLease);
             throw new IllegalStateException("Failed to issue access credential", ex);
         }
     }
 
-    public AuthResponse handleAuthentication(SamlAuthRequest request, boolean includeBookingInfo)
-            throws SamlAuthenticationException {
+    /**
+     * Combined same-backend flow. The check-in is queued before the provider
+     * prepares the Guacamole user and JWT, but neither credential nor ticket is
+     * released until the contract exposes ACCESS_AUTHORIZED.
+     */
+    public AuthResponse authorizeAndIssue(SamlAuthRequest request) throws SamlAuthenticationException {
         String marketplaceToken = request.getMarketplaceToken();
         String samlAssertion = request.getSamlAssertion();
-
         auditSAMLAuthentication();
-
-        if (marketplaceToken == null || marketplaceToken.isEmpty()) {
+        if (marketplaceToken == null || marketplaceToken.isBlank()) {
             throw new IllegalArgumentException("Missing marketplaceToken");
         }
-        if (samlAssertion == null || samlAssertion.isEmpty()) {
+        if (samlAssertion == null || samlAssertion.isBlank()) {
             throw new IllegalArgumentException("Missing samlAssertion");
         }
 
         Map<String, Object> marketplaceJWTClaims = validateMarketplaceJWTBasic(marketplaceToken);
         Map<String, String> samlAttributes = validateSAMLAssertion(samlAssertion);
-
         String jwtPuc = stringClaim(marketplaceJWTClaims, "puc");
-        String jwtAffiliation = (String) marketplaceJWTClaims.get("affiliation");
+        String jwtAffiliation = stringClaim(marketplaceJWTClaims, "affiliation");
         String samlPuc = resolveSamlPucForMarketplaceToken(
             samlAttributes,
             stringClaim(marketplaceJWTClaims, "stableUserIdMode")
         );
-        String samlAffiliation = samlAttributes.get("affiliation");
+        if (!Objects.equals(PucNormalizer.normalize(jwtPuc), PucNormalizer.normalize(samlPuc))
+                || normalizeAffiliation(jwtAffiliation) == null
+                || !normalizeAffiliation(jwtAffiliation).equals(normalizeAffiliation(samlAttributes.get("affiliation")))) {
+            throw new SecurityException("JWT and SAML identity mismatch");
+        }
+        enforceBookingInfoEntitlement(marketplaceJWTClaims);
+        enforceLabAccessPurpose(marketplaceJWTClaims);
+        enforceClaimEquals(marketplaceJWTClaims, "reservationKey", request.getReservationKey());
+        enforceClaimEquals(marketplaceJWTClaims, "labId", request.getLabId());
 
-        String normalizedJwtPuc = PucNormalizer.normalize(jwtPuc);
-        String normalizedSamlPuc = PucNormalizer.normalize(samlPuc);
-        if (normalizedJwtPuc == null || !normalizedJwtPuc.equals(normalizedSamlPuc)) {
-            throw new SecurityException("JWT and SAML puc mismatch");
+        String wallet = stringClaim(marketplaceJWTClaims, "payerInstitutionWallet");
+        if (wallet == null || wallet.isBlank()) {
+            throw new SecurityException("Marketplace token missing payerInstitutionWallet");
         }
 
-        String normalizedJwtAffiliation = normalizeAffiliation(jwtAffiliation);
-        String normalizedSamlAffiliation = normalizeAffiliation(samlAffiliation);
-        if (normalizedJwtAffiliation == null || !normalizedJwtAffiliation.equals(normalizedSamlAffiliation)) {
-            throw new SecurityException("JWT and SAML affiliation mismatch");
+        Map<String, Object> bookingInfo = null;
+        boolean provisionalLease = false;
+        try {
+            bookingInfo = blockchainService.getBookingInfoForCredentialPreparation(wallet, request.getReservationKey(), request.getLabId(), jwtPuc);
+            if (isAccessAuthorized(bookingInfo)) {
+                blockchainService.provisionGuacamoleAccess(bookingInfo);
+            } else {
+                provisionalLease = acquireProvisioningLease(request.getReservationKey(), null);
+                blockchainService.provisionGuacamoleAccess(bookingInfo, false);
+                accessCheckInCoordinator.recordAccessGranted(request, marketplaceJWTClaims, bookingInfo);
+                accessAuthorizationProvisioningService.markWaiting(request.getReservationKey());
+                awaitAccessAuthorization(wallet, request.getReservationKey(), request.getLabId(), jwtPuc, bookingInfo, null);
+                blockchainService.validateAccessAuthorizedReservation(
+                    wallet,
+                    reservationKeyFromBooking(bookingInfo, request.getReservationKey()),
+                    request.getLabId(),
+                    jwtPuc
+                );
+                blockchainService.activatePreparedGuacamoleAccess(bookingInfo);
+            }
+            JwtService.IssuedToken issuedToken = jwtService.generateIssuedToken(null, bookingInfo);
+            accessCredentialAuditService.recordJwtIssued(request, marketplaceJWTClaims, bookingInfo, issuedToken);
+            if (provisionalLease) {
+                accessAuthorizationProvisioningService.markDelivered(request.getReservationKey());
+            }
+            return new AuthResponse(issuedToken.token(), (String) bookingInfo.get("labURL"));
+        } catch (RuntimeException ex) {
+            rollbackPreparedGuacamoleAccess(bookingInfo, request.getReservationKey(), provisionalLease);
+            throw ex;
+        } catch (Exception ex) {
+            rollbackPreparedGuacamoleAccess(bookingInfo, request.getReservationKey(), provisionalLease);
+            throw new IllegalStateException("Failed to authorize and issue access credential", ex);
         }
+    }
 
-        enforceBookingInfoAccess(includeBookingInfo, marketplaceJWTClaims);
-        if (includeBookingInfo) {
-            return buildBookingInfoResponse(
-                request,
-                marketplaceJWTClaims,
-                request.getReservationKey(),
-                request.getLabId()
+    private void awaitAccessAuthorization(
+            String wallet,
+            String reservationKey,
+            String labId,
+            String puc,
+            Map<String, Object> preparedBookingInfo,
+            String txHash) {
+        long timeoutMs = Math.max(0L, accessAuthorizationWaitTimeoutMs);
+        long pollMs = Math.max(25L, accessAuthorizationPollIntervalMs);
+        long deadlineNanos = System.nanoTime() + timeoutMs * 1_000_000L;
+
+        while (true) {
+            validatePendingTransaction(txHash);
+            Map<String, Object> state = blockchainService.getAccessAuthorizationState(
+                wallet,
+                reservationKeyFromBooking(preparedBookingInfo, reservationKey),
+                labId,
+                puc
             );
+            Object status = state.get("reservationStatus");
+            if (status instanceof Number number && number.longValue() == 2L) {
+                preparedBookingInfo.put("reservationStatus", status);
+                return;
+            }
+            if (isTerminalReservationStatus(status)) {
+                throw new AccessAuthorizationRejectedException(
+                    "Reservation is no longer eligible for access authorization"
+                );
+            }
+            if (System.nanoTime() >= deadlineNanos) {
+                throw new AccessAuthorizationPendingException(
+                    "Access authorization was not confirmed on-chain within " + timeoutMs + " ms",
+                    reservationKey,
+                    txHash
+                );
+            }
+            try {
+                Thread.sleep(Math.min(pollMs, Math.max(1L, (deadlineNanos - System.nanoTime()) / 1_000_000L)));
+            } catch (InterruptedException ex) {
+                Thread.currentThread().interrupt();
+                throw new IllegalStateException("Interrupted while waiting for access authorization", ex);
+            }
         }
-        return buildJwtOnlyResponse(jwtPuc, jwtAffiliation);
+    }
+
+    private boolean isAccessAuthorized(Map<String, Object> bookingInfo) {
+        Object status = bookingInfo == null ? null : bookingInfo.get("reservationStatus");
+        return status instanceof Number number && number.longValue() == 2L;
+    }
+
+    private boolean isTerminalReservationStatus(Object status) {
+        if (!(status instanceof Number number)) {
+            return false;
+        }
+        long value = number.longValue();
+        return value == 3L || value == 4L;
+    }
+
+    private String reservationKeyFromBooking(Map<String, Object> bookingInfo, String fallback) {
+        Object value = bookingInfo == null ? null : bookingInfo.get("reservationKey");
+        return value == null || value.toString().isBlank() ? fallback : value.toString();
+    }
+
+    private boolean acquireProvisioningLease(String reservationKey, String txHash) {
+        if (accessAuthorizationProvisioningService.tryStart(reservationKey)) {
+            return true;
+        }
+        throw new AccessAuthorizationPendingException(
+            "Access authorization provisioning is already in progress",
+            reservationKey,
+            txHash
+        );
+    }
+
+    private void validatePendingTransaction(String txHash) {
+        if (txHash == null || txHash.isBlank()) {
+            return;
+        }
+        if (checkInOnChainService.transactionState(txHash) == CheckInOnChainService.TransactionState.FAILED) {
+            throw new AccessAuthorizationRejectedException("Access authorization transaction reverted on-chain");
+        }
+    }
+
+    private void rollbackPreparedGuacamoleAccess(Map<String, Object> bookingInfo, String reservationKey, boolean provisionalLease) {
+        if (bookingInfo == null || !"lab".equals(bookingInfo.get("resourceType"))) {
+            if (provisionalLease) {
+                accessAuthorizationProvisioningService.markFailed(reservationKey);
+            }
+            return;
+        }
+        try {
+            blockchainService.deletePreparedGuacamoleAccess(bookingInfo);
+            if (provisionalLease) {
+                accessAuthorizationProvisioningService.markRolledBack(reservationKey);
+            }
+        } catch (RuntimeException cleanupError) {
+            if (provisionalLease) {
+                accessAuthorizationProvisioningService.markFailed(reservationKey);
+            }
+            log.error("Failed to clean up the unissued Guacamole user", cleanupError);
+        }
     }
 
     private Map<String, Object> validateMarketplaceJWTBasic(String marketplaceToken) {
@@ -189,49 +355,6 @@ public class SamlAuthService {
         return samlValidationService.resolveStableUserId(samlAttributes, stableUserIdMode, null);
     }
 
-    private AuthResponse buildBookingInfoResponse(
-        SamlAuthRequest request,
-        Map<String, Object> marketplaceJWTClaims,
-        String reservationKey,
-        String labId
-    ) {
-        try {
-            String institutionalProviderWallet = (String) marketplaceJWTClaims.get("institutionalProviderWallet");
-            String puc = (String) marketplaceJWTClaims.get("puc");
-            Map<String, Object> bookingInfo = blockchainService.getBookingInfo(
-                institutionalProviderWallet,
-                reservationKey,
-                labId,
-                puc
-            );
-            // The provider backend issues the technical access credential only after
-            // coordinating the payer-side on-chain AccessAuthorized check-in.
-            accessCheckInCoordinator.recordAccessGranted(request, marketplaceJWTClaims, bookingInfo);
-            JwtService.IssuedToken issuedToken = jwtService.generateIssuedToken(null, bookingInfo);
-            accessCredentialAuditService.recordJwtIssued(request, marketplaceJWTClaims, bookingInfo, issuedToken);
-            return new AuthResponse(issuedToken.token(), (String) bookingInfo.get("labURL"));
-        } catch (RuntimeException ex) {
-            throw ex;
-        } catch (Exception ex) {
-            throw new IllegalStateException("Failed to generate booking authentication token", ex);
-        }
-    }
-
-    private AuthResponse buildJwtOnlyResponse(String jwtPuc, String jwtAffiliation) {
-        try {
-            Map<String, Object> claims = Map.of(
-                "puc", jwtPuc,
-                "affiliation", jwtAffiliation
-            );
-            String token = jwtService.generateToken(claims, null);
-            return new AuthResponse(token);
-        } catch (RuntimeException ex) {
-            throw ex;
-        } catch (Exception ex) {
-            throw new IllegalStateException("Failed to generate SAML authentication token", ex);
-        }
-    }
-
     private void auditSAMLAuthentication() {
         log.info("SAML Authentication attempt recorded");
     }
@@ -251,16 +374,6 @@ public class SamlAuthService {
         throw new SecurityException(
             "Marketplace token missing required scope '" + requiredBookingScope + "' for booking info"
         );
-    }
-
-    private void enforceBookingInfoAccess(
-        boolean bookingInfoRequested,
-        Map<String, Object> marketplaceClaims
-    ) {
-        if (!bookingInfoRequested) {
-            return;
-        }
-        enforceBookingInfoEntitlement(marketplaceClaims);
     }
 
     private void validateProviderAccessCredentialRequest(ProviderAccessCredentialRequest request) {

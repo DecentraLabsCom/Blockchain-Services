@@ -56,7 +56,7 @@ class AccessCredentialAuditServiceTest {
         );
         Map<String, Object> marketplaceClaims = Map.of(
             "puc", "User@University.EDU",
-            "institutionalProviderWallet", "0xwallet"
+            "payerInstitutionWallet", "0xwallet"
         );
         JwtService.IssuedToken issuedToken =
             new JwtService.IssuedToken("secret.jwt.value", "session-abc", 1_700_000_000L, 1_700_003_600L);

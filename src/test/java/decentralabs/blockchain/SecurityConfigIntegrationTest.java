@@ -96,25 +96,6 @@ class SecurityConfigIntegrationTest {
     }
 
     @Test
-    void preflightOnPublicAuthEndpoint_allowsConfiguredOrigin() throws Exception {
-        mockMvc.perform(options("/auth/saml-auth")
-                .header("Origin", "https://app.example")
-                .header("Access-Control-Request-Method", "POST")
-                .header("Access-Control-Request-Headers", "Content-Type"))
-            .andExpect(status().isOk())
-            .andExpect(header().string("Access-Control-Allow-Origin", "https://app.example"));
-    }
-
-    @Test
-    void preflightOnPublicAuthEndpoint_allowsGatewayOriginFromResolver() throws Exception {
-        mockMvc.perform(options("/auth/saml-auth")
-                .header("Origin", "https://gateway.example")
-                .header("Access-Control-Request-Method", "POST"))
-            .andExpect(status().isOk())
-            .andExpect(header().string("Access-Control-Allow-Origin", "https://gateway.example"));
-    }
-
-    @Test
     void preflightOnHealthEndpoint_allowsConfiguredOriginWithoutWildcard() throws Exception {
         mockMvc.perform(options("/health")
                 .header("Origin", "https://app.example")
@@ -320,60 +301,8 @@ class SecurityConfigIntegrationTest {
             .andExpect(status().isForbidden());
     }
 
-    @Test
-    void publicAuthEndpoint_isRateLimitedPerIp() throws Exception {
-        mockMvc.perform(post("/auth/saml-auth")
-                .contentType(MediaType.APPLICATION_JSON)
-                .content("{}")
-                .with(req -> {
-                    req.setRemoteAddr("198.51.100.20");
-                    return req;
-                }))
-            .andExpect(status().isOk())
-            .andExpect(content().string("saml-ok"));
-
-        mockMvc.perform(post("/auth/saml-auth")
-                .contentType(MediaType.APPLICATION_JSON)
-                .content("{}")
-                .with(req -> {
-                    req.setRemoteAddr("198.51.100.20");
-                    return req;
-                }))
-            .andExpect(status().isTooManyRequests())
-            .andExpect(header().string("Retry-After", "60"))
-            .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON));
-    }
-
-    @Test
-    void publicAuthEndpoint_rateLimitsByForwardedClientAcrossTrustedProxyIps() throws Exception {
-        mockMvc.perform(post("/auth/saml-auth")
-                .contentType(MediaType.APPLICATION_JSON)
-                .content("{}")
-                .header("X-Forwarded-For", "198.51.100.20, 172.17.0.10")
-                .with(req -> {
-                    req.setRemoteAddr("172.17.0.10");
-                    return req;
-                }))
-            .andExpect(status().isOk());
-
-        mockMvc.perform(post("/auth/saml-auth")
-                .contentType(MediaType.APPLICATION_JSON)
-                .content("{}")
-                .header("X-Forwarded-For", "198.51.100.20, 172.18.0.10")
-                .with(req -> {
-                    req.setRemoteAddr("172.18.0.10");
-                    return req;
-                }))
-            .andExpect(status().isTooManyRequests());
-    }
-
     @RestController
     static class TestEndpoints {
-
-        @PostMapping("/auth/saml-auth")
-        String authSaml() {
-            return "saml-ok";
-        }
 
         @GetMapping("/wallet/test")
         String wallet() {

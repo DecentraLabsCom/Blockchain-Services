@@ -54,6 +54,10 @@ public class GuacamoleProvisioningService {
             return uri("connections");
         }
 
+        URI provisionUri(String sessionId) {
+            return URI.create(provisionUri().toString() + "/" + sessionId);
+        }
+
         URI uri(String endpoint) {
             String normalizedBase = baseUrl.endsWith("/") ? baseUrl.substring(0, baseUrl.length() - 1) : baseUrl;
             String normalizedPrefix = pathPrefix.startsWith("/") ? pathPrefix : "/" + pathPrefix;
@@ -131,6 +135,15 @@ public class GuacamoleProvisioningService {
     }
 
     public ProvisioningResult provisionTemporaryUser(String selector, String sessionId, BigInteger validUntilEpochSeconds, String accessUri) {
+        return provisionTemporaryUser(selector, sessionId, validUntilEpochSeconds, accessUri, true);
+    }
+
+    public ProvisioningResult provisionTemporaryUser(
+            String selector,
+            String sessionId,
+            BigInteger validUntilEpochSeconds,
+            String accessUri,
+            boolean activate) {
         if (!isConfigured()) {
             throw new IllegalStateException("Guacamole provisioner is not configured");
         }
@@ -140,6 +153,7 @@ public class GuacamoleProvisioningService {
         payload.put("selector", selector);
         payload.put("sessionId", sessionId);
         payload.put("validUntilEpochSeconds", validUntilEpochSeconds);
+        payload.put("activate", activate);
         Map<String, Object> response = postJson(route.provisionUri(), route, payload);
         if (!Boolean.TRUE.equals(response.get("success"))) {
             throw new IllegalStateException("Guacamole provisioner rejected the request");
@@ -153,6 +167,30 @@ public class GuacamoleProvisioningService {
             username,
             connectionMetadata(response.get("connection"))
         );
+    }
+
+    /** Removes the reservation-scoped temporary user created by provisioning. */
+    public void deleteTemporaryUser(String sessionId, String accessUri) {
+        if (!isConfigured()) {
+            throw new IllegalStateException("Guacamole provisioner is not configured");
+        }
+        if (!StringUtils.hasText(sessionId) || !sessionId.matches("[A-Za-z0-9_.-]{1,128}")) {
+            throw new IllegalArgumentException("sessionId is required and must be a safe identifier");
+        }
+        ProvisionerRoute route = resolveRoute(accessUri);
+        try {
+            HttpRequest.Builder builder = HttpRequest.newBuilder(route.provisionUri(sessionId))
+                .timeout(Duration.ofSeconds(10))
+                .DELETE();
+            addAuthHeader(builder, route);
+            HttpResponse<String> response = httpClient.send(builder.build(), HttpResponse.BodyHandlers.ofString());
+            Map<String, Object> body = parseResponse(response);
+            if (!Boolean.TRUE.equals(body.get("success"))) {
+                throw new IllegalStateException("Guacamole provisioner rejected the cleanup request");
+            }
+        } catch (Exception ex) {
+            throw new IllegalStateException("Guacamole provisioner cleanup request failed: " + ex.getMessage(), ex);
+        }
     }
 
     public List<Map<String, Object>> listSafeConnections() {

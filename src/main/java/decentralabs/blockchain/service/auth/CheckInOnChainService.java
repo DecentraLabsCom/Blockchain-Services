@@ -3,6 +3,7 @@ package decentralabs.blockchain.service.auth;
 import decentralabs.blockchain.dto.auth.CheckInRequest;
 import decentralabs.blockchain.dto.auth.CheckInResponse;
 import decentralabs.blockchain.service.wallet.InstitutionalWalletService;
+import decentralabs.blockchain.service.wallet.PendingNonceFastRawTransactionManager;
 import decentralabs.blockchain.service.wallet.WalletService;
 import decentralabs.blockchain.util.PucHashUtil;
 import java.io.IOException;
@@ -20,10 +21,10 @@ import org.web3j.abi.datatypes.generated.Bytes32;
 import org.web3j.abi.datatypes.generated.Uint64;
 import org.web3j.crypto.Credentials;
 import org.web3j.protocol.Web3j;
+import org.web3j.protocol.core.DefaultBlockParameterName;
 import org.web3j.protocol.core.methods.response.EthChainId;
 import org.web3j.protocol.core.methods.response.EthSendTransaction;
 import org.web3j.protocol.core.methods.response.TransactionReceipt;
-import org.web3j.tx.FastRawTransactionManager;
 import org.web3j.tx.TransactionManager;
 import org.web3j.utils.Numeric;
 
@@ -31,9 +32,11 @@ import org.web3j.utils.Numeric;
 @RequiredArgsConstructor
 @Slf4j
 public class CheckInOnChainService {
+    public enum TransactionState { PENDING, SUCCEEDED, FAILED }
     private final CheckInAuthService checkInAuthService;
     private final WalletService walletService;
     private final InstitutionalWalletService institutionalWalletService;
+    private final Object transactionSubmissionLock = new Object();
 
     @Value("${contract.address}")
     private String contractAddress;
@@ -50,11 +53,14 @@ public class CheckInOnChainService {
     @Value("${checkin.receipt.poll-interval-ms:1500}")
     private long receiptPollIntervalMs;
 
+    @Value("${institutional.checkin.outbox.nonce-replacement-gas-bump-percent:15}")
+    private int nonceReplacementGasBumpPercent;
+
     public CheckInResponse verifyAndSubmit(CheckInRequest request) {
         CheckInResponse response = checkInAuthService.verifyCheckIn(request);
         String pucHash = computePucHash(request.getPuc());
         long timestamp = response.getTimestamp() != null ? response.getTimestamp() : 0L;
-        String txHash = submitSignedCheckIn(
+        String txHash = submitSignedCheckInAsync(
             response.getSigner(),
             response.getReservationKey(),
             pucHash,
@@ -72,14 +78,112 @@ public class CheckInOnChainService {
         long timestamp,
         String signature
     ) {
+        return submitSignedCheckIn(signer, reservationKey, pucHash, timestamp, signature, true);
+    }
+
+    /**
+     * Submits a check-in transaction without making the caller wait for a
+     * receipt. The provider observes ACCESS_AUTHORIZED before it releases an
+     * access credential, so the transaction hash is sufficient here.
+     */
+    public String submitSignedCheckInAsync(
+        String signer,
+        String reservationKey,
+        String pucHash,
+        long timestamp,
+        String signature
+    ) {
+        return submitSignedCheckIn(signer, reservationKey, pucHash, timestamp, signature, false);
+    }
+
+    /** Uses a nonce allocated by the durable per-wallet dispatcher. */
+    public String submitSignedCheckInAsync(
+        String signer,
+        String reservationKey,
+        String pucHash,
+        long timestamp,
+        String signature,
+        BigInteger nonce
+    ) {
+        return submitSignedCheckIn(signer, reservationKey, pucHash, timestamp, signature, false, nonce, 0);
+    }
+
+    public String submitSignedCheckInAsync(
+        String signer,
+        String reservationKey,
+        String pucHash,
+        long timestamp,
+        String signature,
+        BigInteger nonce,
+        int replacementAttempt
+    ) {
+        return submitSignedCheckIn(
+            signer, reservationKey, pucHash, timestamp, signature, false, nonce, replacementAttempt
+        );
+    }
+
+    public BigInteger pendingNonce(String walletAddress) {
+        try {
+            var response = walletService.getWeb3jInstance().ethGetTransactionCount(
+                walletAddress,
+                DefaultBlockParameterName.PENDING
+            ).send();
+            if (response == null || response.getTransactionCount() == null) {
+                throw new IllegalStateException("Node returned no pending nonce");
+            }
+            return response.getTransactionCount();
+        } catch (Exception ex) {
+            throw new IllegalStateException("Failed to read pending nonce", ex);
+        }
+    }
+
+    /** Best-effort diagnostic only; access remains authorized solely by contract state. */
+    public TransactionState transactionState(String txHash) {
+        if (txHash == null || !txHash.matches("^0x[0-9a-fA-F]{64}$")) {
+            throw new IllegalArgumentException("Invalid access authorization transaction hash");
+        }
+        try {
+            var result = walletService.getWeb3jInstance().ethGetTransactionReceipt(txHash).send();
+            if (result == null || result.getTransactionReceipt().isEmpty()) {
+                return TransactionState.PENDING;
+            }
+            return result.getTransactionReceipt().get().isStatusOK()
+                ? TransactionState.SUCCEEDED
+                : TransactionState.FAILED;
+        } catch (Exception ex) {
+            log.warn("Unable to inspect access authorization transaction {}: {}", txHash, ex.getMessage());
+            return TransactionState.PENDING;
+        }
+    }
+
+    private String submitSignedCheckIn(
+        String signer,
+        String reservationKey,
+        String pucHash,
+        long timestamp,
+        String signature,
+        boolean waitForReceipt
+    ) {
+        return submitSignedCheckIn(signer, reservationKey, pucHash, timestamp, signature, waitForReceipt, null, 0);
+    }
+
+    private String submitSignedCheckIn(
+        String signer,
+        String reservationKey,
+        String pucHash,
+        long timestamp,
+        String signature,
+        boolean waitForReceipt,
+        BigInteger explicitNonce,
+        int replacementAttempt
+    ) {
         Credentials credentials = institutionalWalletService.getInstitutionalCredentials();
         Web3j web3j = walletService.getWeb3jInstance();
         
-        // Check for pending transactions to prevent nonce collisions
-        checkForPendingTransactions(web3j, credentials.getAddress());
-        
         long chainId = getChainId(web3j);
-        TransactionManager txManager = new FastRawTransactionManager(web3j, credentials, chainId);
+        TransactionManager txManager = explicitNonce == null
+            ? new PendingNonceFastRawTransactionManager(web3j, credentials, chainId)
+            : new PendingNonceFastRawTransactionManager(web3j, credentials, chainId, explicitNonce);
 
         String normalizedReservationKey = normalizeBytes32(reservationKey);
         String normalizedPucHash = normalizeBytes32(pucHash);
@@ -103,13 +207,17 @@ public class CheckInOnChainService {
         String encoded = FunctionEncoder.encode(function);
         EthSendTransaction tx;
         try {
-            tx = txManager.sendTransaction(
-                toWei(gasPriceGwei),
-                gasLimit,
-                contractAddress,
-                encoded,
-                BigInteger.ZERO
-            );
+            // Pending nonce allocation and broadcast must be one critical section:
+            // two request threads can otherwise read the same pending nonce.
+            synchronized (transactionSubmissionLock) {
+                tx = txManager.sendTransaction(
+                    toWei(gasPriceForReplacement(replacementAttempt)),
+                    gasLimit,
+                    contractAddress,
+                    encoded,
+                    BigInteger.ZERO
+                );
+            }
         } catch (IOException e) {
             throw new IllegalStateException("Failed to send check-in transaction: " + e.getMessage(), e);
         }
@@ -120,10 +228,12 @@ public class CheckInOnChainService {
             throw new IllegalStateException("Check-in transaction failed: " + error);
         }
 
-        TransactionReceipt receipt = waitForReceipt(web3j, txHash);
-        if (!receipt.isStatusOK()) {
-            String status = receipt.getStatus() != null ? receipt.getStatus() : "unknown";
-            throw new IllegalStateException("Check-in transaction was mined but failed. Status: " + status);
+        if (waitForReceipt) {
+            TransactionReceipt receipt = waitForReceipt(web3j, txHash);
+            if (!receipt.isStatusOK()) {
+                String status = receipt.getStatus() != null ? receipt.getStatus() : "unknown";
+                throw new IllegalStateException("Check-in transaction was mined but failed. Status: " + status);
+            }
         }
         return txHash;
     }
@@ -157,34 +267,6 @@ public class CheckInOnChainService {
         );
     }
 
-    private void checkForPendingTransactions(Web3j web3j, String address) {
-        try {
-            BigInteger pendingNonce = web3j.ethGetTransactionCount(
-                address,
-                org.web3j.protocol.core.DefaultBlockParameterName.PENDING
-            ).send().getTransactionCount();
-            
-            BigInteger confirmedNonce = web3j.ethGetTransactionCount(
-                address,
-                org.web3j.protocol.core.DefaultBlockParameterName.LATEST
-            ).send().getTransactionCount();
-            
-            if (pendingNonce.compareTo(confirmedNonce) > 0) {
-                long pendingCount = pendingNonce.subtract(confirmedNonce).longValue();
-                log.warn("Institutional wallet {} has {} pending transaction(s). Nonce: confirmed={}, pending={}",
-                    address, pendingCount, confirmedNonce, pendingNonce);
-                throw new IllegalStateException(
-                    "A previous check-in transaction is still pending confirmation. Please wait 30-60 seconds and try again."
-                );
-            }
-        } catch (IllegalStateException e) {
-            throw e; // Re-throw our own exception
-        } catch (Exception e) {
-            log.warn("Unable to check for pending transactions: {}", e.getMessage());
-            // Don't fail the check-in if we can't query nonces - network might be slow
-        }
-    }
-
     private long getChainId(Web3j web3j) {
         try {
             EthChainId id = web3j.ethChainId().send();
@@ -207,6 +289,15 @@ public class CheckInOnChainService {
 
     private String computePucHash(String puc) {
         return PucHashUtil.hashPuc(puc);
+    }
+
+    private BigInteger gasPriceForReplacement(int replacementAttempt) {
+        if (gasPriceGwei == null || replacementAttempt <= 0) {
+            return gasPriceGwei;
+        }
+        BigInteger bumpPercent = BigInteger.valueOf(Math.max(1, nonceReplacementGasBumpPercent));
+        BigInteger multiplier = BigInteger.valueOf(100L + bumpPercent.longValue() * replacementAttempt);
+        return gasPriceGwei.multiply(multiplier).add(BigInteger.valueOf(99)).divide(BigInteger.valueOf(100));
     }
 
     private String normalizeBytes32(String value) {

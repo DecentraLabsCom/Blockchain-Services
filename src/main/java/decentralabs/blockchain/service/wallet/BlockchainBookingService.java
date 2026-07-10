@@ -72,6 +72,91 @@ public class BlockchainBookingService {
         return getBookingInfo(wallet, reservationKey, labId, puc, true, true);
     }
 
+    /**
+     * Loads and validates a reservation before its check-in transaction is
+     * mined. Guacamole provisioning is deliberately separate so a provider can
+     * start it while it polls for ACCESS_AUTHORIZED.
+     */
+    public Map<String, Object> getBookingInfoForCredentialPreparation(
+            String wallet, String reservationKey, String labId, String puc) {
+        return getBookingInfo(wallet, reservationKey, labId, puc, false, true, false);
+    }
+
+    /**
+     * Reads only the reservation identity and status for the authorization
+     * polling loop. It deliberately avoids lab metadata, access URI and
+     * Guacamole preparation on every poll.
+     */
+    public Map<String, Object> getAccessAuthorizationState(
+            String wallet, String reservationKey, String labId, String puc) {
+        if (reservationKey != null && !reservationKey.isBlank()) {
+            try {
+                byte[] key = hexStringToByteArray(reservationKey);
+                Diamond diamond = loadDiamondContract(wallet);
+                Diamond.Reservation reservation = diamond.getReservation(key).send();
+                if (!reservation.renter.equalsIgnoreCase(wallet)) {
+                    throw new SecurityException("Reservation does not belong to this wallet");
+                }
+                return buildReservationInfo(
+                    reservation.labId, reservationKey, reservation.price, reservation.status,
+                    reservation.start, reservation.end
+                );
+            } catch (SecurityException | IllegalStateException | IllegalArgumentException e) {
+                throw e;
+            } catch (Exception e) {
+                throw new IllegalStateException("Failed to read reservation authorization state", e);
+            }
+        }
+        // The initial full lookup resolves a reservation key, so this is only
+        // a defensive fallback for callers that do not provide one.
+        return getBookingInfo(wallet, reservationKey, labId, puc, false, false, false);
+    }
+
+    /** Final status/window/ownership validation immediately before activation. */
+    public Map<String, Object> validateAccessAuthorizedReservation(
+            String wallet, String reservationKey, String labId, String puc) {
+        return getBookingInfo(wallet, reservationKey, labId, puc, true, false, false);
+    }
+
+    public void provisionGuacamoleAccess(Map<String, Object> bookingInfo) {
+        provisionGuacamoleAccess(bookingInfo, true);
+    }
+
+    public void provisionGuacamoleAccess(Map<String, Object> bookingInfo, boolean activate) {
+        if (!"lab".equals(bookingInfo.get("resourceType"))) {
+            return;
+        }
+        String accessKey = (String) bookingInfo.get("accessKey");
+        if (!GuacamoleProvisioningService.isGuacamoleSelector(accessKey)) {
+            throw new IllegalArgumentException("Physical Guacamole labs require accessKey format guac:id:<connection_id>");
+        }
+        String reservationKey = (String) bookingInfo.get("reservationKey");
+        String sessionId = guacamoleSessionId(reservationKey);
+        BigInteger expiresAt = toBigInteger(bookingInfo.get("exp"));
+        String accessUri = (String) bookingInfo.get("labURL");
+        var provisioned = guacamoleProvisioningService.provisionTemporaryUser(
+            accessKey, sessionId, expiresAt, accessUri, activate
+        );
+        bookingInfo.put("sub", provisioned.username());
+        bookingInfo.put("guacSessionId", sessionId);
+        bookingInfo.put("guacamoleConnectionId", BigInteger.valueOf(provisioned.connection().id()));
+    }
+
+    public void activatePreparedGuacamoleAccess(Map<String, Object> bookingInfo) {
+        provisionGuacamoleAccess(bookingInfo, true);
+    }
+
+    public void deletePreparedGuacamoleAccess(Map<String, Object> bookingInfo) {
+        if (!"lab".equals(bookingInfo.get("resourceType"))) {
+            return;
+        }
+        String reservationKey = (String) bookingInfo.get("reservationKey");
+        guacamoleProvisioningService.deleteTemporaryUser(
+            guacamoleSessionId(reservationKey),
+            (String) bookingInfo.get("labURL")
+        );
+    }
+
     public Map<String, Object> getCheckInBookingInfo(String wallet, String reservationKey, String labId, String puc) {
         return getBookingInfo(wallet, reservationKey, labId, puc, false, false);
     }
@@ -92,14 +177,25 @@ public class BlockchainBookingService {
             String puc,
             boolean requireAccessAuthorized,
             boolean includeAccessInfo) {
+        return getBookingInfo(wallet, reservationKey, labId, puc, requireAccessAuthorized, includeAccessInfo, true);
+    }
+
+    private Map<String, Object> getBookingInfo(
+            String wallet,
+            String reservationKey,
+            String labId,
+            String puc,
+            boolean requireAccessAuthorized,
+            boolean includeAccessInfo,
+            boolean provisionGuacamole) {
         try {           
             // Determine which method to use based on available parameters
             if (reservationKey != null && !reservationKey.isEmpty()) {
                 // OPTIMAL PATH: Use reservationKey for direct O(1) access
-                return getBookingInfoByReservationKey(wallet, reservationKey, puc, requireAccessAuthorized, includeAccessInfo);
+                return getBookingInfoByReservationKey(wallet, reservationKey, puc, requireAccessAuthorized, includeAccessInfo, provisionGuacamole);
             } else if (labId != null && !labId.isEmpty()) {
                 // FALLBACK PATH: Search by labId (requires iteration)
-                return getBookingInfoByLabId(wallet, labId, puc, requireAccessAuthorized, includeAccessInfo);
+                return getBookingInfoByLabId(wallet, labId, puc, requireAccessAuthorized, includeAccessInfo, provisionGuacamole);
             } else {
                 throw new IllegalArgumentException(
                     "Must provide either 'reservationKey' (recommended) or 'labId'"
@@ -155,7 +251,8 @@ public class BlockchainBookingService {
             String reservationKeyHex,
             String expectedPuc,
             boolean requireAccessAuthorized,
-            boolean includeAccessInfo)
+            boolean includeAccessInfo,
+            boolean provisionGuacamole)
             throws Exception {
         
         // 1. Convert reservationKey from hex to bytes32
@@ -204,7 +301,8 @@ public class BlockchainBookingService {
             status,
             start, end,
             accessURI, accessKey, metadata, authURI,
-            base.resourceType
+            base.resourceType,
+            provisionGuacamole
         );
     }
 
@@ -217,7 +315,8 @@ public class BlockchainBookingService {
             String labIdStr,
             String puc,
             boolean requireAccessAuthorized,
-            boolean includeAccessInfo) throws Exception {
+            boolean includeAccessInfo,
+            boolean provisionGuacamole) throws Exception {
         
         BigInteger labId = EthereumAddressValidator.parseBigInteger(labIdStr, "labId");
 
@@ -299,7 +398,8 @@ public class BlockchainBookingService {
             status,
             start, end,
             accessURI, accessKey, metadata, authURI,
-            base.resourceType
+            base.resourceType,
+            provisionGuacamole
         );
     }
     
@@ -365,14 +465,15 @@ public class BlockchainBookingService {
             BigInteger status,
             BigInteger start, BigInteger end,
             String accessURI, String accessKey, String metadata, String authURI,
-            BigInteger onChainResourceType) {
+            BigInteger onChainResourceType,
+            boolean provisionGuacamole) {
         
         Map<String, Object> bookingInfo = new HashMap<>();
         
         boolean physicalLab = onChainResourceType == null || onChainResourceType.intValue() == 0;
         BigInteger expiresAt = resolveAccessJwtExpiration(end);
         String subject = accessKey;
-        if (physicalLab) {
+        if (physicalLab && provisionGuacamole) {
             if (!GuacamoleProvisioningService.isGuacamoleSelector(accessKey)) {
                 throw new IllegalArgumentException("Physical Guacamole labs require accessKey format guac:id:<connection_id>");
             }
@@ -411,6 +512,16 @@ public class BlockchainBookingService {
         bookingInfo.put("labURL", accessURI);               // Complete URL to access lab
 
         return bookingInfo;
+    }
+
+    private BigInteger toBigInteger(Object value) {
+        if (value instanceof BigInteger bigInteger) {
+            return bigInteger;
+        }
+        if (value instanceof Number number) {
+            return BigInteger.valueOf(number.longValue());
+        }
+        return new BigInteger(String.valueOf(value));
     }
 
     private String guacamoleSessionId(String reservationKeyHex) {

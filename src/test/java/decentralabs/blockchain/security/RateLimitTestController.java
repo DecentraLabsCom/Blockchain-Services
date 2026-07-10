@@ -11,8 +11,8 @@ import org.springframework.web.bind.annotation.RestController;
 @RestController
 class RateLimitTestController {
 
-    @PostMapping("/auth/saml-auth")
-    public String samlAuth() {
+    @PostMapping("/auth/authorize-and-issue")
+    public String authorizeAndIssue() {
         return "ok";
     }
 

@@ -1,7 +1,6 @@
 package decentralabs.blockchain.service.auth;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
@@ -13,6 +12,7 @@ import static org.mockito.Mockito.when;
 import decentralabs.blockchain.dto.auth.CheckInRequest;
 import decentralabs.blockchain.dto.auth.CheckInResponse;
 import decentralabs.blockchain.service.wallet.InstitutionalWalletService;
+import decentralabs.blockchain.service.wallet.PendingNonceFastRawTransactionManager;
 import decentralabs.blockchain.service.wallet.WalletService;
 import java.io.IOException;
 import java.math.BigInteger;
@@ -24,6 +24,8 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.MockedConstruction;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.mockito.junit.jupiter.MockitoSettings;
+import org.mockito.quality.Strictness;
 import org.springframework.test.util.ReflectionTestUtils;
 import org.web3j.crypto.Credentials;
 import org.web3j.crypto.Hash;
@@ -32,13 +34,11 @@ import org.web3j.protocol.core.DefaultBlockParameterName;
 import org.web3j.protocol.core.Request;
 import org.web3j.protocol.core.methods.response.EthChainId;
 import org.web3j.protocol.core.methods.response.EthGetTransactionCount;
-import org.web3j.protocol.core.methods.response.EthGetTransactionReceipt;
 import org.web3j.protocol.core.methods.response.EthSendTransaction;
-import org.web3j.protocol.core.methods.response.TransactionReceipt;
-import org.web3j.tx.FastRawTransactionManager;
 import org.web3j.utils.Numeric;
 
 @ExtendWith(MockitoExtension.class)
+@MockitoSettings(strictness = Strictness.LENIENT)
 class CheckInOnChainServiceTest {
 
     @Mock
@@ -86,10 +86,9 @@ class CheckInOnChainServiceTest {
         EthSendTransaction sendTransaction = mock(EthSendTransaction.class);
         when(sendTransaction.getTransactionHash()).thenReturn("0xtx123");
         when(sendTransaction.hasError()).thenReturn(false);
-        stubReceipt("0xtx123", true);
 
-        try (MockedConstruction<FastRawTransactionManager> ignored =
-                 mockConstruction(FastRawTransactionManager.class, (mock, context) ->
+        try (MockedConstruction<PendingNonceFastRawTransactionManager> ignored =
+                 mockConstruction(PendingNonceFastRawTransactionManager.class, (mock, context) ->
                      when(mock.sendTransaction(
                          eq(toWei(BigInteger.valueOf(2))),
                          eq(BigInteger.valueOf(300000)),
@@ -107,7 +106,7 @@ class CheckInOnChainServiceTest {
     }
 
     @Test
-    void verifyAndSubmit_rejectsFailedMinedReceipt() throws Exception {
+    void verifyAndSubmit_returnsAfterSubmissionWithoutWaitingForFailedReceipt() throws Exception {
         CheckInRequest request = validRequest();
         CheckInResponse authResponse = new CheckInResponse();
         authResponse.setValid(true);
@@ -124,20 +123,16 @@ class CheckInOnChainServiceTest {
         EthSendTransaction sendTransaction = mock(EthSendTransaction.class);
         when(sendTransaction.getTransactionHash()).thenReturn("0xtxfailed");
         when(sendTransaction.hasError()).thenReturn(false);
-        stubReceipt("0xtxfailed", false);
-
-        try (MockedConstruction<FastRawTransactionManager> ignored =
-                 mockConstruction(FastRawTransactionManager.class, (mock, context) ->
+        try (MockedConstruction<PendingNonceFastRawTransactionManager> ignored =
+                 mockConstruction(PendingNonceFastRawTransactionManager.class, (mock, context) ->
                      when(mock.sendTransaction(any(), any(), any(), any(), any())).thenReturn(sendTransaction))) {
 
-            assertThatThrownBy(() -> service.verifyAndSubmit(request))
-                .isInstanceOf(IllegalStateException.class)
-                .hasMessageContaining("Check-in transaction was mined but failed");
+            assertThat(service.verifyAndSubmit(request).getTxHash()).isEqualTo("0xtxfailed");
         }
     }
 
     @Test
-    void verifyAndSubmit_rejectsReceiptTimeout() throws Exception {
+    void verifyAndSubmit_returnsAfterSubmissionWhenReceiptIsStillPending() throws Exception {
         CheckInRequest request = validRequest();
         CheckInResponse authResponse = new CheckInResponse();
         authResponse.setValid(true);
@@ -154,20 +149,16 @@ class CheckInOnChainServiceTest {
         EthSendTransaction sendTransaction = mock(EthSendTransaction.class);
         when(sendTransaction.getTransactionHash()).thenReturn("0xtimeout");
         when(sendTransaction.hasError()).thenReturn(false);
-        stubMissingReceipt("0xtimeout");
-
-        try (MockedConstruction<FastRawTransactionManager> ignored =
-                 mockConstruction(FastRawTransactionManager.class, (mock, context) ->
+        try (MockedConstruction<PendingNonceFastRawTransactionManager> ignored =
+                 mockConstruction(PendingNonceFastRawTransactionManager.class, (mock, context) ->
                      when(mock.sendTransaction(any(), any(), any(), any(), any())).thenReturn(sendTransaction))) {
 
-            assertThatThrownBy(() -> service.verifyAndSubmit(request))
-                .isInstanceOf(IllegalStateException.class)
-                .hasMessageContaining("Check-in transaction was not confirmed");
+            assertThat(service.verifyAndSubmit(request).getTxHash()).isEqualTo("0xtimeout");
         }
     }
 
     @Test
-    void verifyAndSubmit_rejectsPendingNonceCollision() throws Exception {
+    void verifyAndSubmit_allowsPendingNonceCollision() throws Exception {
         CheckInRequest request = validRequest();
         CheckInResponse authResponse = new CheckInResponse();
         authResponse.setValid(true);
@@ -180,9 +171,14 @@ class CheckInOnChainServiceTest {
         when(walletService.getWeb3jInstance()).thenReturn(web3j);
         stubNonceChecks(BigInteger.valueOf(3), BigInteger.ONE);
 
-        assertThatThrownBy(() -> service.verifyAndSubmit(request))
-            .isInstanceOf(IllegalStateException.class)
-            .hasMessageContaining("still pending confirmation");
+        EthSendTransaction sendTransaction = mock(EthSendTransaction.class);
+        when(sendTransaction.getTransactionHash()).thenReturn("0xpending-nonce");
+        when(sendTransaction.hasError()).thenReturn(false);
+        try (MockedConstruction<PendingNonceFastRawTransactionManager> ignored =
+                 mockConstruction(PendingNonceFastRawTransactionManager.class, (mock, context) ->
+                     when(mock.sendTransaction(any(), any(), any(), any(), any())).thenReturn(sendTransaction))) {
+            assertThat(service.verifyAndSubmit(request).getTxHash()).isEqualTo("0xpending-nonce");
+        }
     }
 
     @Test
@@ -212,10 +208,9 @@ class CheckInOnChainServiceTest {
         EthSendTransaction sendTransaction = mock(EthSendTransaction.class);
         when(sendTransaction.getTransactionHash()).thenReturn("0xtx123");
         when(sendTransaction.hasError()).thenReturn(false);
-        stubReceipt("0xtx123", true);
 
-        try (MockedConstruction<FastRawTransactionManager> construction =
-                 mockConstruction(FastRawTransactionManager.class, (mock, context) ->
+        try (MockedConstruction<PendingNonceFastRawTransactionManager> construction =
+                 mockConstruction(PendingNonceFastRawTransactionManager.class, (mock, context) ->
                      when(mock.sendTransaction(any(), any(), any(), any(), any())).thenReturn(sendTransaction))) {
 
             CheckInResponse response = service.verifyAndSubmit(request);
@@ -241,8 +236,8 @@ class CheckInOnChainServiceTest {
         stubNonceChecks(BigInteger.ONE, BigInteger.ONE);
         stubChainId(1L);
 
-        try (MockedConstruction<FastRawTransactionManager> ignored =
-                 mockConstruction(FastRawTransactionManager.class, (mock, context) ->
+        try (MockedConstruction<PendingNonceFastRawTransactionManager> ignored =
+                 mockConstruction(PendingNonceFastRawTransactionManager.class, (mock, context) ->
                      when(mock.sendTransaction(any(), any(), any(), any(), any()))
                          .thenThrow(new IOException("rpc write failed")))) {
 
@@ -273,8 +268,8 @@ class CheckInOnChainServiceTest {
         org.web3j.protocol.core.Response.Error error = new org.web3j.protocol.core.Response.Error(1, "execution reverted");
         when(sendTransaction.getError()).thenReturn(error);
 
-        try (MockedConstruction<FastRawTransactionManager> ignored =
-                 mockConstruction(FastRawTransactionManager.class, (mock, context) ->
+        try (MockedConstruction<PendingNonceFastRawTransactionManager> ignored =
+                 mockConstruction(PendingNonceFastRawTransactionManager.class, (mock, context) ->
                      when(mock.sendTransaction(any(), any(), any(), any(), any())).thenReturn(sendTransaction))) {
 
             assertThatThrownBy(() -> service.verifyAndSubmit(request))
@@ -299,8 +294,6 @@ class CheckInOnChainServiceTest {
         String pucHash = (String) ReflectionTestUtils.invokeMethod(service, "computePucHash", "puc-123");
         assertThat(pucHash).isEqualTo(normalizeBytes32(Numeric.toHexString(Hash.sha3("puc-123".getBytes(StandardCharsets.UTF_8)))));
 
-        assertThatCode(() -> ReflectionTestUtils.invokeMethod(service, "checkForPendingTransactions", web3j, credentials.getAddress()))
-            .doesNotThrowAnyException();
     }
 
     private void stubNonceChecks(BigInteger pendingNonce, BigInteger latestNonce) throws Exception {
@@ -328,31 +321,6 @@ class CheckInOnChainServiceTest {
         when(web3j.ethChainId()).thenAnswer(invocation -> request);
         when(request.send()).thenReturn(response);
         when(response.getChainId()).thenReturn(BigInteger.valueOf(chainId));
-    }
-
-    private void stubReceipt(String txHash, boolean statusOk) throws Exception {
-        @SuppressWarnings("unchecked")
-        Request<?, EthGetTransactionReceipt> receiptRequest = (Request<?, EthGetTransactionReceipt>) mock(Request.class);
-        EthGetTransactionReceipt receiptResponse = mock(EthGetTransactionReceipt.class);
-        TransactionReceipt receipt = mock(TransactionReceipt.class);
-
-        when(web3j.ethGetTransactionReceipt(txHash)).thenAnswer(invocation -> receiptRequest);
-        when(receiptRequest.send()).thenReturn(receiptResponse);
-        when(receiptResponse.getTransactionReceipt()).thenReturn(java.util.Optional.of(receipt));
-        when(receipt.isStatusOK()).thenReturn(statusOk);
-        if (!statusOk) {
-            when(receipt.getStatus()).thenReturn("0x0");
-        }
-    }
-
-    private void stubMissingReceipt(String txHash) throws Exception {
-        @SuppressWarnings("unchecked")
-        Request<?, EthGetTransactionReceipt> receiptRequest = (Request<?, EthGetTransactionReceipt>) mock(Request.class);
-        EthGetTransactionReceipt receiptResponse = mock(EthGetTransactionReceipt.class);
-
-        when(web3j.ethGetTransactionReceipt(txHash)).thenAnswer(invocation -> receiptRequest);
-        when(receiptRequest.send()).thenReturn(receiptResponse);
-        when(receiptResponse.getTransactionReceipt()).thenReturn(java.util.Optional.empty());
     }
 
     private CheckInRequest validRequest() {

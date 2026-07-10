@@ -32,8 +32,8 @@ public class AuthController {
     @Value("${auth.base-path:/auth}")
     private String authPath;
     
-    @Value("${endpoint.saml-auth2}")
-    private String samlAuth2Endpoint;
+    @Value("${endpoint.authorize-and-issue:/auth/authorize-and-issue}")
+    private String authorizeAndIssueEndpoint;
     
     @Value("${endpoint.jwks}")
     private String jwksEndpoint;
@@ -62,7 +62,7 @@ public class AuthController {
         config.put("issuer", baseDomain + authPath);
         
         // Primary authorization endpoint for institutional auth.
-        config.put("authorization_endpoint", baseDomain + samlAuth2Endpoint);
+        config.put("authorization_endpoint", baseDomain + authorizeAndIssueEndpoint);
 
         config.put("jwks_uri", baseDomain + jwksEndpoint);
         return ResponseEntity.ok()

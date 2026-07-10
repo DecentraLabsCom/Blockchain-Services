@@ -3,6 +3,7 @@ package decentralabs.blockchain.service.auth;
 import decentralabs.blockchain.dto.auth.CheckInResponse;
 import decentralabs.blockchain.service.wallet.InstitutionalWalletService;
 import decentralabs.blockchain.util.PucHashUtil;
+import java.math.BigInteger;
 import org.springframework.stereotype.Service;
 import org.web3j.crypto.Credentials;
 import org.web3j.crypto.Sign;
@@ -25,6 +26,18 @@ public class InstitutionalCheckInSubmissionService {
     }
 
     public CheckInResponse submit(String reservationKey, String pucHash) {
+        return submit(reservationKey, pucHash, null);
+    }
+
+    public String signerAddress() {
+        return institutionalWalletService.getInstitutionalCredentials().getAddress();
+    }
+
+    public CheckInResponse submit(String reservationKey, String pucHash, BigInteger nonce) {
+        return submit(reservationKey, pucHash, nonce, 0);
+    }
+
+    public CheckInResponse submit(String reservationKey, String pucHash, BigInteger nonce, int replacementAttempt) {
         Credentials credentials = institutionalWalletService.getInstitutionalCredentials();
         String signer = credentials.getAddress();
         String normalizedReservationKey = PucHashUtil.normalizeBytes32(reservationKey);
@@ -38,13 +51,13 @@ public class InstitutionalCheckInSubmissionService {
             timestamp
         );
         String signature = signatureToHex(Sign.signMessage(digest, credentials.getEcKeyPair(), false));
-        String txHash = checkInOnChainService.submitSignedCheckIn(
-            signer,
-            normalizedReservationKey,
-            normalizedPucHash,
-            timestamp,
-            signature
-        );
+        String txHash = nonce == null
+            ? checkInOnChainService.submitSignedCheckInAsync(
+                signer, normalizedReservationKey, normalizedPucHash, timestamp, signature
+            )
+            : checkInOnChainService.submitSignedCheckInAsync(
+                signer, normalizedReservationKey, normalizedPucHash, timestamp, signature, nonce, replacementAttempt
+            );
 
         CheckInResponse response = new CheckInResponse();
         response.setValid(true);

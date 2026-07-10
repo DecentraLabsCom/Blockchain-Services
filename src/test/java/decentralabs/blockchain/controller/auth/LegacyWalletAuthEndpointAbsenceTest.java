@@ -44,7 +44,7 @@ class LegacyWalletAuthEndpointAbsenceTest {
     @BeforeEach
     void setUp() {
         ReflectionTestUtils.setField(authController, "authPath", "/auth");
-        ReflectionTestUtils.setField(authController, "samlAuth2Endpoint", "/auth/saml-auth2");
+        ReflectionTestUtils.setField(authController, "authorizeAndIssueEndpoint", "/auth/authorize-and-issue");
         ReflectionTestUtils.setField(authController, "jwksEndpoint", "/auth/jwks");
 
         mockMvc = MockMvcBuilders.standaloneSetup(authController, samlAuthController).build();

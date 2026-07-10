@@ -20,6 +20,7 @@ Minimum actions to keep `blockchain-services` safe in production.
   - `admin.dashboard.allow-private=true` allows private-network access only when `security.allow-private-networks=true` and token rules permit it.
   - `admin.dashboard.local-only=false` removes the locality check, but a valid admin access token is still required whenever `security.access-token.required=true`.
 - Do not distribute `security.access-token` via query parameters. The backend accepts it only via header/cookie to avoid leaking it into logs, history, and referrers.
+- Lab access credentials use a one-time opaque `access_code`: OpenResty redeems it by POST, sets the Secure/HttpOnly JTI cookie and redirects with `Referrer-Policy: no-referrer`. Signed lab-access JWTs are never placed in browser URLs.
 - Provisioning token JWKS fetches should keep bounded network waits; tune `PROVISIONING_TOKEN_HTTP_CONNECT_TIMEOUT_MS` and `PROVISIONING_TOKEN_HTTP_READ_TIMEOUT_MS` for your environment.
 - `/wallet/reveal` exists for break-glass scenarios; leave it reachable only from loopback.
 - `/billing/admin/**` requires a valid access token when `security.access-token.required=true` (default).

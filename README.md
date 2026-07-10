@@ -52,7 +52,7 @@ Together, they bridge institutional access control systems (such as **Lab Gatewa
 ## ✨ Key Features
 
 ### Authentication and Authorization Service
-- **SAML2 Integration**: dual-path SSO flows (`/auth/saml-auth` and `/auth/saml-auth2`).
+- **SAML2 Integration**: SSO and combined authorization flow (`/auth/authorize-and-issue`).
 - **JWT Management**: OIDC/JWKS discovery, JWT issuance, and claim/scope-based access checks.
 - **Smart Contract Validation**: direct on-chain reservation/booking queries for booking-aware flows.
 
@@ -91,8 +91,7 @@ flowchart LR
 
 - `GET /.well-known/openid-configuration`
 - `GET /auth/jwks`
-- `POST /auth/saml-auth`
-- `POST /auth/saml-auth2`
+- `POST /auth/authorize-and-issue`
 - `POST /auth/checkin-institutional`
 - `POST /webauthn/register`
 - `POST /webauthn/revoke`
@@ -306,8 +305,7 @@ Health endpoint available at `/health`:
   "institution_registered": true,
   "jwt_validation": "ready",
   "endpoints": {
-    "saml-auth": "disabled (providers flag off)",
-    "saml-auth2": "disabled (providers flag off)",
+    "authorize-and-issue": "disabled (providers flag off)",
     "checkin-institutional": "disabled (providers flag off)",
     "jwks": "disabled (providers flag off)",
     "wallet-create": "available (localhost)",

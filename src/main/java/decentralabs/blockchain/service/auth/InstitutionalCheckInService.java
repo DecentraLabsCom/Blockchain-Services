@@ -1,6 +1,5 @@
 package decentralabs.blockchain.service.auth;
 
-import decentralabs.blockchain.dto.auth.CheckInRequest;
 import decentralabs.blockchain.dto.auth.CheckInResponse;
 import decentralabs.blockchain.dto.auth.InstitutionalCheckInRequest;
 import decentralabs.blockchain.service.wallet.BlockchainBookingService;
@@ -8,6 +7,7 @@ import decentralabs.blockchain.service.wallet.InstitutionalWalletService;
 import decentralabs.blockchain.service.wallet.WalletService;
 import java.nio.charset.StandardCharsets;
 import java.math.BigInteger;
+import java.time.Instant;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
@@ -25,9 +25,7 @@ import org.web3j.abi.datatypes.Address;
 import org.web3j.abi.datatypes.Function;
 import org.web3j.abi.datatypes.Type;
 import org.web3j.abi.datatypes.Utf8String;
-import org.web3j.crypto.Credentials;
 import org.web3j.crypto.Hash;
-import org.web3j.crypto.Sign;
 import org.web3j.protocol.Web3j;
 import org.web3j.protocol.core.DefaultBlockParameterName;
 import org.web3j.protocol.core.methods.request.Transaction;
@@ -43,11 +41,11 @@ public class InstitutionalCheckInService {
 
     private static final class MarketplaceIdentityClaims {
         private final String puc;
-        private final String institutionalProviderWallet;
+        private final String payerInstitutionWallet;
 
-        MarketplaceIdentityClaims(String puc, String institutionalProviderWallet) {
+        MarketplaceIdentityClaims(String puc, String payerInstitutionWallet) {
             this.puc = puc;
-            this.institutionalProviderWallet = institutionalProviderWallet;
+            this.payerInstitutionWallet = payerInstitutionWallet;
         }
     }
 
@@ -56,10 +54,10 @@ public class InstitutionalCheckInService {
     private final BlockchainBookingService bookingService;
     private final InstitutionalWalletService institutionalWalletService;
     private final WalletService walletService;
-    private final Eip712CheckInVerifier checkInVerifier;
-    private final CheckInOnChainService checkInOnChainService;
     private final InstitutionalCheckInDirectoryService directoryService;
     private final RemoteInstitutionalCheckInClient remoteCheckInClient;
+    private final InstitutionalCheckInOutboxService outboxService;
+    private final InstitutionalWalletNonceDispatcher nonceDispatcher;
 
     @Value("${contract.address}")
     private String contractAddress;
@@ -90,9 +88,9 @@ public class InstitutionalCheckInService {
             throw new IllegalArgumentException("Institution wallet could not be resolved");
         }
 
-        String claimedInstitutionWallet = normalizeAddress(marketplaceIdentity.institutionalProviderWallet);
+        String claimedInstitutionWallet = normalizeAddress(marketplaceIdentity.payerInstitutionWallet);
         if (claimedInstitutionWallet != null && !claimedInstitutionWallet.equalsIgnoreCase(institutionWallet)) {
-            throw new SecurityException("Marketplace token institutionalProviderWallet mismatch");
+            throw new SecurityException("Marketplace token payerInstitutionWallet mismatch");
         }
 
         Map<String, Object> bookingInfo = bookingService.getCheckInBookingInfo(
@@ -123,23 +121,34 @@ public class InstitutionalCheckInService {
             return delegateToInstitutionBackend(request, institutionOrganization, institutionWallet);
         }
 
-        Credentials credentials = institutionalWalletService.getInstitutionalCredentials();
-        String signer = credentials.getAddress();
-        long timestamp = System.currentTimeMillis() / 1000;
+        InstitutionalCheckInOutboxRecord record = outboxService.enqueueAccessGranted(
+            reservationKey,
+            request.getLabId(),
+            institutionWallet,
+            computePucHash(puc),
+            reservationKey
+        );
+        if (outboxService.claim(record.id())) {
+            try {
+                return nonceDispatcher.dispatch(record);
+            } catch (InstitutionalWalletDispatchException ex) {
+                outboxService.markRetry(
+                    record.id(),
+                    record.attempts() + 1,
+                    Instant.now(),
+                    "Initial institutional check-in broadcast outcome is uncertain"
+                );
+                throw new IllegalStateException("Institutional check-in submission could not be confirmed", ex);
+            }
+        }
 
-        String pucHash = computePucHash(puc);
-        byte[] digest = checkInVerifier.buildDigest(signer, normalizeBytes32(reservationKey), pucHash, timestamp);
-        Sign.SignatureData signatureData = Sign.signMessage(digest, credentials.getEcKeyPair(), false);
-        String signatureHex = signatureToHex(signatureData);
-
-        CheckInRequest checkInRequest = new CheckInRequest();
-        checkInRequest.setReservationKey(reservationKey);
-        checkInRequest.setSigner(signer);
-        checkInRequest.setSignature(signatureHex);
-        checkInRequest.setTimestamp(timestamp);
-        checkInRequest.setPuc(puc);
-
-        return checkInOnChainService.verifyAndSubmit(checkInRequest);
+        CheckInResponse response = new CheckInResponse();
+        response.setValid(true);
+        response.setReservationKey(reservationKey);
+        response.setTxHash(record.txHash());
+        response.setTimestamp(System.currentTimeMillis() / 1000);
+        response.setReason("Institutional check-in is already queued");
+        return response;
     }
 
     private void validateRequest(InstitutionalCheckInRequest request) {
@@ -203,10 +212,10 @@ public class InstitutionalCheckInService {
             enforceBoundClaim(claims, "labId", request.getLabId());
             enforceRequiredSamlAssertionHash(claims, request.getSamlAssertion());
 
-            String claimInstitutionalProviderWallet = firstClaim(claims, "institutionalProviderWallet");
+            String claimPayerInstitutionWallet = firstClaim(claims, "payerInstitutionWallet");
             return new MarketplaceIdentityClaims(
                 claimPuc,
-                claimInstitutionalProviderWallet
+                claimPayerInstitutionWallet
             );
         } catch (ResponseStatusException ex) {
             if (ex.getStatusCode().equals(HttpStatus.UNAUTHORIZED) || ex.getStatusCode().equals(HttpStatus.FORBIDDEN)) {
@@ -221,7 +230,7 @@ public class InstitutionalCheckInService {
     }
 
     private String resolveInstitutionWallet(InstitutionalCheckInRequest request, String organization) {
-        String explicit = normalizeAddress(request.getInstitutionalProviderWallet());
+        String explicit = normalizeAddress(request.getPayerInstitutionWallet());
         if (explicit != null && !explicit.isBlank()) {
             return explicit;
         }
@@ -257,7 +266,7 @@ public class InstitutionalCheckInService {
         if (backendUrl == null || backendUrl.isBlank()) {
             throw new IllegalStateException("No institutional backend registered for organization " + organization);
         }
-        request.setInstitutionalProviderWallet(institutionWallet);
+        request.setPayerInstitutionWallet(institutionWallet);
         log.info("Delegating institutional check-in for organization {} to registered backend", organization);
         return remoteCheckInClient.submit(backendUrl, request);
     }
@@ -312,15 +321,6 @@ public class InstitutionalCheckInService {
             clean = "0".repeat(64 - clean.length()) + clean;
         }
         return "0x" + clean;
-    }
-
-    private String signatureToHex(Sign.SignatureData signatureData) {
-        byte[] sigBytes = new byte[65];
-        System.arraycopy(signatureData.getR(), 0, sigBytes, 0, 32);
-        System.arraycopy(signatureData.getS(), 0, sigBytes, 32, 32);
-        byte[] v = signatureData.getV();
-        sigBytes[64] = v[0];
-        return Numeric.toHexString(sigBytes);
     }
 
     private String normalizeOrganization(String value) {

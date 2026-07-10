@@ -1,10 +1,10 @@
 package decentralabs.blockchain.controller.auth;
 
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import org.junit.jupiter.api.BeforeEach;
@@ -26,6 +26,8 @@ import decentralabs.blockchain.dto.auth.CheckInResponse;
 import decentralabs.blockchain.dto.auth.InstitutionalCheckInRequest;
 import decentralabs.blockchain.dto.auth.ProviderAccessCredentialRequest;
 import decentralabs.blockchain.dto.auth.SamlAuthRequest;
+import decentralabs.blockchain.exception.AccessAuthorizationPendingException;
+import decentralabs.blockchain.exception.AccessAuthorizationRejectedException;
 import decentralabs.blockchain.exception.SamlAuthControllerAdvice;
 import decentralabs.blockchain.service.auth.InstitutionalCheckInService;
 import decentralabs.blockchain.service.auth.SamlAuthService;
@@ -58,72 +60,6 @@ class SamlAuthControllerTest {
     }
 
     @Nested
-    @DisplayName("SAML Auth Endpoint Tests")
-    class SamlAuthTests {
-
-        @Test
-        @DisplayName("Should authenticate successfully with valid SAML request")
-        void shouldAuthenticateWithValidSamlRequest() throws Exception {
-            SamlAuthRequest request = createValidSamlRequest();
-            AuthResponse response = new AuthResponse("valid-jwt-token");
-
-            when(samlAuthService.handleAuthentication(any(SamlAuthRequest.class), eq(false)))
-                .thenReturn(response);
-
-            mockMvc.perform(post("/auth/saml-auth")
-                    .contentType(MediaType.APPLICATION_JSON)
-                    .content(objectMapper.writeValueAsString(request)))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.token").value("valid-jwt-token"));
-        }
-
-        @Test
-        @DisplayName("Should return 400 for invalid request")
-        void shouldReturn400ForInvalidRequest() throws Exception {
-            SamlAuthRequest request = createValidSamlRequest();
-
-            when(samlAuthService.handleAuthentication(any(SamlAuthRequest.class), eq(false)))
-                .thenThrow(new IllegalArgumentException("Invalid SAML assertion format"));
-
-            mockMvc.perform(post("/auth/saml-auth")
-                    .contentType(MediaType.APPLICATION_JSON)
-                    .content(objectMapper.writeValueAsString(request)))
-                .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.error").value("Invalid SAML assertion format"));
-        }
-
-        @Test
-        @DisplayName("Should return 401 for security exception")
-        void shouldReturn401ForSecurityException() throws Exception {
-            SamlAuthRequest request = createValidSamlRequest();
-
-            when(samlAuthService.handleAuthentication(any(SamlAuthRequest.class), eq(false)))
-                .thenThrow(new SecurityException("SAML assertion expired"));
-
-            mockMvc.perform(post("/auth/saml-auth")
-                    .contentType(MediaType.APPLICATION_JSON)
-                    .content(objectMapper.writeValueAsString(request)))
-                .andExpect(status().isUnauthorized())
-                .andExpect(jsonPath("$.error").value("SAML assertion expired"));
-        }
-
-        @Test
-        @DisplayName("Should return 500 for unexpected error")
-        void shouldReturn500ForUnexpectedError() throws Exception {
-            SamlAuthRequest request = createValidSamlRequest();
-
-            when(samlAuthService.handleAuthentication(any(SamlAuthRequest.class), eq(false)))
-                .thenThrow(new RuntimeException("Database connection failed"));
-
-            mockMvc.perform(post("/auth/saml-auth")
-                    .contentType(MediaType.APPLICATION_JSON)
-                    .content(objectMapper.writeValueAsString(request)))
-                .andExpect(status().isInternalServerError())
-                .andExpect(jsonPath("$.error").value("Internal server error"));
-        }
-    }
-
-    @Nested
     @DisplayName("SAML Auth2 Endpoint Tests")
     class SamlAuth2Tests {
 
@@ -134,10 +70,10 @@ class SamlAuthControllerTest {
             request.setLabId("lab-123");
             AuthResponse response = new AuthResponse("jwt-with-booking", "https://lab.example.com");
 
-            when(samlAuthService.handleAuthentication(any(SamlAuthRequest.class), eq(true)))
+            when(samlAuthService.authorizeAndIssue(any(SamlAuthRequest.class)))
                 .thenReturn(response);
 
-            mockMvc.perform(post("/auth/saml-auth2")
+            mockMvc.perform(post("/auth/authorize-and-issue")
                     .contentType(MediaType.APPLICATION_JSON)
                     .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isOk())
@@ -152,10 +88,10 @@ class SamlAuthControllerTest {
             request.setReservationKey("0x" + "a".repeat(64));
             AuthResponse response = new AuthResponse("jwt-with-reservation", "https://lab2.example.com");
 
-            when(samlAuthService.handleAuthentication(any(SamlAuthRequest.class), eq(true)))
+            when(samlAuthService.authorizeAndIssue(any(SamlAuthRequest.class)))
                 .thenReturn(response);
 
-            mockMvc.perform(post("/auth/saml-auth2")
+            mockMvc.perform(post("/auth/authorize-and-issue")
                     .contentType(MediaType.APPLICATION_JSON)
                     .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isOk())
@@ -168,10 +104,10 @@ class SamlAuthControllerTest {
             SamlAuthRequest request = createValidSamlRequest();
             // No labId or reservationKey set
 
-            when(samlAuthService.handleAuthentication(any(SamlAuthRequest.class), eq(true)))
+            when(samlAuthService.authorizeAndIssue(any(SamlAuthRequest.class)))
                 .thenThrow(new IllegalArgumentException("labId or reservationKey is required"));
 
-            mockMvc.perform(post("/auth/saml-auth2")
+            mockMvc.perform(post("/auth/authorize-and-issue")
                     .contentType(MediaType.APPLICATION_JSON)
                     .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isBadRequest())
@@ -184,10 +120,10 @@ class SamlAuthControllerTest {
             SamlAuthRequest request = createValidSamlRequest();
             request.setLabId("invalid-lab");
 
-            when(samlAuthService.handleAuthentication(any(SamlAuthRequest.class), eq(true)))
+            when(samlAuthService.authorizeAndIssue(any(SamlAuthRequest.class)))
                 .thenThrow(new SecurityException("No valid booking found for user"));
 
-            mockMvc.perform(post("/auth/saml-auth2")
+            mockMvc.perform(post("/auth/authorize-and-issue")
                     .contentType(MediaType.APPLICATION_JSON)
                     .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isUnauthorized())
@@ -200,14 +136,51 @@ class SamlAuthControllerTest {
             SamlAuthRequest request = createValidSamlRequest();
             request.setLabId("lab-123");
 
-            when(samlAuthService.handleAuthentication(any(SamlAuthRequest.class), eq(true)))
+            when(samlAuthService.authorizeAndIssue(any(SamlAuthRequest.class)))
                 .thenThrow(new RuntimeException("Blockchain unavailable"));
 
-            mockMvc.perform(post("/auth/saml-auth2")
+            mockMvc.perform(post("/auth/authorize-and-issue")
                     .contentType(MediaType.APPLICATION_JSON)
                     .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isInternalServerError())
                 .andExpect(jsonPath("$.error").value("Internal server error"));
+        }
+
+        @Test
+        @DisplayName("Should return retryable 503 while authorization is pending")
+        void shouldReturnRetryablePendingResponse() throws Exception {
+            SamlAuthRequest request = createValidSamlRequest();
+            request.setReservationKey("0x" + "a".repeat(64));
+            when(samlAuthService.authorizeAndIssue(any(SamlAuthRequest.class)))
+                .thenThrow(new AccessAuthorizationPendingException(
+                    "Access authorization was not confirmed on-chain within 27000 ms",
+                    request.getReservationKey(),
+                    "0x" + "b".repeat(64)
+                ));
+
+            mockMvc.perform(post("/auth/authorize-and-issue")
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isServiceUnavailable())
+                .andExpect(header().string("Retry-After", "1"))
+                .andExpect(jsonPath("$.error").value("ACCESS_AUTHORIZATION_PENDING"))
+                .andExpect(jsonPath("$.retryable").value(true))
+                .andExpect(jsonPath("$.reservationKey").value(request.getReservationKey()));
+        }
+
+        @Test
+        @DisplayName("Should return non-retryable conflict when authorization transaction reverts")
+        void shouldReturnRejectedResponse() throws Exception {
+            SamlAuthRequest request = createValidSamlRequest();
+            when(samlAuthService.authorizeAndIssue(any(SamlAuthRequest.class)))
+                .thenThrow(new AccessAuthorizationRejectedException("Access authorization transaction reverted on-chain"));
+
+            mockMvc.perform(post("/auth/authorize-and-issue")
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.error").value("ACCESS_AUTHORIZATION_REJECTED"))
+                .andExpect(jsonPath("$.retryable").value(false));
         }
     }
 

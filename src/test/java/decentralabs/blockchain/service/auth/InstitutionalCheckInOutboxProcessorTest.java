@@ -6,7 +6,6 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-import decentralabs.blockchain.dto.auth.CheckInResponse;
 import decentralabs.blockchain.service.wallet.BlockchainBookingService;
 import java.math.BigInteger;
 import java.time.Instant;
@@ -27,20 +26,20 @@ class InstitutionalCheckInOutboxProcessorTest {
     private BlockchainBookingService bookingService;
 
     @Mock
-    private InstitutionalCheckInSubmissionService submissionService;
+    private InstitutionalWalletNonceDispatcher nonceDispatcher;
 
     private InstitutionalCheckInOutboxProcessor processor;
 
     @BeforeEach
     void setUp() {
-        processor = new InstitutionalCheckInOutboxProcessor(outboxService, bookingService, submissionService);
+        processor = new InstitutionalCheckInOutboxProcessor(outboxService, bookingService, nonceDispatcher);
         ReflectionTestUtils.setField(processor, "maxAttempts", 3);
         ReflectionTestUtils.setField(processor, "retryBaseDelayMs", 1000L);
         ReflectionTestUtils.setField(processor, "retryMaxDelayMs", 10_000L);
     }
 
     @Test
-    void submitsConfirmedReservationAndMarksSuccess() {
+    void submitsConfirmedReservationAndMarksSuccess() throws Exception {
         var record = record(0);
         when(outboxService.claim(1L)).thenReturn(true);
         when(bookingService.getCheckInBookingInfo(
@@ -49,18 +48,13 @@ class InstitutionalCheckInOutboxProcessorTest {
             "42",
             null
         )).thenReturn(Map.of("reservationStatus", BigInteger.ONE));
-        CheckInResponse response = new CheckInResponse();
-        response.setTxHash("0xtx");
-        when(submissionService.submit("0xabc", "0xpuchash")).thenReturn(response);
-
         processor.process(record);
 
-        verify(submissionService).submit("0xabc", "0xpuchash");
-        verify(outboxService).markSucceeded(1L, "0xtx");
+        verify(nonceDispatcher).dispatch(record);
     }
 
     @Test
-    void marksSuccessWithoutSubmittingWhenReservationAccessAlreadyAuthorized() {
+    void marksSuccessWithoutSubmittingWhenReservationAccessAlreadyAuthorized() throws Exception {
         var record = record(0);
         when(outboxService.claim(1L)).thenReturn(true);
         when(bookingService.getCheckInBookingInfo(any(), any(), any(), eq(null)))
@@ -68,18 +62,18 @@ class InstitutionalCheckInOutboxProcessorTest {
 
         processor.process(record);
 
-        verify(submissionService, never()).submit(any(), any());
-        verify(outboxService).markSucceeded(1L, null);
+        verify(nonceDispatcher, never()).dispatch(any());
+        verify(outboxService).markMinedSuccess(1L, null);
     }
 
     @Test
-    void schedulesRetryWhenSubmissionFailsBeforeMaxAttempts() {
+    void schedulesRetryWhenSubmissionFailsBeforeMaxAttempts() throws Exception {
         var record = record(1);
         when(outboxService.claim(1L)).thenReturn(true);
         when(bookingService.getCheckInBookingInfo(any(), any(), any(), eq(null)))
             .thenReturn(Map.of("reservationStatus", BigInteger.ONE));
-        when(submissionService.submit("0xabc", "0xpuchash"))
-            .thenThrow(new IllegalStateException("nonce pending"));
+        org.mockito.Mockito.doThrow(new IllegalStateException("nonce pending"))
+            .when(nonceDispatcher).dispatch(record);
 
         processor.process(record);
 
@@ -87,13 +81,13 @@ class InstitutionalCheckInOutboxProcessorTest {
     }
 
     @Test
-    void marksFailedWhenMaxAttemptsIsReached() {
+    void marksFailedWhenMaxAttemptsIsReached() throws Exception {
         var record = record(2);
         when(outboxService.claim(1L)).thenReturn(true);
         when(bookingService.getCheckInBookingInfo(any(), any(), any(), eq(null)))
             .thenReturn(Map.of("reservationStatus", BigInteger.ONE));
-        when(submissionService.submit("0xabc", "0xpuchash"))
-            .thenThrow(new IllegalStateException("rpc down"));
+        org.mockito.Mockito.doThrow(new IllegalStateException("rpc down"))
+            .when(nonceDispatcher).dispatch(record);
 
         processor.process(record);
 
@@ -110,7 +104,11 @@ class InstitutionalCheckInOutboxProcessorTest {
             "session-1",
             "PENDING",
             attempts,
-            Instant.now()
+            Instant.now(),
+            null,
+            "0x1111111111111111111111111111111111111111",
+            null,
+            null
         );
     }
 }

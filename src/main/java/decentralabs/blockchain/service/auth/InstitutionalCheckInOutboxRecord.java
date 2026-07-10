@@ -1,6 +1,7 @@
 package decentralabs.blockchain.service.auth;
 
 import java.time.Instant;
+import java.math.BigInteger;
 
 public record InstitutionalCheckInOutboxRecord(
     long id,
@@ -11,6 +12,10 @@ public record InstitutionalCheckInOutboxRecord(
     String accessSessionId,
     String status,
     int attempts,
-    Instant nextAttemptAt
+    Instant nextAttemptAt,
+    String txHash,
+    String walletAddress,
+    BigInteger nonce,
+    Instant submittedAt
 ) {
 }

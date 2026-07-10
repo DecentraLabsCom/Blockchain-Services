@@ -22,14 +22,12 @@ import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.test.util.ReflectionTestUtils;
 import org.web3j.crypto.Credentials;
 import org.web3j.crypto.Hash;
-import org.web3j.crypto.Sign;
 import org.web3j.utils.Numeric;
 
 @ExtendWith(MockitoExtension.class)
@@ -62,6 +60,12 @@ class InstitutionalCheckInServiceTest {
     @Mock
     private RemoteInstitutionalCheckInClient remoteCheckInClient;
 
+    @Mock
+    private InstitutionalCheckInOutboxService outboxService;
+
+    @Mock
+    private InstitutionalWalletNonceDispatcher nonceDispatcher;
+
     @InjectMocks
     private InstitutionalCheckInService service;
 
@@ -75,10 +79,9 @@ class InstitutionalCheckInServiceTest {
     }
 
     @Test
-    void checkInShouldBuildSignedRequestAndSubmitIt() throws Exception {
+    void checkInShouldQueueAndDispatchWithDurableNonceCoordination() throws Exception {
         InstitutionalCheckInRequest request = validRequest();
         SamlAssertionAttributes saml = samlAttributes();
-        byte[] digest = Hash.sha3("institutional-checkin".getBytes(StandardCharsets.UTF_8));
         CheckInResponse onChainResponse = new CheckInResponse();
         onChainResponse.setValid(true);
         onChainResponse.setTxHash("0xtx123");
@@ -90,55 +93,49 @@ class InstitutionalCheckInServiceTest {
         when(institutionalWalletService.getInstitutionalWalletAddress()).thenReturn(credentials.getAddress());
         when(directoryService.isAuthorizedCheckInSigner("0x1111111111111111111111111111111111111111", credentials.getAddress()))
             .thenReturn(true);
-        when(institutionalWalletService.getInstitutionalCredentials()).thenReturn(credentials);
-        when(checkInVerifier.buildDigest(eq(credentials.getAddress()), eq(normalizeBytes32("0xabc")), eq(computePucHash("puc-123")), any(Long.class)))
-            .thenReturn(digest);
-        when(checkInOnChainService.verifyAndSubmit(any(CheckInRequest.class))).thenReturn(onChainResponse);
+        InstitutionalCheckInOutboxRecord record = queuedRecord();
+        when(outboxService.enqueueAccessGranted(eq("0xabc"), eq("42"), eq("0x1111111111111111111111111111111111111111"), any(), eq("0xabc")))
+            .thenReturn(record);
+        when(outboxService.claim(record.id())).thenReturn(true);
+        when(nonceDispatcher.dispatch(record)).thenReturn(onChainResponse);
 
         CheckInResponse response = service.checkIn(request);
 
         assertThat(response).isSameAs(onChainResponse);
         verify(bookingService).getCheckInBookingInfo("0x1111111111111111111111111111111111111111", "0xabc", "42", "puc-123");
 
-        ArgumentCaptor<CheckInRequest> captor = ArgumentCaptor.forClass(CheckInRequest.class);
-        verify(checkInOnChainService).verifyAndSubmit(captor.capture());
-        CheckInRequest checkInRequest = captor.getValue();
-
-        assertThat(checkInRequest.getReservationKey()).isEqualTo("0xabc");
-        assertThat(checkInRequest.getSigner()).isEqualTo(credentials.getAddress());
-        assertThat(checkInRequest.getPuc()).isEqualTo("puc-123");
-        assertThat(checkInRequest.getTimestamp()).isNotNull();
-        assertThat(checkInRequest.getSignature()).isEqualTo(signatureToHex(Sign.signMessage(digest, credentials.getEcKeyPair(), false)));
+        verify(outboxService).claim(record.id());
+        verify(nonceDispatcher).dispatch(record);
     }
 
     @Test
     void checkInShouldKeepLocalFlowWhenPayerAndProviderUseLocalWallet() throws Exception {
         InstitutionalCheckInRequest request = validRequest();
-        request.setInstitutionalProviderWallet(credentials.getAddress());
+        request.setPayerInstitutionWallet(credentials.getAddress());
         SamlAssertionAttributes saml = samlAttributes();
-        byte[] digest = Hash.sha3("same-institution-checkin".getBytes(StandardCharsets.UTF_8));
         CheckInResponse onChainResponse = new CheckInResponse();
         onChainResponse.setValid(true);
         onChainResponse.setTxHash("0xsame");
 
         when(samlValidationService.validateSamlAssertionDetailed("valid-saml")).thenReturn(saml);
         when(marketplaceEndpointAuthService.enforceToken("market-token", null))
-            .thenReturn(marketplaceClaims(Map.of("institutionalProviderWallet", credentials.getAddress())));
+            .thenReturn(marketplaceClaims(Map.of("payerInstitutionWallet", credentials.getAddress())));
         when(bookingService.getCheckInBookingInfo(credentials.getAddress(), "0xabc", "42", "puc-123"))
             .thenReturn(Map.of("reservationKey", "0xabc"));
         when(institutionalWalletService.getInstitutionalWalletAddress()).thenReturn(credentials.getAddress());
         when(directoryService.isAuthorizedCheckInSigner(credentials.getAddress(), credentials.getAddress()))
             .thenReturn(true);
-        when(institutionalWalletService.getInstitutionalCredentials()).thenReturn(credentials);
-        when(checkInVerifier.buildDigest(eq(credentials.getAddress()), eq(normalizeBytes32("0xabc")), eq(computePucHash("puc-123")), any(Long.class)))
-            .thenReturn(digest);
-        when(checkInOnChainService.verifyAndSubmit(any(CheckInRequest.class))).thenReturn(onChainResponse);
+        InstitutionalCheckInOutboxRecord record = queuedRecord();
+        when(outboxService.enqueueAccessGranted(eq("0xabc"), eq("42"), eq(credentials.getAddress()), any(), eq("0xabc")))
+            .thenReturn(record);
+        when(outboxService.claim(record.id())).thenReturn(true);
+        when(nonceDispatcher.dispatch(record)).thenReturn(onChainResponse);
 
         CheckInResponse response = service.checkIn(request);
 
         assertThat(response).isSameAs(onChainResponse);
         verify(remoteCheckInClient, never()).submit(any(), any());
-        verify(checkInOnChainService).verifyAndSubmit(any(CheckInRequest.class));
+        verify(nonceDispatcher).dispatch(record);
     }
 
     @Test
@@ -252,11 +249,11 @@ class InstitutionalCheckInServiceTest {
 
         when(samlValidationService.validateSamlAssertionDetailed("valid-saml")).thenReturn(samlAttributes());
         when(marketplaceEndpointAuthService.enforceToken("market-token", null))
-            .thenReturn(marketplaceClaims(Map.of("institutionalProviderWallet", "0x9999999999999999999999999999999999999999")));
+            .thenReturn(marketplaceClaims(Map.of("payerInstitutionWallet", "0x9999999999999999999999999999999999999999")));
 
         assertThatThrownBy(() -> service.checkIn(request))
             .isInstanceOf(SecurityException.class)
-            .hasMessageContaining("institutionalProviderWallet mismatch");
+            .hasMessageContaining("payerInstitutionWallet mismatch");
     }
 
     @Test
@@ -347,7 +344,7 @@ class InstitutionalCheckInServiceTest {
         request.setSamlAssertion("valid-saml");
         request.setReservationKey("0xabc");
         request.setLabId("42");
-        request.setInstitutionalProviderWallet("0x1111111111111111111111111111111111111111");
+        request.setPayerInstitutionWallet("0x1111111111111111111111111111111111111111");
         return request;
     }
 
@@ -371,13 +368,21 @@ class InstitutionalCheckInServiceTest {
         Map<String, Object> claims = new HashMap<>();
         claims.put("affiliation", "org.example");
         claims.put("puc", "puc-123");
-        claims.put("institutionalProviderWallet", "0x1111111111111111111111111111111111111111");
+        claims.put("payerInstitutionWallet", "0x1111111111111111111111111111111111111111");
         claims.put("purpose", "lab_access");
         claims.put("reservationKey", "0xabc");
         claims.put("labId", "42");
         claims.put("samlAssertionHash", samlAssertionHash("valid-saml"));
         claims.putAll(overrides);
         return claims;
+    }
+
+    private InstitutionalCheckInOutboxRecord queuedRecord() {
+        return new InstitutionalCheckInOutboxRecord(
+            1L, "0xabc", "42", "0x1111111111111111111111111111111111111111",
+            computePucHash("puc-123"), "0xabc", "PENDING", 0, java.time.Instant.now(), null,
+            "0x1111111111111111111111111111111111111111", null, null
+        );
     }
 
     private static String samlAssertionHash(String samlAssertion) {
@@ -400,11 +405,4 @@ class InstitutionalCheckInServiceTest {
         return "0x" + clean;
     }
 
-    private static String signatureToHex(Sign.SignatureData signatureData) {
-        byte[] sigBytes = new byte[65];
-        System.arraycopy(signatureData.getR(), 0, sigBytes, 0, 32);
-        System.arraycopy(signatureData.getS(), 0, sigBytes, 32, 32);
-        sigBytes[64] = signatureData.getV()[0];
-        return Numeric.toHexString(sigBytes);
-    }
 }

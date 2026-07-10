@@ -32,17 +32,17 @@ public class SecurityConfig {
     @Value("${endpoint.jwks:/auth/jwks}")
     private @Nonnull String jwksEndpoint = "/auth/jwks";
     
-    @Value("${endpoint.saml-auth:/auth/saml-auth}")
-    private @Nonnull String samlAuthEndpoint = "/auth/saml-auth";
-    
-    @Value("${endpoint.saml-auth2:/auth/saml-auth2}")
-    private @Nonnull String samlAuth2Endpoint = "/auth/saml-auth2";
+    @Value("${endpoint.authorize-and-issue:/auth/authorize-and-issue}")
+    private @Nonnull String authorizeAndIssueEndpoint = "/auth/authorize-and-issue";
 
     @Value("${endpoint.checkin-institutional:/auth/checkin-institutional}")
     private @Nonnull String checkinInstitutionalEndpoint = "/auth/checkin-institutional";
 
     @Value("${endpoint.access-credential:/auth/access-credential}")
     private @Nonnull String accessCredentialEndpoint = "/auth/access-credential";
+
+    @Value("${endpoint.access-code:/auth/access-code}")
+    private @Nonnull String accessCodeEndpoint = "/auth/access-code";
     
     @Value("${endpoint.health:/health}")
     private @Nonnull String healthEndpoint = "/health";
@@ -90,10 +90,10 @@ public class SecurityConfig {
                 .ignoringRequestMatchers(
                     authBasePath + "/.well-known/*",
                     jwksEndpoint,
-                    samlAuthEndpoint,
-                    samlAuth2Endpoint,
+                    authorizeAndIssueEndpoint,
                     checkinInstitutionalEndpoint,
                     accessCredentialEndpoint,
+                    accessCodeEndpoint + "/**",
                     healthEndpoint,
                     "/actuator/health/**",
                     "/actuator/info",
@@ -117,10 +117,10 @@ public class SecurityConfig {
                 authorize.requestMatchers("/").permitAll();
                 authorize.requestMatchers(authBasePath + "/.well-known/*").permitAll();
                 authorize.requestMatchers(jwksEndpoint).permitAll();
-                authorize.requestMatchers(samlAuthEndpoint).permitAll();
-                authorize.requestMatchers(samlAuth2Endpoint).permitAll();
+                authorize.requestMatchers(authorizeAndIssueEndpoint).permitAll();
                 authorize.requestMatchers(checkinInstitutionalEndpoint).permitAll();
                 authorize.requestMatchers(accessCredentialEndpoint).permitAll();
+                authorize.requestMatchers(accessCodeEndpoint + "/**").permitAll();
                 authorize.requestMatchers(fmuProviderDescribeTokenEndpoint).permitAll();
                 // Internal endpoint — only reachable within Docker network; not exposed via nginx.
                 // FmuSessionTicketService validates the FMU JWT supplied in the Authorization header.
@@ -177,10 +177,10 @@ public class SecurityConfig {
 
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
         // Public endpoints
-        source.registerCorsConfiguration(samlAuthEndpoint, publicConfiguration);
-        source.registerCorsConfiguration(samlAuth2Endpoint, publicConfiguration);
+        source.registerCorsConfiguration(authorizeAndIssueEndpoint, publicConfiguration);
         source.registerCorsConfiguration(checkinInstitutionalEndpoint, publicConfiguration);
         source.registerCorsConfiguration(accessCredentialEndpoint, publicConfiguration);
+        source.registerCorsConfiguration(accessCodeEndpoint + "/**", publicConfiguration);
         source.registerCorsConfiguration(fmuProviderDescribeTokenEndpoint, publicConfiguration);
         source.registerCorsConfiguration(healthEndpoint, publicConfiguration);
         source.registerCorsConfiguration(intentsEndpoint + "/**", publicConfiguration);

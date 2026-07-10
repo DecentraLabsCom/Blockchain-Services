@@ -22,7 +22,7 @@ import decentralabs.blockchain.service.auth.KeyService;
 
 @SpringBootTest(classes = AuthController.class)
 @TestPropertySource(properties = {
-    "endpoint.saml-auth2=/auth/saml-auth2",
+    "endpoint.authorize-and-issue=/auth/authorize-and-issue",
     "endpoint.jwks=/auth/jwks"
 })
 class AuthControllerIntegrationTest {
@@ -34,7 +34,7 @@ class AuthControllerIntegrationTest {
         AuthController controller = new AuthController(this.keyService, this.backendUrlResolver);
         // Manually set @Value-injected fields since we instantiate controller directly
         org.springframework.test.util.ReflectionTestUtils.setField(controller, "authPath", "/auth");
-        org.springframework.test.util.ReflectionTestUtils.setField(controller, "samlAuth2Endpoint", "/auth/saml-auth2");
+        org.springframework.test.util.ReflectionTestUtils.setField(controller, "authorizeAndIssueEndpoint", "/auth/authorize-and-issue");
         org.springframework.test.util.ReflectionTestUtils.setField(controller, "jwksEndpoint", "/auth/jwks");
 
         this.mockMvc = MockMvcBuilders.standaloneSetup(controller)
@@ -57,7 +57,7 @@ class AuthControllerIntegrationTest {
         mockMvc.perform(get("/.well-known/openid-configuration"))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.issuer").value("https://backend.example.com/auth"))
-            .andExpect(jsonPath("$.authorization_endpoint").value("https://backend.example.com/auth/saml-auth2"))
+            .andExpect(jsonPath("$.authorization_endpoint").value("https://backend.example.com/auth/authorize-and-issue"))
             .andExpect(jsonPath("$.jwks_uri").value("https://backend.example.com/auth/jwks"));
     }
 

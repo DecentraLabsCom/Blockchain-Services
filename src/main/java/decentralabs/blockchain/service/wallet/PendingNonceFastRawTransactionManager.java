@@ -18,11 +18,25 @@ public class PendingNonceFastRawTransactionManager extends FastRawTransactionMan
 
     private final Web3j web3j;
     private final Credentials credentials;
+    private final BigInteger explicitNonce;
 
     public PendingNonceFastRawTransactionManager(Web3j web3j, Credentials credentials, long chainId) {
         super(web3j, credentials, chainId);
         this.web3j = web3j;
         this.credentials = credentials;
+        this.explicitNonce = null;
+    }
+
+    public PendingNonceFastRawTransactionManager(
+        Web3j web3j,
+        Credentials credentials,
+        long chainId,
+        BigInteger explicitNonce
+    ) {
+        super(web3j, credentials, chainId);
+        this.web3j = web3j;
+        this.credentials = credentials;
+        this.explicitNonce = explicitNonce;
     }
 
     public PendingNonceFastRawTransactionManager(
@@ -34,10 +48,14 @@ public class PendingNonceFastRawTransactionManager extends FastRawTransactionMan
         super(web3j, credentials, chainId, receiptProcessor);
         this.web3j = web3j;
         this.credentials = credentials;
+        this.explicitNonce = null;
     }
 
     @Override
     protected BigInteger getNonce() throws IOException {
+        if (explicitNonce != null) {
+            return explicitNonce;
+        }
         EthGetTransactionCount ethGetTransactionCount = web3j.ethGetTransactionCount(
             credentials.getAddress(),
             DefaultBlockParameterName.PENDING
