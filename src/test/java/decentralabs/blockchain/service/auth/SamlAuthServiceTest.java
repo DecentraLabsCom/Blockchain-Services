@@ -144,17 +144,98 @@ class SamlAuthServiceTest {
                 .thenReturn(bookingInfo);
             when(blockchainService.getAccessAuthorizationState("0xwallet", "0xreservation", "42", TEST_PUC))
                 .thenReturn(Map.of("reservationStatus", java.math.BigInteger.ONE));
-            when(accessAuthorizationProvisioningService.tryStart("0xreservation")).thenReturn(true);
+            var lease = new AccessAuthorizationProvisioningService.ProvisioningLease(
+                "0xreservation", "fence-token", 1L
+            );
+            when(accessAuthorizationProvisioningService.tryStart("0xreservation")).thenReturn(lease);
+            when(accessAuthorizationProvisioningService.isCurrent(lease)).thenReturn(true);
+            when(accessAuthorizationProvisioningService.markWaiting(lease)).thenReturn(true);
+            when(accessAuthorizationProvisioningService.heartbeat(lease)).thenReturn(true);
+            when(accessAuthorizationProvisioningService.beginRollback(lease)).thenReturn(true);
             ReflectionTestUtils.setField(samlAuthService, "accessAuthorizationWaitTimeoutMs", 0L);
 
             assertThatThrownBy(() -> samlAuthService.issueAccessCredential(request))
                 .isInstanceOf(decentralabs.blockchain.exception.AccessAuthorizationPendingException.class);
 
-            verify(blockchainService).provisionGuacamoleAccess(bookingInfo, false);
+            verify(blockchainService).provisionGuacamoleAccess(bookingInfo, false, "fence-token");
             verify(blockchainService).deletePreparedGuacamoleAccess(bookingInfo);
-            verify(accessAuthorizationProvisioningService).markRolledBack("0xreservation");
+            verify(accessAuthorizationProvisioningService).markRolledBack(lease);
             verify(jwtService, never()).generateIssuedToken(eq(null), any());
             verify(accessCredentialAuditService, never()).recordJwtIssued(any(), any(), any(), any());
+        }
+
+        @Test
+        @DisplayName("Should not activate a prepared Guacamole user after its provisioning lease is fenced out")
+        void shouldNotActivateWhenProvisioningLeaseIsSuperseded() throws Exception {
+            ProviderAccessCredentialRequest request = new ProviderAccessCredentialRequest();
+            request.setMarketplaceToken("provider-token-fenced");
+            request.setReservationKey("0xreservation");
+            request.setLabId("42");
+            when(marketplaceEndpointAuthService.enforceToken(eq("provider-token-fenced"), eq(null)))
+                .thenReturn(Map.of(
+                    "puc", TEST_PUC, "affiliation", TEST_AFFILIATION,
+                    "bookingInfoAllowed", true, "purpose", "lab_access",
+                    "reservationKey", "0xreservation", "labId", "42",
+                    "payerInstitutionWallet", "0xwallet"
+                ));
+            Map<String, Object> bookingInfo = new HashMap<>(Map.of(
+                "labURL", "https://lab.example.com", "reservationKey", "0xreservation",
+                "reservationStatus", java.math.BigInteger.ONE, "resourceType", "lab"
+            ));
+            var lease = new AccessAuthorizationProvisioningService.ProvisioningLease(
+                "0xreservation", "fence-token", 1L
+            );
+            when(blockchainService.getBookingInfoForCredentialPreparation("0xwallet", "0xreservation", "42", TEST_PUC))
+                .thenReturn(bookingInfo);
+            when(blockchainService.getAccessAuthorizationState("0xwallet", "0xreservation", "42", TEST_PUC))
+                .thenReturn(Map.of("reservationStatus", java.math.BigInteger.valueOf(2)));
+            when(accessAuthorizationProvisioningService.tryStart("0xreservation")).thenReturn(lease);
+            when(accessAuthorizationProvisioningService.isCurrent(lease)).thenReturn(true, false);
+            when(accessAuthorizationProvisioningService.markWaiting(lease)).thenReturn(true);
+            when(accessAuthorizationProvisioningService.heartbeat(lease)).thenReturn(true);
+            when(accessAuthorizationProvisioningService.beginRollback(lease)).thenReturn(true);
+
+            assertThatThrownBy(() -> samlAuthService.issueAccessCredential(request))
+                .isInstanceOf(decentralabs.blockchain.exception.AccessAuthorizationPendingException.class);
+
+            verify(blockchainService).provisionGuacamoleAccess(bookingInfo, false, "fence-token");
+            verify(blockchainService, never()).activatePreparedGuacamoleAccess(bookingInfo, "fence-token");
+            verify(blockchainService).deletePreparedGuacamoleAccess(bookingInfo);
+        }
+
+        @Test
+        @DisplayName("Should fence the already-authorized Guacamole fast path")
+        void shouldFenceAlreadyAuthorizedGuacamoleAccess() throws Exception {
+            ProviderAccessCredentialRequest request = new ProviderAccessCredentialRequest();
+            request.setMarketplaceToken("provider-token-authorized");
+            request.setReservationKey("0xreservation");
+            request.setLabId("42");
+            when(marketplaceEndpointAuthService.enforceToken(eq("provider-token-authorized"), eq(null)))
+                .thenReturn(Map.of(
+                    "puc", TEST_PUC, "affiliation", TEST_AFFILIATION,
+                    "bookingInfoAllowed", true, "purpose", "lab_access",
+                    "reservationKey", "0xreservation", "labId", "42",
+                    "payerInstitutionWallet", "0xwallet"
+                ));
+            Map<String, Object> bookingInfo = new HashMap<>(Map.of(
+                "labURL", "https://lab.example.com/guacamole/", "reservationKey", "0xreservation",
+                "reservationStatus", java.math.BigInteger.valueOf(2), "resourceType", "lab"
+            ));
+            var lease = new AccessAuthorizationProvisioningService.ProvisioningLease(
+                "0xreservation", "fence-token", 2L
+            );
+            when(blockchainService.getBookingInfoForCredentialPreparation("0xwallet", "0xreservation", "42", TEST_PUC))
+                .thenReturn(bookingInfo);
+            when(accessAuthorizationProvisioningService.tryStart("0xreservation")).thenReturn(lease);
+            when(accessAuthorizationProvisioningService.isCurrent(lease)).thenReturn(true);
+            when(accessAuthorizationProvisioningService.heartbeat(lease)).thenReturn(true);
+            when(accessAuthorizationProvisioningService.markDelivered(lease)).thenReturn(true);
+
+            samlAuthService.issueAccessCredential(request);
+
+            verify(blockchainService).provisionGuacamoleAccess(bookingInfo, false, "fence-token");
+            verify(blockchainService).activatePreparedGuacamoleAccess(bookingInfo, "fence-token");
+            verify(accessAuthorizationProvisioningService).markDelivered(lease);
         }
     }
 }

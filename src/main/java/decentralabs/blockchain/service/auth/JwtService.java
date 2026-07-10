@@ -62,6 +62,7 @@ public class JwtService {
         BigInteger exp = null;
         String resourceType = null;
         String accessKey = null;
+        String labURL = null;
     
         if (bookingInfo != null) {
             labId = (BigInteger) bookingInfo.get("lab");
@@ -71,6 +72,7 @@ public class JwtService {
             exp = (BigInteger) bookingInfo.get("exp");
             resourceType = (String) bookingInfo.get("resourceType");
             accessKey = (String) bookingInfo.get("accessKey");
+            labURL = (String) bookingInfo.get("labURL");
         }
     
         String reservationKey = null;
@@ -113,6 +115,9 @@ public class JwtService {
         }
         if (accessKey != null) {
             jwtBuilder.claim("accessKey", accessKey);
+        }
+        if (labURL != null) {
+            jwtBuilder.claim("labURL", labURL);
         }
         if (reservationKey != null && !reservationKey.isBlank()) {
             jwtBuilder.claim("reservationKey", reservationKey);

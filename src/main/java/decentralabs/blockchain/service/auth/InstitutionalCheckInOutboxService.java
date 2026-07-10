@@ -41,17 +41,7 @@ public class InstitutionalCheckInOutboxService {
                 status, attempts, next_attempt_at, created_at, updated_at
             ) VALUES (?, ?, ?, ?, ?, ?, 'PENDING', 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
             ON DUPLICATE KEY UPDATE
-                id = LAST_INSERT_ID(id),
-                lab_id = VALUES(lab_id),
-                institutional_wallet = VALUES(institutional_wallet),
-                wallet_address = IF(institutional_checkin_outbox.status = 'MINED_SUCCESS', institutional_checkin_outbox.wallet_address, VALUES(wallet_address)),
-                puc_hash = VALUES(puc_hash),
-                access_session_id = VALUES(access_session_id),
-                status = IF(institutional_checkin_outbox.status = 'MINED_SUCCESS', institutional_checkin_outbox.status, 'PENDING'),
-                attempts = IF(institutional_checkin_outbox.status = 'MINED_SUCCESS', institutional_checkin_outbox.attempts, 0),
-                next_attempt_at = IF(institutional_checkin_outbox.status = 'MINED_SUCCESS', institutional_checkin_outbox.next_attempt_at, CURRENT_TIMESTAMP),
-                last_error = IF(institutional_checkin_outbox.status = 'MINED_SUCCESS', institutional_checkin_outbox.last_error, NULL),
-                updated_at = CURRENT_TIMESTAMP
+                id = LAST_INSERT_ID(id)
             """,
             reservationKey,
             labId,
@@ -78,6 +68,32 @@ public class InstitutionalCheckInOutboxService {
             (rs, rowNum) -> mapRow(rs),
             id
         );
+    }
+
+    /**
+     * Starts a new check-in generation only after the caller has revalidated
+     * the reservation. It never reuses a transaction hash or nonce from a
+     * terminal generation.
+     */
+    public InstitutionalCheckInOutboxRecord restartTerminalFailure(long id) {
+        requireConfigured();
+        jdbcTemplate.update(
+            """
+            UPDATE institutional_checkin_outbox
+            SET status = 'PENDING',
+                attempts = 0,
+                next_attempt_at = CURRENT_TIMESTAMP,
+                tx_hash = NULL,
+                nonce = NULL,
+                submitted_at = NULL,
+                mined_at = NULL,
+                last_error = NULL,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE id = ? AND status IN ('MINED_FAILED', 'FAILED')
+            """,
+            id
+        );
+        return findById(id);
     }
 
     public List<InstitutionalCheckInOutboxRecord> findDue(Instant now, int limit) {

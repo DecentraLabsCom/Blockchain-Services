@@ -12,6 +12,7 @@ import decentralabs.blockchain.exception.AccessAuthorizationPendingException;
 import decentralabs.blockchain.exception.AccessAuthorizationRejectedException;
 import decentralabs.blockchain.exception.SamlAuthenticationException;
 import decentralabs.blockchain.service.auth.InstitutionalCheckInService;
+import decentralabs.blockchain.service.auth.MarketplaceEndpointAuthService;
 import decentralabs.blockchain.service.auth.SamlAuthService;
 import decentralabs.blockchain.service.auth.AccessCodeService;
 import lombok.RequiredArgsConstructor;
@@ -19,7 +20,12 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
 import java.util.Map;
 import java.util.LinkedHashMap;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -33,15 +39,58 @@ public class SamlAuthController {
     private final SamlAuthService samlAuthService;
     private final InstitutionalCheckInService institutionalCheckInService;
     private final AccessCodeService accessCodeService;
+    private final MarketplaceEndpointAuthService marketplaceEndpointAuthService;
+
+    @Value("${auth.access-code.redeemer-token:}")
+    private String accessCodeRedeemerToken;
+
+    @Value("${auth.marketplace-endpoints.enabled:true}")
+    private boolean marketplaceEndpointAuthenticationEnabled;
 
     @PostMapping("/access-code/issue")
-    public ResponseEntity<AccessCodeResponse> issueAccessCode(@RequestBody AccessCodeIssueRequest request) {
-        return ResponseEntity.ok(accessCodeService.issue(request.getToken(), request.getLabURL()));
+    public ResponseEntity<AccessCodeResponse> issueAccessCode(
+        @RequestHeader(value = "X-Marketplace-Authorization", required = false) String marketplaceAuthorization,
+        @RequestBody AccessCodeIssueRequest request
+    ) {
+        String marketplaceToken = bearerToken(marketplaceAuthorization);
+        if (!marketplaceEndpointAuthenticationEnabled || marketplaceToken == null) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
+        }
+        try {
+            marketplaceEndpointAuthService.enforceToken(marketplaceToken, null);
+        } catch (RuntimeException ex) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
+        }
+        return ResponseEntity.ok(accessCodeService.issue(request.getToken()));
     }
 
     @PostMapping("/access-code/redeem")
-    public ResponseEntity<AuthResponse> redeemAccessCode(@RequestBody AccessCodeRedeemRequest request) {
+    public ResponseEntity<AuthResponse> redeemAccessCode(
+        @RequestHeader(value = "X-Access-Code-Redeemer-Token", required = false) String redeemerToken,
+        @RequestBody AccessCodeRedeemRequest request
+    ) {
+        if (!constantTimeEquals(accessCodeRedeemerToken, redeemerToken)) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
+        }
         return ResponseEntity.ok(accessCodeService.redeem(request.getAccessCode()));
+    }
+
+    private boolean constantTimeEquals(String expected, String actual) {
+        if (expected == null || expected.isBlank() || "CHANGE_ME".equalsIgnoreCase(expected) || actual == null) {
+            return false;
+        }
+        return MessageDigest.isEqual(
+            expected.getBytes(StandardCharsets.UTF_8),
+            actual.getBytes(StandardCharsets.UTF_8)
+        );
+    }
+
+    private String bearerToken(String authorization) {
+        if (authorization == null || !authorization.startsWith("Bearer ")) {
+            return null;
+        }
+        String token = authorization.substring("Bearer ".length()).trim();
+        return token.isEmpty() ? null : token;
     }
 
     @PostMapping("/authorize-and-issue")

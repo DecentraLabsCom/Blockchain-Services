@@ -19,10 +19,10 @@ public class InstitutionalCheckInReceiptMonitor {
     @Value("${institutional.checkin.outbox.batch-size:10}")
     private int batchSize;
 
-    @Value("${institutional.checkin.outbox.stuck-transaction-ms:120000}")
+    @Value("${institutional.checkin.outbox.stuck-transaction-ms:15000}")
     private long stuckTransactionMs;
 
-    @Scheduled(fixedDelayString = "${institutional.checkin.outbox.receipt-interval-ms:5000}")
+    @Scheduled(fixedDelayString = "${institutional.checkin.outbox.receipt-interval-ms:2000}")
     public void monitorSubmittedCheckIns() {
         List<InstitutionalCheckInOutboxRecord> submitted = outboxService.findSubmitted(
             Instant.now(), Math.max(1, batchSize)

@@ -55,13 +55,18 @@ public class InstitutionalAccessCheckInCoordinator {
 
         String configuredSigner = normalizeAddress(institutionalWalletService.getInstitutionalWalletAddress());
         if (directoryService.isAuthorizedCheckInSigner(institutionalWallet, configuredSigner)) {
-            outboxService.enqueueAccessGranted(
+            InstitutionalCheckInOutboxRecord record = outboxService.enqueueAccessGranted(
                 reservationKey,
                 labId,
                 institutionalWallet,
                 PucHashUtil.hashPuc(puc),
                 accessSessionId
             );
+            if ("MINED_FAILED".equals(record.status()) || "FAILED".equals(record.status())) {
+                // This point is reached only after the provider has performed
+                // the full CONFIRMED/window validation for the new request.
+                outboxService.restartTerminalFailure(record.id());
+            }
             return;
         }
 

@@ -180,7 +180,6 @@ public class SecurityConfig {
         source.registerCorsConfiguration(authorizeAndIssueEndpoint, publicConfiguration);
         source.registerCorsConfiguration(checkinInstitutionalEndpoint, publicConfiguration);
         source.registerCorsConfiguration(accessCredentialEndpoint, publicConfiguration);
-        source.registerCorsConfiguration(accessCodeEndpoint + "/**", publicConfiguration);
         source.registerCorsConfiguration(fmuProviderDescribeTokenEndpoint, publicConfiguration);
         source.registerCorsConfiguration(healthEndpoint, publicConfiguration);
         source.registerCorsConfiguration(intentsEndpoint + "/**", publicConfiguration);

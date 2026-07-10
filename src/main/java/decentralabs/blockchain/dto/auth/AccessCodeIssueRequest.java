@@ -7,5 +7,4 @@ import lombok.Setter;
 @Setter
 public class AccessCodeIssueRequest {
     private String token;
-    private String labURL;
 }

@@ -123,6 +123,14 @@ public class BlockchainBookingService {
     }
 
     public void provisionGuacamoleAccess(Map<String, Object> bookingInfo, boolean activate) {
+        provisionGuacamoleAccess(bookingInfo, activate, null);
+    }
+
+    /**
+     * Uses a lease-specific suffix for provisional users so a stale request can
+     * only activate or delete its own Guacamole entity.
+     */
+    public void provisionGuacamoleAccess(Map<String, Object> bookingInfo, boolean activate, String fencingToken) {
         if (!"lab".equals(bookingInfo.get("resourceType"))) {
             return;
         }
@@ -131,7 +139,7 @@ public class BlockchainBookingService {
             throw new IllegalArgumentException("Physical Guacamole labs require accessKey format guac:id:<connection_id>");
         }
         String reservationKey = (String) bookingInfo.get("reservationKey");
-        String sessionId = guacamoleSessionId(reservationKey);
+        String sessionId = guacamoleSessionId(reservationKey, fencingToken);
         BigInteger expiresAt = toBigInteger(bookingInfo.get("exp"));
         String accessUri = (String) bookingInfo.get("labURL");
         var provisioned = guacamoleProvisioningService.provisionTemporaryUser(
@@ -146,13 +154,19 @@ public class BlockchainBookingService {
         provisionGuacamoleAccess(bookingInfo, true);
     }
 
+    public void activatePreparedGuacamoleAccess(Map<String, Object> bookingInfo, String fencingToken) {
+        provisionGuacamoleAccess(bookingInfo, true, fencingToken);
+    }
+
     public void deletePreparedGuacamoleAccess(Map<String, Object> bookingInfo) {
         if (!"lab".equals(bookingInfo.get("resourceType"))) {
             return;
         }
-        String reservationKey = (String) bookingInfo.get("reservationKey");
+        String sessionId = bookingInfo.get("guacSessionId") instanceof String value && !value.isBlank()
+            ? value
+            : guacamoleSessionId((String) bookingInfo.get("reservationKey"));
         guacamoleProvisioningService.deleteTemporaryUser(
-            guacamoleSessionId(reservationKey),
+            sessionId,
             (String) bookingInfo.get("labURL")
         );
     }
@@ -525,6 +539,10 @@ public class BlockchainBookingService {
     }
 
     private String guacamoleSessionId(String reservationKeyHex) {
+        return guacamoleSessionId(reservationKeyHex, null);
+    }
+
+    private String guacamoleSessionId(String reservationKeyHex, String fencingToken) {
         String clean = reservationKeyHex == null ? "" : reservationKeyHex.trim();
         if (clean.startsWith("0x") || clean.startsWith("0X")) {
             clean = clean.substring(2);
@@ -533,10 +551,15 @@ public class BlockchainBookingService {
         if (clean.isBlank()) {
             throw new IllegalArgumentException("Missing reservation key for Guacamole session");
         }
-        if (clean.length() > 120) {
-            clean = clean.substring(clean.length() - 120);
+        String fencingSuffix = fencingToken == null ? "" : fencingToken.replaceAll("[^A-Za-z0-9]", "").toLowerCase();
+        if (!fencingSuffix.isBlank()) {
+            fencingSuffix = "-" + fencingSuffix.substring(0, Math.min(16, fencingSuffix.length()));
         }
-        return clean.toLowerCase();
+        int maxReservationLength = 120 - fencingSuffix.length();
+        if (clean.length() > maxReservationLength) {
+            clean = clean.substring(clean.length() - maxReservationLength);
+        }
+        return clean.toLowerCase() + fencingSuffix;
     }
 
     private Map<String, Object> buildReservationInfo(

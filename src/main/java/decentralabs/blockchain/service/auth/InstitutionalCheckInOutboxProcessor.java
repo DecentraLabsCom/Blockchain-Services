@@ -37,7 +37,7 @@ public class InstitutionalCheckInOutboxProcessor {
     @Value("${institutional.checkin.outbox.retry-max-delay-ms:900000}")
     private long retryMaxDelayMs;
 
-    @Scheduled(fixedDelayString = "${institutional.checkin.outbox.interval-ms:10000}")
+    @Scheduled(fixedDelayString = "${institutional.checkin.outbox.interval-ms:2000}")
     public void processDueCheckIns() {
         if (!enabled) {
             return;

@@ -13,6 +13,7 @@ import decentralabs.blockchain.dto.auth.SamlAuthRequest;
 import decentralabs.blockchain.service.wallet.InstitutionalWalletService;
 import decentralabs.blockchain.util.PucHashUtil;
 import java.math.BigInteger;
+import java.time.Instant;
 import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -57,6 +58,7 @@ class InstitutionalAccessCheckInCoordinatorTest {
             "0x1111111111111111111111111111111111111111",
             "0x9999999999999999999999999999999999999999"
         )).thenReturn(true);
+        when(outboxService.enqueueAccessGranted(any(), any(), any(), any(), any())).thenReturn(record("PENDING"));
 
         coordinator.recordAccessGranted(
             request(),
@@ -77,6 +79,25 @@ class InstitutionalAccessCheckInCoordinatorTest {
             "session-1"
         );
         verify(remoteCheckInClient, never()).submit(any(), any());
+    }
+
+    @Test
+    void explicitlyRestartsOnlyATerminalCheckInAfterRevalidation() {
+        when(institutionalWalletService.getInstitutionalWalletAddress())
+            .thenReturn("0x9999999999999999999999999999999999999999");
+        when(directoryService.isAuthorizedCheckInSigner(
+            "0x1111111111111111111111111111111111111111",
+            "0x9999999999999999999999999999999999999999"
+        )).thenReturn(true);
+        when(outboxService.enqueueAccessGranted(any(), any(), any(), any(), any())).thenReturn(record("MINED_FAILED"));
+
+        coordinator.recordAccessGranted(
+            request(),
+            claims(),
+            Map.of("reservationKey", "0xabc", "lab", BigInteger.valueOf(42), "reservationStatus", BigInteger.ONE)
+        );
+
+        verify(outboxService).restartTerminalFailure(7L);
     }
 
     @Test
@@ -160,6 +181,13 @@ class InstitutionalAccessCheckInCoordinatorTest {
             "affiliation", "org.example",
             "payerInstitutionWallet", "0x1111111111111111111111111111111111111111",
             "puc", "puc-123"
+        );
+    }
+
+    private InstitutionalCheckInOutboxRecord record(String status) {
+        return new InstitutionalCheckInOutboxRecord(
+            7L, "0xabc", "42", "0xwallet", "0xpuc", "session", status, 1, Instant.now(),
+            "0xtx", "0xwallet", BigInteger.ONE, Instant.now()
         );
     }
 }

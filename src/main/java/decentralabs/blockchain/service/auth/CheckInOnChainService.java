@@ -9,6 +9,9 @@ import decentralabs.blockchain.util.PucHashUtil;
 import java.io.IOException;
 import java.math.BigInteger;
 import java.util.List;
+import java.util.Locale;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -36,7 +39,7 @@ public class CheckInOnChainService {
     private final CheckInAuthService checkInAuthService;
     private final WalletService walletService;
     private final InstitutionalWalletService institutionalWalletService;
-    private final Object transactionSubmissionLock = new Object();
+    private final ConcurrentMap<String, Object> transactionSubmissionLocks = new ConcurrentHashMap<>();
 
     @Value("${contract.address}")
     private String contractAddress;
@@ -207,9 +210,14 @@ public class CheckInOnChainService {
         String encoded = FunctionEncoder.encode(function);
         EthSendTransaction tx;
         try {
-            // Pending nonce allocation and broadcast must be one critical section:
-            // two request threads can otherwise read the same pending nonce.
-            synchronized (transactionSubmissionLock) {
+            // The durable dispatcher holds the database row lock for the
+            // wallet while it reserves and persists an explicit nonce. Direct
+            // callers still need a local critical section, but wallets must
+            // not serialize one another in the same JVM.
+            Object walletLock = transactionSubmissionLocks.computeIfAbsent(
+                credentials.getAddress().toLowerCase(Locale.ROOT), ignored -> new Object()
+            );
+            synchronized (walletLock) {
                 tx = txManager.sendTransaction(
                     toWei(gasPriceForReplacement(replacementAttempt)),
                     gasLimit,

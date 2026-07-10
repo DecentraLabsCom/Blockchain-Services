@@ -32,6 +32,11 @@
       "type": "java.lang.Long",
       "defaultValue": 60
     },
+    {
+      "name": "auth.access-code.redeemer-token",
+      "type": "java.lang.String",
+      "description": "Secret required from OpenResty to redeem a browser access code."
+    },
   {
     "name": "endpoint.checkin-institutional",
     "type": "java.lang.String",
@@ -87,16 +92,22 @@
     "defaultValue": "/auth/checkin-institutional"
   },
   {
+    "name": "institutional.checkin.outbox.interval-ms",
+    "type": "java.lang.Long",
+    "description": "Interval for the worker that submits due institutional check-ins.",
+    "defaultValue": 2000
+  },
+  {
     "name": "institutional.checkin.outbox.receipt-interval-ms",
     "type": "java.lang.Long",
     "description": "Interval for the worker that monitors submitted institutional check-in receipts.",
-    "defaultValue": 5000
+    "defaultValue": 2000
   },
   {
     "name": "institutional.checkin.outbox.stuck-transaction-ms",
     "type": "java.lang.Long",
     "description": "Age after which a pending institutional check-in is retried with its reserved nonce.",
-    "defaultValue": 120000
+    "defaultValue": 15000
   },
   {
     "name": "institutional.checkin.outbox.nonce-replacement-gas-bump-percent",
