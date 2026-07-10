@@ -33,6 +33,12 @@
       "defaultValue": 60
     },
     {
+      "name": "auth.access-code.cleanup-interval-ms",
+      "type": "java.lang.Long",
+      "description": "Interval in milliseconds for purging expired access codes.",
+      "defaultValue": 30000
+    },
+    {
       "name": "auth.access-code.redeemer-token",
       "type": "java.lang.String",
       "description": "Secret required from OpenResty to redeem a browser access code."
