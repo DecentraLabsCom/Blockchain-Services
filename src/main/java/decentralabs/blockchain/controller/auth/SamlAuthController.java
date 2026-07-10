@@ -1,9 +1,7 @@
 package decentralabs.blockchain.controller.auth;
 
 import decentralabs.blockchain.dto.auth.CheckInResponse;
-import decentralabs.blockchain.dto.auth.AccessCodeIssueRequest;
 import decentralabs.blockchain.dto.auth.AccessCodeRedeemRequest;
-import decentralabs.blockchain.dto.auth.AccessCodeResponse;
 import decentralabs.blockchain.dto.auth.AuthResponse;
 import decentralabs.blockchain.dto.auth.InstitutionalCheckInRequest;
 import decentralabs.blockchain.dto.auth.ProviderAccessCredentialRequest;
@@ -12,7 +10,6 @@ import decentralabs.blockchain.exception.AccessAuthorizationPendingException;
 import decentralabs.blockchain.exception.AccessAuthorizationRejectedException;
 import decentralabs.blockchain.exception.SamlAuthenticationException;
 import decentralabs.blockchain.service.auth.InstitutionalCheckInService;
-import decentralabs.blockchain.service.auth.MarketplaceEndpointAuthService;
 import decentralabs.blockchain.service.auth.SamlAuthService;
 import decentralabs.blockchain.service.auth.AccessCodeService;
 import lombok.RequiredArgsConstructor;
@@ -39,30 +36,8 @@ public class SamlAuthController {
     private final SamlAuthService samlAuthService;
     private final InstitutionalCheckInService institutionalCheckInService;
     private final AccessCodeService accessCodeService;
-    private final MarketplaceEndpointAuthService marketplaceEndpointAuthService;
-
     @Value("${auth.access-code.redeemer-token:}")
     private String accessCodeRedeemerToken;
-
-    @Value("${auth.marketplace-endpoints.enabled:true}")
-    private boolean marketplaceEndpointAuthenticationEnabled;
-
-    @PostMapping("/access-code/issue")
-    public ResponseEntity<AccessCodeResponse> issueAccessCode(
-        @RequestHeader(value = "X-Marketplace-Authorization", required = false) String marketplaceAuthorization,
-        @RequestBody AccessCodeIssueRequest request
-    ) {
-        String marketplaceToken = bearerToken(marketplaceAuthorization);
-        if (!marketplaceEndpointAuthenticationEnabled || marketplaceToken == null) {
-            return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
-        }
-        try {
-            marketplaceEndpointAuthService.enforceToken(marketplaceToken, null);
-        } catch (RuntimeException ex) {
-            return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
-        }
-        return ResponseEntity.ok(accessCodeService.issue(request.getToken()));
-    }
 
     @PostMapping("/access-code/redeem")
     public ResponseEntity<AuthResponse> redeemAccessCode(
@@ -83,14 +58,6 @@ public class SamlAuthController {
             expected.getBytes(StandardCharsets.UTF_8),
             actual.getBytes(StandardCharsets.UTF_8)
         );
-    }
-
-    private String bearerToken(String authorization) {
-        if (authorization == null || !authorization.startsWith("Bearer ")) {
-            return null;
-        }
-        String token = authorization.substring("Bearer ".length()).trim();
-        return token.isEmpty() ? null : token;
     }
 
     @PostMapping("/authorize-and-issue")

@@ -14,7 +14,6 @@ Endpoints:
 - `POST /auth/authorize-and-issue`
 - `POST /auth/access-credential`
 - `POST /auth/checkin-institutional`
-- `POST /auth/access-code/issue` (server-side, short-lived browser hand-off)
 - `POST /auth/access-code/redeem` (single-use redemption)
 
 Request body:
@@ -48,8 +47,8 @@ sequenceDiagram
     Chain-->>Auth: ACCESS_AUTHORIZED
     Auth->>Chain: final status/window validation
     Auth->>Gateway: activate access
-    Auth-->>Marketplace: signed lab-access JWT (server-side only)
-    Marketplace->>Auth: POST /auth/access-code/issue
+    Auth->>Auth: persist one-time access code before DELIVERED
+    Auth-->>Marketplace: opaque one-time access code
     Marketplace-->>Browser: opaque one-time access_code
     Browser->>Gateway: POST /auth/access with access_code
     Gateway->>Auth: POST /auth/access-code/redeem
@@ -70,7 +69,7 @@ Institutional check-in is handled through `/auth/checkin-institutional` and deri
 
 For separate consumer and provider backends, check-in returns after transaction submission with its `txHash`; it does not wait for the receipt. The provider validates the Marketplace JWT and reservation (including the validity window), stages a physical Guacamole user disabled and without connection permissions, and prepares the access claims. Each attempt has a durable fencing token, generation, heartbeat and expiry; status changes and rollback ownership are conditional on that token. It also uses a distinct temporary Guacamole user, so a stale attempt cannot activate or delete the current attempt's user. The same lease is acquired when `ACCESS_AUTHORIZED` is already visible, closing the fast-path race with a provisional request. The JWT is signed, audited, and returned only after the reservation reaches `ACCESS_AUTHORIZED`; the provider polls only the reservation status for at most 27 seconds (`auth.access-authorization.wait-timeout-ms`), refreshing its lease on every poll, then performs a final full reservation/window validation before activating Guacamole. On timeout it returns `503 ACCESS_AUTHORIZATION_PENDING` with `Retry-After: 1` and removes only its own temporary Guacamole user. If the authorization transaction is mined reverted, it returns `409 ACCESS_AUTHORIZATION_REJECTED`. No JWT has been signed or persisted before authorization. OpenResty allows 60 seconds for `/auth`, so provisioning plus fenced cleanup can return that structured response instead of being cut off by the proxy.
 
-When consumer and provider are the same backend, `/auth/authorize-and-issue` queues the institutional check-in in the local outbox, stages the provider access, and follows the same `ACCESS_AUTHORIZED` gate before activation and issuance.
+When consumer and provider are the same backend, `/auth/authorize-and-issue` queues the institutional check-in in the local outbox before staging provider access, and follows the same `ACCESS_AUTHORIZED` gate before activation and issuance.
 
 The institutional check-in outbox separates transaction submission from receipt monitoring. Its lifecycle is `PENDING → SUBMITTING → SUBMITTED → MINED_SUCCESS` or `MINED_FAILED`, with `RETRY` and terminal `FAILED` for submission errors. Enqueue is idempotent: an existing row is never reset or reopened, so a transmitted hash and nonce cannot be reused accidentally. A later, fully revalidated access request may explicitly restart only `MINED_FAILED` or `FAILED`; that creates a clean generation by clearing the prior hash, nonce and submission timestamps. A submission worker persists the hash and a separate receipt monitor checks mining status. Nonces are allocated and persisted per signing wallet under a database row lock, so distinct reservations can be transmitted concurrently up to the wallet nonce order without waiting for receipts; an uncertain broadcast retains its reserved nonce for reconciliation/retry.
 
@@ -78,9 +77,9 @@ The submission and receipt workers run every two seconds by default. A transacti
 
 The booking flow uses `/auth/authorize-and-issue`.
 
-For physical Guacamole labs, Marketplace exchanges the signed credential for a 60-second opaque access code; issuance requires the Marketplace server's validated bearer token in `X-Marketplace-Authorization`. OpenResty redeems the code once with `AUTH_ACCESS_CODE_REDEEMER_TOKEN`, sets the secure JTI cookie and redirects to a clean URL. Codes use the persistent database atomically whenever a datasource exists; in-memory storage is used only without a datasource. Issuance validates the signed credential and derives the target URL from its claims, which bind its HTTPS Guacamole URL to its audience. FMU credentials do not use this Guacamole handoff: they remain JWT bearer credentials for the FMU flow.
+For physical Guacamole labs, the provider creates and persists the 60-second opaque access code before it marks the fenced provisioning lease `DELIVERED`; Marketplace receives only that code and laboratory URL. OpenResty redeems the code once with `AUTH_ACCESS_CODE_REDEEMER_TOKEN`, sets the secure JTI cookie and redirects to a clean URL. Codes use the persistent database atomically whenever a datasource exists; in-memory storage is used only without a datasource. The provider validates the signed credential and derives the target URL from its claims, which bind its HTTPS Guacamole URL to its audience. FMU credentials use their separate session-ticket flow.
 
-When Guacamole accepts a reservation WebSocket (`101`), OpenResty records that opening timestamp in a local MySQL observation outbox. The ops worker delivers it to `/access-audit/internal/session-observed` with retry/backoff and marks it sent only when the backend replies with `recorded=true`; the backend then writes the local audit and the session-start attestation. Tunnel closure is not used as an observation timestamp.
+When Guacamole accepts a reservation WebSocket (`101`), OpenResty captures that opening timestamp and schedules an authenticated internal hand-off to the Ops Worker. The Ops Worker writes the local MySQL observation outbox; OpenResty does not receive database credentials. The worker delivers to `/access-audit/internal/session-observed` with retry/backoff and marks it sent only when the backend replies with `recorded=true`, meaning that both the local audit and the SessionStarted attestation are durable. Tunnel closure is not used as an observation timestamp. In Lite mode, `ACCESS_AUDIT_URL` must target the Full backend that issued the credential; an unset value leaves the outbox pending rather than sending the event to a local backend that cannot attest it.
 
 SAML trust defaults:
 

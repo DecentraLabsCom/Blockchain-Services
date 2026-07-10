@@ -118,19 +118,19 @@ public class AccessCredentialAuditService {
         request.setGatewayId(gatewayId);
         request.setAccessType("fmu");
         request.setObservedAt(observedAt);
-        return recordSessionObserved(request);
+        return recordSessionObserved(request).recorded();
     }
 
-    public boolean recordSessionObserved(AccessCredentialSessionObservedRequest request) {
+    public SessionObservationResult recordSessionObserved(AccessCredentialSessionObservedRequest request) {
         if (jdbcTemplate == null) {
             log.debug("Access credential session observation skipped: no datasource configured");
-            return false;
+            return SessionObservationResult.notRecorded();
         }
         if (request == null || !hasText(request.getReservationKey())) {
-            return false;
+            return SessionObservationResult.notRecorded();
         }
         if (!hasText(request.getCredentialHash()) && !hasText(request.getJwtJti()) && !hasText(request.getFmuTicketId())) {
-            return false;
+            return SessionObservationResult.notRecorded();
         }
 
         Long observedAt = firstNonNull(request.getObservedAt(), Instant.now().getEpochSecond());
@@ -164,18 +164,20 @@ public class AccessCredentialAuditService {
                 blankToNull(request.getFmuTicketId())
             );
             if (updated > 0) {
-                recordSessionStartedAttestation(request, observedAt, observationType);
-                return true;
+                return new SessionObservationResult(
+                    true,
+                    recordSessionStartedAttestation(request, observedAt, observationType)
+                );
             }
         } catch (BadSqlGrammarException ex) {
             log.warn("Access credential audit table unavailable for session observation: {}", LogSanitizer.sanitize(ex.getMessage()));
         } catch (DataAccessException ex) {
             log.warn("Access credential session observation failed: {}", LogSanitizer.sanitize(ex.getMessage()));
         }
-        return false;
+        return SessionObservationResult.notRecorded();
     }
 
-    private void recordSessionStartedAttestation(
+    private boolean recordSessionStartedAttestation(
         AccessCredentialSessionObservedRequest request,
         long observedAt,
         String observationType
@@ -184,11 +186,12 @@ public class AccessCredentialAuditService {
             SessionStartedAttestationService attestationService =
                 sessionStartedAttestationServiceProvider.getIfAvailable();
             if (attestationService != null) {
-                attestationService.recordSessionStarted(request, observedAt, observationType);
+                return attestationService.recordSessionStarted(request, observedAt, observationType);
             }
         } catch (RuntimeException ex) {
             log.warn("SessionStarted attestation was not recorded: {}", LogSanitizer.sanitize(ex.getMessage()));
         }
+        return false;
     }
 
     public List<AuditEntry> findByReservationKey(String reservationKey) {
@@ -396,6 +399,20 @@ public class AccessCredentialAuditService {
     ) {
         public boolean sessionObserved() {
             return sessionObservedAt != null;
+        }
+    }
+
+    /**
+     * The gateway outbox may acknowledge an observation only after its signed
+     * attestation is durable as well as the audit row itself.
+     */
+    public record SessionObservationResult(boolean auditRecorded, boolean attestationRecorded) {
+        public boolean recorded() {
+            return auditRecorded && attestationRecorded;
+        }
+
+        static SessionObservationResult notRecorded() {
+            return new SessionObservationResult(false, false);
         }
     }
 }

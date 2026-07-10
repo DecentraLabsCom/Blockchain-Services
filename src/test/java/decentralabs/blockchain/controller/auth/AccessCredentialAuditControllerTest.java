@@ -40,7 +40,9 @@ class AccessCredentialAuditControllerTest {
 
     @Test
     void shouldRecordSessionObserved() throws Exception {
-        when(auditService.recordSessionObserved(any(AccessCredentialSessionObservedRequest.class))).thenReturn(true);
+        when(auditService.recordSessionObserved(any(AccessCredentialSessionObservedRequest.class))).thenReturn(
+            new AccessCredentialAuditService.SessionObservationResult(true, true)
+        );
 
         AccessCredentialSessionObservedRequest request = new AccessCredentialSessionObservedRequest();
         request.setReservationKey("0xabc");
@@ -53,7 +55,9 @@ class AccessCredentialAuditControllerTest {
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(objectMapper.writeValueAsString(request)))
             .andExpect(status().isOk())
-            .andExpect(jsonPath("$.recorded").value(true));
+            .andExpect(jsonPath("$.recorded").value(true))
+            .andExpect(jsonPath("$.auditRecorded").value(true))
+            .andExpect(jsonPath("$.attestationRecorded").value(true));
 
         verify(auditService).recordSessionObserved(any(AccessCredentialSessionObservedRequest.class));
     }

@@ -18,13 +18,21 @@ public class AuthResponse {
     
     private final String token;
     private final String labURL;
+    private final String accessCode;
     
     /**
      * Constructor for authentication without booking info
      */
     public AuthResponse(String token) {
-        this.token = token;
-        this.labURL = null;
+        this(token, null, null);
+    }
+
+    public AuthResponse(String token, String labURL) {
+        this(token, labURL, null);
+    }
+
+    public static AuthResponse opaqueGuacamoleAccess(String accessCode, String labURL) {
+        return new AuthResponse(null, labURL, accessCode);
     }
     
     /**

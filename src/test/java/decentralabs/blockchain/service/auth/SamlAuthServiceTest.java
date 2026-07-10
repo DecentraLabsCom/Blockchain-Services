@@ -51,6 +51,9 @@ class SamlAuthServiceTest {
     @Mock
     private CheckInOnChainService checkInOnChainService;
 
+    @Mock
+    private AccessCodeService accessCodeService;
+
     @InjectMocks
     private SamlAuthService samlAuthService;
 
@@ -87,20 +90,33 @@ class SamlAuthServiceTest {
             Map<String, Object> bookingInfo = new HashMap<>(Map.of(
                 "labURL", "https://lab.example.com",
                 "reservationKey", "0xreservation",
-                "reservationStatus", java.math.BigInteger.valueOf(2)
+                "reservationStatus", java.math.BigInteger.valueOf(2),
+                "resourceType", "lab"
             ));
             when(blockchainService.getBookingInfoForCredentialPreparation("0xwallet", "0xreservation", "42", TEST_PUC))
                 .thenReturn(bookingInfo);
             when(jwtService.generateIssuedToken(eq(null), any())).thenReturn(
                 new JwtService.IssuedToken("booking-token", "jwt-jti-provider", 1_700_000_000L, null)
             );
+            when(accessCodeService.issue("booking-token")).thenReturn(
+                new decentralabs.blockchain.dto.auth.AccessCodeResponse("opaque-code", "https://lab.example.com/guacamole/")
+            );
+            var lease = new AccessAuthorizationProvisioningService.ProvisioningLease(
+                "0xreservation", "fence-token", 1L
+            );
+            when(accessAuthorizationProvisioningService.tryStart("0xreservation")).thenReturn(lease);
+            when(accessAuthorizationProvisioningService.isCurrent(lease)).thenReturn(true);
+            when(accessAuthorizationProvisioningService.heartbeat(lease)).thenReturn(true);
+            when(accessAuthorizationProvisioningService.markDelivered(lease)).thenReturn(true);
 
             AuthResponse response = samlAuthService.issueAccessCredential(request);
 
-            assertThat(response.getToken()).isEqualTo("booking-token");
-            assertThat(response.getLabURL()).isEqualTo("https://lab.example.com");
+            assertThat(response.getToken()).isNull();
+            assertThat(response.getAccessCode()).isEqualTo("opaque-code");
+            assertThat(response.getLabURL()).isEqualTo("https://lab.example.com/guacamole/");
             verify(accessCheckInCoordinator, never()).recordAccessGranted(any(), any(), any());
             verify(accessCredentialAuditService).recordJwtIssued(any(), any(), eq(bookingInfo), any());
+            verify(accessCodeService).issue("booking-token");
         }
 
         @Test
@@ -230,6 +246,9 @@ class SamlAuthServiceTest {
             when(accessAuthorizationProvisioningService.isCurrent(lease)).thenReturn(true);
             when(accessAuthorizationProvisioningService.heartbeat(lease)).thenReturn(true);
             when(accessAuthorizationProvisioningService.markDelivered(lease)).thenReturn(true);
+            when(accessCodeService.issue("booking-token")).thenReturn(
+                new decentralabs.blockchain.dto.auth.AccessCodeResponse("opaque-code", "https://lab.example.com/guacamole/")
+            );
 
             samlAuthService.issueAccessCredential(request);
 

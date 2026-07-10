@@ -34,8 +34,12 @@ public class AccessCredentialAuditController {
             ));
         }
 
-        boolean recorded = auditService.recordSessionObserved(request);
-        return ResponseEntity.ok(Map.of("recorded", recorded));
+        AccessCredentialAuditService.SessionObservationResult result = auditService.recordSessionObserved(request);
+        return ResponseEntity.ok(Map.of(
+            "recorded", result.recorded(),
+            "auditRecorded", result.auditRecorded(),
+            "attestationRecorded", result.attestationRecorded()
+        ));
     }
 
     @GetMapping("/reservations/{reservationKey}")

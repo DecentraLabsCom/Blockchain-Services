@@ -124,9 +124,13 @@ class AccessCredentialAuditServiceTest {
         request.setGatewayId("gateway-a");
         request.setObservedAt(1_700_010_000L);
 
-        boolean recorded = service.recordSessionObserved(request);
+        when(sessionStartedAttestationService.recordSessionStarted(request, 1_700_010_000L, "guacamole"))
+            .thenReturn(true);
 
-        org.assertj.core.api.Assertions.assertThat(recorded).isTrue();
+        AccessCredentialAuditService.SessionObservationResult result = service.recordSessionObserved(request);
+
+        org.assertj.core.api.Assertions.assertThat(result.auditRecorded()).isTrue();
+        org.assertj.core.api.Assertions.assertThat(result.attestationRecorded()).isTrue();
         ArgumentCaptor<Object[]> args = ArgumentCaptor.forClass(Object[].class);
         verify(jdbcTemplate).update(contains("session_observed_at"), args.capture());
         org.assertj.core.api.Assertions.assertThat(args.getValue())
@@ -136,9 +140,32 @@ class AccessCredentialAuditServiceTest {
     }
 
     @Test
+    void shouldRequireAttestationBeforeConfirmingSessionObservationDelivery() {
+        AccessCredentialAuditService service = buildService(jdbcTemplate);
+        when(jdbcTemplate.update(anyString(), any(Object[].class))).thenReturn(1);
+        when(sessionStartedAttestationServiceProvider.getIfAvailable()).thenReturn(sessionStartedAttestationService);
+        when(sessionStartedAttestationService.recordSessionStarted(any(), org.mockito.ArgumentMatchers.anyLong(), anyString()))
+            .thenReturn(false);
+
+        AccessCredentialSessionObservedRequest request = new AccessCredentialSessionObservedRequest();
+        request.setReservationKey("0xabc");
+        request.setJwtJti("jwt-jti");
+        request.setSessionId("guac-session-1");
+
+        AccessCredentialAuditService.SessionObservationResult result = service.recordSessionObserved(request);
+
+        org.assertj.core.api.Assertions.assertThat(result.auditRecorded()).isTrue();
+        org.assertj.core.api.Assertions.assertThat(result.attestationRecorded()).isFalse();
+        org.assertj.core.api.Assertions.assertThat(result.recorded()).isFalse();
+    }
+
+    @Test
     void shouldMarkFmuSessionObservedByTicketHashWithoutRawTicket() {
         AccessCredentialAuditService service = buildService(jdbcTemplate);
         when(jdbcTemplate.update(anyString(), any(Object[].class))).thenReturn(1);
+        when(sessionStartedAttestationServiceProvider.getIfAvailable()).thenReturn(sessionStartedAttestationService);
+        when(sessionStartedAttestationService.recordSessionStarted(any(), org.mockito.ArgumentMatchers.anyLong(), anyString()))
+            .thenReturn(true);
 
         boolean recorded = service.recordFmuTicketRedeemed(
             "st_secret_ticket",
