@@ -15,7 +15,8 @@ ALTER TABLE institutional_checkin_outbox
 -- Durable per-wallet nonce allocation for concurrent institutional check-ins.
 ALTER TABLE institutional_checkin_outbox
     ADD COLUMN wallet_address VARCHAR(64) NULL AFTER institutional_wallet,
-    ADD COLUMN nonce DECIMAL(78, 0) NULL AFTER tx_hash,
+    -- MySQL DECIMAL supports at most 65 digits; this is ample for an EVM account nonce.
+    ADD COLUMN nonce DECIMAL(65, 0) NULL AFTER tx_hash,
     ADD COLUMN submitted_at DATETIME NULL AFTER nonce,
     ADD COLUMN mined_at DATETIME NULL AFTER submitted_at,
     ADD UNIQUE KEY uk_checkin_outbox_wallet_nonce (wallet_address, nonce),
@@ -30,7 +31,7 @@ ALTER TABLE institutional_checkin_outbox
 
 CREATE TABLE IF NOT EXISTS institutional_wallet_nonce (
     wallet_address VARCHAR(64) NOT NULL,
-    next_nonce DECIMAL(78, 0) NOT NULL,
+    next_nonce DECIMAL(65, 0) NOT NULL,
     updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     PRIMARY KEY (wallet_address)
 );
