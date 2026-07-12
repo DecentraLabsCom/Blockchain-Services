@@ -55,7 +55,7 @@ class AccessCodeServiceTest {
 
     @Test
     @SuppressWarnings("unchecked")
-    void rejectsNonGuacamoleCredentialsBeforeIssuingACode() {
+    void issuesOpaqueCodesForFmuCredentials() {
         ObjectProvider<JdbcTemplate> provider = mock(ObjectProvider.class);
         when(provider.getIfAvailable()).thenReturn(null);
         JwtService jwtService = mock(JwtService.class);
@@ -66,9 +66,28 @@ class AccessCodeServiceTest {
         ));
         AccessCodeService service = new AccessCodeService(provider, jwtService);
 
-        assertThatThrownBy(() -> service.issue("fmu-jwt"))
-            .isInstanceOf(ResponseStatusException.class)
-            .hasMessageContaining("Guacamole");
+        AccessCodeResponse issued = service.issue("fmu-jwt");
+
+        assertThat(issued.getAccessCode()).isNotBlank().doesNotContain("fmu-jwt");
+        assertThat(issued.getLabURL()).isEqualTo("https://lab.example/fmu/model");
+        assertThat(service.redeem(issued.getAccessCode()).getToken()).isEqualTo("fmu-jwt");
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void recoversTheSameUnconsumedDeliveryAfterTheProviderResponseIsLost() {
+        ObjectProvider<JdbcTemplate> provider = mock(ObjectProvider.class);
+        when(provider.getIfAvailable()).thenReturn(null);
+        JwtService jwtService = mock(JwtService.class);
+        when(jwtService.extractAllClaims("signed-jwt")).thenReturn(labClaims());
+        AccessCodeService service = new AccessCodeService(provider, jwtService);
+
+        AccessCodeResponse issued = service.issue("signed-jwt", "0xreservation", 3L);
+        AccessCodeResponse recovered = service.recoverDelivery("0xreservation", 3L);
+
+        assertThat(recovered.getAccessCode()).isEqualTo(issued.getAccessCode());
+        assertThat(service.redeem(recovered.getAccessCode()).getToken()).isEqualTo("signed-jwt");
+        assertThat(service.recoverDelivery("0xreservation", 3L)).isNull();
     }
 
     private Map<String, Object> labClaims() {

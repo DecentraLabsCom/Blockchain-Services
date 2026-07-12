@@ -37,6 +37,10 @@ public class AccessTokenAuthenticationFilter extends OncePerRequestFilter {
     @Override
     protected boolean shouldNotFilter(@Nonnull HttpServletRequest request) {
         String path = request.getRequestURI();
+        if ("POST".equalsIgnoreCase(request.getMethod())
+            && "/access-audit/internal/session-observed".equals(path)) {
+            return true;
+        }
         // Run for routes where SecurityConfig hasRole rules enforce ROLE_INTERNAL.
         return path == null
             || (!path.startsWith("/billing") && !path.startsWith("/access-audit/internal"));

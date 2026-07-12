@@ -56,11 +56,12 @@ class AccessTokenAuthenticationFilterTest {
     }
 
     @Test
-    void shouldFilter_accessAuditInternalPath() {
+    void shouldNotFilter_sessionObservationSubmissionBecauseItUsesDedicatedJwt() {
         MockHttpServletRequest request = new MockHttpServletRequest();
+        request.setMethod("POST");
         request.setRequestURI("/access-audit/internal/session-observed");
 
-        assertThat(filter.shouldSkip(request)).isFalse();
+        assertThat(filter.shouldSkip(request)).isTrue();
     }
 
     @Test

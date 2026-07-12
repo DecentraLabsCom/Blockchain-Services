@@ -31,7 +31,7 @@ public class AuthResponse {
         this(token, labURL, null);
     }
 
-    public static AuthResponse opaqueGuacamoleAccess(String accessCode, String labURL) {
+    public static AuthResponse opaqueAccess(String accessCode, String labURL) {
         return new AuthResponse(null, labURL, accessCode);
     }
     

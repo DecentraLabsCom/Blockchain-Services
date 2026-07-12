@@ -3,6 +3,7 @@ package decentralabs.blockchain.service.auth;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -11,7 +12,6 @@ import java.math.BigInteger;
 import java.time.Instant;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
@@ -19,8 +19,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 class InstitutionalWalletNonceDispatcherTest {
     @Mock private InstitutionalCheckInOutboxService outboxService;
     @Mock private InstitutionalCheckInSubmissionService submissionService;
-    @Mock private CheckInOnChainService checkInOnChainService;
-    @InjectMocks private InstitutionalWalletNonceDispatcher dispatcher;
+    @Mock private InstitutionalWalletTransactionDispatcher transactionDispatcher;
 
     @Test
     void persistsReservedNonceAndTransactionHashBeforeReleasingWalletDispatch() throws Exception {
@@ -31,9 +30,21 @@ class InstitutionalWalletNonceDispatcherTest {
         CheckInResponse response = new CheckInResponse();
         response.setTxHash("0x" + "a".repeat(64));
         when(submissionService.signerAddress()).thenReturn("0xsigner");
-        when(checkInOnChainService.pendingNonce("0xsigner")).thenReturn(BigInteger.valueOf(45));
-        when(outboxService.reserveNextNonce("0xsigner", BigInteger.valueOf(45))).thenReturn(BigInteger.valueOf(47));
         when(submissionService.submit("0xabc", "0xpuchash", BigInteger.valueOf(47), 0)).thenReturn(response);
+        when(transactionDispatcher.dispatch(eq("0xsigner"), eq(null), any(), any(), any()))
+            .thenAnswer(invocation -> {
+                java.util.function.Consumer<BigInteger> persistNonce = invocation.getArgument(2);
+                java.util.function.Function<BigInteger, String> broadcast = invocation.getArgument(3);
+                java.util.function.Consumer<String> persistHash = invocation.getArgument(4);
+                persistNonce.accept(BigInteger.valueOf(47));
+                String hash = broadcast.apply(BigInteger.valueOf(47));
+                persistHash.accept(hash);
+                return hash;
+            });
+
+        InstitutionalWalletNonceDispatcher dispatcher = new InstitutionalWalletNonceDispatcher(
+            outboxService, submissionService, transactionDispatcher
+        );
 
         CheckInResponse result = dispatcher.dispatch(record);
 
@@ -43,7 +54,7 @@ class InstitutionalWalletNonceDispatcherTest {
     }
 
     @Test
-    void keepsTheReservedNonceWhenBroadcastOutcomeIsUncertain() {
+    void keepsTheReservedNonceWhenBroadcastOutcomeIsUncertain() throws Exception {
         InstitutionalCheckInOutboxRecord record = new InstitutionalCheckInOutboxRecord(
             8L, "0xdef", "42", "0xpayer", "0xpuchash", "session-8", "RETRY", 1,
             Instant.now(), null, "0xsigner", BigInteger.valueOf(48), Instant.now()
@@ -51,11 +62,20 @@ class InstitutionalWalletNonceDispatcherTest {
         when(submissionService.signerAddress()).thenReturn("0xsigner");
         when(submissionService.submit("0xdef", "0xpuchash", BigInteger.valueOf(48), 1))
             .thenThrow(new IllegalStateException("rpc response lost"));
+        when(transactionDispatcher.dispatch(eq("0xsigner"), eq(BigInteger.valueOf(48)), any(), any(), any()))
+            .thenAnswer(invocation -> {
+                java.util.function.Function<BigInteger, String> broadcast = invocation.getArgument(3);
+                return broadcast.apply(BigInteger.valueOf(48));
+            });
+        InstitutionalWalletNonceDispatcher dispatcher = new InstitutionalWalletNonceDispatcher(
+            outboxService, submissionService, transactionDispatcher
+        );
 
         assertThatThrownBy(() -> dispatcher.dispatch(record))
-            .isInstanceOf(InstitutionalWalletDispatchException.class);
+            .isInstanceOf(IllegalStateException.class)
+            .hasMessageContaining("rpc response lost");
 
         verify(submissionService).submit("0xdef", "0xpuchash", BigInteger.valueOf(48), 1);
-        verify(outboxService, org.mockito.Mockito.never()).reserveNextNonce(eq("0xsigner"), org.mockito.ArgumentMatchers.any());
+        verify(transactionDispatcher).dispatch(eq("0xsigner"), eq(BigInteger.valueOf(48)), any(), any(), any());
     }
 }

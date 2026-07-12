@@ -37,6 +37,9 @@ class InstitutionalAccessCheckInCoordinatorTest {
     @Mock
     private RemoteInstitutionalCheckInClient remoteCheckInClient;
 
+    @Mock
+    private InstitutionalWalletNonceDispatcher nonceDispatcher;
+
     private InstitutionalAccessCheckInCoordinator coordinator;
 
     @BeforeEach
@@ -45,20 +48,23 @@ class InstitutionalAccessCheckInCoordinatorTest {
             outboxService,
             institutionalWalletService,
             directoryService,
-            remoteCheckInClient
+            remoteCheckInClient,
+            nonceDispatcher
         );
         ReflectionTestUtils.setField(coordinator, "delegationEnabled", true);
     }
 
     @Test
-    void enqueuesDurableCheckInWhenLocalSignerIsAuthorized() {
+    void enqueuesAndBroadcastsImmediatelyWhenLocalSignerIsAuthorized() throws Exception {
         when(institutionalWalletService.getInstitutionalWalletAddress())
             .thenReturn("0x9999999999999999999999999999999999999999");
         when(directoryService.isAuthorizedCheckInSigner(
             "0x1111111111111111111111111111111111111111",
             "0x9999999999999999999999999999999999999999"
         )).thenReturn(true);
-        when(outboxService.enqueueAccessGranted(any(), any(), any(), any(), any())).thenReturn(record("PENDING"));
+        InstitutionalCheckInOutboxRecord pending = record("PENDING");
+        when(outboxService.enqueueAccessGranted(any(), any(), any(), any(), any())).thenReturn(pending);
+        when(outboxService.claim(pending.id())).thenReturn(true);
 
         coordinator.recordAccessGranted(
             request(),
@@ -78,18 +84,42 @@ class InstitutionalAccessCheckInCoordinatorTest {
             PucHashUtil.hashPuc("puc-123"),
             "session-1"
         );
+        verify(outboxService).claim(pending.id());
+        verify(nonceDispatcher).dispatch(pending);
         verify(remoteCheckInClient, never()).submit(any(), any());
     }
 
     @Test
-    void explicitlyRestartsOnlyATerminalCheckInAfterRevalidation() {
+    void doesNotRebroadcastAnExistingActiveTransaction() throws Exception {
+        when(institutionalWalletService.getInstitutionalWalletAddress())
+            .thenReturn("0x9999999999999999999999999999999999999999");
+        when(directoryService.isAuthorizedCheckInSigner(any(), any())).thenReturn(true);
+        InstitutionalCheckInOutboxRecord submitted = record("SUBMITTED");
+        when(outboxService.enqueueAccessGranted(any(), any(), any(), any(), any())).thenReturn(submitted);
+        when(outboxService.claim(submitted.id())).thenReturn(false);
+
+        coordinator.recordAccessGranted(
+            request(),
+            claims(),
+            Map.of("reservationKey", "0xabc", "lab", BigInteger.valueOf(42), "reservationStatus", BigInteger.ONE)
+        );
+
+        verify(nonceDispatcher, never()).dispatch(any());
+    }
+
+    @Test
+    void explicitlyRestartsAndBroadcastsOnlyATerminalCheckInAfterRevalidation() throws Exception {
         when(institutionalWalletService.getInstitutionalWalletAddress())
             .thenReturn("0x9999999999999999999999999999999999999999");
         when(directoryService.isAuthorizedCheckInSigner(
             "0x1111111111111111111111111111111111111111",
             "0x9999999999999999999999999999999999999999"
         )).thenReturn(true);
-        when(outboxService.enqueueAccessGranted(any(), any(), any(), any(), any())).thenReturn(record("MINED_FAILED"));
+        InstitutionalCheckInOutboxRecord failed = record("MINED_FAILED");
+        InstitutionalCheckInOutboxRecord restarted = record("PENDING");
+        when(outboxService.enqueueAccessGranted(any(), any(), any(), any(), any())).thenReturn(failed);
+        when(outboxService.restartTerminalFailure(failed.id())).thenReturn(restarted);
+        when(outboxService.claim(restarted.id())).thenReturn(true);
 
         coordinator.recordAccessGranted(
             request(),
@@ -98,6 +128,32 @@ class InstitutionalAccessCheckInCoordinatorTest {
         );
 
         verify(outboxService).restartTerminalFailure(7L);
+        verify(nonceDispatcher).dispatch(restarted);
+    }
+
+    @Test
+    void preservesAnUncertainImmediateBroadcastForBackgroundReconciliation() throws Exception {
+        when(institutionalWalletService.getInstitutionalWalletAddress())
+            .thenReturn("0x9999999999999999999999999999999999999999");
+        when(directoryService.isAuthorizedCheckInSigner(any(), any())).thenReturn(true);
+        InstitutionalCheckInOutboxRecord pending = record("PENDING");
+        when(outboxService.enqueueAccessGranted(any(), any(), any(), any(), any())).thenReturn(pending);
+        when(outboxService.claim(pending.id())).thenReturn(true);
+        when(nonceDispatcher.dispatch(pending))
+            .thenThrow(new InstitutionalWalletDispatchException("uncertain", new IllegalStateException("rpc response lost")));
+
+        coordinator.recordAccessGranted(
+            request(),
+            claims(),
+            Map.of("reservationKey", "0xabc", "lab", BigInteger.valueOf(42), "reservationStatus", BigInteger.ONE)
+        );
+
+        verify(outboxService).markRetry(
+            eq(pending.id()),
+            eq(pending.attempts() + 1),
+            any(Instant.class),
+            eq("Initial institutional check-in broadcast outcome is uncertain")
+        );
     }
 
     @Test

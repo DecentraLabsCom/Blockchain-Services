@@ -131,6 +131,18 @@ public class AccessAuthorizationProvisioningService {
         return count != null && count == 1;
     }
 
+    public Long deliveredGeneration(String reservationKey) {
+        if (jdbcTemplate == null || reservationKey == null || reservationKey.isBlank()) {
+            return null;
+        }
+        return jdbcTemplate.query(
+            "SELECT generation FROM access_authorization_provisioning "
+                + "WHERE reservation_key = ? AND status = 'DELIVERED'",
+            ps -> ps.setString(1, reservationKey),
+            rs -> rs.next() ? rs.getLong(1) : null
+        );
+    }
+
     private ProvisioningLease currentLease(String reservationKey, String fencingToken) {
         Long generation = jdbcTemplate.queryForObject(
             "SELECT generation FROM access_authorization_provisioning WHERE reservation_key = ? AND fencing_token = ?",

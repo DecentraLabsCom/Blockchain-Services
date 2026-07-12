@@ -1,6 +1,7 @@
 package decentralabs.blockchain.service.auth;
 
 import decentralabs.blockchain.service.wallet.InstitutionalWalletService;
+import decentralabs.blockchain.service.wallet.PendingNonceFastRawTransactionManager;
 import decentralabs.blockchain.service.wallet.WalletService;
 import java.io.IOException;
 import java.math.BigInteger;
@@ -28,8 +29,6 @@ import org.web3j.protocol.core.methods.request.Transaction;
 import org.web3j.protocol.core.methods.response.EthCall;
 import org.web3j.protocol.core.methods.response.EthChainId;
 import org.web3j.protocol.core.methods.response.EthSendTransaction;
-import org.web3j.protocol.core.methods.response.TransactionReceipt;
-import org.web3j.tx.FastRawTransactionManager;
 import org.web3j.tx.TransactionManager;
 import org.web3j.utils.Numeric;
 
@@ -37,6 +36,7 @@ import org.web3j.utils.Numeric;
 @RequiredArgsConstructor
 @Slf4j
 public class SessionStartedOnChainClient {
+    public enum TransactionState { PENDING, SUCCEEDED, FAILED }
 
     private final WalletService walletService;
     private final InstitutionalWalletService institutionalWalletService;
@@ -51,11 +51,8 @@ public class SessionStartedOnChainClient {
     @Value("${ethereum.gas.price.default:1}")
     private BigInteger gasPriceGwei;
 
-    @Value("${session.attestation.publisher.receipt.max-attempts:40}")
-    private int receiptMaxAttempts;
-
-    @Value("${session.attestation.publisher.receipt.poll-interval-ms:1500}")
-    private long receiptPollIntervalMs;
+    @Value("${session.attestation.publisher.nonce-replacement-gas-bump-percent:15}")
+    private int nonceReplacementGasBumpPercent;
 
     public boolean hasSessionStarted(String reservationKey) {
         Web3j web3j = walletService.getWeb3jInstance();
@@ -87,14 +84,27 @@ public class SessionStartedOnChainClient {
         }
     }
 
-    public String markSessionStarted(SessionStartedOnChainSubmission submission) {
+    public String signerAddress() {
+        return institutionalWalletService.getInstitutionalCredentials().getAddress();
+    }
+
+    public String markSessionStarted(
+        SessionStartedOnChainSubmission submission,
+        BigInteger transactionNonce,
+        int replacementAttempt
+    ) {
         validate(submission);
+        if (transactionNonce == null || transactionNonce.signum() < 0) {
+            throw new IllegalArgumentException("SessionStarted transaction nonce is required");
+        }
 
         Credentials credentials = institutionalWalletService.getInstitutionalCredentials();
         Web3j web3j = walletService.getWeb3jInstance();
         long chainId = getChainId(web3j);
         validateDomainChainId(chainId);
-        TransactionManager txManager = new FastRawTransactionManager(web3j, credentials, chainId);
+        TransactionManager txManager = new PendingNonceFastRawTransactionManager(
+            web3j, credentials, chainId, transactionNonce
+        );
 
         Function function = new Function(
             "markSessionStarted",
@@ -119,7 +129,7 @@ public class SessionStartedOnChainClient {
         EthSendTransaction tx;
         try {
             tx = txManager.sendTransaction(
-                toWei(gasPriceGwei),
+                toWei(gasPriceForReplacement(replacementAttempt)),
                 gasLimit,
                 contractAddress,
                 encoded,
@@ -135,41 +145,24 @@ public class SessionStartedOnChainClient {
             throw new IllegalStateException("SessionStarted transaction failed: " + error);
         }
 
-        TransactionReceipt receipt = waitForReceipt(web3j, txHash);
-        if (!receipt.isStatusOK()) {
-            String status = receipt.getStatus() != null ? receipt.getStatus() : "unknown";
-            throw new IllegalStateException("SessionStarted transaction was mined but failed. Status: " + status);
-        }
         return txHash;
     }
 
-    private TransactionReceipt waitForReceipt(Web3j web3j, String txHash) {
-        int attempts = Math.max(1, receiptMaxAttempts);
-        long pollInterval = Math.max(0L, receiptPollIntervalMs);
-
-        for (int attempt = 1; attempt <= attempts; attempt++) {
-            try {
-                var response = web3j.ethGetTransactionReceipt(txHash).send();
-                if (response != null && response.getTransactionReceipt().isPresent()) {
-                    return response.getTransactionReceipt().get();
-                }
-            } catch (Exception ex) {
-                throw new IllegalStateException("Failed to confirm SessionStarted transaction: " + ex.getMessage(), ex);
-            }
-
-            if (attempt < attempts && pollInterval > 0L) {
-                try {
-                    Thread.sleep(pollInterval);
-                } catch (InterruptedException ex) {
-                    Thread.currentThread().interrupt();
-                    throw new IllegalStateException("Interrupted while waiting for SessionStarted confirmation", ex);
-                }
-            }
+    public TransactionState transactionState(String txHash) {
+        if (txHash == null || !txHash.matches("^0x[0-9a-fA-F]{64}$")) {
+            throw new IllegalArgumentException("Invalid SessionStarted transaction hash");
         }
-
-        throw new IllegalStateException(
-            "SessionStarted transaction was not confirmed after " + attempts + " receipt poll attempts: " + txHash
-        );
+        try {
+            var response = walletService.getWeb3jInstance().ethGetTransactionReceipt(txHash).send();
+            if (response == null || response.getTransactionReceipt().isEmpty()) {
+                return TransactionState.PENDING;
+            }
+            return response.getTransactionReceipt().get().isStatusOK()
+                ? TransactionState.SUCCEEDED : TransactionState.FAILED;
+        } catch (Exception ex) {
+            log.warn("Unable to inspect SessionStarted transaction {}: {}", txHash, ex.getMessage());
+            return TransactionState.PENDING;
+        }
     }
 
     private long getChainId(Web3j web3j) {
@@ -224,6 +217,14 @@ public class SessionStartedOnChainClient {
             return BigInteger.ZERO;
         }
         return org.web3j.utils.Convert.toWei(gwei.toString(), org.web3j.utils.Convert.Unit.GWEI).toBigInteger();
+    }
+
+    private BigInteger gasPriceForReplacement(int replacementAttempt) {
+        BigInteger base = gasPriceGwei != null ? gasPriceGwei : BigInteger.ZERO;
+        int attempts = Math.max(0, replacementAttempt);
+        int bumpPercent = Math.max(0, nonceReplacementGasBumpPercent);
+        BigInteger multiplier = BigInteger.valueOf(100L + (long) attempts * bumpPercent);
+        return base.multiply(multiplier).add(BigInteger.valueOf(99)).divide(BigInteger.valueOf(100));
     }
 
     private byte[] toBytes32(String hex) {

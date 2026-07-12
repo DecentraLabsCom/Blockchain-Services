@@ -12,6 +12,8 @@ import decentralabs.blockchain.security.AccessTokenAuthenticationFilter;
 import decentralabs.blockchain.security.AdminNetworkAccessPolicy;
 import decentralabs.blockchain.security.LocalhostOnlyFilter;
 import decentralabs.blockchain.security.PublicEndpointRateLimitFilter;
+import decentralabs.blockchain.security.SessionObserverAuthenticationFilter;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import decentralabs.blockchain.service.BackendUrlResolver;
 import decentralabs.blockchain.service.billing.InstitutionalAdminService;
 import decentralabs.blockchain.dto.billing.InstitutionalAdminRequest;
@@ -24,6 +26,7 @@ import org.springframework.boot.SpringBootConfiguration;
 import org.springframework.boot.autoconfigure.EnableAutoConfiguration;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.annotation.Import;
+import org.springframework.context.annotation.Bean;
 import org.springframework.http.MediaType;
 import org.springframework.security.test.context.support.WithMockUser;
 import org.springframework.test.context.TestPropertySource;
@@ -177,11 +180,16 @@ class BillingAdminControllerIntegrationTest {
         SecurityConfig.class,
         BackendUrlResolver.class,
         AccessTokenAuthenticationFilter.class,
+        SessionObserverAuthenticationFilter.class,
         AdminNetworkAccessPolicy.class,
         LocalhostOnlyFilter.class,
         PublicEndpointRateLimitFilter.class,
         BillingAdminController.class
     })
     static class TestApplication {
+        @Bean
+        ObjectMapper objectMapper() {
+            return new ObjectMapper();
+        }
     }
 }

@@ -20,6 +20,7 @@ import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 import org.springframework.web.cors.CorsConfigurationSource;
 
 import decentralabs.blockchain.security.AccessTokenAuthenticationFilter;
+import decentralabs.blockchain.security.SessionObserverAuthenticationFilter;
 import decentralabs.blockchain.service.BackendUrlResolver;
 
 @Configuration
@@ -72,13 +73,16 @@ public class SecurityConfig {
     private boolean providersEnabled;
 
     private final AccessTokenAuthenticationFilter accessTokenAuthenticationFilter;
+    private final SessionObserverAuthenticationFilter sessionObserverAuthenticationFilter;
     private final BackendUrlResolver backendUrlResolver;
 
     public SecurityConfig(
         AccessTokenAuthenticationFilter accessTokenAuthenticationFilter,
+        SessionObserverAuthenticationFilter sessionObserverAuthenticationFilter,
         BackendUrlResolver backendUrlResolver
     ) {
         this.accessTokenAuthenticationFilter = accessTokenAuthenticationFilter;
+        this.sessionObserverAuthenticationFilter = sessionObserverAuthenticationFilter;
         this.backendUrlResolver = backendUrlResolver;
     }
 
@@ -135,6 +139,8 @@ public class SecurityConfig {
                 authorize.requestMatchers("/institution-config/**").permitAll();
                 authorize.requestMatchers("/lab-content/**").permitAll();
                 authorize.requestMatchers("/lab-admin/**").permitAll();
+                authorize.requestMatchers(HttpMethod.POST, "/access-audit/internal/session-observed")
+                    .hasRole("SESSION_OBSERVER");
                 authorize.requestMatchers("/access-audit/internal/**").hasRole("INTERNAL");
                 authorize.requestMatchers(intentsEndpoint + "/**").permitAll();
                 // Wallet dashboard static resources (HTML/CSS/JS)
@@ -153,7 +159,8 @@ public class SecurityConfig {
                 authorize.requestMatchers(billingEndpoint + "/**").permitAll();
                 authorize.anyRequest().denyAll();
             })
-            .addFilterBefore(accessTokenAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
+            .addFilterBefore(sessionObserverAuthenticationFilter, UsernamePasswordAuthenticationFilter.class)
+            .addFilterBefore(accessTokenAuthenticationFilter, SessionObserverAuthenticationFilter.class);
 
         return http.build();
     }

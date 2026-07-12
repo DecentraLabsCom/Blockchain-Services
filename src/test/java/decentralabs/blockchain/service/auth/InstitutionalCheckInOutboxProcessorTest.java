@@ -9,6 +9,7 @@ import static org.mockito.Mockito.when;
 import decentralabs.blockchain.service.wallet.BlockchainBookingService;
 import java.math.BigInteger;
 import java.time.Instant;
+import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -49,6 +50,20 @@ class InstitutionalCheckInOutboxProcessorTest {
             null
         )).thenReturn(Map.of("reservationStatus", BigInteger.ONE));
         processor.process(record);
+
+        verify(nonceDispatcher).dispatch(record);
+    }
+
+    @Test
+    void scheduledProcessingAlwaysDrainsTheRequiredOutbox() throws Exception {
+        var record = record(0);
+        ReflectionTestUtils.setField(processor, "batchSize", 1);
+        when(outboxService.findDue(any(Instant.class), eq(1))).thenReturn(List.of(record));
+        when(outboxService.claim(record.id())).thenReturn(true);
+        when(bookingService.getCheckInBookingInfo(any(), any(), any(), eq(null)))
+            .thenReturn(Map.of("reservationStatus", BigInteger.ONE));
+
+        processor.processDueCheckIns();
 
         verify(nonceDispatcher).dispatch(record);
     }

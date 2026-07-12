@@ -41,7 +41,7 @@ public class InstitutionalCheckInOutboxService {
                 status, attempts, next_attempt_at, created_at, updated_at
             ) VALUES (?, ?, ?, ?, ?, ?, 'PENDING', 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
             ON DUPLICATE KEY UPDATE
-                id = LAST_INSERT_ID(id)
+                reservation_key = VALUES(reservation_key)
             """,
             reservationKey,
             labId,
@@ -50,11 +50,20 @@ public class InstitutionalCheckInOutboxService {
             pucHash,
             accessSessionId
         );
-        Long id = jdbcTemplate.queryForObject("SELECT LAST_INSERT_ID()", Long.class);
-        if (id == null) {
-            throw new IllegalStateException("Could not resolve check-in outbox record");
-        }
-        return findById(id);
+        return findByReservationKey(reservationKey);
+    }
+
+    public InstitutionalCheckInOutboxRecord findByReservationKey(String reservationKey) {
+        requireConfigured();
+        return jdbcTemplate.queryForObject(
+            """
+            SELECT id, reservation_key, lab_id, institutional_wallet, puc_hash,
+                   access_session_id, status, attempts, next_attempt_at, tx_hash, wallet_address, nonce, submitted_at
+            FROM institutional_checkin_outbox WHERE reservation_key = ?
+            """,
+            (rs, rowNum) -> mapRow(rs),
+            reservationKey
+        );
     }
 
     public InstitutionalCheckInOutboxRecord findById(long id) {

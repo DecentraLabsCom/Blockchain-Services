@@ -22,9 +22,6 @@ public class InstitutionalCheckInOutboxProcessor {
     private final BlockchainBookingService bookingService;
     private final InstitutionalWalletNonceDispatcher nonceDispatcher;
 
-    @Value("${institutional.checkin.outbox.enabled:true}")
-    private boolean enabled;
-
     @Value("${institutional.checkin.outbox.batch-size:10}")
     private int batchSize;
 
@@ -39,9 +36,6 @@ public class InstitutionalCheckInOutboxProcessor {
 
     @Scheduled(fixedDelayString = "${institutional.checkin.outbox.interval-ms:2000}")
     public void processDueCheckIns() {
-        if (!enabled) {
-            return;
-        }
         List<InstitutionalCheckInOutboxRecord> due = outboxService.findDue(
             Instant.now(),
             Math.max(1, batchSize)

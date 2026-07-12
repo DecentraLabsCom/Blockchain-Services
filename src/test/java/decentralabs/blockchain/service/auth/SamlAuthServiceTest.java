@@ -25,6 +25,7 @@ import org.springframework.test.util.ReflectionTestUtils;
 
 import decentralabs.blockchain.dto.auth.AuthResponse;
 import decentralabs.blockchain.dto.auth.ProviderAccessCredentialRequest;
+import decentralabs.blockchain.dto.auth.SamlAuthRequest;
 import decentralabs.blockchain.service.wallet.BlockchainBookingService;
 
 @ExtendWith(MockitoExtension.class)
@@ -38,6 +39,9 @@ class SamlAuthServiceTest {
 
     @Mock
     private MarketplaceEndpointAuthService marketplaceEndpointAuthService;
+
+    @Mock
+    private SamlValidationService samlValidationService;
 
     @Mock
     private InstitutionalAccessCheckInCoordinator accessCheckInCoordinator;
@@ -98,7 +102,7 @@ class SamlAuthServiceTest {
             when(jwtService.generateIssuedToken(eq(null), any())).thenReturn(
                 new JwtService.IssuedToken("booking-token", "jwt-jti-provider", 1_700_000_000L, null)
             );
-            when(accessCodeService.issue("booking-token")).thenReturn(
+            when(accessCodeService.issue("booking-token", "0xreservation", 1L)).thenReturn(
                 new decentralabs.blockchain.dto.auth.AccessCodeResponse("opaque-code", "https://lab.example.com/guacamole/")
             );
             var lease = new AccessAuthorizationProvisioningService.ProvisioningLease(
@@ -116,7 +120,10 @@ class SamlAuthServiceTest {
             assertThat(response.getLabURL()).isEqualTo("https://lab.example.com/guacamole/");
             verify(accessCheckInCoordinator, never()).recordAccessGranted(any(), any(), any());
             verify(accessCredentialAuditService).recordJwtIssued(any(), any(), eq(bookingInfo), any());
-            verify(accessCodeService).issue("booking-token");
+            verify(accessCodeService).issue("booking-token", "0xreservation", 1L);
+            var deliveryOrder = org.mockito.Mockito.inOrder(accessCodeService, accessCredentialAuditService);
+            deliveryOrder.verify(accessCodeService).issue("booking-token", "0xreservation", 1L);
+            deliveryOrder.verify(accessCredentialAuditService).recordJwtIssued(any(), any(), eq(bookingInfo), any());
         }
 
         @Test
@@ -246,7 +253,7 @@ class SamlAuthServiceTest {
             when(accessAuthorizationProvisioningService.isCurrent(lease)).thenReturn(true);
             when(accessAuthorizationProvisioningService.heartbeat(lease)).thenReturn(true);
             when(accessAuthorizationProvisioningService.markDelivered(lease)).thenReturn(true);
-            when(accessCodeService.issue("booking-token")).thenReturn(
+            when(accessCodeService.issue("booking-token", "0xreservation", 2L)).thenReturn(
                 new decentralabs.blockchain.dto.auth.AccessCodeResponse("opaque-code", "https://lab.example.com/guacamole/")
             );
 
@@ -256,5 +263,53 @@ class SamlAuthServiceTest {
             verify(blockchainService).activatePreparedGuacamoleAccess(bookingInfo, "fence-token");
             verify(accessAuthorizationProvisioningService).markDelivered(lease);
         }
+    }
+
+    @Test
+    void combinedFlowBroadcastsCheckInBeforeProviderProvisioning() throws Exception {
+        SamlAuthRequest request = new SamlAuthRequest();
+        request.setMarketplaceToken("combined-token");
+        request.setSamlAssertion("signed-saml");
+        request.setReservationKey("0xreservation");
+        request.setLabId("42");
+        Map<String, Object> claims = Map.of(
+            "puc", TEST_PUC,
+            "affiliation", TEST_AFFILIATION,
+            "bookingInfoAllowed", true,
+            "purpose", "lab_access",
+            "reservationKey", "0xreservation",
+            "labId", "42",
+            "payerInstitutionWallet", "0xwallet"
+        );
+        Map<String, Object> bookingInfo = new HashMap<>(Map.of(
+            "labURL", "https://lab.example.com/guacamole/",
+            "reservationKey", "0xreservation",
+            "reservationStatus", java.math.BigInteger.valueOf(2),
+            "resourceType", "lab"
+        ));
+        var lease = new AccessAuthorizationProvisioningService.ProvisioningLease(
+            "0xreservation", "fence-token", 1L
+        );
+        when(marketplaceEndpointAuthService.enforceToken("combined-token", null)).thenReturn(claims);
+        when(samlValidationService.validateSamlAssertionWithSignature("signed-saml"))
+            .thenReturn(Map.of("puc", TEST_PUC, "affiliation", TEST_AFFILIATION));
+        when(blockchainService.getBookingInfoForCredentialPreparation(
+            "0xwallet", "0xreservation", "42", TEST_PUC
+        )).thenReturn(bookingInfo);
+        when(accessAuthorizationProvisioningService.tryStart("0xreservation")).thenReturn(lease);
+        when(accessAuthorizationProvisioningService.isCurrent(lease)).thenReturn(true);
+        when(accessAuthorizationProvisioningService.heartbeat(lease)).thenReturn(true);
+        when(accessAuthorizationProvisioningService.markDelivered(lease)).thenReturn(true);
+        when(accessCodeService.issue("booking-token", "0xreservation", 1L)).thenReturn(
+            new decentralabs.blockchain.dto.auth.AccessCodeResponse(
+                "opaque-code", "https://lab.example.com/guacamole/"
+            )
+        );
+
+        samlAuthService.authorizeAndIssue(request);
+
+        var order = org.mockito.Mockito.inOrder(accessCheckInCoordinator, blockchainService);
+        order.verify(accessCheckInCoordinator).recordAccessGranted(request, claims, bookingInfo);
+        order.verify(blockchainService).provisionGuacamoleAccess(bookingInfo, false, "fence-token");
     }
 }

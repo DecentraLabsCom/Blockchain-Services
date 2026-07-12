@@ -5,8 +5,10 @@ import decentralabs.blockchain.service.auth.AccessCredentialAuditService;
 import decentralabs.blockchain.service.auth.SessionStartedAttestationService;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -24,8 +26,19 @@ public class AccessCredentialAuditController {
 
     @PostMapping("/session-observed")
     public ResponseEntity<?> recordSessionObserved(
-        @RequestBody(required = false) AccessCredentialSessionObservedRequest request
+        @RequestBody(required = false) AccessCredentialSessionObservedRequest request,
+        Authentication authentication
     ) {
+        String authenticatedGateway = authentication != null ? authentication.getName() : null;
+        if (request != null && hasText(authenticatedGateway)) {
+            if (hasText(request.getGatewayId()) && !Objects.equals(authenticatedGateway, request.getGatewayId())) {
+                return ResponseEntity.status(403).body(Map.of(
+                    "code", "GATEWAY_ID_MISMATCH",
+                    "error", "gatewayId does not match the authenticated observer"
+                ));
+            }
+            request.setGatewayId(authenticatedGateway);
+        }
         String validationError = validateObservation(request);
         if (validationError != null) {
             return ResponseEntity.badRequest().body(Map.of(

@@ -7,6 +7,7 @@ import decentralabs.blockchain.service.wallet.InstitutionalWalletService;
 import decentralabs.blockchain.util.PucHashUtil;
 import decentralabs.blockchain.util.PucNormalizer;
 import java.math.BigInteger;
+import java.time.Instant;
 import java.util.Locale;
 import java.util.Map;
 import lombok.RequiredArgsConstructor;
@@ -22,6 +23,7 @@ public class InstitutionalAccessCheckInCoordinator {
     private final InstitutionalWalletService institutionalWalletService;
     private final InstitutionalCheckInDirectoryService directoryService;
     private final RemoteInstitutionalCheckInClient remoteCheckInClient;
+    private final InstitutionalWalletNonceDispatcher nonceDispatcher;
 
     @Value("${institutional.checkin.delegation.enabled:true}")
     private boolean delegationEnabled;
@@ -65,12 +67,29 @@ public class InstitutionalAccessCheckInCoordinator {
             if ("MINED_FAILED".equals(record.status()) || "FAILED".equals(record.status())) {
                 // This point is reached only after the provider has performed
                 // the full CONFIRMED/window validation for the new request.
-                outboxService.restartTerminalFailure(record.id());
+                record = outboxService.restartTerminalFailure(record.id());
             }
+            dispatchImmediately(record);
             return;
         }
 
         delegateSynchronously(request, marketplaceClaims, reservationKey, institutionalWallet, puc, labId);
+    }
+
+    private void dispatchImmediately(InstitutionalCheckInOutboxRecord record) {
+        if (record == null || !outboxService.claim(record.id())) {
+            return;
+        }
+        try {
+            nonceDispatcher.dispatch(record);
+        } catch (Exception ex) {
+            outboxService.markRetry(
+                record.id(),
+                record.attempts() + 1,
+                Instant.now(),
+                "Initial institutional check-in broadcast outcome is uncertain"
+            );
+        }
     }
 
     private void delegateSynchronously(

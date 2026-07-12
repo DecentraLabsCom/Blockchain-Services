@@ -68,6 +68,7 @@ public class SamlAuthService {
 
         Map<String, Object> bookingInfo = null;
         AccessAuthorizationProvisioningService.ProvisioningLease provisionalLease = null;
+        String issuedAccessCode = null;
         try {
             bookingInfo = blockchainService.getBookingInfoForCredentialPreparation(
                 payerInstitutionWallet,
@@ -75,6 +76,11 @@ public class SamlAuthService {
                 request.getLabId(),
                 stringClaim(marketplaceJWTClaims, "puc")
             );
+            AuthResponse recovered = isAccessAuthorized(bookingInfo)
+                ? recoverDeliveredAccess(request.getReservationKey()) : null;
+            if (recovered != null) {
+                return recovered;
+            }
             String puc = stringClaim(marketplaceJWTClaims, "puc");
             String txHash = request.getAccessAuthorizationTxHash();
             if (isAccessAuthorized(bookingInfo)) {
@@ -102,24 +108,28 @@ public class SamlAuthService {
                 blockchainService.activatePreparedGuacamoleAccess(bookingInfo, provisionalLease.fencingToken());
             }
             JwtService.IssuedToken issuedToken = jwtService.generateIssuedToken(null, bookingInfo);
+            AuthResponse response = buildDeliveredAccessResponse(issuedToken, bookingInfo, provisionalLease);
+            issuedAccessCode = response.getAccessCode();
             SamlAuthRequest auditRequest = new SamlAuthRequest();
             auditRequest.setMarketplaceToken(request.getMarketplaceToken());
             auditRequest.setReservationKey(request.getReservationKey());
             auditRequest.setLabId(request.getLabId());
             auditRequest.setTimestamp(System.currentTimeMillis() / 1000);
             accessCredentialAuditService.recordJwtIssued(auditRequest, marketplaceJWTClaims, bookingInfo, issuedToken);
-            AuthResponse response = buildDeliveredAccessResponse(issuedToken, bookingInfo);
             if (provisionalLease != null && !accessAuthorizationProvisioningService.markDelivered(provisionalLease)) {
                 throw provisioningLeaseLost(provisionalLease, txHash);
             }
             return response;
         } catch (AccessAuthorizationPendingException ex) {
+            accessCodeService.revoke(issuedAccessCode);
             rollbackPreparedGuacamoleAccess(bookingInfo, request.getReservationKey(), provisionalLease);
             throw ex;
         } catch (RuntimeException ex) {
+            accessCodeService.revoke(issuedAccessCode);
             rollbackPreparedGuacamoleAccess(bookingInfo, request.getReservationKey(), provisionalLease);
             throw ex;
         } catch (Exception ex) {
+            accessCodeService.revoke(issuedAccessCode);
             rollbackPreparedGuacamoleAccess(bookingInfo, request.getReservationKey(), provisionalLease);
             throw new IllegalStateException("Failed to issue access credential", ex);
         }
@@ -166,9 +176,15 @@ public class SamlAuthService {
 
         Map<String, Object> bookingInfo = null;
         AccessAuthorizationProvisioningService.ProvisioningLease provisionalLease = null;
+        String issuedAccessCode = null;
         try {
             bookingInfo = blockchainService.getBookingInfoForCredentialPreparation(wallet, request.getReservationKey(), request.getLabId(), jwtPuc);
-            // Persist and schedule the payer-side authorization before the
+            AuthResponse recovered = isAccessAuthorized(bookingInfo)
+                ? recoverDeliveredAccess(request.getReservationKey()) : null;
+            if (recovered != null) {
+                return recovered;
+            }
+            // Persist and immediately broadcast the payer-side authorization before the
             // remote Guacamole provisioning work. The access gate remains
             // ACCESS_AUTHORIZED; this only removes avoidable broadcast delay.
             accessCheckInCoordinator.recordAccessGranted(request, marketplaceJWTClaims, bookingInfo);
@@ -196,16 +212,19 @@ public class SamlAuthService {
                 blockchainService.activatePreparedGuacamoleAccess(bookingInfo, provisionalLease.fencingToken());
             }
             JwtService.IssuedToken issuedToken = jwtService.generateIssuedToken(null, bookingInfo);
+            AuthResponse response = buildDeliveredAccessResponse(issuedToken, bookingInfo, provisionalLease);
+            issuedAccessCode = response.getAccessCode();
             accessCredentialAuditService.recordJwtIssued(request, marketplaceJWTClaims, bookingInfo, issuedToken);
-            AuthResponse response = buildDeliveredAccessResponse(issuedToken, bookingInfo);
             if (provisionalLease != null && !accessAuthorizationProvisioningService.markDelivered(provisionalLease)) {
                 throw provisioningLeaseLost(provisionalLease, null);
             }
             return response;
         } catch (RuntimeException ex) {
+            accessCodeService.revoke(issuedAccessCode);
             rollbackPreparedGuacamoleAccess(bookingInfo, request.getReservationKey(), provisionalLease);
             throw ex;
         } catch (Exception ex) {
+            accessCodeService.revoke(issuedAccessCode);
             rollbackPreparedGuacamoleAccess(bookingInfo, request.getReservationKey(), provisionalLease);
             throw new IllegalStateException("Failed to authorize and issue access credential", ex);
         }
@@ -312,13 +331,23 @@ public class SamlAuthService {
      * The provider persists the browser hand-off before declaring provisioning
      * delivered. Marketplace never receives the Guacamole bearer credential.
      */
-    private AuthResponse buildDeliveredAccessResponse(JwtService.IssuedToken issuedToken, Map<String, Object> bookingInfo) {
-        String labUrl = stringClaim(bookingInfo, "labURL");
-        if ("lab".equals(stringClaim(bookingInfo, "resourceType"))) {
-            var accessCode = accessCodeService.issue(issuedToken.token());
-            return AuthResponse.opaqueGuacamoleAccess(accessCode.getAccessCode(), accessCode.getLabURL());
+    private AuthResponse buildDeliveredAccessResponse(
+        JwtService.IssuedToken issuedToken,
+        Map<String, Object> bookingInfo,
+        AccessAuthorizationProvisioningService.ProvisioningLease lease
+    ) {
+        if (lease == null) {
+            throw new IllegalStateException("Access delivery requires a provisioning generation");
         }
-        return new AuthResponse(issuedToken.token(), labUrl);
+        var accessCode = accessCodeService.issue(issuedToken.token(), lease.reservationKey(), lease.generation());
+        return AuthResponse.opaqueAccess(accessCode.getAccessCode(), accessCode.getLabURL());
+    }
+
+    private AuthResponse recoverDeliveredAccess(String reservationKey) {
+        Long generation = accessAuthorizationProvisioningService.deliveredGeneration(reservationKey);
+        if (generation == null) return null;
+        var delivery = accessCodeService.recoverDelivery(reservationKey, generation);
+        return delivery == null ? null : AuthResponse.opaqueAccess(delivery.getAccessCode(), delivery.getLabURL());
     }
 
     /**
@@ -335,8 +364,9 @@ public class SamlAuthService {
         String txHash
     ) {
         if (!"lab".equals(bookingInfo.get("resourceType"))) {
+            AccessAuthorizationProvisioningService.ProvisioningLease lease = acquireProvisioningLease(reservationKey, txHash);
             blockchainService.provisionGuacamoleAccess(bookingInfo);
-            return null;
+            return lease;
         }
         AccessAuthorizationProvisioningService.ProvisioningLease lease = acquireProvisioningLease(reservationKey, txHash);
         blockchainService.provisionGuacamoleAccess(bookingInfo, false, lease.fencingToken());

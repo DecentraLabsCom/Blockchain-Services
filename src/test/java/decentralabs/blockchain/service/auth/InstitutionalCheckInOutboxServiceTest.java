@@ -22,8 +22,11 @@ class InstitutionalCheckInOutboxServiceTest {
         ObjectProvider<JdbcTemplate> provider = mock(ObjectProvider.class);
         JdbcTemplate jdbcTemplate = mock(JdbcTemplate.class);
         when(provider.getIfAvailable()).thenReturn(jdbcTemplate);
-        when(jdbcTemplate.queryForObject("SELECT LAST_INSERT_ID()", Long.class)).thenReturn(7L);
-        when(jdbcTemplate.queryForObject(any(String.class), any(org.springframework.jdbc.core.RowMapper.class), anyLong()))
+        when(jdbcTemplate.queryForObject(
+            any(String.class),
+            any(org.springframework.jdbc.core.RowMapper.class),
+            org.mockito.ArgumentMatchers.eq("0xreservation")
+        ))
             .thenReturn(record());
         InstitutionalCheckInOutboxService service = new InstitutionalCheckInOutboxService(provider);
 
@@ -31,7 +34,7 @@ class InstitutionalCheckInOutboxServiceTest {
 
         ArgumentCaptor<String> sql = ArgumentCaptor.forClass(String.class);
         verify(jdbcTemplate).update(sql.capture(), any(), any(), any(), any(), any(), any());
-        assertThat(sql.getValue()).contains("id = LAST_INSERT_ID(id)");
+        assertThat(sql.getValue()).contains("reservation_key = VALUES(reservation_key)");
         assertThat(sql.getValue()).doesNotContain("status =").doesNotContain("attempts =").doesNotContain("nonce =");
     }
 

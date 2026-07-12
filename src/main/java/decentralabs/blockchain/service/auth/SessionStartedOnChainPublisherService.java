@@ -2,6 +2,7 @@ package decentralabs.blockchain.service.auth;
 
 import decentralabs.blockchain.util.LogSanitizer;
 import java.sql.Timestamp;
+import java.math.BigInteger;
 import java.time.Instant;
 import java.util.List;
 import lombok.extern.slf4j.Slf4j;
@@ -19,6 +20,7 @@ public class SessionStartedOnChainPublisherService {
 
     private final JdbcTemplate jdbcTemplate;
     private final SessionStartedOnChainClient onChainClient;
+    private final InstitutionalWalletTransactionDispatcher transactionDispatcher;
 
     @Value("${session.attestation.publisher.enabled:true}")
     private boolean enabled;
@@ -32,12 +34,17 @@ public class SessionStartedOnChainPublisherService {
     @Value("${session.attestation.publisher.max-attempts:5}")
     private int maxAttempts;
 
+    @Value("${session.attestation.publisher.stuck-transaction-ms:30000}")
+    private long stuckTransactionMs;
+
     public SessionStartedOnChainPublisherService(
         ObjectProvider<JdbcTemplate> jdbcTemplateProvider,
-        SessionStartedOnChainClient onChainClient
+        SessionStartedOnChainClient onChainClient,
+        InstitutionalWalletTransactionDispatcher transactionDispatcher
     ) {
         this.jdbcTemplate = jdbcTemplateProvider.getIfAvailable();
         this.onChainClient = onChainClient;
+        this.transactionDispatcher = transactionDispatcher;
     }
 
     @Scheduled(fixedDelayString = "${session.attestation.publisher.interval-ms:15000}")
@@ -53,15 +60,18 @@ public class SessionStartedOnChainPublisherService {
     }
 
     int publishPending(int limit) {
-        List<SessionStartedOnChainSubmission> pending;
+        int mined = monitorSubmitted(Math.max(1, limit));
+        List<SessionStartedTransactionRecord> pending;
         try {
             pending = jdbcTemplate.query(
                 """
                 SELECT id, reservation_key, lab_id, puc_hash, signer_address, gateway_id,
                        session_id, access_type, started_at, nonce, credential_hash,
-                       client_proof_hash, signature
+                       client_proof_hash, signature, onchain_status, onchain_publish_attempts,
+                       onchain_wallet_address, onchain_nonce, onchain_tx_hash, onchain_submitted_at
                 FROM session_started_attestations
                 WHERE onchain_published_at IS NULL
+                  AND onchain_status IN ('QUEUED', 'RETRY', 'SUBMITTING')
                   AND onchain_publish_attempts < ?
                   AND (
                     onchain_publish_locked_at IS NULL
@@ -70,7 +80,7 @@ public class SessionStartedOnChainPublisherService {
                 ORDER BY created_at ASC, id ASC
                 LIMIT ?
                 """,
-                rowMapper(),
+                transactionRowMapper(),
                 maxPublishAttempts(),
                 lockThreshold(),
                 Math.max(1, limit)
@@ -80,16 +90,17 @@ public class SessionStartedOnChainPublisherService {
             return 0;
         }
 
-        int published = 0;
-        for (SessionStartedOnChainSubmission submission : pending) {
-            if (publish(submission)) {
-                published++;
+        int submitted = 0;
+        for (SessionStartedTransactionRecord record : pending) {
+            if (publish(record)) {
+                submitted++;
             }
         }
-        return published;
+        return mined + submitted;
     }
 
-    private boolean publish(SessionStartedOnChainSubmission submission) {
+    private boolean publish(SessionStartedTransactionRecord record) {
+        SessionStartedOnChainSubmission submission = record.submission();
         if (!claim(submission.id())) {
             return false;
         }
@@ -100,10 +111,18 @@ public class SessionStartedOnChainPublisherService {
                 return true;
             }
 
-            String txHash = onChainClient.markSessionStarted(submission);
-            markSucceeded(submission.id(), txHash);
+            String walletAddress = onChainClient.signerAddress();
+            BigInteger existingNonce = walletAddress.equalsIgnoreCase(record.walletAddress())
+                ? record.transactionNonce() : null;
+            String txHash = transactionDispatcher.dispatch(
+                walletAddress,
+                existingNonce,
+                nonce -> markNonceReserved(submission.id(), walletAddress, nonce),
+                nonce -> onChainClient.markSessionStarted(submission, nonce, record.attempts()),
+                hash -> markSubmitted(submission.id(), hash)
+            );
             log.info(
-                "Published SessionStarted on-chain for reservation {} tx={}",
+                "Submitted SessionStarted on-chain for reservation {} tx={}",
                 LogSanitizer.sanitize(submission.reservationKey()),
                 LogSanitizer.sanitize(txHash)
             );
@@ -120,10 +139,12 @@ public class SessionStartedOnChainPublisherService {
             UPDATE session_started_attestations
             SET onchain_publish_locked_at = CURRENT_TIMESTAMP,
                 onchain_publish_attempts = onchain_publish_attempts + 1,
+                onchain_status = 'SUBMITTING',
                 onchain_publish_last_error = NULL,
                 updated_at = CURRENT_TIMESTAMP
             WHERE id = ?
               AND onchain_published_at IS NULL
+              AND onchain_status IN ('QUEUED', 'RETRY', 'SUBMITTING')
               AND onchain_publish_attempts < ?
               AND (
                 onchain_publish_locked_at IS NULL
@@ -137,12 +158,28 @@ public class SessionStartedOnChainPublisherService {
         return updated == 1;
     }
 
-    private void markSucceeded(long id, String txHash) {
+    private void markNonceReserved(long id, String walletAddress, BigInteger nonce) {
+        jdbcTemplate.update(
+            """
+            UPDATE session_started_attestations
+            SET onchain_wallet_address = ?,
+                onchain_nonce = ?,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE id = ? AND onchain_status = 'SUBMITTING'
+            """,
+            walletAddress,
+            nonce,
+            id
+        );
+    }
+
+    private void markSubmitted(long id, String txHash) {
         jdbcTemplate.update(
             """
             UPDATE session_started_attestations
             SET onchain_tx_hash = ?,
-                onchain_published_at = CURRENT_TIMESTAMP,
+                onchain_status = 'SUBMITTED',
+                onchain_submitted_at = CURRENT_TIMESTAMP,
                 onchain_publish_locked_at = NULL,
                 onchain_publish_last_error = NULL,
                 updated_at = CURRENT_TIMESTAMP
@@ -158,6 +195,8 @@ public class SessionStartedOnChainPublisherService {
             """
             UPDATE session_started_attestations
             SET onchain_published_at = CURRENT_TIMESTAMP,
+                onchain_status = 'MINED_SUCCESS',
+                onchain_mined_at = CURRENT_TIMESTAMP,
                 onchain_publish_locked_at = NULL,
                 onchain_publish_last_error = NULL,
                 updated_at = CURRENT_TIMESTAMP
@@ -173,10 +212,15 @@ public class SessionStartedOnChainPublisherService {
             """
             UPDATE session_started_attestations
             SET onchain_publish_locked_at = NULL,
+                onchain_status = CASE
+                    WHEN onchain_publish_attempts >= ? THEN 'FAILED'
+                    ELSE 'RETRY'
+                END,
                 onchain_publish_last_error = ?,
                 updated_at = CURRENT_TIMESTAMP
             WHERE id = ?
             """,
+            maxPublishAttempts(),
             error,
             id
         );
@@ -192,8 +236,99 @@ public class SessionStartedOnChainPublisherService {
         return Math.max(1, maxAttempts);
     }
 
-    private RowMapper<SessionStartedOnChainSubmission> rowMapper() {
-        return (rs, rowNum) -> new SessionStartedOnChainSubmission(
+    private int monitorSubmitted(int limit) {
+        List<SessionStartedTransactionRecord> submitted;
+        try {
+            submitted = jdbcTemplate.query(
+                """
+                SELECT id, reservation_key, lab_id, puc_hash, signer_address, gateway_id,
+                       session_id, access_type, started_at, nonce, credential_hash,
+                       client_proof_hash, signature, onchain_status, onchain_publish_attempts,
+                       onchain_wallet_address, onchain_nonce, onchain_tx_hash, onchain_submitted_at
+                FROM session_started_attestations
+                WHERE onchain_status = 'SUBMITTED'
+                ORDER BY onchain_submitted_at ASC, id ASC
+                LIMIT ?
+                """,
+                transactionRowMapper(),
+                limit
+            );
+        } catch (BadSqlGrammarException ex) {
+            return 0;
+        }
+        int mined = 0;
+        for (SessionStartedTransactionRecord record : submitted) {
+            try {
+                SessionStartedOnChainClient.TransactionState state =
+                    onChainClient.transactionState(record.transactionHash());
+                if (state == SessionStartedOnChainClient.TransactionState.SUCCEEDED) {
+                    markMinedSuccess(record.submission().id(), record.transactionHash());
+                    mined++;
+                } else if (state == SessionStartedOnChainClient.TransactionState.FAILED) {
+                    markMinedFailed(record.submission().id(), "SessionStarted transaction reverted on-chain");
+                } else if (isStuck(record)) {
+                    markPendingRetry(record);
+                }
+            } catch (RuntimeException ex) {
+                log.warn("Unable to monitor SessionStarted attestation {}: {}", record.submission().id(), ex.getMessage());
+            }
+        }
+        return mined;
+    }
+
+    private void markMinedSuccess(long id, String txHash) {
+        jdbcTemplate.update(
+            """
+            UPDATE session_started_attestations
+            SET onchain_tx_hash = ?, onchain_status = 'MINED_SUCCESS',
+                onchain_published_at = CURRENT_TIMESTAMP, onchain_mined_at = CURRENT_TIMESTAMP,
+                onchain_publish_locked_at = NULL, onchain_publish_last_error = NULL,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE id = ? AND onchain_status = 'SUBMITTED'
+            """,
+            txHash,
+            id
+        );
+    }
+
+    private void markMinedFailed(long id, String error) {
+        jdbcTemplate.update(
+            """
+            UPDATE session_started_attestations
+            SET onchain_status = 'MINED_FAILED', onchain_mined_at = CURRENT_TIMESTAMP,
+                onchain_publish_locked_at = NULL, onchain_publish_last_error = ?,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE id = ? AND onchain_status = 'SUBMITTED'
+            """,
+            error,
+            id
+        );
+    }
+
+    private void markPendingRetry(SessionStartedTransactionRecord record) {
+        boolean exhausted = record.attempts() >= maxPublishAttempts();
+        jdbcTemplate.update(
+            """
+            UPDATE session_started_attestations
+            SET onchain_status = ?, onchain_publish_locked_at = NULL,
+                onchain_publish_last_error = ?, updated_at = CURRENT_TIMESTAMP
+            WHERE id = ? AND onchain_status = 'SUBMITTED'
+            """,
+            exhausted ? "FAILED" : "RETRY",
+            exhausted
+                ? "SessionStarted transaction remained pending after maximum broadcasts"
+                : "SessionStarted transaction is pending; retrying the same nonce with higher gas",
+            record.submission().id()
+        );
+    }
+
+    private boolean isStuck(SessionStartedTransactionRecord record) {
+        return record.submittedAt() != null
+            && record.submittedAt().plusMillis(Math.max(1L, stuckTransactionMs)).isBefore(Instant.now());
+    }
+
+    private RowMapper<SessionStartedTransactionRecord> transactionRowMapper() {
+        return (rs, rowNum) -> new SessionStartedTransactionRecord(new SessionStartedOnChainSubmission(
             rs.getLong("id"),
             rs.getString("reservation_key"),
             rs.getString("lab_id"),
@@ -207,6 +342,14 @@ public class SessionStartedOnChainPublisherService {
             rs.getString("credential_hash"),
             rs.getString("client_proof_hash"),
             rs.getString("signature")
+        ),
+            rs.getString("onchain_status"),
+            rs.getInt("onchain_publish_attempts"),
+            rs.getString("onchain_wallet_address"),
+            rs.getObject("onchain_nonce") != null ? rs.getBigDecimal("onchain_nonce").toBigIntegerExact() : null,
+            rs.getString("onchain_tx_hash"),
+            rs.getTimestamp("onchain_submitted_at") != null
+                ? rs.getTimestamp("onchain_submitted_at").toInstant() : null
         );
     }
 }

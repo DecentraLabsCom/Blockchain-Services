@@ -938,5 +938,23 @@
     "name": "billing.admin.domain.verifying-contract",
     "type": "java.lang.String",
     "description": "Verifying contract address for treasury admin EIP-712 domain. Defaults to contract.address."
+  },
+  {
+    "name": "security.session-observer.credentials-json",
+    "type": "java.lang.String",
+    "description": "JSON object mapping trusted gateway IDs to Base64URL HS256 secrets.",
+    "defaultValue": "{}"
+  },
+  {
+    "name": "session.attestation.publisher.stuck-transaction-ms",
+    "type": "java.lang.Long",
+    "description": "Age after which a pending SessionStarted transaction is replaced.",
+    "defaultValue": 30000
+  },
+  {
+    "name": "session.attestation.publisher.nonce-replacement-gas-bump-percent",
+    "type": "java.lang.Integer",
+    "description": "Gas-price increase per SessionStarted replacement broadcast.",
+    "defaultValue": 15
   }
 ]}

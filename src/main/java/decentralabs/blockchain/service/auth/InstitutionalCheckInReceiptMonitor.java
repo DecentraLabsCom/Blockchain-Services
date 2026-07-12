@@ -22,6 +22,9 @@ public class InstitutionalCheckInReceiptMonitor {
     @Value("${institutional.checkin.outbox.stuck-transaction-ms:15000}")
     private long stuckTransactionMs;
 
+    @Value("${institutional.checkin.outbox.max-attempts:8}")
+    private int maxAttempts;
+
     @Scheduled(fixedDelayString = "${institutional.checkin.outbox.receipt-interval-ms:2000}")
     public void monitorSubmittedCheckIns() {
         List<InstitutionalCheckInOutboxRecord> submitted = outboxService.findSubmitted(
@@ -46,12 +49,21 @@ public class InstitutionalCheckInReceiptMonitor {
             } else if (state == CheckInOnChainService.TransactionState.FAILED) {
                 outboxService.markMinedFailed(record.id(), "Check-in transaction reverted on-chain");
             } else if (isStuck(record)) {
-                outboxService.markRetry(
-                    record.id(),
-                    record.attempts() + 1,
-                    Instant.now(),
-                    "Check-in transaction is still pending; retrying with the same nonce and higher gas"
-                );
+                int nextAttempt = record.attempts() + 1;
+                if (nextAttempt >= Math.max(1, maxAttempts)) {
+                    outboxService.markFailed(
+                        record.id(),
+                        nextAttempt,
+                        "Check-in transaction remained pending after the maximum number of broadcasts"
+                    );
+                } else {
+                    outboxService.markRetry(
+                        record.id(),
+                        nextAttempt,
+                        Instant.now(),
+                        "Check-in transaction is still pending; retrying with the same nonce and higher gas"
+                    );
+                }
             }
         } catch (RuntimeException ex) {
             log.warn("Unable to monitor institutional check-in {}: {}", record.id(), ex.getMessage());

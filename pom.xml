@@ -209,6 +209,18 @@
             <scope>test</scope>
         </dependency>
 
+        <!-- Real MySQL concurrency tests for nonce, lease, and access-code semantics. -->
+        <dependency>
+            <groupId>org.testcontainers</groupId>
+            <artifactId>testcontainers-mysql</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.testcontainers</groupId>
+            <artifactId>testcontainers-junit-jupiter</artifactId>
+            <scope>test</scope>
+        </dependency>
+
         <!-- Redis (optional) for anti-replay persistence -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
