@@ -52,6 +52,7 @@ Thumbs.db
 dev/
 *.tmp
 *.bak
+build_output*.txt
 
 # Environment variables
 .env
