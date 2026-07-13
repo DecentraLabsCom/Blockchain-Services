@@ -16,12 +16,12 @@ public class SmtpMailSenderAdapter implements MailSenderAdapter {
     private final NotificationProperties.Mail mailProps;
 
     public SmtpMailSenderAdapter(NotificationProperties.Mail mailProps) {
-        this.mailProps = mailProps;
-        NotificationProperties.Smtp smtp = mailProps.getSmtp();
-        if (smtp == null) {
-            smtp = new NotificationProperties.Smtp();
-        }
-        this.mailSender = buildMailSender(smtp);
+        this(mailProps, buildMailSender(mailProps));
+    }
+
+    SmtpMailSenderAdapter(NotificationProperties.Mail mailProps, JavaMailSenderImpl mailSender) {
+        this.mailProps = Objects.requireNonNull(mailProps, "mailProps");
+        this.mailSender = Objects.requireNonNull(mailSender, "mailSender");
     }
 
     @Override
@@ -78,7 +78,8 @@ public class SmtpMailSenderAdapter implements MailSenderAdapter {
                 byte[] icsBytes = Objects.requireNonNull(icsContent.getBytes(StandardCharsets.UTF_8), "icsBytes");
                 ByteArrayResource ics = new ByteArrayResource(icsBytes);
                 String contentType = "text/calendar; charset=UTF-8; method=REQUEST";
-                String fileName = Objects.requireNonNull(Objects.requireNonNullElse(message.icsFileName(), "reservation.ics"), "fileName");
+                String fileName = Objects.requireNonNull(
+                    Objects.requireNonNullElse(message.icsFileName(), "reservation.ics"), "fileName");
                 helper.addAttachment(fileName, ics, contentType);
                 helper.addInline("invite", ics, contentType);
             }
@@ -90,7 +91,16 @@ public class SmtpMailSenderAdapter implements MailSenderAdapter {
         }
     }
 
-    private JavaMailSenderImpl buildMailSender(NotificationProperties.Smtp smtp) {
+    private static JavaMailSenderImpl buildMailSender(NotificationProperties.Mail mailProps) {
+        Objects.requireNonNull(mailProps, "mailProps");
+        NotificationProperties.Smtp smtp = mailProps.getSmtp();
+        if (smtp == null) {
+            smtp = new NotificationProperties.Smtp();
+        }
+        return buildMailSender(smtp);
+    }
+
+    private static JavaMailSenderImpl buildMailSender(NotificationProperties.Smtp smtp) {
         JavaMailSenderImpl sender = new JavaMailSenderImpl();
         String host = smtp.getHost() != null ? smtp.getHost() : "";
         sender.setHost(host);

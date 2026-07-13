@@ -1,17 +1,30 @@
 package decentralabs.blockchain.notification;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.mockito.Mockito.lenient;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
 
+import jakarta.mail.Session;
+import jakarta.mail.internet.MimeMessage;
+import java.util.Arrays;
 import java.util.List;
+import java.util.Properties;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
+import org.springframework.mail.javamail.JavaMailSenderImpl;
 
 @DisplayName("SmtpMailSenderAdapter Tests")
 class SmtpMailSenderAdapterTest {
 
     private NotificationProperties.Mail mailProps;
+    private JavaMailSenderImpl mailSender;
 
     @BeforeEach
     void setUp() {
@@ -29,6 +42,12 @@ class SmtpMailSenderAdapterTest {
         smtp.setStartTls(true);
         smtp.setTimeoutMs(5000);
         mailProps.setSmtp(smtp);
+
+        mailSender = mock(JavaMailSenderImpl.class);
+        lenient().when(mailSender.getHost()).thenReturn(smtp.getHost());
+        lenient().when(mailSender.createMimeMessage()).thenAnswer(
+            invocation -> new MimeMessage(Session.getInstance(new Properties()))
+        );
     }
 
     // Helper method to create NotificationMessage (record constructor)
@@ -39,6 +58,19 @@ class SmtpMailSenderAdapterTest {
 
     private NotificationMessage createSimpleMessage(List<String> recipients, String subject, String textBody) {
         return new NotificationMessage(recipients, subject, textBody, null, null, null);
+    }
+
+    private SmtpMailSenderAdapter adapterWithMockedSender() {
+        return new SmtpMailSenderAdapter(mailProps, mailSender);
+    }
+
+    private void assertMessageWasSent(String subject, String... recipients) throws Exception {
+        ArgumentCaptor<MimeMessage> message = ArgumentCaptor.forClass(MimeMessage.class);
+        verify(mailSender).send(message.capture());
+        assertEquals(subject, message.getValue().getSubject());
+        assertArrayEquals(recipients, Arrays.stream(message.getValue().getAllRecipients())
+            .map(address -> address == null ? null : address.toString())
+            .toArray(String[]::new));
     }
 
     @Nested
@@ -166,8 +198,8 @@ class SmtpMailSenderAdapterTest {
 
         @Test
         @DisplayName("Should handle message with ICS content")
-        void shouldHandleMessageWithIcs() {
-            SmtpMailSenderAdapter adapter = new SmtpMailSenderAdapter(mailProps);
+        void shouldHandleMessageWithIcs() throws Exception {
+            SmtpMailSenderAdapter adapter = adapterWithMockedSender();
             
             NotificationMessage message = createMessage(
                 List.of("test@example.com"),
@@ -179,12 +211,13 @@ class SmtpMailSenderAdapterTest {
             );
             
             assertDoesNotThrow(() -> adapter.send(message));
+            assertMessageWasSent("Test Reservation", "test@example.com");
         }
 
         @Test
         @DisplayName("Should use default filename when icsFileName is null")
-        void shouldUseDefaultFilenameWhenNull() {
-            SmtpMailSenderAdapter adapter = new SmtpMailSenderAdapter(mailProps);
+        void shouldUseDefaultFilenameWhenNull() throws Exception {
+            SmtpMailSenderAdapter adapter = adapterWithMockedSender();
             
             NotificationMessage message = createMessage(
                 List.of("test@example.com"),
@@ -196,6 +229,7 @@ class SmtpMailSenderAdapterTest {
             );
             
             assertDoesNotThrow(() -> adapter.send(message));
+            assertMessageWasSent("Test", "test@example.com");
         }
     }
 
@@ -205,8 +239,8 @@ class SmtpMailSenderAdapterTest {
 
         @Test
         @DisplayName("Should handle message without HTML body")
-        void shouldHandleMessageWithoutHtmlBody() {
-            SmtpMailSenderAdapter adapter = new SmtpMailSenderAdapter(mailProps);
+        void shouldHandleMessageWithoutHtmlBody() throws Exception {
+            SmtpMailSenderAdapter adapter = adapterWithMockedSender();
             
             NotificationMessage message = createMessage(
                 List.of("test@example.com"),
@@ -218,12 +252,13 @@ class SmtpMailSenderAdapterTest {
             );
             
             assertDoesNotThrow(() -> adapter.send(message));
+            assertMessageWasSent("Test", "test@example.com");
         }
 
         @Test
         @DisplayName("Should handle multiple recipients")
-        void shouldHandleMultipleRecipients() {
-            SmtpMailSenderAdapter adapter = new SmtpMailSenderAdapter(mailProps);
+        void shouldHandleMultipleRecipients() throws Exception {
+            SmtpMailSenderAdapter adapter = adapterWithMockedSender();
             
             NotificationMessage message = createSimpleMessage(
                 List.of("user1@example.com", "user2@example.com", "user3@example.com"),
@@ -232,6 +267,7 @@ class SmtpMailSenderAdapterTest {
             );
             
             assertDoesNotThrow(() -> adapter.send(message));
+            assertMessageWasSent("Test", "user1@example.com", "user2@example.com", "user3@example.com");
         }
     }
 }
