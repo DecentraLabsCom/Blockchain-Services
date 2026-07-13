@@ -21,6 +21,7 @@ import org.web3j.protocol.Web3j;
 import org.web3j.protocol.core.Request;
 import org.web3j.protocol.core.methods.response.EthChainId;
 import org.web3j.tx.TransactionManager;
+import decentralabs.blockchain.service.auth.InstitutionalWalletNonceReservationService;
 
 @ExtendWith(MockitoExtension.class)
 class InstitutionalTxManagerProviderTest {
@@ -37,11 +38,14 @@ class InstitutionalTxManagerProviderTest {
     @Mock
     private Web3j otherWeb3j;
 
+    @Mock
+    private InstitutionalWalletNonceReservationService nonceReservationService;
+
     private InstitutionalTxManagerProvider provider;
 
     @BeforeEach
     void setUp() {
-        provider = new InstitutionalTxManagerProvider(institutionalWalletService);
+        provider = new InstitutionalTxManagerProvider(institutionalWalletService, nonceReservationService);
     }
 
     @Test
@@ -104,20 +108,21 @@ class InstitutionalTxManagerProviderTest {
     }
 
     @Test
-    void get_fallsBackToChainIdZeroWhenLookupFailsAndStillCaches() throws Exception {
-        when(institutionalWalletService.getInstitutionalCredentials()).thenReturn(CREDENTIALS);
+    void get_failsClosedWhenChainIdLookupFails() throws Exception {
         stubChainIdFailure(web3j);
 
-        try (MockedConstruction<PendingNonceFastRawTransactionManager> construction =
-                 mockConstruction(PendingNonceFastRawTransactionManager.class)) {
+        assertThatThrownBy(() -> provider.get(web3j))
+            .isInstanceOf(IllegalStateException.class)
+            .hasMessageContaining("chainId");
+    }
 
-            TransactionManager first = provider.get(web3j);
-            TransactionManager second = provider.get(web3j);
+    @Test
+    void get_rejectsZeroChainId() throws Exception {
+        stubChainId(web3j, 0L);
 
-            assertThat(first).isSameAs(second);
-            assertThat(construction.constructed()).hasSize(1);
-            verify(institutionalWalletService, times(1)).getInstitutionalCredentials();
-        }
+        assertThatThrownBy(() -> provider.get(web3j))
+            .isInstanceOf(IllegalStateException.class)
+            .hasMessageContaining("chainId");
     }
 
     @SuppressWarnings({"unchecked", "rawtypes"})

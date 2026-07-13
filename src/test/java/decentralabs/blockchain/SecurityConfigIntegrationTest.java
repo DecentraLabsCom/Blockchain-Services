@@ -245,7 +245,7 @@ class SecurityConfigIntegrationTest {
     }
 
     @Test
-    void fmuSessionTicketEndpoint_isAccessibleWithoutAuthentication() throws Exception {
+    void fmuSessionTicketIssue_isAccessibleWithoutAuthentication() throws Exception {
         mockMvc.perform(post("/auth/fmu/session-ticket/issue")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("{}")
@@ -255,6 +255,18 @@ class SecurityConfigIntegrationTest {
                 }))
             .andExpect(status().isOk())
             .andExpect(content().string("fmu-session-ticket-ok"));
+    }
+
+    @Test
+    void fmuSessionTicketRedeem_requiresGatewayAuthentication() throws Exception {
+        mockMvc.perform(post("/auth/fmu/session-ticket/redeem")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{}")
+                .with(req -> {
+                    req.setRemoteAddr("172.17.0.10");
+                    return req;
+                }))
+            .andExpect(status().isForbidden());
     }
 
     @Test

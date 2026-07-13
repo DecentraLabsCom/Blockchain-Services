@@ -10,12 +10,14 @@ import static org.mockito.Mockito.when;
 import decentralabs.blockchain.dto.auth.FmuSessionTicketIssueRequest;
 import decentralabs.blockchain.dto.auth.FmuSessionTicketRedeemRequest;
 import java.sql.ResultSet;
+import java.util.Base64;
 import java.util.HashMap;
 import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
+import org.mockito.ArgumentCaptor;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -39,9 +41,13 @@ class FmuSessionTicketServiceTest {
     private AccessCredentialAuditService accessCredentialAuditService;
 
     private FmuSessionTicketService service;
+    private AccessCodeTokenCipher ticketCipher;
 
     @BeforeEach
     void setUp() {
+        ticketCipher = new AccessCodeTokenCipher(
+            Base64.getUrlEncoder().withoutPadding().encodeToString(new byte[32])
+        );
         service = buildService(null);
     }
 
@@ -67,64 +73,13 @@ class FmuSessionTicketServiceTest {
         redeemRequest.setSessionTicket(issueResponse.getSessionTicket());
         redeemRequest.setLabId("42");
         redeemRequest.setReservationKey("0xabc");
-        redeemRequest.setSessionId("sess-fmu-1");
-        redeemRequest.setGatewayId("gateway-a");
-        when(accessCredentialAuditService.recordFmuTicketRedeemed(
-            org.mockito.Mockito.eq(issueResponse.getSessionTicket()),
-            org.mockito.Mockito.eq(claims),
-            org.mockito.Mockito.eq("sess-fmu-1"),
-            org.mockito.Mockito.eq("gateway-a"),
-            org.mockito.Mockito.isNull()
-        )).thenReturn(new AccessCredentialAuditService.SessionObservationResult(true, true));
-        var redeemResponse = service.redeem(redeemRequest);
+        var redeemResponse = service.redeem(redeemRequest, "lab.example");
 
         assertThat(redeemResponse.getClaims()).containsEntry("resourceType", "fmu");
         assertThat(redeemResponse.getClaims()).containsEntry("accessKey", "test.fmu");
-        assertThat(redeemResponse.getSessionId()).isEqualTo("sess-fmu-1");
-        assertThat(redeemResponse.isAuditRecorded()).isTrue();
-        assertThat(redeemResponse.isAttestationRecorded()).isTrue();
-        assertThat(redeemResponse.isSessionObserved()).isTrue();
-        org.mockito.Mockito.verify(accessCredentialAuditService)
-            .recordFmuTicketRedeemed(
-                org.mockito.Mockito.eq(issueResponse.getSessionTicket()),
-                org.mockito.Mockito.eq(claims),
-                org.mockito.Mockito.eq("sess-fmu-1"),
-                org.mockito.Mockito.eq("gateway-a"),
-                org.mockito.Mockito.isNull()
-            );
-
         // Second redeem should also succeed — ticket is reusable within validity period
-        var redeemResponse2 = service.redeem(redeemRequest);
+        var redeemResponse2 = service.redeem(redeemRequest, "lab.example");
         assertThat(redeemResponse2.getClaims()).containsEntry("resourceType", "fmu");
-    }
-
-    @Test
-    void shouldExposeAuditAndAttestationFailureSeparately() {
-        long now = System.currentTimeMillis() / 1000;
-        Map<String, Object> claims = validClaims(now);
-        when(jwtService.validateToken("booking-token")).thenReturn(true);
-        when(jwtService.extractAllClaims("booking-token")).thenReturn(claims);
-
-        FmuSessionTicketIssueRequest issueRequest = new FmuSessionTicketIssueRequest();
-        issueRequest.setLabId("42");
-        issueRequest.setReservationKey("0xabc");
-        var issueResponse = service.issue("Bearer booking-token", issueRequest);
-
-        FmuSessionTicketRedeemRequest redeemRequest = new FmuSessionTicketRedeemRequest();
-        redeemRequest.setSessionTicket(issueResponse.getSessionTicket());
-        redeemRequest.setLabId("42");
-        redeemRequest.setReservationKey("0xabc");
-        redeemRequest.setSessionId("sess-fmu-failed-attestation");
-        redeemRequest.setGatewayId("gateway-a");
-        when(accessCredentialAuditService.recordFmuTicketRedeemed(
-            anyString(), org.mockito.Mockito.eq(claims), anyString(), anyString(), org.mockito.Mockito.isNull()
-        )).thenReturn(new AccessCredentialAuditService.SessionObservationResult(true, false));
-
-        var response = service.redeem(redeemRequest);
-
-        assertThat(response.isAuditRecorded()).isTrue();
-        assertThat(response.isAttestationRecorded()).isFalse();
-        assertThat(response.isSessionObserved()).isFalse();
     }
 
     @Test
@@ -143,14 +98,18 @@ class FmuSessionTicketServiceTest {
         var issueResponse = service.issue("Bearer booking-token", issueRequest);
 
         assertThat(issueResponse.getSessionTicket()).startsWith("st_");
+        ArgumentCaptor<String> ticketHash = ArgumentCaptor.forClass(String.class);
+        ArgumentCaptor<String> encryptedClaims = ArgumentCaptor.forClass(String.class);
         org.mockito.Mockito.verify(jdbcTemplate).update(
             org.mockito.ArgumentMatchers.contains("INSERT INTO fmu_session_tickets"),
+            ticketHash.capture(),
             anyString(),
             anyString(),
-            anyString(),
-            anyString(),
+            encryptedClaims.capture(),
             anyLong()
         );
+        assertThat(ticketHash.getValue()).hasSize(64).doesNotContain(issueResponse.getSessionTicket());
+        assertThat(encryptedClaims.getValue()).startsWith("v1.").doesNotContain("user-1");
     }
 
     @SuppressWarnings("unchecked")
@@ -165,9 +124,9 @@ class FmuSessionTicketServiceTest {
                 ResultSetExtractor<Object> extractor = invocation.getArgument(2, ResultSetExtractor.class);
                 ResultSet resultSet = org.mockito.Mockito.mock(ResultSet.class);
                 when(resultSet.next()).thenReturn(true);
-                when(resultSet.getString(1)).thenReturn("""
-                    {"sub":"user-1","labId":42,"accessKey":"test.fmu","resourceType":"fmu","reservationKey":"0xabc","nbf":%d,"exp":%d}
-                    """.formatted(now - 30, now + 300).trim());
+                when(resultSet.getString(1)).thenReturn(ticketCipher.encrypt("""
+                    {"sub":"user-1","labId":42,"accessKey":"test.fmu","resourceType":"fmu","reservationKey":"0xabc","targetGatewayId":"lab.example","nbf":%d,"exp":%d}
+                    """.formatted(now - 30, now + 300).trim()));
                 when(resultSet.getLong(2)).thenReturn(now + 120);
                 return extractor.extractData(resultSet);
             });
@@ -176,15 +135,30 @@ class FmuSessionTicketServiceTest {
         redeemRequest.setSessionTicket("st_test");
         redeemRequest.setLabId("42");
         redeemRequest.setReservationKey("0xabc");
-        redeemRequest.setSessionId("sess-fmu-persisted");
 
-        var redeemResponse = service.redeem(redeemRequest);
+        var redeemResponse = service.redeem(redeemRequest, "lab.example");
         assertThat(redeemResponse.getClaims()).containsEntry("resourceType", "fmu");
-        assertThat(redeemResponse.getSessionId()).isEqualTo("sess-fmu-persisted");
 
         // Second redeem should also succeed — ticket is reusable within validity period
-        var redeemResponse2 = service.redeem(redeemRequest);
+        var redeemResponse2 = service.redeem(redeemRequest, "lab.example");
         assertThat(redeemResponse2.getClaims()).containsEntry("resourceType", "fmu");
+    }
+
+    @Test
+    void shouldRejectRedeemFromDifferentGateway() {
+        long now = System.currentTimeMillis() / 1000;
+        Map<String, Object> claims = validClaims(now);
+        when(jwtService.validateToken("booking-token")).thenReturn(true);
+        when(jwtService.extractAllClaims("booking-token")).thenReturn(claims);
+
+        var issueResponse = service.issue("Bearer booking-token", new FmuSessionTicketIssueRequest());
+        FmuSessionTicketRedeemRequest redeemRequest = new FmuSessionTicketRedeemRequest();
+        redeemRequest.setSessionTicket(issueResponse.getSessionTicket());
+
+        assertThatThrownBy(() -> service.redeem(redeemRequest, "other.example"))
+            .isInstanceOf(SessionTicketException.class)
+            .extracting("code")
+            .isEqualTo("GATEWAY_ID_MISMATCH");
     }
 
     @Test
@@ -209,15 +183,29 @@ class FmuSessionTicketServiceTest {
             .isEqualTo("UNAUTHORIZED");
     }
 
+    @Test
+    void shouldFailClosedWhenPersistenceIsRequiredButUnavailable() {
+        long now = System.currentTimeMillis() / 1000;
+        when(jwtService.validateToken("booking-token")).thenReturn(true);
+        when(jwtService.extractAllClaims("booking-token")).thenReturn(validClaims(now));
+        ReflectionTestUtils.setField(service, "requirePersistence", true);
+
+        assertThatThrownBy(() -> service.issue("Bearer booking-token", new FmuSessionTicketIssueRequest()))
+            .isInstanceOf(SessionTicketException.class)
+            .extracting("code")
+            .isEqualTo("SESSION_TICKET_PERSISTENCE_UNAVAILABLE");
+    }
+
     private FmuSessionTicketService buildService(JdbcTemplate template) {
         when(jdbcTemplateProvider.getIfAvailable()).thenReturn(template);
         FmuSessionTicketService candidate = new FmuSessionTicketService(
             jwtService,
             jdbcTemplateProvider,
-            accessCredentialAuditService
+            accessCredentialAuditService,
+            ticketCipher
         );
-        ReflectionTestUtils.setField(candidate, "defaultTtlSeconds", 120L);
         ReflectionTestUtils.setField(candidate, "maxTtlSeconds", 300L);
+        ReflectionTestUtils.setField(candidate, "requirePersistence", false);
         return candidate;
     }
 
@@ -228,6 +216,7 @@ class FmuSessionTicketServiceTest {
         claims.put("accessKey", "test.fmu");
         claims.put("resourceType", "fmu");
         claims.put("reservationKey", "0xabc");
+        claims.put("targetGatewayId", "lab.example");
         claims.put("nbf", now - 30);
         claims.put("exp", now + 300);
         return claims;

@@ -3,10 +3,12 @@ package decentralabs.blockchain.service.auth;
 import decentralabs.blockchain.service.wallet.WalletService;
 import java.math.BigInteger;
 import java.util.function.Consumer;
+import java.util.function.BiConsumer;
 import java.util.function.Function;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.web3j.protocol.core.DefaultBlockParameterName;
+import org.web3j.protocol.Web3j;
 
 /**
  * Dispatches institutional-wallet transactions after committing their nonce
@@ -21,18 +23,22 @@ public class InstitutionalWalletTransactionDispatcher {
 
     public String dispatch(
         String walletAddress,
+        BigInteger existingChainId,
         BigInteger existingNonce,
-        Consumer<BigInteger> persistNonce,
+        BiConsumer<BigInteger, BigInteger> persistNonce,
         Function<BigInteger, String> broadcast,
         Consumer<String> persistTransactionHash
     ) throws InstitutionalWalletDispatchException {
         if (walletAddress == null || walletAddress.isBlank()) {
             throw new IllegalArgumentException("Institutional wallet address is required");
         }
-        BigInteger nonce = existingNonce;
+        Web3j web3j = walletService.getWeb3jInstance();
+        BigInteger chainId = chainId(web3j);
+        BigInteger nonce = existingNonce != null
+            && (existingChainId == null || chainId.equals(existingChainId)) ? existingNonce : null;
         if (nonce == null) {
             nonce = nonceReservationService.reserveAndPersist(
-                walletAddress, pendingNonce(walletAddress), persistNonce
+                walletAddress, chainId, pendingNonce(web3j, walletAddress), persistNonce
             );
         }
 
@@ -48,9 +54,21 @@ public class InstitutionalWalletTransactionDispatcher {
         }
     }
 
-    private BigInteger pendingNonce(String walletAddress) {
+    private BigInteger chainId(Web3j web3j) {
         try {
-            var response = walletService.getWeb3jInstance().ethGetTransactionCount(
+            var response = web3j.ethChainId().send();
+            if (response == null || response.getChainId() == null || response.getChainId().signum() <= 0) {
+                throw new IllegalStateException("Node returned no chainId");
+            }
+            return response.getChainId();
+        } catch (Exception ex) {
+            throw new IllegalStateException("Failed to read institutional wallet chainId", ex);
+        }
+    }
+
+    private BigInteger pendingNonce(Web3j web3j, String walletAddress) {
+        try {
+            var response = web3j.ethGetTransactionCount(
                 walletAddress,
                 DefaultBlockParameterName.PENDING
             ).send();

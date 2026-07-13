@@ -126,9 +126,11 @@ public class SecurityConfig {
                 authorize.requestMatchers(accessCredentialEndpoint).permitAll();
                 authorize.requestMatchers(accessCodeEndpoint + "/**").permitAll();
                 authorize.requestMatchers(fmuProviderDescribeTokenEndpoint).permitAll();
-                // Internal endpoint — only reachable within Docker network; not exposed via nginx.
-                // FmuSessionTicketService validates the FMU JWT supplied in the Authorization header.
-                authorize.requestMatchers(fmuSessionTicketEndpoint + "/**").permitAll();
+                // Issue validates the booking JWT. Redeem is restricted to a least-privilege,
+                // per-gateway observer credential so a downloaded ticket is not a public oracle.
+                authorize.requestMatchers(HttpMethod.POST, fmuSessionTicketEndpoint + "/redeem")
+                    .hasRole("SESSION_OBSERVER");
+                authorize.requestMatchers(HttpMethod.POST, fmuSessionTicketEndpoint + "/issue").permitAll();
                 authorize.requestMatchers(healthEndpoint).permitAll();
                 authorize.requestMatchers("/actuator/health/**").permitAll();
                 authorize.requestMatchers("/actuator/info").permitAll();

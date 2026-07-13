@@ -178,26 +178,28 @@ class AccessCredentialAuditServiceTest {
     }
 
     @Test
-    void shouldMarkFmuSessionObservedByTicketHashWithoutRawTicket() {
+    void shouldMarkFmuSessionObservedOnlyByTheRuntimeSuppliedTicketHash() {
         AccessCredentialAuditService service = buildService(jdbcTemplate);
         when(jdbcTemplate.update(anyString(), any(Object[].class))).thenReturn(1);
         when(sessionStartedAttestationServiceProvider.getIfAvailable()).thenReturn(sessionStartedAttestationService);
         when(sessionStartedAttestationService.recordSessionStarted(any(), org.mockito.ArgumentMatchers.anyLong(), anyString()))
             .thenReturn(true);
 
-        AccessCredentialAuditService.SessionObservationResult result = service.recordFmuTicketRedeemed(
-            "st_secret_ticket",
-            Map.of("reservationKey", "0xabc", "targetGatewayId", "gateway-a"),
-            "sess-fmu-1",
-            "gateway-a",
-            Instant.now().getEpochSecond()
-        );
+        AccessCredentialSessionObservedRequest request = new AccessCredentialSessionObservedRequest();
+        request.setReservationKey("0xabc");
+        request.setFmuTicketId("a".repeat(64));
+        request.setSessionId("sess-fmu-1");
+        request.setGatewayId("gateway-a");
+        request.setAccessType("fmu");
+        request.setObservedAt(Instant.now().getEpochSecond());
+
+        AccessCredentialAuditService.SessionObservationResult result = service.recordSessionObserved(request);
 
         org.assertj.core.api.Assertions.assertThat(result.recorded()).isTrue();
         ArgumentCaptor<Object[]> args = ArgumentCaptor.forClass(Object[].class);
         verify(jdbcTemplate).update(contains("session_observed_at"), args.capture());
         org.assertj.core.api.Assertions.assertThat(args.getValue())
-            .contains("sess-fmu-1", "gateway-a", "fmu", "0xabc")
+            .contains("sess-fmu-1", "gateway-a", "fmu", "0xabc", "a".repeat(64))
             .doesNotContain("st_secret_ticket");
     }
 

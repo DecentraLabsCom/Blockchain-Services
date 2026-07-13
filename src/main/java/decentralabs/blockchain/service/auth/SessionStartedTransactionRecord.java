@@ -8,6 +8,7 @@ record SessionStartedTransactionRecord(
     String status,
     int attempts,
     String walletAddress,
+    BigInteger chainId,
     BigInteger transactionNonce,
     String transactionHash,
     Instant submittedAt

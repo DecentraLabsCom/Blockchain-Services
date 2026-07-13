@@ -2,6 +2,8 @@ package decentralabs.blockchain.service.wallet;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import java.math.BigInteger;
@@ -17,6 +19,7 @@ import org.web3j.protocol.core.Request;
 import org.web3j.protocol.core.methods.response.EthGetTransactionCount;
 import org.web3j.tx.response.PollingTransactionReceiptProcessor;
 import org.web3j.tx.response.TransactionReceiptProcessor;
+import decentralabs.blockchain.service.auth.InstitutionalWalletNonceReservationService;
 
 @ExtendWith(MockitoExtension.class)
 class PendingNonceFastRawTransactionManagerTest {
@@ -26,6 +29,9 @@ class PendingNonceFastRawTransactionManagerTest {
 
     @Mock
     private Web3j web3j;
+
+    @Mock
+    private InstitutionalWalletNonceReservationService nonceReservationService;
 
     private TestPendingNonceFastRawTransactionManager manager;
 
@@ -55,6 +61,40 @@ class PendingNonceFastRawTransactionManagerTest {
         assertThat(nonce).isEqualTo(BigInteger.valueOf(11));
     }
 
+    @Test
+    void durableConstructorUsesTheSharedChainScopedAllocator() throws Exception {
+        TransactionReceiptProcessor receiptProcessor = new PollingTransactionReceiptProcessor(web3j, 10, 2);
+        TestPendingNonceFastRawTransactionManager durableManager =
+            new TestPendingNonceFastRawTransactionManager(
+                web3j, CREDENTIALS, 11155111L, receiptProcessor, nonceReservationService
+            );
+        stubPendingCount(BigInteger.valueOf(11));
+        when(nonceReservationService.reserve(
+            CREDENTIALS.getAddress(), BigInteger.valueOf(11155111L), BigInteger.valueOf(11)
+        )).thenReturn(BigInteger.valueOf(14));
+
+        assertThat(durableManager.readNonce()).isEqualTo(BigInteger.valueOf(14));
+    }
+
+    @Test
+    void durableConstructorReservesEveryTransactionInsteadOfCachingLocally() throws Exception {
+        TransactionReceiptProcessor receiptProcessor = new PollingTransactionReceiptProcessor(web3j, 10, 2);
+        TestPendingNonceFastRawTransactionManager durableManager =
+            new TestPendingNonceFastRawTransactionManager(
+                web3j, CREDENTIALS, 11155111L, receiptProcessor, nonceReservationService
+            );
+        stubPendingCount(BigInteger.valueOf(11));
+        when(nonceReservationService.reserve(
+            CREDENTIALS.getAddress(), BigInteger.valueOf(11155111L), BigInteger.valueOf(11)
+        )).thenReturn(BigInteger.valueOf(14), BigInteger.valueOf(15));
+
+        assertThat(durableManager.readNonce()).isEqualTo(BigInteger.valueOf(14));
+        assertThat(durableManager.readNonce()).isEqualTo(BigInteger.valueOf(15));
+        verify(nonceReservationService, times(2)).reserve(
+            CREDENTIALS.getAddress(), BigInteger.valueOf(11155111L), BigInteger.valueOf(11)
+        );
+    }
+
     @SuppressWarnings({"unchecked", "rawtypes"})
     private void stubPendingCount(BigInteger transactionCount) throws Exception {
         Request<?, EthGetTransactionCount> request = (Request<?, EthGetTransactionCount>) mock(Request.class);
@@ -78,6 +118,16 @@ class PendingNonceFastRawTransactionManagerTest {
             TransactionReceiptProcessor receiptProcessor
         ) {
             super(web3j, credentials, chainId, receiptProcessor);
+        }
+
+        private TestPendingNonceFastRawTransactionManager(
+            Web3j web3j,
+            Credentials credentials,
+            long chainId,
+            TransactionReceiptProcessor receiptProcessor,
+            InstitutionalWalletNonceReservationService nonceReservationService
+        ) {
+            super(web3j, credentials, chainId, receiptProcessor, nonceReservationService);
         }
 
         private BigInteger readNonce() throws java.io.IOException {

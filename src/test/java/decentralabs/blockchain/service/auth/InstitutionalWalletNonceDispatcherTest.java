@@ -31,12 +31,13 @@ class InstitutionalWalletNonceDispatcherTest {
         response.setTxHash("0x" + "a".repeat(64));
         when(submissionService.signerAddress()).thenReturn("0xsigner");
         when(submissionService.submit("0xabc", "0xpuchash", BigInteger.valueOf(47), 0)).thenReturn(response);
-        when(transactionDispatcher.dispatch(eq("0xsigner"), eq(null), any(), any(), any()))
+        BigInteger chainId = BigInteger.valueOf(11155111);
+        when(transactionDispatcher.dispatch(eq("0xsigner"), eq(null), eq(null), any(), any(), any()))
             .thenAnswer(invocation -> {
-                java.util.function.Consumer<BigInteger> persistNonce = invocation.getArgument(2);
-                java.util.function.Function<BigInteger, String> broadcast = invocation.getArgument(3);
-                java.util.function.Consumer<String> persistHash = invocation.getArgument(4);
-                persistNonce.accept(BigInteger.valueOf(47));
+                java.util.function.BiConsumer<BigInteger, BigInteger> persistNonce = invocation.getArgument(3);
+                java.util.function.Function<BigInteger, String> broadcast = invocation.getArgument(4);
+                java.util.function.Consumer<String> persistHash = invocation.getArgument(5);
+                persistNonce.accept(chainId, BigInteger.valueOf(47));
                 String hash = broadcast.apply(BigInteger.valueOf(47));
                 persistHash.accept(hash);
                 return hash;
@@ -49,7 +50,7 @@ class InstitutionalWalletNonceDispatcherTest {
         CheckInResponse result = dispatcher.dispatch(record);
 
         assertThat(result).isSameAs(response);
-        verify(outboxService).markNonceReserved(7L, "0xsigner", BigInteger.valueOf(47));
+        verify(outboxService).markNonceReserved(7L, "0xsigner", chainId, BigInteger.valueOf(47));
         verify(outboxService).markSubmitted(7L, response.getTxHash());
     }
 
@@ -57,14 +58,16 @@ class InstitutionalWalletNonceDispatcherTest {
     void keepsTheReservedNonceWhenBroadcastOutcomeIsUncertain() throws Exception {
         InstitutionalCheckInOutboxRecord record = new InstitutionalCheckInOutboxRecord(
             8L, "0xdef", "42", "0xpayer", "0xpuchash", "session-8", "RETRY", 1,
-            Instant.now(), null, "0xsigner", BigInteger.valueOf(48), Instant.now()
+            Instant.now(), null, "0xsigner", BigInteger.ONE, BigInteger.valueOf(48), Instant.now(), 0L
         );
         when(submissionService.signerAddress()).thenReturn("0xsigner");
         when(submissionService.submit("0xdef", "0xpuchash", BigInteger.valueOf(48), 1))
             .thenThrow(new IllegalStateException("rpc response lost"));
-        when(transactionDispatcher.dispatch(eq("0xsigner"), eq(BigInteger.valueOf(48)), any(), any(), any()))
+        when(transactionDispatcher.dispatch(
+            eq("0xsigner"), eq(BigInteger.ONE), eq(BigInteger.valueOf(48)), any(), any(), any()
+        ))
             .thenAnswer(invocation -> {
-                java.util.function.Function<BigInteger, String> broadcast = invocation.getArgument(3);
+                java.util.function.Function<BigInteger, String> broadcast = invocation.getArgument(4);
                 return broadcast.apply(BigInteger.valueOf(48));
             });
         InstitutionalWalletNonceDispatcher dispatcher = new InstitutionalWalletNonceDispatcher(
@@ -76,6 +79,8 @@ class InstitutionalWalletNonceDispatcherTest {
             .hasMessageContaining("rpc response lost");
 
         verify(submissionService).submit("0xdef", "0xpuchash", BigInteger.valueOf(48), 1);
-        verify(transactionDispatcher).dispatch(eq("0xsigner"), eq(BigInteger.valueOf(48)), any(), any(), any());
+        verify(transactionDispatcher).dispatch(
+            eq("0xsigner"), eq(BigInteger.ONE), eq(BigInteger.valueOf(48)), any(), any(), any()
+        );
     }
 }

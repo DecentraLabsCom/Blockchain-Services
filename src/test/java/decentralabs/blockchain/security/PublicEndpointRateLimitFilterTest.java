@@ -121,6 +121,19 @@ class PublicEndpointRateLimitFilterTest {
     }
 
     @Test
+    void fmuSessionTicketRedemption_isRateLimited() throws Exception {
+        String clientIp = "10.10.10.11";
+        for (int i = 0; i < 3; i++) {
+            mockMvc.perform(post("/auth/fmu/session-ticket/redeem")
+                    .with(req -> { req.setRemoteAddr(clientIp); return req; }))
+                .andExpect(status().isOk());
+        }
+        mockMvc.perform(post("/auth/fmu/session-ticket/redeem")
+                .with(req -> { req.setRemoteAddr(clientIp); return req; }))
+            .andExpect(status().isTooManyRequests());
+    }
+
+    @Test
     void rateLimiting_canBeDisabled() throws Exception {
         ReflectionTestUtils.setField(filter, "rateLimitEnabled", false);
         for (int i = 0; i < 20; i++) {

@@ -135,33 +135,6 @@ public class AccessCredentialAuditService {
         ));
     }
 
-    public SessionObservationResult recordFmuTicketRedeemed(
-        String sessionTicket,
-        Map<String, Object> claims,
-        String sessionId,
-        String gatewayId,
-        Long observedAt
-    ) {
-        if (!hasText(sessionTicket)) {
-            return SessionObservationResult.notRecorded();
-        }
-        String reservationKey = stringValue(claims, "reservationKey");
-        if (!hasText(reservationKey)) {
-            log.debug("FMU session observation skipped: missing reservationKey");
-            return SessionObservationResult.notRecorded();
-        }
-
-        String ticketHash = sha256Hex(sessionTicket);
-        AccessCredentialSessionObservedRequest request = new AccessCredentialSessionObservedRequest();
-        request.setReservationKey(reservationKey);
-        request.setFmuTicketId(ticketHash);
-        request.setSessionId(firstNonBlank(sessionId, "fmu:" + ticketHash));
-        request.setGatewayId(gatewayId);
-        request.setAccessType("fmu");
-        request.setObservedAt(observedAt);
-        return recordSessionObserved(request);
-    }
-
     public SessionObservationResult recordSessionObserved(AccessCredentialSessionObservedRequest request) {
         if (jdbcTemplate == null) {
             log.debug("Access credential session observation skipped: no datasource configured");

@@ -57,6 +57,15 @@ public class InstitutionalCheckInOutboxProcessor {
             }
 
             nonceDispatcher.dispatch(record);
+        } catch (InstitutionalWalletDispatchException ex) {
+            int attempts = record.attempts() + 1;
+            String message = LogSanitizer.sanitize(ex.getMessage());
+            log.warn(
+                "Institutional check-in broadcast outcome is uncertain for reservation {}: {}",
+                LogSanitizer.sanitize(record.reservationKey()),
+                message
+            );
+            outboxService.markBroadcastUncertain(record.id(), attempts, message);
         } catch (Exception ex) {
             handleFailure(record, ex);
         }

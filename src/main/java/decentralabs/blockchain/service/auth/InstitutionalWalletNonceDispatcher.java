@@ -23,8 +23,9 @@ public class InstitutionalWalletNonceDispatcher {
         final CheckInResponse[] response = new CheckInResponse[1];
         transactionDispatcher.dispatch(
             walletAddress,
+            record.chainId(),
             existingNonce,
-            nonce -> outboxService.markNonceReserved(record.id(), walletAddress, nonce),
+            (chainId, nonce) -> outboxService.markNonceReserved(record.id(), walletAddress, chainId, nonce),
             nonce -> {
                 response[0] = submissionService.submit(
                     record.reservationKey(), record.pucHash(), nonce, Math.max(0, record.attempts())

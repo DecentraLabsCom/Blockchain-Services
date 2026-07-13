@@ -26,6 +26,7 @@ import java.util.concurrent.ConcurrentHashMap;
  * - /auth/checkin-institutional
  * - /auth/access-credential
  * - /auth/access-code/*
+ * - /auth/fmu/session-ticket/*
  * - /onboarding/webauthn/*
  * - /webauthn/*
  * - /auth/jwks
@@ -99,6 +100,7 @@ public class PublicEndpointRateLimitFilter extends OncePerRequestFilter {
                 || path.startsWith("/auth/checkin-institutional")
                 || path.startsWith("/auth/access-credential")
                 || path.startsWith("/auth/access-code")
+                || path.startsWith("/auth/fmu/session-ticket")
                 || path.startsWith("/onboarding/webauthn")
                 || path.startsWith("/webauthn");
     }

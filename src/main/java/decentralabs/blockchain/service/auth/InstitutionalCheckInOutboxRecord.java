@@ -15,6 +15,7 @@ public record InstitutionalCheckInOutboxRecord(
     Instant nextAttemptAt,
     String txHash,
     String walletAddress,
+    BigInteger chainId,
     BigInteger nonce,
     Instant submittedAt,
     long version
@@ -26,6 +27,6 @@ public record InstitutionalCheckInOutboxRecord(
         Instant submittedAt
     ) {
         this(id, reservationKey, labId, institutionalWallet, pucHash, accessSessionId,
-            status, attempts, nextAttemptAt, txHash, walletAddress, nonce, submittedAt, 0L);
+            status, attempts, nextAttemptAt, txHash, walletAddress, null, nonce, submittedAt, 0L);
     }
 }

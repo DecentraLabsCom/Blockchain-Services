@@ -52,6 +52,22 @@ class SessionObserverAuthenticationFilterTest {
     }
 
     @Test
+    void authenticatesSessionTicketRedemptionWithTheSameGatewayCredential() throws Exception {
+        byte[] secret = "a-32-byte-session-observer-secret!!".getBytes(StandardCharsets.UTF_8);
+        String encoded = Base64.getUrlEncoder().withoutPadding().encodeToString(secret);
+        SessionObserverAuthenticationFilter filter = filterWithCredentials("{\"gateway-a\":\"" + encoded + "\"}");
+        MockHttpServletRequest request = new MockHttpServletRequest("POST", "/auth/fmu/session-ticket/redeem");
+        request.setRequestURI("/auth/fmu/session-ticket/redeem");
+        request.addHeader(HttpHeaders.AUTHORIZATION, "Bearer " + token("gateway-a", secret, 60));
+        MockHttpServletResponse response = new MockHttpServletResponse();
+
+        filter.doFilter(request, response, filterChain);
+
+        verify(filterChain).doFilter(request, response);
+        assertThat(SecurityContextHolder.getContext().getAuthentication().getName()).isEqualTo("gateway-a");
+    }
+
+    @Test
     void rejectsExpiredOrUnknownGatewayCredentials() throws Exception {
         byte[] secret = "a-32-byte-session-observer-secret!!".getBytes(StandardCharsets.UTF_8);
         SessionObserverAuthenticationFilter filter = filterWithCredentials("{}");

@@ -1,7 +1,7 @@
 package decentralabs.blockchain.service.auth;
 
 import java.math.BigInteger;
-import java.util.function.Consumer;
+import java.util.function.BiConsumer;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -15,11 +15,17 @@ public class InstitutionalWalletNonceReservationService {
     @Transactional
     public BigInteger reserveAndPersist(
         String walletAddress,
+        BigInteger chainId,
         BigInteger nodePendingNonce,
-        Consumer<BigInteger> persistNonce
+        BiConsumer<BigInteger, BigInteger> persistNonce
     ) {
-        BigInteger nonce = nonceStore.reserveNextNonce(walletAddress, nodePendingNonce);
-        persistNonce.accept(nonce);
+        BigInteger nonce = nonceStore.reserveNextNonce(chainId, walletAddress, nodePendingNonce);
+        persistNonce.accept(chainId, nonce);
         return nonce;
+    }
+
+    @Transactional
+    public BigInteger reserve(String walletAddress, BigInteger chainId, BigInteger nodePendingNonce) {
+        return nonceStore.reserveNextNonce(chainId, walletAddress, nodePendingNonce);
     }
 }

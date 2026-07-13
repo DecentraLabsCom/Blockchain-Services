@@ -1,6 +1,8 @@
 package decentralabs.blockchain.service.auth;
 
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -107,6 +109,22 @@ class InstitutionalCheckInOutboxProcessorTest {
         processor.process(record);
 
         verify(outboxService).markFailed(1L, 3, "rpc down");
+    }
+
+    @Test
+    void quarantinesAnUncertainBroadcastEvenWithoutATransactionHash() throws Exception {
+        var record = record(2);
+        when(outboxService.claim(1L)).thenReturn(true);
+        when(bookingService.getCheckInBookingInfo(any(), any(), any(), eq(null)))
+            .thenReturn(Map.of("reservationStatus", BigInteger.ONE));
+        org.mockito.Mockito.doThrow(new InstitutionalWalletDispatchException(
+            "broadcast outcome uncertain", new IllegalStateException("rpc response lost")
+        )).when(nonceDispatcher).dispatch(record);
+
+        processor.process(record);
+
+        verify(outboxService).markBroadcastUncertain(1L, 3, "broadcast outcome uncertain");
+        verify(outboxService, never()).markFailed(eq(1L), anyInt(), anyString());
     }
 
     private InstitutionalCheckInOutboxRecord record(int attempts) {

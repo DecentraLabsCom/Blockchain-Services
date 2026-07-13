@@ -17,6 +17,7 @@ import java.sql.ResultSet;
 import java.sql.Timestamp;
 import java.time.Instant;
 import java.util.List;
+import java.util.function.BiConsumer;
 import java.util.function.Consumer;
 import java.util.function.Function;
 import org.junit.jupiter.api.Test;
@@ -33,6 +34,8 @@ import org.springframework.test.util.ReflectionTestUtils;
 
 @ExtendWith(MockitoExtension.class)
 class SessionStartedOnChainPublisherServiceTest {
+    private static final BigInteger CHAIN_ID = BigInteger.valueOf(11155111);
+
     @Mock private ObjectProvider<JdbcTemplate> jdbcTemplateProvider;
     @Mock private JdbcTemplate jdbcTemplate;
     @Mock private SessionStartedOnChainClient onChainClient;
@@ -61,7 +64,8 @@ class SessionStartedOnChainPublisherServiceTest {
 
         verify(onChainClient).markSessionStarted(any(), eq(BigInteger.valueOf(45)), eq(0));
         verify(jdbcTemplate).update(
-            contains("onchain_wallet_address = ?"), eq("0xwallet"), eq(BigInteger.valueOf(45)), eq(7L)
+            contains("onchain_wallet_address = ?"), eq("0xwallet"), eq(CHAIN_ID),
+            eq(BigInteger.valueOf(45)), eq(7L)
         );
         verify(jdbcTemplate).update(contains("onchain_status = 'SUBMITTED'"), eq("0x" + "a".repeat(64)), eq(7L));
         verify(onChainClient, never()).transactionState(anyString());
@@ -80,7 +84,7 @@ class SessionStartedOnChainPublisherServiceTest {
         assertThat(service.publishPending(10)).isEqualTo(1);
 
         verify(jdbcTemplate).update(contains("onchain_status = 'MINED_SUCCESS'"), eq(hash), eq(7L), eq(hash));
-        verify(transactionDispatcher, never()).dispatch(anyString(), any(), any(), any(), any());
+        verify(transactionDispatcher, never()).dispatch(anyString(), any(), any(), any(), any(), any());
     }
 
     @Test
@@ -97,7 +101,9 @@ class SessionStartedOnChainPublisherServiceTest {
 
         assertThat(service.publishPending(10)).isEqualTo(1);
 
-        verify(transactionDispatcher).dispatch(eq("0xwallet"), eq(BigInteger.valueOf(47)), any(), any(), any());
+        verify(transactionDispatcher).dispatch(
+            eq("0xwallet"), eq(CHAIN_ID), eq(BigInteger.valueOf(47)), any(), any(), any()
+        );
         verify(onChainClient).markSessionStarted(any(), eq(BigInteger.valueOf(47)), eq(2));
     }
 
@@ -111,7 +117,7 @@ class SessionStartedOnChainPublisherServiceTest {
 
         assertThat(service.publishPending(10)).isEqualTo(1);
 
-        verify(transactionDispatcher, never()).dispatch(anyString(), any(), any(), any(), any());
+        verify(transactionDispatcher, never()).dispatch(anyString(), any(), any(), any(), any(), any());
         verify(jdbcTemplate).update(contains("onchain_status = 'MINED_SUCCESS'"), eq(7L));
     }
 
@@ -153,7 +159,31 @@ class SessionStartedOnChainPublisherServiceTest {
         assertThat(service.publishPending(10)).isZero();
 
         verify(jdbcTemplate).update(contains("onchain_status = 'SUPERSEDED'"), eq(7L));
-        verify(transactionDispatcher, never()).dispatch(anyString(), any(), any(), any(), any());
+        verify(transactionDispatcher, never()).dispatch(anyString(), any(), any(), any(), any(), any());
+    }
+
+    @Test
+    void quarantinesUncertainBroadcastWithoutClearingTheReservationGuard() throws Exception {
+        SessionStartedOnChainPublisherService service = buildService(jdbcTemplate);
+        mockSubmittedQuery(List.of());
+        mockPendingQuery("QUEUED", 0, null, null, null, null);
+        when(jdbcTemplate.update(anyString(), any(Object[].class))).thenReturn(1);
+        when(onChainClient.hasSessionStarted("0xabc")).thenReturn(false);
+        when(onChainClient.signerAddress()).thenReturn("0xwallet");
+        org.mockito.Mockito.doThrow(new InstitutionalWalletDispatchException(
+            "broadcast outcome uncertain", new IllegalStateException("rpc response lost")
+        )).when(transactionDispatcher).dispatch(
+            anyString(), isNull(), isNull(), any(), any(), any()
+        );
+
+        assertThat(service.publishPending(10)).isZero();
+
+        verify(jdbcTemplate).update(
+            contains("onchain_status = 'STUCK_UNKNOWN'"),
+            eq("broadcast outcome uncertain"),
+            eq(7L)
+        );
+        verify(jdbcTemplate, never()).update(contains("onchain_reservation_guard = CASE"), any(Object[].class));
     }
 
     @Test
@@ -268,8 +298,10 @@ class SessionStartedOnChainPublisherServiceTest {
         when(rs.getString("onchain_status")).thenReturn(status);
         when(rs.getInt("onchain_publish_attempts")).thenReturn(attempts);
         when(rs.getString("onchain_wallet_address")).thenReturn(wallet);
+        when(rs.getObject("onchain_chain_id")).thenReturn(txNonce == null ? null : new BigDecimal(CHAIN_ID));
         when(rs.getObject("onchain_nonce")).thenReturn(txNonce == null ? null : new BigDecimal(txNonce));
         if (txNonce != null) {
+            when(rs.getBigDecimal("onchain_chain_id")).thenReturn(new BigDecimal(CHAIN_ID));
             when(rs.getBigDecimal("onchain_nonce")).thenReturn(new BigDecimal(txNonce));
         }
         when(rs.getString("onchain_tx_hash")).thenReturn(hash);
@@ -282,22 +314,22 @@ class SessionStartedOnChainPublisherServiceTest {
     }
 
     private void mockDispatch(BigInteger nonce, String hash) throws Exception {
-        when(transactionDispatcher.dispatch(eq("0xwallet"), isNull(), any(), any(), any()))
+        when(transactionDispatcher.dispatch(eq("0xwallet"), isNull(), isNull(), any(), any(), any()))
             .thenAnswer(invocation -> executeDispatch(invocation, nonce, hash, true));
     }
 
     private void mockDispatchWithExistingNonce(BigInteger nonce, String hash) throws Exception {
-        when(transactionDispatcher.dispatch(eq("0xwallet"), eq(nonce), any(), any(), any()))
+        when(transactionDispatcher.dispatch(eq("0xwallet"), eq(CHAIN_ID), eq(nonce), any(), any(), any()))
             .thenAnswer(invocation -> executeDispatch(invocation, nonce, hash, false));
     }
 
     private String executeDispatch(
         org.mockito.invocation.InvocationOnMock invocation, BigInteger nonce, String hash, boolean persistNonce
     ) {
-        Consumer<BigInteger> nonceConsumer = invocation.getArgument(2);
-        Function<BigInteger, String> broadcaster = invocation.getArgument(3);
-        Consumer<String> hashConsumer = invocation.getArgument(4);
-        if (persistNonce) nonceConsumer.accept(nonce);
+        BiConsumer<BigInteger, BigInteger> nonceConsumer = invocation.getArgument(3);
+        Function<BigInteger, String> broadcaster = invocation.getArgument(4);
+        Consumer<String> hashConsumer = invocation.getArgument(5);
+        if (persistNonce) nonceConsumer.accept(CHAIN_ID, nonce);
         assertThat(broadcaster.apply(nonce)).isEqualTo(hash);
         hashConsumer.accept(hash);
         return hash;

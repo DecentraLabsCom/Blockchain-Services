@@ -70,7 +70,7 @@ public class SessionStartedOnChainPublisherService {
                 SELECT id, reservation_key, lab_id, puc_hash, signer_address, gateway_id,
                        session_id, access_type, started_at, nonce, credential_hash,
                        client_proof_hash, signature, onchain_status, onchain_publish_attempts,
-                       onchain_wallet_address, onchain_nonce, onchain_tx_hash, onchain_submitted_at
+                       onchain_wallet_address, onchain_chain_id, onchain_nonce, onchain_tx_hash, onchain_submitted_at
                 FROM session_started_attestations
                 WHERE onchain_published_at IS NULL
                   AND onchain_status IN ('QUEUED', 'RETRY', 'SUBMITTING')
@@ -118,8 +118,9 @@ public class SessionStartedOnChainPublisherService {
                 ? record.transactionNonce() : null;
             String txHash = transactionDispatcher.dispatch(
                 walletAddress,
+                record.chainId(),
                 existingNonce,
-                nonce -> markNonceReserved(submission.id(), walletAddress, nonce),
+                (chainId, nonce) -> markNonceReserved(submission.id(), walletAddress, chainId, nonce),
                 nonce -> onChainClient.markSessionStarted(submission, nonce, record.attempts()),
                 hash -> markSubmitted(submission.id(), hash)
             );
@@ -129,6 +130,9 @@ public class SessionStartedOnChainPublisherService {
                 LogSanitizer.sanitize(txHash)
             );
             return true;
+        } catch (InstitutionalWalletDispatchException ex) {
+            markBroadcastUncertain(submission.id(), ex);
+            return false;
         } catch (Exception ex) {
             markFailed(submission.id(), ex);
             return false;
@@ -179,16 +183,18 @@ public class SessionStartedOnChainPublisherService {
         );
     }
 
-    private void markNonceReserved(long id, String walletAddress, BigInteger nonce) {
+    private void markNonceReserved(long id, String walletAddress, BigInteger chainId, BigInteger nonce) {
         jdbcTemplate.update(
             """
             UPDATE session_started_attestations
             SET onchain_wallet_address = ?,
+                onchain_chain_id = ?,
                 onchain_nonce = ?,
                 updated_at = CURRENT_TIMESTAMP
             WHERE id = ? AND onchain_status = 'SUBMITTING'
             """,
             walletAddress,
+            chainId,
             nonce,
             id
         );
@@ -253,6 +259,24 @@ public class SessionStartedOnChainPublisherService {
         log.warn("SessionStarted on-chain publication failed for attestation {}: {}", id, error);
     }
 
+    private void markBroadcastUncertain(long id, InstitutionalWalletDispatchException ex) {
+        String error = LogSanitizer.sanitize(ex.getMessage());
+        jdbcTemplate.update(
+            """
+            UPDATE session_started_attestations
+            SET onchain_publish_locked_at = NULL,
+                onchain_status = 'STUCK_UNKNOWN',
+                onchain_submitted_at = COALESCE(onchain_submitted_at, CURRENT_TIMESTAMP),
+                onchain_publish_last_error = ?,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE id = ? AND onchain_status = 'SUBMITTING'
+            """,
+            error,
+            id
+        );
+        log.warn("SessionStarted broadcast outcome is uncertain for attestation {}: {}", id, error);
+    }
+
     private Timestamp lockThreshold() {
         long seconds = Math.max(1L, lockTimeoutSeconds);
         return Timestamp.from(Instant.now().minusSeconds(seconds));
@@ -270,7 +294,7 @@ public class SessionStartedOnChainPublisherService {
                 SELECT id, reservation_key, lab_id, puc_hash, signer_address, gateway_id,
                        session_id, access_type, started_at, nonce, credential_hash,
                        client_proof_hash, signature, onchain_status, onchain_publish_attempts,
-                       onchain_wallet_address, onchain_nonce, onchain_tx_hash, onchain_submitted_at
+                       onchain_wallet_address, onchain_chain_id, onchain_nonce, onchain_tx_hash, onchain_submitted_at
                 FROM session_started_attestations
                 WHERE onchain_status = 'SUBMITTED'
                 ORDER BY onchain_submitted_at ASC, id ASC
@@ -310,7 +334,7 @@ public class SessionStartedOnChainPublisherService {
                 SELECT id, reservation_key, lab_id, puc_hash, signer_address, gateway_id,
                        session_id, access_type, started_at, nonce, credential_hash,
                        client_proof_hash, signature, onchain_status, onchain_publish_attempts,
-                       onchain_wallet_address, onchain_nonce, onchain_tx_hash, onchain_submitted_at
+                       onchain_wallet_address, onchain_chain_id, onchain_nonce, onchain_tx_hash, onchain_submitted_at
                 FROM session_started_attestations
                 WHERE onchain_status = 'STUCK_UNKNOWN'
                 ORDER BY updated_at ASC, id ASC
@@ -330,15 +354,22 @@ public class SessionStartedOnChainPublisherService {
                     reconciled++;
                     continue;
                 }
-                SessionStartedOnChainClient.TransactionState state =
-                    onChainClient.transactionStateStrict(record.transactionHash());
-                if (state == SessionStartedOnChainClient.TransactionState.SUCCEEDED) {
-                    markUnknownMinedSuccess(record.submission().id());
-                    reconciled++;
-                } else if (state == SessionStartedOnChainClient.TransactionState.FAILED) {
-                    markUnknownMinedFailed(record, "SessionStarted transaction reverted on-chain");
-                } else if (record.transactionNonce() != null && record.walletAddress() != null
-                        && !onChainClient.transactionVisible(record.transactionHash())
+                boolean hasTransactionHash = record.transactionHash() != null && !record.transactionHash().isBlank();
+                if (hasTransactionHash) {
+                    SessionStartedOnChainClient.TransactionState state =
+                        onChainClient.transactionStateStrict(record.transactionHash());
+                    if (state == SessionStartedOnChainClient.TransactionState.SUCCEEDED) {
+                        markUnknownMinedSuccess(record.submission().id());
+                        reconciled++;
+                        continue;
+                    }
+                    if (state == SessionStartedOnChainClient.TransactionState.FAILED) {
+                        markUnknownMinedFailed(record, "SessionStarted transaction reverted on-chain");
+                        continue;
+                    }
+                }
+                if (record.transactionNonce() != null && record.walletAddress() != null
+                        && (!hasTransactionHash || !onChainClient.transactionVisible(record.transactionHash()))
                         && onChainClient.pendingNonce(record.walletAddress()).compareTo(record.transactionNonce()) <= 0) {
                     markUnknownRetry(record);
                 }
@@ -372,7 +403,7 @@ public class SessionStartedOnChainPublisherService {
             SET onchain_status = 'MINED_FAILED', onchain_mined_at = CURRENT_TIMESTAMP,
                 onchain_reservation_guard = NULL, onchain_publish_locked_at = NULL,
                 onchain_publish_last_error = ?, updated_at = CURRENT_TIMESTAMP
-            WHERE id = ? AND onchain_status = 'STUCK_UNKNOWN' AND onchain_tx_hash = ?
+            WHERE id = ? AND onchain_status = 'STUCK_UNKNOWN' AND onchain_tx_hash <=> ?
             """,
             error, record.submission().id(), record.transactionHash()
         );
@@ -386,7 +417,7 @@ public class SessionStartedOnChainPublisherService {
                 onchain_publish_attempts = GREATEST(onchain_publish_attempts - 1, 0),
                 onchain_publish_locked_at = NULL,
                 onchain_publish_last_error = ?, updated_at = CURRENT_TIMESTAMP
-            WHERE id = ? AND onchain_status = 'STUCK_UNKNOWN' AND onchain_tx_hash = ?
+            WHERE id = ? AND onchain_status = 'STUCK_UNKNOWN' AND onchain_tx_hash <=> ?
             """,
             "Reconciler proved the transaction absent and its nonce unconsumed; retrying the same nonce",
             record.submission().id(), record.transactionHash()
@@ -467,6 +498,7 @@ public class SessionStartedOnChainPublisherService {
             rs.getString("onchain_status"),
             rs.getInt("onchain_publish_attempts"),
             rs.getString("onchain_wallet_address"),
+            rs.getObject("onchain_chain_id") != null ? rs.getBigDecimal("onchain_chain_id").toBigIntegerExact() : null,
             rs.getObject("onchain_nonce") != null ? rs.getBigDecimal("onchain_nonce").toBigIntegerExact() : null,
             rs.getString("onchain_tx_hash"),
             rs.getTimestamp("onchain_submitted_at") != null

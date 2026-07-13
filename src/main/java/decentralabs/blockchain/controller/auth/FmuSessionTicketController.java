@@ -11,6 +11,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
@@ -49,9 +50,13 @@ public class FmuSessionTicketController {
     }
 
     @PostMapping("/redeem")
-    public ResponseEntity<?> redeem(@RequestBody(required = false) FmuSessionTicketRedeemRequest request) {
+    public ResponseEntity<?> redeem(
+        @RequestBody(required = false) FmuSessionTicketRedeemRequest request,
+        Authentication authentication
+    ) {
         try {
-            FmuSessionTicketRedeemResponse response = sessionTicketService.redeem(request);
+            String authenticatedGatewayId = authentication != null ? authentication.getName() : null;
+            FmuSessionTicketRedeemResponse response = sessionTicketService.redeem(request, authenticatedGatewayId);
             return ResponseEntity.ok(response);
         } catch (SessionTicketException ex) {
             return ResponseEntity.status(ex.getStatus()).body(Map.of(

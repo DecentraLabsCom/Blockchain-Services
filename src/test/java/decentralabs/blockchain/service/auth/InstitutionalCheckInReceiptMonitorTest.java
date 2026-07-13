@@ -88,6 +88,22 @@ class InstitutionalCheckInReceiptMonitorTest {
         verify(outboxService).markUnknownRetry(eq(record), any(Instant.class), any(String.class));
     }
 
+    @Test
+    void reconcilesUncertainBroadcastWithoutHashFromContractAndNonceState() {
+        InstitutionalCheckInOutboxRecord record = new InstitutionalCheckInOutboxRecord(
+            7L, "0xabc", "42", "0xpayer", "0xpuchash", "session", "STUCK_UNKNOWN", 3,
+            Instant.now(), null, "0xsigner", BigInteger.valueOf(16), Instant.now().minusSeconds(60)
+        );
+        when(bookingService.getCheckInBookingInfo("0xpayer", "0xabc", "42", null))
+            .thenReturn(Map.of("reservationStatus", BigInteger.ONE));
+        when(checkInOnChainService.pendingNonce("0xsigner")).thenReturn(BigInteger.valueOf(16));
+
+        monitor.reconcileUnknown(record);
+
+        verify(outboxService).markUnknownRetry(eq(record), any(Instant.class), any(String.class));
+        verify(checkInOnChainService, never()).transactionStateStrict(any(String.class));
+    }
+
     private InstitutionalCheckInOutboxRecord unknownRecord(long id, long nonce) {
         return new InstitutionalCheckInOutboxRecord(
             id, "0xabc", "42", "0xpayer", "0xpuchash", "session", "STUCK_UNKNOWN", 8,

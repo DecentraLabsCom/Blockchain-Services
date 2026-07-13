@@ -49,7 +49,7 @@ public class InstitutionalCheckInReceiptMonitor {
     }
 
     void reconcileUnknown(InstitutionalCheckInOutboxRecord record) {
-        if (record == null || record.txHash() == null || record.txHash().isBlank()) {
+        if (record == null) {
             return;
         }
         try {
@@ -57,18 +57,23 @@ public class InstitutionalCheckInReceiptMonitor {
                 outboxService.markUnknownMinedSuccess(record);
                 return;
             }
-            CheckInOnChainService.TransactionState state =
-                checkInOnChainService.transactionStateStrict(record.txHash());
-            if (state == CheckInOnChainService.TransactionState.SUCCEEDED) {
-                outboxService.markUnknownMinedSuccess(record);
+            boolean hasTransactionHash = record.txHash() != null && !record.txHash().isBlank();
+            if (hasTransactionHash) {
+                CheckInOnChainService.TransactionState state =
+                    checkInOnChainService.transactionStateStrict(record.txHash());
+                if (state == CheckInOnChainService.TransactionState.SUCCEEDED) {
+                    outboxService.markUnknownMinedSuccess(record);
+                    return;
+                }
+                if (state == CheckInOnChainService.TransactionState.FAILED) {
+                    outboxService.markUnknownMinedFailed(record, "Check-in transaction reverted on-chain");
+                    return;
+                }
+            }
+            if (record.nonce() == null || record.walletAddress() == null) {
                 return;
             }
-            if (state == CheckInOnChainService.TransactionState.FAILED) {
-                outboxService.markUnknownMinedFailed(record, "Check-in transaction reverted on-chain");
-                return;
-            }
-            if (record.nonce() == null || record.walletAddress() == null
-                    || checkInOnChainService.transactionVisible(record.txHash())) {
+            if (hasTransactionHash && checkInOnChainService.transactionVisible(record.txHash())) {
                 return;
             }
             BigInteger pendingNonce = checkInOnChainService.pendingNonce(record.walletAddress());

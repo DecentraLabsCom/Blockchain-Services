@@ -58,7 +58,7 @@ public class InstitutionalCheckInOutboxService {
         return jdbcTemplate.queryForObject(
             """
             SELECT id, reservation_key, lab_id, institutional_wallet, puc_hash,
-                   access_session_id, status, attempts, next_attempt_at, tx_hash, wallet_address, nonce, submitted_at, version
+                   access_session_id, status, attempts, next_attempt_at, tx_hash, wallet_address, chain_id, nonce, submitted_at, version
             FROM institutional_checkin_outbox WHERE reservation_key = ?
             """,
             (rs, rowNum) -> mapRow(rs),
@@ -71,7 +71,7 @@ public class InstitutionalCheckInOutboxService {
         return jdbcTemplate.queryForObject(
             """
             SELECT id, reservation_key, lab_id, institutional_wallet, puc_hash,
-                   access_session_id, status, attempts, next_attempt_at, tx_hash, wallet_address, nonce, submitted_at, version
+                   access_session_id, status, attempts, next_attempt_at, tx_hash, wallet_address, chain_id, nonce, submitted_at, version
             FROM institutional_checkin_outbox WHERE id = ?
             """,
             (rs, rowNum) -> mapRow(rs),
@@ -93,6 +93,7 @@ public class InstitutionalCheckInOutboxService {
                 attempts = 0,
                 next_attempt_at = CURRENT_TIMESTAMP,
                 tx_hash = NULL,
+                chain_id = NULL,
                 nonce = NULL,
                 submitted_at = NULL,
                 mined_at = NULL,
@@ -115,7 +116,7 @@ public class InstitutionalCheckInOutboxService {
             return jdbcTemplate.query(
                 """
                 SELECT id, reservation_key, lab_id, institutional_wallet, puc_hash,
-                       access_session_id, status, attempts, next_attempt_at, tx_hash, wallet_address, nonce, submitted_at, version
+                       access_session_id, status, attempts, next_attempt_at, tx_hash, wallet_address, chain_id, nonce, submitted_at, version
                 FROM institutional_checkin_outbox
                 WHERE (status IN ('PENDING', 'RETRY') AND next_attempt_at <= ?)
                    OR (status = 'SUBMITTING' AND updated_at <= ?)
@@ -156,39 +157,46 @@ public class InstitutionalCheckInOutboxService {
      * Allocates a unique nonce while the caller holds the database transaction
      * that serializes this wallet's signing and broadcast section.
      */
-    public BigInteger reserveNextNonce(String walletAddress, BigInteger nodePendingNonce) {
+    public BigInteger reserveNextNonce(BigInteger chainId, String walletAddress, BigInteger nodePendingNonce) {
         requireConfigured();
-        if (!hasText(walletAddress) || nodePendingNonce == null || nodePendingNonce.signum() < 0) {
-            throw new IllegalArgumentException("Missing wallet address or pending nonce");
+        if (chainId == null || chainId.signum() <= 0 || !hasText(walletAddress)
+                || nodePendingNonce == null || nodePendingNonce.signum() < 0) {
+            throw new IllegalArgumentException("Missing chain, wallet address or pending nonce");
         }
         jdbcTemplate.update(
-            "INSERT INTO institutional_wallet_nonce (wallet_address, next_nonce) VALUES (?, ?) "
+            "INSERT INTO institutional_wallet_nonce (chain_id, wallet_address, next_nonce) VALUES (?, ?, ?) "
                 + "ON DUPLICATE KEY UPDATE wallet_address = VALUES(wallet_address)",
+            chainId,
             walletAddress,
             nodePendingNonce
         );
         BigInteger storedNext = jdbcTemplate.queryForObject(
-            "SELECT next_nonce FROM institutional_wallet_nonce WHERE wallet_address = ? FOR UPDATE",
+            "SELECT next_nonce FROM institutional_wallet_nonce WHERE chain_id = ? AND wallet_address = ? FOR UPDATE",
             BigInteger.class,
+            chainId,
             walletAddress
         );
         BigInteger nonce = storedNext.max(nodePendingNonce);
         jdbcTemplate.update(
-            "UPDATE institutional_wallet_nonce SET next_nonce = ?, updated_at = CURRENT_TIMESTAMP WHERE wallet_address = ?",
+            "UPDATE institutional_wallet_nonce SET next_nonce = ?, updated_at = CURRENT_TIMESTAMP "
+                + "WHERE chain_id = ? AND wallet_address = ?",
             nonce.add(BigInteger.ONE),
+            chainId,
             walletAddress
         );
         return nonce;
     }
 
-    public void markNonceReserved(long id, String walletAddress, BigInteger nonce) {
+    public void markNonceReserved(long id, String walletAddress, BigInteger chainId, BigInteger nonce) {
         if (jdbcTemplate == null) {
             return;
         }
         jdbcTemplate.update(
-            "UPDATE institutional_checkin_outbox SET wallet_address = ?, nonce = ?, version = version + 1, updated_at = CURRENT_TIMESTAMP "
+            "UPDATE institutional_checkin_outbox SET wallet_address = ?, chain_id = ?, nonce = ?, "
+                + "version = version + 1, updated_at = CURRENT_TIMESTAMP "
                 + "WHERE id = ? AND status = 'SUBMITTING'",
             walletAddress,
+            chainId,
             nonce,
             id
         );
@@ -202,7 +210,7 @@ public class InstitutionalCheckInOutboxService {
             return jdbcTemplate.query(
                 """
                 SELECT id, reservation_key, lab_id, institutional_wallet, puc_hash,
-                       access_session_id, status, attempts, next_attempt_at, tx_hash, wallet_address, nonce, submitted_at, version
+                       access_session_id, status, attempts, next_attempt_at, tx_hash, wallet_address, chain_id, nonce, submitted_at, version
                 FROM institutional_checkin_outbox
                 WHERE status = 'SUBMITTED'
                 ORDER BY updated_at ASC, id ASC
@@ -225,7 +233,7 @@ public class InstitutionalCheckInOutboxService {
             return jdbcTemplate.query(
                 """
                 SELECT id, reservation_key, lab_id, institutional_wallet, puc_hash,
-                       access_session_id, status, attempts, next_attempt_at, tx_hash, wallet_address, nonce, submitted_at, version
+                       access_session_id, status, attempts, next_attempt_at, tx_hash, wallet_address, chain_id, nonce, submitted_at, version
                 FROM institutional_checkin_outbox
                 WHERE status = 'STUCK_UNKNOWN'
                 ORDER BY updated_at ASC, id ASC
@@ -341,6 +349,27 @@ public class InstitutionalCheckInOutboxService {
         );
     }
 
+    public void markBroadcastUncertain(long id, int attempts, String error) {
+        if (jdbcTemplate == null) {
+            return;
+        }
+        jdbcTemplate.update(
+            """
+            UPDATE institutional_checkin_outbox
+            SET status = 'STUCK_UNKNOWN',
+                attempts = ?,
+                submitted_at = COALESCE(submitted_at, CURRENT_TIMESTAMP),
+                last_error = ?,
+                version = version + 1,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE id = ? AND status = 'SUBMITTING'
+            """,
+            attempts,
+            truncate(error),
+            id
+        );
+    }
+
     private InstitutionalCheckInOutboxRecord mapRow(ResultSet rs) throws SQLException {
         Timestamp nextAttempt = rs.getTimestamp("next_attempt_at");
         return new InstitutionalCheckInOutboxRecord(
@@ -355,6 +384,7 @@ public class InstitutionalCheckInOutboxService {
             nextAttempt != null ? nextAttempt.toInstant() : null,
             rs.getString("tx_hash"),
             rs.getString("wallet_address"),
+            rs.getObject("chain_id", BigInteger.class),
             rs.getObject("nonce", BigInteger.class),
             rs.getTimestamp("submitted_at") != null ? rs.getTimestamp("submitted_at").toInstant() : null,
             rs.getLong("version")
@@ -432,7 +462,7 @@ public class InstitutionalCheckInOutboxService {
             UPDATE institutional_checkin_outbox
             SET status = 'MINED_SUCCESS', mined_at = CURRENT_TIMESTAMP, last_error = NULL,
                 version = version + 1, updated_at = CURRENT_TIMESTAMP
-            WHERE id = ? AND status = 'STUCK_UNKNOWN' AND tx_hash = ? AND version = ?
+            WHERE id = ? AND status = 'STUCK_UNKNOWN' AND tx_hash <=> ? AND version = ?
             """,
             record.id(), record.txHash(), record.version()
         ) == 1;
@@ -447,7 +477,7 @@ public class InstitutionalCheckInOutboxService {
             UPDATE institutional_checkin_outbox
             SET status = 'MINED_FAILED', mined_at = CURRENT_TIMESTAMP, last_error = ?,
                 version = version + 1, updated_at = CURRENT_TIMESTAMP
-            WHERE id = ? AND status = 'STUCK_UNKNOWN' AND tx_hash = ? AND version = ?
+            WHERE id = ? AND status = 'STUCK_UNKNOWN' AND tx_hash <=> ? AND version = ?
             """,
             truncate(error), record.id(), record.txHash(), record.version()
         ) == 1;
@@ -464,7 +494,7 @@ public class InstitutionalCheckInOutboxService {
             UPDATE institutional_checkin_outbox
             SET status = 'RETRY', attempts = GREATEST(attempts - 1, 0), next_attempt_at = ?,
                 last_error = ?, version = version + 1, updated_at = CURRENT_TIMESTAMP
-            WHERE id = ? AND status = 'STUCK_UNKNOWN' AND tx_hash = ? AND version = ?
+            WHERE id = ? AND status = 'STUCK_UNKNOWN' AND tx_hash <=> ? AND version = ?
             """,
             Timestamp.from(nextAttemptAt), truncate(reason), record.id(), record.txHash(), record.version()
         ) == 1;

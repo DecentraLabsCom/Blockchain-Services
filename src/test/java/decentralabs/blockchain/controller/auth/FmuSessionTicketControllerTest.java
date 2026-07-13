@@ -20,6 +20,7 @@ import org.mockito.Mockito;
 import org.springframework.beans.factory.support.StaticListableBeanFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
@@ -77,21 +78,20 @@ class FmuSessionTicketControllerTest {
         FmuSessionTicketRedeemResponse response = new FmuSessionTicketRedeemResponse();
         response.setClaims(Map.of("resourceType", "fmu", "accessKey", "test.fmu"));
         response.setExpiresAt(12345);
-        response.setSessionId("sess-fmu-1");
-        response.setSessionObserved(true);
         sessionTicketService.redeemResponse = response;
 
         FmuSessionTicketRedeemRequest request = new FmuSessionTicketRedeemRequest();
         request.setSessionTicket("st_test");
-        request.setSessionId("sess-fmu-1");
 
         mockMvc.perform(post("/auth/fmu/session-ticket/redeem")
+                .principal(new UsernamePasswordAuthenticationToken("lab.example", null))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(objectMapper.writeValueAsString(request)))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.claims.resourceType").value("fmu"))
-            .andExpect(jsonPath("$.sessionId").value("sess-fmu-1"))
-            .andExpect(jsonPath("$.sessionObserved").value(true));
+            .andExpect(jsonPath("$.expiresAt").value(12345));
+        org.assertj.core.api.Assertions.assertThat(sessionTicketService.redeemGatewayId)
+            .isEqualTo("lab.example");
     }
 
     private static final class StubFmuSessionTicketService extends FmuSessionTicketService {
@@ -100,12 +100,14 @@ class FmuSessionTicketControllerTest {
         private FmuSessionTicketRedeemResponse redeemResponse;
         private RuntimeException issueException;
         private RuntimeException redeemException;
+        private String redeemGatewayId;
 
         private StubFmuSessionTicketService() {
             super(
                 Mockito.mock(JwtService.class),
                 new StaticListableBeanFactory().getBeanProvider(org.springframework.jdbc.core.JdbcTemplate.class),
-                Mockito.mock(AccessCredentialAuditService.class)
+                Mockito.mock(AccessCredentialAuditService.class),
+                Mockito.mock(decentralabs.blockchain.service.auth.AccessCodeTokenCipher.class)
             );
         }
 
@@ -118,10 +120,14 @@ class FmuSessionTicketControllerTest {
         }
 
         @Override
-        public FmuSessionTicketRedeemResponse redeem(FmuSessionTicketRedeemRequest request) {
+        public FmuSessionTicketRedeemResponse redeem(
+            FmuSessionTicketRedeemRequest request,
+            String authenticatedGatewayId
+        ) {
             if (redeemException != null) {
                 throw redeemException;
             }
+            redeemGatewayId = authenticatedGatewayId;
             return redeemResponse;
         }
     }

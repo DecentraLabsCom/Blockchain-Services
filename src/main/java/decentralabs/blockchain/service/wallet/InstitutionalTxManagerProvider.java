@@ -12,6 +12,7 @@ import org.web3j.tx.response.TransactionReceiptProcessor;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import decentralabs.blockchain.service.auth.InstitutionalWalletNonceReservationService;
 
 @Service
 @RequiredArgsConstructor
@@ -19,6 +20,7 @@ import lombok.extern.slf4j.Slf4j;
 public class InstitutionalTxManagerProvider {
 
     private final InstitutionalWalletService institutionalWalletService;
+    private final InstitutionalWalletNonceReservationService nonceReservationService;
 
     private final Object lock = new Object();
     private TransactionManager txManager;
@@ -37,7 +39,9 @@ public class InstitutionalTxManagerProvider {
                 || !Objects.equals(currentChainId, chainId)) {
                 Credentials credentials = institutionalWalletService.getInstitutionalCredentials();
                 TransactionReceiptProcessor receiptProcessor = new PollingTransactionReceiptProcessor(web3j, 1500, 40);
-                txManager = new PendingNonceFastRawTransactionManager(web3j, credentials, chainId, receiptProcessor);
+                txManager = new PendingNonceFastRawTransactionManager(
+                    web3j, credentials, chainId, receiptProcessor, nonceReservationService
+                );
                 currentWeb3j = web3j;
                 currentChainId = chainId;
                 log.info("Institutional tx manager initialized (chainId={})", chainId);
@@ -49,12 +53,12 @@ public class InstitutionalTxManagerProvider {
     private long resolveChainId(Web3j web3j) {
         try {
             EthChainId id = web3j.ethChainId().send();
-            if (id != null && id.getChainId() != null) {
+            if (id != null && id.getChainId() != null && id.getChainId().signum() > 0) {
                 return id.getChainId().longValue();
             }
         } catch (Exception ex) {
             log.warn("Unable to fetch chainId for tx manager: {}", ex.getMessage());
         }
-        return 0L;
+        throw new IllegalStateException("Unable to resolve chainId for institutional tx manager");
     }
 }

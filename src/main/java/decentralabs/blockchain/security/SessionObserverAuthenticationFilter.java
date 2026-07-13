@@ -28,7 +28,8 @@ import org.springframework.web.filter.OncePerRequestFilter;
 /** Authenticates short-lived, least-privilege JWTs issued per gateway. */
 @Component
 public class SessionObserverAuthenticationFilter extends OncePerRequestFilter {
-    private static final String PATH = "/access-audit/internal/session-observed";
+    private static final String OBSERVATION_PATH = "/access-audit/internal/session-observed";
+    private static final String FMU_TICKET_REDEEM_PATH = "/auth/fmu/session-ticket/redeem";
     private static final String AUDIENCE = "session-observation";
     private static final String SCOPE = "session-observation:submit";
 
@@ -43,7 +44,11 @@ public class SessionObserverAuthenticationFilter extends OncePerRequestFilter {
 
     @Override
     protected boolean shouldNotFilter(@Nonnull HttpServletRequest request) {
-        return !"POST".equalsIgnoreCase(request.getMethod()) || !PATH.equals(request.getRequestURI());
+        if (!"POST".equalsIgnoreCase(request.getMethod())) {
+            return true;
+        }
+        String path = request.getRequestURI();
+        return !OBSERVATION_PATH.equals(path) && !FMU_TICKET_REDEEM_PATH.equals(path);
     }
 
     @Override

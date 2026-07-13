@@ -36,6 +36,8 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 @Testcontainers(disabledWithoutDocker = true)
 class InstitutionalConcurrencyMySqlIntegrationTest {
 
+    private static final BigInteger CHAIN_ID = BigInteger.valueOf(11155111);
+
     @Container
     @SuppressWarnings("resource")
     private static final MySQLContainer MYSQL = new MySQLContainer("mysql:8.4")
@@ -80,14 +82,15 @@ class InstitutionalConcurrencyMySqlIntegrationTest {
         InstitutionalCheckInOutboxService replicaB = outboxService();
 
         List<BigInteger> nonces = runConcurrently(
-            () -> inTransaction(() -> replicaA.reserveNextNonce("0xwallet", BigInteger.valueOf(45))),
-            () -> inTransaction(() -> replicaB.reserveNextNonce("0xwallet", BigInteger.valueOf(45)))
+            () -> inTransaction(() -> replicaA.reserveNextNonce(CHAIN_ID, "0xwallet", BigInteger.valueOf(45))),
+            () -> inTransaction(() -> replicaB.reserveNextNonce(CHAIN_ID, "0xwallet", BigInteger.valueOf(45)))
         );
 
         assertThat(nonces).containsExactlyInAnyOrder(BigInteger.valueOf(45), BigInteger.valueOf(46));
         assertThat(jdbcTemplate.queryForObject(
-            "SELECT next_nonce FROM institutional_wallet_nonce WHERE wallet_address = ?",
+            "SELECT next_nonce FROM institutional_wallet_nonce WHERE chain_id = ? AND wallet_address = ?",
             BigInteger.class,
+            CHAIN_ID,
             "0xwallet"
         )).isEqualTo(BigInteger.valueOf(47));
     }
