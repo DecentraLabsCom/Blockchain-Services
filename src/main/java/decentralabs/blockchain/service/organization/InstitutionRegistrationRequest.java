@@ -52,4 +52,11 @@ public class InstitutionRegistrationRequest {
      * Public base URL / auth URI (PROVIDER only, optional for CONSUMER)
      */
     String publicBaseUrl;
+
+    /** Wallet and deployment binding extracted from a verified provider token. */
+    String walletAddress;
+    String provisioningJti;
+    String registrationNonce;
+    Long chainId;
+    String verifyingContract;
 }

@@ -86,6 +86,7 @@ class IntentServiceTest {
             }
         };
         lenient().when(samlValidationService.resolveStableUserId(any(), any(), any())).thenCallRealMethod();
+        lenient().when(persistenceService.tryClaimForExecution(anyString(), anyString())).thenReturn(true);
     }
 
     @Test

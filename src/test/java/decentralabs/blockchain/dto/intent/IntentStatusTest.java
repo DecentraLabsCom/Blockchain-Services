@@ -35,6 +35,13 @@ class IntentStatusTest {
         }
 
         @Test
+        @DisplayName("Should have SUBMITTED status")
+        void shouldHaveSubmittedStatus() {
+            assertNotNull(IntentStatus.SUBMITTED);
+            assertEquals("submitted", IntentStatus.SUBMITTED.getWireValue());
+        }
+
+        @Test
         @DisplayName("Should have EXECUTED status")
         void shouldHaveExecutedStatus() {
             assertNotNull(IntentStatus.EXECUTED);
@@ -82,6 +89,12 @@ class IntentStatusTest {
         }
 
         @Test
+        @DisplayName("Should return SUBMITTED from string")
+        void shouldReturnSubmittedFromString() {
+            assertEquals(IntentStatus.SUBMITTED, IntentStatus.valueOf("SUBMITTED"));
+        }
+
+        @Test
         @DisplayName("Should return EXECUTED from string")
         void shouldReturnExecutedFromString() {
             assertEquals(IntentStatus.EXECUTED, IntentStatus.valueOf("EXECUTED"));
@@ -116,7 +129,7 @@ class IntentStatusTest {
         @DisplayName("Should return all values")
         void shouldReturnAllValues() {
             IntentStatus[] values = IntentStatus.values();
-            assertEquals(6, values.length);
+            assertEquals(7, values.length);
         }
 
         @Test
@@ -127,6 +140,7 @@ class IntentStatusTest {
             assertTrue(containsStatus(values, IntentStatus.QUEUED));
             assertTrue(containsStatus(values, IntentStatus.AUTHORIZED_PENDING_REGISTRATION));
             assertTrue(containsStatus(values, IntentStatus.IN_PROGRESS));
+            assertTrue(containsStatus(values, IntentStatus.SUBMITTED));
             assertTrue(containsStatus(values, IntentStatus.EXECUTED));
             assertTrue(containsStatus(values, IntentStatus.FAILED));
             assertTrue(containsStatus(values, IntentStatus.REJECTED));

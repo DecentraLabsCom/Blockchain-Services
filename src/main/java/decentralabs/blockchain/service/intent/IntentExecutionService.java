@@ -33,6 +33,9 @@ public class IntentExecutionService {
     @Value("${intent.execution-interval-ms:1000}")
     private long executionIntervalMs;
 
+    @Value("${intent.execution-stale-after-seconds:60}")
+    private long executionStaleAfterSeconds;
+
     @Observed(name = "intent.execution", contextualName = "process-queued-intent")
     public void processQueuedIntent(String requestId) {
         if (requestId == null || requestId.isBlank()) {
@@ -77,6 +80,24 @@ public class IntentExecutionService {
         }
     }
 
+    @Observed(name = "intent.execution", contextualName = "recover-stale-intent-claims")
+    @Scheduled(fixedDelayString = "${intent.execution-recovery-interval-ms:30000}")
+    public void recoverStaleExecutions() {
+        long staleAfter = Math.max(10L, executionStaleAfterSeconds);
+        int recovered = intentService.recoverStaleExecutions(Instant.now().minusSeconds(staleAfter));
+        if (recovered > 0) {
+            log.warn("Recovered {} stale institutional intent execution claim(s)", recovered);
+        }
+    }
+
+    @Observed(name = "intent.receipt", contextualName = "monitor-submitted-intents")
+    @Scheduled(fixedDelayString = "${intent.receipt-poll-interval-ms:5000}")
+    public void monitorSubmittedIntents() {
+        intentService.getQueuedIntents().values().stream()
+            .filter(record -> record.getStatus() == IntentStatus.SUBMITTED)
+            .forEach(this::monitorSubmittedRecord);
+    }
+
     private void processRecord(IntentRecord record) {
         if (record == null || record.getRequestId() == null || record.getRequestId().isBlank()) {
             return;
@@ -117,17 +138,54 @@ public class IntentExecutionService {
             } else {
                 log.warn("Intent {} failed on-chain: reason={} txHash={} blockNumber={}",
                     record.getRequestId(), result.reason(), result.txHash(), result.blockNumber());
-                if (result.txHash() == null && result.blockNumber() == null) {
+                if (result.txHash() != null && result.blockNumber() == null
+                    && result.reason() != null && result.reason().startsWith("receipt_error:")) {
+                    intentService.markSubmitted(record, result.txHash(), result.reason());
+                } else if (result.txHash() == null && result.blockNumber() == null
+                    && "dispatch_uncertain".equals(result.reason())) {
+                    intentService.markRetryable(record, result.reason());
+                } else if (result.txHash() == null && result.blockNumber() == null) {
                     intentService.markFailed(record, result.reason());
                 } else {
                     intentService.markFailed(record, result.reason(), result.txHash(), result.blockNumber());
                 }
             }
+        } catch (IntentClaimRejectedException ex) {
+            log.info("Intent {} is owned by another backend worker", record.getRequestId());
         } catch (Exception ex) {
             log.warn("Intent {} failed during execution: {}", record.getRequestId(), ex.getMessage(), ex);
             intentService.markFailed(record, "execution_error: " + ex.getMessage());
         } finally {
             executionGuards.remove(record.getRequestId(), guard);
+        }
+    }
+
+    private void monitorSubmittedRecord(IntentRecord record) {
+        try {
+            IntentOnChainExecutor.ReceiptResult receipt = onChainExecutor.inspectReceipt(record);
+            if (receipt.state() == IntentOnChainExecutor.ReceiptState.PENDING) {
+                return;
+            }
+            if (receipt.state() == IntentOnChainExecutor.ReceiptState.MINED_SUCCESS) {
+                intentService.markExecuted(
+                    record,
+                    record.getTxHash(),
+                    receipt.blockNumber(),
+                    receipt.labId(),
+                    record.getReservationKey()
+                );
+                triggerReservationPostflight(
+                    record,
+                    new IntentOnChainExecutor.ExecutionResult(
+                        true, record.getTxHash(), receipt.blockNumber(), receipt.labId(),
+                        record.getReservationKey(), null
+                    )
+                );
+            } else {
+                intentService.markFailed(record, receipt.reason(), record.getTxHash(), receipt.blockNumber());
+            }
+        } catch (Exception ex) {
+            log.debug("Receipt for intent {} remains unresolved: {}", record.getRequestId(), ex.getMessage());
         }
     }
 

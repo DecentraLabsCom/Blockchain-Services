@@ -194,6 +194,23 @@ class IntentControllerTest {
                     .content("{\"event\":\"registration_mined\"}"))
                 .andExpect(status().isUnauthorized());
         }
+
+        @Test
+        @DisplayName("Should persist a terminal registration failure")
+        void shouldAcceptRegistrationFailureSignal() throws Exception {
+            when(intentService.markRegistrationFailed("req-reverted", "registration_reverted"))
+                .thenReturn(true);
+
+            mockMvc.perform(post("/intents/req-reverted/registration-failed")
+                    .header("Authorization", VALID_BEARER)
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content("{\"event\":\"registration_reverted\"}"))
+                .andExpect(status().isAccepted())
+                .andExpect(jsonPath("$.requestId").value("req-reverted"))
+                .andExpect(jsonPath("$.status").value("accepted"));
+
+            verify(intentService).markRegistrationFailed("req-reverted", "registration_reverted");
+        }
     }
 
     private IntentSubmission createValidSubmission() {

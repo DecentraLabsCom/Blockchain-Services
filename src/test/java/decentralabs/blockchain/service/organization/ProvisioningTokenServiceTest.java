@@ -83,7 +83,11 @@ class ProvisioningTokenServiceTest {
                 "providerEmail", "ops@example.com",
                 "providerCountry", "ES",
                 "providerOrganization", "Decentra Labs",
-                "publicBaseUrl", PUBLIC_URL
+                "publicBaseUrl", PUBLIC_URL,
+                "walletAddress", "0x1234567890123456789012345678901234567890",
+                "chainId", 11155111L,
+                "verifyingContract", "0xe49a2f59631717691642f929E0FeF1f705866600",
+                "registrationNonce", "registration-nonce-1"
             ),
             "provider-jti",
             MARKETPLACE_URL,
@@ -99,10 +103,14 @@ class ProvisioningTokenServiceTest {
         assertThat(payload.getProviderOrganization()).isEqualTo("Decentra Labs");
         assertThat(payload.getPublicBaseUrl()).isEqualTo(PUBLIC_URL);
         assertThat(payload.getJti()).isEqualTo("provider-jti");
+        assertThat(payload.getWalletAddress()).isEqualTo("0x1234567890123456789012345678901234567890");
+        assertThat(payload.getChainId()).isEqualTo(11155111L);
+        assertThat(payload.getVerifyingContract()).isEqualTo("0xe49a2f59631717691642f929E0FeF1f705866600");
+        assertThat(payload.getRegistrationNonce()).isEqualTo("registration-nonce-1");
     }
 
     @Test
-    void validateAndExtract_rejectsReplayAttackOnSecondUse() {
+    void validateAndExtract_allowsSafeRetryUntilDiamondConsumesJti() {
         String token = createToken(
             Map.of(
                 "marketplaceBaseUrl", MARKETPLACE_URL,
@@ -117,11 +125,11 @@ class ProvisioningTokenServiceTest {
             PUBLIC_URL
         );
 
-        service.validateAndExtract(token, MARKETPLACE_URL, PUBLIC_URL);
+        ProvisioningTokenPayload first = service.validateAndExtract(token, MARKETPLACE_URL, PUBLIC_URL);
+        ProvisioningTokenPayload retry = service.validateAndExtract(token, MARKETPLACE_URL, PUBLIC_URL);
 
-        assertThatThrownBy(() -> service.validateAndExtract(token, MARKETPLACE_URL, PUBLIC_URL))
-            .isInstanceOf(IllegalArgumentException.class)
-            .hasMessageContaining("Provisioning token already used");
+        assertThat(first.getJti()).isEqualTo("replayed-jti");
+        assertThat(retry.getJti()).isEqualTo(first.getJti());
     }
 
     @Test
@@ -211,13 +219,56 @@ class ProvisioningTokenServiceTest {
             List.of(PUBLIC_URL, "https://fallback.example.com")
         );
 
-        ConsumerProvisioningTokenPayload payload = service.validateAndExtractConsumer(token, "", "");
+        ConsumerProvisioningTokenPayload payload = service.validateAndExtractConsumer(token, MARKETPLACE_URL, "");
 
         assertThat(payload.getType()).isEqualTo("consumer");
         assertThat(payload.getMarketplaceBaseUrl()).isEqualTo(MARKETPLACE_URL);
         assertThat(payload.getConsumerName()).isEqualTo("Consumer Name");
         assertThat(payload.getConsumerOrganization()).isEqualTo("Consumer Org");
         assertThat(payload.getJti()).isEqualTo("consumer-jti");
+    }
+
+    @Test
+    void validateAndExtract_rejectsUnconfiguredMarketplaceInsteadOfTrustingUnsignedClaim() {
+        String token = createToken(
+            Map.of(
+                "marketplaceBaseUrl", MARKETPLACE_URL,
+                "providerName", "Provider Name",
+                "providerEmail", "ops@example.com",
+                "providerCountry", "ES",
+                "providerOrganization", "Decentra Labs",
+                "publicBaseUrl", PUBLIC_URL
+            ),
+            "provider-jti",
+            MARKETPLACE_URL,
+            PUBLIC_URL
+        );
+
+        assertThatThrownBy(() -> service.validateAndExtract(token, "", PUBLIC_URL))
+            .isInstanceOf(IllegalArgumentException.class)
+            .hasMessageContaining("must be configured");
+    }
+
+    @Test
+    void validateAndExtract_rejectsRemoteHttpPublicBaseUrl() {
+        String insecurePublicUrl = "http://provider.example.com";
+        String token = createToken(
+            Map.of(
+                "marketplaceBaseUrl", MARKETPLACE_URL,
+                "providerName", "Provider Name",
+                "providerEmail", "ops@example.com",
+                "providerCountry", "ES",
+                "providerOrganization", "Decentra Labs",
+                "publicBaseUrl", insecurePublicUrl
+            ),
+            "provider-http-jti",
+            MARKETPLACE_URL,
+            insecurePublicUrl
+        );
+
+        assertThatThrownBy(() -> service.validateAndExtract(token, MARKETPLACE_URL, insecurePublicUrl))
+            .isInstanceOf(IllegalArgumentException.class)
+            .hasMessageContaining("HTTPS");
     }
 
     @Test
@@ -243,9 +294,16 @@ class ProvisioningTokenServiceTest {
 
     private String createToken(Map<String, Object> claims, String jti, String issuer, Object audience) {
         long now = System.currentTimeMillis();
+        Map<String, Object> signedClaims = new java.util.HashMap<>(claims);
+        if (!"consumer".equals(signedClaims.get("type"))) {
+            signedClaims.putIfAbsent("walletAddress", "0x1234567890123456789012345678901234567890");
+            signedClaims.putIfAbsent("chainId", 11155111L);
+            signedClaims.putIfAbsent("verifyingContract", "0xe49a2f59631717691642f929E0FeF1f705866600");
+            signedClaims.putIfAbsent("registrationNonce", "registration-nonce-default");
+        }
         return Jwts.builder()
             .header().keyId(KEY_ID).and()
-            .claims(claims)
+            .claims(signedClaims)
             .issuer(issuer)
             .id(jti)
             .claim("aud", audience)

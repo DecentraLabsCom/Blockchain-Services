@@ -2,6 +2,7 @@ package decentralabs.blockchain.service.wallet;
 
 import java.io.IOException;
 import java.math.BigInteger;
+import java.util.function.BiFunction;
 
 import org.web3j.crypto.Credentials;
 import org.web3j.protocol.Web3j;
@@ -19,12 +20,14 @@ public class PendingNonceFastRawTransactionManager extends FastRawTransactionMan
     private final Web3j web3j;
     private final Credentials credentials;
     private final BigInteger explicitNonce;
+    private final BiFunction<String, BigInteger, BigInteger> nonceAllocator;
 
     public PendingNonceFastRawTransactionManager(Web3j web3j, Credentials credentials, long chainId) {
         super(web3j, credentials, chainId);
         this.web3j = web3j;
         this.credentials = credentials;
         this.explicitNonce = null;
+        this.nonceAllocator = null;
     }
 
     public PendingNonceFastRawTransactionManager(
@@ -37,6 +40,7 @@ public class PendingNonceFastRawTransactionManager extends FastRawTransactionMan
         this.web3j = web3j;
         this.credentials = credentials;
         this.explicitNonce = explicitNonce;
+        this.nonceAllocator = null;
     }
 
     public PendingNonceFastRawTransactionManager(
@@ -49,6 +53,21 @@ public class PendingNonceFastRawTransactionManager extends FastRawTransactionMan
         this.web3j = web3j;
         this.credentials = credentials;
         this.explicitNonce = null;
+        this.nonceAllocator = null;
+    }
+
+    public PendingNonceFastRawTransactionManager(
+        Web3j web3j,
+        Credentials credentials,
+        long chainId,
+        TransactionReceiptProcessor receiptProcessor,
+        BiFunction<String, BigInteger, BigInteger> nonceAllocator
+    ) {
+        super(web3j, credentials, chainId, receiptProcessor);
+        this.web3j = web3j;
+        this.credentials = credentials;
+        this.explicitNonce = null;
+        this.nonceAllocator = nonceAllocator;
     }
 
     @Override
@@ -60,6 +79,12 @@ public class PendingNonceFastRawTransactionManager extends FastRawTransactionMan
             credentials.getAddress(),
             DefaultBlockParameterName.PENDING
         ).send();
-        return ethGetTransactionCount.getTransactionCount();
+        BigInteger pendingNonce = ethGetTransactionCount.getTransactionCount();
+        if (pendingNonce == null) {
+            throw new IOException("Node returned no pending nonce");
+        }
+        return nonceAllocator != null
+            ? nonceAllocator.apply(credentials.getAddress(), pendingNonce)
+            : pendingNonce;
     }
 }

@@ -13,6 +13,11 @@ public class InstitutionalWalletNonceReservationService {
     private final InstitutionalCheckInOutboxService nonceStore;
 
     @Transactional
+    public BigInteger reserve(String walletAddress, BigInteger nodePendingNonce) {
+        return nonceStore.reserveNextNonce(walletAddress, nodePendingNonce);
+    }
+
+    @Transactional
     public BigInteger reserveAndPersist(
         String walletAddress,
         BigInteger nodePendingNonce,

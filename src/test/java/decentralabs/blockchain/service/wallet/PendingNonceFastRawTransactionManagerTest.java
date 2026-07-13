@@ -5,6 +5,7 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 import java.math.BigInteger;
+import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -32,6 +33,31 @@ class PendingNonceFastRawTransactionManagerTest {
     @BeforeEach
     void setUp() {
         manager = new TestPendingNonceFastRawTransactionManager(web3j, CREDENTIALS, 11155111L);
+    }
+
+    @Test
+    @SuppressWarnings({"unchecked", "rawtypes"})
+    void coordinatesPendingNonceThroughDurableAllocator() throws Exception {
+        Request<?, EthGetTransactionCount> request = (Request<?, EthGetTransactionCount>) mock(Request.class);
+        EthGetTransactionCount response = new EthGetTransactionCount();
+        response.setResult("0x2d");
+        when(web3j.ethGetTransactionCount(CREDENTIALS.getAddress(), DefaultBlockParameterName.PENDING))
+            .thenReturn((Request) request);
+        when(request.send()).thenReturn(response);
+        AtomicReference<BigInteger> observedPending = new AtomicReference<>();
+        TestPendingNonceFastRawTransactionManager coordinated =
+            new TestPendingNonceFastRawTransactionManager(
+                web3j,
+                CREDENTIALS,
+                11155111L,
+                (wallet, pending) -> {
+                    observedPending.set(pending);
+                    return BigInteger.valueOf(47);
+                }
+            );
+
+        assertThat(coordinated.readNonce()).isEqualTo(BigInteger.valueOf(47));
+        assertThat(observedPending.get()).isEqualTo(BigInteger.valueOf(45));
     }
 
     @Test
@@ -78,6 +104,15 @@ class PendingNonceFastRawTransactionManagerTest {
             TransactionReceiptProcessor receiptProcessor
         ) {
             super(web3j, credentials, chainId, receiptProcessor);
+        }
+
+        private TestPendingNonceFastRawTransactionManager(
+            Web3j web3j,
+            Credentials credentials,
+            long chainId,
+            java.util.function.BiFunction<String, BigInteger, BigInteger> nonceAllocator
+        ) {
+            super(web3j, credentials, chainId, null, nonceAllocator);
         }
 
         private BigInteger readNonce() throws java.io.IOException {

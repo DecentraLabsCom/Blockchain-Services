@@ -15,5 +15,9 @@ public class ProvisioningTokenPayload {
     String providerCountry;
     String providerOrganization;
     String publicBaseUrl;
+    String walletAddress;
+    Long chainId;
+    String verifyingContract;
+    String registrationNonce;
     String jti;
 }

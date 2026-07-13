@@ -1,6 +1,7 @@
 package decentralabs.blockchain.service.intent;
 
 import java.time.Instant;
+import java.math.BigInteger;
 import java.util.Map;
 
 import decentralabs.blockchain.dto.intent.ActionIntentPayload;
@@ -34,6 +35,8 @@ public class IntentRecord {
     private String signature;
     private ActionIntentPayload actionPayload;
     private ReservationIntentPayload reservationPayload;
+    private String institutionalWalletAddress;
+    private BigInteger transactionNonce;
 
     public IntentRecord(String requestId, String action, String provider) {
         this.requestId = requestId;
@@ -235,5 +238,21 @@ public class IntentRecord {
 
     public IntentAction getIntentAction() {
         return IntentAction.fromId(actionId).orElse(null);
+    }
+
+    public String getInstitutionalWalletAddress() {
+        return institutionalWalletAddress;
+    }
+
+    public void setInstitutionalWalletAddress(String institutionalWalletAddress) {
+        this.institutionalWalletAddress = institutionalWalletAddress;
+    }
+
+    public BigInteger getTransactionNonce() {
+        return transactionNonce;
+    }
+
+    public void setTransactionNonce(BigInteger transactionNonce) {
+        this.transactionNonce = transactionNonce;
     }
 }

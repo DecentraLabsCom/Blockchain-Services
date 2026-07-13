@@ -10,6 +10,7 @@ import decentralabs.blockchain.service.persistence.ReservationPersistenceService
 import decentralabs.blockchain.service.intent.IntentPersistenceService;
 import decentralabs.blockchain.service.intent.IntentService;
 import decentralabs.blockchain.service.wallet.InstitutionalTxManagerProvider;
+import decentralabs.blockchain.service.wallet.InstitutionalWalletService;
 import decentralabs.blockchain.service.wallet.WalletService;
 import java.math.BigDecimal;
 import java.math.BigInteger;
@@ -68,13 +69,13 @@ public class ContractEventListenerConfig {
     private static final String LAB_INTENT_PROCESSED = "LabIntentProcessed";
     private static final String RESERVATION_INTENT_PROCESSED = "ReservationIntentProcessed";
     private static final String MISSING_PUC_PREFIX = "Missing PUC for reservation ";
-    private static final int MAX_RESERVATION_PROCESSING_ATTEMPTS = 3;
     private static final long RESERVATION_RETRY_BACKOFF_MS = 120_000L;
 
     private final ConcurrentHashMap<String, ReservationProcessingState> reservationProcessingGuard = new ConcurrentHashMap<>();
 
     private final EventPollingFallbackService eventPollingFallbackService;
     private final InstitutionalTxManagerProvider txManagerProvider;
+    private final InstitutionalWalletService institutionalWalletService;
 
     private static final Event RESERVATION_REQUESTED_EVENT = new Event(
         RESERVATION_REQUESTED,
@@ -629,6 +630,10 @@ public class ContractEventListenerConfig {
         Optional<String> collectorInstitution = Optional.ofNullable(details)
             .map(detail -> detail.collectorInstitution())
             .flatMap(this::normalizeAddress);
+        Optional<BigInteger> requestPeriodStart = Optional.ofNullable(details)
+            .map(detail -> detail.requestPeriodStart());
+        Optional<BigInteger> requestPeriodDuration = Optional.ofNullable(details)
+            .map(detail -> detail.requestPeriodDuration());
 
         return new ReservationEventPayload(
             reservationKey,
@@ -640,6 +645,8 @@ public class ContractEventListenerConfig {
             pucHash,
             payerInstitution,
             collectorInstitution,
+            requestPeriodStart,
+            requestPeriodDuration,
             eventLog
         );
     }
@@ -663,6 +670,8 @@ public class ContractEventListenerConfig {
         Optional<String> pucHash = Optional.ofNullable(reservation.pucHash()).flatMap(this::normalizeBytes32);
         Optional<String> payerInstitution = Optional.ofNullable(reservation.payerInstitution()).flatMap(this::normalizeAddress);
         Optional<String> collectorInstitution = Optional.ofNullable(reservation.collectorInstitution()).flatMap(this::normalizeAddress);
+        Optional<BigInteger> requestPeriodStart = Optional.ofNullable(reservation.requestPeriodStart());
+        Optional<BigInteger> requestPeriodDuration = Optional.ofNullable(reservation.requestPeriodDuration());
 
         return Optional.of(
             new ReservationEventPayload(
@@ -675,6 +684,8 @@ public class ContractEventListenerConfig {
                 pucHash,
                 payerInstitution,
                 collectorInstitution,
+                requestPeriodStart,
+                requestPeriodDuration,
                 null
             )
         );
@@ -759,20 +770,58 @@ public class ContractEventListenerConfig {
             return;
         }
 
+        if (!isLocalLabOwner(payload.labId())) {
+            log.info(
+                "Reservation {} belongs to a different provider. Leaving it for the owning provider backend.",
+                payload.reservationKey()
+            );
+            return;
+        }
+
         if (!shouldAttemptReservationProcessing(payload.reservationKey())) {
             return;
         }
 
+        if (isRequestPeriodExpired(payload)) {
+            if (institutional) {
+                try {
+                    // The institutional confirmation path performs the canonical
+                    // expiry transition and releases the reservation treasury lock
+                    // without charging the provider with a manual-denial penalty.
+                    confirmInstitutionalReservationOnChain(payload);
+                    log.info(
+                        "Expired institutional reservation {} released on-chain.",
+                        payload.reservationKey()
+                    );
+                    markReservationProcessed(payload.reservationKey());
+                } catch (Exception ex) {
+                    log.warn(
+                        "Unable to release expired institutional reservation {}: {}",
+                        payload.reservationKey(),
+                        ex.getMessage()
+                    );
+                    recordReservationFailure(payload.reservationKey(), ex.getMessage());
+                }
+            } else {
+                log.info("Reservation {} request period has ended; stopping automatic retries.", payload.reservationKey());
+                markReservationProcessed(payload.reservationKey());
+            }
+            return;
+        }
+
+        String failureStage = "METADATA";
         try {
             LabMetadata metadata = loadLabMetadata(payload.labId())
                 .orElseThrow(() -> new IllegalStateException("Missing metadata for lab " + payload.labId()));
 
+            failureStage = "AVAILABILITY";
             Instant start = toInstant(payload.startEpoch())
                 .orElseThrow(() -> new IllegalStateException("Missing reservation start time"));
             Instant end = toInstant(payload.endEpoch())
                 .orElseThrow(() -> new IllegalStateException("Missing reservation end time"));
 
             labMetadataService.validateAvailability(metadata, start, end, DEFAULT_RESERVATION_USER_COUNT);
+            failureStage = "RPC";
             if (institutional) {
                 confirmInstitutionalReservationOnChain(payload);
                 log.info("Institutional reservation {} auto-approved for lab {}", payload.reservationKey(), payload.labId());
@@ -789,14 +838,16 @@ public class ContractEventListenerConfig {
                 ex.getMessage()
             );
             recordReservationFailure(payload.reservationKey(), ex.getMessage());
-            if (isRetryablePucFailure(ex)) {
+            ReservationFailureCategory category = classifyReservationFailure(failureStage, ex);
+            if (!category.deniesReservation()) {
                 log.info(
-                    "Leaving reservation {} pending for retry because the PUC is not available locally yet.",
-                    payload.reservationKey()
+                    "Leaving reservation {} pending for retry (category={}).",
+                    payload.reservationKey(),
+                    category
                 );
                 return;
             }
-            autoDenyReservation(payload, ex.getMessage());
+            autoDenyReservation(payload, category + ": " + ex.getMessage());
         }
     }
 
@@ -804,12 +855,54 @@ public class ContractEventListenerConfig {
         return payload.status().map(status -> status.intValue() == 0).orElse(true);
     }
 
-    private boolean isRetryablePucFailure(Exception ex) {
-        return ex != null && ex.getMessage() != null && ex.getMessage().startsWith(MISSING_PUC_PREFIX);
+    private boolean isLocalLabOwner(BigInteger labId) {
+        if (labId == null || labId.signum() <= 0) {
+            return false;
+        }
+        String localInstitution = institutionalWalletService.getInstitutionalWalletAddress();
+        if (localInstitution == null || localInstitution.isBlank()) {
+            log.warn("Reservation auto-processing skipped because the institutional wallet is not configured");
+            return false;
+        }
+        return walletService.isLabOwnedByProvider(localInstitution, labId);
+    }
+
+    private ReservationFailureCategory classifyReservationFailure(String stage, Exception ex) {
+        String normalizedStage = stage == null ? "RPC" : stage.trim().toUpperCase(Locale.ROOT);
+        String message = ex != null && ex.getMessage() != null
+            ? ex.getMessage().toLowerCase(Locale.ROOT)
+            : "";
+        if (message.startsWith(MISSING_PUC_PREFIX.toLowerCase(Locale.ROOT))) {
+            return ReservationFailureCategory.TRANSIENT_METADATA_ERROR;
+        }
+        return switch (normalizedStage) {
+            case "METADATA" -> ReservationFailureCategory.TRANSIENT_METADATA_ERROR;
+            case "AVAILABILITY" -> isCapacityFailure(message)
+                ? ReservationFailureCategory.CAPACITY_DENIED
+                : ReservationFailureCategory.POLICY_DENIED;
+            case "PROVIDER" -> ReservationFailureCategory.PROVIDER_NOT_ELIGIBLE;
+            default -> ReservationFailureCategory.TRANSIENT_RPC_ERROR;
+        };
+    }
+
+    private boolean isCapacityFailure(String message) {
+        return message.contains("concurrent")
+            || message.contains("capacity")
+            || message.contains("maintenance")
+            || message.contains("unavailable window");
     }
 
     private void autoDenyReservation(ReservationEventPayload payload, String reason) {
-        if (!isPending(payload) || !isStillPendingOnChain(payload.reservationKey())) {
+        Optional<Boolean> pendingOnChain = isStillPendingOnChain(payload.reservationKey());
+        if (pendingOnChain.isEmpty()) {
+            log.warn(
+                "Unable to revalidate reservation {} before policy denial; leaving it pending for retry.",
+                payload.reservationKey()
+            );
+            recordReservationFailure(payload.reservationKey(), "Transient RPC error before policy denial");
+            return;
+        }
+        if (!isPending(payload) || !pendingOnChain.get()) {
             log.info(
                 "Reservation {} already processed on-chain. Skipping auto-denial (reason: {}).",
                 payload.reservationKey(),
@@ -827,16 +920,15 @@ public class ContractEventListenerConfig {
         denyReservationOnChain(payload.reservationKey(), reason);
     }
 
-    private boolean isStillPendingOnChain(String reservationKey) {
+    private Optional<Boolean> isStillPendingOnChain(String reservationKey) {
         Optional<ReservationDetails> latest = fetchReservationDetails(reservationKey);
         if (latest.isEmpty()) {
-            log.warn("Unable to revalidate reservation {} before auto-denial; treating as pending", reservationKey);
-            return true;
+            return Optional.empty();
         }
-        return latest
+        return Optional.of(latest
             .flatMap(details -> Optional.ofNullable(details.status()))
             .map(status -> status.intValue() == 0)
-            .orElse(true);
+            .orElse(true));
     }
 
     private void sendReservationApprovedNotification(ReservationEventPayload payload) {
@@ -1044,18 +1136,20 @@ public class ContractEventListenerConfig {
             state.inProgress.set(false);
             return false;
         }
-        int attempt = state.attempts.incrementAndGet();
-        if (attempt > MAX_RESERVATION_PROCESSING_ATTEMPTS) {
-            state.completed = true;
-            state.inProgress.set(false);
-            log.warn(
-                "Reservation {} reached max auto-processing attempts ({}). Skipping further retries.",
-                reservationKey,
-                MAX_RESERVATION_PROCESSING_ATTEMPTS
-            );
+        state.attempts.incrementAndGet();
+        return true;
+    }
+
+    private boolean isRequestPeriodExpired(ReservationEventPayload payload) {
+        if (payload == null || payload.requestPeriodStart().isEmpty() || payload.requestPeriodDuration().isEmpty()) {
             return false;
         }
-        return true;
+        BigInteger start = payload.requestPeriodStart().get();
+        BigInteger duration = payload.requestPeriodDuration().get();
+        if (start.signum() <= 0 || duration.signum() <= 0) {
+            return false;
+        }
+        return BigInteger.valueOf(Instant.now().getEpochSecond()).compareTo(start.add(duration)) > 0;
     }
 
     private void recordReservationFailure(String reservationKey, String reason) {
@@ -1089,6 +1183,24 @@ public class ContractEventListenerConfig {
         private volatile boolean completed = false;
         private volatile long nextAllowedAtMs = 0;
         private volatile String lastError = null;
+    }
+
+    private enum ReservationFailureCategory {
+        POLICY_DENIED(true),
+        CAPACITY_DENIED(true),
+        PROVIDER_NOT_ELIGIBLE(true),
+        TRANSIENT_METADATA_ERROR(false),
+        TRANSIENT_RPC_ERROR(false);
+
+        private final boolean deniesReservation;
+
+        ReservationFailureCategory(boolean deniesReservation) {
+            this.deniesReservation = deniesReservation;
+        }
+
+        boolean deniesReservation() {
+            return deniesReservation;
+        }
     }
 
     private byte[] reservationKeyToBytes(String reservationKey) {
@@ -1299,6 +1411,8 @@ public class ContractEventListenerConfig {
         Optional<String> pucHash,
         Optional<String> payerInstitution,
         Optional<String> collectorInstitution,
+        Optional<BigInteger> requestPeriodStart,
+        Optional<BigInteger> requestPeriodDuration,
         Log rawLog
     ) { }
 }

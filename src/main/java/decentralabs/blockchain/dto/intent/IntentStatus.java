@@ -6,6 +6,7 @@ public enum IntentStatus {
     QUEUED("queued"),
     AUTHORIZED_PENDING_REGISTRATION("authorized_pending_registration"),
     IN_PROGRESS("in_progress"),
+    SUBMITTED("submitted"),
     EXECUTED("executed"),
     FAILED("failed"),
     REJECTED("rejected");

@@ -382,6 +382,72 @@ class IntentExecutionServiceTest {
     @Nested
     @DisplayName("Failed Execution")
     class FailedExecutionTests {
+
+        @Test
+        @DisplayName("Should not execute when another replica owns the database claim")
+        void shouldSkipIntentClaimedByAnotherReplica() {
+            IntentRecord intent = createIntentRecord("req-claimed", IntentStatus.QUEUED);
+            when(intentService.getQueuedIntents()).thenReturn(Map.of("req-claimed", intent));
+            doThrow(new IntentClaimRejectedException("req-claimed"))
+                .when(intentService).markInProgress(intent);
+
+            executionService.processQueuedIntents();
+
+            verifyNoInteractions(onChainExecutor);
+            verify(intentService, never()).markFailed(any(), any());
+        }
+
+        @Test
+        @DisplayName("Should keep broadcast transaction submitted when receipt is temporarily unavailable")
+        void shouldMarkReceiptTimeoutAsSubmitted() throws Exception {
+            IntentRecord intent = createIntentRecord("req-submitted", IntentStatus.QUEUED);
+            when(intentService.getQueuedIntents()).thenReturn(Map.of("req-submitted", intent));
+            when(onChainExecutor.execute(intent)).thenReturn(
+                new ExecutionResult(false, "0xbroadcast", null, null, null, "receipt_error: timeout")
+            );
+
+            executionService.processQueuedIntents();
+
+            verify(intentService).markSubmitted(intent, "0xbroadcast", "receipt_error: timeout");
+            verify(intentService, never()).markFailed(any(), any());
+        }
+
+        @Test
+        @DisplayName("Should retry an uncertain broadcast with its reserved nonce")
+        void shouldRetryUncertainBroadcastWithoutFailingIntent() throws Exception {
+            IntentRecord intent = createIntentRecord("req-uncertain", IntentStatus.QUEUED);
+            intent.setTransactionNonce(java.math.BigInteger.valueOf(44));
+            when(intentService.getQueuedIntents()).thenReturn(Map.of("req-uncertain", intent));
+            when(onChainExecutor.execute(intent)).thenReturn(
+                new ExecutionResult(false, null, null, null, null, "dispatch_uncertain")
+            );
+
+            executionService.processQueuedIntents();
+
+            verify(intentService).markRetryable(intent, "dispatch_uncertain");
+            verify(intentService, never()).markFailed(any(), any());
+        }
+
+        @Test
+        @DisplayName("Should reconcile a submitted transaction after its receipt is mined")
+        void shouldReconcileSubmittedReceipt() throws Exception {
+            IntentRecord intent = createIntentRecord("req-mined-later", IntentStatus.SUBMITTED);
+            intent.setTxHash("0xbroadcast");
+            when(intentService.getQueuedIntents()).thenReturn(Map.of("req-mined-later", intent));
+            when(onChainExecutor.inspectReceipt(intent)).thenReturn(
+                new IntentOnChainExecutor.ReceiptResult(
+                    IntentOnChainExecutor.ReceiptState.MINED_SUCCESS,
+                    123L,
+                    "77",
+                    null
+                )
+            );
+
+            executionService.monitorSubmittedIntents();
+
+            verify(intentService).markExecuted(intent, "0xbroadcast", 123L, "77", null);
+            verify(intentService, never()).markFailed(any(), any());
+        }
         
         @Test
         @DisplayName("Should mark intent as failed when execution returns failure")

@@ -1,5 +1,6 @@
 package decentralabs.blockchain.service.wallet;
 
+import decentralabs.blockchain.service.auth.InstitutionalWalletNonceReservationService;
 import java.util.Objects;
 
 import org.springframework.stereotype.Service;
@@ -19,6 +20,7 @@ import lombok.extern.slf4j.Slf4j;
 public class InstitutionalTxManagerProvider {
 
     private final InstitutionalWalletService institutionalWalletService;
+    private final InstitutionalWalletNonceReservationService nonceReservationService;
 
     private final Object lock = new Object();
     private TransactionManager txManager;
@@ -37,7 +39,13 @@ public class InstitutionalTxManagerProvider {
                 || !Objects.equals(currentChainId, chainId)) {
                 Credentials credentials = institutionalWalletService.getInstitutionalCredentials();
                 TransactionReceiptProcessor receiptProcessor = new PollingTransactionReceiptProcessor(web3j, 1500, 40);
-                txManager = new PendingNonceFastRawTransactionManager(web3j, credentials, chainId, receiptProcessor);
+                txManager = new PendingNonceFastRawTransactionManager(
+                    web3j,
+                    credentials,
+                    chainId,
+                    receiptProcessor,
+                    nonceReservationService::reserve
+                );
                 currentWeb3j = web3j;
                 currentChainId = chainId;
                 log.info("Institutional tx manager initialized (chainId={})", chainId);

@@ -6,6 +6,7 @@ import java.time.Instant;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
+import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
@@ -47,6 +48,7 @@ public class IntentAuthorizationService {
     private final WebauthnCredentialService webauthnCredentialService;
     private final SamlValidationService samlValidationService;
     private final BackendUrlResolver backendUrlResolver;
+    private final IntentAuthorizationSessionStore sessionStore;
 
     @Value("${webauthn.rp.id:${base.domain:localhost}}")
     private String rpId;
@@ -69,13 +71,15 @@ public class IntentAuthorizationService {
         IntentExecutionService intentExecutionService,
         WebauthnCredentialService webauthnCredentialService,
         SamlValidationService samlValidationService,
-        BackendUrlResolver backendUrlResolver
+        BackendUrlResolver backendUrlResolver,
+        IntentAuthorizationSessionStore sessionStore
     ) {
         this.intentService = intentService;
         this.intentExecutionService = intentExecutionService;
         this.webauthnCredentialService = webauthnCredentialService;
         this.samlValidationService = samlValidationService;
         this.backendUrlResolver = backendUrlResolver;
+        this.sessionStore = sessionStore;
     }
 
     @PostConstruct
@@ -138,6 +142,7 @@ public class IntentAuthorizationService {
             request.getReturnUrl(),
             expiresAt
         );
+        sessionStore.savePending(session);
         pendingSessions.put(sessionId, session);
 
         log.info(
@@ -155,6 +160,12 @@ public class IntentAuthorizationService {
 
     public AuthorizationSession getSession(String sessionId) {
         AuthorizationSession session = pendingSessions.get(sessionId);
+        if (session == null) {
+            session = sessionStore.findPending(sessionId).orElse(null);
+            if (session != null) {
+                pendingSessions.put(sessionId, session);
+            }
+        }
         if (session == null) {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Session not found");
         }
@@ -186,16 +197,44 @@ public class IntentAuthorizationService {
                 .build();
         }
 
+        Optional<String> activeRequestId = sessionStore.findActiveRequestId(sessionId);
+        if (activeRequestId.isPresent()) {
+            return IntentAuthorizationStatusResponse.builder()
+                .sessionId(sessionId)
+                .requestId(activeRequestId.get())
+                .status("PENDING")
+                .build();
+        }
+
+        Optional<IntentAuthorizationSessionStore.PersistedResult> persisted = sessionStore.findResult(sessionId);
+        if (persisted.isPresent()) {
+            IntentAuthorizationSessionStore.PersistedResult result = persisted.get();
+            return IntentAuthorizationStatusResponse.builder()
+                .sessionId(sessionId)
+                .requestId(result.requestId())
+                .status(result.status())
+                .error(result.error())
+                .completedAt(result.completedAt())
+                .build();
+        }
+
         throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Session not found");
     }
 
     public IntentAckResponse completeAuthorization(IntentAuthorizationCompleteRequest request) {
-        AuthorizationSession session = pendingSessions.remove(request.getSessionId());
+        AuthorizationSession session;
+        if (sessionStore.isConfigured()) {
+            session = sessionStore.claimPending(request.getSessionId()).orElse(null);
+            pendingSessions.remove(request.getSessionId());
+        } else {
+            session = pendingSessions.remove(request.getSessionId());
+        }
         if (session == null) {
             log.warn("Intent authorization completion rejected. sessionId={} reason=invalid_or_expired_session", request.getSessionId());
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Invalid or expired session");
         }
         String requestId = session.getSubmission().getMeta().getRequestId();
+        try {
         log.info(
             "Intent authorization completion received. sessionId={} requestId={} credentialAllowed={} credentialIdPresent={}",
             request.getSessionId(),
@@ -231,13 +270,7 @@ public class IntentAuthorizationService {
         submission.setWebauthnSignature(request.getSignature());
 
         IntentAckResponse ack;
-        try {
-            ack = intentService.processIntent(submission);
-        } catch (ResponseStatusException ex) {
-            storeResult(session, "FAILED", ex.getReason());
-            log.warn("Intent authorization completion failed. sessionId={} requestId={} reason={}", request.getSessionId(), requestId, ex.getReason());
-            throw ex;
-        }
+        ack = intentService.processIntent(submission);
 
         if ("accepted".equalsIgnoreCase(ack.getStatus())) {
             storeResult(session, "SUCCESS", null);
@@ -252,6 +285,14 @@ public class IntentAuthorizationService {
             log.warn("Intent authorization completion rejected by intent service. sessionId={} requestId={} reason={}", request.getSessionId(), requestId, ack.getReason());
         }
         return ack;
+        } catch (ResponseStatusException ex) {
+            storeResult(session, "FAILED", ex.getReason());
+            log.warn("Intent authorization completion failed. sessionId={} requestId={} reason={}", request.getSessionId(), requestId, ex.getReason());
+            throw ex;
+        } catch (RuntimeException ex) {
+            storeResult(session, "FAILED", ex.getMessage());
+            throw ex;
+        }
     }
 
     public String getRelyingPartyId() {
@@ -456,12 +497,19 @@ public class IntentAuthorizationService {
             error,
             Instant.now()
         ));
+        sessionStore.saveResult(
+            session.getSessionId(),
+            session.getSubmission().getMeta().getRequestId(),
+            status,
+            error
+        );
     }
 
     private void cleanupExpiredSessions() {
         Instant now = Instant.now();
         pendingSessions.entrySet().removeIf(entry -> entry.getValue().getExpiresAt().isBefore(now));
         completedSessions.entrySet().removeIf(entry -> entry.getValue().completedAt().isBefore(now.minusSeconds(sessionTtlSeconds)));
+        sessionStore.deleteExpired(now.minusSeconds(sessionTtlSeconds));
     }
 
     @Data

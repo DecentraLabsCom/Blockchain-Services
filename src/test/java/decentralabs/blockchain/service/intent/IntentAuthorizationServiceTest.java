@@ -55,6 +55,9 @@ class IntentAuthorizationServiceTest {
     @Mock
     private BackendUrlResolver backendUrlResolver;
 
+    @Mock
+    private IntentAuthorizationSessionStore sessionStore;
+
     @InjectMocks
     private IntentAuthorizationService service;
 
@@ -66,6 +69,7 @@ class IntentAuthorizationServiceTest {
         ReflectionTestUtils.setField(service, "cleanupIntervalSeconds", 60L);
         lenient().when(samlValidationService.validateSamlAssertionWithSignature(any())).thenReturn(Map.of("puc", "user@example.edu"));
         lenient().when(samlValidationService.resolveStableUserId(any(), any(), any())).thenCallRealMethod();
+        lenient().when(sessionStore.isConfigured()).thenReturn(false);
     }
 
     @AfterEach

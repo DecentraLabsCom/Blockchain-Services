@@ -29,8 +29,10 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doNothing;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -77,6 +79,7 @@ class ContractEventListenerConfigTest {
         config = new ContractEventListenerConfig(
             eventPollingFallbackService,
             txManagerProvider,
+            institutionalWalletService,
             walletService,
             labMetadataService,
             reservationNotificationService,
@@ -86,6 +89,10 @@ class ContractEventListenerConfigTest {
         );
         ReflectionTestUtils.setField(config, "diamondContractAddress", "0x1234567890abcdef");
         ReflectionTestUtils.setField(config, "startBlock", "latest");
+        lenient().when(institutionalWalletService.getInstitutionalWalletAddress())
+            .thenReturn("0x1111111111111111111111111111111111111111");
+        lenient().when(walletService.isLabOwnedByProvider(anyString(), any(BigInteger.class)))
+            .thenReturn(true);
     }
 
     @Test
@@ -275,7 +282,7 @@ class ContractEventListenerConfigTest {
     }
 
     @Test
-    void shouldAutoDenyReservationWhenMetadataMissing() throws Exception {
+    void shouldKeepReservationPendingWhenMetadataIsTemporarilyUnavailable() throws Exception {
         ReflectionTestUtils.setField(config, "eventListeningEnabled", true);
 
         var diamond = mock(decentralabs.blockchain.contract.Diamond.class);
@@ -312,10 +319,6 @@ class ContractEventListenerConfigTest {
         ReflectionTestUtils.setField(config, "cachedDiamond", diamond);
 
         var writableDiamond = mock(decentralabs.blockchain.contract.Diamond.class);
-        @SuppressWarnings("unchecked")
-        var denyCall = (org.web3j.protocol.core.RemoteFunctionCall<org.web3j.protocol.core.methods.response.TransactionReceipt>) mock(org.web3j.protocol.core.RemoteFunctionCall.class);
-        when(denyCall.send()).thenReturn(new org.web3j.protocol.core.methods.response.TransactionReceipt());
-        when(writableDiamond.denyReservationRequest(any(byte[].class))).thenReturn(denyCall);
         ReflectionTestUtils.setField(config, "writableDiamond", writableDiamond);
 
         when(labMetadataService.getLabMetadata("ipfs://lab-metadata"))
@@ -341,7 +344,45 @@ class ContractEventListenerConfigTest {
 
         ReflectionTestUtils.invokeMethod(config, "handleContractEvent", "ReservationRequested", eventDefinition, eventLog);
 
-        verify(writableDiamond).denyReservationRequest(any(byte[].class));
+        verify(writableDiamond, never()).denyReservationRequest(any(byte[].class));
+    }
+
+    @Test
+    void shouldClassifyAvailabilityViolationsAsPolicyOrCapacityDenials() {
+        Object policy = ReflectionTestUtils.invokeMethod(
+            config,
+            "classifyReservationFailure",
+            "AVAILABILITY",
+            new IllegalArgumentException("Lab not available on SUNDAY")
+        );
+        Object capacity = ReflectionTestUtils.invokeMethod(
+            config,
+            "classifyReservationFailure",
+            "AVAILABILITY",
+            new IllegalArgumentException("Too many concurrent users requested")
+        );
+
+        assertThat(policy.toString()).isEqualTo("POLICY_DENIED");
+        assertThat(capacity.toString()).isEqualTo("CAPACITY_DENIED");
+    }
+
+    @Test
+    void shouldClassifyMetadataAndRpcFailuresAsTransient() {
+        Object metadata = ReflectionTestUtils.invokeMethod(
+            config,
+            "classifyReservationFailure",
+            "METADATA",
+            new IllegalStateException("timeout")
+        );
+        Object rpc = ReflectionTestUtils.invokeMethod(
+            config,
+            "classifyReservationFailure",
+            "RPC",
+            new IllegalStateException("connection reset")
+        );
+
+        assertThat(metadata.toString()).isEqualTo("TRANSIENT_METADATA_ERROR");
+        assertThat(rpc.toString()).isEqualTo("TRANSIENT_RPC_ERROR");
     }
 
     private Map<String, Event> getSupportedEvents() {
@@ -531,6 +572,42 @@ class ContractEventListenerConfigTest {
 
         verify(writableDiamond).confirmReservationRequest(any(byte[].class));
         verify(writableDiamond, never()).denyReservationRequest(any(byte[].class));
+    }
+
+    @Test
+    void shouldNotProcessReservationOwnedByAnotherInstitution() {
+        when(institutionalWalletService.getInstitutionalWalletAddress())
+            .thenReturn("0x1111111111111111111111111111111111111111");
+        when(walletService.isLabOwnedByProvider(
+            "0x1111111111111111111111111111111111111111",
+            BigInteger.valueOf(42)
+        )).thenReturn(false);
+
+        Boolean localOwner = ReflectionTestUtils.invokeMethod(
+            config,
+            "isLocalLabOwner",
+            BigInteger.valueOf(42)
+        );
+
+        assertThat(localOwner).isFalse();
+    }
+
+    @Test
+    void shouldProcessReservationOwnedByLocalInstitution() {
+        when(institutionalWalletService.getInstitutionalWalletAddress())
+            .thenReturn("0x1111111111111111111111111111111111111111");
+        when(walletService.isLabOwnedByProvider(
+            "0x1111111111111111111111111111111111111111",
+            BigInteger.valueOf(42)
+        )).thenReturn(true);
+
+        Boolean localOwner = ReflectionTestUtils.invokeMethod(
+            config,
+            "isLocalLabOwner",
+            BigInteger.valueOf(42)
+        );
+
+        assertThat(localOwner).isTrue();
     }
 
     @Test
@@ -781,5 +858,57 @@ class ContractEventListenerConfigTest {
             eq(storedPucHash)
         );
         verify(writableDiamond, never()).denyReservationRequest(any(byte[].class));
+    }
+
+    @Test
+    void shouldFinalizeExpiredInstitutionalRequestOnChainWithoutLoadingMetadata() throws Exception {
+        ReflectionTestUtils.setField(config, "eventListeningEnabled", true);
+        String institution = "0x00000000000000000000000000000000000000cc";
+        BigInteger now = BigInteger.valueOf(java.time.Instant.now().getEpochSecond());
+
+        var diamond = mock(decentralabs.blockchain.contract.Diamond.class);
+        @SuppressWarnings("unchecked")
+        var reservationCall = (org.web3j.protocol.core.RemoteFunctionCall<decentralabs.blockchain.contract.Diamond.Reservation>) mock(org.web3j.protocol.core.RemoteFunctionCall.class);
+        var reservation = new decentralabs.blockchain.contract.Diamond.Reservation(
+            BigInteger.valueOf(19), institution, BigInteger.valueOf(50), institution,
+            BigInteger.ZERO, now.add(BigInteger.valueOf(300)), now.add(BigInteger.valueOf(600)),
+            now.subtract(BigInteger.valueOf(120)), BigInteger.TEN,
+            institution, institution, BigInteger.ZERO
+        );
+        when(reservationCall.send()).thenReturn(reservation);
+        when(diamond.getReservation(any(byte[].class))).thenReturn(reservationCall);
+        String pucHash = "0x" + "56".repeat(32);
+        stubReservationPucHash(diamond, pucHash);
+        ReflectionTestUtils.setField(config, "cachedDiamond", diamond);
+
+        var writableDiamond = mock(decentralabs.blockchain.contract.Diamond.class);
+        @SuppressWarnings("unchecked")
+        var confirmCall = (org.web3j.protocol.core.RemoteFunctionCall<org.web3j.protocol.core.methods.response.TransactionReceipt>) mock(org.web3j.protocol.core.RemoteFunctionCall.class);
+        when(confirmCall.send()).thenReturn(new org.web3j.protocol.core.methods.response.TransactionReceipt());
+        when(writableDiamond.confirmInstitutionalReservationRequestWithPucHash(any(), any(), any()))
+            .thenReturn(confirmCall);
+        ReflectionTestUtils.setField(config, "writableDiamond", writableDiamond);
+
+        Map<String, Event> supported = getSupportedEvents();
+        Event eventDefinition = supported.get("ReservationRequested");
+        String reservationKey = "0x" + "bb".repeat(32);
+        Log eventLog = new Log();
+        eventLog.setTopics(List.of(
+            EventEncoder.encode(eventDefinition),
+            encodeAddressTopic(institution),
+            encodeUintTopic(BigInteger.valueOf(19)),
+            reservationKey
+        ));
+        eventLog.setData("0x" + encodeUintData(reservation.start) + encodeUintData(reservation.end));
+        eventLog.setTransactionHash("0xexpiredinstitutional");
+
+        ReflectionTestUtils.invokeMethod(
+            config, "handleContractEvent", "ReservationRequested", eventDefinition, eventLog
+        );
+
+        verify(writableDiamond).confirmInstitutionalReservationRequestWithPucHash(
+            eq(institution), any(byte[].class), eq(pucHash)
+        );
+        verifyNoInteractions(labMetadataService);
     }
 }

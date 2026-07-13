@@ -16,6 +16,7 @@ import decentralabs.blockchain.dto.provider.ProvisioningTokenPayload;
 import decentralabs.blockchain.security.AdminNetworkAccessPolicy;
 import decentralabs.blockchain.security.LocalhostOnlyFilter;
 import decentralabs.blockchain.service.organization.InstitutionRegistrationService;
+import decentralabs.blockchain.service.organization.InstitutionOnChainStatusService;
 import decentralabs.blockchain.service.organization.ProviderConfigurationPersistenceService;
 import decentralabs.blockchain.service.organization.ProvisioningTokenService;
 import java.util.Properties;
@@ -70,6 +71,9 @@ class ProviderConfigurationControllerIntegrationTest {
 
     @MockitoBean
     private ProvisioningTokenService provisioningTokenService;
+
+    @MockitoBean
+    private InstitutionOnChainStatusService onChainStatusService;
 
     @BeforeEach
     void setUp() {
@@ -126,7 +130,7 @@ class ProviderConfigurationControllerIntegrationTest {
             .andExpect(jsonPath("$.lockedFields[0]").value("providerName"))
             .andExpect(jsonPath("$.config.providerOrganization").value("token.edu"));
 
-        verify(persistenceService).saveConfigurationFromToken(any(ProvisioningTokenPayload.class));
+        verify(persistenceService, never()).saveConfigurationFromToken(any(ProvisioningTokenPayload.class));
         verify(registrationService, never()).markAsRegistered(any());
     }
 

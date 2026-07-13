@@ -1244,6 +1244,49 @@ public class WalletService {
         return hasRole(INSTITUTION_ROLE_HEX, accountAddress);
     }
 
+    public String resolveInstitutionWalletForOrganization(String organization) {
+        try {
+            return loadReadonlyDiamond().resolveSchacHomeOrganization(organization).send();
+        } catch (Exception ex) {
+            throw new IllegalStateException("Unable to resolve organization owner on-chain", ex);
+        }
+    }
+
+    public String getOrganizationBackendUrl(String organization) {
+        try {
+            return loadReadonlyDiamond().getSchacHomeOrganizationBackend(organization).send();
+        } catch (Exception ex) {
+            throw new IllegalStateException("Unable to resolve organization backend on-chain", ex);
+        }
+    }
+
+    public String getAuthorizedInstitutionalBackend(String institution) {
+        try {
+            return loadReadonlyDiamond().getAuthorizedBackend(institution).send();
+        } catch (Exception ex) {
+            throw new IllegalStateException("Unable to resolve authorized backend on-chain", ex);
+        }
+    }
+
+    public int getProviderNetworkStatus(String provider) {
+        try {
+            BigInteger status = loadReadonlyDiamond().getProviderNetworkStatus(provider).send();
+            return status == null ? 0 : status.intValueExact();
+        } catch (Exception ex) {
+            throw new IllegalStateException("Unable to resolve provider network status on-chain", ex);
+        }
+    }
+
+    private Diamond loadReadonlyDiamond() {
+        Web3j web3j = getWeb3jInstance();
+        return Diamond.load(
+            contractAddress,
+            web3j,
+            new ReadonlyTransactionManager(web3j, contractAddress),
+            new StaticGasProvider(BigInteger.ZERO, BigInteger.ZERO)
+        );
+    }
+
     public boolean hasRole(String roleHex, String accountAddress) {
         if (accountAddress == null || accountAddress.isBlank()) {
             return false;

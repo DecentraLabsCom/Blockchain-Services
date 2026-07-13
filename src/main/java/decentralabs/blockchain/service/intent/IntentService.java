@@ -16,6 +16,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.UUID;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 
@@ -86,6 +87,7 @@ public class IntentService {
     private final String contractAddress;
     private final MeterRegistry meterRegistry;
     private final ObjectMapper objectMapper = new ObjectMapper();
+    private final String workerId = UUID.randomUUID().toString();
 
     public IntentService(
         @Value("${intent.default-eta:15s}") String defaultEta,
@@ -189,6 +191,12 @@ public class IntentService {
 
         // Idempotent behavior: if already stored, return current ack status
         IntentRecord existing = intents.get(meta.getRequestId());
+        if (existing == null) {
+            existing = persistenceService.findByRequestId(meta.getRequestId()).orElse(null);
+            if (existing != null) {
+                intents.put(meta.getRequestId(), existing);
+            }
+        }
         if (existing != null) {
             return buildAck(meta.getRequestId(),
                 existing.getStatus() == IntentStatus.REJECTED ? "rejected" : "accepted",
@@ -1096,12 +1104,58 @@ public class IntentService {
     }
 
     public void markInProgress(IntentRecord record) {
+        if (!persistenceService.tryClaimForExecution(record.getRequestId(), workerId)) {
+            throw new IntentClaimRejectedException(record.getRequestId());
+        }
         record.setStatus(IntentStatus.IN_PROGRESS);
         persistenceService.upsert(record);
     }
 
     public void markQueued(IntentRecord record) {
         record.setStatus(IntentStatus.QUEUED);
+        persistenceService.upsert(record);
+    }
+
+    public void markRetryable(IntentRecord record, String reason) {
+        record.setStatus(IntentStatus.QUEUED);
+        record.setReason(reason);
+        record.setError(null);
+        persistenceService.upsert(record);
+    }
+
+    public boolean markRegistrationFailed(String requestId, String reason) {
+        Optional<IntentRecord> existing = findByRequestId(requestId);
+        if (existing.isEmpty()) {
+            log.warn("Ignoring registration failure for unknown intent {}", LogSanitizer.sanitize(requestId));
+            return false;
+        }
+        IntentRecord record = existing.get();
+        synchronized (record) {
+            if (record.getStatus() != IntentStatus.AUTHORIZED_PENDING_REGISTRATION) {
+                log.info(
+                    "Ignoring stale registration failure for intent {} in status {}",
+                    LogSanitizer.sanitize(requestId), record.getStatus()
+                );
+                return false;
+            }
+            markFailed(record, reason);
+            return true;
+        }
+    }
+
+    public int recoverStaleExecutions(Instant cutoff) {
+        List<String> recovered = persistenceService.recoverStaleInProgress(cutoff);
+        for (String requestId : recovered) {
+            persistenceService.findByRequestId(requestId).ifPresent(record -> intents.put(requestId, record));
+        }
+        return recovered.size();
+    }
+
+    public void markSubmitted(IntentRecord record, String txHash, String reason) {
+        record.setStatus(IntentStatus.SUBMITTED);
+        record.setTxHash(txHash);
+        record.setReason(reason);
+        record.setError(null);
         persistenceService.upsert(record);
     }
 
@@ -1178,6 +1232,7 @@ public class IntentService {
             case "queued" -> IntentStatus.QUEUED;
             case "authorized_pending_registration" -> IntentStatus.AUTHORIZED_PENDING_REGISTRATION;
             case "in_progress" -> IntentStatus.IN_PROGRESS;
+            case "submitted" -> IntentStatus.SUBMITTED;
             case "executed" -> IntentStatus.EXECUTED;
             case "failed" -> IntentStatus.FAILED;
             case "rejected" -> IntentStatus.REJECTED;

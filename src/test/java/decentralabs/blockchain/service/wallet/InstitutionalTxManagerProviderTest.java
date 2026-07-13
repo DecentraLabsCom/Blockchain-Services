@@ -1,5 +1,7 @@
 package decentralabs.blockchain.service.wallet;
 
+import decentralabs.blockchain.service.auth.InstitutionalWalletNonceReservationService;
+
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.mock;
@@ -37,11 +39,14 @@ class InstitutionalTxManagerProviderTest {
     @Mock
     private Web3j otherWeb3j;
 
+    @Mock
+    private InstitutionalWalletNonceReservationService nonceReservationService;
+
     private InstitutionalTxManagerProvider provider;
 
     @BeforeEach
     void setUp() {
-        provider = new InstitutionalTxManagerProvider(institutionalWalletService);
+        provider = new InstitutionalTxManagerProvider(institutionalWalletService, nonceReservationService);
     }
 
     @Test

@@ -223,6 +223,21 @@ public class Diamond extends Contract {
             });
     }
 
+    /** Resolve a schacHomeOrganization to its institution wallet. */
+    @SuppressWarnings("rawtypes")
+    public RemoteFunctionCall<String> resolveSchacHomeOrganization(String organization) {
+        final Function function = new Function(
+            "resolveSchacHomeOrganization",
+            Arrays.asList(new Utf8String(organization)),
+            Arrays.asList(new TypeReference<Address>() {})
+        );
+        return new RemoteFunctionCall<>(function,
+            () -> {
+                Type result = executeCallSingleValueReturn(function);
+                return (String) result.getValue();
+            });
+    }
+
     /**
      * Get the authorized backend wallet for an institution (InstitutionalTreasuryFacet)
      */
@@ -237,6 +252,21 @@ public class Diamond extends Contract {
             () -> {
                 Type result = executeCallSingleValueReturn(function);
                 return (String) result.getValue();
+            });
+    }
+
+    /** Return ProviderNetworkStatus as its uint8 ordinal. */
+    @SuppressWarnings("rawtypes")
+    public RemoteFunctionCall<BigInteger> getProviderNetworkStatus(String provider) {
+        final Function function = new Function(
+            "getProviderNetworkStatus",
+            Arrays.asList(new Address(provider)),
+            Arrays.asList(new TypeReference<Uint8>() {})
+        );
+        return new RemoteFunctionCall<>(function,
+            () -> {
+                Type result = executeCallSingleValueReturn(function);
+                return (BigInteger) result.getValue();
             });
     }
 

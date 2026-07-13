@@ -35,4 +35,15 @@ public class ProviderConfigurationResponse {
     private String registrationRole;
     private boolean fromProvisioningToken;
     private List<String> lockedFields;
+    private boolean localConfigSaved;
+    private boolean localRegistrationCached;
+    private boolean onChainStatusAvailable;
+    private String walletAddress;
+    private boolean providerRoleOnChain;
+    private boolean institutionRoleOnChain;
+    private String organizationOwner;
+    private String backendUrlOnChain;
+    private String authorizedBackendOnChain;
+    private String providerNetworkStatus;
+    private boolean fullyOperational;
 }

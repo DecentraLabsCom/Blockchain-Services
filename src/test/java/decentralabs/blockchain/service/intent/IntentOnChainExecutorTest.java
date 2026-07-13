@@ -22,6 +22,7 @@ import org.web3j.protocol.core.methods.response.EthChainId;
 
 import decentralabs.blockchain.dto.intent.ActionIntentPayload;
 import decentralabs.blockchain.dto.intent.ReservationIntentPayload;
+import decentralabs.blockchain.service.auth.InstitutionalWalletTransactionDispatcher;
 import decentralabs.blockchain.service.intent.IntentOnChainExecutor.ExecutionResult;
 import decentralabs.blockchain.service.wallet.InstitutionalTxManagerProvider;
 import decentralabs.blockchain.service.wallet.InstitutionalWalletService;
@@ -40,6 +41,12 @@ class IntentOnChainExecutorTest {
 
     @Mock
     private InstitutionalTxManagerProvider txManagerProvider;
+
+    @Mock
+    private InstitutionalWalletTransactionDispatcher transactionDispatcher;
+
+    @Mock
+    private IntentPersistenceService persistenceService;
 
     @Mock
     private Eip712IntentVerifier intentVerifier;
@@ -75,7 +82,9 @@ class IntentOnChainExecutorTest {
             GAS_PRICE_MULTIPLIER,
             GAS_PRICE_MIN_GWEI,
             txManagerProvider,
-            intentVerifier
+            intentVerifier,
+            transactionDispatcher,
+            persistenceService
         );
 
         // Create test credentials

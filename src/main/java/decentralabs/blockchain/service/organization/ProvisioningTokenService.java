@@ -48,7 +48,8 @@ public class ProvisioningTokenService {
     private RestTemplate restTemplate = new RestTemplate();
     private final ObjectMapper objectMapper = new ObjectMapper();
 
-    // Simple in-memory replay guard keyed by jti with expiration time
+    // Consumer-token replay guard. Provider-token replay protection is enforced
+    // atomically by the Diamond so safe retries can survive backend restarts.
     private final Map<String, Instant> usedJti = new ConcurrentHashMap<>();
 
     @PostConstruct
@@ -68,8 +69,7 @@ public class ProvisioningTokenService {
             JsonNode headerNode = decodePart(token, 0);
             JsonNode payloadNode = decodePart(token, 1);
 
-            String tokenMarketplaceBaseUrl = payloadNode.path("marketplaceBaseUrl").asText("");
-            String marketplaceBaseUrl = resolveMarketplaceBaseUrl(configuredMarketplaceBaseUrl, tokenMarketplaceBaseUrl);
+            String marketplaceBaseUrl = resolveMarketplaceBaseUrl(configuredMarketplaceBaseUrl);
             String expectedAudience = resolveExpectedAudience(configuredPublicBaseUrl, payloadNode);
 
             String jwksUrl = marketplaceBaseUrl + "/api/institutions/provisionToken/jwks";
@@ -87,8 +87,6 @@ public class ProvisioningTokenService {
 
             Claims claims = parser.parseSignedClaims(token).getPayload();
 
-            enforceReplayProtection(claims.getId(), claims.getExpiration().toInstant());
-
             ProvisioningTokenPayload payload = ProvisioningTokenPayload.builder()
                 .marketplaceBaseUrl(validateHttps(marketplaceBaseUrl, "marketplace base URL"))
                 .providerName(requireNonBlank(claims.get("providerName", String.class), "provider name"))
@@ -96,6 +94,14 @@ public class ProvisioningTokenService {
                 .providerCountry(requireNonBlank(claims.get("providerCountry", String.class), "provider country"))
                 .providerOrganization(requireNonBlank(claims.get("providerOrganization", String.class), "provider organization"))
                 .publicBaseUrl(validateHttps(claims.get("publicBaseUrl", String.class), "public base URL"))
+                .walletAddress(validateEvmAddress(claims.get("walletAddress", String.class), "wallet address"))
+                .chainId(requirePositiveLong(claims.get("chainId"), "chain ID"))
+                .verifyingContract(validateEvmAddress(
+                    claims.get("verifyingContract", String.class), "verifying contract"
+                ))
+                .registrationNonce(requireNonBlank(
+                    claims.get("registrationNonce", String.class), "registration nonce"
+                ))
                 .jti(claims.getId())
                 .build();
 
@@ -130,8 +136,7 @@ public class ProvisioningTokenService {
                 throw new IllegalArgumentException("Token is not a consumer provisioning token");
             }
 
-            String tokenMarketplaceBaseUrl = payloadNode.path("marketplaceBaseUrl").asText("");
-            String marketplaceBaseUrl = resolveMarketplaceBaseUrl(configuredMarketplaceBaseUrl, tokenMarketplaceBaseUrl);
+            String marketplaceBaseUrl = resolveMarketplaceBaseUrl(configuredMarketplaceBaseUrl);
             String expectedAudience = resolveExpectedAudience(configuredPublicBaseUrl, payloadNode);
 
             String jwksUrl = marketplaceBaseUrl + "/api/institutions/provisionConsumer/jwks";
@@ -185,19 +190,16 @@ public class ProvisioningTokenService {
         return objectMapper.readTree(json);
     }
 
-    private String resolveMarketplaceBaseUrl(String configured, String fromToken) {
-        if (configured != null && !configured.isBlank()) {
-            return normalizeUrl(configured);
+    private String resolveMarketplaceBaseUrl(String configured) {
+        if (configured == null || configured.isBlank()) {
+            throw new IllegalArgumentException("Marketplace base URL must be configured before provisioning");
         }
-        if (fromToken == null || fromToken.isBlank()) {
-            throw new IllegalArgumentException("Marketplace base URL is required (configure marketplace.base-url or include it in token)");
-        }
-        return normalizeUrl(fromToken);
+        return validateHttps(configured, "marketplace base URL");
     }
 
     private String resolveExpectedAudience(String configuredPublicBaseUrl, JsonNode payloadNode) {
         if (configuredPublicBaseUrl != null && !configuredPublicBaseUrl.isBlank()) {
-            return normalizeUrl(configuredPublicBaseUrl);
+            return validateHttps(configuredPublicBaseUrl, "public base URL");
         }
 
         JsonNode audNode = payloadNode.get("aud");
@@ -283,10 +285,38 @@ public class ProvisioningTokenService {
     private String validateHttps(String url, String label) {
         String value = requireNonBlank(url, label);
         String normalized = normalizeUrl(value);
-        if (!normalized.startsWith("https://") && !normalized.startsWith("http://")) {
-            throw new IllegalArgumentException(label + " must start with http:// or https://");
+        URI uri;
+        try {
+            uri = URI.create(normalized);
+        } catch (IllegalArgumentException ex) {
+            throw new IllegalArgumentException(label + " must be a valid URL", ex);
+        }
+        String scheme = uri.getScheme();
+        String host = uri.getHost();
+        boolean loopbackHttp = "http".equalsIgnoreCase(scheme)
+            && ("localhost".equalsIgnoreCase(host) || "127.0.0.1".equals(host) || "::1".equals(host));
+        if (!"https".equalsIgnoreCase(scheme) && !loopbackHttp) {
+            throw new IllegalArgumentException(label + " must use HTTPS");
+        }
+        if (host == null || host.isBlank() || uri.getUserInfo() != null) {
+            throw new IllegalArgumentException(label + " must be a plain absolute URL");
         }
         return normalized;
+    }
+
+    private String validateEvmAddress(String address, String label) {
+        String value = requireNonBlank(address, label);
+        if (!value.matches("^0x[a-fA-F0-9]{40}$")) {
+            throw new IllegalArgumentException("Invalid " + label);
+        }
+        return value;
+    }
+
+    private long requirePositiveLong(Object rawValue, String label) {
+        if (!(rawValue instanceof Number number) || number.longValue() <= 0) {
+            throw new IllegalArgumentException("Missing or invalid " + label);
+        }
+        return number.longValue();
     }
 
     private String validateEmail(String email) {

@@ -38,6 +38,10 @@ import org.web3j.utils.Numeric;
 import jakarta.annotation.PreDestroy;
 import decentralabs.blockchain.dto.intent.ActionIntentPayload;
 import decentralabs.blockchain.dto.intent.ReservationIntentPayload;
+import decentralabs.blockchain.dto.intent.IntentStatus;
+import decentralabs.blockchain.service.auth.InstitutionalWalletDispatchException;
+import decentralabs.blockchain.service.auth.InstitutionalWalletTransactionDispatcher;
+import decentralabs.blockchain.service.wallet.PendingNonceFastRawTransactionManager;
 import decentralabs.blockchain.service.wallet.InstitutionalWalletService;
 import decentralabs.blockchain.service.wallet.InstitutionalTxManagerProvider;
 import decentralabs.blockchain.service.wallet.WalletService;
@@ -62,6 +66,8 @@ public class IntentOnChainExecutor {
     private final ExecutorService cleanupExecutor;
     private final InstitutionalTxManagerProvider txManagerProvider;
     private final Eip712IntentVerifier intentVerifier;
+    private final InstitutionalWalletTransactionDispatcher transactionDispatcher;
+    private final IntentPersistenceService persistenceService;
     @Value("${blockchain.network.active:sepolia}")
     private String executionNetwork;
     public IntentOnChainExecutor(
@@ -74,7 +80,9 @@ public class IntentOnChainExecutor {
         @Value("${ethereum.gas.price.multiplier:1.2}") BigDecimal gasPriceMultiplier,
         @Value("${ethereum.gas.price.min-gwei:1}") BigDecimal gasPriceMinGwei,
         InstitutionalTxManagerProvider txManagerProvider,
-        Eip712IntentVerifier intentVerifier
+        Eip712IntentVerifier intentVerifier,
+        InstitutionalWalletTransactionDispatcher transactionDispatcher,
+        IntentPersistenceService persistenceService
     ) {
         this.walletService = walletService;
         this.institutionalWalletService = institutionalWalletService;
@@ -86,6 +94,8 @@ public class IntentOnChainExecutor {
         this.gasPriceMinGwei = gasPriceMinGwei;
         this.txManagerProvider = txManagerProvider;
         this.intentVerifier = intentVerifier;
+        this.transactionDispatcher = transactionDispatcher;
+        this.persistenceService = persistenceService;
         this.cleanupExecutor = Executors.newSingleThreadExecutor(new ThreadFactory() {
             @Override
             public Thread newThread(Runnable r) {
@@ -97,6 +107,38 @@ public class IntentOnChainExecutor {
     }
 
     public record ExecutionResult(boolean success, String txHash, Long blockNumber, String labId, String reservationKey, String reason) { }
+    public enum ReceiptState { PENDING, MINED_SUCCESS, MINED_REVERTED }
+    public record ReceiptResult(ReceiptState state, Long blockNumber, String labId, String reason) { }
+
+    public ReceiptResult inspectReceipt(IntentRecord record) throws Exception {
+        if (record == null || record.getTxHash() == null || record.getTxHash().isBlank()) {
+            throw new IllegalArgumentException("Submitted intent transaction hash is required");
+        }
+        Optional<TransactionReceipt> receipt = resolveWeb3j()
+            .ethGetTransactionReceipt(record.getTxHash())
+            .send()
+            .getTransactionReceipt();
+        if (receipt.isEmpty()) {
+            return new ReceiptResult(ReceiptState.PENDING, null, null, null);
+        }
+        TransactionReceipt mined = receipt.get();
+        Long blockNumber = mined.getBlockNumber() != null ? mined.getBlockNumber().longValue() : null;
+        if (mined.isStatusOK()) {
+            String action = record.getAction() == null ? "" : record.getAction().toUpperCase(Locale.ROOT);
+            return new ReceiptResult(
+                ReceiptState.MINED_SUCCESS,
+                blockNumber,
+                extractMintedTokenId(action, mined),
+                null
+            );
+        }
+        return new ReceiptResult(
+            ReceiptState.MINED_REVERTED,
+            blockNumber,
+            null,
+            inferRevertReason(mined, gasLimit)
+        );
+    }
 
     public ExecutionResult execute(IntentRecord record) throws Exception {
         String action = record.getAction() == null ? "" : record.getAction().toUpperCase(Locale.ROOT);
@@ -162,7 +204,6 @@ public class IntentOnChainExecutor {
         
         Function function = functionOpt.get();
         Web3j web3j = resolveWeb3j();
-        TransactionManager txManager = txManagerProvider.get(web3j);
         String encoded = FunctionEncoder.encode(function);
 
         Optional<String> preflightFailure = simulateAndDecodeFailure(web3j, credentials.getAddress(), encoded);
@@ -172,25 +213,39 @@ public class IntentOnChainExecutor {
 
         BigInteger gasPriceWei = resolveGasPriceWei(web3j);
 
-        EthSendTransaction tx = txManager.sendTransaction(gasPriceWei, gas, contractAddress, encoded, BigInteger.ZERO);
-        String txHash = tx.getTransactionHash();
-        if (txHash == null) {
-            String error = tx.getError() != null ? tx.getError().getMessage() : "tx_hash_missing";
-            if (shouldRetryWithHigherGas(error)) {
-                BigInteger bumpedGasPrice = bumpGasPrice(gasPriceWei);
-                EthSendTransaction retry = txManager.sendTransaction(
-                    bumpedGasPrice, gas, contractAddress, encoded, BigInteger.ZERO
-                );
-                String retryHash = retry.getTransactionHash();
-                if (retryHash != null) {
-                    TransactionReceipt receipt = waitForReceipt(web3j, retryHash);
-                    Long blockNumber = receipt.getBlockNumber() != null ? receipt.getBlockNumber().longValue() : null;
-                    String labId = receipt.isStatusOK() ? extractMintedTokenId(action, receipt) : null;
-                    return new ExecutionResult(receipt.isStatusOK(), retryHash, blockNumber, labId, null,
-                        receipt.isStatusOK() ? null : inferRevertReason(receipt, gas));
+        String txHash;
+        try {
+            txHash = transactionDispatcher.dispatch(
+                credentials.getAddress(),
+                record.getTransactionNonce(),
+                nonce -> {
+                    persistenceService.persistTransactionNonce(
+                        record.getRequestId(), credentials.getAddress(), nonce
+                    );
+                    record.setInstitutionalWalletAddress(credentials.getAddress());
+                    record.setTransactionNonce(nonce);
+                },
+                nonce -> broadcastWithNonce(
+                    web3j, credentials, nonce, gasPriceWei, gas, encoded
+                ),
+                hash -> {
+                    record.setTxHash(hash);
+                    record.setStatus(IntentStatus.SUBMITTED);
+                    persistenceService.persistSubmittedTransactionHash(record.getRequestId(), hash);
                 }
-            }
-            return new ExecutionResult(false, null, null, null, null, error);
+            );
+        } catch (InstitutionalWalletDispatchException ex) {
+            log.warn("Institutional transaction dispatch is uncertain for intent {}: {}",
+                record.getRequestId(), ex.getMessage());
+            String knownHash = record.getTxHash();
+            return new ExecutionResult(
+                false,
+                knownHash,
+                null,
+                null,
+                null,
+                knownHash != null ? "receipt_error: dispatch outcome uncertain" : "dispatch_uncertain"
+            );
         }
 
         try {
@@ -203,6 +258,54 @@ public class IntentOnChainExecutor {
             log.warn("Failed to get tx receipt for {}: {}", txHash, ex.getMessage());
             return new ExecutionResult(false, txHash, null, null, null, "receipt_error: " + ex.getMessage());
         }
+    }
+
+    private String broadcastWithNonce(
+        Web3j web3j,
+        Credentials credentials,
+        BigInteger nonce,
+        BigInteger gasPriceWei,
+        BigInteger gas,
+        String encoded
+    ) {
+        try {
+            long chainId = resolveChainId(web3j);
+            TransactionManager txManager = new PendingNonceFastRawTransactionManager(
+                web3j, credentials, chainId, nonce
+            );
+            EthSendTransaction tx = txManager.sendTransaction(
+                gasPriceWei, gas, contractAddress, encoded, BigInteger.ZERO
+            );
+            String txHash = tx.getTransactionHash();
+            if (txHash != null && !tx.hasError()) {
+                return txHash;
+            }
+
+            String error = tx.getError() != null ? tx.getError().getMessage() : "tx_hash_missing";
+            if (shouldRetryWithHigherGas(error)) {
+                EthSendTransaction retry = txManager.sendTransaction(
+                    bumpGasPrice(gasPriceWei), gas, contractAddress, encoded, BigInteger.ZERO
+                );
+                if (retry.getTransactionHash() != null && !retry.hasError()) {
+                    return retry.getTransactionHash();
+                }
+                error = retry.getError() != null ? retry.getError().getMessage() : "tx_hash_missing";
+            }
+            throw new IllegalStateException("Institutional transaction rejected: " + error);
+        } catch (Exception ex) {
+            if (ex instanceof RuntimeException runtimeException) {
+                throw runtimeException;
+            }
+            throw new IllegalStateException("Failed to broadcast institutional transaction", ex);
+        }
+    }
+
+    private long resolveChainId(Web3j web3j) throws Exception {
+        var response = web3j.ethChainId().send();
+        if (response == null || response.getChainId() == null) {
+            throw new IllegalStateException("Node returned no chain ID");
+        }
+        return response.getChainId().longValueExact();
     }
 
     /**

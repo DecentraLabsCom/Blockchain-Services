@@ -18,6 +18,7 @@ import org.springframework.web.client.RestTemplate;
 import java.io.IOException;
 import java.util.Map;
 import java.util.Properties;
+import org.web3j.crypto.Credentials;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.*;
@@ -29,6 +30,8 @@ import static org.mockito.Mockito.*;
 @ExtendWith(MockitoExtension.class)
 @DisplayName("InstitutionRegistrationService Tests")
 class InstitutionRegistrationServiceTest {
+
+    private static final Credentials PROVIDER_CREDENTIALS = Credentials.create("1".repeat(64));
 
     @Mock
     private InstitutionalAdminService institutionalAdminService;
@@ -67,9 +70,15 @@ class InstitutionRegistrationServiceTest {
                 .email("test@university.edu")
                 .country("US")
                 .publicBaseUrl("https://gateway.university.edu")
+                .walletAddress(PROVIDER_CREDENTIALS.getAddress())
+                .provisioningJti("provider-jti")
+                .registrationNonce("registration-nonce-1")
+                .chainId(11155111L)
+                .verifyingContract("0xe49a2f59631717691642f929E0FeF1f705866600")
                 .build();
 
-        when(walletService.getInstitutionalWalletAddress()).thenReturn("0xABC123");
+        when(walletService.getInstitutionalWalletAddress()).thenReturn(PROVIDER_CREDENTIALS.getAddress());
+        when(walletService.getInstitutionalCredentials()).thenReturn(PROVIDER_CREDENTIALS);
         when(restTemplate.postForEntity(anyString(), any(HttpEntity.class), eq(String.class)))
                 .thenReturn(ResponseEntity.status(HttpStatus.CREATED).body("Registration successful"));
 
@@ -84,6 +93,11 @@ class InstitutionRegistrationServiceTest {
         verify(restTemplate).postForEntity(urlCaptor.capture(), entityCaptor.capture(), eq(String.class));
         
         assertTrue(urlCaptor.getValue().contains("/api/institutions/registerProvider"));
+        @SuppressWarnings("unchecked")
+        Map<String, String> registrationBody = (Map<String, String>) entityCaptor.getValue().getBody();
+        assertNotNull(registrationBody);
+        assertEquals(PROVIDER_CREDENTIALS.getAddress(), registrationBody.get("walletAddress"));
+        assertTrue(registrationBody.get("walletSignature").startsWith("0x"));
         verify(configPersistenceService).markAsRegistered(InstitutionRole.PROVIDER);
     }
 
@@ -271,8 +285,8 @@ class InstitutionRegistrationServiceTest {
 
 
     @Test
-    @DisplayName("Should handle already registered provider (CONFLICT status)")
-    void shouldHandleAlreadyRegisteredProvider() throws IOException {
+    @DisplayName("Should reject ambiguous provider CONFLICT status")
+    void shouldRejectProviderConflict() throws IOException {
         // Arrange
         InstitutionRegistrationRequest request = InstitutionRegistrationRequest.builder()
                 .role(InstitutionRole.PROVIDER)
@@ -283,9 +297,15 @@ class InstitutionRegistrationServiceTest {
                 .email("test@university.edu")
                 .country("US")
                 .publicBaseUrl("https://gateway.university.edu")
+                .walletAddress(PROVIDER_CREDENTIALS.getAddress())
+                .provisioningJti("provider-conflict-jti")
+                .registrationNonce("provider-conflict-nonce")
+                .chainId(11155111L)
+                .verifyingContract("0xe49a2f59631717691642f929E0FeF1f705866600")
                 .build();
 
-        when(walletService.getInstitutionalWalletAddress()).thenReturn("0xABC123");
+        when(walletService.getInstitutionalWalletAddress()).thenReturn(PROVIDER_CREDENTIALS.getAddress());
+        when(walletService.getInstitutionalCredentials()).thenReturn(PROVIDER_CREDENTIALS);
         when(restTemplate.postForEntity(anyString(), any(HttpEntity.class), eq(String.class)))
                 .thenThrow(new HttpClientErrorException(HttpStatus.CONFLICT, "Already registered"));
 
@@ -293,8 +313,8 @@ class InstitutionRegistrationServiceTest {
         boolean result = service.register(request);
 
         // Assert
-        assertTrue(result); // CONFLICT is treated as success (already registered)
-        verify(configPersistenceService).markAsRegistered(InstitutionRole.PROVIDER); // Marks as registered locally
+        assertFalse(result);
+        verify(configPersistenceService, never()).markAsRegistered(InstitutionRole.PROVIDER);
     }
 
     @Test
@@ -333,9 +353,15 @@ class InstitutionRegistrationServiceTest {
                 .email("test@university.edu")
                 .country("US")
                 .publicBaseUrl("https://gateway.university.edu")
+                .walletAddress(PROVIDER_CREDENTIALS.getAddress())
+                .provisioningJti("provider-error-jti")
+                .registrationNonce("provider-error-nonce")
+                .chainId(11155111L)
+                .verifyingContract("0xe49a2f59631717691642f929E0FeF1f705866600")
                 .build();
 
-        when(walletService.getInstitutionalWalletAddress()).thenReturn("0xABC123");
+        when(walletService.getInstitutionalWalletAddress()).thenReturn(PROVIDER_CREDENTIALS.getAddress());
+        when(walletService.getInstitutionalCredentials()).thenReturn(PROVIDER_CREDENTIALS);
         when(restTemplate.postForEntity(anyString(), any(HttpEntity.class), eq(String.class)))
                 .thenThrow(new HttpClientErrorException(HttpStatus.INTERNAL_SERVER_ERROR, "Server error"));
 
@@ -359,9 +385,15 @@ class InstitutionRegistrationServiceTest {
                 .email("test@university.edu")
                 .country("US")
                 .publicBaseUrl("  https://gateway.university.edu/  ")
+                .walletAddress(PROVIDER_CREDENTIALS.getAddress())
+                .provisioningJti("provider-normalize-jti")
+                .registrationNonce("provider-normalize-nonce")
+                .chainId(11155111L)
+                .verifyingContract("0xe49a2f59631717691642f929E0FeF1f705866600")
                 .build();
 
-        when(walletService.getInstitutionalWalletAddress()).thenReturn("0xABC123");
+        when(walletService.getInstitutionalWalletAddress()).thenReturn(PROVIDER_CREDENTIALS.getAddress());
+        when(walletService.getInstitutionalCredentials()).thenReturn(PROVIDER_CREDENTIALS);
         when(restTemplate.postForEntity(anyString(), any(HttpEntity.class), eq(String.class)))
                 .thenReturn(ResponseEntity.status(HttpStatus.CREATED).body("Registration successful"));
 

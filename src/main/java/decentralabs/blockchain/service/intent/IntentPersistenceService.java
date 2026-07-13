@@ -4,7 +4,9 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Timestamp;
 import java.time.Instant;
+import java.math.BigInteger;
 import java.util.List;
+import java.util.ArrayList;
 import java.util.Optional;
 
 import javax.sql.DataSource;
@@ -98,12 +100,112 @@ public class IntentPersistenceService {
         }
         try {
             return jdbcTemplate.query(
-                "SELECT * FROM intents WHERE status IN ('queued', 'authorized_pending_registration', 'in_progress')",
+                "SELECT * FROM intents WHERE status IN ('queued', 'authorized_pending_registration', 'in_progress', 'submitted')",
                 (rs, rowNum) -> mapRow(rs)
             );
         } catch (Exception e) {
             log.warn("Intent pending lookup skipped: {}", LogSanitizer.sanitize(e.getMessage()));
             return List.of();
+        }
+    }
+
+    /** Atomically claims one queued intent for a single backend replica. */
+    public boolean tryClaimForExecution(String requestId, String workerId) {
+        if (jdbcTemplate == null) {
+            return true;
+        }
+        return jdbcTemplate.update(
+            """
+            UPDATE intents
+            SET status = 'in_progress', worker_id = ?, execution_version = execution_version + 1,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE request_id = ? AND status = 'queued'
+            """,
+            workerId,
+            requestId
+        ) == 1;
+    }
+
+    /**
+     * Returns abandoned execution claims to the queue without discarding their
+     * reserved wallet nonce. The timestamp predicate makes the recovery safe
+     * when another replica has refreshed or completed the same row.
+     */
+    public List<String> recoverStaleInProgress(Instant cutoff) {
+        if (jdbcTemplate == null || cutoff == null) {
+            return List.of();
+        }
+        Timestamp cutoffTimestamp = Timestamp.from(cutoff);
+        List<String> candidates = jdbcTemplate.queryForList(
+            "SELECT request_id FROM intents WHERE status = 'in_progress' AND updated_at <= ?",
+            String.class,
+            cutoffTimestamp
+        );
+        List<String> recovered = new ArrayList<>();
+        for (String requestId : candidates) {
+            int updated = jdbcTemplate.update(
+                """
+                UPDATE intents
+                SET status = 'queued', worker_id = NULL,
+                    reason = 'execution_claim_recovered', error = NULL,
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE request_id = ? AND status = 'in_progress' AND updated_at <= ?
+                """,
+                requestId,
+                cutoffTimestamp
+            );
+            if (updated == 1) {
+                recovered.add(requestId);
+            }
+        }
+        return recovered;
+    }
+
+    /** Persists nonce ownership in the same transaction that advances the wallet nonce. */
+    public void persistTransactionNonce(String requestId, String walletAddress, BigInteger nonce) {
+        requireConfigured();
+        if (requestId == null || requestId.isBlank() || walletAddress == null || walletAddress.isBlank()
+            || nonce == null || nonce.signum() < 0) {
+            throw new IllegalArgumentException("Intent request, institutional wallet and nonce are required");
+        }
+        int updated = jdbcTemplate.update(
+            """
+            UPDATE intents
+            SET institutional_wallet_address = ?, transaction_nonce = ?, updated_at = CURRENT_TIMESTAMP
+            WHERE request_id = ? AND status = 'in_progress'
+              AND (transaction_nonce IS NULL
+                   OR (transaction_nonce = ? AND institutional_wallet_address = ?))
+            """,
+            walletAddress,
+            nonce,
+            requestId,
+            nonce,
+            walletAddress
+        );
+        if (updated != 1) {
+            throw new IllegalStateException("Intent is not claimed or already owns a different transaction nonce");
+        }
+    }
+
+    /** Records SUBMITTED before receipt polling so a crash cannot turn a broadcast into FAILED. */
+    public void persistSubmittedTransactionHash(String requestId, String txHash) {
+        requireConfigured();
+        if (requestId == null || requestId.isBlank() || txHash == null
+            || !txHash.matches("^0x[0-9a-fA-F]{64}$")) {
+            throw new IllegalArgumentException("Valid intent request and transaction hash are required");
+        }
+        int updated = jdbcTemplate.update(
+            """
+            UPDATE intents
+            SET tx_hash = ?, status = 'submitted', submitted_at = CURRENT_TIMESTAMP,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE request_id = ? AND status IN ('in_progress', 'submitted')
+            """,
+            txHash,
+            requestId
+        );
+        if (updated != 1) {
+            throw new IllegalStateException("Intent is not in a broadcastable state");
         }
     }
 
@@ -176,6 +278,10 @@ public class IntentPersistenceService {
         record.setNonce(rs.getObject("nonce", Long.class));
         record.setExpiresAt(rs.getObject("expires_at", Long.class));
         record.setPayloadJson(rs.getString("payload_json"));
+        record.setInstitutionalWalletAddress(rs.getString("institutional_wallet_address"));
+        if (rs.getObject("transaction_nonce") != null) {
+            record.setTransactionNonce(rs.getBigDecimal("transaction_nonce").toBigIntegerExact());
+        }
         hydrateFromPayloadJson(record);
 
         if (createdAt != null) {
@@ -227,6 +333,12 @@ public class IntentPersistenceService {
             }
         } catch (Exception ex) {
             log.warn("Unable to hydrate intent {} payload: {}", LogSanitizer.sanitize(record.getRequestId()), LogSanitizer.sanitize(ex.getMessage()));
+        }
+    }
+
+    private void requireConfigured() {
+        if (jdbcTemplate == null) {
+            throw new IllegalStateException("Intent persistence is required for institutional transaction dispatch");
         }
     }
 }

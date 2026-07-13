@@ -2,8 +2,11 @@ package decentralabs.blockchain.controller.provider;
 
 import decentralabs.blockchain.dto.provider.ProviderConfigurationRequest;
 import decentralabs.blockchain.dto.provider.ProviderConfigurationResponse;
+import decentralabs.blockchain.dto.provider.ProvisioningTokenPayload;
 import decentralabs.blockchain.dto.provider.ProvisioningTokenRequest;
+import decentralabs.blockchain.service.organization.InstitutionRegistrationRequest;
 import decentralabs.blockchain.service.organization.InstitutionRegistrationService;
+import decentralabs.blockchain.service.organization.InstitutionOnChainStatusService;
 import decentralabs.blockchain.service.organization.ProviderConfigurationPersistenceService;
 import decentralabs.blockchain.service.organization.ProvisioningTokenService;
 import org.junit.jupiter.api.BeforeEach;
@@ -11,6 +14,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.http.HttpStatus;
@@ -37,6 +41,9 @@ class ProviderConfigurationControllerTest {
     @Mock
     private ProvisioningTokenService provisioningTokenService;
 
+    @Mock
+    private InstitutionOnChainStatusService onChainStatusService;
+
     @InjectMocks
     private ProviderConfigurationController controller;
 
@@ -51,6 +58,8 @@ class ProviderConfigurationControllerTest {
         ReflectionTestUtils.setField(controller, "providerCountry", "");
         ReflectionTestUtils.setField(controller, "providerOrganization", "");
         ReflectionTestUtils.setField(controller, "publicBaseUrl", "");
+        lenient().when(onChainStatusService.inspect(anyString(), anyString(), anyBoolean()))
+            .thenReturn(InstitutionOnChainStatusService.Status.unavailable());
     }
 
     @Test
@@ -68,6 +77,18 @@ class ProviderConfigurationControllerTest {
         props.setProperty("provider.registered", "true");
 
         when(persistenceService.loadConfigurationSafe()).thenReturn(props);
+        when(onChainStatusService.inspect("uned.es", "https://gateway.uned.es", true))
+            .thenReturn(new InstitutionOnChainStatusService.Status(
+                true,
+                "0x00000000000000000000000000000000000000aa",
+                true,
+                true,
+                "0x00000000000000000000000000000000000000aa",
+                "https://gateway.uned.es",
+                "0x00000000000000000000000000000000000000aa",
+                "ACTIVE",
+                true
+            ));
 
         // Execute
         ResponseEntity<ProviderConfigurationResponse> response = controller.getConfigurationStatus();
@@ -88,6 +109,13 @@ class ProviderConfigurationControllerTest {
         assertEquals("test@uned.es", body.getProviderEmail());
         assertEquals("ES", body.getProviderCountry());
         assertEquals("uned.es", body.getProviderOrganization());
+        assertTrue(body.isLocalConfigSaved());
+        assertTrue(body.isLocalRegistrationCached());
+        assertTrue(body.isOnChainStatusAvailable());
+        assertTrue(body.isProviderRoleOnChain());
+        assertTrue(body.isInstitutionRoleOnChain());
+        assertEquals("ACTIVE", body.getProviderNetworkStatus());
+        assertTrue(body.isFullyOperational());
         assertEquals("https://gateway.uned.es", body.getPublicBaseUrl());
     }
 
@@ -133,7 +161,12 @@ class ProviderConfigurationControllerTest {
         request.setPublicBaseUrl("https://gateway.university.edu");
         request.setProvisioningToken("valid-token-123");
 
-        // Mock successful registration
+        ProvisioningTokenPayload payload = providerPayload();
+        when(provisioningTokenService.validateAndExtract(
+            "valid-token-123",
+            "https://marketplace.example.com",
+            "https://gateway.university.edu"
+        )).thenReturn(payload);
         when(registrationService.register(any())).thenReturn(true);
 
         // Execute
@@ -145,10 +178,17 @@ class ProviderConfigurationControllerTest {
         assertEquals(true, response.getBody().get("success"));
         assertEquals(true, response.getBody().get("registered"));
 
-        // Verify persistence was called
-        verify(persistenceService).saveConfiguration(request);
+        verify(persistenceService).saveConfigurationFromToken(payload);
+        verify(persistenceService, never()).saveConfiguration(any());
         verify(registrationService).markAsRegistered(any());
-        verify(registrationService).register(any());
+        ArgumentCaptor<InstitutionRegistrationRequest> captor =
+            ArgumentCaptor.forClass(InstitutionRegistrationRequest.class);
+        verify(registrationService).register(captor.capture());
+        assertEquals(payload.getWalletAddress(), captor.getValue().getWalletAddress());
+        assertEquals(payload.getJti(), captor.getValue().getProvisioningJti());
+        assertEquals(payload.getRegistrationNonce(), captor.getValue().getRegistrationNonce());
+        assertEquals(payload.getChainId(), captor.getValue().getChainId());
+        assertEquals(payload.getVerifyingContract(), captor.getValue().getVerifyingContract());
     }
 
     @Test
@@ -164,7 +204,9 @@ class ProviderConfigurationControllerTest {
         request.setPublicBaseUrl("https://gateway.university.edu");
         request.setProvisioningToken("valid-token-123");
 
-        // Mock failed registration
+        ProvisioningTokenPayload payload = providerPayload();
+        when(provisioningTokenService.validateAndExtract(anyString(), anyString(), anyString()))
+            .thenReturn(payload);
         when(registrationService.register(any())).thenReturn(false);
 
         // Execute
@@ -176,8 +218,9 @@ class ProviderConfigurationControllerTest {
         assertEquals(true, response.getBody().get("success"));
         assertEquals(false, response.getBody().get("registered"));
 
-        // Verify persistence was called but NOT marked as registered
-        verify(persistenceService).saveConfiguration(request);
+        // Failed registrations must not persist unverified or partial configuration.
+        verify(persistenceService, never()).saveConfiguration(any());
+        verify(persistenceService, never()).saveConfigurationFromToken(any());
         verify(registrationService, never()).markAsRegistered(any());
     }
 
@@ -276,7 +319,7 @@ class ProviderConfigurationControllerTest {
         assertEquals(true, response.getBody().get("success"));
         assertEquals(false, response.getBody().get("registered"));
 
-        verify(persistenceService).saveConfigurationFromToken(payload);
+        verify(persistenceService, never()).saveConfigurationFromToken(payload);
         verify(registrationService, never()).markAsRegistered(any());
     }
 
@@ -374,5 +417,54 @@ class ProviderConfigurationControllerTest {
 
         verify(persistenceService, never()).saveConfiguration(any());
         verify(registrationService, never()).register(any());
+    }
+
+    @Test
+    @DisplayName("Should retry provider registration using only validated token claims")
+    void shouldRetryUsingValidatedTokenClaims() throws Exception {
+        Properties props = new Properties();
+        props.setProperty("marketplace.base-url", "https://marketplace.example.com");
+        props.setProperty("provider.name", "Stale Name");
+        props.setProperty("provider.email", "stale@example.com");
+        props.setProperty("provider.country", "ES");
+        props.setProperty("provider.organization", "stale.example");
+        props.setProperty("public.base-url", "https://gateway.university.edu");
+        when(persistenceService.loadConfigurationSafe()).thenReturn(props);
+
+        ProvisioningTokenPayload payload = providerPayload();
+        when(provisioningTokenService.validateAndExtract(
+            "valid-token-123",
+            "https://marketplace.example.com",
+            "https://gateway.university.edu"
+        )).thenReturn(payload);
+        when(registrationService.register(any())).thenReturn(true);
+
+        ResponseEntity<Map<String, Object>> response = controller.retryRegistration(
+            Map.of("provisioningToken", "valid-token-123")
+        );
+
+        assertEquals(HttpStatus.OK, response.getStatusCode());
+        ArgumentCaptor<InstitutionRegistrationRequest> captor =
+            ArgumentCaptor.forClass(InstitutionRegistrationRequest.class);
+        verify(registrationService).register(captor.capture());
+        assertEquals(payload.getProviderOrganization(), captor.getValue().getOrganization());
+        assertEquals(payload.getWalletAddress(), captor.getValue().getWalletAddress());
+        verify(persistenceService).saveConfigurationFromToken(payload);
+    }
+
+    private ProvisioningTokenPayload providerPayload() {
+        return ProvisioningTokenPayload.builder()
+            .marketplaceBaseUrl("https://marketplace.example.com")
+            .providerName("Test University")
+            .providerEmail("test@university.edu")
+            .providerCountry("US")
+            .providerOrganization("university.edu")
+            .publicBaseUrl("https://gateway.university.edu")
+            .walletAddress("0x1111111111111111111111111111111111111111")
+            .jti("test-jti-123")
+            .registrationNonce("registration-nonce-123")
+            .chainId(11155111L)
+            .verifyingContract("0xe49a2f59631717691642f929E0FeF1f705866600")
+            .build();
     }
 }

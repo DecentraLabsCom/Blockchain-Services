@@ -17,6 +17,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+import java.util.Map;
 
 @RestController
 @RequestMapping("${endpoint.intents:/intents}")
@@ -59,6 +60,27 @@ public class IntentController {
         } else {
             log.info("Registration mined signal accepted before WebAuthn completion. requestId={}", requestId);
         }
+        IntentAckResponse ack = new IntentAckResponse();
+        ack.setRequestId(requestId);
+        ack.setStatus("accepted");
+        return ResponseEntity.accepted().body(ack);
+    }
+
+    @PostMapping("/{requestId}/registration-failed")
+    public ResponseEntity<IntentAckResponse> notifyRegistrationFailed(
+        @PathVariable String requestId,
+        @RequestHeader(value = "Authorization", required = false) String authorizationHeader,
+        @RequestBody(required = false) Map<String, Object> signal
+    ) {
+        intentAuthService.enforceSubmitAuthorization(authorizationHeader);
+        String event = signal == null ? null : String.valueOf(signal.get("event"));
+        if (!"registration_reverted".equals(event) && !"registration_dropped".equals(event)) {
+            IntentAckResponse rejected = new IntentAckResponse();
+            rejected.setRequestId(requestId);
+            rejected.setStatus("rejected");
+            return ResponseEntity.badRequest().body(rejected);
+        }
+        intentService.markRegistrationFailed(requestId, event);
         IntentAckResponse ack = new IntentAckResponse();
         ack.setRequestId(requestId);
         ack.setStatus("accepted");

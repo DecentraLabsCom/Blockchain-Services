@@ -14,10 +14,15 @@ import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.RestTemplate;
 
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Properties;
+import org.web3j.crypto.Credentials;
+import org.web3j.crypto.Sign;
+import org.web3j.utils.Numeric;
 
 /**
  * Unified service for institution registration with the DecentraLabs Marketplace.
@@ -109,6 +114,10 @@ public class InstitutionRegistrationService {
             log.error("Provider registration failed: institutional wallet address not available");
             return false;
         }
+        if (!walletAddress.equalsIgnoreCase(request.getWalletAddress())) {
+            log.error("Provider registration failed: token wallet does not match institutional wallet");
+            return false;
+        }
 
         String authURI = request.getPublicBaseUrl().trim();
         if (authURI.endsWith("/")) {
@@ -123,6 +132,11 @@ public class InstitutionRegistrationService {
         String backendUrl = normalizeBackendUrl(authURI);
 
         try {
+            Credentials credentials = institutionalWalletService.getInstitutionalCredentials();
+            if (!credentials.getAddress().equalsIgnoreCase(walletAddress)) {
+                throw new IllegalStateException("Institutional credentials do not match configured wallet");
+            }
+            String walletSignature = signProviderRegistrationChallenge(request, walletAddress, authURI, credentials);
             log.info("Attempting to register as provider with marketplace...");
             log.info("Provider details: name={}, wallet={}, organization={}, authURI={}", 
                 request.getName(), walletAddress, request.getOrganization(), authURI);
@@ -136,7 +150,8 @@ public class InstitutionRegistrationService {
                 request.getCountry(),
                 request.getOrganization(),
                 authURI,
-                backendUrl
+                backendUrl,
+                walletSignature
             );
 
             log.info("Provider registration completed successfully");
@@ -205,7 +220,8 @@ public class InstitutionRegistrationService {
         String country,
         String organization,
         String authURI,
-        String backendUrl
+        String backendUrl,
+        String walletSignature
     ) {
         String url = buildMarketplaceUrl(marketplaceUrl, "/api/institutions/registerProvider");
 
@@ -217,6 +233,7 @@ public class InstitutionRegistrationService {
         requestBody.put("country", country.trim());
         requestBody.put("authURI", authURI);
         requestBody.put("organization", organization.trim());
+        requestBody.put("walletSignature", walletSignature);
         if (backendUrl != null && !backendUrl.isBlank()) {
             requestBody.put("backendUrl", backendUrl);
         }
@@ -279,9 +296,7 @@ public class InstitutionRegistrationService {
                     roleLabel, response.getStatusCode(), response.getBody());
             }
         } catch (HttpClientErrorException e) {
-            if (e.getStatusCode() == HttpStatus.CONFLICT || e.getStatusCode() == HttpStatus.OK) {
-                log.info("{} already registered (expected on subsequent startups)", roleLabel);
-            } else if (e.getStatusCode() == HttpStatus.UNAUTHORIZED) {
+            if (e.getStatusCode() == HttpStatus.UNAUTHORIZED) {
                 log.error("{} registration failed: Unauthorized (invalid provisioning token)", roleLabel);
                 throw new RuntimeException("Invalid provisioning token");
             } else {
@@ -329,6 +344,32 @@ public class InstitutionRegistrationService {
         return trimmed + "/api";
     }
 
+    private String signProviderRegistrationChallenge(
+        InstitutionRegistrationRequest request,
+        String walletAddress,
+        String publicBaseUrl,
+        Credentials credentials
+    ) {
+        String challenge = String.join("\n",
+            "DecentraLabs Provider Registration v1",
+            "jti=" + request.getProvisioningJti(),
+            "registrationNonce=" + request.getRegistrationNonce(),
+            "walletAddress=" + walletAddress.toLowerCase(Locale.ROOT),
+            "providerOrganization=" + request.getOrganization().trim().toLowerCase(Locale.ROOT),
+            "publicBaseUrl=" + publicBaseUrl,
+            "chainId=" + request.getChainId(),
+            "verifyingContract=" + request.getVerifyingContract().toLowerCase(Locale.ROOT)
+        );
+        Sign.SignatureData signature = Sign.signPrefixedMessage(
+            challenge.getBytes(StandardCharsets.UTF_8), credentials.getEcKeyPair()
+        );
+        byte[] encoded = new byte[65];
+        System.arraycopy(signature.getR(), 0, encoded, 0, 32);
+        System.arraycopy(signature.getS(), 0, encoded, 32, 32);
+        System.arraycopy(signature.getV(), 0, encoded, 64, 1);
+        return Numeric.toHexString(encoded);
+    }
+
     /**
      * Validate required fields for provider registration
      */
@@ -344,6 +385,22 @@ public class InstitutionRegistrationService {
         }
         if (request.getPublicBaseUrl() == null || request.getPublicBaseUrl().isBlank()) {
             throw new IllegalArgumentException("Provider public base URL is required");
+        }
+        if (request.getWalletAddress() == null || !request.getWalletAddress().matches("^0x[a-fA-F0-9]{40}$")) {
+            throw new IllegalArgumentException("Provider token wallet address is required");
+        }
+        if (request.getProvisioningJti() == null || request.getProvisioningJti().isBlank()) {
+            throw new IllegalArgumentException("Provider token jti is required");
+        }
+        if (request.getRegistrationNonce() == null || request.getRegistrationNonce().isBlank()) {
+            throw new IllegalArgumentException("Provider registration nonce is required");
+        }
+        if (request.getChainId() == null || request.getChainId() <= 0) {
+            throw new IllegalArgumentException("Provider token chain ID is required");
+        }
+        if (request.getVerifyingContract() == null
+            || !request.getVerifyingContract().matches("^0x[a-fA-F0-9]{40}$")) {
+            throw new IllegalArgumentException("Provider token verifying contract is required");
         }
         validateCommonFields(request);
     }

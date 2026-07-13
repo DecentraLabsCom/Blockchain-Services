@@ -8,6 +8,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import java.sql.Timestamp;
+import java.math.BigInteger;
 import java.time.Instant;
 import java.util.Collections;
 import java.util.List;
@@ -182,6 +183,84 @@ class IntentPersistenceServiceTest {
             Optional<IntentRecord> result = service.findByRequestId("error-id");
 
             assertThat(result).isEmpty();
+        }
+    }
+
+    @Nested
+    @DisplayName("Distributed Claim Tests")
+    class DistributedClaimTests {
+        @Test
+        void shouldClaimOnlyQueuedIntent() {
+            when(jdbcTemplate.update(anyString(), eq("worker-1"), eq("req-claim"))).thenReturn(1);
+
+            assertThat(service.tryClaimForExecution("req-claim", "worker-1")).isTrue();
+
+            verify(jdbcTemplate).update(anyString(), eq("worker-1"), eq("req-claim"));
+        }
+
+        @Test
+        void shouldRejectClaimLostToAnotherReplica() {
+            when(jdbcTemplate.update(anyString(), eq("worker-2"), eq("req-claim"))).thenReturn(0);
+
+            assertThat(service.tryClaimForExecution("req-claim", "worker-2")).isFalse();
+        }
+
+        @Test
+        void shouldPersistReservedInstitutionalNonceOnlyForClaimedIntent() {
+            when(jdbcTemplate.update(
+                anyString(),
+                eq("0xwallet"),
+                eq(BigInteger.valueOf(47)),
+                eq("req-claim"),
+                eq(BigInteger.valueOf(47)),
+                eq("0xwallet")
+            )).thenReturn(1);
+
+            service.persistTransactionNonce("req-claim", "0xwallet", BigInteger.valueOf(47));
+
+            verify(jdbcTemplate).update(
+                anyString(),
+                eq("0xwallet"),
+                eq(BigInteger.valueOf(47)),
+                eq("req-claim"),
+                eq(BigInteger.valueOf(47)),
+                eq("0xwallet")
+            );
+        }
+
+        @Test
+        void shouldRejectNoncePersistenceWhenIntentIsNotClaimed() {
+            when(jdbcTemplate.update(anyString(), any(Object[].class))).thenReturn(0);
+
+            org.assertj.core.api.Assertions.assertThatThrownBy(() ->
+                service.persistTransactionNonce("req-lost", "0xwallet", BigInteger.valueOf(48))
+            ).isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("not claimed");
+        }
+
+        @Test
+        void shouldPersistBroadcastHashAsSubmittedBeforeWaitingForReceipt() {
+            String hash = "0x" + "a".repeat(64);
+            when(jdbcTemplate.update(anyString(), eq(hash), eq("req-claim"))).thenReturn(1);
+
+            service.persistSubmittedTransactionHash("req-claim", hash);
+
+            verify(jdbcTemplate).update(anyString(), eq(hash), eq("req-claim"));
+        }
+
+        @Test
+        void shouldRecoverOnlyStaleInProgressClaims() {
+            Timestamp cutoff = Timestamp.from(java.time.Instant.parse("2026-07-13T18:00:00Z"));
+            when(jdbcTemplate.queryForList(anyString(), eq(String.class), eq(cutoff)))
+                .thenReturn(java.util.List.of("req-stale", "req-raced"));
+            when(jdbcTemplate.update(anyString(), eq("req-stale"), eq(cutoff))).thenReturn(1);
+            when(jdbcTemplate.update(anyString(), eq("req-raced"), eq(cutoff))).thenReturn(0);
+
+            assertThat(service.recoverStaleInProgress(cutoff.toInstant()))
+                .containsExactly("req-stale");
+
+            verify(jdbcTemplate).update(anyString(), eq("req-stale"), eq(cutoff));
+            verify(jdbcTemplate).update(anyString(), eq("req-raced"), eq(cutoff));
         }
     }
 
