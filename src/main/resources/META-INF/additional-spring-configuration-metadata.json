@@ -958,6 +958,18 @@
     "defaultValue": "{}"
   },
   {
+    "name": "access.audit.observation-window-tolerance-seconds",
+    "type": "java.lang.Long",
+    "description": "Tolerance in seconds when matching an observed access credential to its audit window.",
+    "defaultValue": 30
+  },
+  {
+    "name": "access.audit.observation-clock-skew-seconds",
+    "type": "java.lang.Long",
+    "description": "Maximum accepted clock skew in seconds for access credential observations.",
+    "defaultValue": 120
+  },
+  {
     "name": "session.attestation.publisher.stuck-transaction-ms",
     "type": "java.lang.Long",
     "description": "Age after which a pending SessionStarted transaction is replaced.",

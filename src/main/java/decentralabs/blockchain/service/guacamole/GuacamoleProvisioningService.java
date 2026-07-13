@@ -385,10 +385,6 @@ public class GuacamoleProvisioningService {
         }
     }
 
-    private static String normalizeOrigin(String origin) {
-        return StringUtils.hasText(origin) ? origin.toLowerCase() : null;
-    }
-
     private static String hostOf(String uri) {
         if (!StringUtils.hasText(uri)) {
             return null;

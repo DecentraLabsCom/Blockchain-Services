@@ -29,7 +29,7 @@ public class AccessCredentialAuditController {
         Authentication authentication
     ) {
         String authenticatedGateway = authentication != null ? authentication.getName() : null;
-        if (request != null && hasText(authenticatedGateway)) {
+        if (request != null && authenticatedGateway != null && !authenticatedGateway.isBlank()) {
             if (hasText(request.getGatewayId()) && !authenticatedGateway.equalsIgnoreCase(request.getGatewayId())) {
                 return ResponseEntity.status(403).body(Map.of(
                     "code", "GATEWAY_ID_MISMATCH",
