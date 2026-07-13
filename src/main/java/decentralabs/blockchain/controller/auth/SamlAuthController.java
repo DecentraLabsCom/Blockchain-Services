@@ -19,6 +19,8 @@ import java.util.Map;
 import java.util.LinkedHashMap;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -36,18 +38,36 @@ public class SamlAuthController {
     private final SamlAuthService samlAuthService;
     private final InstitutionalCheckInService institutionalCheckInService;
     private final AccessCodeService accessCodeService;
-    @Value("${auth.access-code.redeemer-token:}")
-    private String accessCodeRedeemerToken;
+    @Value("${auth.access-code.redeemer-credentials-json:{}}")
+    private String accessCodeRedeemerCredentialsJson;
 
     @PostMapping("/access-code/redeem")
     public ResponseEntity<AuthResponse> redeemAccessCode(
         @RequestHeader(value = "X-Access-Code-Redeemer-Token", required = false) String redeemerToken,
+        @RequestHeader(value = "X-Gateway-ID", required = false) String gatewayId,
         @RequestBody AccessCodeRedeemRequest request
     ) {
-        if (!constantTimeEquals(accessCodeRedeemerToken, redeemerToken)) {
+        String expected = redeemerCredential(gatewayId);
+        if (!constantTimeEquals(expected, redeemerToken)) {
             return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
         }
-        return ResponseEntity.ok(accessCodeService.redeem(request.getAccessCode()));
+        return ResponseEntity.ok(accessCodeService.redeem(request.getAccessCode(), gatewayId.trim().toLowerCase()));
+    }
+
+    private String redeemerCredential(String gatewayId) {
+        if (gatewayId == null || gatewayId.isBlank()) {
+            return null;
+        }
+        try {
+            Map<String, String> credentials = new ObjectMapper().readValue(
+                accessCodeRedeemerCredentialsJson == null ? "{}" : accessCodeRedeemerCredentialsJson,
+                new TypeReference<>() { }
+            );
+            return credentials.get(gatewayId.trim().toLowerCase());
+        } catch (Exception ex) {
+            log.error("Invalid access-code redeemer credential configuration", ex);
+            return null;
+        }
     }
 
     private boolean constantTimeEquals(String expected, String actual) {

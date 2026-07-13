@@ -70,6 +70,7 @@ class SamlAuthServiceTest {
             .thenReturn(Map.of("puc", TEST_PUC, "affiliation", TEST_AFFILIATION));
         lenient().when(jwtService.generateIssuedToken(eq(null), any()))
             .thenReturn(new JwtService.IssuedToken("booking-token", "jwt-jti-default", 1_700_000_000L, null));
+        lenient().when(accessAuthorizationProvisioningService.markActivated(any())).thenReturn(true);
     }
 
     @Nested
@@ -118,12 +119,104 @@ class SamlAuthServiceTest {
             assertThat(response.getToken()).isNull();
             assertThat(response.getAccessCode()).isEqualTo("opaque-code");
             assertThat(response.getLabURL()).isEqualTo("https://lab.example.com/guacamole/");
+            assertThat(response.getReservationKey()).isEqualTo("0xreservation");
             verify(accessCheckInCoordinator, never()).recordAccessGranted(any(), any(), any());
             verify(accessCredentialAuditService).recordJwtIssued(any(), any(), eq(bookingInfo), any());
             verify(accessCodeService).issue("booking-token", "0xreservation", 1L);
             var deliveryOrder = org.mockito.Mockito.inOrder(accessCodeService, accessCredentialAuditService);
-            deliveryOrder.verify(accessCodeService).issue("booking-token", "0xreservation", 1L);
             deliveryOrder.verify(accessCredentialAuditService).recordJwtIssued(any(), any(), eq(bookingInfo), any());
+            deliveryOrder.verify(accessCodeService).issue("booking-token", "0xreservation", 1L);
+        }
+
+        @Test
+        @DisplayName("Should use the booking canonical reservation key throughout a labId-only request")
+        void shouldUseCanonicalReservationKeyForLabIdFallback() throws Exception {
+            ProviderAccessCredentialRequest request = new ProviderAccessCredentialRequest();
+            request.setMarketplaceToken("provider-token-lab-only");
+            request.setLabId("42");
+
+            when(marketplaceEndpointAuthService.enforceToken(eq("provider-token-lab-only"), eq(null)))
+                .thenReturn(Map.of(
+                    "puc", TEST_PUC,
+                    "affiliation", TEST_AFFILIATION,
+                    "bookingInfoAllowed", true,
+                    "purpose", "lab_access",
+                    "labId", "42",
+                    "payerInstitutionWallet", "0xwallet"
+                ));
+            Map<String, Object> bookingInfo = new HashMap<>(Map.of(
+                "labURL", "https://lab.example.com/fmu/",
+                "reservationKey", "0xcanonical",
+                "reservationStatus", java.math.BigInteger.valueOf(2),
+                "resourceType", "fmu"
+            ));
+            when(blockchainService.getBookingInfoForCredentialPreparation("0xwallet", null, "42", TEST_PUC))
+                .thenReturn(bookingInfo);
+            var lease = new AccessAuthorizationProvisioningService.ProvisioningLease(
+                "0xcanonical", "fence-token", 7L
+            );
+            when(accessAuthorizationProvisioningService.tryStart("0xcanonical")).thenReturn(lease);
+            when(accessAuthorizationProvisioningService.markDelivered(lease)).thenReturn(true);
+            when(accessCodeService.issue("booking-token", "0xcanonical", 7L)).thenReturn(
+                new decentralabs.blockchain.dto.auth.AccessCodeResponse(
+                    "opaque-code", "https://lab.example.com/fmu/", "fmu"
+                )
+            );
+
+            AuthResponse response = samlAuthService.issueAccessCredential(request);
+
+            assertThat(request.getReservationKey()).isEqualTo("0xcanonical");
+            assertThat(response.getReservationKey()).isEqualTo("0xcanonical");
+            assertThat(response.getResourceType()).isEqualTo("fmu");
+            verify(accessAuthorizationProvisioningService).recoverableProvisioning("0xcanonical");
+            verify(accessAuthorizationProvisioningService).tryStart("0xcanonical");
+            verify(accessCodeService).issue("booking-token", "0xcanonical", 7L);
+        }
+
+        @Test
+        @DisplayName("Should recover a code-persisted generation without activating another user")
+        void shouldRecoverCodePersistedGenerationAfterLostResponse() throws Exception {
+            ProviderAccessCredentialRequest request = new ProviderAccessCredentialRequest();
+            request.setMarketplaceToken("provider-token-recovery");
+            request.setReservationKey("0xreservation");
+            request.setLabId("42");
+            when(marketplaceEndpointAuthService.enforceToken(eq("provider-token-recovery"), eq(null)))
+                .thenReturn(Map.of(
+                    "puc", TEST_PUC,
+                    "affiliation", TEST_AFFILIATION,
+                    "bookingInfoAllowed", true,
+                    "purpose", "lab_access",
+                    "reservationKey", "0xreservation",
+                    "labId", "42",
+                    "payerInstitutionWallet", "0xwallet"
+                ));
+            Map<String, Object> bookingInfo = new HashMap<>(Map.of(
+                "labURL", "https://lab.example.com/guacamole/",
+                "reservationKey", "0xreservation",
+                "reservationStatus", java.math.BigInteger.valueOf(2),
+                "resourceType", "lab"
+            ));
+            when(blockchainService.getBookingInfoForCredentialPreparation(
+                "0xwallet", "0xreservation", "42", TEST_PUC
+            )).thenReturn(bookingInfo);
+            when(accessAuthorizationProvisioningService.recoverableProvisioning("0xreservation"))
+                .thenReturn(new AccessAuthorizationProvisioningService.RecoverableProvisioning(4L, "CODE_PERSISTED"));
+            when(accessCodeService.recoverDelivery("0xreservation", 4L)).thenReturn(
+                new decentralabs.blockchain.dto.auth.AccessCodeResponse(
+                    "recovered-code", "https://lab.example.com/guacamole/", "lab"
+                )
+            );
+            when(accessAuthorizationProvisioningService.promoteRecoveredDelivery("0xreservation", 4L))
+                .thenReturn(true);
+
+            AuthResponse response = samlAuthService.issueAccessCredential(request);
+
+            assertThat(response.getAccessCode()).isEqualTo("recovered-code");
+            assertThat(response.getResourceType()).isEqualTo("lab");
+            assertThat(response.getReservationKey()).isEqualTo("0xreservation");
+            verify(accessAuthorizationProvisioningService, never()).tryStart(any());
+            verify(blockchainService, never()).provisionGuacamoleAccess(any());
+            verify(jwtService, never()).generateIssuedToken(eq(null), any());
         }
 
         @Test

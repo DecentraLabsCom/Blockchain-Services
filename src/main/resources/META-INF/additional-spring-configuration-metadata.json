@@ -39,9 +39,21 @@
       "defaultValue": 30000
     },
     {
-      "name": "auth.access-code.redeemer-token",
+      "name": "auth.access-code.encryption-key",
       "type": "java.lang.String",
-      "description": "Secret required from OpenResty to redeem a browser access code."
+      "description": "Base64URL-encoded 32-byte AES key used to encrypt access JWTs and recoverable codes at rest."
+    },
+    {
+      "name": "health.queue-stuck-threshold-seconds",
+      "type": "java.lang.Integer",
+      "description": "Age threshold used by readiness for nonce backlogs and interrupted access deliveries.",
+      "defaultValue": 120
+    },
+    {
+      "name": "auth.access-code.redeemer-credentials-json",
+      "type": "java.lang.String",
+      "description": "JSON map of gateway IDs to the distinct secrets allowed to redeem browser access codes.",
+      "defaultValue": "{}"
     },
   {
     "name": "endpoint.checkin-institutional",

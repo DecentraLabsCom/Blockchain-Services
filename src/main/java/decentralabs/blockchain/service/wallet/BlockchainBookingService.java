@@ -15,6 +15,7 @@ import decentralabs.blockchain.contract.Diamond;
 
 import java.math.BigInteger;
 import java.nio.charset.StandardCharsets;
+import java.net.URI;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.Map;
@@ -513,6 +514,7 @@ public class BlockchainBookingService {
         bookingInfo.put("metadata", metadata);              // Lab metadata URI
         bookingInfo.put("authURI", authURI);                // This auth service
         bookingInfo.put("accessKey", accessKey);            // Raw access key (FMU filename or Guacamole selector)
+        bookingInfo.put("targetGatewayId", gatewayIdFromAccessUri(accessURI));
         
         // Resource type: read from on-chain LabBase.resourceType (#27)
         // 0 = physical lab, 1 = FMU simulation
@@ -526,6 +528,18 @@ public class BlockchainBookingService {
         bookingInfo.put("labURL", accessURI);               // Complete URL to access lab
 
         return bookingInfo;
+    }
+
+    private String gatewayIdFromAccessUri(String accessUri) {
+        try {
+            String host = URI.create(accessUri).getHost();
+            if (host == null || host.isBlank()) {
+                throw new IllegalArgumentException("accessURI does not identify a gateway host");
+            }
+            return host.toLowerCase();
+        } catch (RuntimeException ex) {
+            throw new IllegalArgumentException("Invalid gateway accessURI", ex);
+        }
     }
 
     private BigInteger toBigInteger(Object value) {

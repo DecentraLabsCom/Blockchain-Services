@@ -31,8 +31,6 @@ public class GuacamoleProvisioningService {
     private final ObjectMapper objectMapper;
     private final ProvisionerRoute defaultRoute;
     private final Map<String, ProvisionerRoute> routesByKey;
-    private final ProvisionerRoute derivedRouteTemplate;
-    private final String localAccessOrigin;
 
     public record ConnectionMetadata(
         long id,
@@ -75,8 +73,8 @@ public class GuacamoleProvisioningService {
             objectMapper,
             buildDefaultRoute(environment),
             buildRoutesByKey(environment, objectMapper),
-            buildDerivedRouteTemplate(environment),
-            buildLocalAccessOrigin(environment)
+            null,
+            null
         );
     }
 
@@ -110,8 +108,8 @@ public class GuacamoleProvisioningService {
         this.objectMapper = objectMapper;
         this.defaultRoute = defaultRoute;
         this.routesByKey = routesByKey == null ? Map.of() : Map.copyOf(routesByKey);
-        this.derivedRouteTemplate = derivedRouteTemplate;
-        this.localAccessOrigin = normalizeOrigin(localAccessOrigin);
+        // Remote provisioners are intentionally accepted only through routesByKey.
+        // The final parameters remain for source compatibility with focused tests.
     }
 
     public static boolean isGuacamoleSelector(String accessKey) {
@@ -127,7 +125,7 @@ public class GuacamoleProvisioningService {
     }
 
     public boolean isConfigured() {
-        return defaultRoute != null || !routesByKey.isEmpty() || derivedRouteTemplate != null;
+        return defaultRoute != null || !routesByKey.isEmpty();
     }
 
     public ProvisioningResult provisionTemporaryUser(String selector, String sessionId, BigInteger validUntilEpochSeconds) {
@@ -270,11 +268,6 @@ public class GuacamoleProvisioningService {
                     return route;
                 }
             }
-            if (derivedRouteTemplate != null && !origin.equals(localAccessOrigin)) {
-                return new ProvisionerRoute(origin, "/gateway-provisioner/guacamole",
-                    derivedRouteTemplate.tokenHeader(),
-                    derivedRouteTemplate.token());
-            }
         }
         if (defaultRoute != null) {
             return defaultRoute;
@@ -326,29 +319,6 @@ public class GuacamoleProvisioningService {
             return null;
         }
         return new ProvisionerRoute(base, prefix, tokenHeader, token);
-    }
-
-    private static ProvisionerRoute buildDerivedRouteTemplate(Environment environment) {
-        String token = firstText(
-            environment.getProperty("guacamole.provisioner.token"),
-            environment.getProperty("GUACAMOLE_PROVISIONER_TOKEN")
-        );
-        if (!StringUtils.hasText(token)) {
-            return null;
-        }
-        String tokenHeader = firstText(
-            environment.getProperty("guacamole.provisioner.token-header"),
-            environment.getProperty("GUACAMOLE_PROVISIONER_TOKEN_HEADER"),
-            "X-Guacamole-Provisioner-Token"
-        );
-        return new ProvisionerRoute("", "/gateway-provisioner/guacamole", tokenHeader, token);
-    }
-
-    private static String buildLocalAccessOrigin(Environment environment) {
-        String serverName = firstText(environment.getProperty("SERVER_NAME"), "localhost");
-        String httpsPort = firstText(environment.getProperty("HTTPS_PORT"), "443");
-        String portPart = "443".equals(httpsPort) ? "" : ":" + httpsPort;
-        return normalizeOrigin("https://" + serverName + portPart);
     }
 
     private static Map<String, ProvisionerRoute> buildRoutesByKey(Environment environment, ObjectMapper objectMapper) {

@@ -183,7 +183,7 @@ public class SessionStartedOnChainPublisherService {
                 onchain_publish_locked_at = NULL,
                 onchain_publish_last_error = NULL,
                 updated_at = CURRENT_TIMESTAMP
-            WHERE id = ?
+            WHERE id = ? AND onchain_status = 'SUBMITTING'
             """,
             txHash,
             id
@@ -200,7 +200,7 @@ public class SessionStartedOnChainPublisherService {
                 onchain_publish_locked_at = NULL,
                 onchain_publish_last_error = NULL,
                 updated_at = CURRENT_TIMESTAMP
-            WHERE id = ?
+            WHERE id = ? AND onchain_status = 'SUBMITTING'
             """,
             id
         );
@@ -218,7 +218,7 @@ public class SessionStartedOnChainPublisherService {
                 END,
                 onchain_publish_last_error = ?,
                 updated_at = CURRENT_TIMESTAMP
-            WHERE id = ?
+            WHERE id = ? AND onchain_status = 'SUBMITTING'
             """,
             maxPublishAttempts(),
             error,
@@ -265,7 +265,7 @@ public class SessionStartedOnChainPublisherService {
                     markMinedSuccess(record.submission().id(), record.transactionHash());
                     mined++;
                 } else if (state == SessionStartedOnChainClient.TransactionState.FAILED) {
-                    markMinedFailed(record.submission().id(), "SessionStarted transaction reverted on-chain");
+                    markMinedFailed(record.submission().id(), record.transactionHash(), "SessionStarted transaction reverted on-chain");
                 } else if (isStuck(record)) {
                     markPendingRetry(record);
                 }
@@ -284,24 +284,26 @@ public class SessionStartedOnChainPublisherService {
                 onchain_published_at = CURRENT_TIMESTAMP, onchain_mined_at = CURRENT_TIMESTAMP,
                 onchain_publish_locked_at = NULL, onchain_publish_last_error = NULL,
                 updated_at = CURRENT_TIMESTAMP
-            WHERE id = ? AND onchain_status = 'SUBMITTED'
+            WHERE id = ? AND onchain_status = 'SUBMITTED' AND onchain_tx_hash = ?
             """,
             txHash,
-            id
+            id,
+            txHash
         );
     }
 
-    private void markMinedFailed(long id, String error) {
+    private void markMinedFailed(long id, String txHash, String error) {
         jdbcTemplate.update(
             """
             UPDATE session_started_attestations
             SET onchain_status = 'MINED_FAILED', onchain_mined_at = CURRENT_TIMESTAMP,
                 onchain_publish_locked_at = NULL, onchain_publish_last_error = ?,
                 updated_at = CURRENT_TIMESTAMP
-            WHERE id = ? AND onchain_status = 'SUBMITTED'
+            WHERE id = ? AND onchain_status = 'SUBMITTED' AND onchain_tx_hash = ?
             """,
             error,
-            id
+            id,
+            txHash
         );
     }
 
@@ -312,13 +314,14 @@ public class SessionStartedOnChainPublisherService {
             UPDATE session_started_attestations
             SET onchain_status = ?, onchain_publish_locked_at = NULL,
                 onchain_publish_last_error = ?, updated_at = CURRENT_TIMESTAMP
-            WHERE id = ? AND onchain_status = 'SUBMITTED'
+            WHERE id = ? AND onchain_status = 'SUBMITTED' AND onchain_tx_hash = ?
             """,
-            exhausted ? "FAILED" : "RETRY",
+            exhausted ? "STUCK_UNKNOWN" : "RETRY",
             exhausted
                 ? "SessionStarted transaction remained pending after maximum broadcasts"
                 : "SessionStarted transaction is pending; retrying the same nonce with higher gas",
-            record.submission().id()
+            record.submission().id(),
+            record.transactionHash()
         );
     }
 

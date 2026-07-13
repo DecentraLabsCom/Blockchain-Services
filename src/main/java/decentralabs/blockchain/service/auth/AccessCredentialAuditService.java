@@ -33,6 +33,12 @@ public class AccessCredentialAuditService {
     @Value("${access.audit.issuer-backend-id:blockchain-services}")
     private String issuerBackendId;
 
+    @Value("${access.audit.observation-window-tolerance-seconds:30}")
+    private long observationWindowToleranceSeconds = 30L;
+
+    @Value("${access.audit.observation-clock-skew-seconds:120}")
+    private long observationClockSkewSeconds = 120L;
+
     public AccessCredentialAuditService(
         ObjectProvider<JdbcTemplate> jdbcTemplateProvider,
         ObjectProvider<SessionStartedAttestationService> sessionStartedAttestationServiceProvider
@@ -67,6 +73,7 @@ public class AccessCredentialAuditService {
             issuedToken.jti(),
             guacUsername,
             null,
+            normalizeGatewayId(stringValue(bookingInfo, "targetGatewayId")),
             issuedToken.issuedAt(),
             firstNonNull(issuedToken.expiresAt(), epochSecond(bookingInfo.get("exp"))),
             issuerBackendId,
@@ -93,6 +100,7 @@ public class AccessCredentialAuditService {
             stringValue(claims, "jti"),
             null,
             ticketHash,
+            normalizeGatewayId(stringValue(claims, "targetGatewayId")),
             Instant.now().getEpochSecond(),
             expiresAt,
             issuerBackendId,
@@ -134,6 +142,15 @@ public class AccessCredentialAuditService {
         }
 
         Long observedAt = firstNonNull(request.getObservedAt(), Instant.now().getEpochSecond());
+        long now = Instant.now().getEpochSecond();
+        if (Math.abs(now - observedAt) > Math.max(0L, observationClockSkewSeconds)) {
+            log.warn("Rejected access credential observation outside the accepted clock skew");
+            return SessionObservationResult.notRecorded();
+        }
+        String gatewayId = normalizeGatewayId(request.getGatewayId());
+        if (!hasText(gatewayId)) {
+            return SessionObservationResult.notRecorded();
+        }
         String observationType = normalizeAccessType(firstNonBlank(request.getAccessType(), "session"));
         try {
             int updated = jdbcTemplate.update(
@@ -150,9 +167,12 @@ public class AccessCredentialAuditService {
                     OR (? IS NOT NULL AND jwt_jti = ?)
                     OR (? IS NOT NULL AND fmu_ticket_id = ?)
                   )
+                  AND target_gateway_id = ?
+                  AND ? >= DATE_SUB(issued_at, INTERVAL ? SECOND)
+                  AND ? <= DATE_ADD(expires_at, INTERVAL ? SECOND)
                 """,
                 blankToNull(request.getSessionId()),
-                blankToNull(request.getGatewayId()),
+                gatewayId,
                 toTimestamp(observedAt),
                 observationType,
                 request.getReservationKey(),
@@ -161,7 +181,12 @@ public class AccessCredentialAuditService {
                 blankToNull(request.getJwtJti()),
                 blankToNull(request.getJwtJti()),
                 blankToNull(request.getFmuTicketId()),
-                blankToNull(request.getFmuTicketId())
+                blankToNull(request.getFmuTicketId()),
+                gatewayId,
+                toTimestamp(observedAt),
+                Math.max(0L, observationWindowToleranceSeconds),
+                toTimestamp(observedAt),
+                Math.max(0L, observationWindowToleranceSeconds)
             );
             if (updated > 0) {
                 return new SessionObservationResult(
@@ -203,6 +228,7 @@ public class AccessCredentialAuditService {
                 """
                 SELECT reservation_key, lab_id, puc_hash, access_type, jwt_jti,
                        guac_username, fmu_ticket_id, session_id, gateway_id,
+                       target_gateway_id,
                        issued_at, expires_at, session_observed_at,
                        session_observation_type, issuer_backend_id, credential_hash
                 FROM access_credential_audit
@@ -230,9 +256,9 @@ public class AccessCredentialAuditService {
                 """
                 INSERT INTO access_credential_audit (
                     reservation_key, lab_id, puc_hash, access_type, jwt_jti,
-                    guac_username, fmu_ticket_id, issued_at, expires_at,
+                    guac_username, fmu_ticket_id, target_gateway_id, issued_at, expires_at,
                     issuer_backend_id, credential_hash
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON DUPLICATE KEY UPDATE
                     expires_at = VALUES(expires_at),
                     issuer_backend_id = VALUES(issuer_backend_id),
@@ -245,6 +271,7 @@ public class AccessCredentialAuditService {
                 record.jwtJti(),
                 record.guacUsername(),
                 record.fmuTicketId(),
+                record.targetGatewayId(),
                 toTimestamp(record.issuedAt()),
                 toTimestamp(record.expiresAt()),
                 record.issuerBackendId(),
@@ -268,6 +295,7 @@ public class AccessCredentialAuditService {
             rs.getString("fmu_ticket_id"),
             rs.getString("session_id"),
             rs.getString("gateway_id"),
+            rs.getString("target_gateway_id"),
             epochSecond(rs.getTimestamp("issued_at")),
             epochSecond(rs.getTimestamp("expires_at")),
             epochSecond(rs.getTimestamp("session_observed_at")),
@@ -292,6 +320,10 @@ public class AccessCredentialAuditService {
     }
 
     private String normalizeAccessType(String value) {
+        return hasText(value) ? value.trim().toLowerCase(Locale.ROOT) : null;
+    }
+
+    private String normalizeGatewayId(String value) {
         return hasText(value) ? value.trim().toLowerCase(Locale.ROOT) : null;
     }
 
@@ -374,6 +406,7 @@ public class AccessCredentialAuditService {
         String jwtJti,
         String guacUsername,
         String fmuTicketId,
+        String targetGatewayId,
         Long issuedAt,
         Long expiresAt,
         String issuerBackendId,
@@ -390,6 +423,7 @@ public class AccessCredentialAuditService {
         String fmuTicketId,
         String sessionId,
         String gatewayId,
+        String targetGatewayId,
         Long issuedAt,
         Long expiresAt,
         Long sessionObservedAt,
@@ -397,6 +431,17 @@ public class AccessCredentialAuditService {
         String issuerBackendId,
         String credentialHash
     ) {
+        public AuditEntry(
+            String reservationKey, String labId, String pucHash, String accessType,
+            String jwtJti, String guacUsername, String fmuTicketId, String sessionId,
+            String gatewayId, Long issuedAt, Long expiresAt, Long sessionObservedAt,
+            String sessionObservationType, String issuerBackendId, String credentialHash
+        ) {
+            this(reservationKey, labId, pucHash, accessType, jwtJti, guacUsername,
+                fmuTicketId, sessionId, gatewayId, null, issuedAt, expiresAt,
+                sessionObservedAt, sessionObservationType, issuerBackendId, credentialHash);
+        }
+
         public boolean sessionObserved() {
             return sessionObservedAt != null;
         }

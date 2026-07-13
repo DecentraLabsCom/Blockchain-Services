@@ -10,4 +10,9 @@ import lombok.Getter;
 public class AccessCodeResponse {
     private final String accessCode;
     private final String labURL;
+    private final String resourceType;
+
+    public AccessCodeResponse(String accessCode, String labURL) {
+        this(accessCode, labURL, null);
+    }
 }

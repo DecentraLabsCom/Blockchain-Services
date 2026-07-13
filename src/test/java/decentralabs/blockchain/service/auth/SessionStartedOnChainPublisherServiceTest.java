@@ -69,7 +69,7 @@ class SessionStartedOnChainPublisherServiceTest {
 
         assertThat(service.publishPending(10)).isEqualTo(1);
 
-        verify(jdbcTemplate).update(contains("onchain_status = 'MINED_SUCCESS'"), eq(hash), eq(7L));
+        verify(jdbcTemplate).update(contains("onchain_status = 'MINED_SUCCESS'"), eq(hash), eq(7L), eq(hash));
         verify(transactionDispatcher, never()).dispatch(anyString(), any(), any(), any(), any());
     }
 

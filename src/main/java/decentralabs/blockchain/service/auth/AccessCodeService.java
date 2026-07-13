@@ -32,6 +32,7 @@ public class AccessCodeService {
     private static final String TABLE = "lab_access_codes";
     private final JdbcTemplate jdbcTemplate;
     private final JwtService jwtService;
+    private final AccessCodeTokenCipher tokenCipher;
     private final SecureRandom random = new SecureRandom();
     private final ConcurrentMap<String, CodeRecord> memory = new ConcurrentHashMap<>();
     private final ConcurrentMap<String, String> memoryDeliveries = new ConcurrentHashMap<>();
@@ -39,15 +40,27 @@ public class AccessCodeService {
     @Value("${auth.access-code.ttl-seconds:60}")
     private long ttlSeconds = 60;
 
-    public AccessCodeService(ObjectProvider<JdbcTemplate> jdbcTemplateProvider, JwtService jwtService) {
+    public AccessCodeService(
+        ObjectProvider<JdbcTemplate> jdbcTemplateProvider,
+        JwtService jwtService,
+        AccessCodeTokenCipher tokenCipher
+    ) {
         this.jdbcTemplate = jdbcTemplateProvider.getIfAvailable();
         this.jwtService = jwtService;
+        this.tokenCipher = tokenCipher;
     }
 
+    /** Backward-compatible constructor for in-memory unit tests. */
+    AccessCodeService(ObjectProvider<JdbcTemplate> jdbcTemplateProvider, JwtService jwtService) {
+        this(jdbcTemplateProvider, jwtService, new AccessCodeTokenCipher(""));
+    }
+
+    @Transactional
     public AccessCodeResponse issue(String token) {
         return issueInternal(token, null, null);
     }
 
+    @Transactional
     public AccessCodeResponse issue(String token, String reservationKey, long provisioningGeneration) {
         if (reservationKey == null || reservationKey.isBlank() || provisioningGeneration < 1) {
             throw new IllegalArgumentException("reservationKey and provisioningGeneration are required");
@@ -57,12 +70,15 @@ public class AccessCodeService {
 
     private AccessCodeResponse issueInternal(String token, String reservationKey, Long provisioningGeneration) {
         ValidatedCredential credential = validatedAccessCredential(token);
-        long expiresAt = Instant.now().plusSeconds(Math.max(1, ttlSeconds)).getEpochSecond();
+        long now = Instant.now().getEpochSecond();
+        long expiresAt = boundedCodeExpiry(now, credential.expiresAt());
         String code = generateCode();
         CodeRecord record = new CodeRecord(
             code,
             token,
             credential.labURL(),
+            credential.resourceType(),
+            credential.targetGatewayId(),
             expiresAt,
             credential.expiresAt(),
             reservationKey,
@@ -77,7 +93,7 @@ public class AccessCodeService {
         } else {
             persist(code, record);
         }
-        return new AccessCodeResponse(code, credential.labURL());
+        return new AccessCodeResponse(code, credential.labURL(), credential.resourceType());
     }
 
     /** Returns the exact unconsumed delivery, refreshing only its opaque code after code expiry. */
@@ -97,23 +113,24 @@ public class AccessCodeService {
                 return null;
             }
             if (now < record.expiresAt()) {
-                return new AccessCodeResponse(record.code(), record.labURL());
+                return new AccessCodeResponse(record.code(), record.labURL(), record.resourceType());
             }
             String refreshed = generateCode();
             CodeRecord refreshedRecord = new CodeRecord(
-                refreshed, record.token(), record.labURL(),
-                Instant.now().plusSeconds(Math.max(1, ttlSeconds)).getEpochSecond(),
+                refreshed, record.token(), record.labURL(), record.resourceType(), record.targetGatewayId(),
+                boundedCodeExpiry(now, record.credentialExpiresAt()),
                 record.credentialExpiresAt(), reservationKey, provisioningGeneration
             );
             memory.remove(codeHash);
             String refreshedHash = hash(refreshed);
             memory.put(refreshedHash, refreshedRecord);
             memoryDeliveries.put(key, refreshedHash);
-            return new AccessCodeResponse(refreshed, record.labURL());
+            return new AccessCodeResponse(refreshed, record.labURL(), record.resourceType());
         }
         return recoverPersistedDelivery(reservationKey, provisioningGeneration, now);
     }
 
+    @Transactional
     public void revoke(String code) {
         if (code == null || code.isBlank()) return;
         String codeHash = hash(code.trim());
@@ -123,31 +140,65 @@ public class AccessCodeService {
                 memoryDeliveries.remove(deliveryKey(removed.reservationKey(), removed.provisioningGeneration()));
             }
         } else {
-            jdbcTemplate.update("DELETE FROM " + TABLE + " WHERE code_hash = ?", codeHash);
+            jdbcTemplate.query(
+                "SELECT reservation_key, provisioning_generation FROM " + TABLE + " WHERE code_hash = ? FOR UPDATE",
+                ps -> ps.setString(1, codeHash),
+                rs -> {
+                    if (!rs.next()) return null;
+                    String reservationKey = rs.getString(1);
+                    Long generation = rs.getObject(2) == null ? null : rs.getLong(2);
+                    if (reservationKey == null || generation == null) {
+                        jdbcTemplate.update("DELETE FROM " + TABLE + " WHERE code_hash = ?", codeHash);
+                    } else {
+                        jdbcTemplate.update(
+                            "UPDATE " + TABLE + " SET consumed_at = CURRENT_TIMESTAMP, recoverable_code = NULL, "
+                                + "recoverable_code_ciphertext = NULL, "
+                                + "access_token = NULL, access_token_ciphertext = NULL WHERE code_hash = ?",
+                            codeHash
+                        );
+                        markProvisioningState(reservationKey, generation, "REVOKED", "CODE_PERSISTED", "DELIVERED");
+                    }
+                    return null;
+                }
+            );
         }
     }
 
     @Transactional
     public AuthResponse redeem(String code) {
+        return redeem(code, null);
+    }
+
+    @Transactional
+    public AuthResponse redeem(String code, String gatewayId) {
         if (code == null || code.isBlank()) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "accessCode is required");
         }
         String normalized = code.trim();
         long now = Instant.now().getEpochSecond();
         String codeHash = hash(normalized);
-        CodeRecord record = inMemoryMode()
-            ? memory.remove(codeHash)
-            : consumePersisted(normalized, now);
+        CodeRecord record;
+        if (inMemoryMode()) {
+            record = memory.get(codeHash);
+            enforceTargetGateway(record, gatewayId);
+            if (record != null) {
+                memory.remove(codeHash, record);
+            }
+        } else {
+            record = consumePersisted(normalized, now, gatewayId);
+            enforceTargetGateway(record, gatewayId);
+        }
         if (record == null || now >= record.expiresAt()) {
             throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Invalid or expired access code");
         }
         if (inMemoryMode() && record.reservationKey() != null) {
             memoryDeliveries.remove(deliveryKey(record.reservationKey(), record.provisioningGeneration()));
         }
-        return new AuthResponse(record.token(), record.labURL());
+        return new AuthResponse(record.token(), record.labURL(), null, record.resourceType());
     }
 
     @Scheduled(fixedDelayString = "${auth.access-code.cleanup-interval-ms:30000}")
+    @Transactional
     public void cleanupExpired() {
         long now = Instant.now().getEpochSecond();
         if (inMemoryMode()) {
@@ -163,6 +214,15 @@ public class AccessCodeService {
         } else {
             try {
                 jdbcTemplate.update(
+                    "UPDATE access_authorization_provisioning p JOIN " + TABLE + " c "
+                        + "ON c.reservation_key = p.reservation_key "
+                        + "AND c.provisioning_generation = p.generation "
+                        + "SET p.status = 'REVOKED', p.updated_at = CURRENT_TIMESTAMP "
+                        + "WHERE c.credential_expires_at <= FROM_UNIXTIME(?) "
+                        + "AND p.status IN ('CODE_PERSISTED', 'DELIVERED')",
+                    now
+                );
+                jdbcTemplate.update(
                     "DELETE FROM " + TABLE + " WHERE "
                         + "(reservation_key IS NULL AND expires_at <= FROM_UNIXTIME(?)) "
                         + "OR (reservation_key IS NOT NULL AND credential_expires_at <= FROM_UNIXTIME(?))",
@@ -177,52 +237,78 @@ public class AccessCodeService {
 
     private void persist(String code, CodeRecord record) {
         try {
+            String encryptedToken = tokenCipher.encrypt(record.token());
+            if (record.reservationKey() != null) {
+                jdbcTemplate.update(
+                    "UPDATE " + TABLE + " SET consumed_at = CURRENT_TIMESTAMP, recoverable_code = NULL, "
+                        + "recoverable_code_ciphertext = NULL, "
+                        + "access_token = NULL, access_token_ciphertext = NULL "
+                        + "WHERE reservation_key = ? AND provisioning_generation <> ? AND consumed_at IS NULL",
+                    record.reservationKey(), record.provisioningGeneration()
+                );
+            }
             jdbcTemplate.update(
-                "INSERT INTO " + TABLE + " (code_hash, access_token, lab_url, expires_at, "
-                    + "reservation_key, provisioning_generation, recoverable_code, credential_expires_at) "
-                    + "VALUES (?, ?, ?, FROM_UNIXTIME(?), ?, ?, ?, FROM_UNIXTIME(?))",
-                hash(code), record.token(), record.labURL(), record.expiresAt(),
+                "INSERT INTO " + TABLE + " (code_hash, access_token, access_token_ciphertext, lab_url, resource_type, "
+                    + "target_gateway_id, expires_at, reservation_key, provisioning_generation, recoverable_code, "
+                    + "recoverable_code_ciphertext, credential_expires_at) "
+                    + "VALUES (?, NULL, ?, ?, ?, ?, FROM_UNIXTIME(?), ?, ?, NULL, ?, FROM_UNIXTIME(?))",
+                hash(code), encryptedToken, record.labURL(), record.resourceType(), record.targetGatewayId(), record.expiresAt(),
                 record.reservationKey(), record.provisioningGeneration(),
-                record.reservationKey() != null ? code : null,
+                record.reservationKey() != null ? tokenCipher.encrypt(code) : null,
                 record.credentialExpiresAt()
             );
-        } catch (DataAccessException ex) {
+            if (record.reservationKey() != null && !markProvisioningState(
+                record.reservationKey(), record.provisioningGeneration(), "CODE_PERSISTED", "ACTIVATED"
+            )) {
+                throw new IllegalStateException("Provisioning generation is not active for access-code persistence");
+            }
+        } catch (DataAccessException | IllegalStateException ex) {
             throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "Access-code persistence unavailable", ex);
         }
     }
 
-    private CodeRecord consumePersisted(String code, long now) {
+    private CodeRecord consumePersisted(String code, long now, String gatewayId) {
         String hash = hash(code);
+        String normalizedGatewayId = gatewayId == null ? null : gatewayId.trim().toLowerCase();
         try {
             return jdbcTemplate.query(
-                "SELECT access_token, lab_url, UNIX_TIMESTAMP(expires_at), reservation_key, "
-                    + "provisioning_generation, UNIX_TIMESTAMP(credential_expires_at), recoverable_code FROM " + TABLE
-                    + " WHERE code_hash = ? AND consumed_at IS NULL AND expires_at > FROM_UNIXTIME(?) FOR UPDATE",
-                ps -> { ps.setString(1, hash); ps.setLong(2, now); },
+                "SELECT access_token_ciphertext, lab_url, resource_type, target_gateway_id, UNIX_TIMESTAMP(expires_at), "
+                    + "reservation_key, provisioning_generation, UNIX_TIMESTAMP(credential_expires_at) FROM " + TABLE
+                    + " WHERE code_hash = ? AND target_gateway_id = ? AND consumed_at IS NULL "
+                    + "AND expires_at > FROM_UNIXTIME(?) FOR UPDATE",
+                ps -> { ps.setString(1, hash); ps.setString(2, normalizedGatewayId); ps.setLong(3, now); },
                 rs -> {
                     if (!rs.next()) return null;
-                    String reservationKey = rs.getString(4);
-                    Long generation = rs.getObject(5) != null ? rs.getLong(5) : null;
-                    long credentialExpiresAt = rs.getObject(6) != null ? rs.getLong(6) : rs.getLong(3);
+                    String reservationKey = rs.getString(6);
+                    Long generation = rs.getObject(7) != null ? rs.getLong(7) : null;
+                    long credentialExpiresAt = rs.getObject(8) != null ? rs.getLong(8) : rs.getLong(5);
                     CodeRecord record = new CodeRecord(
-                        rs.getString(7), rs.getString(1), rs.getString(2), rs.getLong(3),
+                        code, tokenCipher.decrypt(rs.getString(1)), rs.getString(2), rs.getString(3),
+                        rs.getString(4), rs.getLong(5),
                         credentialExpiresAt, reservationKey, generation
                     );
                     if (reservationKey == null) {
                         jdbcTemplate.update("DELETE FROM " + TABLE + " WHERE code_hash = ?", hash);
                     } else {
                         jdbcTemplate.update(
-                            "UPDATE " + TABLE + " SET consumed_at = CURRENT_TIMESTAMP, recoverable_code = NULL "
+                            "UPDATE " + TABLE + " SET consumed_at = CURRENT_TIMESTAMP, recoverable_code = NULL, "
+                                + "recoverable_code_ciphertext = NULL, "
+                                + "access_token = NULL, access_token_ciphertext = NULL "
                                 + "WHERE code_hash = ? AND consumed_at IS NULL",
                             hash
                         );
+                        if (!markProvisioningState(
+                            reservationKey, generation, "CONSUMED", "DELIVERED", "CODE_PERSISTED"
+                        )) {
+                            throw new IllegalStateException("Access delivery generation is not consumable");
+                        }
                     }
                     return record;
                 }
             );
         } catch (EmptyResultDataAccessException ex) {
             return null;
-        } catch (DataAccessException ex) {
+        } catch (DataAccessException | IllegalStateException ex) {
             throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "Access-code persistence unavailable", ex);
         }
     }
@@ -230,7 +316,7 @@ public class AccessCodeService {
     private AccessCodeResponse recoverPersistedDelivery(String reservationKey, long generation, long now) {
         try {
             return jdbcTemplate.query(
-                "SELECT code_hash, recoverable_code, access_token, lab_url, UNIX_TIMESTAMP(expires_at), "
+                "SELECT code_hash, recoverable_code_ciphertext, lab_url, resource_type, target_gateway_id, UNIX_TIMESTAMP(expires_at), "
                     + "UNIX_TIMESTAMP(credential_expires_at) FROM " + TABLE
                     + " WHERE reservation_key = ? AND provisioning_generation = ? AND consumed_at IS NULL "
                     + "AND credential_expires_at > FROM_UNIXTIME(?) FOR UPDATE",
@@ -241,22 +327,24 @@ public class AccessCodeService {
                 },
                 rs -> {
                     if (!rs.next()) return null;
-                    String code = rs.getString(2);
-                    String labURL = rs.getString(4);
-                    if (code != null && now < rs.getLong(5)) {
-                        return new AccessCodeResponse(code, labURL);
+                    String code = rs.getString(2) == null ? null : tokenCipher.decrypt(rs.getString(2));
+                    String labURL = rs.getString(3);
+                    String resourceType = rs.getString(4);
+                    if (code != null && now < rs.getLong(6)) {
+                        return new AccessCodeResponse(code, labURL, resourceType);
                     }
                     String refreshed = generateCode();
-                    long refreshedExpiry = Instant.now().plusSeconds(Math.max(1, ttlSeconds)).getEpochSecond();
+                    long refreshedExpiry = boundedCodeExpiry(now, rs.getLong(7));
                     int updated = jdbcTemplate.update(
-                        "UPDATE " + TABLE + " SET code_hash = ?, recoverable_code = ?, expires_at = FROM_UNIXTIME(?) "
+                        "UPDATE " + TABLE + " SET code_hash = ?, recoverable_code = NULL, "
+                            + "recoverable_code_ciphertext = ?, expires_at = FROM_UNIXTIME(?) "
                             + "WHERE code_hash = ? AND consumed_at IS NULL",
-                        hash(refreshed), refreshed, refreshedExpiry, rs.getString(1)
+                        hash(refreshed), tokenCipher.encrypt(refreshed), refreshedExpiry, rs.getString(1)
                     );
-                    return updated == 1 ? new AccessCodeResponse(refreshed, labURL) : null;
+                    return updated == 1 ? new AccessCodeResponse(refreshed, labURL, resourceType) : null;
                 }
             );
-        } catch (DataAccessException ex) {
+        } catch (DataAccessException | IllegalStateException ex) {
             throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "Access delivery recovery unavailable", ex);
         }
     }
@@ -274,18 +362,61 @@ public class AccessCodeService {
         String resourceType = stringClaim(claims, "resourceType");
         String labURL = stringClaim(claims, "labURL");
         String audience = stringClaim(claims, "aud");
+        String targetGatewayId = stringClaim(claims, "targetGatewayId");
         if (!isAllowedAccessUrl(labURL, resourceType) || !sameUrl(labURL, audience)) {
             throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Invalid access credential destination");
         }
+        if (targetGatewayId == null || targetGatewayId.isBlank()) {
+            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Access credential has no target gateway");
+        }
         long now = Instant.now().getEpochSecond();
         Object expClaim = claims.get("exp");
-        long credentialExpiresAt = expClaim instanceof Number number
-            ? number.longValue()
-            : now + Math.max(60L, ttlSeconds);
+        long credentialExpiresAt;
+        if (expClaim instanceof Number number) {
+            credentialExpiresAt = number.longValue();
+        } else if (expClaim instanceof java.util.Date date) {
+            credentialExpiresAt = date.toInstant().getEpochSecond();
+        } else {
+            credentialExpiresAt = now + Math.max(60L, ttlSeconds);
+        }
         if (credentialExpiresAt <= now) {
             throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Expired access credential");
         }
-        return new ValidatedCredential(labURL, credentialExpiresAt);
+        return new ValidatedCredential(
+            labURL, resourceType, targetGatewayId.trim().toLowerCase(), credentialExpiresAt
+        );
+    }
+
+    long boundedCodeExpiry(long now, long credentialExpiresAt) {
+        return Math.min(now + Math.max(1, ttlSeconds), credentialExpiresAt);
+    }
+
+    private boolean markProvisioningState(
+        String reservationKey, Long generation, String targetStatus, String... allowedStatuses
+    ) {
+        if (reservationKey == null || generation == null) return false;
+        String placeholders = String.join(", ", java.util.Collections.nCopies(allowedStatuses.length, "?"));
+        Object[] parameters = new Object[3 + allowedStatuses.length];
+        parameters[0] = targetStatus;
+        parameters[1] = reservationKey;
+        parameters[2] = generation;
+        System.arraycopy(allowedStatuses, 0, parameters, 3, allowedStatuses.length);
+        return jdbcTemplate.update(
+            "UPDATE access_authorization_provisioning SET status = ?, updated_at = CURRENT_TIMESTAMP "
+                + "WHERE reservation_key = ? AND generation = ? AND status IN (" + placeholders + ")",
+            parameters
+        ) == 1;
+    }
+
+    private void enforceTargetGateway(CodeRecord record, String gatewayId) {
+        if (record == null) {
+            return;
+        }
+        String expected = record.targetGatewayId();
+        String actual = gatewayId == null ? null : gatewayId.trim().toLowerCase();
+        if (expected == null || expected.isBlank() || !expected.equals(actual)) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Access code is not valid for this gateway");
+        }
     }
 
     private boolean inMemoryMode() {
@@ -347,12 +478,14 @@ public class AccessCodeService {
         }
     }
 
-    private record ValidatedCredential(String labURL, long expiresAt) { }
+    private record ValidatedCredential(String labURL, String resourceType, String targetGatewayId, long expiresAt) { }
 
     private record CodeRecord(
         String code,
         String token,
         String labURL,
+        String resourceType,
+        String targetGatewayId,
         long expiresAt,
         long credentialExpiresAt,
         String reservationKey,

@@ -5,7 +5,6 @@ import decentralabs.blockchain.service.auth.AccessCredentialAuditService;
 import decentralabs.blockchain.service.auth.SessionStartedAttestationService;
 import java.util.List;
 import java.util.Map;
-import java.util.Objects;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
@@ -31,7 +30,7 @@ public class AccessCredentialAuditController {
     ) {
         String authenticatedGateway = authentication != null ? authentication.getName() : null;
         if (request != null && hasText(authenticatedGateway)) {
-            if (hasText(request.getGatewayId()) && !Objects.equals(authenticatedGateway, request.getGatewayId())) {
+            if (hasText(request.getGatewayId()) && !authenticatedGateway.equalsIgnoreCase(request.getGatewayId())) {
                 return ResponseEntity.status(403).body(Map.of(
                     "code", "GATEWAY_ID_MISMATCH",
                     "error", "gatewayId does not match the authenticated observer"

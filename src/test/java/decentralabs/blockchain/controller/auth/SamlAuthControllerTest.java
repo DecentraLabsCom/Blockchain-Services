@@ -256,7 +256,9 @@ class SamlAuthControllerTest {
             request.setMarketplaceToken("marketplace-token");
             request.setReservationKey("0x" + "a".repeat(64));
 
-            AuthResponse response = new AuthResponse("provider-jwt", "https://lab.example.com");
+            AuthResponse response = AuthResponse.opaqueAccess(
+                "opaque-code", "https://lab.example.com/fmu/", "fmu", "0xcanonical"
+            );
             when(samlAuthService.issueAccessCredential(any(ProviderAccessCredentialRequest.class)))
                 .thenReturn(response);
 
@@ -264,8 +266,11 @@ class SamlAuthControllerTest {
                     .contentType(MediaType.APPLICATION_JSON)
                     .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.token").value("provider-jwt"))
-                .andExpect(jsonPath("$.labURL").value("https://lab.example.com"));
+                .andExpect(jsonPath("$.token").doesNotExist())
+                .andExpect(jsonPath("$.accessCode").value("opaque-code"))
+                .andExpect(jsonPath("$.labURL").value("https://lab.example.com/fmu/"))
+                .andExpect(jsonPath("$.resourceType").value("fmu"))
+                .andExpect(jsonPath("$.reservationKey").value("0xcanonical"));
         }
     }
 

@@ -157,10 +157,14 @@ class InstitutionalConcurrencyMySqlIntegrationTest {
             "resourceType", "lab",
             "labURL", "https://lab.example/guacamole/",
             "aud", "https://lab.example/guacamole/",
+            "targetGatewayId", "lab.example",
             "exp", Instant.now().plusSeconds(600).getEpochSecond()
         ));
-        AccessCodeService replicaA = new AccessCodeService(provider(new JdbcTemplate(dataSource)), jwtService);
-        AccessCodeService replicaB = new AccessCodeService(provider(new JdbcTemplate(dataSource)), jwtService);
+        AccessCodeTokenCipher cipher = new AccessCodeTokenCipher(
+            "MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY"
+        );
+        AccessCodeService replicaA = new AccessCodeService(provider(new JdbcTemplate(dataSource)), jwtService, cipher);
+        AccessCodeService replicaB = new AccessCodeService(provider(new JdbcTemplate(dataSource)), jwtService, cipher);
         String code = replicaA.issue("signed-jwt").getAccessCode();
 
         List<Boolean> redeemed = runConcurrently(
@@ -177,7 +181,7 @@ class InstitutionalConcurrencyMySqlIntegrationTest {
 
     private boolean redeem(AccessCodeService service, String code) {
         try {
-            AuthResponse response = inTransaction(() -> service.redeem(code));
+            AuthResponse response = inTransaction(() -> service.redeem(code, "lab.example"));
             return response != null && "signed-jwt".equals(response.getToken());
         } catch (ResponseStatusException ex) {
             return false;

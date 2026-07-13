@@ -128,6 +128,10 @@ public class InstitutionalCheckInService {
             computePucHash(puc),
             reservationKey
         );
+        if ("MINED_FAILED".equals(record.status()) || "FAILED".equals(record.status())) {
+            // The booking, payer and institutional identity were fully revalidated above.
+            record = outboxService.restartTerminalFailure(record.id());
+        }
         if (outboxService.claim(record.id())) {
             try {
                 return nonceDispatcher.dispatch(record);

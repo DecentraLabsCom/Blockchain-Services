@@ -12,6 +12,7 @@ import decentralabs.blockchain.dto.auth.AccessCredentialSessionObservedRequest;
 import decentralabs.blockchain.dto.auth.SamlAuthRequest;
 import java.math.BigInteger;
 import java.sql.Timestamp;
+import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
@@ -122,9 +123,10 @@ class AccessCredentialAuditServiceTest {
         request.setAccessType("guacamole");
         request.setSessionId("guac-session-1");
         request.setGatewayId("gateway-a");
-        request.setObservedAt(1_700_010_000L);
+        long observedAt = Instant.now().getEpochSecond();
+        request.setObservedAt(observedAt);
 
-        when(sessionStartedAttestationService.recordSessionStarted(request, 1_700_010_000L, "guacamole"))
+        when(sessionStartedAttestationService.recordSessionStarted(request, observedAt, "guacamole"))
             .thenReturn(true);
 
         AccessCredentialAuditService.SessionObservationResult result = service.recordSessionObserved(request);
@@ -136,7 +138,22 @@ class AccessCredentialAuditServiceTest {
         org.assertj.core.api.Assertions.assertThat(args.getValue())
             .contains("guac-session-1", "gateway-a", "guacamole", "0xabc", "jwt-jti")
             .doesNotContain("secret.jwt.value");
-        verify(sessionStartedAttestationService).recordSessionStarted(request, 1_700_010_000L, "guacamole");
+        verify(sessionStartedAttestationService).recordSessionStarted(request, observedAt, "guacamole");
+    }
+
+    @Test
+    void shouldRejectAnObservationOutsideTheAcceptedClockSkew() {
+        AccessCredentialAuditService service = buildService(jdbcTemplate);
+        AccessCredentialSessionObservedRequest request = new AccessCredentialSessionObservedRequest();
+        request.setReservationKey("0xabc");
+        request.setJwtJti("jwt-jti");
+        request.setGatewayId("gateway-a");
+        request.setObservedAt(Instant.now().minusSeconds(121).getEpochSecond());
+
+        AccessCredentialAuditService.SessionObservationResult result = service.recordSessionObserved(request);
+
+        org.assertj.core.api.Assertions.assertThat(result.recorded()).isFalse();
+        verify(jdbcTemplate, never()).update(anyString(), any(Object[].class));
     }
 
     @Test
@@ -151,6 +168,7 @@ class AccessCredentialAuditServiceTest {
         request.setReservationKey("0xabc");
         request.setJwtJti("jwt-jti");
         request.setSessionId("guac-session-1");
+        request.setGatewayId("gateway-a");
 
         AccessCredentialAuditService.SessionObservationResult result = service.recordSessionObserved(request);
 
@@ -169,10 +187,10 @@ class AccessCredentialAuditServiceTest {
 
         boolean recorded = service.recordFmuTicketRedeemed(
             "st_secret_ticket",
-            Map.of("reservationKey", "0xabc"),
+            Map.of("reservationKey", "0xabc", "targetGatewayId", "gateway-a"),
             "sess-fmu-1",
             "gateway-a",
-            1_700_010_000L
+            Instant.now().getEpochSecond()
         );
 
         org.assertj.core.api.Assertions.assertThat(recorded).isTrue();
@@ -199,6 +217,7 @@ class AccessCredentialAuditServiceTest {
                 when(rs.getString("fmu_ticket_id")).thenReturn(null);
                 when(rs.getString("session_id")).thenReturn("guac-session-1");
                 when(rs.getString("gateway_id")).thenReturn("gateway-a");
+                when(rs.getString("target_gateway_id")).thenReturn("gateway-a");
                 when(rs.getTimestamp("issued_at")).thenReturn(Timestamp.from(java.time.Instant.ofEpochSecond(1_700_000_000L)));
                 when(rs.getTimestamp("expires_at")).thenReturn(Timestamp.from(java.time.Instant.ofEpochSecond(1_700_003_600L)));
                 when(rs.getTimestamp("session_observed_at")).thenReturn(Timestamp.from(java.time.Instant.ofEpochSecond(1_700_010_000L)));
@@ -222,6 +241,8 @@ class AccessCredentialAuditServiceTest {
             sessionStartedAttestationServiceProvider
         );
         ReflectionTestUtils.setField(service, "issuerBackendId", "test-backend");
+        ReflectionTestUtils.setField(service, "observationWindowToleranceSeconds", 30L);
+        ReflectionTestUtils.setField(service, "observationClockSkewSeconds", 120L);
         return service;
     }
 

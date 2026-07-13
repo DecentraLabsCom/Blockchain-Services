@@ -182,7 +182,7 @@ class GuacamoleProvisioningServiceTest {
     }
 
     @Test
-    void sharedProvisionerTokenDerivesRouteFromAccessUriWhenNoRouteMapExists() throws Exception {
+    void sharedProvisionerTokenDoesNotDeriveRemoteRouteFromAccessUri() throws Exception {
         server = startServer();
         AtomicInteger calls = new AtomicInteger();
         server.createContext("/gateway-provisioner/guacamole/provision", exchange -> {
@@ -202,9 +202,11 @@ class GuacamoleProvisioningServiceTest {
             .withProperty("GUACAMOLE_PROVISIONER_TOKEN", "shared-secret");
         GuacamoleProvisioningService service = new GuacamoleProvisioningService(environment, new ObjectMapper());
 
-        service.provisionTemporaryUser("guac:id:42", "session-a", BigInteger.valueOf(1_800_000_000L), base + "/guacamole");
+        assertThatThrownBy(() -> service.provisionTemporaryUser(
+            "guac:id:42", "session-a", BigInteger.valueOf(1_800_000_000L), base + "/guacamole"
+        )).isInstanceOf(IllegalStateException.class);
 
-        assertThat(calls).hasValue(1);
+        assertThat(calls).hasValue(0);
     }
 
     @Test

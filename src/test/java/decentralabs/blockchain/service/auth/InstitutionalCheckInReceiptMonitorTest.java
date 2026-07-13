@@ -34,7 +34,7 @@ class InstitutionalCheckInReceiptMonitorTest {
 
         monitor.monitor(record);
 
-        verify(outboxService).markRetry(eq(3L), eq(3), any(Instant.class), eq("Check-in transaction is still pending; retrying with the same nonce and higher gas"));
+        verify(outboxService).markSubmittedRetry(eq(record), eq(3), any(Instant.class), eq("Check-in transaction is still pending; retrying with the same nonce and higher gas"));
     }
 
     @Test
@@ -50,11 +50,11 @@ class InstitutionalCheckInReceiptMonitorTest {
 
         monitor.monitor(record);
 
-        verify(outboxService).markFailed(
-            4L,
+        verify(outboxService).markStuckUnknown(
+            record,
             8,
             "Check-in transaction remained pending after the maximum number of broadcasts"
         );
-        verify(outboxService, never()).markRetry(eq(4L), eq(8), any(Instant.class), any(String.class));
+        verify(outboxService, never()).markSubmittedRetry(eq(record), eq(8), any(Instant.class), any(String.class));
     }
 }

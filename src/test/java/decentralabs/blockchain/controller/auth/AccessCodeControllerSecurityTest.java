@@ -24,11 +24,11 @@ class AccessCodeControllerSecurityTest {
             mock(InstitutionalCheckInService.class),
             accessCodeService
         );
-        ReflectionTestUtils.setField(controller, "accessCodeRedeemerToken", "redeemer-secret");
+        ReflectionTestUtils.setField(controller, "accessCodeRedeemerCredentialsJson", "{\"gateway.example\":\"redeemer-secret\"}");
         AccessCodeRedeemRequest request = new AccessCodeRedeemRequest();
         request.setAccessCode("opaque-code");
 
-        var response = controller.redeemAccessCode(null, request);
+        var response = controller.redeemAccessCode(null, "gateway.example", request);
 
         assertThat(response.getStatusCode().value()).isEqualTo(403);
         verifyNoInteractions(accessCodeService);
@@ -42,14 +42,15 @@ class AccessCodeControllerSecurityTest {
             mock(InstitutionalCheckInService.class),
             accessCodeService
         );
-        ReflectionTestUtils.setField(controller, "accessCodeRedeemerToken", "redeemer-secret");
+        ReflectionTestUtils.setField(controller, "accessCodeRedeemerCredentialsJson", "{\"gateway.example\":\"redeemer-secret\"}");
         AccessCodeRedeemRequest request = new AccessCodeRedeemRequest();
         request.setAccessCode("opaque-code");
-        when(accessCodeService.redeem("opaque-code")).thenReturn(new AuthResponse("jwt", "https://lab.example/guacamole/"));
+        when(accessCodeService.redeem("opaque-code", "gateway.example"))
+            .thenReturn(new AuthResponse("jwt", "https://lab.example/guacamole/"));
 
-        var response = controller.redeemAccessCode("redeemer-secret", request);
+        var response = controller.redeemAccessCode("redeemer-secret", "gateway.example", request);
 
         assertThat(response.getStatusCode().value()).isEqualTo(200);
-        verify(accessCodeService).redeem("opaque-code");
+        verify(accessCodeService).redeem("opaque-code", "gateway.example");
     }
 }

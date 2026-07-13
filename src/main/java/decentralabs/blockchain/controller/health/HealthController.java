@@ -53,6 +53,9 @@ public class HealthController {
     @Value("${organization.invite.hmac-secret:}")
     private String organizationInviteHmacSecret;
 
+    @Value("${health.queue-stuck-threshold-seconds:120}")
+    private int queueStuckThresholdSeconds;
+
     @GetMapping
     public ResponseEntity<Map<String, Object>> health() {
         Map<String, Object> healthStatus = new HashMap<>();
@@ -74,7 +77,14 @@ public class HealthController {
             healthStatus.put("private_key_present", isPrivateKeyPresent());
             healthStatus.put("saml_validation_ready", samlValidationService.isConfigured());
             healthStatus.put("event_listener_enabled", eventListeningEnabled);
-            healthStatus.put("database_up", isDatabaseUp());
+            boolean databaseUp = isDatabaseUp();
+            healthStatus.put("database_up", databaseUp);
+            int nonceBacklog = databaseUp ? countNonceBacklog() : -1;
+            int accessDeliveriesStuck = databaseUp ? countStuckAccessDeliveries() : -1;
+            int sessionStartedUnknown = databaseUp ? countUnknownSessionStartedTransactions() : -1;
+            healthStatus.put("nonce_backlog", nonceBacklog);
+            healthStatus.put("access_deliveries_stuck", accessDeliveriesStuck);
+            healthStatus.put("session_started_unknown", sessionStartedUnknown);
             healthStatus.put("wallet_configured", institutionalWalletService.isConfigured());
             healthStatus.put("treasury_configured", isTreasuryConfigured());
             boolean providerRegistered = institutionRegistrationService.isRegistered(InstitutionRole.PROVIDER);
@@ -113,8 +123,12 @@ public class HealthController {
         boolean consumerRegistered = Boolean.TRUE.equals(status.get("consumer_registered"));
         boolean providerReady = providersEnabled ? providerRegistered : consumerRegistered;
         boolean authSigningReady = !providersEnabled || keyPresent;
+        boolean durableQueuesReady = zeroCount(status.get("nonce_backlog"))
+            && zeroCount(status.get("access_deliveries_stuck"))
+            && zeroCount(status.get("session_started_unknown"));
 
-        if (!rpcUp || !authSigningReady || !marketplaceReady || !dbUp || !walletConfigured || !treasuryConfigured || !providerReady) {
+        if (!rpcUp || !authSigningReady || !marketplaceReady || !dbUp || !walletConfigured
+                || !treasuryConfigured || !providerReady || !durableQueuesReady) {
             status.put("status", "DEGRADED");
             return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).body(status);
         }
@@ -202,6 +216,52 @@ public class HealthController {
             log.warn("Database connectivity check failed: {}", e.getMessage());
             return false;
         }
+    }
+
+    private int countNonceBacklog() {
+        int threshold = boundedQueueThreshold();
+        return countHealthRows(
+            "SELECT COUNT(*) FROM institutional_checkin_outbox "
+                + "WHERE status = 'STUCK_UNKNOWN' OR (nonce IS NOT NULL "
+                + "AND status IN ('PENDING', 'RETRY', 'SUBMITTING', 'SUBMITTED') "
+                + "AND updated_at < DATE_SUB(CURRENT_TIMESTAMP, INTERVAL " + threshold + " SECOND))"
+        );
+    }
+
+    private int countStuckAccessDeliveries() {
+        int threshold = boundedQueueThreshold();
+        return countHealthRows(
+            "SELECT COUNT(*) FROM access_authorization_provisioning WHERE "
+                + "(status IN ('PREPARED', 'WAITING_AUTHORIZATION', 'ACTIVATED', 'ROLLING_BACK') "
+                + "AND expires_at < CURRENT_TIMESTAMP) OR (status = 'CODE_PERSISTED' "
+                + "AND updated_at < DATE_SUB(CURRENT_TIMESTAMP, INTERVAL " + threshold + " SECOND))"
+        );
+    }
+
+    private int countUnknownSessionStartedTransactions() {
+        return countHealthRows(
+            "SELECT COUNT(*) FROM access_credential_audit WHERE onchain_status = 'STUCK_UNKNOWN'"
+        );
+    }
+
+    private int countHealthRows(String sql) {
+        try {
+            JdbcTemplate jdbcTemplate = jdbcTemplateProvider.getIfAvailable();
+            if (jdbcTemplate == null) return -1;
+            Integer count = jdbcTemplate.queryForObject(sql, Integer.class);
+            return count == null ? -1 : count;
+        } catch (Exception e) {
+            log.warn("Durable queue health check failed: {}", e.getMessage());
+            return -1;
+        }
+    }
+
+    private int boundedQueueThreshold() {
+        return Math.max(1, Math.min(86_400, queueStuckThresholdSeconds));
+    }
+
+    private boolean zeroCount(Object value) {
+        return value instanceof Number number && number.intValue() == 0;
     }
 
     private boolean isTreasuryConfigured() {

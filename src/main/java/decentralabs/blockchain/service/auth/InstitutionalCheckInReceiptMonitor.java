@@ -45,20 +45,20 @@ public class InstitutionalCheckInReceiptMonitor {
         try {
             CheckInOnChainService.TransactionState state = checkInOnChainService.transactionState(record.txHash());
             if (state == CheckInOnChainService.TransactionState.SUCCEEDED) {
-                outboxService.markMinedSuccess(record.id(), record.txHash());
+                outboxService.markSubmittedMinedSuccess(record);
             } else if (state == CheckInOnChainService.TransactionState.FAILED) {
-                outboxService.markMinedFailed(record.id(), "Check-in transaction reverted on-chain");
+                outboxService.markSubmittedMinedFailed(record, "Check-in transaction reverted on-chain");
             } else if (isStuck(record)) {
                 int nextAttempt = record.attempts() + 1;
                 if (nextAttempt >= Math.max(1, maxAttempts)) {
-                    outboxService.markFailed(
-                        record.id(),
+                    outboxService.markStuckUnknown(
+                        record,
                         nextAttempt,
                         "Check-in transaction remained pending after the maximum number of broadcasts"
                     );
                 } else {
-                    outboxService.markRetry(
-                        record.id(),
+                    outboxService.markSubmittedRetry(
+                        record,
                         nextAttempt,
                         Instant.now(),
                         "Check-in transaction is still pending; retrying with the same nonce and higher gas"

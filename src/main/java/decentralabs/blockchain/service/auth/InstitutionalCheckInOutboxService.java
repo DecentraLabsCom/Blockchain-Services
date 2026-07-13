@@ -58,7 +58,7 @@ public class InstitutionalCheckInOutboxService {
         return jdbcTemplate.queryForObject(
             """
             SELECT id, reservation_key, lab_id, institutional_wallet, puc_hash,
-                   access_session_id, status, attempts, next_attempt_at, tx_hash, wallet_address, nonce, submitted_at
+                   access_session_id, status, attempts, next_attempt_at, tx_hash, wallet_address, nonce, submitted_at, version
             FROM institutional_checkin_outbox WHERE reservation_key = ?
             """,
             (rs, rowNum) -> mapRow(rs),
@@ -71,7 +71,7 @@ public class InstitutionalCheckInOutboxService {
         return jdbcTemplate.queryForObject(
             """
             SELECT id, reservation_key, lab_id, institutional_wallet, puc_hash,
-                   access_session_id, status, attempts, next_attempt_at, tx_hash, wallet_address, nonce, submitted_at
+                   access_session_id, status, attempts, next_attempt_at, tx_hash, wallet_address, nonce, submitted_at, version
             FROM institutional_checkin_outbox WHERE id = ?
             """,
             (rs, rowNum) -> mapRow(rs),
@@ -97,6 +97,7 @@ public class InstitutionalCheckInOutboxService {
                 submitted_at = NULL,
                 mined_at = NULL,
                 last_error = NULL,
+                version = version + 1,
                 updated_at = CURRENT_TIMESTAMP
             WHERE id = ? AND status IN ('MINED_FAILED', 'FAILED')
             """,
@@ -114,7 +115,7 @@ public class InstitutionalCheckInOutboxService {
             return jdbcTemplate.query(
                 """
                 SELECT id, reservation_key, lab_id, institutional_wallet, puc_hash,
-                       access_session_id, status, attempts, next_attempt_at, tx_hash, wallet_address, nonce, submitted_at
+                       access_session_id, status, attempts, next_attempt_at, tx_hash, wallet_address, nonce, submitted_at, version
                 FROM institutional_checkin_outbox
                 WHERE (status IN ('PENDING', 'RETRY') AND next_attempt_at <= ?)
                    OR (status = 'SUBMITTING' AND updated_at <= ?)
@@ -139,7 +140,7 @@ public class InstitutionalCheckInOutboxService {
         int updated = jdbcTemplate.update(
             """
             UPDATE institutional_checkin_outbox
-            SET status = 'SUBMITTING', updated_at = CURRENT_TIMESTAMP
+            SET status = 'SUBMITTING', version = version + 1, updated_at = CURRENT_TIMESTAMP
             WHERE id = ?
               AND (
                 status IN ('PENDING', 'RETRY')
@@ -185,7 +186,7 @@ public class InstitutionalCheckInOutboxService {
             return;
         }
         jdbcTemplate.update(
-            "UPDATE institutional_checkin_outbox SET wallet_address = ?, nonce = ?, updated_at = CURRENT_TIMESTAMP "
+            "UPDATE institutional_checkin_outbox SET wallet_address = ?, nonce = ?, version = version + 1, updated_at = CURRENT_TIMESTAMP "
                 + "WHERE id = ? AND status = 'SUBMITTING'",
             walletAddress,
             nonce,
@@ -201,7 +202,7 @@ public class InstitutionalCheckInOutboxService {
             return jdbcTemplate.query(
                 """
                 SELECT id, reservation_key, lab_id, institutional_wallet, puc_hash,
-                       access_session_id, status, attempts, next_attempt_at, tx_hash, wallet_address, nonce, submitted_at
+                       access_session_id, status, attempts, next_attempt_at, tx_hash, wallet_address, nonce, submitted_at, version
                 FROM institutional_checkin_outbox
                 WHERE status = 'SUBMITTED'
                 ORDER BY updated_at ASC, id ASC
@@ -227,8 +228,9 @@ public class InstitutionalCheckInOutboxService {
                 tx_hash = ?,
                 submitted_at = CURRENT_TIMESTAMP,
                 last_error = NULL,
+                version = version + 1,
                 updated_at = CURRENT_TIMESTAMP
-            WHERE id = ?
+            WHERE id = ? AND status = 'SUBMITTING'
             """,
             txHash,
             id
@@ -246,6 +248,7 @@ public class InstitutionalCheckInOutboxService {
                 tx_hash = COALESCE(?, tx_hash),
                 mined_at = CURRENT_TIMESTAMP,
                 last_error = NULL,
+                version = version + 1,
                 updated_at = CURRENT_TIMESTAMP
             WHERE id = ? AND status IN ('SUBMITTING', 'SUBMITTED')
             """,
@@ -264,6 +267,7 @@ public class InstitutionalCheckInOutboxService {
             SET status = 'MINED_FAILED',
                 mined_at = CURRENT_TIMESTAMP,
                 last_error = ?,
+                version = version + 1,
                 updated_at = CURRENT_TIMESTAMP
             WHERE id = ? AND status = 'SUBMITTED'
             """,
@@ -283,8 +287,9 @@ public class InstitutionalCheckInOutboxService {
                 attempts = ?,
                 next_attempt_at = ?,
                 last_error = ?,
+                version = version + 1,
                 updated_at = CURRENT_TIMESTAMP
-            WHERE id = ?
+            WHERE id = ? AND status = 'SUBMITTING'
             """,
             attempts,
             Timestamp.from(nextAttemptAt),
@@ -303,8 +308,9 @@ public class InstitutionalCheckInOutboxService {
             SET status = 'FAILED',
                 attempts = ?,
                 last_error = ?,
+                version = version + 1,
                 updated_at = CURRENT_TIMESTAMP
-            WHERE id = ?
+            WHERE id = ? AND status = 'SUBMITTING'
             """,
             attempts,
             truncate(error),
@@ -327,8 +333,71 @@ public class InstitutionalCheckInOutboxService {
             rs.getString("tx_hash"),
             rs.getString("wallet_address"),
             rs.getObject("nonce", BigInteger.class),
-            rs.getTimestamp("submitted_at") != null ? rs.getTimestamp("submitted_at").toInstant() : null
+            rs.getTimestamp("submitted_at") != null ? rs.getTimestamp("submitted_at").toInstant() : null,
+            rs.getLong("version")
         );
+    }
+
+    public boolean markSubmittedMinedSuccess(InstitutionalCheckInOutboxRecord record) {
+        if (jdbcTemplate == null || record == null) {
+            return false;
+        }
+        return jdbcTemplate.update(
+            """
+            UPDATE institutional_checkin_outbox
+            SET status = 'MINED_SUCCESS', mined_at = CURRENT_TIMESTAMP, last_error = NULL,
+                version = version + 1, updated_at = CURRENT_TIMESTAMP
+            WHERE id = ? AND status = 'SUBMITTED' AND tx_hash = ? AND version = ?
+            """,
+            record.id(), record.txHash(), record.version()
+        ) == 1;
+    }
+
+    public boolean markSubmittedMinedFailed(InstitutionalCheckInOutboxRecord record, String error) {
+        if (jdbcTemplate == null || record == null) {
+            return false;
+        }
+        return jdbcTemplate.update(
+            """
+            UPDATE institutional_checkin_outbox
+            SET status = 'MINED_FAILED', mined_at = CURRENT_TIMESTAMP, last_error = ?,
+                version = version + 1, updated_at = CURRENT_TIMESTAMP
+            WHERE id = ? AND status = 'SUBMITTED' AND tx_hash = ? AND version = ?
+            """,
+            truncate(error), record.id(), record.txHash(), record.version()
+        ) == 1;
+    }
+
+    public boolean markSubmittedRetry(
+        InstitutionalCheckInOutboxRecord record, int attempts, Instant nextAttemptAt, String error
+    ) {
+        if (jdbcTemplate == null || record == null) {
+            return false;
+        }
+        return jdbcTemplate.update(
+            """
+            UPDATE institutional_checkin_outbox
+            SET status = 'RETRY', attempts = ?, next_attempt_at = ?, last_error = ?,
+                version = version + 1, updated_at = CURRENT_TIMESTAMP
+            WHERE id = ? AND status = 'SUBMITTED' AND tx_hash = ? AND version = ?
+            """,
+            attempts, Timestamp.from(nextAttemptAt), truncate(error), record.id(), record.txHash(), record.version()
+        ) == 1;
+    }
+
+    public boolean markStuckUnknown(InstitutionalCheckInOutboxRecord record, int attempts, String error) {
+        if (jdbcTemplate == null || record == null) {
+            return false;
+        }
+        return jdbcTemplate.update(
+            """
+            UPDATE institutional_checkin_outbox
+            SET status = 'STUCK_UNKNOWN', attempts = ?, last_error = ?,
+                version = version + 1, updated_at = CURRENT_TIMESTAMP
+            WHERE id = ? AND status = 'SUBMITTED' AND tx_hash = ? AND version = ?
+            """,
+            attempts, truncate(error), record.id(), record.txHash(), record.version()
+        ) == 1;
     }
 
     private void requireConfigured() {

@@ -15,6 +15,7 @@ import decentralabs.blockchain.exception.SamlServiceUnavailableException;
 import decentralabs.blockchain.service.wallet.BlockchainBookingService;
 import decentralabs.blockchain.util.LogSanitizer;
 import decentralabs.blockchain.util.PucNormalizer;
+import decentralabs.blockchain.util.PucHashUtil;
 import java.util.Collection;
 import java.util.Map;
 import java.util.Objects;
@@ -69,6 +70,7 @@ public class SamlAuthService {
         Map<String, Object> bookingInfo = null;
         AccessAuthorizationProvisioningService.ProvisioningLease provisionalLease = null;
         String issuedAccessCode = null;
+        String canonicalReservationKey = request.getReservationKey();
         try {
             bookingInfo = blockchainService.getBookingInfoForCredentialPreparation(
                 payerInstitutionWallet,
@@ -76,8 +78,13 @@ public class SamlAuthService {
                 request.getLabId(),
                 stringClaim(marketplaceJWTClaims, "puc")
             );
+            canonicalReservationKey = reservationKeyFromBooking(bookingInfo, request.getReservationKey());
+            if (canonicalReservationKey == null || canonicalReservationKey.isBlank()) {
+                throw new IllegalArgumentException("Unable to resolve canonical reservationKey");
+            }
+            request.setReservationKey(canonicalReservationKey);
             AuthResponse recovered = isAccessAuthorized(bookingInfo)
-                ? recoverDeliveredAccess(request.getReservationKey()) : null;
+                ? recoverDeliveredAccess(canonicalReservationKey) : null;
             if (recovered != null) {
                 return recovered;
             }
@@ -85,52 +92,56 @@ public class SamlAuthService {
             String txHash = request.getAccessAuthorizationTxHash();
             if (isAccessAuthorized(bookingInfo)) {
                 provisionalLease = provisionAuthorizedGuacamoleAccess(
-                    bookingInfo, request.getReservationKey(), payerInstitutionWallet, request.getLabId(), puc, txHash
+                    bookingInfo, canonicalReservationKey, payerInstitutionWallet, request.getLabId(), puc, txHash
                 );
             } else {
                 validatePendingTransaction(txHash);
-                provisionalLease = acquireProvisioningLease(request.getReservationKey(), txHash);
+                provisionalLease = acquireProvisioningLease(canonicalReservationKey, txHash);
                 blockchainService.provisionGuacamoleAccess(bookingInfo, false, provisionalLease.fencingToken());
                 requireCurrentProvisioningLease(provisionalLease, txHash);
                 if (!accessAuthorizationProvisioningService.markWaiting(provisionalLease)) {
                     throw provisioningLeaseLost(provisionalLease, txHash);
                 }
                 awaitAccessAuthorization(
-                    payerInstitutionWallet, request.getReservationKey(), request.getLabId(), puc, bookingInfo, txHash, provisionalLease
+                    payerInstitutionWallet, canonicalReservationKey, request.getLabId(), puc, bookingInfo, txHash, provisionalLease
                 );
                 requireCurrentProvisioningLease(provisionalLease, txHash);
                 blockchainService.validateAccessAuthorizedReservation(
                     payerInstitutionWallet,
-                    reservationKeyFromBooking(bookingInfo, request.getReservationKey()),
+                    canonicalReservationKey,
                     request.getLabId(),
                     puc
                 );
                 blockchainService.activatePreparedGuacamoleAccess(bookingInfo, provisionalLease.fencingToken());
             }
+            if (!accessAuthorizationProvisioningService.markActivated(provisionalLease)) {
+                throw provisioningLeaseLost(provisionalLease, txHash);
+            }
+            bindFmuIdentity(bookingInfo, puc);
             JwtService.IssuedToken issuedToken = jwtService.generateIssuedToken(null, bookingInfo);
-            AuthResponse response = buildDeliveredAccessResponse(issuedToken, bookingInfo, provisionalLease);
-            issuedAccessCode = response.getAccessCode();
             SamlAuthRequest auditRequest = new SamlAuthRequest();
             auditRequest.setMarketplaceToken(request.getMarketplaceToken());
-            auditRequest.setReservationKey(request.getReservationKey());
+            auditRequest.setReservationKey(canonicalReservationKey);
             auditRequest.setLabId(request.getLabId());
             auditRequest.setTimestamp(System.currentTimeMillis() / 1000);
             accessCredentialAuditService.recordJwtIssued(auditRequest, marketplaceJWTClaims, bookingInfo, issuedToken);
+            AuthResponse response = buildDeliveredAccessResponse(issuedToken, bookingInfo, provisionalLease);
+            issuedAccessCode = response.getAccessCode();
             if (provisionalLease != null && !accessAuthorizationProvisioningService.markDelivered(provisionalLease)) {
                 throw provisioningLeaseLost(provisionalLease, txHash);
             }
             return response;
         } catch (AccessAuthorizationPendingException ex) {
             accessCodeService.revoke(issuedAccessCode);
-            rollbackPreparedGuacamoleAccess(bookingInfo, request.getReservationKey(), provisionalLease);
+            rollbackPreparedGuacamoleAccess(bookingInfo, canonicalReservationKey, provisionalLease);
             throw ex;
         } catch (RuntimeException ex) {
             accessCodeService.revoke(issuedAccessCode);
-            rollbackPreparedGuacamoleAccess(bookingInfo, request.getReservationKey(), provisionalLease);
+            rollbackPreparedGuacamoleAccess(bookingInfo, canonicalReservationKey, provisionalLease);
             throw ex;
         } catch (Exception ex) {
             accessCodeService.revoke(issuedAccessCode);
-            rollbackPreparedGuacamoleAccess(bookingInfo, request.getReservationKey(), provisionalLease);
+            rollbackPreparedGuacamoleAccess(bookingInfo, canonicalReservationKey, provisionalLease);
             throw new IllegalStateException("Failed to issue access credential", ex);
         }
     }
@@ -177,10 +188,16 @@ public class SamlAuthService {
         Map<String, Object> bookingInfo = null;
         AccessAuthorizationProvisioningService.ProvisioningLease provisionalLease = null;
         String issuedAccessCode = null;
+        String canonicalReservationKey = request.getReservationKey();
         try {
             bookingInfo = blockchainService.getBookingInfoForCredentialPreparation(wallet, request.getReservationKey(), request.getLabId(), jwtPuc);
+            canonicalReservationKey = reservationKeyFromBooking(bookingInfo, request.getReservationKey());
+            if (canonicalReservationKey == null || canonicalReservationKey.isBlank()) {
+                throw new IllegalArgumentException("Unable to resolve canonical reservationKey");
+            }
+            request.setReservationKey(canonicalReservationKey);
             AuthResponse recovered = isAccessAuthorized(bookingInfo)
-                ? recoverDeliveredAccess(request.getReservationKey()) : null;
+                ? recoverDeliveredAccess(canonicalReservationKey) : null;
             if (recovered != null) {
                 return recovered;
             }
@@ -190,42 +207,46 @@ public class SamlAuthService {
             accessCheckInCoordinator.recordAccessGranted(request, marketplaceJWTClaims, bookingInfo);
             if (isAccessAuthorized(bookingInfo)) {
                 provisionalLease = provisionAuthorizedGuacamoleAccess(
-                    bookingInfo, request.getReservationKey(), wallet, request.getLabId(), jwtPuc, null
+                    bookingInfo, canonicalReservationKey, wallet, request.getLabId(), jwtPuc, null
                 );
             } else {
-                provisionalLease = acquireProvisioningLease(request.getReservationKey(), null);
+                provisionalLease = acquireProvisioningLease(canonicalReservationKey, null);
                 blockchainService.provisionGuacamoleAccess(bookingInfo, false, provisionalLease.fencingToken());
                 requireCurrentProvisioningLease(provisionalLease, null);
                 if (!accessAuthorizationProvisioningService.markWaiting(provisionalLease)) {
                     throw provisioningLeaseLost(provisionalLease, null);
                 }
                 awaitAccessAuthorization(
-                    wallet, request.getReservationKey(), request.getLabId(), jwtPuc, bookingInfo, null, provisionalLease
+                    wallet, canonicalReservationKey, request.getLabId(), jwtPuc, bookingInfo, null, provisionalLease
                 );
                 requireCurrentProvisioningLease(provisionalLease, null);
                 blockchainService.validateAccessAuthorizedReservation(
                     wallet,
-                    reservationKeyFromBooking(bookingInfo, request.getReservationKey()),
+                    canonicalReservationKey,
                     request.getLabId(),
                     jwtPuc
                 );
                 blockchainService.activatePreparedGuacamoleAccess(bookingInfo, provisionalLease.fencingToken());
             }
+            if (!accessAuthorizationProvisioningService.markActivated(provisionalLease)) {
+                throw provisioningLeaseLost(provisionalLease, null);
+            }
+            bindFmuIdentity(bookingInfo, jwtPuc);
             JwtService.IssuedToken issuedToken = jwtService.generateIssuedToken(null, bookingInfo);
+            accessCredentialAuditService.recordJwtIssued(request, marketplaceJWTClaims, bookingInfo, issuedToken);
             AuthResponse response = buildDeliveredAccessResponse(issuedToken, bookingInfo, provisionalLease);
             issuedAccessCode = response.getAccessCode();
-            accessCredentialAuditService.recordJwtIssued(request, marketplaceJWTClaims, bookingInfo, issuedToken);
             if (provisionalLease != null && !accessAuthorizationProvisioningService.markDelivered(provisionalLease)) {
                 throw provisioningLeaseLost(provisionalLease, null);
             }
             return response;
         } catch (RuntimeException ex) {
             accessCodeService.revoke(issuedAccessCode);
-            rollbackPreparedGuacamoleAccess(bookingInfo, request.getReservationKey(), provisionalLease);
+            rollbackPreparedGuacamoleAccess(bookingInfo, canonicalReservationKey, provisionalLease);
             throw ex;
         } catch (Exception ex) {
             accessCodeService.revoke(issuedAccessCode);
-            rollbackPreparedGuacamoleAccess(bookingInfo, request.getReservationKey(), provisionalLease);
+            rollbackPreparedGuacamoleAccess(bookingInfo, canonicalReservationKey, provisionalLease);
             throw new IllegalStateException("Failed to authorize and issue access credential", ex);
         }
     }
@@ -340,14 +361,31 @@ public class SamlAuthService {
             throw new IllegalStateException("Access delivery requires a provisioning generation");
         }
         var accessCode = accessCodeService.issue(issuedToken.token(), lease.reservationKey(), lease.generation());
-        return AuthResponse.opaqueAccess(accessCode.getAccessCode(), accessCode.getLabURL());
+        return AuthResponse.opaqueAccess(
+            accessCode.getAccessCode(), accessCode.getLabURL(), accessCode.getResourceType(), lease.reservationKey()
+        );
     }
 
     private AuthResponse recoverDeliveredAccess(String reservationKey) {
-        Long generation = accessAuthorizationProvisioningService.deliveredGeneration(reservationKey);
-        if (generation == null) return null;
-        var delivery = accessCodeService.recoverDelivery(reservationKey, generation);
-        return delivery == null ? null : AuthResponse.opaqueAccess(delivery.getAccessCode(), delivery.getLabURL());
+        var provisioning = accessAuthorizationProvisioningService.recoverableProvisioning(reservationKey);
+        if (provisioning == null) return null;
+        var delivery = accessCodeService.recoverDelivery(reservationKey, provisioning.generation());
+        if (delivery == null) {
+            accessAuthorizationProvisioningService.revokeExpiredDelivery(
+                reservationKey, provisioning.generation()
+            );
+            return null;
+        }
+        if (!accessAuthorizationProvisioningService.promoteRecoveredDelivery(
+            reservationKey, provisioning.generation()
+        )) {
+            throw new AccessAuthorizationPendingException(
+                "Access delivery recovery lost its provisioning generation", reservationKey, null
+            );
+        }
+        return AuthResponse.opaqueAccess(
+            delivery.getAccessCode(), delivery.getLabURL(), delivery.getResourceType(), reservationKey
+        );
     }
 
     /**
@@ -543,6 +581,19 @@ public class SamlAuthService {
         }
         Object value = claims.get(key);
         return value == null ? null : value.toString();
+    }
+
+    private void bindFmuIdentity(Map<String, Object> bookingInfo, String puc) {
+        if (bookingInfo == null || !"fmu".equalsIgnoreCase(String.valueOf(bookingInfo.get("resourceType")))) {
+            return;
+        }
+        String normalizedPuc = PucNormalizer.normalize(puc);
+        if (normalizedPuc == null || normalizedPuc.isBlank()) {
+            throw new SecurityException("FMU credential requires an institutional user identity");
+        }
+        String pucHash = PucHashUtil.hashPuc(normalizedPuc);
+        bookingInfo.put("pucHash", pucHash);
+        bookingInfo.put("sub", "fmu-user:" + pucHash);
     }
 
     private boolean scopeContainsRequiredScope(Object scopeClaim) {

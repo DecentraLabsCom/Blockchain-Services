@@ -92,6 +92,7 @@ class HealthControllerTest {
         ReflectionTestUtils.setField(healthController, "eventListeningEnabled", true);
         ReflectionTestUtils.setField(healthController, "contractAddress", "0xContract");
         ReflectionTestUtils.setField(healthController, "organizationInviteHmacSecret", "");
+        ReflectionTestUtils.setField(healthController, "queueStuckThresholdSeconds", 120);
 
         mockMvc = MockMvcBuilders.standaloneSetup(healthController).build();
     }
@@ -235,6 +236,23 @@ class HealthControllerTest {
             mockMvc.perform(get("/health"))
                 .andExpect(status().isServiceUnavailable())
                 .andExpect(jsonPath("$.database_up").value(false));
+        }
+
+        @Test
+        @DisplayName("Should degrade when a durable authorization queue is stuck")
+        void shouldReturnDegradedWhenDurableQueueIsStuck() throws Exception {
+            setupHealthyEnvironment();
+            when(jdbcTemplate.queryForObject(
+                org.mockito.ArgumentMatchers.contains("institutional_checkin_outbox"),
+                eq(Integer.class)
+            )).thenReturn(2);
+
+            mockMvc.perform(get("/health"))
+                .andExpect(status().isServiceUnavailable())
+                .andExpect(jsonPath("$.status").value("DEGRADED"))
+                .andExpect(jsonPath("$.nonce_backlog").value(2))
+                .andExpect(jsonPath("$.access_deliveries_stuck").value(0))
+                .andExpect(jsonPath("$.session_started_unknown").value(0));
         }
     }
 
@@ -416,7 +434,8 @@ class HealthControllerTest {
         lenient().when(institutionRegistrationService.isRegistered(InstitutionRole.PROVIDER)).thenReturn(true);
         lenient().when(institutionRegistrationService.isRegistered(InstitutionRole.CONSUMER)).thenReturn(false);
         lenient().when(jdbcTemplateProvider.getIfAvailable()).thenReturn(jdbcTemplate);
-        lenient().when(jdbcTemplate.queryForObject(anyString(), eq(Integer.class))).thenReturn(1);
+        lenient().when(jdbcTemplate.queryForObject(anyString(), eq(Integer.class))).thenReturn(0);
+        lenient().when(jdbcTemplate.queryForObject("SELECT 1", Integer.class)).thenReturn(1);
 
         // Setup Web3j mock chain using doReturn to avoid generic type issues
         lenient().when(walletService.getWeb3jInstance()).thenReturn(web3j);
