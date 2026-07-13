@@ -109,7 +109,7 @@ public class GuacamoleProvisioningService {
         this.objectMapper = objectMapper;
         this.defaultRoute = defaultRoute;
         this.routesByKey = routesByKey == null ? Map.of() : Map.copyOf(routesByKey);
-        this.localAccessOrigin = normalizeOrigin(localAccessOrigin);
+        this.localAccessOrigin = originOf(localAccessOrigin);
         // Remote provisioners are intentionally accepted only through routesByKey.
     }
 
