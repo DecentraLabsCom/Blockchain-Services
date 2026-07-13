@@ -142,6 +142,16 @@ public class CheckInOnChainService {
 
     /** Best-effort diagnostic only; access remains authorized solely by contract state. */
     public TransactionState transactionState(String txHash) {
+        try {
+            return transactionStateStrict(txHash);
+        } catch (RuntimeException ex) {
+            log.warn("Unable to inspect access authorization transaction {}: {}", txHash, ex.getMessage());
+            return TransactionState.PENDING;
+        }
+    }
+
+    /** Strict receipt lookup for reconciliation; RPC failures must never look like pending work. */
+    public TransactionState transactionStateStrict(String txHash) {
         if (txHash == null || !txHash.matches("^0x[0-9a-fA-F]{64}$")) {
             throw new IllegalArgumentException("Invalid access authorization transaction hash");
         }
@@ -154,8 +164,23 @@ public class CheckInOnChainService {
                 ? TransactionState.SUCCEEDED
                 : TransactionState.FAILED;
         } catch (Exception ex) {
-            log.warn("Unable to inspect access authorization transaction {}: {}", txHash, ex.getMessage());
-            return TransactionState.PENDING;
+            throw new IllegalStateException("Failed to inspect access authorization transaction", ex);
+        }
+    }
+
+    /** Strict mempool/chain visibility lookup used only after the receipt is absent. */
+    public boolean transactionVisible(String txHash) {
+        if (txHash == null || !txHash.matches("^0x[0-9a-fA-F]{64}$")) {
+            throw new IllegalArgumentException("Invalid access authorization transaction hash");
+        }
+        try {
+            var result = walletService.getWeb3jInstance().ethGetTransactionByHash(txHash).send();
+            if (result == null) {
+                throw new IllegalStateException("Node returned no transaction lookup response");
+            }
+            return result.getTransaction().isPresent();
+        } catch (Exception ex) {
+            throw new IllegalStateException("Failed to inspect access authorization transaction visibility", ex);
         }
     }
 

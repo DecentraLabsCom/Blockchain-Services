@@ -143,7 +143,7 @@ class GuacamoleProvisioningServiceTest {
                 new GuacamoleProvisioningService.ProvisionerRoute(secondBase, "/internal/guacamole", "X-Guacamole-Provisioner-Token", "secret")
             ),
             null,
-            null
+            "https://lite-a.example.edu"
         );
 
         service.provisionTemporaryUser("guac:id:42", "session-a", BigInteger.valueOf(1_800_000_000L), "https://lite-a.example.edu/guacamole");
@@ -151,6 +151,34 @@ class GuacamoleProvisioningServiceTest {
 
         assertThat(firstCalls).hasValue(1);
         assertThat(secondCalls).hasValue(1);
+    }
+
+    @Test
+    void refusesUnmappedRemoteAccessUriInsteadOfUsingLocalDefaultRoute() throws Exception {
+        server = startServer();
+        AtomicInteger localCalls = new AtomicInteger();
+        createProvisionContext(server, localCalls, "local-session");
+        String localBase = "http://127.0.0.1:" + server.getAddress().getPort();
+        GuacamoleProvisioningService service = new GuacamoleProvisioningService(
+            HttpClient.newHttpClient(),
+            new ObjectMapper(),
+            new GuacamoleProvisioningService.ProvisionerRoute(
+                localBase, "/internal/guacamole", "X-Guacamole-Provisioner-Token", "secret"
+            ),
+            Map.of(),
+            null,
+            "https://full.example.edu"
+        );
+
+        assertThatThrownBy(() -> service.provisionTemporaryUser(
+            "guac:id:42",
+            "session-remote",
+            BigInteger.valueOf(1_800_000_000L),
+            "https://lite.example.edu/guacamole"
+        ))
+            .isInstanceOf(IllegalStateException.class)
+            .hasMessageContaining("No Guacamole provisioner route");
+        assertThat(localCalls).hasValue(0);
     }
 
     @Test

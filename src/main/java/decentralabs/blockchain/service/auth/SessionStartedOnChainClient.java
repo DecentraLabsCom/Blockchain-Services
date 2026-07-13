@@ -149,6 +149,15 @@ public class SessionStartedOnChainClient {
     }
 
     public TransactionState transactionState(String txHash) {
+        try {
+            return transactionStateStrict(txHash);
+        } catch (RuntimeException ex) {
+            log.warn("Unable to inspect SessionStarted transaction {}: {}", txHash, ex.getMessage());
+            return TransactionState.PENDING;
+        }
+    }
+
+    public TransactionState transactionStateStrict(String txHash) {
         if (txHash == null || !txHash.matches("^0x[0-9a-fA-F]{64}$")) {
             throw new IllegalArgumentException("Invalid SessionStarted transaction hash");
         }
@@ -160,8 +169,36 @@ public class SessionStartedOnChainClient {
             return response.getTransactionReceipt().get().isStatusOK()
                 ? TransactionState.SUCCEEDED : TransactionState.FAILED;
         } catch (Exception ex) {
-            log.warn("Unable to inspect SessionStarted transaction {}: {}", txHash, ex.getMessage());
-            return TransactionState.PENDING;
+            throw new IllegalStateException("Failed to inspect SessionStarted transaction", ex);
+        }
+    }
+
+    public boolean transactionVisible(String txHash) {
+        if (txHash == null || !txHash.matches("^0x[0-9a-fA-F]{64}$")) {
+            throw new IllegalArgumentException("Invalid SessionStarted transaction hash");
+        }
+        try {
+            var response = walletService.getWeb3jInstance().ethGetTransactionByHash(txHash).send();
+            if (response == null) {
+                throw new IllegalStateException("Node returned no transaction lookup response");
+            }
+            return response.getTransaction().isPresent();
+        } catch (Exception ex) {
+            throw new IllegalStateException("Failed to inspect SessionStarted transaction visibility", ex);
+        }
+    }
+
+    public BigInteger pendingNonce(String walletAddress) {
+        try {
+            var response = walletService.getWeb3jInstance().ethGetTransactionCount(
+                walletAddress, DefaultBlockParameterName.PENDING
+            ).send();
+            if (response == null || response.getTransactionCount() == null) {
+                throw new IllegalStateException("Node returned no pending nonce");
+            }
+            return response.getTransactionCount();
+        } catch (Exception ex) {
+            throw new IllegalStateException("Failed to read SessionStarted signer pending nonce", ex);
         }
     }
 

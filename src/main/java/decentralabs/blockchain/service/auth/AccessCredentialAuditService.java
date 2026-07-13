@@ -62,10 +62,37 @@ public class AccessCredentialAuditService {
             return;
         }
 
+        persist(jwtAuditRecord(request, marketplaceClaims, bookingInfo, issuedToken));
+    }
+
+    /** Fails closed so the caller's delivery transaction rolls back with the access code. */
+    public void recordJwtIssuedRequired(
+        SamlAuthRequest request,
+        Map<String, Object> marketplaceClaims,
+        Map<String, Object> bookingInfo,
+        JwtService.IssuedToken issuedToken
+    ) {
+        if (issuedToken == null || !hasText(issuedToken.token())) {
+            throw new IllegalArgumentException("Issued access credential is required for durable audit");
+        }
+        String reservationKey = stringValue(bookingInfo, "reservationKey");
+        if (!hasText(reservationKey)) {
+            throw new IllegalArgumentException("reservationKey is required for durable access audit");
+        }
+        persistRequired(jwtAuditRecord(request, marketplaceClaims, bookingInfo, issuedToken));
+    }
+
+    private AuditRecord jwtAuditRecord(
+        SamlAuthRequest request,
+        Map<String, Object> marketplaceClaims,
+        Map<String, Object> bookingInfo,
+        JwtService.IssuedToken issuedToken
+    ) {
+        String reservationKey = stringValue(bookingInfo, "reservationKey");
         String accessType = resolveAccessType(bookingInfo);
         String subject = stringValue(bookingInfo, "sub");
         String guacUsername = "guacamole".equals(accessType) ? subject : null;
-        persist(new AuditRecord(
+        return new AuditRecord(
             reservationKey,
             firstNonBlank(stringValue(bookingInfo, "lab"), stringValue(bookingInfo, "labId")),
             resolvePucHash(marketplaceClaims, bookingInfo),
@@ -78,7 +105,7 @@ public class AccessCredentialAuditService {
             firstNonNull(issuedToken.expiresAt(), epochSecond(bookingInfo.get("exp"))),
             issuerBackendId,
             sha256Hex(issuedToken.token())
-        ));
+        );
     }
 
     public void recordFmuTicketIssued(String sessionTicket, Map<String, Object> claims, long expiresAt) {
@@ -108,14 +135,20 @@ public class AccessCredentialAuditService {
         ));
     }
 
-    public boolean recordFmuTicketRedeemed(String sessionTicket, Map<String, Object> claims, String sessionId, String gatewayId, Long observedAt) {
+    public SessionObservationResult recordFmuTicketRedeemed(
+        String sessionTicket,
+        Map<String, Object> claims,
+        String sessionId,
+        String gatewayId,
+        Long observedAt
+    ) {
         if (!hasText(sessionTicket)) {
-            return false;
+            return SessionObservationResult.notRecorded();
         }
         String reservationKey = stringValue(claims, "reservationKey");
         if (!hasText(reservationKey)) {
             log.debug("FMU session observation skipped: missing reservationKey");
-            return false;
+            return SessionObservationResult.notRecorded();
         }
 
         String ticketHash = sha256Hex(sessionTicket);
@@ -126,7 +159,7 @@ public class AccessCredentialAuditService {
         request.setGatewayId(gatewayId);
         request.setAccessType("fmu");
         request.setObservedAt(observedAt);
-        return recordSessionObserved(request).recorded();
+        return recordSessionObserved(request);
     }
 
     public SessionObservationResult recordSessionObserved(AccessCredentialSessionObservedRequest request) {
@@ -247,7 +280,18 @@ public class AccessCredentialAuditService {
     }
 
     private void persist(AuditRecord record) {
+        persist(record, false);
+    }
+
+    private void persistRequired(AuditRecord record) {
+        persist(record, true);
+    }
+
+    private void persist(AuditRecord record, boolean required) {
         if (jdbcTemplate == null) {
+            if (required) {
+                throw new IllegalStateException("Durable access credential audit requires a datasource");
+            }
             log.debug("Access credential audit skipped: no datasource configured");
             return;
         }
@@ -278,8 +322,14 @@ public class AccessCredentialAuditService {
                 record.credentialHash()
             );
         } catch (BadSqlGrammarException ex) {
+            if (required) {
+                throw new IllegalStateException("Access credential audit schema is unavailable", ex);
+            }
             log.warn("Access credential audit table unavailable: {}", LogSanitizer.sanitize(ex.getMessage()));
         } catch (DataAccessException ex) {
+            if (required) {
+                throw new IllegalStateException("Access credential audit write failed", ex);
+            }
             log.warn("Access credential audit write failed: {}", LogSanitizer.sanitize(ex.getMessage()));
         }
     }

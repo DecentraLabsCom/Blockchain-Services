@@ -9,6 +9,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.jdbc.BadSqlGrammarException;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -60,6 +61,7 @@ public class SessionStartedOnChainPublisherService {
     }
 
     int publishPending(int limit) {
+        int reconciled = reconcileUnknown(Math.max(1, limit));
         int mined = monitorSubmitted(Math.max(1, limit));
         List<SessionStartedTransactionRecord> pending;
         try {
@@ -96,7 +98,7 @@ public class SessionStartedOnChainPublisherService {
                 submitted++;
             }
         }
-        return mined + submitted;
+        return reconciled + mined + submitted;
     }
 
     private boolean publish(SessionStartedTransactionRecord record) {
@@ -134,28 +136,47 @@ public class SessionStartedOnChainPublisherService {
     }
 
     private boolean claim(long id) {
-        int updated = jdbcTemplate.update(
+        try {
+            int updated = jdbcTemplate.update(
+                """
+                UPDATE session_started_attestations
+                SET onchain_publish_locked_at = CURRENT_TIMESTAMP,
+                    onchain_publish_attempts = onchain_publish_attempts + 1,
+                    onchain_status = 'SUBMITTING',
+                    onchain_reservation_guard = reservation_key,
+                    onchain_publish_last_error = NULL,
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE id = ?
+                  AND onchain_published_at IS NULL
+                  AND onchain_status IN ('QUEUED', 'RETRY', 'SUBMITTING')
+                  AND onchain_publish_attempts < ?
+                  AND (
+                    onchain_publish_locked_at IS NULL
+                    OR onchain_publish_locked_at < ?
+                  )
+                """,
+                id,
+                maxPublishAttempts(),
+                lockThreshold()
+            );
+            return updated == 1;
+        } catch (DataIntegrityViolationException ex) {
+            markSuperseded(id);
+            return false;
+        }
+    }
+
+    private void markSuperseded(long id) {
+        jdbcTemplate.update(
             """
             UPDATE session_started_attestations
-            SET onchain_publish_locked_at = CURRENT_TIMESTAMP,
-                onchain_publish_attempts = onchain_publish_attempts + 1,
-                onchain_status = 'SUBMITTING',
-                onchain_publish_last_error = NULL,
+            SET onchain_status = 'SUPERSEDED', onchain_publish_locked_at = NULL,
+                onchain_publish_last_error = 'Another attestation owns the reservation on-chain publication',
                 updated_at = CURRENT_TIMESTAMP
-            WHERE id = ?
-              AND onchain_published_at IS NULL
-              AND onchain_status IN ('QUEUED', 'RETRY', 'SUBMITTING')
-              AND onchain_publish_attempts < ?
-              AND (
-                onchain_publish_locked_at IS NULL
-                OR onchain_publish_locked_at < ?
-              )
+            WHERE id = ? AND onchain_status IN ('QUEUED', 'RETRY', 'SUBMITTING')
             """,
-            id,
-            maxPublishAttempts(),
-            lockThreshold()
+            id
         );
-        return updated == 1;
     }
 
     private void markNonceReserved(long id, String walletAddress, BigInteger nonce) {
@@ -216,10 +237,15 @@ public class SessionStartedOnChainPublisherService {
                     WHEN onchain_publish_attempts >= ? THEN 'FAILED'
                     ELSE 'RETRY'
                 END,
+                onchain_reservation_guard = CASE
+                    WHEN onchain_publish_attempts >= ? THEN NULL
+                    ELSE onchain_reservation_guard
+                END,
                 onchain_publish_last_error = ?,
                 updated_at = CURRENT_TIMESTAMP
             WHERE id = ? AND onchain_status = 'SUBMITTING'
             """,
+            maxPublishAttempts(),
             maxPublishAttempts(),
             error,
             id
@@ -276,6 +302,97 @@ public class SessionStartedOnChainPublisherService {
         return mined;
     }
 
+    private int reconcileUnknown(int limit) {
+        List<SessionStartedTransactionRecord> unknown;
+        try {
+            unknown = jdbcTemplate.query(
+                """
+                SELECT id, reservation_key, lab_id, puc_hash, signer_address, gateway_id,
+                       session_id, access_type, started_at, nonce, credential_hash,
+                       client_proof_hash, signature, onchain_status, onchain_publish_attempts,
+                       onchain_wallet_address, onchain_nonce, onchain_tx_hash, onchain_submitted_at
+                FROM session_started_attestations
+                WHERE onchain_status = 'STUCK_UNKNOWN'
+                ORDER BY updated_at ASC, id ASC
+                LIMIT ?
+                """,
+                transactionRowMapper(),
+                limit
+            );
+        } catch (BadSqlGrammarException ex) {
+            return 0;
+        }
+        int reconciled = 0;
+        for (SessionStartedTransactionRecord record : unknown) {
+            try {
+                if (onChainClient.hasSessionStarted(record.submission().reservationKey())) {
+                    markUnknownMinedSuccess(record.submission().id());
+                    reconciled++;
+                    continue;
+                }
+                SessionStartedOnChainClient.TransactionState state =
+                    onChainClient.transactionStateStrict(record.transactionHash());
+                if (state == SessionStartedOnChainClient.TransactionState.SUCCEEDED) {
+                    markUnknownMinedSuccess(record.submission().id());
+                    reconciled++;
+                } else if (state == SessionStartedOnChainClient.TransactionState.FAILED) {
+                    markUnknownMinedFailed(record, "SessionStarted transaction reverted on-chain");
+                } else if (record.transactionNonce() != null && record.walletAddress() != null
+                        && !onChainClient.transactionVisible(record.transactionHash())
+                        && onChainClient.pendingNonce(record.walletAddress()).compareTo(record.transactionNonce()) <= 0) {
+                    markUnknownRetry(record);
+                }
+            } catch (RuntimeException ex) {
+                log.warn(
+                    "Unable to reconcile SessionStarted attestation {}: {}",
+                    record.submission().id(), LogSanitizer.sanitize(ex.getMessage())
+                );
+            }
+        }
+        return reconciled;
+    }
+
+    private void markUnknownMinedSuccess(long id) {
+        jdbcTemplate.update(
+            """
+            UPDATE session_started_attestations
+            SET onchain_status = 'MINED_SUCCESS', onchain_published_at = CURRENT_TIMESTAMP,
+                onchain_mined_at = CURRENT_TIMESTAMP, onchain_publish_locked_at = NULL,
+                onchain_publish_last_error = NULL, updated_at = CURRENT_TIMESTAMP
+            WHERE id = ? AND onchain_status = 'STUCK_UNKNOWN'
+            """,
+            id
+        );
+    }
+
+    private void markUnknownMinedFailed(SessionStartedTransactionRecord record, String error) {
+        jdbcTemplate.update(
+            """
+            UPDATE session_started_attestations
+            SET onchain_status = 'MINED_FAILED', onchain_mined_at = CURRENT_TIMESTAMP,
+                onchain_reservation_guard = NULL, onchain_publish_locked_at = NULL,
+                onchain_publish_last_error = ?, updated_at = CURRENT_TIMESTAMP
+            WHERE id = ? AND onchain_status = 'STUCK_UNKNOWN' AND onchain_tx_hash = ?
+            """,
+            error, record.submission().id(), record.transactionHash()
+        );
+    }
+
+    private void markUnknownRetry(SessionStartedTransactionRecord record) {
+        jdbcTemplate.update(
+            """
+            UPDATE session_started_attestations
+            SET onchain_status = 'RETRY',
+                onchain_publish_attempts = GREATEST(onchain_publish_attempts - 1, 0),
+                onchain_publish_locked_at = NULL,
+                onchain_publish_last_error = ?, updated_at = CURRENT_TIMESTAMP
+            WHERE id = ? AND onchain_status = 'STUCK_UNKNOWN' AND onchain_tx_hash = ?
+            """,
+            "Reconciler proved the transaction absent and its nonce unconsumed; retrying the same nonce",
+            record.submission().id(), record.transactionHash()
+        );
+    }
+
     private void markMinedSuccess(long id, String txHash) {
         jdbcTemplate.update(
             """
@@ -297,6 +414,7 @@ public class SessionStartedOnChainPublisherService {
             """
             UPDATE session_started_attestations
             SET onchain_status = 'MINED_FAILED', onchain_mined_at = CURRENT_TIMESTAMP,
+                onchain_reservation_guard = NULL,
                 onchain_publish_locked_at = NULL, onchain_publish_last_error = ?,
                 updated_at = CURRENT_TIMESTAMP
             WHERE id = ? AND onchain_status = 'SUBMITTED' AND onchain_tx_hash = ?

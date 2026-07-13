@@ -8,8 +8,10 @@ import decentralabs.blockchain.service.wallet.InstitutionalWalletService;
 import decentralabs.blockchain.service.wallet.WalletService;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.sql.SQLException;
 import java.time.Instant;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.Map;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -27,6 +29,10 @@ import org.springframework.web.bind.annotation.RestController;
 @RequiredArgsConstructor
 @Slf4j
 public class HealthController {
+
+    private static final String DATABASE_UNAVAILABLE = "DATABASE_UNAVAILABLE";
+    private static final String MIGRATION_MISSING = "MIGRATION_MISSING";
+    private static final String QUERY_FAILED = "QUERY_FAILED";
 
     private final MarketplaceKeyService marketplaceKeyService;
     private final WalletService walletService;
@@ -79,12 +85,15 @@ public class HealthController {
             healthStatus.put("event_listener_enabled", eventListeningEnabled);
             boolean databaseUp = isDatabaseUp();
             healthStatus.put("database_up", databaseUp);
-            int nonceBacklog = databaseUp ? countNonceBacklog() : -1;
-            int accessDeliveriesStuck = databaseUp ? countStuckAccessDeliveries() : -1;
-            int sessionStartedUnknown = databaseUp ? countUnknownSessionStartedTransactions() : -1;
-            healthStatus.put("nonce_backlog", nonceBacklog);
-            healthStatus.put("access_deliveries_stuck", accessDeliveriesStuck);
-            healthStatus.put("session_started_unknown", sessionStartedUnknown);
+            HealthCount unavailable = HealthCount.failure(DATABASE_UNAVAILABLE);
+            HealthCount nonceBacklog = databaseUp ? countNonceBacklog() : unavailable;
+            HealthCount accessDeliveriesStuck = databaseUp ? countStuckAccessDeliveries() : unavailable;
+            HealthCount sessionStartedUnknown = databaseUp ? countUnknownSessionStartedTransactions() : unavailable;
+            Map<String, String> queueHealthErrors = new LinkedHashMap<>();
+            putHealthCount(healthStatus, queueHealthErrors, "nonce_backlog", nonceBacklog);
+            putHealthCount(healthStatus, queueHealthErrors, "access_deliveries_stuck", accessDeliveriesStuck);
+            putHealthCount(healthStatus, queueHealthErrors, "session_started_unknown", sessionStartedUnknown);
+            healthStatus.put("queue_health_errors", queueHealthErrors);
             healthStatus.put("wallet_configured", institutionalWalletService.isConfigured());
             healthStatus.put("treasury_configured", isTreasuryConfigured());
             boolean providerRegistered = institutionRegistrationService.isRegistered(InstitutionRole.PROVIDER);
@@ -218,41 +227,115 @@ public class HealthController {
         }
     }
 
-    private int countNonceBacklog() {
+    private HealthCount countNonceBacklog() {
         int threshold = boundedQueueThreshold();
         return countHealthRows(
             "SELECT COUNT(*) FROM institutional_checkin_outbox "
                 + "WHERE status = 'STUCK_UNKNOWN' OR (nonce IS NOT NULL "
                 + "AND status IN ('PENDING', 'RETRY', 'SUBMITTING', 'SUBMITTED') "
-                + "AND updated_at < DATE_SUB(CURRENT_TIMESTAMP, INTERVAL " + threshold + " SECOND))"
+                + "AND updated_at < DATE_SUB(CURRENT_TIMESTAMP, INTERVAL " + threshold + " SECOND))",
+            "11"
         );
     }
 
-    private int countStuckAccessDeliveries() {
+    private HealthCount countStuckAccessDeliveries() {
         int threshold = boundedQueueThreshold();
         return countHealthRows(
             "SELECT COUNT(*) FROM access_authorization_provisioning WHERE "
                 + "(status IN ('PREPARED', 'WAITING_AUTHORIZATION', 'ACTIVATED', 'ROLLING_BACK') "
                 + "AND expires_at < CURRENT_TIMESTAMP) OR (status = 'CODE_PERSISTED' "
-                + "AND updated_at < DATE_SUB(CURRENT_TIMESTAMP, INTERVAL " + threshold + " SECOND))"
+                + "AND updated_at < DATE_SUB(CURRENT_TIMESTAMP, INTERVAL " + threshold + " SECOND))",
+            "17"
         );
     }
 
-    private int countUnknownSessionStartedTransactions() {
+    private HealthCount countUnknownSessionStartedTransactions() {
         return countHealthRows(
-            "SELECT COUNT(*) FROM access_credential_audit WHERE onchain_status = 'STUCK_UNKNOWN'"
+            "SELECT COUNT(*) FROM session_started_attestations WHERE onchain_status = 'STUCK_UNKNOWN'",
+            "21"
         );
     }
 
-    private int countHealthRows(String sql) {
+    private HealthCount countHealthRows(String sql, String requiredMigration) {
+        JdbcTemplate jdbcTemplate = jdbcTemplateProvider.getIfAvailable();
+        if (jdbcTemplate == null) {
+            return HealthCount.failure(DATABASE_UNAVAILABLE);
+        }
         try {
-            JdbcTemplate jdbcTemplate = jdbcTemplateProvider.getIfAvailable();
-            if (jdbcTemplate == null) return -1;
             Integer count = jdbcTemplate.queryForObject(sql, Integer.class);
-            return count == null ? -1 : count;
+            if (count == null) {
+                log.warn("Durable queue health query returned no count");
+                return HealthCount.failure(QUERY_FAILED);
+            }
+            return HealthCount.success(count);
         } catch (Exception e) {
-            log.warn("Durable queue health check failed: {}", e.getMessage());
-            return -1;
+            String error = isMissingSchemaObject(e) && isMigrationMissing(jdbcTemplate, requiredMigration)
+                ? MIGRATION_MISSING
+                : QUERY_FAILED;
+            log.warn("Durable queue health check failed ({}): {}", error, e.getMessage());
+            return HealthCount.failure(error);
+        }
+    }
+
+    private boolean isMigrationMissing(JdbcTemplate jdbcTemplate, String requiredMigration) {
+        try {
+            Integer applied = jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM flyway_schema_history WHERE version = ? AND success = TRUE",
+                Integer.class,
+                requiredMigration
+            );
+            return applied != null && applied == 0;
+        } catch (Exception historyError) {
+            if (isMissingSchemaObject(historyError)) {
+                return true;
+            }
+            log.warn(
+                "Unable to inspect Flyway migration {} while classifying queue health: {}",
+                requiredMigration,
+                historyError.getMessage()
+            );
+            return false;
+        }
+    }
+
+    private void putHealthCount(
+            Map<String, Object> status,
+            Map<String, String> errors,
+            String key,
+            HealthCount result) {
+        status.put(key, result.count());
+        if (result.error() != null) {
+            errors.put(key, result.error());
+        }
+    }
+
+    private boolean isMissingSchemaObject(Throwable error) {
+        Throwable current = error;
+        while (current != null) {
+            if (current instanceof SQLException sqlException) {
+                String sqlState = sqlException.getSQLState();
+                int vendorCode = sqlException.getErrorCode();
+                if ("42S02".equals(sqlState)
+                        || "42S22".equals(sqlState)
+                        || "42P01".equals(sqlState)
+                        || "42703".equals(sqlState)
+                        || vendorCode == 1054
+                        || vendorCode == 1146) {
+                    return true;
+                }
+            }
+            current = current.getCause();
+        }
+        return false;
+    }
+
+    private record HealthCount(Integer count, String error) {
+        private static HealthCount success(int count) {
+            return new HealthCount(count, null);
+        }
+
+        private static HealthCount failure(String error) {
+            return new HealthCount(null, error);
         }
     }
 

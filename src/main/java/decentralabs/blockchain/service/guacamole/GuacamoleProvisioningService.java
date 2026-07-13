@@ -31,6 +31,7 @@ public class GuacamoleProvisioningService {
     private final ObjectMapper objectMapper;
     private final ProvisionerRoute defaultRoute;
     private final Map<String, ProvisionerRoute> routesByKey;
+    private final String localAccessOrigin;
 
     public record ConnectionMetadata(
         long id,
@@ -74,7 +75,7 @@ public class GuacamoleProvisioningService {
             buildDefaultRoute(environment),
             buildRoutesByKey(environment, objectMapper),
             null,
-            null
+            buildLocalAccessOrigin(environment)
         );
     }
 
@@ -108,8 +109,8 @@ public class GuacamoleProvisioningService {
         this.objectMapper = objectMapper;
         this.defaultRoute = defaultRoute;
         this.routesByKey = routesByKey == null ? Map.of() : Map.copyOf(routesByKey);
+        this.localAccessOrigin = normalizeOrigin(localAccessOrigin);
         // Remote provisioners are intentionally accepted only through routesByKey.
-        // The final parameters remain for source compatibility with focused tests.
     }
 
     public static boolean isGuacamoleSelector(String accessKey) {
@@ -269,7 +270,7 @@ public class GuacamoleProvisioningService {
                 }
             }
         }
-        if (defaultRoute != null) {
+        if (defaultRoute != null && (!StringUtils.hasText(origin) || origin.equals(localAccessOrigin))) {
             return defaultRoute;
         }
         throw new IllegalStateException("No Guacamole provisioner route configured for accessURI: " + accessUri);
@@ -353,6 +354,18 @@ public class GuacamoleProvisioningService {
         }
     }
 
+    private static String buildLocalAccessOrigin(Environment environment) {
+        String serverName = firstText(
+            environment.getProperty("gateway.server.name"),
+            environment.getProperty("SERVER_NAME")
+        );
+        if (!StringUtils.hasText(serverName)) {
+            return null;
+        }
+        String port = firstText(environment.getProperty("HTTPS_PORT"), "443");
+        return "https://" + serverName.toLowerCase() + ("443".equals(port) ? "" : ":" + port);
+    }
+
     private static ProvisionerRoute routeFromUris(URI provisionUri, URI connectionsUri, String tokenHeader, String token) {
         if (provisionUri == null || connectionsUri == null) {
             return null;
@@ -378,8 +391,11 @@ public class GuacamoleProvisioningService {
                 return null;
             }
             int port = parsed.getPort();
-            String portPart = port < 0 ? "" : ":" + port;
-            return parsed.getScheme() + "://" + parsed.getHost() + portPart;
+            boolean defaultPort = port < 0
+                || ("https".equalsIgnoreCase(parsed.getScheme()) && port == 443)
+                || ("http".equalsIgnoreCase(parsed.getScheme()) && port == 80);
+            String portPart = defaultPort ? "" : ":" + port;
+            return parsed.getScheme().toLowerCase() + "://" + parsed.getHost().toLowerCase() + portPart;
         } catch (URISyntaxException ex) {
             return null;
         }

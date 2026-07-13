@@ -150,13 +150,20 @@ public class FmuSessionTicketService {
         response.setClaims(claims);
         response.setExpiresAt(Math.min(record.expiresAt(), exp));
         response.setSessionId(request.getSessionId());
-        response.setSessionObserved(accessCredentialAuditService.recordFmuTicketRedeemed(
+        AccessCredentialAuditService.SessionObservationResult observation =
+            accessCredentialAuditService.recordFmuTicketRedeemed(
             ticket,
             claims,
             request.getSessionId(),
             request.getGatewayId(),
             request.getObservedAt()
-        ));
+        );
+        if (observation == null) {
+            observation = AccessCredentialAuditService.SessionObservationResult.notRecorded();
+        }
+        response.setAuditRecorded(observation.auditRecorded());
+        response.setAttestationRecorded(observation.attestationRecorded());
+        response.setSessionObserved(observation.recorded());
         return response;
     }
 

@@ -26,6 +26,7 @@ import org.springframework.beans.factory.support.StaticListableBeanFactory;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.DataSourceTransactionManager;
 import org.springframework.jdbc.datasource.DriverManagerDataSource;
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.web.server.ResponseStatusException;
 import org.testcontainers.mysql.MySQLContainer;
@@ -69,6 +70,7 @@ class InstitutionalConcurrencyMySqlIntegrationTest {
         jdbcTemplate.update("DELETE FROM access_authorization_provisioning");
         jdbcTemplate.update("DELETE FROM institutional_checkin_outbox");
         jdbcTemplate.update("DELETE FROM institutional_wallet_nonce");
+        jdbcTemplate.update("DELETE FROM session_started_attestations");
         jdbcTemplate.execute("SET FOREIGN_KEY_CHECKS = 1");
     }
 
@@ -177,6 +179,53 @@ class InstitutionalConcurrencyMySqlIntegrationTest {
             "SELECT COUNT(*) FROM lab_access_codes WHERE code_hash IS NOT NULL AND consumed_at IS NULL",
             Integer.class
         )).isZero();
+    }
+
+    @Test
+    void onlyOneSessionStartedAttestationCanOwnPublicationForAReservation() throws Exception {
+        long first = insertAttestation("session-a", "0x" + "1".repeat(64));
+        long second = insertAttestation("session-b", "0x" + "2".repeat(64));
+
+        List<Boolean> claimed = runConcurrently(
+            () -> claimSessionStarted(first),
+            () -> claimSessionStarted(second)
+        );
+
+        assertThat(claimed).containsExactlyInAnyOrder(true, false);
+        assertThat(jdbcTemplate.queryForObject(
+            "SELECT COUNT(*) FROM session_started_attestations WHERE onchain_reservation_guard = '0xreservation'",
+            Integer.class
+        )).isEqualTo(1);
+    }
+
+    private long insertAttestation(String sessionId, String nonce) {
+        jdbcTemplate.update(
+            """
+            INSERT INTO session_started_attestations (
+                reservation_key, signer_address, session_id, access_type, started_at,
+                nonce, digest, signature, credential_reference_type, credential_reference_id
+            ) VALUES (?, ?, ?, 'fmu', CURRENT_TIMESTAMP, ?, ?, ?, 'jwt_jti', ?)
+            """,
+            "0xreservation", "0x1111111111111111111111111111111111111111", sessionId,
+            nonce, nonce, "0x" + "a".repeat(130), sessionId
+        );
+        return jdbcTemplate.queryForObject(
+            "SELECT id FROM session_started_attestations WHERE session_id = ?",
+            Long.class,
+            sessionId
+        );
+    }
+
+    private boolean claimSessionStarted(long id) {
+        try {
+            return jdbcTemplate.update(
+                "UPDATE session_started_attestations SET onchain_reservation_guard = reservation_key, "
+                    + "onchain_status = 'SUBMITTING' WHERE id = ?",
+                id
+            ) == 1;
+        } catch (DuplicateKeyException ex) {
+            return false;
+        }
     }
 
     private boolean redeem(AccessCodeService service, String code) {

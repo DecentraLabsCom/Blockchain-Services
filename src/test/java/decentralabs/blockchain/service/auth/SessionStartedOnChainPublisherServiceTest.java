@@ -7,6 +7,7 @@ import static org.mockito.ArgumentMatchers.contains;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -19,6 +20,7 @@ import java.util.List;
 import java.util.function.Consumer;
 import java.util.function.Function;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentMatchers;
 import org.mockito.Mock;
@@ -26,6 +28,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.test.util.ReflectionTestUtils;
 
 @ExtendWith(MockitoExtension.class)
@@ -34,6 +37,13 @@ class SessionStartedOnChainPublisherServiceTest {
     @Mock private JdbcTemplate jdbcTemplate;
     @Mock private SessionStartedOnChainClient onChainClient;
     @Mock private InstitutionalWalletTransactionDispatcher transactionDispatcher;
+
+    @BeforeEach
+    void noUnknownTransactionsByDefault() {
+        lenient().when(jdbcTemplate.query(
+            contains("WHERE onchain_status = 'STUCK_UNKNOWN'"), anyTransactionRowMapper(), eq(10)
+        )).thenReturn(List.of());
+    }
 
     @Test
     void dispatchesWithDurablyReservedNonceAndDoesNotWaitForReceipt() throws Exception {
@@ -127,6 +137,67 @@ class SessionStartedOnChainPublisherServiceTest {
         verify(onChainClient, never()).hasSessionStarted(anyString());
     }
 
+    @Test
+    void reservationGuardSupersedesConcurrentDuplicateBeforeBroadcast() throws Exception {
+        SessionStartedOnChainPublisherService service = buildService(jdbcTemplate);
+        mockSubmittedQuery(List.of());
+        mockPendingQuery("QUEUED", 0, null, null, null, null);
+        when(jdbcTemplate.update(anyString(), any(Object[].class))).thenAnswer(invocation -> {
+            String sql = invocation.getArgument(0);
+            if (sql.contains("onchain_reservation_guard = reservation_key")) {
+                throw new DuplicateKeyException("reservation already claimed");
+            }
+            return 1;
+        });
+
+        assertThat(service.publishPending(10)).isZero();
+
+        verify(jdbcTemplate).update(contains("onchain_status = 'SUPERSEDED'"), eq(7L));
+        verify(transactionDispatcher, never()).dispatch(anyString(), any(), any(), any(), any());
+    }
+
+    @Test
+    void reconcilesUnknownSessionFromAuthoritativeContractState() throws Exception {
+        SessionStartedOnChainPublisherService service = buildService(jdbcTemplate);
+        SessionStartedTransactionRecord unknown = mappedRecord(
+            "STUCK_UNKNOWN", 5, "0xwallet", BigInteger.valueOf(45),
+            "0x" + "e".repeat(64), Instant.now().minusSeconds(60)
+        );
+        mockUnknownQuery(List.of(unknown));
+        mockSubmittedQuery(List.of());
+        mockPendingEmpty();
+        when(onChainClient.hasSessionStarted("0xabc")).thenReturn(true);
+
+        assertThat(service.publishPending(10)).isEqualTo(1);
+
+        verify(jdbcTemplate).update(contains("onchain_status = 'STUCK_UNKNOWN'"), eq(7L));
+        verify(onChainClient, never()).transactionStateStrict(anyString());
+    }
+
+    @Test
+    void retriesUnknownSessionOnlyWhenNodeProvesItsNonceWasNotConsumed() throws Exception {
+        SessionStartedOnChainPublisherService service = buildService(jdbcTemplate);
+        String hash = "0x" + "f".repeat(64);
+        SessionStartedTransactionRecord unknown = mappedRecord(
+            "STUCK_UNKNOWN", 5, "0xwallet", BigInteger.valueOf(45), hash,
+            Instant.now().minusSeconds(60)
+        );
+        mockUnknownQuery(List.of(unknown));
+        mockSubmittedQuery(List.of());
+        mockPendingEmpty();
+        when(onChainClient.hasSessionStarted("0xabc")).thenReturn(false);
+        when(onChainClient.transactionStateStrict(hash))
+            .thenReturn(SessionStartedOnChainClient.TransactionState.PENDING);
+        when(onChainClient.transactionVisible(hash)).thenReturn(false);
+        when(onChainClient.pendingNonce("0xwallet")).thenReturn(BigInteger.valueOf(45));
+
+        service.publishPending(10);
+
+        verify(jdbcTemplate).update(
+            contains("onchain_status = 'RETRY'"), any(String.class), eq(7L), eq(hash)
+        );
+    }
+
     private SessionStartedOnChainPublisherService buildService(JdbcTemplate template) {
         when(jdbcTemplateProvider.getIfAvailable()).thenReturn(template);
         return new SessionStartedOnChainPublisherService(jdbcTemplateProvider, onChainClient, transactionDispatcher);
@@ -135,6 +206,12 @@ class SessionStartedOnChainPublisherServiceTest {
     private void mockSubmittedQuery(List<SessionStartedTransactionRecord> rows) {
         when(jdbcTemplate.query(
             contains("WHERE onchain_status = 'SUBMITTED'"), anyTransactionRowMapper(), eq(10)
+        )).thenAnswer(invocation -> rows);
+    }
+
+    private void mockUnknownQuery(List<SessionStartedTransactionRecord> rows) {
+        when(jdbcTemplate.query(
+            contains("WHERE onchain_status = 'STUCK_UNKNOWN'"), anyTransactionRowMapper(), eq(10)
         )).thenAnswer(invocation -> rows);
     }
 

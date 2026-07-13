@@ -217,6 +217,29 @@ public class InstitutionalCheckInOutboxService {
         }
     }
 
+    public List<InstitutionalCheckInOutboxRecord> findStuckUnknown(int limit) {
+        if (jdbcTemplate == null || limit <= 0) {
+            return List.of();
+        }
+        try {
+            return jdbcTemplate.query(
+                """
+                SELECT id, reservation_key, lab_id, institutional_wallet, puc_hash,
+                       access_session_id, status, attempts, next_attempt_at, tx_hash, wallet_address, nonce, submitted_at, version
+                FROM institutional_checkin_outbox
+                WHERE status = 'STUCK_UNKNOWN'
+                ORDER BY updated_at ASC, id ASC
+                LIMIT ?
+                """,
+                (rs, rowNum) -> mapRow(rs),
+                limit
+            );
+        } catch (Exception ex) {
+            log.warn("Institutional check-in reconciliation lookup skipped: {}", LogSanitizer.sanitize(ex.getMessage()));
+            return List.of();
+        }
+    }
+
     public void markSubmitted(long id, String txHash) {
         if (jdbcTemplate == null) {
             return;
@@ -397,6 +420,53 @@ public class InstitutionalCheckInOutboxService {
             WHERE id = ? AND status = 'SUBMITTED' AND tx_hash = ? AND version = ?
             """,
             attempts, truncate(error), record.id(), record.txHash(), record.version()
+        ) == 1;
+    }
+
+    public boolean markUnknownMinedSuccess(InstitutionalCheckInOutboxRecord record) {
+        if (jdbcTemplate == null || record == null) {
+            return false;
+        }
+        return jdbcTemplate.update(
+            """
+            UPDATE institutional_checkin_outbox
+            SET status = 'MINED_SUCCESS', mined_at = CURRENT_TIMESTAMP, last_error = NULL,
+                version = version + 1, updated_at = CURRENT_TIMESTAMP
+            WHERE id = ? AND status = 'STUCK_UNKNOWN' AND tx_hash = ? AND version = ?
+            """,
+            record.id(), record.txHash(), record.version()
+        ) == 1;
+    }
+
+    public boolean markUnknownMinedFailed(InstitutionalCheckInOutboxRecord record, String error) {
+        if (jdbcTemplate == null || record == null) {
+            return false;
+        }
+        return jdbcTemplate.update(
+            """
+            UPDATE institutional_checkin_outbox
+            SET status = 'MINED_FAILED', mined_at = CURRENT_TIMESTAMP, last_error = ?,
+                version = version + 1, updated_at = CURRENT_TIMESTAMP
+            WHERE id = ? AND status = 'STUCK_UNKNOWN' AND tx_hash = ? AND version = ?
+            """,
+            truncate(error), record.id(), record.txHash(), record.version()
+        ) == 1;
+    }
+
+    public boolean markUnknownRetry(
+        InstitutionalCheckInOutboxRecord record, Instant nextAttemptAt, String reason
+    ) {
+        if (jdbcTemplate == null || record == null) {
+            return false;
+        }
+        return jdbcTemplate.update(
+            """
+            UPDATE institutional_checkin_outbox
+            SET status = 'RETRY', attempts = GREATEST(attempts - 1, 0), next_attempt_at = ?,
+                last_error = ?, version = version + 1, updated_at = CURRENT_TIMESTAMP
+            WHERE id = ? AND status = 'STUCK_UNKNOWN' AND tx_hash = ? AND version = ?
+            """,
+            Timestamp.from(nextAttemptAt), truncate(reason), record.id(), record.txHash(), record.version()
         ) == 1;
     }
 

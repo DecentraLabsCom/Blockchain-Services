@@ -47,7 +47,7 @@ class SamlAuthServiceTest {
     private InstitutionalAccessCheckInCoordinator accessCheckInCoordinator;
 
     @Mock
-    private AccessCredentialAuditService accessCredentialAuditService;
+    private AccessCredentialDeliveryService accessCredentialDeliveryService;
 
     @Mock
     private AccessAuthorizationProvisioningService accessAuthorizationProvisioningService;
@@ -103,8 +103,8 @@ class SamlAuthServiceTest {
             when(jwtService.generateIssuedToken(eq(null), any())).thenReturn(
                 new JwtService.IssuedToken("booking-token", "jwt-jti-provider", 1_700_000_000L, null)
             );
-            when(accessCodeService.issue("booking-token", "0xreservation", 1L)).thenReturn(
-                new decentralabs.blockchain.dto.auth.AccessCodeResponse("opaque-code", "https://lab.example.com/guacamole/")
+            when(accessCredentialDeliveryService.deliver(any(), any(), any(), eq(bookingInfo), any())).thenReturn(
+                AuthResponse.opaqueAccess("opaque-code", "https://lab.example.com/guacamole/", "lab", "0xreservation")
             );
             var lease = new AccessAuthorizationProvisioningService.ProvisioningLease(
                 "0xreservation", "fence-token", 1L
@@ -121,11 +121,7 @@ class SamlAuthServiceTest {
             assertThat(response.getLabURL()).isEqualTo("https://lab.example.com/guacamole/");
             assertThat(response.getReservationKey()).isEqualTo("0xreservation");
             verify(accessCheckInCoordinator, never()).recordAccessGranted(any(), any(), any());
-            verify(accessCredentialAuditService).recordJwtIssued(any(), any(), eq(bookingInfo), any());
-            verify(accessCodeService).issue("booking-token", "0xreservation", 1L);
-            var deliveryOrder = org.mockito.Mockito.inOrder(accessCodeService, accessCredentialAuditService);
-            deliveryOrder.verify(accessCredentialAuditService).recordJwtIssued(any(), any(), eq(bookingInfo), any());
-            deliveryOrder.verify(accessCodeService).issue("booking-token", "0xreservation", 1L);
+            verify(accessCredentialDeliveryService).deliver(any(), any(), any(), eq(bookingInfo), eq(lease));
         }
 
         @Test
@@ -157,10 +153,8 @@ class SamlAuthServiceTest {
             );
             when(accessAuthorizationProvisioningService.tryStart("0xcanonical")).thenReturn(lease);
             when(accessAuthorizationProvisioningService.markDelivered(lease)).thenReturn(true);
-            when(accessCodeService.issue("booking-token", "0xcanonical", 7L)).thenReturn(
-                new decentralabs.blockchain.dto.auth.AccessCodeResponse(
-                    "opaque-code", "https://lab.example.com/fmu/", "fmu"
-                )
+            when(accessCredentialDeliveryService.deliver(any(), any(), any(), eq(bookingInfo), eq(lease))).thenReturn(
+                AuthResponse.opaqueAccess("opaque-code", "https://lab.example.com/fmu/", "fmu", "0xcanonical")
             );
 
             AuthResponse response = samlAuthService.issueAccessCredential(request);
@@ -170,7 +164,7 @@ class SamlAuthServiceTest {
             assertThat(response.getResourceType()).isEqualTo("fmu");
             verify(accessAuthorizationProvisioningService).recoverableProvisioning("0xcanonical");
             verify(accessAuthorizationProvisioningService).tryStart("0xcanonical");
-            verify(accessCodeService).issue("booking-token", "0xcanonical", 7L);
+            verify(accessCredentialDeliveryService).deliver(any(), any(), any(), eq(bookingInfo), eq(lease));
         }
 
         @Test
@@ -277,7 +271,7 @@ class SamlAuthServiceTest {
             verify(blockchainService).deletePreparedGuacamoleAccess(bookingInfo);
             verify(accessAuthorizationProvisioningService).markRolledBack(lease);
             verify(jwtService, never()).generateIssuedToken(eq(null), any());
-            verify(accessCredentialAuditService, never()).recordJwtIssued(any(), any(), any(), any());
+            verify(accessCredentialDeliveryService, never()).deliver(any(), any(), any(), any(), any());
         }
 
         @Test
@@ -346,8 +340,8 @@ class SamlAuthServiceTest {
             when(accessAuthorizationProvisioningService.isCurrent(lease)).thenReturn(true);
             when(accessAuthorizationProvisioningService.heartbeat(lease)).thenReturn(true);
             when(accessAuthorizationProvisioningService.markDelivered(lease)).thenReturn(true);
-            when(accessCodeService.issue("booking-token", "0xreservation", 2L)).thenReturn(
-                new decentralabs.blockchain.dto.auth.AccessCodeResponse("opaque-code", "https://lab.example.com/guacamole/")
+            when(accessCredentialDeliveryService.deliver(any(), any(), any(), eq(bookingInfo), eq(lease))).thenReturn(
+                AuthResponse.opaqueAccess("opaque-code", "https://lab.example.com/guacamole/", "lab", "0xreservation")
             );
 
             samlAuthService.issueAccessCredential(request);
@@ -393,10 +387,8 @@ class SamlAuthServiceTest {
         when(accessAuthorizationProvisioningService.isCurrent(lease)).thenReturn(true);
         when(accessAuthorizationProvisioningService.heartbeat(lease)).thenReturn(true);
         when(accessAuthorizationProvisioningService.markDelivered(lease)).thenReturn(true);
-        when(accessCodeService.issue("booking-token", "0xreservation", 1L)).thenReturn(
-            new decentralabs.blockchain.dto.auth.AccessCodeResponse(
-                "opaque-code", "https://lab.example.com/guacamole/"
-            )
+        when(accessCredentialDeliveryService.deliver(any(), any(), any(), eq(bookingInfo), eq(lease))).thenReturn(
+            AuthResponse.opaqueAccess("opaque-code", "https://lab.example.com/guacamole/", "lab", "0xreservation")
         );
 
         samlAuthService.authorizeAndIssue(request);

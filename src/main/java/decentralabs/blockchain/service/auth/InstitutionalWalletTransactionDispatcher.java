@@ -6,20 +6,19 @@ import java.util.function.Consumer;
 import java.util.function.Function;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 import org.web3j.protocol.core.DefaultBlockParameterName;
 
 /**
- * Durable, cross-replica critical section for institutional-wallet nonce
- * allocation, signing, broadcast and transaction-hash persistence.
+ * Dispatches institutional-wallet transactions after committing their nonce
+ * ownership. Broadcast deliberately happens outside the reservation transaction
+ * so a process crash cannot roll the nonce association back and permit reuse.
  */
 @Service
 @RequiredArgsConstructor
 public class InstitutionalWalletTransactionDispatcher {
-    private final InstitutionalCheckInOutboxService nonceStore;
+    private final InstitutionalWalletNonceReservationService nonceReservationService;
     private final WalletService walletService;
 
-    @Transactional(noRollbackFor = InstitutionalWalletDispatchException.class)
     public String dispatch(
         String walletAddress,
         BigInteger existingNonce,
@@ -32,8 +31,9 @@ public class InstitutionalWalletTransactionDispatcher {
         }
         BigInteger nonce = existingNonce;
         if (nonce == null) {
-            nonce = nonceStore.reserveNextNonce(walletAddress, pendingNonce(walletAddress));
-            persistNonce.accept(nonce);
+            nonce = nonceReservationService.reserveAndPersist(
+                walletAddress, pendingNonce(walletAddress), persistNonce
+            );
         }
 
         try {

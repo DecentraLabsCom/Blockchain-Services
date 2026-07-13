@@ -7,6 +7,9 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
+import decentralabs.blockchain.service.wallet.BlockchainBookingService;
+import java.math.BigInteger;
+import java.util.Map;
 
 /** Monitors receipts for hashes already persisted by the submission worker. */
 @Service
@@ -15,6 +18,7 @@ import org.springframework.stereotype.Service;
 public class InstitutionalCheckInReceiptMonitor {
     private final InstitutionalCheckInOutboxService outboxService;
     private final CheckInOnChainService checkInOnChainService;
+    private final BlockchainBookingService bookingService;
 
     @Value("${institutional.checkin.outbox.batch-size:10}")
     private int batchSize;
@@ -35,6 +39,63 @@ public class InstitutionalCheckInReceiptMonitor {
         }
         for (InstitutionalCheckInOutboxRecord record : submitted) {
             monitor(record);
+        }
+        List<InstitutionalCheckInOutboxRecord> unknown = outboxService.findStuckUnknown(Math.max(1, batchSize));
+        if (unknown != null) {
+            for (InstitutionalCheckInOutboxRecord record : unknown) {
+                reconcileUnknown(record);
+            }
+        }
+    }
+
+    void reconcileUnknown(InstitutionalCheckInOutboxRecord record) {
+        if (record == null || record.txHash() == null || record.txHash().isBlank()) {
+            return;
+        }
+        try {
+            if (isAccessAlreadyAuthorized(record)) {
+                outboxService.markUnknownMinedSuccess(record);
+                return;
+            }
+            CheckInOnChainService.TransactionState state =
+                checkInOnChainService.transactionStateStrict(record.txHash());
+            if (state == CheckInOnChainService.TransactionState.SUCCEEDED) {
+                outboxService.markUnknownMinedSuccess(record);
+                return;
+            }
+            if (state == CheckInOnChainService.TransactionState.FAILED) {
+                outboxService.markUnknownMinedFailed(record, "Check-in transaction reverted on-chain");
+                return;
+            }
+            if (record.nonce() == null || record.walletAddress() == null
+                    || checkInOnChainService.transactionVisible(record.txHash())) {
+                return;
+            }
+            BigInteger pendingNonce = checkInOnChainService.pendingNonce(record.walletAddress());
+            if (pendingNonce.compareTo(record.nonce()) <= 0) {
+                outboxService.markUnknownRetry(
+                    record,
+                    Instant.now(),
+                    "Reconciler proved the transaction absent and its nonce unconsumed; retrying the same nonce"
+                );
+            }
+        } catch (RuntimeException ex) {
+            log.warn("Unable to reconcile institutional check-in {}: {}", record.id(), ex.getMessage());
+        }
+    }
+
+    private boolean isAccessAlreadyAuthorized(InstitutionalCheckInOutboxRecord record) {
+        Map<String, Object> bookingInfo = bookingService.getCheckInBookingInfo(
+            record.institutionalWallet(), record.reservationKey(), record.labId(), null
+        );
+        Object value = bookingInfo.get("reservationStatus");
+        if (value instanceof Number status) {
+            return status.longValue() == 2L;
+        }
+        try {
+            return value != null && new BigInteger(value.toString()).longValue() == 2L;
+        } catch (RuntimeException ignored) {
+            return false;
         }
     }
 

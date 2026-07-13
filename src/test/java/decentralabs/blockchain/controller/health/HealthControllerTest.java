@@ -5,6 +5,7 @@ import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -13,6 +14,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.sql.SQLException;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -22,6 +24,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.api.io.TempDir;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.jdbc.BadSqlGrammarException;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.util.ReflectionTestUtils;
@@ -223,7 +226,13 @@ class HealthControllerTest {
 
             mockMvc.perform(get("/health"))
                 .andExpect(status().isServiceUnavailable())
-                .andExpect(jsonPath("$.database_up").value(false));
+                .andExpect(jsonPath("$.database_up").value(false))
+                .andExpect(jsonPath("$.nonce_backlog").doesNotExist())
+                .andExpect(jsonPath("$.access_deliveries_stuck").doesNotExist())
+                .andExpect(jsonPath("$.session_started_unknown").doesNotExist())
+                .andExpect(jsonPath("$.queue_health_errors.nonce_backlog").value("DATABASE_UNAVAILABLE"))
+                .andExpect(jsonPath("$.queue_health_errors.access_deliveries_stuck").value("DATABASE_UNAVAILABLE"))
+                .andExpect(jsonPath("$.queue_health_errors.session_started_unknown").value("DATABASE_UNAVAILABLE"));
         }
 
         @Test
@@ -253,6 +262,89 @@ class HealthControllerTest {
                 .andExpect(jsonPath("$.nonce_backlog").value(2))
                 .andExpect(jsonPath("$.access_deliveries_stuck").value(0))
                 .andExpect(jsonPath("$.session_started_unknown").value(0));
+        }
+
+        @Test
+        @DisplayName("Should count unknown SessionStarted transactions from the attestation table")
+        void shouldCountUnknownSessionStartedTransactionsFromAttestations() throws Exception {
+            setupHealthyEnvironment();
+
+            mockMvc.perform(get("/health"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.session_started_unknown").value(0))
+                .andExpect(jsonPath("$.queue_health_errors").isEmpty());
+
+            verify(jdbcTemplate).queryForObject(
+                org.mockito.ArgumentMatchers.contains("FROM session_started_attestations"),
+                eq(Integer.class)
+            );
+        }
+
+        @Test
+        @DisplayName("Should expose a missing durable queue migration separately from backlog")
+        void shouldExposeMissingQueueMigration() throws Exception {
+            setupHealthyEnvironment();
+            String sql = "SELECT COUNT(*) FROM session_started_attestations WHERE onchain_status = 'STUCK_UNKNOWN'";
+            when(jdbcTemplate.queryForObject(
+                org.mockito.ArgumentMatchers.contains("FROM session_started_attestations"),
+                eq(Integer.class)
+            )).thenThrow(new BadSqlGrammarException(
+                "session started health",
+                sql,
+                new SQLException("Table does not exist", "42S02", 1146)
+            ));
+            when(jdbcTemplate.queryForObject(
+                org.mockito.ArgumentMatchers.contains("flyway_schema_history"),
+                eq(Integer.class),
+                eq("21")
+            )).thenReturn(0);
+
+            mockMvc.perform(get("/health"))
+                .andExpect(status().isServiceUnavailable())
+                .andExpect(jsonPath("$.status").value("DEGRADED"))
+                .andExpect(jsonPath("$.session_started_unknown").doesNotExist())
+                .andExpect(jsonPath("$.queue_health_errors.session_started_unknown").value("MIGRATION_MISSING"));
+        }
+
+        @Test
+        @DisplayName("Should report a bad queue query when its required migration is already applied")
+        void shouldNotMisclassifyBadQueryAsMissingMigration() throws Exception {
+            setupHealthyEnvironment();
+            String sql = "SELECT COUNT(*) FROM session_started_attestations WHERE missing_column = 1";
+            when(jdbcTemplate.queryForObject(
+                org.mockito.ArgumentMatchers.contains("FROM session_started_attestations"),
+                eq(Integer.class)
+            )).thenThrow(new BadSqlGrammarException(
+                "session started health",
+                sql,
+                new SQLException("Unknown column", "42S22", 1054)
+            ));
+            when(jdbcTemplate.queryForObject(
+                org.mockito.ArgumentMatchers.contains("flyway_schema_history"),
+                eq(Integer.class),
+                eq("21")
+            )).thenReturn(1);
+
+            mockMvc.perform(get("/health"))
+                .andExpect(status().isServiceUnavailable())
+                .andExpect(jsonPath("$.session_started_unknown").doesNotExist())
+                .andExpect(jsonPath("$.queue_health_errors.session_started_unknown").value("QUERY_FAILED"));
+        }
+
+        @Test
+        @DisplayName("Should expose a durable queue query failure separately from backlog")
+        void shouldExposeQueueQueryFailure() throws Exception {
+            setupHealthyEnvironment();
+            when(jdbcTemplate.queryForObject(
+                org.mockito.ArgumentMatchers.contains("FROM session_started_attestations"),
+                eq(Integer.class)
+            )).thenThrow(new RuntimeException("Query timed out"));
+
+            mockMvc.perform(get("/health"))
+                .andExpect(status().isServiceUnavailable())
+                .andExpect(jsonPath("$.status").value("DEGRADED"))
+                .andExpect(jsonPath("$.session_started_unknown").doesNotExist())
+                .andExpect(jsonPath("$.queue_health_errors.session_started_unknown").value("QUERY_FAILED"));
         }
     }
 

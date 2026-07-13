@@ -36,7 +36,7 @@ public class SamlAuthService {
     private final MarketplaceEndpointAuthService marketplaceEndpointAuthService;
     private final SamlValidationService samlValidationService;
     private final InstitutionalAccessCheckInCoordinator accessCheckInCoordinator;
-    private final AccessCredentialAuditService accessCredentialAuditService;
+    private final AccessCredentialDeliveryService accessCredentialDeliveryService;
     private final AccessAuthorizationProvisioningService accessAuthorizationProvisioningService;
     private final CheckInOnChainService checkInOnChainService;
     private final AccessCodeService accessCodeService;
@@ -124,8 +124,9 @@ public class SamlAuthService {
             auditRequest.setReservationKey(canonicalReservationKey);
             auditRequest.setLabId(request.getLabId());
             auditRequest.setTimestamp(System.currentTimeMillis() / 1000);
-            accessCredentialAuditService.recordJwtIssued(auditRequest, marketplaceJWTClaims, bookingInfo, issuedToken);
-            AuthResponse response = buildDeliveredAccessResponse(issuedToken, bookingInfo, provisionalLease);
+            AuthResponse response = accessCredentialDeliveryService.deliver(
+                issuedToken, auditRequest, marketplaceJWTClaims, bookingInfo, provisionalLease
+            );
             issuedAccessCode = response.getAccessCode();
             if (provisionalLease != null && !accessAuthorizationProvisioningService.markDelivered(provisionalLease)) {
                 throw provisioningLeaseLost(provisionalLease, txHash);
@@ -233,8 +234,9 @@ public class SamlAuthService {
             }
             bindFmuIdentity(bookingInfo, jwtPuc);
             JwtService.IssuedToken issuedToken = jwtService.generateIssuedToken(null, bookingInfo);
-            accessCredentialAuditService.recordJwtIssued(request, marketplaceJWTClaims, bookingInfo, issuedToken);
-            AuthResponse response = buildDeliveredAccessResponse(issuedToken, bookingInfo, provisionalLease);
+            AuthResponse response = accessCredentialDeliveryService.deliver(
+                issuedToken, request, marketplaceJWTClaims, bookingInfo, provisionalLease
+            );
             issuedAccessCode = response.getAccessCode();
             if (provisionalLease != null && !accessAuthorizationProvisioningService.markDelivered(provisionalLease)) {
                 throw provisioningLeaseLost(provisionalLease, null);
@@ -346,24 +348,6 @@ public class SamlAuthService {
         if (!accessAuthorizationProvisioningService.isCurrent(lease)) {
             throw provisioningLeaseLost(lease, txHash);
         }
-    }
-
-    /**
-     * The provider persists the browser hand-off before declaring provisioning
-     * delivered. Marketplace never receives the Guacamole bearer credential.
-     */
-    private AuthResponse buildDeliveredAccessResponse(
-        JwtService.IssuedToken issuedToken,
-        Map<String, Object> bookingInfo,
-        AccessAuthorizationProvisioningService.ProvisioningLease lease
-    ) {
-        if (lease == null) {
-            throw new IllegalStateException("Access delivery requires a provisioning generation");
-        }
-        var accessCode = accessCodeService.issue(issuedToken.token(), lease.reservationKey(), lease.generation());
-        return AuthResponse.opaqueAccess(
-            accessCode.getAccessCode(), accessCode.getLabURL(), accessCode.getResourceType(), lease.reservationKey()
-        );
     }
 
     private AuthResponse recoverDeliveredAccess(String reservationKey) {

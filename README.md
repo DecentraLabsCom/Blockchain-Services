@@ -304,6 +304,10 @@ Health endpoint available at `/health`:
   "marketplace_key_cached": true,
   "institution_registered": true,
   "jwt_validation": "ready",
+  "nonce_backlog": 0,
+  "access_deliveries_stuck": 0,
+  "session_started_unknown": 0,
+  "queue_health_errors": {},
   "endpoints": {
     "authorize-and-issue": "disabled (providers flag off)",
     "checkin-institutional": "disabled (providers flag off)",
@@ -315,6 +319,19 @@ Health endpoint available at `/health`:
   }
 }
 ```
+
+The durable-queue counts are numeric only when their queries succeed. A database outage,
+missing Flyway migration, or other query failure returns the affected count as `null`,
+sets `/health` to `DEGRADED`, and records `DATABASE_UNAVAILABLE`, `MIGRATION_MISSING`,
+or `QUERY_FAILED` under `queue_health_errors`. A positive numeric count is a real backlog,
+not a query-error sentinel.
+
+Institutional check-in and `SessionStarted` publishers persist the wallet nonce owner
+before broadcast. Rows that exhaust replacement attempts enter `STUCK_UNKNOWN`; a
+scheduled reconciler first checks authoritative contract state and receipts, and only
+requeues when the node also proves that the hash is absent and the stored nonce remains
+unconsumed. `SessionStarted` additionally uses a unique per-reservation publication guard
+so concurrent attestations cannot produce multiple transactions for one reservation.
 
 ## 🤝 Contributing
 

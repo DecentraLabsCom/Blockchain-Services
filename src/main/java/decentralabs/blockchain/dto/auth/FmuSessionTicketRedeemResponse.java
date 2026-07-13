@@ -7,6 +7,8 @@ public class FmuSessionTicketRedeemResponse {
     private long expiresAt;
     private String sessionId;
     private boolean sessionObserved;
+    private boolean auditRecorded;
+    private boolean attestationRecorded;
 
     public Map<String, Object> getClaims() {
         return claims;
@@ -38,5 +40,21 @@ public class FmuSessionTicketRedeemResponse {
 
     public void setSessionObserved(boolean sessionObserved) {
         this.sessionObserved = sessionObserved;
+    }
+
+    public boolean isAuditRecorded() {
+        return auditRecorded;
+    }
+
+    public void setAuditRecorded(boolean auditRecorded) {
+        this.auditRecorded = auditRecorded;
+    }
+
+    public boolean isAttestationRecorded() {
+        return attestationRecorded;
+    }
+
+    public void setAttestationRecorded(boolean attestationRecorded) {
+        this.attestationRecorded = attestationRecorded;
     }
 }

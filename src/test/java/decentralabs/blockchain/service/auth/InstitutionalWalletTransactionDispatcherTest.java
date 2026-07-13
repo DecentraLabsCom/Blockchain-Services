@@ -23,7 +23,7 @@ import org.web3j.protocol.core.methods.response.EthGetTransactionCount;
 
 @ExtendWith(MockitoExtension.class)
 class InstitutionalWalletTransactionDispatcherTest {
-    @Mock private InstitutionalCheckInOutboxService nonceStore;
+    @Mock private InstitutionalWalletNonceReservationService nonceReservationService;
     @Mock private WalletService walletService;
     @Mock private Web3j web3j;
     @Mock private Request<?, EthGetTransactionCount> nonceRequest;
@@ -36,12 +36,16 @@ class InstitutionalWalletTransactionDispatcherTest {
         doReturn(nonceRequest).when(web3j)
             .ethGetTransactionCount(eq("0xwallet"), any(DefaultBlockParameter.class));
         when(nonceRequest.send()).thenReturn(response);
-        when(nonceStore.reserveNextNonce("0xwallet", BigInteger.valueOf(45)))
-            .thenReturn(BigInteger.valueOf(47));
+        when(nonceReservationService.reserveAndPersist(eq("0xwallet"), eq(BigInteger.valueOf(45)), any()))
+            .thenAnswer(invocation -> {
+                BigInteger nonce = BigInteger.valueOf(47);
+                invocation.<java.util.function.Consumer<BigInteger>>getArgument(2).accept(nonce);
+                return nonce;
+            });
         AtomicReference<BigInteger> persistedNonce = new AtomicReference<>();
         AtomicReference<String> persistedHash = new AtomicReference<>();
         InstitutionalWalletTransactionDispatcher dispatcher =
-            new InstitutionalWalletTransactionDispatcher(nonceStore, walletService);
+            new InstitutionalWalletTransactionDispatcher(nonceReservationService, walletService);
 
         String hash = dispatcher.dispatch(
             "0xwallet",
@@ -58,7 +62,7 @@ class InstitutionalWalletTransactionDispatcherTest {
     @Test
     void reusesExistingNonceAndClassifiesLostRpcResponseAsUncertain() {
         InstitutionalWalletTransactionDispatcher dispatcher =
-            new InstitutionalWalletTransactionDispatcher(nonceStore, walletService);
+            new InstitutionalWalletTransactionDispatcher(nonceReservationService, walletService);
 
         assertThatThrownBy(() -> dispatcher.dispatch(
             "0xwallet",
@@ -69,7 +73,7 @@ class InstitutionalWalletTransactionDispatcherTest {
         )).isInstanceOf(InstitutionalWalletDispatchException.class)
             .hasCauseInstanceOf(IllegalStateException.class);
 
-        verify(nonceStore, never()).reserveNextNonce(eq("0xwallet"), any());
+        verify(nonceReservationService, never()).reserveAndPersist(eq("0xwallet"), any(), any());
         verify(walletService, never()).getWeb3jInstance();
     }
 }

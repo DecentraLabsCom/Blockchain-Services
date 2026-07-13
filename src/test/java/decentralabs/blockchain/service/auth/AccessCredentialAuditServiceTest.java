@@ -185,7 +185,7 @@ class AccessCredentialAuditServiceTest {
         when(sessionStartedAttestationService.recordSessionStarted(any(), org.mockito.ArgumentMatchers.anyLong(), anyString()))
             .thenReturn(true);
 
-        boolean recorded = service.recordFmuTicketRedeemed(
+        AccessCredentialAuditService.SessionObservationResult result = service.recordFmuTicketRedeemed(
             "st_secret_ticket",
             Map.of("reservationKey", "0xabc", "targetGatewayId", "gateway-a"),
             "sess-fmu-1",
@@ -193,7 +193,7 @@ class AccessCredentialAuditServiceTest {
             Instant.now().getEpochSecond()
         );
 
-        org.assertj.core.api.Assertions.assertThat(recorded).isTrue();
+        org.assertj.core.api.Assertions.assertThat(result.recorded()).isTrue();
         ArgumentCaptor<Object[]> args = ArgumentCaptor.forClass(Object[].class);
         verify(jdbcTemplate).update(contains("session_observed_at"), args.capture());
         org.assertj.core.api.Assertions.assertThat(args.getValue())
