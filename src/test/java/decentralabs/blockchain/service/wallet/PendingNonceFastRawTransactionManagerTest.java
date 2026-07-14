@@ -1,6 +1,8 @@
 package decentralabs.blockchain.service.wallet;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.doReturn;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -117,13 +119,13 @@ class PendingNonceFastRawTransactionManagerTest {
             anyString(), any(), any(), anyString(), any(), any(), anyString(), any(), anyString()
         )).thenReturn(attempt);
         stubPendingCount(BigInteger.valueOf(14));
-        Request<?, EthSendTransaction> sendRequest = (Request<?, EthSendTransaction>) mock(Request.class);
         EthSendTransaction accepted = new EthSendTransaction();
         accepted.setResult("0x" + "a".repeat(64));
-        when(sendRequest.send()).thenReturn(accepted);
-        when(web3j.ethSendRawTransaction(any()))
-            .thenThrow(new RuntimeException("rpc unavailable"))
-            .thenReturn((Request) sendRequest);
+        Request<?, EthSendTransaction> sendRequest = requestReturning(accepted);
+        doThrow(new RuntimeException("rpc unavailable"))
+            .doReturn(sendRequest)
+            .when(web3j)
+            .ethSendRawTransaction(any());
 
         org.assertj.core.api.Assertions.assertThatThrownBy(() -> durableManager.sendTransaction(
             BigInteger.valueOf(2_000_000_000L), BigInteger.valueOf(300_000),
@@ -154,14 +156,21 @@ class PendingNonceFastRawTransactionManagerTest {
         verify(transactionOutboxService, times(2)).markSubmitted(any(), anyString());
     }
 
-    @SuppressWarnings({"unchecked", "rawtypes"})
     private void stubPendingCount(BigInteger transactionCount) throws Exception {
-        Request<?, EthGetTransactionCount> request = (Request<?, EthGetTransactionCount>) mock(Request.class);
         EthGetTransactionCount response = mock(EthGetTransactionCount.class);
-        when(web3j.ethGetTransactionCount(CREDENTIALS.getAddress(), DefaultBlockParameterName.PENDING))
-            .thenReturn((Request) request);
-        when(request.send()).thenReturn(response);
+        Request<?, EthGetTransactionCount> request = requestReturning(response);
+        doReturn(request).when(web3j)
+            .ethGetTransactionCount(CREDENTIALS.getAddress(), DefaultBlockParameterName.PENDING);
         when(response.getTransactionCount()).thenReturn(transactionCount);
+    }
+
+    private static <T extends org.web3j.protocol.core.Response<?>> Request<?, T> requestReturning(T response) {
+        return new Request<Object, T>() {
+            @Override
+            public T send() {
+                return response;
+            }
+        };
     }
 
     private static final class TestPendingNonceFastRawTransactionManager extends PendingNonceFastRawTransactionManager {
