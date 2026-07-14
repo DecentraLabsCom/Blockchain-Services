@@ -118,8 +118,25 @@ public class AccessCredentialAuditService {
             return;
         }
 
+        persist(fmuTicketAuditRecord(sessionTicket, claims, expiresAt));
+    }
+
+    /** Fails closed so ticket issuance cannot return a capability without its audit row. */
+    public void recordFmuTicketIssuedRequired(String sessionTicket, Map<String, Object> claims, long expiresAt) {
+        if (!hasText(sessionTicket)) {
+            throw new IllegalArgumentException("Issued FMU session ticket is required for durable audit");
+        }
+        String reservationKey = stringValue(claims, "reservationKey");
+        if (!hasText(reservationKey)) {
+            throw new IllegalArgumentException("reservationKey is required for durable FMU ticket audit");
+        }
+        persistRequired(fmuTicketAuditRecord(sessionTicket, claims, expiresAt));
+    }
+
+    private AuditRecord fmuTicketAuditRecord(String sessionTicket, Map<String, Object> claims, long expiresAt) {
+        String reservationKey = stringValue(claims, "reservationKey");
         String ticketHash = sha256Hex(sessionTicket);
-        persist(new AuditRecord(
+        return new AuditRecord(
             reservationKey,
             firstNonBlank(stringValue(claims, "labId"), stringValue(claims, "lab")),
             resolvePucHash(claims, claims),
@@ -132,7 +149,7 @@ public class AccessCredentialAuditService {
             expiresAt,
             issuerBackendId,
             ticketHash
-        ));
+        );
     }
 
     public SessionObservationResult recordSessionObserved(AccessCredentialSessionObservedRequest request) {

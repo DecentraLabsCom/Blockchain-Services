@@ -27,6 +27,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 @Service
 @Slf4j
@@ -60,6 +61,7 @@ public class FmuSessionTicketService {
         this.ticketCipher = ticketCipher;
     }
 
+    @Transactional
     public FmuSessionTicketIssueResponse issue(String bearerToken, FmuSessionTicketIssueRequest request) {
         cleanupExpired();
         String token = normalizeBearerToken(bearerToken);
@@ -100,7 +102,12 @@ public class FmuSessionTicketService {
         String ticket = generateTicket();
         TicketRecord record = new TicketRecord(claims, ticketExpiry);
         persistTicket(ticket, record);
-        accessCredentialAuditService.recordFmuTicketIssued(ticket, claims, ticketExpiry);
+        try {
+            accessCredentialAuditService.recordFmuTicketIssuedRequired(ticket, claims, ticketExpiry);
+        } catch (RuntimeException auditFailure) {
+            discardTicketAfterAuditFailure(ticket, auditFailure);
+            throw auditFailure;
+        }
 
         FmuSessionTicketIssueResponse response = new FmuSessionTicketIssueResponse();
         response.setSessionTicket(ticket);
@@ -294,6 +301,19 @@ public class FmuSessionTicketService {
 
     private boolean isPersistentStoreAvailable() {
         return jdbcTemplate != null;
+    }
+
+    private void discardTicketAfterAuditFailure(String ticket, RuntimeException auditFailure) {
+        tickets.remove(ticketHash(ticket));
+        if (!isPersistentStoreAvailable()) {
+            return;
+        }
+        try {
+            jdbcTemplate.update("DELETE FROM " + TICKETS_TABLE + " WHERE ticket_hash = ?", ticketHash(ticket));
+        } catch (DataAccessException cleanupFailure) {
+            log.error("Failed to discard FMU session ticket after audit failure", cleanupFailure);
+            auditFailure.addSuppressed(cleanupFailure);
+        }
     }
 
     private void handlePersistenceException(String operation, DataAccessException ex) {

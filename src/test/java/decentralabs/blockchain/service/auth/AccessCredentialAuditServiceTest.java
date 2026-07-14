@@ -1,6 +1,7 @@
 package decentralabs.blockchain.service.auth;
 
 import static org.assertj.core.api.Assertions.assertThatCode;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.contains;
@@ -95,6 +96,19 @@ class AccessCredentialAuditServiceTest {
             org.assertj.core.api.Assertions.assertThat(values).contains("0xabc", "42", "fmu", "jwt-jti");
             org.assertj.core.api.Assertions.assertThat(values).doesNotContain("st_secret_ticket");
         }).doesNotThrowAnyException();
+    }
+
+    @Test
+    void shouldFailClosedForRequiredFmuTicketAuditWithoutDatasource() {
+        AccessCredentialAuditService service = buildService(null);
+
+        assertThatThrownBy(() -> service.recordFmuTicketIssuedRequired(
+            "st_secret_ticket",
+            Map.of("reservationKey", "0xabc"),
+            1_700_003_600L
+        ))
+            .isInstanceOf(IllegalStateException.class)
+            .hasMessageContaining("requires a datasource");
     }
 
     @Test

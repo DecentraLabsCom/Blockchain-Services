@@ -6,6 +6,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.doThrow;
 
 import decentralabs.blockchain.dto.auth.FmuSessionTicketIssueRequest;
 import decentralabs.blockchain.dto.auth.FmuSessionTicketRedeemRequest;
@@ -67,7 +68,7 @@ class FmuSessionTicketServiceTest {
         assertThat(issueResponse.getLabId()).isEqualTo("42");
         assertThat(issueResponse.isOneTimeUse()).isFalse();
         org.mockito.Mockito.verify(accessCredentialAuditService)
-            .recordFmuTicketIssued(org.mockito.Mockito.eq(issueResponse.getSessionTicket()), org.mockito.Mockito.eq(claims), org.mockito.Mockito.anyLong());
+            .recordFmuTicketIssuedRequired(org.mockito.Mockito.eq(issueResponse.getSessionTicket()), org.mockito.Mockito.eq(claims), org.mockito.Mockito.anyLong());
 
         FmuSessionTicketRedeemRequest redeemRequest = new FmuSessionTicketRedeemRequest();
         redeemRequest.setSessionTicket(issueResponse.getSessionTicket());
@@ -142,6 +143,28 @@ class FmuSessionTicketServiceTest {
         // Second redeem should also succeed — ticket is reusable within validity period
         var redeemResponse2 = service.redeem(redeemRequest, "lab.example");
         assertThat(redeemResponse2.getClaims()).containsEntry("resourceType", "fmu");
+    }
+
+    @Test
+    void shouldDeletePersistedTicketWhenRequiredAuditFails() {
+        service = buildService(jdbcTemplate);
+
+        long now = System.currentTimeMillis() / 1000;
+        Map<String, Object> claims = validClaims(now);
+        when(jwtService.validateToken("booking-token")).thenReturn(true);
+        when(jwtService.extractAllClaims("booking-token")).thenReturn(claims);
+        doThrow(new IllegalStateException("audit unavailable"))
+            .when(accessCredentialAuditService)
+            .recordFmuTicketIssuedRequired(anyString(), any(), anyLong());
+
+        assertThatThrownBy(() -> service.issue("Bearer booking-token", new FmuSessionTicketIssueRequest()))
+            .isInstanceOf(IllegalStateException.class)
+            .hasMessage("audit unavailable");
+
+        org.mockito.Mockito.verify(jdbcTemplate).update(
+            org.mockito.ArgumentMatchers.contains("DELETE FROM fmu_session_tickets WHERE ticket_hash"),
+            anyString()
+        );
     }
 
     @Test
