@@ -17,7 +17,10 @@ class AccessCodeTokenCipherTest {
 
         assertThat(encrypted).startsWith("v1.").doesNotContain("signed-jwt");
         assertThat(cipher.decrypt(encrypted)).isEqualTo("signed-jwt");
-        assertThatThrownBy(() -> cipher.decrypt(encrypted.substring(0, encrypted.length() - 1) + "A"))
+        String tampered = encrypted.substring(0, 4)
+            + (encrypted.charAt(4) == 'A' ? 'B' : 'A')
+            + encrypted.substring(5);
+        assertThatThrownBy(() -> cipher.decrypt(tampered))
             .isInstanceOf(IllegalStateException.class);
     }
 
