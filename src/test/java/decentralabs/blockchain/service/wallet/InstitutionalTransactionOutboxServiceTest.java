@@ -82,7 +82,11 @@ class InstitutionalTransactionOutboxServiceTest {
     }
 
     private void stubExisting(InstitutionalTransactionOutboxService.Attempt existing) {
-        when(jdbcTemplate.query(anyString(), any(RowMapper.class), any(), any(), any()))
+        when(jdbcTemplate.query(
+            anyString(),
+            org.mockito.ArgumentMatchers.<RowMapper<InstitutionalTransactionOutboxService.Attempt>>any(),
+            any(), any(), any()
+        ))
             .thenReturn(List.of(existing));
     }
 
