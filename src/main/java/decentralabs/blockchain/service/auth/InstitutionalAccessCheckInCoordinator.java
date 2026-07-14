@@ -77,18 +77,23 @@ public class InstitutionalAccessCheckInCoordinator {
     }
 
     private void dispatchImmediately(InstitutionalCheckInOutboxRecord record) {
-        if (record == null || !outboxService.claim(record.id())) {
+        if (record == null) {
             return;
         }
+        InstitutionalCheckInOutboxClaim claim = outboxService.claim(record.id());
+        if (claim == null) {
+            return;
+        }
+        InstitutionalCheckInOutboxRecord claimed = claim.record();
         try {
-            nonceDispatcher.dispatch(record);
+            nonceDispatcher.dispatch(claim);
         } catch (InstitutionalWalletDispatchException ex) {
             boolean blocked = ex.outcome() == InstitutionalWalletDispatchException.Outcome.PRE_BROADCAST_BLOCKED;
-            int attempts = blocked ? record.attempts() : record.attempts() + 1;
+            int attempts = blocked ? claimed.attempts() : claimed.attempts() + 1;
             if (ex.outcome() == InstitutionalWalletDispatchException.Outcome.PRE_BROADCAST_BLOCKED
                 || ex.outcome() == InstitutionalWalletDispatchException.Outcome.PRE_BROADCAST_TRANSIENT) {
                 boolean retryPersisted = outboxService.markRetry(
-                    record.id(), attempts, Instant.now(),
+                    claim, attempts, Instant.now(),
                     "Initial institutional check-in transaction was not broadcast; retrying"
                 );
                 if (!retryPersisted) {
@@ -96,11 +101,11 @@ public class InstitutionalAccessCheckInCoordinator {
                 }
             } else if (ex.outcome() == InstitutionalWalletDispatchException.Outcome.PRE_BROADCAST_PERMANENT) {
                 outboxService.markFailed(
-                    record.id(), attempts, "Initial institutional check-in preparation failed permanently"
+                    claim, attempts, "Initial institutional check-in preparation failed permanently"
                 );
             } else {
                 outboxService.markBroadcastUncertain(
-                    record.id(), attempts,
+                    claim, attempts,
                     "Initial institutional check-in broadcast outcome is uncertain"
                 );
             }
@@ -108,7 +113,7 @@ public class InstitutionalAccessCheckInCoordinator {
             // Non-classified failures happen before the dispatcher can establish
             // a broadcast boundary and are therefore safe to retry.
             boolean retryPersisted = outboxService.markRetry(
-                record.id(), record.attempts() + 1, Instant.now(),
+                claim, claimed.attempts() + 1, Instant.now(),
                 "Initial institutional check-in transaction was not broadcast; retrying"
             );
             if (!retryPersisted) {

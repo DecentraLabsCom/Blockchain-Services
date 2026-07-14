@@ -19,6 +19,8 @@ import org.springframework.stereotype.Service;
 @Slf4j
 public class SessionStartedOnChainPublisherService {
 
+    private record ActiveWalletContext(BigInteger chainId, String walletAddress) { }
+
     private final JdbcTemplate jdbcTemplate;
     private final SessionStartedOnChainClient onChainClient;
     private final InstitutionalWalletTransactionDispatcher transactionDispatcher;
@@ -61,8 +63,20 @@ public class SessionStartedOnChainPublisherService {
     }
 
     int publishPending(int limit) {
-        int reconciled = reconcileUnknown(Math.max(1, limit));
-        int mined = monitorSubmitted(Math.max(1, limit));
+        ActiveWalletContext context;
+        try {
+            context = new ActiveWalletContext(onChainClient.connectedChainId(), onChainClient.signerAddress());
+            if (context.chainId() == null || context.chainId().signum() <= 0
+                    || context.walletAddress() == null || context.walletAddress().isBlank()) {
+                throw new IllegalStateException("Active SessionStarted chain/wallet context is incomplete");
+            }
+        } catch (RuntimeException ex) {
+            log.warn("SessionStarted publisher context unavailable: {}", ex.getMessage());
+            return 0;
+        }
+
+        int reconciled = reconcileUnknown(Math.max(1, limit), context);
+        int mined = monitorSubmitted(Math.max(1, limit), context);
         List<SessionStartedTransactionRecord> pending;
         try {
             pending = jdbcTemplate.query(
@@ -87,12 +101,21 @@ public class SessionStartedOnChainPublisherService {
                     OR onchain_publish_locked_at IS NULL
                     OR onchain_publish_locked_at < ?
                   )
+                  AND (
+                    (onchain_chain_id = ? AND LOWER(onchain_wallet_address) = LOWER(?))
+                    OR (onchain_chain_id IS NULL
+                        AND onchain_status IN ('QUEUED', 'RETRY', 'FAILED')
+                        AND LOWER(signer_address) = LOWER(?))
+                  )
                 ORDER BY created_at ASC, id ASC
                 LIMIT ?
                 """,
                 transactionRowMapper(),
                 maxPublishAttempts(),
                 lockThreshold(),
+                context.chainId(),
+                context.walletAddress(),
+                context.walletAddress(),
                 Math.max(1, limit)
             );
         } catch (BadSqlGrammarException ex) {
@@ -102,14 +125,14 @@ public class SessionStartedOnChainPublisherService {
 
         int submitted = 0;
         for (SessionStartedTransactionRecord record : pending) {
-            if (publish(record)) {
+            if (matchesContext(record, context) && publish(record, context)) {
                 submitted++;
             }
         }
         return reconciled + mined + submitted;
     }
 
-    private boolean publish(SessionStartedTransactionRecord record) {
+    private boolean publish(SessionStartedTransactionRecord record, ActiveWalletContext context) {
         SessionStartedOnChainSubmission submission = record.submission();
         if (!claim(submission.id())) {
             return false;
@@ -129,7 +152,7 @@ public class SessionStartedOnChainPublisherService {
                 return resumePersistedSubmission(record);
             }
 
-            String walletAddress = onChainClient.signerAddress();
+            String walletAddress = context.walletAddress();
             BigInteger existingNonce = walletAddress.equalsIgnoreCase(record.walletAddress())
                 ? record.transactionNonce() : null;
             String txHash = transactionDispatcher.dispatchPrepared(
@@ -159,6 +182,22 @@ public class SessionStartedOnChainPublisherService {
             markPreBroadcastTransient(submission.id(), ex);
             return false;
         }
+    }
+
+    private boolean matchesContext(SessionStartedTransactionRecord record, ActiveWalletContext context) {
+        if (record == null || context == null) {
+            return false;
+        }
+        if (record.chainId() != null || record.walletAddress() != null) {
+            if (record.chainId() == null || record.walletAddress() == null) {
+                return false;
+            }
+            return context.chainId().equals(record.chainId())
+                && context.walletAddress().equalsIgnoreCase(record.walletAddress());
+        }
+        String status = record.status();
+        return ("QUEUED".equals(status) || "RETRY".equals(status) || "FAILED".equals(status))
+            && context.walletAddress().equalsIgnoreCase(record.submission().signerAddress());
     }
 
     private boolean claim(long id) {
@@ -521,7 +560,7 @@ public class SessionStartedOnChainPublisherService {
         return Math.max(1, maxAttempts);
     }
 
-    private int monitorSubmitted(int limit) {
+    private int monitorSubmitted(int limit, ActiveWalletContext context) {
         List<SessionStartedTransactionRecord> submitted;
         try {
             submitted = jdbcTemplate.query(
@@ -534,10 +573,14 @@ public class SessionStartedOnChainPublisherService {
                        onchain_current_gas_price, onchain_submitted_at, onchain_version
                 FROM session_started_attestations
                 WHERE onchain_status = 'SUBMITTED'
+                  AND onchain_chain_id = ?
+                  AND LOWER(onchain_wallet_address) = LOWER(?)
                 ORDER BY onchain_submitted_at ASC, id ASC
                 LIMIT ?
                 """,
                 transactionRowMapper(),
+                context.chainId(),
+                context.walletAddress(),
                 limit
             );
         } catch (BadSqlGrammarException ex) {
@@ -574,7 +617,7 @@ public class SessionStartedOnChainPublisherService {
         return mined;
     }
 
-    private int reconcileUnknown(int limit) {
+    private int reconcileUnknown(int limit, ActiveWalletContext context) {
         List<SessionStartedTransactionRecord> unknown;
         try {
             unknown = jdbcTemplate.query(
@@ -587,10 +630,14 @@ public class SessionStartedOnChainPublisherService {
                        onchain_current_gas_price, onchain_submitted_at, onchain_version
                 FROM session_started_attestations
                 WHERE onchain_status = 'STUCK_UNKNOWN'
+                  AND onchain_chain_id = ?
+                  AND LOWER(onchain_wallet_address) = LOWER(?)
                 ORDER BY updated_at ASC, id ASC
                 LIMIT ?
                 """,
                 transactionRowMapper(),
+                context.chainId(),
+                context.walletAddress(),
                 limit
             );
         } catch (BadSqlGrammarException ex) {

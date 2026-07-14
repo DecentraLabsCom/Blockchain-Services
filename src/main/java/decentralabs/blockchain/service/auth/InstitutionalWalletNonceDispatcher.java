@@ -17,8 +17,9 @@ public class InstitutionalWalletNonceDispatcher {
     private final InstitutionalCheckInSubmissionService submissionService;
     private final InstitutionalWalletTransactionDispatcher transactionDispatcher;
 
-    public CheckInResponse dispatch(InstitutionalCheckInOutboxRecord record) throws InstitutionalWalletDispatchException {
-        return dispatch(record, false);
+    public CheckInResponse dispatch(InstitutionalCheckInOutboxClaim claim)
+        throws InstitutionalWalletDispatchException {
+        return dispatch(claim, false);
     }
 
     /**
@@ -28,8 +29,9 @@ public class InstitutionalWalletNonceDispatcher {
      * SUBMITTING before the row was reloaded.
      */
     public CheckInResponse dispatch(
-        InstitutionalCheckInOutboxRecord record, boolean replacementRequested
+        InstitutionalCheckInOutboxClaim claim, boolean replacementRequested
     ) throws InstitutionalWalletDispatchException {
+        InstitutionalCheckInOutboxRecord record = claim != null ? claim.record() : null;
         if (record == null) {
             throw new InstitutionalWalletDispatchException(
                 "Institutional check-in outbox record is required",
@@ -65,7 +67,7 @@ public class InstitutionalWalletNonceDispatcher {
                 );
             }
             String txHash = transactionDispatcher.rebroadcastPrepared(persisted);
-            if (!outboxService.markSubmitted(record, txHash)) {
+            if (!outboxService.markSubmitted(claim, record, txHash)) {
                 throw new IllegalStateException("Check-in persisted transaction submission lost its fencing claim");
             }
             CheckInResponse response = new CheckInResponse();
@@ -83,7 +85,11 @@ public class InstitutionalWalletNonceDispatcher {
             walletAddress,
             record.chainId(),
             existingNonce,
-            (chainId, nonce) -> outboxService.markNonceReserved(record.id(), walletAddress, chainId, nonce),
+            (chainId, nonce) -> {
+                if (!outboxService.markNonceReserved(claim, walletAddress, chainId, nonce)) {
+                    throw new IllegalStateException("Check-in nonce reservation lost its fencing claim");
+                }
+            },
             nonce -> {
                 InstitutionalCheckInSubmissionService.PreparedCheckIn prepared = submissionService.prepare(
                     record.reservationKey(), record.pucHash(), nonce,
@@ -93,16 +99,16 @@ public class InstitutionalWalletNonceDispatcher {
                 return prepared.transaction();
             },
             prepared -> {
-                InstitutionalCheckInOutboxRecord current = currentRecord(record);
+                InstitutionalCheckInOutboxRecord current = currentRecord(claim, record);
                 preparedFrom.set(current);
-                outboxService.markPrepared(current, prepared);
+                outboxService.markPrepared(claim, current, prepared);
             },
             txHash -> {
                 InstitutionalCheckInOutboxRecord current = preparedFrom.get();
                 if (current == null) {
                     current = record;
                 }
-                if (!outboxService.markSubmittedAfterPreparation(current, txHash)) {
+                if (!outboxService.markSubmittedAfterPreparation(claim, current, txHash)) {
                     throw new IllegalStateException("Check-in prepared transaction submission lost its fencing claim");
                 }
             }
@@ -114,9 +120,12 @@ public class InstitutionalWalletNonceDispatcher {
         return hasText(record.signedRawTransaction()) || hasText(record.txHash());
     }
 
-    private InstitutionalCheckInOutboxRecord currentRecord(InstitutionalCheckInOutboxRecord fallback) {
+    private InstitutionalCheckInOutboxRecord currentRecord(
+        InstitutionalCheckInOutboxClaim claim,
+        InstitutionalCheckInOutboxRecord fallback
+    ) {
         try {
-            InstitutionalCheckInOutboxRecord current = outboxService.findById(fallback.id());
+            InstitutionalCheckInOutboxRecord current = outboxService.findClaimed(claim);
             return current != null ? current : fallback;
         } catch (RuntimeException ex) {
             return fallback;

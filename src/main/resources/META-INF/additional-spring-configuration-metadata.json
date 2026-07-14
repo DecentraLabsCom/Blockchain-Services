@@ -134,6 +134,12 @@
     "defaultValue": 2000
   },
   {
+    "name": "institutional.checkin.outbox.claim-lease-ms",
+    "type": "java.lang.Long",
+    "description": "Lease duration for a check-in outbox worker claim before another replica may recover it.",
+    "defaultValue": 900000
+  },
+  {
     "name": "institutional.checkin.outbox.stuck-transaction-ms",
     "type": "java.lang.Long",
     "description": "Age after which a pending institutional check-in is retried with its reserved nonce.",

@@ -31,8 +31,17 @@ public class InstitutionalCheckInReceiptMonitor {
 
     @Scheduled(fixedDelayString = "${institutional.checkin.outbox.receipt-interval-ms:2000}")
     public void monitorSubmittedCheckIns() {
+        BigInteger activeChainId;
+        String activeWalletAddress;
+        try {
+            activeChainId = checkInOnChainService.connectedChainId();
+            activeWalletAddress = checkInOnChainService.activeWalletAddress();
+        } catch (RuntimeException ex) {
+            log.warn("Institutional check-in receipt monitor context unavailable: {}", ex.getMessage());
+            return;
+        }
         List<InstitutionalCheckInOutboxRecord> submitted = outboxService.findSubmitted(
-            Instant.now(), Math.max(1, batchSize)
+            activeChainId, activeWalletAddress, Instant.now(), Math.max(1, batchSize)
         );
         if (submitted == null) {
             return;
@@ -40,7 +49,9 @@ public class InstitutionalCheckInReceiptMonitor {
         for (InstitutionalCheckInOutboxRecord record : submitted) {
             monitor(record);
         }
-        List<InstitutionalCheckInOutboxRecord> unknown = outboxService.findStuckUnknown(Math.max(1, batchSize));
+        List<InstitutionalCheckInOutboxRecord> unknown = outboxService.findStuckUnknown(
+            activeChainId, activeWalletAddress, Math.max(1, batchSize)
+        );
         if (unknown != null) {
             for (InstitutionalCheckInOutboxRecord record : unknown) {
                 reconcileUnknown(record);

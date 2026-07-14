@@ -26,6 +26,22 @@ class InstitutionalCheckInReceiptMonitorTest {
     @InjectMocks private InstitutionalCheckInReceiptMonitor monitor;
 
     @Test
+    void monitorsOnlyRowsFromTheActiveChainAndWalletContext() {
+        BigInteger chainId = BigInteger.valueOf(11155111);
+        when(checkInOnChainService.connectedChainId()).thenReturn(chainId);
+        when(checkInOnChainService.activeWalletAddress()).thenReturn("0xwallet");
+        when(outboxService.findSubmitted(eq(chainId), eq("0xwallet"), any(Instant.class), anyInt()))
+            .thenReturn(java.util.List.of());
+        when(outboxService.findStuckUnknown(eq(chainId), eq("0xwallet"), anyInt()))
+            .thenReturn(java.util.List.of());
+
+        monitor.monitorSubmittedCheckIns();
+
+        verify(outboxService).findSubmitted(eq(chainId), eq("0xwallet"), any(Instant.class), anyInt());
+        verify(outboxService).findStuckUnknown(eq(chainId), eq("0xwallet"), anyInt());
+    }
+
+    @Test
     void requeuesStuckTransactionUsingItsExistingNonce() {
         ReflectionTestUtils.setField(monitor, "stuckTransactionMs", 1L);
         ReflectionTestUtils.setField(monitor, "maxAttempts", 8);

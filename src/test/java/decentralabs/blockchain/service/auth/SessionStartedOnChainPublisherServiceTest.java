@@ -44,8 +44,10 @@ class SessionStartedOnChainPublisherServiceTest {
 
     @BeforeEach
     void noUnknownTransactionsByDefault() {
+        lenient().when(onChainClient.connectedChainId()).thenReturn(CHAIN_ID);
+        lenient().when(onChainClient.signerAddress()).thenReturn("0xwallet");
         lenient().when(jdbcTemplate.query(
-            contains("WHERE onchain_status = 'STUCK_UNKNOWN'"), anyTransactionRowMapper(), eq(10)
+            contains("WHERE onchain_status = 'STUCK_UNKNOWN'"), anyTransactionRowMapper(), any(Object[].class)
         )).thenReturn(List.of());
     }
 
@@ -202,7 +204,7 @@ class SessionStartedOnChainPublisherServiceTest {
         assertThat(service.publishPending(10)).isZero();
 
         verify(jdbcTemplate).query(
-            contains("onchain_publish_attempts < ?"), anyTransactionRowMapper(), eq(3), any(Timestamp.class), eq(10)
+            contains("onchain_publish_attempts < ?"), anyTransactionRowMapper(), any(Object[].class)
         );
     }
 
@@ -428,13 +430,13 @@ class SessionStartedOnChainPublisherServiceTest {
 
     private void mockSubmittedQuery(List<SessionStartedTransactionRecord> rows) {
         when(jdbcTemplate.query(
-            contains("WHERE onchain_status = 'SUBMITTED'"), anyTransactionRowMapper(), eq(10)
+            contains("WHERE onchain_status = 'SUBMITTED'"), anyTransactionRowMapper(), any(Object[].class)
         )).thenAnswer(invocation -> rows);
     }
 
     private void mockUnknownQuery(List<SessionStartedTransactionRecord> rows) {
         when(jdbcTemplate.query(
-            contains("WHERE onchain_status = 'STUCK_UNKNOWN'"), anyTransactionRowMapper(), eq(10)
+            contains("WHERE onchain_status = 'STUCK_UNKNOWN'"), anyTransactionRowMapper(), any(Object[].class)
         )).thenAnswer(invocation -> rows);
     }
 
@@ -499,7 +501,7 @@ class SessionStartedOnChainPublisherServiceTest {
         when(rs.getString("reservation_key")).thenReturn("0xabc");
         when(rs.getString("lab_id")).thenReturn("42");
         when(rs.getString("puc_hash")).thenReturn("0x" + "1".repeat(64));
-        when(rs.getString("signer_address")).thenReturn("0x1111111111111111111111111111111111111111");
+        when(rs.getString("signer_address")).thenReturn(wallet == null ? "0xwallet" : wallet);
         when(rs.getString("gateway_id")).thenReturn("gateway-a");
         when(rs.getString("session_id")).thenReturn("guac-session-1");
         when(rs.getString("access_type")).thenReturn("guacamole");

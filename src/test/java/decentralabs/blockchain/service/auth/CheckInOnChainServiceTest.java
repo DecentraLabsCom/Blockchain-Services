@@ -34,6 +34,8 @@ import org.web3j.protocol.core.DefaultBlockParameterName;
 import org.web3j.protocol.core.Request;
 import org.web3j.protocol.core.methods.response.EthChainId;
 import org.web3j.protocol.core.methods.response.EthGetTransactionCount;
+import org.web3j.protocol.core.methods.response.EthGetTransactionReceipt;
+import org.web3j.protocol.core.methods.response.EthTransaction;
 import org.web3j.protocol.core.methods.response.EthSendTransaction;
 import org.web3j.utils.Numeric;
 
@@ -319,6 +321,42 @@ class CheckInOnChainServiceTest {
             );
 
         assertThat(prepared.gasPrice()).isEqualTo(BigInteger.valueOf(2_875_000_000L));
+    }
+
+    @Test
+    void strictReceiptInspectionRejectsJsonRpcErrors() throws Exception {
+        String hash = "0x" + "1".repeat(64);
+        @SuppressWarnings("unchecked")
+        Request<?, EthGetTransactionReceipt> request = (Request<?, EthGetTransactionReceipt>) mock(Request.class);
+        EthGetTransactionReceipt response = mock(EthGetTransactionReceipt.class);
+        when(walletService.getWeb3jInstance()).thenReturn(web3j);
+        org.mockito.Mockito.doReturn(request).when(web3j).ethGetTransactionReceipt(hash);
+        when(request.send()).thenReturn(response);
+        when(response.hasError()).thenReturn(true);
+        when(response.getError()).thenReturn(new org.web3j.protocol.core.Response.Error(1, "upstream unavailable"));
+
+        assertThatThrownBy(() -> service.transactionStateStrict(hash))
+            .isInstanceOf(IllegalStateException.class)
+            .hasMessageContaining("Failed to inspect access authorization transaction")
+            .hasRootCauseMessage("RPC returned an error while reading transaction receipt: upstream unavailable");
+    }
+
+    @Test
+    void strictVisibilityInspectionRejectsJsonRpcErrors() throws Exception {
+        String hash = "0x" + "2".repeat(64);
+        @SuppressWarnings("unchecked")
+        Request<?, EthTransaction> request = (Request<?, EthTransaction>) mock(Request.class);
+        EthTransaction response = mock(EthTransaction.class);
+        when(walletService.getWeb3jInstance()).thenReturn(web3j);
+        org.mockito.Mockito.doReturn(request).when(web3j).ethGetTransactionByHash(hash);
+        when(request.send()).thenReturn(response);
+        when(response.hasError()).thenReturn(true);
+        when(response.getError()).thenReturn(new org.web3j.protocol.core.Response.Error(1, "upstream unavailable"));
+
+        assertThatThrownBy(() -> service.transactionVisible(hash))
+            .isInstanceOf(IllegalStateException.class)
+            .hasMessageContaining("Failed to inspect access authorization transaction visibility")
+            .hasRootCauseMessage("RPC returned an error while reading transaction visibility: upstream unavailable");
     }
 
     private void stubNonceChecks(BigInteger pendingNonce, BigInteger latestNonce) throws Exception {

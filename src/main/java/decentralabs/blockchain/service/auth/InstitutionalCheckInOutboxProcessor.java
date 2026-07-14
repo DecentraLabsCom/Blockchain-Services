@@ -21,6 +21,7 @@ public class InstitutionalCheckInOutboxProcessor {
     private final InstitutionalCheckInOutboxService outboxService;
     private final BlockchainBookingService bookingService;
     private final InstitutionalWalletNonceDispatcher nonceDispatcher;
+    private final CheckInOnChainService checkInOnChainService;
 
     @Value("${institutional.checkin.outbox.batch-size:10}")
     private int batchSize;
@@ -36,7 +37,18 @@ public class InstitutionalCheckInOutboxProcessor {
 
     @Scheduled(fixedDelayString = "${institutional.checkin.outbox.interval-ms:2000}")
     public void processDueCheckIns() {
+        BigInteger activeChainId;
+        String activeWalletAddress;
+        try {
+            activeChainId = checkInOnChainService.connectedChainId();
+            activeWalletAddress = checkInOnChainService.activeWalletAddress();
+        } catch (RuntimeException ex) {
+            log.warn("Institutional check-in publisher context unavailable: {}", ex.getMessage());
+            return;
+        }
         List<InstitutionalCheckInOutboxRecord> due = outboxService.findDue(
+            activeChainId,
+            activeWalletAddress,
             Instant.now(),
             Math.max(1, batchSize)
         );
@@ -46,39 +58,35 @@ public class InstitutionalCheckInOutboxProcessor {
     }
 
     void process(InstitutionalCheckInOutboxRecord record) {
-        if (record == null || !outboxService.claim(record.id())) {
+        if (record == null) {
             return;
         }
         boolean replacementRequested = "REPLACEMENT_PENDING".equalsIgnoreCase(record.status())
             || ("PENDING".equalsIgnoreCase(record.status()) && hasPersistedMaterial(record));
 
-        InstitutionalCheckInOutboxRecord claimed;
-        try {
-            claimed = outboxService.findById(record.id());
-        } catch (RuntimeException ex) {
-            claimed = record;
+        InstitutionalCheckInOutboxClaim claim = outboxService.claim(record.id());
+        if (claim == null || claim.record() == null) {
+            return;
         }
-        if (claimed == null) {
-            claimed = record;
-        }
+        InstitutionalCheckInOutboxRecord claimed = claim.record();
 
         try {
             if (isAccessAlreadyAuthorized(claimed)) {
-                outboxService.markMinedSuccess(claimed.id(), null);
+                outboxService.markMinedSuccess(claim, claimed, null);
                 return;
             }
 
             if (replacementRequested) {
-                nonceDispatcher.dispatch(claimed, true);
+                nonceDispatcher.dispatch(claim, true);
             } else {
-                nonceDispatcher.dispatch(claimed);
+                nonceDispatcher.dispatch(claim);
             }
         } catch (InstitutionalWalletDispatchException ex) {
             switch (ex.outcome()) {
-                case PRE_BROADCAST_BLOCKED -> scheduleBlockedRetry(claimed, ex);
-                case PRE_BROADCAST_TRANSIENT -> handleFailure(claimed, ex);
+                case PRE_BROADCAST_BLOCKED -> scheduleBlockedRetry(claim, claimed, ex);
+                case PRE_BROADCAST_TRANSIENT -> handleFailure(claim, claimed, ex);
                 case PRE_BROADCAST_PERMANENT -> outboxService.markFailed(
-                    claimed.id(), claimed.attempts() + 1, LogSanitizer.sanitize(ex.getMessage())
+                    claim, claimed.attempts() + 1, LogSanitizer.sanitize(ex.getMessage())
                 );
                 case BROADCAST_OUTCOME_UNKNOWN -> {
                     int attempts = claimed.attempts() + 1;
@@ -87,11 +95,11 @@ public class InstitutionalCheckInOutboxProcessor {
                         "Institutional check-in broadcast outcome is uncertain for reservation {}: {}",
                         LogSanitizer.sanitize(claimed.reservationKey()), message
                     );
-                    outboxService.markBroadcastUncertain(claimed.id(), attempts, message);
+                    outboxService.markBroadcastUncertain(claim, attempts, message);
                 }
             }
         } catch (Exception ex) {
-            handleFailure(claimed, ex);
+            handleFailure(claim, claimed, ex);
         }
     }
 
@@ -122,7 +130,11 @@ public class InstitutionalCheckInOutboxProcessor {
         return false;
     }
 
-    private void handleFailure(InstitutionalCheckInOutboxRecord record, Exception ex) {
+    private void handleFailure(
+        InstitutionalCheckInOutboxClaim claim,
+        InstitutionalCheckInOutboxRecord record,
+        Exception ex
+    ) {
         int attempts = record.attempts() + 1;
         String message = LogSanitizer.sanitize(ex.getMessage());
         if (attempts >= Math.max(1, maxAttempts)) {
@@ -132,7 +144,7 @@ public class InstitutionalCheckInOutboxProcessor {
                 attempts,
                 message
             );
-            outboxService.markFailed(record.id(), attempts, message);
+            outboxService.markFailed(claim, attempts, message);
             return;
         }
 
@@ -143,13 +155,20 @@ public class InstitutionalCheckInOutboxProcessor {
             attempts,
             message
         );
-        outboxService.markRetry(record.id(), attempts, nextAttempt, message);
+        outboxService.markRetry(claim, attempts, nextAttempt, message);
     }
 
-    private void scheduleBlockedRetry(InstitutionalCheckInOutboxRecord record, Exception ex) {
+    private void scheduleBlockedRetry(
+        InstitutionalCheckInOutboxClaim claim,
+        InstitutionalCheckInOutboxRecord record,
+        Exception ex
+    ) {
         String message = LogSanitizer.sanitize(ex.getMessage());
         outboxService.markRetry(
-            record.id(), record.attempts(), Instant.now().plusMillis(retryDelayMs(Math.max(1, record.attempts()))), message
+            claim,
+            record.attempts(),
+            Instant.now().plusMillis(retryDelayMs(Math.max(1, record.attempts()))),
+            message
         );
     }
 

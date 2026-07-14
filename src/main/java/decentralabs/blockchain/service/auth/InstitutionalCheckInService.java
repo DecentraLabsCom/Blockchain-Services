@@ -132,16 +132,18 @@ public class InstitutionalCheckInService {
             // The booking, payer and institutional identity were fully revalidated above.
             record = outboxService.restartTerminalFailure(record.id());
         }
-        if (outboxService.claim(record.id())) {
+        InstitutionalCheckInOutboxClaim claim = outboxService.claim(record.id());
+        if (claim != null) {
+            InstitutionalCheckInOutboxRecord claimed = claim.record();
             try {
-                return nonceDispatcher.dispatch(record);
+                return nonceDispatcher.dispatch(claim);
             } catch (InstitutionalWalletDispatchException ex) {
                 boolean blocked = ex.outcome() == InstitutionalWalletDispatchException.Outcome.PRE_BROADCAST_BLOCKED;
-                int attempts = blocked ? record.attempts() : record.attempts() + 1;
+                int attempts = blocked ? claimed.attempts() : claimed.attempts() + 1;
                 if (ex.outcome() == InstitutionalWalletDispatchException.Outcome.PRE_BROADCAST_BLOCKED
                     || ex.outcome() == InstitutionalWalletDispatchException.Outcome.PRE_BROADCAST_TRANSIENT) {
                     boolean retryPersisted = outboxService.markRetry(
-                        record.id(), attempts, Instant.now(),
+                        claim, attempts, Instant.now(),
                         "Initial institutional check-in transaction was not broadcast; retrying"
                     );
                     if (retryPersisted) {
@@ -149,11 +151,11 @@ public class InstitutionalCheckInService {
                     }
                 } else if (ex.outcome() == InstitutionalWalletDispatchException.Outcome.PRE_BROADCAST_PERMANENT) {
                     outboxService.markFailed(
-                        record.id(), attempts, "Initial institutional check-in preparation failed permanently"
+                        claim, attempts, "Initial institutional check-in preparation failed permanently"
                     );
                 } else {
                     outboxService.markBroadcastUncertain(
-                        record.id(), attempts, "Initial institutional check-in broadcast outcome is uncertain"
+                        claim, attempts, "Initial institutional check-in broadcast outcome is uncertain"
                     );
                 }
                 throw new IllegalStateException(
@@ -168,6 +170,7 @@ public class InstitutionalCheckInService {
 
         CheckInResponse response = new CheckInResponse();
         response.setValid(true);
+        response.setQueued(true);
         response.setReservationKey(reservationKey);
         response.setTxHash(record.txHash());
         response.setTimestamp(System.currentTimeMillis() / 1000);

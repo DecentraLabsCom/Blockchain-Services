@@ -96,8 +96,9 @@ class InstitutionalCheckInServiceTest {
         InstitutionalCheckInOutboxRecord record = queuedRecord();
         when(outboxService.enqueueAccessGranted(eq("0xabc"), eq("42"), eq("0x1111111111111111111111111111111111111111"), any(), eq("0xabc")))
             .thenReturn(record);
-        when(outboxService.claim(record.id())).thenReturn(true);
-        when(nonceDispatcher.dispatch(record)).thenReturn(onChainResponse);
+        InstitutionalCheckInOutboxClaim claim = claim(record);
+        when(outboxService.claim(record.id())).thenReturn(claim);
+        when(nonceDispatcher.dispatch(claim)).thenReturn(onChainResponse);
 
         CheckInResponse response = service.checkIn(request);
 
@@ -105,7 +106,7 @@ class InstitutionalCheckInServiceTest {
         verify(bookingService).getCheckInBookingInfo("0x1111111111111111111111111111111111111111", "0xabc", "42", "puc-123");
 
         verify(outboxService).claim(record.id());
-        verify(nonceDispatcher).dispatch(record);
+        verify(nonceDispatcher).dispatch(claim);
     }
 
     @Test
@@ -128,14 +129,35 @@ class InstitutionalCheckInServiceTest {
         InstitutionalCheckInOutboxRecord record = queuedRecord();
         when(outboxService.enqueueAccessGranted(eq("0xabc"), eq("42"), eq(credentials.getAddress()), any(), eq("0xabc")))
             .thenReturn(record);
-        when(outboxService.claim(record.id())).thenReturn(true);
-        when(nonceDispatcher.dispatch(record)).thenReturn(onChainResponse);
+        InstitutionalCheckInOutboxClaim claim = claim(record);
+        when(outboxService.claim(record.id())).thenReturn(claim);
+        when(nonceDispatcher.dispatch(claim)).thenReturn(onChainResponse);
 
         CheckInResponse response = service.checkIn(request);
 
         assertThat(response).isSameAs(onChainResponse);
         verify(remoteCheckInClient, never()).submit(any(), any());
-        verify(nonceDispatcher).dispatch(record);
+        verify(nonceDispatcher).dispatch(claim);
+    }
+
+    @Test
+    void alreadyQueuedResponseSetsQueuedFlagWhenAnotherWorkerOwnsTheClaim() throws Exception {
+        InstitutionalCheckInRequest request = validRequest();
+        when(samlValidationService.validateSamlAssertionDetailed("valid-saml")).thenReturn(samlAttributes());
+        when(marketplaceEndpointAuthService.enforceToken("market-token", null)).thenReturn(marketplaceClaims());
+        when(bookingService.getCheckInBookingInfo(any(), eq("0xabc"), eq("42"), eq("puc-123")))
+            .thenReturn(Map.of("reservationKey", "0xabc"));
+        when(institutionalWalletService.getInstitutionalWalletAddress()).thenReturn(credentials.getAddress());
+        when(directoryService.isAuthorizedCheckInSigner(any(), any())).thenReturn(true);
+        InstitutionalCheckInOutboxRecord record = queuedRecord();
+        when(outboxService.enqueueAccessGranted(any(), any(), any(), any(), any())).thenReturn(record);
+        when(outboxService.claim(record.id())).thenReturn(null);
+
+        CheckInResponse response = service.checkIn(request);
+
+        assertThat(response.isValid()).isTrue();
+        assertThat(response.getQueued()).isTrue();
+        assertThat(response.getReason()).isEqualTo("Institutional check-in is already queued");
     }
 
     @Test
@@ -149,8 +171,9 @@ class InstitutionalCheckInServiceTest {
         when(directoryService.isAuthorizedCheckInSigner(any(), any())).thenReturn(true);
         InstitutionalCheckInOutboxRecord record = queuedRecord();
         when(outboxService.enqueueAccessGranted(any(), any(), any(), any(), any())).thenReturn(record);
-        when(outboxService.claim(record.id())).thenReturn(true);
-        when(nonceDispatcher.dispatch(record)).thenThrow(new InstitutionalWalletDispatchException(
+        InstitutionalCheckInOutboxClaim claim = claim(record);
+        when(outboxService.claim(record.id())).thenReturn(claim);
+        when(nonceDispatcher.dispatch(claim)).thenThrow(new InstitutionalWalletDispatchException(
             "uncertain", new IllegalStateException("response lost after broadcast")
         ));
 
@@ -158,9 +181,9 @@ class InstitutionalCheckInServiceTest {
             .hasMessageContaining("could not be confirmed");
 
         verify(outboxService).markBroadcastUncertain(
-            eq(record.id()), eq(record.attempts() + 1), eq("Initial institutional check-in broadcast outcome is uncertain")
+            eq(claim), eq(record.attempts() + 1), eq("Initial institutional check-in broadcast outcome is uncertain")
         );
-        verify(outboxService, never()).markRetry(any(Long.class), any(Integer.class), any(), any());
+        verify(outboxService, never()).markRetry(any(InstitutionalCheckInOutboxClaim.class), any(Integer.class), any(), any());
     }
 
     @Test
@@ -174,12 +197,13 @@ class InstitutionalCheckInServiceTest {
         when(directoryService.isAuthorizedCheckInSigner(any(), any())).thenReturn(true);
         InstitutionalCheckInOutboxRecord record = queuedRecord();
         when(outboxService.enqueueAccessGranted(any(), any(), any(), any(), any())).thenReturn(record);
-        when(outboxService.claim(record.id())).thenReturn(true);
-        when(nonceDispatcher.dispatch(record)).thenThrow(new InstitutionalWalletDispatchException(
+        InstitutionalCheckInOutboxClaim claim = claim(record);
+        when(outboxService.claim(record.id())).thenReturn(claim);
+        when(nonceDispatcher.dispatch(claim)).thenThrow(new InstitutionalWalletDispatchException(
             "blocked", InstitutionalWalletDispatchException.Outcome.PRE_BROADCAST_BLOCKED,
             new IllegalStateException("allocator blocked")
         ));
-        when(outboxService.markRetry(any(Long.class), any(Integer.class), any(), any())).thenReturn(true);
+        when(outboxService.markRetry(any(InstitutionalCheckInOutboxClaim.class), any(Integer.class), any(), any())).thenReturn(true);
 
         CheckInResponse response = service.checkIn(request);
 
@@ -188,10 +212,10 @@ class InstitutionalCheckInServiceTest {
         assertThat(response.getReason()).isEqualTo("CHECKIN_QUEUED");
 
         verify(outboxService).markRetry(
-            eq(record.id()), eq(record.attempts()), any(),
+            eq(claim), eq(record.attempts()), any(),
             eq("Initial institutional check-in transaction was not broadcast; retrying")
         );
-        verify(outboxService, never()).markBroadcastUncertain(any(Long.class), any(Integer.class), any());
+        verify(outboxService, never()).markBroadcastUncertain(any(InstitutionalCheckInOutboxClaim.class), any(Integer.class), any());
     }
 
     @Test
@@ -205,12 +229,13 @@ class InstitutionalCheckInServiceTest {
         when(directoryService.isAuthorizedCheckInSigner(any(), any())).thenReturn(true);
         InstitutionalCheckInOutboxRecord record = queuedRecord();
         when(outboxService.enqueueAccessGranted(any(), any(), any(), any(), any())).thenReturn(record);
-        when(outboxService.claim(record.id())).thenReturn(true);
-        when(nonceDispatcher.dispatch(record)).thenThrow(new InstitutionalWalletDispatchException(
+        InstitutionalCheckInOutboxClaim claim = claim(record);
+        when(outboxService.claim(record.id())).thenReturn(claim);
+        when(nonceDispatcher.dispatch(claim)).thenThrow(new InstitutionalWalletDispatchException(
             "temporary", InstitutionalWalletDispatchException.Outcome.PRE_BROADCAST_TRANSIENT,
             new IllegalStateException("rpc timeout")
         ));
-        when(outboxService.markRetry(any(Long.class), any(Integer.class), any(), any())).thenReturn(true);
+        when(outboxService.markRetry(any(InstitutionalCheckInOutboxClaim.class), any(Integer.class), any(), any())).thenReturn(true);
 
         CheckInResponse response = service.checkIn(request);
 
@@ -218,7 +243,7 @@ class InstitutionalCheckInServiceTest {
         assertThat(response.getQueued()).isTrue();
         assertThat(response.getReason()).isEqualTo("CHECKIN_QUEUED");
         verify(outboxService).markRetry(
-            eq(record.id()), eq(record.attempts() + 1), any(),
+            eq(claim), eq(record.attempts() + 1), any(),
             eq("Initial institutional check-in transaction was not broadcast; retrying")
         );
     }
@@ -234,8 +259,9 @@ class InstitutionalCheckInServiceTest {
         when(directoryService.isAuthorizedCheckInSigner(any(), any())).thenReturn(true);
         InstitutionalCheckInOutboxRecord record = queuedRecord();
         when(outboxService.enqueueAccessGranted(any(), any(), any(), any(), any())).thenReturn(record);
-        when(outboxService.claim(record.id())).thenReturn(true);
-        when(nonceDispatcher.dispatch(record)).thenThrow(new InstitutionalWalletDispatchException(
+        InstitutionalCheckInOutboxClaim claim = claim(record);
+        when(outboxService.claim(record.id())).thenReturn(claim);
+        when(nonceDispatcher.dispatch(claim)).thenThrow(new InstitutionalWalletDispatchException(
             "temporary", InstitutionalWalletDispatchException.Outcome.PRE_BROADCAST_TRANSIENT,
             new IllegalStateException("rpc timeout")
         ));
@@ -245,7 +271,7 @@ class InstitutionalCheckInServiceTest {
             .hasMessageContaining("could not be prepared");
 
         verify(outboxService).markRetry(
-            eq(record.id()), eq(record.attempts() + 1), any(),
+            eq(claim), eq(record.attempts() + 1), any(),
             eq("Initial institutional check-in transaction was not broadcast; retrying")
         );
     }
@@ -495,6 +521,10 @@ class InstitutionalCheckInServiceTest {
             computePucHash("puc-123"), "0xabc", "PENDING", 0, java.time.Instant.now(), null,
             "0x1111111111111111111111111111111111111111", null, null
         );
+    }
+
+    private InstitutionalCheckInOutboxClaim claim(InstitutionalCheckInOutboxRecord record) {
+        return new InstitutionalCheckInOutboxClaim(record, "claim-id", "worker", record.version());
     }
 
     private static String samlAssertionHash(String samlAssertion) {

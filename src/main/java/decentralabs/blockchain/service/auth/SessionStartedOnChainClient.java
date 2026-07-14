@@ -91,6 +91,19 @@ public class SessionStartedOnChainClient {
         return institutionalWalletService.getInstitutionalCredentials().getAddress();
     }
 
+    /** Returns the chain currently served by the RPC used for attestation publication. */
+    public BigInteger connectedChainId() {
+        try {
+            EthChainId response = walletService.getWeb3jInstance().ethChainId().send();
+            if (response == null || response.getChainId() == null || response.getChainId().signum() <= 0) {
+                throw new IllegalStateException("RPC returned no valid SessionStarted chainId");
+            }
+            return response.getChainId();
+        } catch (Exception ex) {
+            throw new IllegalStateException("Failed to resolve SessionStarted publication chainId", ex);
+        }
+    }
+
     public InstitutionalWalletTransactionDispatcher.PreparedTransaction prepareSessionStarted(
         SessionStartedOnChainSubmission submission,
         BigInteger transactionNonce,
@@ -256,7 +269,14 @@ public class SessionStartedOnChainClient {
         }
         try {
             var response = walletService.getWeb3jInstance().ethGetTransactionReceipt(txHash).send();
-            if (response == null || response.getTransactionReceipt().isEmpty()) {
+            if (response == null) {
+                throw new IllegalStateException("Node returned no SessionStarted receipt response");
+            }
+            if (response.hasError()) {
+                throw new IllegalStateException("RPC returned an error while reading SessionStarted receipt: "
+                    + response.getError().getMessage());
+            }
+            if (response.getTransactionReceipt().isEmpty()) {
                 return TransactionState.PENDING;
             }
             return response.getTransactionReceipt().get().isStatusOK()
@@ -274,6 +294,10 @@ public class SessionStartedOnChainClient {
             var response = walletService.getWeb3jInstance().ethGetTransactionByHash(txHash).send();
             if (response == null) {
                 throw new IllegalStateException("Node returned no transaction lookup response");
+            }
+            if (response.hasError()) {
+                throw new IllegalStateException("RPC returned an error while reading SessionStarted visibility: "
+                    + response.getError().getMessage());
             }
             return response.getTransaction().isPresent();
         } catch (Exception ex) {

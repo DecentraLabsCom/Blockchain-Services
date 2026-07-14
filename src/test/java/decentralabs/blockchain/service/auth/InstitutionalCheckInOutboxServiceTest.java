@@ -56,10 +56,79 @@ class InstitutionalCheckInOutboxServiceTest {
             .contains("status IN ('MINED_FAILED', 'FAILED')")
             .contains("tx_hash = CASE")
             .contains("signed_raw_transaction = CASE")
+            .contains("original_gas_price = CASE")
+            .contains("current_gas_price = CASE")
             .contains("generation = CASE")
             .contains("nonce = CASE")
             .contains("status = 'FAILED'")
             .contains("submitted_at = NULL");
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void dueLookupRequiresTheActiveChainAndWalletContext() {
+        ObjectProvider<JdbcTemplate> provider = mock(ObjectProvider.class);
+        JdbcTemplate jdbcTemplate = mock(JdbcTemplate.class);
+        when(provider.getIfAvailable()).thenReturn(jdbcTemplate);
+        when(jdbcTemplate.query(
+            any(String.class), any(org.springframework.jdbc.core.RowMapper.class), any(Object[].class)
+        )).thenReturn(java.util.List.of());
+        InstitutionalCheckInOutboxService service = new InstitutionalCheckInOutboxService(provider);
+
+        BigInteger chainId = BigInteger.valueOf(11155111);
+        service.findDue(chainId, "0xwallet", Instant.now(), 10);
+
+        ArgumentCaptor<String> sql = ArgumentCaptor.forClass(String.class);
+        ArgumentCaptor<Object[]> parameters = ArgumentCaptor.forClass(Object[].class);
+        verify(jdbcTemplate).query(
+            sql.capture(), any(org.springframework.jdbc.core.RowMapper.class), parameters.capture()
+        );
+        assertThat(sql.getValue())
+            .contains("(chain_id = ? AND LOWER(wallet_address) = LOWER(?))")
+            .contains("LOWER(institutional_wallet) = LOWER(?)");
+        assertThat(parameters.getValue()[2]).isEqualTo(chainId);
+        assertThat(parameters.getValue()[3]).isEqualTo("0xwallet");
+        assertThat(parameters.getValue()[4]).isEqualTo("0xwallet");
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void claimPersistsOwnerLeaseAndClaimVersionBeforeReturningTheRow() {
+        ObjectProvider<JdbcTemplate> provider = mock(ObjectProvider.class);
+        JdbcTemplate jdbcTemplate = mock(JdbcTemplate.class);
+        when(provider.getIfAvailable()).thenReturn(jdbcTemplate);
+        when(jdbcTemplate.update(any(String.class), any(Object[].class))).thenReturn(1);
+        when(jdbcTemplate.queryForObject(
+            any(String.class), any(org.springframework.jdbc.core.RowMapper.class), any(), any(), any()
+        )).thenReturn(record());
+        InstitutionalCheckInOutboxService service = new InstitutionalCheckInOutboxService(provider);
+
+        InstitutionalCheckInOutboxClaim claim = service.claim(7L);
+
+        assertThat(claim).isNotNull();
+        ArgumentCaptor<String> sql = ArgumentCaptor.forClass(String.class);
+        verify(jdbcTemplate).update(sql.capture(), any(Object[].class));
+        assertThat(sql.getValue())
+            .contains("claim_id = ?")
+            .contains("claimed_by = ?")
+            .contains("claim_version = version + 1")
+            .contains("claim_expires_at = ?")
+            .contains("claim_expires_at <= CURRENT_TIMESTAMP");
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void failedHistoricalReceiptRecordsTheMiningTimestamp() {
+        ObjectProvider<JdbcTemplate> provider = mock(ObjectProvider.class);
+        JdbcTemplate jdbcTemplate = mock(JdbcTemplate.class);
+        when(provider.getIfAvailable()).thenReturn(jdbcTemplate);
+        InstitutionalCheckInOutboxService service = new InstitutionalCheckInOutboxService(provider);
+
+        service.markUnknownMinedFailed(record(), "0xmined", "reverted");
+
+        ArgumentCaptor<String> sql = ArgumentCaptor.forClass(String.class);
+        verify(jdbcTemplate).update(sql.capture(), any(Object[].class));
+        assertThat(sql.getValue()).contains("mined_at = CURRENT_TIMESTAMP");
     }
 
     private InstitutionalCheckInOutboxRecord record() {

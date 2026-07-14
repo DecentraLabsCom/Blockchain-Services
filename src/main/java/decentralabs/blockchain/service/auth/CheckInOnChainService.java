@@ -208,6 +208,28 @@ public class CheckInOnChainService {
         }
     }
 
+    /** Returns the chain currently served by the RPC used for check-in publication. */
+    public BigInteger connectedChainId() {
+        try {
+            EthChainId response = walletService.getWeb3jInstance().ethChainId().send();
+            if (response == null || response.getChainId() == null || response.getChainId().signum() <= 0) {
+                throw new IllegalStateException("RPC returned no valid check-in chainId");
+            }
+            return response.getChainId();
+        } catch (Exception ex) {
+            throw new IllegalStateException("Failed to resolve check-in publication chainId", ex);
+        }
+    }
+
+    /** Returns the wallet whose credentials are used to sign check-in transactions. */
+    public String activeWalletAddress() {
+        Credentials credentials = institutionalWalletService.getInstitutionalCredentials();
+        if (credentials == null || credentials.getAddress() == null || credentials.getAddress().isBlank()) {
+            throw new IllegalStateException("Institutional check-in wallet is not available");
+        }
+        return credentials.getAddress();
+    }
+
     /** Best-effort diagnostic only; access remains authorized solely by contract state. */
     public TransactionState transactionState(String txHash) {
         try {
@@ -225,7 +247,14 @@ public class CheckInOnChainService {
         }
         try {
             var result = walletService.getWeb3jInstance().ethGetTransactionReceipt(txHash).send();
-            if (result == null || result.getTransactionReceipt().isEmpty()) {
+            if (result == null) {
+                throw new IllegalStateException("Node returned no transaction receipt response");
+            }
+            if (result.hasError()) {
+                throw new IllegalStateException("RPC returned an error while reading transaction receipt: "
+                    + result.getError().getMessage());
+            }
+            if (result.getTransactionReceipt().isEmpty()) {
                 return TransactionState.PENDING;
             }
             return result.getTransactionReceipt().get().isStatusOK()
@@ -245,6 +274,10 @@ public class CheckInOnChainService {
             var result = walletService.getWeb3jInstance().ethGetTransactionByHash(txHash).send();
             if (result == null) {
                 throw new IllegalStateException("Node returned no transaction lookup response");
+            }
+            if (result.hasError()) {
+                throw new IllegalStateException("RPC returned an error while reading transaction visibility: "
+                    + result.getError().getMessage());
             }
             return result.getTransaction().isPresent();
         } catch (Exception ex) {

@@ -64,7 +64,8 @@ class InstitutionalAccessCheckInCoordinatorTest {
         )).thenReturn(true);
         InstitutionalCheckInOutboxRecord pending = record("PENDING");
         when(outboxService.enqueueAccessGranted(any(), any(), any(), any(), any())).thenReturn(pending);
-        when(outboxService.claim(pending.id())).thenReturn(true);
+        InstitutionalCheckInOutboxClaim claim = claim(pending);
+        when(outboxService.claim(pending.id())).thenReturn(claim);
 
         coordinator.recordAccessGranted(
             request(),
@@ -85,7 +86,7 @@ class InstitutionalAccessCheckInCoordinatorTest {
             "session-1"
         );
         verify(outboxService).claim(pending.id());
-        verify(nonceDispatcher).dispatch(pending);
+        verify(nonceDispatcher).dispatch(claim);
         verify(remoteCheckInClient, never()).submit(any(), any());
     }
 
@@ -96,7 +97,7 @@ class InstitutionalAccessCheckInCoordinatorTest {
         when(directoryService.isAuthorizedCheckInSigner(any(), any())).thenReturn(true);
         InstitutionalCheckInOutboxRecord submitted = record("SUBMITTED");
         when(outboxService.enqueueAccessGranted(any(), any(), any(), any(), any())).thenReturn(submitted);
-        when(outboxService.claim(submitted.id())).thenReturn(false);
+        when(outboxService.claim(submitted.id())).thenReturn(null);
 
         coordinator.recordAccessGranted(
             request(),
@@ -119,7 +120,8 @@ class InstitutionalAccessCheckInCoordinatorTest {
         InstitutionalCheckInOutboxRecord restarted = record("PENDING");
         when(outboxService.enqueueAccessGranted(any(), any(), any(), any(), any())).thenReturn(failed);
         when(outboxService.restartTerminalFailure(failed.id())).thenReturn(restarted);
-        when(outboxService.claim(restarted.id())).thenReturn(true);
+        InstitutionalCheckInOutboxClaim claim = claim(restarted);
+        when(outboxService.claim(restarted.id())).thenReturn(claim);
 
         coordinator.recordAccessGranted(
             request(),
@@ -128,7 +130,7 @@ class InstitutionalAccessCheckInCoordinatorTest {
         );
 
         verify(outboxService).restartTerminalFailure(7L);
-        verify(nonceDispatcher).dispatch(restarted);
+        verify(nonceDispatcher).dispatch(claim);
     }
 
     @Test
@@ -138,8 +140,9 @@ class InstitutionalAccessCheckInCoordinatorTest {
         when(directoryService.isAuthorizedCheckInSigner(any(), any())).thenReturn(true);
         InstitutionalCheckInOutboxRecord pending = record("PENDING");
         when(outboxService.enqueueAccessGranted(any(), any(), any(), any(), any())).thenReturn(pending);
-        when(outboxService.claim(pending.id())).thenReturn(true);
-        when(nonceDispatcher.dispatch(pending))
+        InstitutionalCheckInOutboxClaim claim = claim(pending);
+        when(outboxService.claim(pending.id())).thenReturn(claim);
+        when(nonceDispatcher.dispatch(claim))
             .thenThrow(new InstitutionalWalletDispatchException("uncertain", new IllegalStateException("rpc response lost")));
 
         coordinator.recordAccessGranted(
@@ -149,7 +152,7 @@ class InstitutionalAccessCheckInCoordinatorTest {
         );
 
         verify(outboxService).markBroadcastUncertain(
-            eq(pending.id()),
+            eq(claim),
             eq(pending.attempts() + 1),
             eq("Initial institutional check-in broadcast outcome is uncertain")
         );
@@ -162,12 +165,13 @@ class InstitutionalAccessCheckInCoordinatorTest {
         when(directoryService.isAuthorizedCheckInSigner(any(), any())).thenReturn(true);
         InstitutionalCheckInOutboxRecord pending = record("PENDING");
         when(outboxService.enqueueAccessGranted(any(), any(), any(), any(), any())).thenReturn(pending);
-        when(outboxService.claim(pending.id())).thenReturn(true);
-        when(nonceDispatcher.dispatch(pending)).thenThrow(new InstitutionalWalletDispatchException(
+        InstitutionalCheckInOutboxClaim claim = claim(pending);
+        when(outboxService.claim(pending.id())).thenReturn(claim);
+        when(nonceDispatcher.dispatch(claim)).thenThrow(new InstitutionalWalletDispatchException(
             "blocked", InstitutionalWalletDispatchException.Outcome.PRE_BROADCAST_BLOCKED,
             new IllegalStateException("allocator blocked")
         ));
-        when(outboxService.markRetry(any(Long.class), any(Integer.class), any(), any())).thenReturn(true);
+        when(outboxService.markRetry(any(InstitutionalCheckInOutboxClaim.class), any(Integer.class), any(), any())).thenReturn(true);
 
         coordinator.recordAccessGranted(
             request(),
@@ -176,10 +180,10 @@ class InstitutionalAccessCheckInCoordinatorTest {
         );
 
         verify(outboxService).markRetry(
-            eq(pending.id()), eq(pending.attempts()), any(Instant.class),
+            eq(claim), eq(pending.attempts()), any(Instant.class),
             eq("Initial institutional check-in transaction was not broadcast; retrying")
         );
-        verify(outboxService, never()).markBroadcastUncertain(any(Long.class), any(Integer.class), any());
+        verify(outboxService, never()).markBroadcastUncertain(any(InstitutionalCheckInOutboxClaim.class), any(Integer.class), any());
     }
 
     @Test
@@ -271,5 +275,9 @@ class InstitutionalAccessCheckInCoordinatorTest {
             7L, "0xabc", "42", "0xwallet", "0xpuc", "session", status, 1, Instant.now(),
             "0xtx", "0xwallet", BigInteger.ONE, Instant.now()
         );
+    }
+
+    private InstitutionalCheckInOutboxClaim claim(InstitutionalCheckInOutboxRecord record) {
+        return new InstitutionalCheckInOutboxClaim(record, "claim-id", "worker", record.version());
     }
 }

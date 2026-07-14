@@ -7,8 +7,10 @@ import java.sql.Timestamp;
 import java.math.BigInteger;
 import java.time.Instant;
 import java.util.List;
+import java.util.UUID;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.stereotype.Service;
@@ -17,8 +19,13 @@ import org.springframework.stereotype.Service;
 @Slf4j
 public class InstitutionalCheckInOutboxService {
     private static final long PROCESSING_STALE_AFTER_SECONDS = 15 * 60;
+    private static final long DEFAULT_CLAIM_LEASE_MILLIS = 15 * 60 * 1000L;
 
     private final JdbcTemplate jdbcTemplate;
+    private final String workerId = UUID.randomUUID().toString();
+
+    @Value("${institutional.checkin.outbox.claim-lease-ms:900000}")
+    private long claimLeaseMillis;
 
     public InstitutionalCheckInOutboxService(ObjectProvider<JdbcTemplate> jdbcTemplateProvider) {
         this.jdbcTemplate = jdbcTemplateProvider.getIfAvailable();
@@ -122,6 +129,16 @@ public class InstitutionalCheckInOutboxService {
                     WHEN status = 'FAILED' AND nonce IS NOT NULL THEN signed_raw_transaction
                     ELSE NULL
                 END,
+                original_gas_price = CASE
+                    WHEN status = 'MINED_FAILED'
+                      OR (status = 'FAILED' AND nonce IS NULL) THEN NULL
+                    ELSE original_gas_price
+                END,
+                current_gas_price = CASE
+                    WHEN status = 'MINED_FAILED'
+                      OR (status = 'FAILED' AND nonce IS NULL) THEN NULL
+                    ELSE current_gas_price
+                END,
                 submitted_at = NULL,
                 mined_at = NULL,
                 last_error = NULL,
@@ -134,8 +151,11 @@ public class InstitutionalCheckInOutboxService {
         return findById(id);
     }
 
-    public List<InstitutionalCheckInOutboxRecord> findDue(Instant now, int limit) {
-        if (jdbcTemplate == null || now == null || limit <= 0) {
+    public List<InstitutionalCheckInOutboxRecord> findDue(
+        BigInteger chainId, String walletAddress, Instant now, int limit
+    ) {
+        if (jdbcTemplate == null || chainId == null || chainId.signum() <= 0
+                || !hasText(walletAddress) || now == null || limit <= 0) {
             return List.of();
         }
         try {
@@ -146,14 +166,25 @@ public class InstitutionalCheckInOutboxService {
                        access_session_id, status, attempts, next_attempt_at, tx_hash, signed_raw_transaction,
                        wallet_address, chain_id, nonce, submitted_at, version, original_gas_price, current_gas_price
                 FROM institutional_checkin_outbox
-                WHERE (status IN ('PENDING', 'RETRY', 'REPLACEMENT_PENDING') AND next_attempt_at <= ?)
-                   OR (status = 'SUBMITTING' AND updated_at <= ?)
+                WHERE (
+                    (status IN ('PENDING', 'RETRY', 'REPLACEMENT_PENDING') AND next_attempt_at <= ?)
+                    OR (status = 'SUBMITTING' AND updated_at <= ?)
+                  )
+                  AND (
+                    (chain_id = ? AND LOWER(wallet_address) = LOWER(?))
+                    OR (chain_id IS NULL
+                        AND status IN ('PENDING', 'RETRY', 'SUBMITTING')
+                        AND LOWER(institutional_wallet) = LOWER(?))
+                  )
                 ORDER BY next_attempt_at ASC, id ASC
                 LIMIT ?
                 """,
                 (rs, rowNum) -> mapRow(rs),
                 Timestamp.from(now),
                 Timestamp.from(staleProcessingCutoff),
+                chainId,
+                walletAddress.trim(),
+                walletAddress.trim(),
                 limit
             );
         } catch (Exception ex) {
@@ -162,23 +193,83 @@ public class InstitutionalCheckInOutboxService {
         }
     }
 
-    public boolean claim(long id) {
+    /** Claims a due row and returns the exact durable ownership token. */
+    public InstitutionalCheckInOutboxClaim claim(long id) {
         if (jdbcTemplate == null) {
-            return false;
+            return null;
         }
+        String claimId = UUID.randomUUID().toString();
+        Timestamp claimExpiresAt = Timestamp.from(
+            Instant.now().plusMillis(claimLeaseMillis > 0 ? claimLeaseMillis : DEFAULT_CLAIM_LEASE_MILLIS)
+        );
         int updated = jdbcTemplate.update(
             """
             UPDATE institutional_checkin_outbox
-            SET status = 'SUBMITTING', version = version + 1, updated_at = CURRENT_TIMESTAMP
+            SET status = 'SUBMITTING', claim_version = version + 1,
+                version = version + 1, claim_id = ?, claimed_by = ?,
+                claim_expires_at = ?, updated_at = CURRENT_TIMESTAMP
             WHERE id = ?
               AND (
                 status IN ('PENDING', 'RETRY', 'REPLACEMENT_PENDING')
-                OR (status = 'SUBMITTING' AND updated_at <= DATE_SUB(CURRENT_TIMESTAMP, INTERVAL 15 MINUTE))
+                OR (status = 'SUBMITTING' AND (
+                    claim_expires_at IS NULL OR claim_expires_at <= CURRENT_TIMESTAMP
+                ))
               )
             """,
+            claimId,
+            workerId,
+            claimExpiresAt,
             id
         );
-        return updated > 0;
+        if (updated != 1) {
+            return null;
+        }
+        InstitutionalCheckInOutboxRecord record = findClaimedById(id, claimId, workerId);
+        return record == null
+            ? null
+            : new InstitutionalCheckInOutboxClaim(record, claimId, workerId, record.version());
+    }
+
+    /** Reads a row only while the supplied durable claim still owns it. */
+    public InstitutionalCheckInOutboxRecord findClaimed(InstitutionalCheckInOutboxClaim claim) {
+        if (claim == null) {
+            return null;
+        }
+        try {
+            return jdbcTemplate.queryForObject(
+                """
+                SELECT id, generation, reservation_key, lab_id, institutional_wallet, puc_hash,
+                       access_session_id, status, attempts, next_attempt_at, tx_hash, signed_raw_transaction,
+                       wallet_address, chain_id, nonce, submitted_at, version, original_gas_price, current_gas_price
+                FROM institutional_checkin_outbox
+                WHERE id = ? AND claim_id = ? AND claimed_by = ? AND claim_version = ?
+                  AND claim_expires_at > CURRENT_TIMESTAMP
+                """,
+                (rs, rowNum) -> mapRow(rs),
+                claim.outboxId(), claim.claimId(), claim.claimedBy(), claim.claimVersion()
+            );
+        } catch (org.springframework.dao.EmptyResultDataAccessException ex) {
+            return null;
+        }
+    }
+
+    private InstitutionalCheckInOutboxRecord findClaimedById(long id, String claimId, String claimedBy) {
+        try {
+            return jdbcTemplate.queryForObject(
+                """
+                SELECT id, generation, reservation_key, lab_id, institutional_wallet, puc_hash,
+                       access_session_id, status, attempts, next_attempt_at, tx_hash, signed_raw_transaction,
+                       wallet_address, chain_id, nonce, submitted_at, version, original_gas_price, current_gas_price
+                FROM institutional_checkin_outbox
+                WHERE id = ? AND claim_id = ? AND claimed_by = ?
+                  AND claim_expires_at > CURRENT_TIMESTAMP
+                """,
+                (rs, rowNum) -> mapRow(rs),
+                id, claimId, claimedBy
+            );
+        } catch (org.springframework.dao.EmptyResultDataAccessException ex) {
+            return null;
+        }
     }
 
     /**
@@ -215,23 +306,35 @@ public class InstitutionalCheckInOutboxService {
         return nonce;
     }
 
-    public void markNonceReserved(long id, String walletAddress, BigInteger chainId, BigInteger nonce) {
-        if (jdbcTemplate == null) {
-            return;
+    public boolean markNonceReserved(
+        InstitutionalCheckInOutboxClaim claim,
+        String walletAddress,
+        BigInteger chainId,
+        BigInteger nonce
+    ) {
+        if (jdbcTemplate == null || claim == null) {
+            return false;
         }
-        jdbcTemplate.update(
+        return jdbcTemplate.update(
             "UPDATE institutional_checkin_outbox SET wallet_address = ?, chain_id = ?, nonce = ?, "
                 + "version = version + 1, updated_at = CURRENT_TIMESTAMP "
-                + "WHERE id = ? AND status = 'SUBMITTING'",
+                + "WHERE id = ? AND status = 'SUBMITTING' AND claim_id = ? AND claimed_by = ? "
+                + "AND claim_version = ? AND claim_expires_at > CURRENT_TIMESTAMP",
             walletAddress,
             chainId,
             nonce,
-            id
-        );
+            claim.outboxId(),
+            claim.claimId(),
+            claim.claimedBy(),
+            claim.claimVersion()
+        ) == 1;
     }
 
-    public List<InstitutionalCheckInOutboxRecord> findSubmitted(Instant now, int limit) {
-        if (jdbcTemplate == null || now == null || limit <= 0) {
+    public List<InstitutionalCheckInOutboxRecord> findSubmitted(
+        BigInteger chainId, String walletAddress, Instant now, int limit
+    ) {
+        if (jdbcTemplate == null || chainId == null || chainId.signum() <= 0
+                || !hasText(walletAddress) || now == null || limit <= 0) {
             return List.of();
         }
         try {
@@ -242,10 +345,14 @@ public class InstitutionalCheckInOutboxService {
                        wallet_address, chain_id, nonce, submitted_at, version, original_gas_price, current_gas_price
                 FROM institutional_checkin_outbox
                 WHERE status = 'SUBMITTED'
+                  AND chain_id = ?
+                  AND LOWER(wallet_address) = LOWER(?)
                 ORDER BY updated_at ASC, id ASC
                 LIMIT ?
                 """,
                 (rs, rowNum) -> mapRow(rs),
+                chainId,
+                walletAddress.trim(),
                 limit
             );
         } catch (Exception ex) {
@@ -254,8 +361,11 @@ public class InstitutionalCheckInOutboxService {
         }
     }
 
-    public List<InstitutionalCheckInOutboxRecord> findStuckUnknown(int limit) {
-        if (jdbcTemplate == null || limit <= 0) {
+    public List<InstitutionalCheckInOutboxRecord> findStuckUnknown(
+        BigInteger chainId, String walletAddress, int limit
+    ) {
+        if (jdbcTemplate == null || chainId == null || chainId.signum() <= 0
+                || !hasText(walletAddress) || limit <= 0) {
             return List.of();
         }
         try {
@@ -266,10 +376,14 @@ public class InstitutionalCheckInOutboxService {
                        wallet_address, chain_id, nonce, submitted_at, version, original_gas_price, current_gas_price
                 FROM institutional_checkin_outbox
                 WHERE status = 'STUCK_UNKNOWN'
+                  AND chain_id = ?
+                  AND LOWER(wallet_address) = LOWER(?)
                 ORDER BY updated_at ASC, id ASC
                 LIMIT ?
                 """,
                 (rs, rowNum) -> mapRow(rs),
+                chainId,
+                walletAddress.trim(),
                 limit
             );
         } catch (Exception ex) {
@@ -294,101 +408,90 @@ public class InstitutionalCheckInOutboxService {
         );
     }
 
-    public void markSubmitted(long id, String txHash) {
-        if (jdbcTemplate == null) {
-            return;
-        }
-        jdbcTemplate.update(
-            """
-            UPDATE institutional_checkin_outbox
-            SET status = 'SUBMITTED',
-                tx_hash = ?,
-                submitted_at = CURRENT_TIMESTAMP,
-                last_error = NULL,
-                version = version + 1,
-                updated_at = CURRENT_TIMESTAMP
-            WHERE id = ? AND status = 'SUBMITTING'
-            """,
-            txHash,
-            id
-        );
-    }
-
     /** Marks a rebroadcast of already persisted material using the observed row version. */
-    public boolean markSubmitted(InstitutionalCheckInOutboxRecord record, String txHash) {
-        if (jdbcTemplate == null || record == null) {
+    public boolean markSubmitted(
+        InstitutionalCheckInOutboxClaim claim,
+        InstitutionalCheckInOutboxRecord record,
+        String txHash
+    ) {
+        if (jdbcTemplate == null || claim == null || record == null) {
             return false;
         }
         return jdbcTemplate.update(
             """
             UPDATE institutional_checkin_outbox
             SET status = 'SUBMITTED', tx_hash = ?, submitted_at = CURRENT_TIMESTAMP,
-                last_error = NULL, version = version + 1, updated_at = CURRENT_TIMESTAMP
+                last_error = NULL, claim_id = NULL, claimed_by = NULL,
+                claim_version = NULL, claim_expires_at = NULL,
+                version = version + 1, updated_at = CURRENT_TIMESTAMP
             WHERE id = ? AND status = 'SUBMITTING' AND tx_hash <=> ? AND version = ?
+              AND claim_id = ? AND claimed_by = ? AND claim_version = ?
+              AND claim_expires_at > CURRENT_TIMESTAMP
             """,
-            txHash, record.id(), record.txHash(), record.version()
+            txHash, record.id(), record.txHash(), record.version(),
+            claim.claimId(), claim.claimedBy(), claim.claimVersion()
         ) == 1;
     }
 
     /** Marks the hash after the durable preparation write. */
     public boolean markSubmittedAfterPreparation(
-        InstitutionalCheckInOutboxRecord record, String txHash
+        InstitutionalCheckInOutboxClaim claim,
+        InstitutionalCheckInOutboxRecord record,
+        String txHash
     ) {
-        if (jdbcTemplate == null || record == null) {
+        if (jdbcTemplate == null || claim == null || record == null) {
             return false;
         }
         return jdbcTemplate.update(
             """
             UPDATE institutional_checkin_outbox
             SET status = 'SUBMITTED', tx_hash = ?, submitted_at = CURRENT_TIMESTAMP,
-                last_error = NULL, version = version + 1, updated_at = CURRENT_TIMESTAMP
+                last_error = NULL, claim_id = NULL, claimed_by = NULL,
+                claim_version = NULL, claim_expires_at = NULL,
+                version = version + 1, updated_at = CURRENT_TIMESTAMP
             WHERE id = ? AND status = 'SUBMITTING' AND tx_hash = ? AND version = ?
+              AND claim_id = ? AND claimed_by = ? AND claim_version = ?
+              AND claim_expires_at > CURRENT_TIMESTAMP
             """,
-            txHash, record.id(), txHash, record.version() + 1L
+            txHash, record.id(), txHash, record.version() + 1L,
+            claim.claimId(), claim.claimedBy(), claim.claimVersion()
         ) == 1;
     }
 
-    public void markMinedSuccess(long id, String txHash) {
-        if (jdbcTemplate == null) {
-            return;
+    public boolean markMinedSuccess(
+        InstitutionalCheckInOutboxClaim claim,
+        InstitutionalCheckInOutboxRecord record,
+        String txHash
+    ) {
+        if (jdbcTemplate == null || claim == null || record == null) {
+            return false;
         }
-        jdbcTemplate.update(
+        return jdbcTemplate.update(
             """
             UPDATE institutional_checkin_outbox
             SET status = 'MINED_SUCCESS',
                 tx_hash = COALESCE(?, tx_hash),
                 mined_at = CURRENT_TIMESTAMP,
                 last_error = NULL,
+                claim_id = NULL, claimed_by = NULL, claim_version = NULL, claim_expires_at = NULL,
                 version = version + 1,
                 updated_at = CURRENT_TIMESTAMP
-            WHERE id = ? AND status IN ('SUBMITTING', 'SUBMITTED')
+            WHERE id = ? AND status = 'SUBMITTING'
+              AND claim_id = ? AND claimed_by = ? AND claim_version = ?
+              AND claim_expires_at > CURRENT_TIMESTAMP
             """,
             txHash,
-            id
-        );
+            claim.outboxId(), claim.claimId(), claim.claimedBy(), claim.claimVersion()
+        ) == 1;
     }
 
-    public void markMinedFailed(long id, String error) {
-        if (jdbcTemplate == null) {
-            return;
-        }
-        jdbcTemplate.update(
-            """
-            UPDATE institutional_checkin_outbox
-            SET status = 'MINED_FAILED',
-                mined_at = CURRENT_TIMESTAMP,
-                last_error = ?,
-                version = version + 1,
-                updated_at = CURRENT_TIMESTAMP
-            WHERE id = ? AND status = 'SUBMITTED'
-            """,
-            truncate(error),
-            id
-        );
-    }
-
-    public boolean markRetry(long id, int attempts, Instant nextAttemptAt, String error) {
-        if (jdbcTemplate == null) {
+    public boolean markRetry(
+        InstitutionalCheckInOutboxClaim claim,
+        int attempts,
+        Instant nextAttemptAt,
+        String error
+    ) {
+        if (jdbcTemplate == null || claim == null || nextAttemptAt == null) {
             return false;
         }
         return jdbcTemplate.update(
@@ -398,14 +501,17 @@ public class InstitutionalCheckInOutboxService {
                 attempts = ?,
                 next_attempt_at = ?,
                 last_error = ?,
+                claim_id = NULL, claimed_by = NULL, claim_version = NULL, claim_expires_at = NULL,
                 version = version + 1,
                 updated_at = CURRENT_TIMESTAMP
             WHERE id = ? AND status = 'SUBMITTING'
+              AND claim_id = ? AND claimed_by = ? AND claim_version = ?
+              AND claim_expires_at > CURRENT_TIMESTAMP
             """,
             attempts,
             Timestamp.from(nextAttemptAt),
             truncate(error),
-            id
+            claim.outboxId(), claim.claimId(), claim.claimedBy(), claim.claimVersion()
         ) == 1;
     }
 
@@ -427,32 +533,40 @@ public class InstitutionalCheckInOutboxService {
         ) == 1;
     }
 
-    public void markFailed(long id, int attempts, String error) {
-        if (jdbcTemplate == null) {
-            return;
+    public boolean markFailed(
+        InstitutionalCheckInOutboxClaim claim,
+        int attempts,
+        String error
+    ) {
+        if (jdbcTemplate == null || claim == null) {
+            return false;
         }
-        jdbcTemplate.update(
+        return jdbcTemplate.update(
             """
             UPDATE institutional_checkin_outbox
             SET status = 'FAILED',
                 attempts = ?,
                 last_error = ?,
+                claim_id = NULL, claimed_by = NULL, claim_version = NULL, claim_expires_at = NULL,
                 version = version + 1,
                 updated_at = CURRENT_TIMESTAMP
             WHERE id = ? AND status = 'SUBMITTING'
+              AND claim_id = ? AND claimed_by = ? AND claim_version = ?
+              AND claim_expires_at > CURRENT_TIMESTAMP
             """,
             attempts,
             truncate(error),
-            id
-        );
+            claim.outboxId(), claim.claimId(), claim.claimedBy(), claim.claimVersion()
+        ) == 1;
     }
 
     @Transactional
     public void markPrepared(
+        InstitutionalCheckInOutboxClaim claim,
         InstitutionalCheckInOutboxRecord record,
         InstitutionalWalletTransactionDispatcher.PreparedTransaction prepared
     ) {
-        if (jdbcTemplate == null || record == null || prepared == null) {
+        if (jdbcTemplate == null || claim == null || record == null || prepared == null) {
             return;
         }
         BigInteger gasPrice = prepared.gasPrice() != null
@@ -480,49 +594,44 @@ public class InstitutionalCheckInOutboxService {
                 updated_at = CURRENT_TIMESTAMP, version = version + 1
             WHERE id = ? AND generation = ? AND status = 'SUBMITTING'
               AND tx_hash <=> ? AND version = ?
+              AND claim_id = ? AND claimed_by = ? AND claim_version = ?
+              AND claim_expires_at > CURRENT_TIMESTAMP
             """,
             prepared.rawTransaction(), prepared.transactionHash(), gasPrice, gasPrice,
-            record.id(), record.generation(), record.txHash(), record.version()
+            record.id(), record.generation(), record.txHash(), record.version(),
+            claim.claimId(), claim.claimedBy(), claim.claimVersion()
         );
         if (updated != 1) {
             throw new IllegalStateException("Check-in signed transaction lost its fencing claim");
         }
     }
 
-    /** Compatibility entry point for callers that only have raw material. */
-    @Transactional
-    public void markPrepared(long id, String rawTransaction, String txHash) {
-        if (jdbcTemplate == null) {
-            return;
+    public boolean markBroadcastUncertain(
+        InstitutionalCheckInOutboxClaim claim,
+        int attempts,
+        String error
+    ) {
+        if (jdbcTemplate == null || claim == null) {
+            return false;
         }
-        InstitutionalCheckInOutboxRecord record = findById(id);
-        markPrepared(
-            record,
-            new InstitutionalWalletTransactionDispatcher.PreparedTransaction(
-                rawTransaction, txHash, record.currentGasPrice()
-            )
-        );
-    }
-
-    public void markBroadcastUncertain(long id, int attempts, String error) {
-        if (jdbcTemplate == null) {
-            return;
-        }
-        jdbcTemplate.update(
+        return jdbcTemplate.update(
             """
             UPDATE institutional_checkin_outbox
             SET status = 'STUCK_UNKNOWN',
                 attempts = ?,
                 submitted_at = COALESCE(submitted_at, CURRENT_TIMESTAMP),
                 last_error = ?,
+                claim_id = NULL, claimed_by = NULL, claim_version = NULL, claim_expires_at = NULL,
                 version = version + 1,
                 updated_at = CURRENT_TIMESTAMP
             WHERE id = ? AND status = 'SUBMITTING'
+              AND claim_id = ? AND claimed_by = ? AND claim_version = ?
+              AND claim_expires_at > CURRENT_TIMESTAMP
             """,
             attempts,
             truncate(error),
-            id
-        );
+            claim.outboxId(), claim.claimId(), claim.claimedBy(), claim.claimVersion()
+        ) == 1;
     }
 
     private InstitutionalCheckInOutboxRecord mapRow(ResultSet rs) throws SQLException {
@@ -681,7 +790,7 @@ public class InstitutionalCheckInOutboxService {
             """
             UPDATE institutional_checkin_outbox
             SET status = 'MINED_FAILED', tx_hash = COALESCE(?, tx_hash),
-                last_error = ?,
+                mined_at = CURRENT_TIMESTAMP, last_error = ?,
                 version = version + 1, updated_at = CURRENT_TIMESTAMP
             WHERE id = ? AND status = 'STUCK_UNKNOWN' AND tx_hash <=> ? AND version = ?
             """,

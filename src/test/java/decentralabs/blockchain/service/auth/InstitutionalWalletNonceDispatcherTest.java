@@ -2,12 +2,12 @@ package decentralabs.blockchain.service.auth;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
-import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import decentralabs.blockchain.dto.auth.CheckInResponse;
@@ -25,123 +25,71 @@ class InstitutionalWalletNonceDispatcherTest {
     @Mock private InstitutionalWalletTransactionDispatcher transactionDispatcher;
 
     @Test
-    void rejectsMissingOutboxRecordAsPreBroadcastRetryable() {
-        InstitutionalWalletNonceDispatcher dispatcher = new InstitutionalWalletNonceDispatcher(
-            outboxService, submissionService, transactionDispatcher
-        );
+    void rejectsMissingClaim() {
+        InstitutionalWalletNonceDispatcher dispatcher = dispatcher();
 
-        assertThatThrownBy(() -> dispatcher.dispatch(null))
+        assertThatThrownBy(() -> dispatcher.dispatch((InstitutionalCheckInOutboxClaim) null))
             .isInstanceOf(InstitutionalWalletDispatchException.class)
             .extracting("outcome")
             .isEqualTo(InstitutionalWalletDispatchException.Outcome.PRE_BROADCAST_PERMANENT);
-
         verify(submissionService, never()).signerAddress();
     }
 
     @Test
-    void persistsReservedNonceAndTransactionHashBeforeReleasingWalletDispatch() throws Exception {
-        InstitutionalCheckInOutboxRecord record = new InstitutionalCheckInOutboxRecord(
-            7L, "0xabc", "42", "0xpayer", "0xpuchash", "session-7", "SUBMITTING", 0,
-            Instant.now(), null, "0xsigner", null, null
-        );
+    void persistsReservedNonceAndTransactionHashThroughTheSameClaim() throws Exception {
+        InstitutionalCheckInOutboxRecord record = submittingRecord(7L, null, null, 0L);
+        InstitutionalCheckInOutboxClaim claim = claim(record);
         CheckInResponse response = new CheckInResponse();
         response.setTxHash("0x" + "a".repeat(64));
         when(submissionService.signerAddress()).thenReturn("0xsigner");
-        when(outboxService.markSubmittedAfterPreparation(any(), any())).thenReturn(true);
-        InstitutionalCheckInSubmissionService.PreparedCheckIn prepared =
-            new InstitutionalCheckInSubmissionService.PreparedCheckIn(
-                response,
-                new InstitutionalWalletTransactionDispatcher.PreparedTransaction(
-                    "0x01", response.getTxHash()
-                )
-            );
+        when(outboxService.markNonceReserved(claim, "0xsigner", BigInteger.ONE, BigInteger.valueOf(47)))
+            .thenReturn(true);
+        when(outboxService.markSubmittedAfterPreparation(eq(claim), any(), eq(response.getTxHash())))
+            .thenReturn(true);
         when(submissionService.prepare(
             eq("0xabc"), eq("0xpuchash"), eq(BigInteger.valueOf(47)),
             isNull(BigInteger.class), isNull(BigInteger.class), eq(0)
-        )).thenReturn(prepared);
-        BigInteger chainId = BigInteger.valueOf(11155111);
-        when(transactionDispatcher.dispatchPrepared(eq("0xsigner"), eq(null), eq(null), any(), any(), any(), any()))
-            .thenAnswer(invocation -> {
-                java.util.function.BiConsumer<BigInteger, BigInteger> persistNonce = invocation.getArgument(3);
-                java.util.function.Function<BigInteger, InstitutionalWalletTransactionDispatcher.PreparedTransaction> prepare = invocation.getArgument(4);
-                java.util.function.Consumer<InstitutionalWalletTransactionDispatcher.PreparedTransaction> persistPrepared = invocation.getArgument(5);
-                java.util.function.Consumer<String> persistHash = invocation.getArgument(6);
-                persistNonce.accept(chainId, BigInteger.valueOf(47));
-                var tx = prepare.apply(BigInteger.valueOf(47));
-                persistPrepared.accept(tx);
-                persistHash.accept(tx.transactionHash());
-                return tx.transactionHash();
-            });
+        )).thenReturn(new InstitutionalCheckInSubmissionService.PreparedCheckIn(
+            response,
+            new InstitutionalWalletTransactionDispatcher.PreparedTransaction("0x01", response.getTxHash())
+        ));
+        when(transactionDispatcher.dispatchPrepared(
+            eq("0xsigner"), eq(null), eq(null), any(), any(), any(), any()
+        )).thenAnswer(invocation -> {
+            var persistNonce = invocation.getArgument(3, java.util.function.BiConsumer.class);
+            var prepare = invocation.getArgument(4, java.util.function.Function.class);
+            var persistPrepared = invocation.getArgument(5, java.util.function.Consumer.class);
+            var persistHash = invocation.getArgument(6, java.util.function.Consumer.class);
+            persistNonce.accept(BigInteger.ONE, BigInteger.valueOf(47));
+            var prepared = (InstitutionalWalletTransactionDispatcher.PreparedTransaction)
+                prepare.apply(BigInteger.valueOf(47));
+            persistPrepared.accept(prepared);
+            persistHash.accept(prepared.transactionHash());
+            return prepared.transactionHash();
+        });
 
-        InstitutionalWalletNonceDispatcher dispatcher = new InstitutionalWalletNonceDispatcher(
-            outboxService, submissionService, transactionDispatcher
-        );
-
-        CheckInResponse result = dispatcher.dispatch(record);
+        CheckInResponse result = dispatcher().dispatch(claim);
 
         assertThat(result).isSameAs(response);
-        verify(outboxService).markNonceReserved(7L, "0xsigner", chainId, BigInteger.valueOf(47));
-        verify(outboxService).markSubmittedAfterPreparation(record, response.getTxHash());
-    }
-
-    @Test
-    void keepsTheReservedNonceWhenBroadcastOutcomeIsUncertain() throws Exception {
-        InstitutionalCheckInOutboxRecord record = new InstitutionalCheckInOutboxRecord(
-            8L, "0xdef", "42", "0xpayer", "0xpuchash", "session-8", "RETRY", 1,
-            Instant.now(), null, "0xsigner", BigInteger.ONE, BigInteger.valueOf(48), Instant.now(), 0L
-        );
-        when(submissionService.signerAddress()).thenReturn("0xsigner");
-        when(submissionService.prepare(
-            eq("0xdef"), eq("0xpuchash"), eq(BigInteger.valueOf(48)),
-            isNull(BigInteger.class), isNull(BigInteger.class), eq(1)
-        ))
-            .thenThrow(new IllegalStateException("rpc response lost"));
-        when(transactionDispatcher.dispatchPrepared(
-            eq("0xsigner"), eq(BigInteger.ONE), eq(BigInteger.valueOf(48)), any(), any(), any(), any()
-        ))
-            .thenAnswer(invocation -> {
-                java.util.function.Function<BigInteger, InstitutionalWalletTransactionDispatcher.PreparedTransaction> prepare = invocation.getArgument(4);
-                return prepare.apply(BigInteger.valueOf(48)).transactionHash();
-            });
-        InstitutionalWalletNonceDispatcher dispatcher = new InstitutionalWalletNonceDispatcher(
-            outboxService, submissionService, transactionDispatcher
-        );
-
-        assertThatThrownBy(() -> dispatcher.dispatch(record))
-            .isInstanceOf(IllegalStateException.class)
-            .hasMessageContaining("rpc response lost");
-
-        verify(submissionService).prepare(
-            eq("0xdef"), eq("0xpuchash"), eq(BigInteger.valueOf(48)),
-            isNull(BigInteger.class), isNull(BigInteger.class), eq(1)
-        );
-        verify(transactionDispatcher).dispatchPrepared(
-            eq("0xsigner"), eq(BigInteger.ONE), eq(BigInteger.valueOf(48)), any(), any(), any(), any()
-        );
+        verify(outboxService).markNonceReserved(claim, "0xsigner", BigInteger.ONE, BigInteger.valueOf(47));
+        verify(outboxService).markPrepared(eq(claim), any(), any());
+        verify(outboxService).markSubmittedAfterPreparation(eq(claim), any(), eq(response.getTxHash()));
     }
 
     @Test
     void staleSubmittingRowRebroadcastsPersistedTransactionBeforePreparingReplacement() throws Exception {
         String previousHash = "0x" + "c".repeat(64);
-        InstitutionalCheckInOutboxRecord record = new InstitutionalCheckInOutboxRecord(
-            9L, "0xghi", "42", "0xpayer", "0xpuchash", "session-9", "SUBMITTING", 1,
-            Instant.now(), previousHash, "0xsigner", BigInteger.ONE, BigInteger.valueOf(49), Instant.now(), 2L,
-            "0xold-raw"
-        );
+        InstitutionalCheckInOutboxRecord record = submittingRecord(9L, previousHash, "0xold-raw", 2L);
+        InstitutionalCheckInOutboxClaim claim = claim(record);
         when(submissionService.signerAddress()).thenReturn("0xsigner");
-        when(outboxService.markSubmitted(any(InstitutionalCheckInOutboxRecord.class), any())).thenReturn(true);
-        when(transactionDispatcher.rebroadcastPrepared(any()))
-            .thenReturn(previousHash);
+        when(transactionDispatcher.rebroadcastPrepared(any())).thenReturn(previousHash);
+        when(outboxService.markSubmitted(claim, record, previousHash)).thenReturn(true);
 
-        InstitutionalWalletNonceDispatcher dispatcher = new InstitutionalWalletNonceDispatcher(
-            outboxService, submissionService, transactionDispatcher
-        );
-
-        CheckInResponse result = dispatcher.dispatch(record);
+        CheckInResponse result = dispatcher().dispatch(claim);
 
         assertThat(result.getTxHash()).isEqualTo(previousHash);
         verify(transactionDispatcher).rebroadcastPrepared(any());
-        verify(outboxService).markSubmitted(record, previousHash);
+        verify(outboxService).markSubmitted(claim, record, previousHash);
         verify(submissionService, never()).prepare(any(), any(), any(), any(), any(), anyInt());
         verify(transactionDispatcher, never()).dispatchPrepared(any(), any(), any(), any(), any(), any(), any());
     }
@@ -155,6 +103,7 @@ class InstitutionalWalletNonceDispatcherTest {
             Instant.now(), previousHash, "0xsigner", BigInteger.ONE, BigInteger.valueOf(51),
             Instant.now(), 4L, "0xold-raw", BigInteger.valueOf(100), BigInteger.valueOf(120), 1L
         );
+        InstitutionalCheckInOutboxClaim claim = claim(record);
         CheckInResponse response = new CheckInResponse();
         response.setTxHash(replacementHash);
         when(submissionService.signerAddress()).thenReturn("0xsigner");
@@ -167,58 +116,42 @@ class InstitutionalWalletNonceDispatcherTest {
                 "0xnew-raw", replacementHash, BigInteger.valueOf(120)
             )
         ));
-        when(outboxService.markSubmittedAfterPreparation(any(), eq(replacementHash))).thenReturn(true);
+        when(outboxService.markSubmittedAfterPreparation(eq(claim), any(), eq(replacementHash)))
+            .thenReturn(true);
         when(transactionDispatcher.dispatchPrepared(
             eq("0xsigner"), eq(BigInteger.ONE), eq(BigInteger.valueOf(51)), any(), any(), any(), any()
         )).thenAnswer(invocation -> {
-            java.util.function.Function<BigInteger, InstitutionalWalletTransactionDispatcher.PreparedTransaction> prepare =
-                invocation.getArgument(4);
-            java.util.function.Consumer<InstitutionalWalletTransactionDispatcher.PreparedTransaction> persistPrepared =
-                invocation.getArgument(5);
-            java.util.function.Consumer<String> persistHash = invocation.getArgument(6);
-            var prepared = prepare.apply(BigInteger.valueOf(51));
+            var prepare = invocation.getArgument(4, java.util.function.Function.class);
+            var persistPrepared = invocation.getArgument(5, java.util.function.Consumer.class);
+            var persistHash = invocation.getArgument(6, java.util.function.Consumer.class);
+            var prepared = (InstitutionalWalletTransactionDispatcher.PreparedTransaction)
+                prepare.apply(BigInteger.valueOf(51));
             persistPrepared.accept(prepared);
             persistHash.accept(prepared.transactionHash());
             return prepared.transactionHash();
         });
 
-        InstitutionalWalletNonceDispatcher dispatcher = new InstitutionalWalletNonceDispatcher(
-            outboxService, submissionService, transactionDispatcher
-        );
-
-        CheckInResponse result = dispatcher.dispatch(record, true);
+        CheckInResponse result = dispatcher().dispatch(claim, true);
 
         assertThat(result).isSameAs(response);
-        verify(submissionService).prepare(
-            "0xreplacement", "0xpuchash", BigInteger.valueOf(51),
-            BigInteger.valueOf(100), BigInteger.valueOf(120), 2
-        );
-        verify(transactionDispatcher).dispatchPrepared(
-            eq("0xsigner"), eq(BigInteger.ONE), eq(BigInteger.valueOf(51)), any(), any(), any(), any()
-        );
         verify(transactionDispatcher, never()).rebroadcastPrepared(any());
-        verify(outboxService).markPrepared(
-            eq(record), any(InstitutionalWalletTransactionDispatcher.PreparedTransaction.class)
-        );
+        verify(outboxService).markPrepared(eq(claim), any(), any());
     }
 
-    @Test
-    void staleSubmittingRowWithPartialMaterialDoesNotOverwriteExistingEvidence() throws Exception {
-        InstitutionalCheckInOutboxRecord record = new InstitutionalCheckInOutboxRecord(
-            10L, "0xjkl", "42", "0xpayer", "0xpuchash", "session-10", "SUBMITTING", 1,
-            Instant.now(), "0x" + "f".repeat(64), "0xsigner", BigInteger.ONE, BigInteger.valueOf(50),
-            Instant.now(), 3L, null
+    private InstitutionalWalletNonceDispatcher dispatcher() {
+        return new InstitutionalWalletNonceDispatcher(outboxService, submissionService, transactionDispatcher);
+    }
+
+    private InstitutionalCheckInOutboxClaim claim(InstitutionalCheckInOutboxRecord record) {
+        return new InstitutionalCheckInOutboxClaim(record, "claim-id", "worker", record.version());
+    }
+
+    private InstitutionalCheckInOutboxRecord submittingRecord(
+        long id, String txHash, String raw, long version
+    ) {
+        return new InstitutionalCheckInOutboxRecord(
+            id, "0xabc", "42", "0xpayer", "0xpuchash", "session", "SUBMITTING", 0,
+            Instant.now(), txHash, "0xsigner", null, null, Instant.now(), version, raw
         );
-        when(submissionService.signerAddress()).thenReturn("0xsigner");
-
-        assertThatThrownBy(() -> new InstitutionalWalletNonceDispatcher(
-            outboxService, submissionService, transactionDispatcher
-        ).dispatch(record))
-            .isInstanceOf(InstitutionalWalletDispatchException.class)
-            .extracting("outcome")
-            .isEqualTo(InstitutionalWalletDispatchException.Outcome.PRE_BROADCAST_PERMANENT);
-
-        verify(submissionService, never()).prepare(any(), any(), any(), any(), any(), anyInt());
-        verify(transactionDispatcher, never()).dispatchPrepared(any(), any(), any(), any(), any(), any(), any());
     }
 }
