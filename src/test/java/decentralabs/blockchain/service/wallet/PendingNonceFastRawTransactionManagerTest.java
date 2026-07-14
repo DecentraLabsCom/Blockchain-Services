@@ -216,7 +216,7 @@ class PendingNonceFastRawTransactionManagerTest {
 
         assertThat(response.getTransactionHash()).isEqualTo("0x" + "c".repeat(64));
         verify(transactionOutboxService).markSigned(eq(blocker), anyString(), anyString());
-        verify(transactionOutboxService).markSubmitted(
+        verify(transactionOutboxService).markVisibleSubmitted(
             argThat(attempt -> attempt != null && attempt.id() == blocker.id()),
             eq("0x" + "b".repeat(64))
         );

@@ -37,7 +37,7 @@ class InstitutionalCheckInReceiptMonitorTest {
 
         monitor.monitor(record);
 
-        verify(outboxService).markSubmittedRetry(eq(record), eq(3), any(Instant.class), eq("Check-in transaction is still pending; retrying with the same nonce and higher gas"));
+        verify(outboxService).markReplacementPending(eq(record), eq(3), any(Instant.class), eq("Check-in transaction is still pending; retrying with the same nonce and higher gas"));
     }
 
     @Test
@@ -86,6 +86,41 @@ class InstitutionalCheckInReceiptMonitorTest {
         monitor.reconcileUnknown(record);
 
         verify(outboxService).markUnknownRetry(eq(record), any(Instant.class), any(String.class));
+    }
+
+    @Test
+    void returnsVisibleStuckUnknownToSubmittedWithoutRebroadcasting() {
+        InstitutionalCheckInOutboxRecord record = unknownRecord(16L, 17L);
+        when(bookingService.getCheckInBookingInfo("0xpayer", "0xabc", "42", null))
+            .thenReturn(Map.of("reservationStatus", BigInteger.ONE));
+        when(checkInOnChainService.transactionStateStrict(record.txHash()))
+            .thenReturn(CheckInOnChainService.TransactionState.PENDING);
+        when(checkInOnChainService.transactionVisible(record.txHash())).thenReturn(true);
+
+        monitor.reconcileUnknown(record);
+
+        verify(outboxService).markUnknownVisibleSubmitted(record);
+        verify(checkInOnChainService, never()).pendingNonce(any(String.class));
+    }
+
+    @Test
+    void promotesTheHistoricalCheckInHashThatActuallyMined() {
+        String currentHash = "0x" + "2".repeat(64);
+        String historicalHash = "0x" + "1".repeat(64);
+        InstitutionalCheckInOutboxRecord record = new InstitutionalCheckInOutboxRecord(
+            17L, "0xabc", "42", "0xpayer", "0xpuchash", "session", "SUBMITTED", 2,
+            Instant.now(), currentHash, "0xsigner", BigInteger.ONE, BigInteger.valueOf(18),
+            Instant.now().minusSeconds(1), 4L
+        );
+        when(outboxService.findReplacedHashes(record.id())).thenReturn(java.util.List.of(historicalHash));
+        when(checkInOnChainService.transactionState(currentHash))
+            .thenReturn(CheckInOnChainService.TransactionState.PENDING);
+        when(checkInOnChainService.transactionState(historicalHash))
+            .thenReturn(CheckInOnChainService.TransactionState.SUCCEEDED);
+
+        monitor.monitor(record);
+
+        verify(outboxService).markSubmittedMinedSuccess(record, historicalHash);
     }
 
     @Test

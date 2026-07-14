@@ -179,6 +179,7 @@ class InstitutionalCheckInServiceTest {
             "blocked", InstitutionalWalletDispatchException.Outcome.PRE_BROADCAST_BLOCKED,
             new IllegalStateException("allocator blocked")
         ));
+        when(outboxService.markRetry(any(Long.class), any(Integer.class), any(), any())).thenReturn(true);
 
         CheckInResponse response = service.checkIn(request);
 
@@ -191,6 +192,62 @@ class InstitutionalCheckInServiceTest {
             eq("Initial institutional check-in transaction was not broadcast; retrying")
         );
         verify(outboxService, never()).markBroadcastUncertain(any(Long.class), any(Integer.class), any());
+    }
+
+    @Test
+    void checkInReturnsQueuedResponseWhenTransientRetryWasPersisted() throws Exception {
+        InstitutionalCheckInRequest request = validRequest();
+        when(samlValidationService.validateSamlAssertionDetailed("valid-saml")).thenReturn(samlAttributes());
+        when(marketplaceEndpointAuthService.enforceToken("market-token", null)).thenReturn(marketplaceClaims());
+        when(bookingService.getCheckInBookingInfo(any(), eq("0xabc"), eq("42"), eq("puc-123")))
+            .thenReturn(Map.of("reservationKey", "0xabc"));
+        when(institutionalWalletService.getInstitutionalWalletAddress()).thenReturn(credentials.getAddress());
+        when(directoryService.isAuthorizedCheckInSigner(any(), any())).thenReturn(true);
+        InstitutionalCheckInOutboxRecord record = queuedRecord();
+        when(outboxService.enqueueAccessGranted(any(), any(), any(), any(), any())).thenReturn(record);
+        when(outboxService.claim(record.id())).thenReturn(true);
+        when(nonceDispatcher.dispatch(record)).thenThrow(new InstitutionalWalletDispatchException(
+            "temporary", InstitutionalWalletDispatchException.Outcome.PRE_BROADCAST_TRANSIENT,
+            new IllegalStateException("rpc timeout")
+        ));
+        when(outboxService.markRetry(any(Long.class), any(Integer.class), any(), any())).thenReturn(true);
+
+        CheckInResponse response = service.checkIn(request);
+
+        assertThat(response.isValid()).isTrue();
+        assertThat(response.getQueued()).isTrue();
+        assertThat(response.getReason()).isEqualTo("CHECKIN_QUEUED");
+        verify(outboxService).markRetry(
+            eq(record.id()), eq(record.attempts() + 1), any(),
+            eq("Initial institutional check-in transaction was not broadcast; retrying")
+        );
+    }
+
+    @Test
+    void checkInFailsWhenTransientRetryCouldNotBePersisted() throws Exception {
+        InstitutionalCheckInRequest request = validRequest();
+        when(samlValidationService.validateSamlAssertionDetailed("valid-saml")).thenReturn(samlAttributes());
+        when(marketplaceEndpointAuthService.enforceToken("market-token", null)).thenReturn(marketplaceClaims());
+        when(bookingService.getCheckInBookingInfo(any(), eq("0xabc"), eq("42"), eq("puc-123")))
+            .thenReturn(Map.of("reservationKey", "0xabc"));
+        when(institutionalWalletService.getInstitutionalWalletAddress()).thenReturn(credentials.getAddress());
+        when(directoryService.isAuthorizedCheckInSigner(any(), any())).thenReturn(true);
+        InstitutionalCheckInOutboxRecord record = queuedRecord();
+        when(outboxService.enqueueAccessGranted(any(), any(), any(), any(), any())).thenReturn(record);
+        when(outboxService.claim(record.id())).thenReturn(true);
+        when(nonceDispatcher.dispatch(record)).thenThrow(new InstitutionalWalletDispatchException(
+            "temporary", InstitutionalWalletDispatchException.Outcome.PRE_BROADCAST_TRANSIENT,
+            new IllegalStateException("rpc timeout")
+        ));
+
+        assertThatThrownBy(() -> service.checkIn(request))
+            .isInstanceOf(IllegalStateException.class)
+            .hasMessageContaining("could not be prepared");
+
+        verify(outboxService).markRetry(
+            eq(record.id()), eq(record.attempts() + 1), any(),
+            eq("Initial institutional check-in transaction was not broadcast; retrying")
+        );
     }
 
     @Test

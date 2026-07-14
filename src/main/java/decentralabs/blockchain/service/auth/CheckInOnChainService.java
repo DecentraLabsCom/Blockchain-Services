@@ -68,7 +68,11 @@ public class CheckInOnChainService {
             contractAddress, BigInteger.ZERO, encoded
         );
         String rawHex = Numeric.toHexString(TransactionEncoder.signMessage(raw, chainId, credentials));
-        return new InstitutionalWalletTransactionDispatcher.PreparedTransaction(rawHex, Hash.sha3(rawHex));
+        return new InstitutionalWalletTransactionDispatcher.PreparedTransaction(
+            rawHex,
+            Hash.sha3(rawHex),
+            toWei(gasPriceForReplacement(replacementAttempt))
+        );
     }
 
     public String broadcastSignedRawTransaction(String rawTransaction) {

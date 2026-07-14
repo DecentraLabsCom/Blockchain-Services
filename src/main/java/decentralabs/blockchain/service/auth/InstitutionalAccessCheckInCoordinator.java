@@ -87,10 +87,13 @@ public class InstitutionalAccessCheckInCoordinator {
             int attempts = blocked ? record.attempts() : record.attempts() + 1;
             if (ex.outcome() == InstitutionalWalletDispatchException.Outcome.PRE_BROADCAST_BLOCKED
                 || ex.outcome() == InstitutionalWalletDispatchException.Outcome.PRE_BROADCAST_TRANSIENT) {
-                outboxService.markRetry(
+                boolean retryPersisted = outboxService.markRetry(
                     record.id(), attempts, Instant.now(),
                     "Initial institutional check-in transaction was not broadcast; retrying"
                 );
+                if (!retryPersisted) {
+                    throw new IllegalStateException("Institutional check-in retry could not be persisted", ex);
+                }
             } else if (ex.outcome() == InstitutionalWalletDispatchException.Outcome.PRE_BROADCAST_PERMANENT) {
                 outboxService.markFailed(
                     record.id(), attempts, "Initial institutional check-in preparation failed permanently"
@@ -104,10 +107,13 @@ public class InstitutionalAccessCheckInCoordinator {
         } catch (RuntimeException ex) {
             // Non-classified failures happen before the dispatcher can establish
             // a broadcast boundary and are therefore safe to retry.
-            outboxService.markRetry(
+            boolean retryPersisted = outboxService.markRetry(
                 record.id(), record.attempts() + 1, Instant.now(),
                 "Initial institutional check-in transaction was not broadcast; retrying"
             );
+            if (!retryPersisted) {
+                throw new IllegalStateException("Institutional check-in retry could not be persisted", ex);
+            }
         }
     }
 

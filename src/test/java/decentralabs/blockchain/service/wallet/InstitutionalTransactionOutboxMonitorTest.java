@@ -88,7 +88,7 @@ class InstitutionalTransactionOutboxMonitorTest {
 
         assertThat(monitor.monitor(web3j, 10)).isEqualTo(1);
 
-        verify(outboxService).markSubmitted(attempt, "0x" + "c".repeat(64));
+        verify(outboxService).markVisibleSubmitted(attempt, "0x" + "c".repeat(64));
     }
 
     @Test
@@ -134,7 +134,28 @@ class InstitutionalTransactionOutboxMonitorTest {
 
         verify(web3j, org.mockito.Mockito.never()).ethGetTransactionCount(any(), any());
         verify(web3j, org.mockito.Mockito.never()).ethSendRawTransaction(any());
-        verify(outboxService).markSubmitted(attempt, attempt.txHash());
+        verify(outboxService).markVisibleSubmitted(attempt, attempt.txHash());
+    }
+
+    @Test
+    void returnsVisibleRetryableMaterialToSubmittedUsingTheCurrentVersion() throws Exception {
+        var attempt = attempt("RETRYABLE", "0x" + "a".repeat(64), "0xf861");
+        when(outboxService.findRecoveryCandidates(any(), any(), org.mockito.ArgumentMatchers.eq(10)))
+            .thenReturn(List.of(attempt));
+        when(outboxService.findSubmitted(any(), any(), org.mockito.ArgumentMatchers.eq(10))).thenReturn(List.of());
+        when(outboxService.findStuckUnknown(any(), any(), org.mockito.ArgumentMatchers.eq(10))).thenReturn(List.of());
+        when(institutionalWalletService.getInstitutionalCredentials()).thenReturn(CREDENTIALS);
+        mockMissingReceipt(attempt);
+        mockVisibleTransaction(attempt);
+
+        InstitutionalTransactionOutboxMonitor monitor = new InstitutionalTransactionOutboxMonitor(
+            outboxService, walletService, institutionalWalletService
+        );
+
+        assertThat(monitor.monitor(web3j, 10)).isEqualTo(1);
+
+        verify(outboxService).markVisibleSubmitted(attempt, attempt.txHash());
+        verify(web3j, org.mockito.Mockito.never()).ethSendRawTransaction(any());
     }
 
     @Test
@@ -196,7 +217,7 @@ class InstitutionalTransactionOutboxMonitorTest {
         verify(outboxService).markReplacementPrepared(
             eq(attempt), eq(attempt.txHash()), any(), any(), eq(BigInteger.valueOf(2))
         );
-        verify(outboxService).markSubmitted(attempt, "0x" + "5".repeat(64));
+        verify(outboxService).markReplacementSubmitted(attempt, "0x" + "5".repeat(64));
     }
 
     @Test
@@ -333,7 +354,8 @@ class InstitutionalTransactionOutboxMonitorTest {
         when(outboxService.findSubmitted(any(), any(), org.mockito.ArgumentMatchers.eq(10))).thenReturn(List.of());
         when(outboxService.findStuckUnknown(any(), any(), org.mockito.ArgumentMatchers.eq(10))).thenReturn(List.of());
         when(institutionalWalletService.getInstitutionalCredentials()).thenReturn(CREDENTIALS);
-        mockMissingTransaction(attempt);
+        mockMissingReceipt(attempt);
+        mockVisibleTransaction(attempt);
         EthSendTransaction sendResponse = new EthSendTransaction();
         sendResponse.setResult("0x" + "3".repeat(64));
         doReturn(requestReturning(sendResponse)).when(web3j).ethSendRawTransaction(any());
@@ -348,7 +370,8 @@ class InstitutionalTransactionOutboxMonitorTest {
         verify(outboxService).markReplacementPrepared(
             eq(attempt), eq(attempt.txHash()), any(), any(), eq(BigInteger.valueOf(2))
         );
-        verify(outboxService).markSubmitted(attempt, "0x" + "3".repeat(64));
+        verify(outboxService).markReplacementSubmitted(attempt, "0x" + "3".repeat(64));
+        verify(outboxService, org.mockito.Mockito.never()).markVisibleSubmitted(any(), any());
         verify(web3j).ethSendRawTransaction(any());
     }
 
@@ -377,6 +400,36 @@ class InstitutionalTransactionOutboxMonitorTest {
         assertThat(monitor.monitor(web3j, 10)).isEqualTo(1);
 
         verify(outboxService).markMinedSuccess(attempt, replacedHash);
+        verify(web3j, org.mockito.Mockito.never()).ethGetTransactionByHash(any());
+    }
+
+    @Test
+    void reconcilesARevertedReceiptFoundUnderAReplacedHash() throws Exception {
+        String currentHash = "0x" + "6".repeat(64);
+        String replacedHash = "0x" + "7".repeat(64);
+        var attempt = attempt("SUBMITTED", currentHash, "0xf861", Instant.now());
+        when(outboxService.findSubmitted(any(), any(), org.mockito.ArgumentMatchers.eq(10))).thenReturn(List.of(attempt));
+        when(outboxService.findStuckUnknown(any(), any(), org.mockito.ArgumentMatchers.eq(10))).thenReturn(List.of());
+        when(outboxService.findReplacedHashes(attempt.id())).thenReturn(List.of(replacedHash));
+
+        EthGetTransactionReceipt missingReceipt = mock(EthGetTransactionReceipt.class);
+        when(missingReceipt.getTransactionReceipt()).thenReturn(Optional.empty());
+        doReturn(requestReturning(missingReceipt)).when(web3j).ethGetTransactionReceipt(currentHash);
+        EthGetTransactionReceipt revertedReceipt = mock(EthGetTransactionReceipt.class);
+        TransactionReceipt receipt = mock(TransactionReceipt.class);
+        when(revertedReceipt.getTransactionReceipt()).thenReturn(Optional.of(receipt));
+        when(receipt.isStatusOK()).thenReturn(false);
+        doReturn(requestReturning(revertedReceipt)).when(web3j).ethGetTransactionReceipt(replacedHash);
+
+        InstitutionalTransactionOutboxMonitor monitor = new InstitutionalTransactionOutboxMonitor(
+            outboxService, walletService, institutionalWalletService
+        );
+
+        assertThat(monitor.monitor(web3j, 10)).isEqualTo(1);
+
+        verify(outboxService).markMinedFailed(
+            attempt, replacedHash, "Institutional transaction reverted on-chain"
+        );
         verify(web3j, org.mockito.Mockito.never()).ethGetTransactionByHash(any());
     }
 
@@ -428,7 +481,7 @@ class InstitutionalTransactionOutboxMonitorTest {
         assertThat(monitor.monitor(web3j, 10)).isEqualTo(1);
 
         verify(outboxService).markSigned(any(), any(), any());
-        verify(outboxService).markSubmitted(attempt, "0x" + "d".repeat(64));
+        verify(outboxService).markSubmittedAfterPreparation(attempt, "0x" + "d".repeat(64));
     }
 
     @Test
@@ -453,7 +506,7 @@ class InstitutionalTransactionOutboxMonitorTest {
         assertThat(monitor.monitor(web3j, 10)).isEqualTo(1);
 
         verify(outboxService).markSigned(any(), any(), any());
-        verify(outboxService).markSubmitted(attempt, "0x" + "a".repeat(64));
+        verify(outboxService).markSubmittedAfterPreparation(attempt, "0x" + "a".repeat(64));
     }
 
     @Test
@@ -510,6 +563,15 @@ class InstitutionalTransactionOutboxMonitorTest {
         mockMissingReceipt(attempt);
         EthTransaction transactionResponse = mock(EthTransaction.class);
         when(transactionResponse.getTransaction()).thenReturn(Optional.empty());
+        doReturn(requestReturning(transactionResponse)).when(web3j)
+            .ethGetTransactionByHash(any());
+    }
+
+    private void mockVisibleTransaction(InstitutionalTransactionOutboxService.Attempt attempt) throws Exception {
+        EthTransaction transactionResponse = mock(EthTransaction.class);
+        when(transactionResponse.getTransaction()).thenReturn(Optional.of(
+            mock(org.web3j.protocol.core.methods.response.Transaction.class)
+        ));
         doReturn(requestReturning(transactionResponse)).when(web3j)
             .ethGetTransactionByHash(any());
     }

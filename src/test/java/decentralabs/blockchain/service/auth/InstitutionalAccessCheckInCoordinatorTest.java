@@ -167,6 +167,7 @@ class InstitutionalAccessCheckInCoordinatorTest {
             "blocked", InstitutionalWalletDispatchException.Outcome.PRE_BROADCAST_BLOCKED,
             new IllegalStateException("allocator blocked")
         ));
+        when(outboxService.markRetry(any(Long.class), any(Integer.class), any(), any())).thenReturn(true);
 
         coordinator.recordAccessGranted(
             request(),

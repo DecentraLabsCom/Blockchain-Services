@@ -259,6 +259,15 @@ public class InstitutionalTransactionOutboxService {
     }
 
     public void markSubmitted(Attempt attempt, String txHash) {
+        markSubmittedAfterPreparation(attempt, txHash);
+    }
+
+    /**
+     * Marks material submitted after a durable preparation write.  The caller
+     * may have started from RESERVED/RETRYABLE/REPLACEMENT_PENDING, so that
+     * preparation write is part of the expected version transition.
+     */
+    public void markSubmittedAfterPreparation(Attempt attempt, String txHash) {
         if (jdbcTemplate == null || attempt == null) {
             return;
         }
@@ -274,6 +283,54 @@ public class InstitutionalTransactionOutboxService {
         );
         if (updated != 1) {
             throw new IllegalStateException("Institutional transaction submission lost its fencing claim");
+        }
+    }
+
+    /**
+     * Returns already persisted material to normal SUBMITTED processing.  No
+     * preparation write preceded this transition, therefore the observed
+     * version itself is the fencing token.  REPLACEMENT_PENDING is deliberately
+     * excluded: visibility of the old hash does not cancel a replacement.
+     */
+    public void markVisibleSubmitted(Attempt attempt, String txHash) {
+        if (jdbcTemplate == null || attempt == null) {
+            return;
+        }
+        int updated = jdbcTemplate.update(
+            """
+            UPDATE institutional_transaction_outbox
+            SET status = 'SUBMITTED', tx_hash = ?, last_error = NULL,
+                version = version + 1, updated_at = CURRENT_TIMESTAMP
+            WHERE id = ? AND status IN ('PREPARED', 'RETRYABLE', 'STUCK_UNKNOWN')
+              AND tx_hash = ? AND version = ?
+            """,
+            txHash, attempt.id(), txHash, attempt.version()
+        );
+        if (updated != 1) {
+            throw new IllegalStateException("Institutional visible transaction submission lost its fencing claim");
+        }
+    }
+
+    /**
+     * Marks a replacement submitted after markReplacementPrepared().  The
+     * replacement preparation increments the source row exactly once.
+     */
+    public void markReplacementSubmitted(Attempt attempt, String txHash) {
+        if (jdbcTemplate == null || attempt == null) {
+            return;
+        }
+        int updated = jdbcTemplate.update(
+            """
+            UPDATE institutional_transaction_outbox
+            SET status = 'SUBMITTED', tx_hash = ?, last_error = NULL,
+                version = version + 1, updated_at = CURRENT_TIMESTAMP
+            WHERE id = ? AND status = 'PREPARED'
+              AND tx_hash = ? AND version = ?
+            """,
+            txHash, attempt.id(), txHash, attempt.version() + 1L
+        );
+        if (updated != 1) {
+            throw new IllegalStateException("Institutional replacement submission lost its fencing claim");
         }
     }
 
@@ -311,7 +368,11 @@ public class InstitutionalTransactionOutboxService {
     }
 
     public void markMinedFailed(Attempt attempt, String error) {
-        updateTerminal(attempt, "MINED_FAILED", truncate(error));
+        markMinedFailed(attempt, null, error);
+    }
+
+    public void markMinedFailed(Attempt attempt, String minedTxHash, String error) {
+        updateTerminal(attempt, "MINED_FAILED", truncate(error), minedTxHash);
     }
 
     public void markStuckUnknown(Attempt attempt, String error) {
@@ -369,7 +430,7 @@ public class InstitutionalTransactionOutboxService {
             SET signed_raw_transaction = ?, tx_hash = ?, current_gas_price = ?,
                 status = 'PREPARED', attempts = attempts + 1, last_error = NULL,
                 version = version + 1, updated_at = CURRENT_TIMESTAMP
-            WHERE id = ? AND status IN ('RETRYABLE', 'REPLACEMENT_PENDING')
+            WHERE id = ? AND status IN ('RETRYABLE', 'REPLACEMENT_PENDING', 'STUCK_UNKNOWN')
               AND tx_hash = ? AND version = ?
             """,
             signedRawTransaction, replacementTxHash, gasPrice, attempt.id(), previousTxHash, attempt.version()

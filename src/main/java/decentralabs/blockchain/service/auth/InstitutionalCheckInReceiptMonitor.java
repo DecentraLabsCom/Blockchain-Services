@@ -58,22 +58,31 @@ public class InstitutionalCheckInReceiptMonitor {
                 return;
             }
             boolean hasTransactionHash = record.txHash() != null && !record.txHash().isBlank();
+            boolean visible = false;
             if (hasTransactionHash) {
-                CheckInOnChainService.TransactionState state =
-                    checkInOnChainService.transactionStateStrict(record.txHash());
-                if (state == CheckInOnChainService.TransactionState.SUCCEEDED) {
-                    outboxService.markUnknownMinedSuccess(record);
-                    return;
-                }
-                if (state == CheckInOnChainService.TransactionState.FAILED) {
-                    outboxService.markUnknownMinedFailed(record, "Check-in transaction reverted on-chain");
-                    return;
+                for (String candidateHash : monitoredHashes(record)) {
+                    CheckInOnChainService.TransactionState state =
+                        checkInOnChainService.transactionStateStrict(candidateHash);
+                    if (state == CheckInOnChainService.TransactionState.SUCCEEDED) {
+                        outboxService.markUnknownMinedSuccess(record, candidateHash);
+                        return;
+                    }
+                    if (state == CheckInOnChainService.TransactionState.FAILED) {
+                        outboxService.markUnknownMinedFailed(
+                            record, candidateHash, "Check-in transaction reverted on-chain"
+                        );
+                        return;
+                    }
+                    if (checkInOnChainService.transactionVisible(candidateHash)) {
+                        visible = true;
+                    }
                 }
             }
             if (record.nonce() == null || record.walletAddress() == null) {
                 return;
             }
-            if (hasTransactionHash && checkInOnChainService.transactionVisible(record.txHash())) {
+            if (visible) {
+                outboxService.markUnknownVisibleSubmitted(record);
                 return;
             }
             BigInteger pendingNonce = checkInOnChainService.pendingNonce(record.walletAddress());
@@ -116,12 +125,24 @@ public class InstitutionalCheckInReceiptMonitor {
             return;
         }
         try {
-            CheckInOnChainService.TransactionState state = checkInOnChainService.transactionState(record.txHash());
-            if (state == CheckInOnChainService.TransactionState.SUCCEEDED) {
-                outboxService.markSubmittedMinedSuccess(record);
-            } else if (state == CheckInOnChainService.TransactionState.FAILED) {
-                outboxService.markSubmittedMinedFailed(record, "Check-in transaction reverted on-chain");
-            } else if (isStuck(record)) {
+            boolean resolved = false;
+            for (String candidateHash : monitoredHashes(record)) {
+                CheckInOnChainService.TransactionState state =
+                    checkInOnChainService.transactionState(candidateHash);
+                if (state == CheckInOnChainService.TransactionState.SUCCEEDED) {
+                    outboxService.markSubmittedMinedSuccess(record, candidateHash);
+                    resolved = true;
+                    break;
+                }
+                if (state == CheckInOnChainService.TransactionState.FAILED) {
+                    outboxService.markSubmittedMinedFailed(
+                        record, candidateHash, "Check-in transaction reverted on-chain"
+                    );
+                    resolved = true;
+                    break;
+                }
+            }
+            if (!resolved && isStuck(record)) {
                 int nextAttempt = record.attempts() + 1;
                 if (nextAttempt >= Math.max(1, maxAttempts)) {
                     outboxService.markStuckUnknown(
@@ -130,7 +151,7 @@ public class InstitutionalCheckInReceiptMonitor {
                         "Check-in transaction remained pending after the maximum number of broadcasts"
                     );
                 } else {
-                    outboxService.markSubmittedRetry(
+                    outboxService.markReplacementPending(
                         record,
                         nextAttempt,
                         Instant.now(),
@@ -141,6 +162,21 @@ public class InstitutionalCheckInReceiptMonitor {
         } catch (RuntimeException ex) {
             log.warn("Unable to monitor institutional check-in {}: {}", record.id(), ex.getMessage());
         }
+    }
+
+    private List<String> monitoredHashes(InstitutionalCheckInOutboxRecord record) {
+        java.util.ArrayList<String> hashes = new java.util.ArrayList<>();
+        if (record.txHash() != null && !record.txHash().isBlank()) {
+            hashes.add(record.txHash());
+        }
+        List<String> history = outboxService.findReplacedHashes(record.id());
+        if (history != null) {
+            history.stream()
+                .filter(hash -> hash != null && !hash.isBlank())
+                .filter(hash -> hashes.stream().noneMatch(existing -> existing.equalsIgnoreCase(hash)))
+                .forEach(hashes::add);
+        }
+        return hashes;
     }
 
     private boolean isStuck(InstitutionalCheckInOutboxRecord record) {

@@ -2,6 +2,7 @@ package decentralabs.blockchain.service.auth;
 
 import decentralabs.blockchain.dto.auth.CheckInResponse;
 import java.math.BigInteger;
+import java.util.concurrent.atomic.AtomicReference;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
@@ -51,7 +52,9 @@ public class InstitutionalWalletNonceDispatcher {
                 );
             }
             String txHash = transactionDispatcher.rebroadcastPrepared(persisted);
-            outboxService.markSubmitted(record.id(), txHash);
+            if (!outboxService.markSubmitted(record, txHash)) {
+                throw new IllegalStateException("Check-in persisted transaction submission lost its fencing claim");
+            }
             CheckInResponse response = new CheckInResponse();
             response.setValid(true);
             response.setSigner(walletAddress);
@@ -62,6 +65,7 @@ public class InstitutionalWalletNonceDispatcher {
         BigInteger existingNonce = record.nonce() != null && walletAddress.equalsIgnoreCase(record.walletAddress())
             ? record.nonce() : null;
         final CheckInResponse[] response = new CheckInResponse[1];
+        AtomicReference<InstitutionalCheckInOutboxRecord> preparedFrom = new AtomicReference<>();
         transactionDispatcher.dispatchPrepared(
             walletAddress,
             record.chainId(),
@@ -74,14 +78,35 @@ public class InstitutionalWalletNonceDispatcher {
                 response[0] = prepared.response();
                 return prepared.transaction();
             },
-            prepared -> outboxService.markPrepared(record.id(), prepared.rawTransaction(), prepared.transactionHash()),
-            txHash -> outboxService.markSubmitted(record.id(), txHash)
+            prepared -> {
+                InstitutionalCheckInOutboxRecord current = currentRecord(record);
+                preparedFrom.set(current);
+                outboxService.markPrepared(current, prepared);
+            },
+            txHash -> {
+                InstitutionalCheckInOutboxRecord current = preparedFrom.get();
+                if (current == null) {
+                    current = record;
+                }
+                if (!outboxService.markSubmittedAfterPreparation(current, txHash)) {
+                    throw new IllegalStateException("Check-in prepared transaction submission lost its fencing claim");
+                }
+            }
         );
         return response[0];
     }
 
     private boolean hasPersistedMaterial(InstitutionalCheckInOutboxRecord record) {
         return hasText(record.signedRawTransaction()) || hasText(record.txHash());
+    }
+
+    private InstitutionalCheckInOutboxRecord currentRecord(InstitutionalCheckInOutboxRecord fallback) {
+        try {
+            InstitutionalCheckInOutboxRecord current = outboxService.findById(fallback.id());
+            return current != null ? current : fallback;
+        } catch (RuntimeException ex) {
+            return fallback;
+        }
     }
 
     private boolean hasText(String value) {

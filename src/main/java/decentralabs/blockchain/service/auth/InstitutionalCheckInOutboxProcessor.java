@@ -50,32 +50,42 @@ public class InstitutionalCheckInOutboxProcessor {
             return;
         }
 
+        InstitutionalCheckInOutboxRecord claimed;
         try {
-            if (isAccessAlreadyAuthorized(record)) {
-                outboxService.markMinedSuccess(record.id(), null);
+            claimed = outboxService.findById(record.id());
+        } catch (RuntimeException ex) {
+            claimed = record;
+        }
+        if (claimed == null) {
+            claimed = record;
+        }
+
+        try {
+            if (isAccessAlreadyAuthorized(claimed)) {
+                outboxService.markMinedSuccess(claimed.id(), null);
                 return;
             }
 
-            nonceDispatcher.dispatch(record);
+            nonceDispatcher.dispatch(claimed);
         } catch (InstitutionalWalletDispatchException ex) {
             switch (ex.outcome()) {
-                case PRE_BROADCAST_BLOCKED -> scheduleBlockedRetry(record, ex);
-                case PRE_BROADCAST_TRANSIENT -> handleFailure(record, ex);
+                case PRE_BROADCAST_BLOCKED -> scheduleBlockedRetry(claimed, ex);
+                case PRE_BROADCAST_TRANSIENT -> handleFailure(claimed, ex);
                 case PRE_BROADCAST_PERMANENT -> outboxService.markFailed(
-                    record.id(), record.attempts() + 1, LogSanitizer.sanitize(ex.getMessage())
+                    claimed.id(), claimed.attempts() + 1, LogSanitizer.sanitize(ex.getMessage())
                 );
                 case BROADCAST_OUTCOME_UNKNOWN -> {
-                    int attempts = record.attempts() + 1;
+                    int attempts = claimed.attempts() + 1;
                     String message = LogSanitizer.sanitize(ex.getMessage());
                     log.warn(
                         "Institutional check-in broadcast outcome is uncertain for reservation {}: {}",
-                        LogSanitizer.sanitize(record.reservationKey()), message
+                        LogSanitizer.sanitize(claimed.reservationKey()), message
                     );
-                    outboxService.markBroadcastUncertain(record.id(), attempts, message);
+                    outboxService.markBroadcastUncertain(claimed.id(), attempts, message);
                 }
             }
         } catch (Exception ex) {
-            handleFailure(record, ex);
+            handleFailure(claimed, ex);
         }
     }
 

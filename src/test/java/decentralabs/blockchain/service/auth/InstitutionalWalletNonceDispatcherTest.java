@@ -46,6 +46,7 @@ class InstitutionalWalletNonceDispatcherTest {
         CheckInResponse response = new CheckInResponse();
         response.setTxHash("0x" + "a".repeat(64));
         when(submissionService.signerAddress()).thenReturn("0xsigner");
+        when(outboxService.markSubmittedAfterPreparation(any(), any())).thenReturn(true);
         InstitutionalCheckInSubmissionService.PreparedCheckIn prepared =
             new InstitutionalCheckInSubmissionService.PreparedCheckIn(
                 response,
@@ -76,7 +77,7 @@ class InstitutionalWalletNonceDispatcherTest {
 
         assertThat(result).isSameAs(response);
         verify(outboxService).markNonceReserved(7L, "0xsigner", chainId, BigInteger.valueOf(47));
-        verify(outboxService).markSubmitted(7L, response.getTxHash());
+        verify(outboxService).markSubmittedAfterPreparation(record, response.getTxHash());
     }
 
     @Test
@@ -118,6 +119,7 @@ class InstitutionalWalletNonceDispatcherTest {
             "0xold-raw"
         );
         when(submissionService.signerAddress()).thenReturn("0xsigner");
+        when(outboxService.markSubmitted(any(InstitutionalCheckInOutboxRecord.class), any())).thenReturn(true);
         when(transactionDispatcher.rebroadcastPrepared(any()))
             .thenReturn(previousHash);
 
@@ -129,7 +131,7 @@ class InstitutionalWalletNonceDispatcherTest {
 
         assertThat(result.getTxHash()).isEqualTo(previousHash);
         verify(transactionDispatcher).rebroadcastPrepared(any());
-        verify(outboxService).markSubmitted(record.id(), previousHash);
+        verify(outboxService).markSubmitted(record, previousHash);
         verify(submissionService, never()).prepare(any(), any(), any(), anyInt());
         verify(transactionDispatcher, never()).dispatchPrepared(any(), any(), any(), any(), any(), any(), any());
     }

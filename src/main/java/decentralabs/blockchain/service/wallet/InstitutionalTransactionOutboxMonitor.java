@@ -173,20 +173,26 @@ public class InstitutionalTransactionOutboxMonitor {
             String hash = attempt.txHash();
             boolean replacementPending = "REPLACEMENT_PENDING".equals(attempt.status());
             boolean retryableReplacement = "RETRYABLE".equals(attempt.status()) && attempt.attempts() > 0;
+            boolean unknownReplacement = "STUCK_UNKNOWN".equals(attempt.status())
+                && attempt.txHash() != null && !attempt.txHash().isBlank();
+            boolean replacementPrepared = false;
+            boolean materialPrepared = false;
             if (raw == null || raw.isBlank()) {
                 if (attempt.gasPrice() == null || attempt.gasLimit() == null || attempt.toAddress() == null
                     || attempt.value() == null || attempt.data() == null || attempt.nonce() == null) {
                     return false;
                 }
-                BigInteger gasPrice = gasPriceForAttempt(attempt, replacementPending || retryableReplacement
+                BigInteger gasPrice = gasPriceForAttempt(attempt, replacementPending || retryableReplacement || unknownReplacement
                     ? attempt.attempts() + 1 : attempt.attempts());
                 raw = sign(attempt, credentials, gasPrice);
                 hash = Hash.sha3(raw);
-                if ((replacementPending || retryableReplacement) && attempt.txHash() != null
+                if ((replacementPending || retryableReplacement || unknownReplacement) && attempt.txHash() != null
                     && !attempt.txHash().isBlank()) {
                     outboxService.markReplacementPrepared(attempt, attempt.txHash(), raw, hash, gasPrice);
+                    replacementPrepared = true;
                 } else {
                     outboxService.markSigned(attempt, raw, hash);
+                    materialPrepared = true;
                 }
             } else if (replacementPending || retryableReplacement) {
                 // A retryable error was classified before the broadcast outcome
@@ -202,11 +208,13 @@ public class InstitutionalTransactionOutboxMonitor {
                 hash = Hash.sha3(raw);
                 if (attempt.txHash() != null && !attempt.txHash().isBlank()) {
                     outboxService.markReplacementPrepared(attempt, attempt.txHash(), raw, hash, gasPrice);
+                    replacementPrepared = true;
                 } else {
                     // There is no prior hash to reconcile when a legacy row has
                     // only partial signed material; persist the bounded material
                     // without inventing history for an unknown hash.
                     outboxService.markSigned(attempt, raw, hash, gasPrice);
+                    materialPrepared = true;
                 }
             } else if (hash != null && !hash.isBlank()) {
                 MaterialState state = inspectPersistedMaterial(web3j, attempt, hash);
@@ -221,7 +229,9 @@ public class InstitutionalTransactionOutboxMonitor {
                     if (receipt.getTransactionReceipt().orElseThrow().isStatusOK()) {
                         markMinedSuccess(attempt, hash);
                     } else {
-                        outboxService.markMinedFailed(attempt, "Institutional transaction reverted on-chain");
+                        outboxService.markMinedFailed(
+                            attempt, hash, "Institutional transaction reverted on-chain"
+                        );
                     }
                     return true;
                 }
@@ -229,13 +239,13 @@ public class InstitutionalTransactionOutboxMonitor {
             var response = web3j.ethSendRawTransaction(raw).send();
             if (response != null && !response.hasError()
                 && response.getTransactionHash() != null && !response.getTransactionHash().isBlank()) {
-                outboxService.markSubmitted(attempt, response.getTransactionHash());
+                markBroadcastSubmitted(attempt, response.getTransactionHash(), replacementPrepared, materialPrepared);
                 return true;
             }
             if (response != null && response.hasError() && response.getError() != null
                 && response.getError().getMessage() != null
                 && response.getError().getMessage().toLowerCase().contains("already known")) {
-                outboxService.markSubmitted(attempt, hash);
+                markBroadcastSubmitted(attempt, hash, replacementPrepared, materialPrepared);
                 return true;
             }
             if (response != null && response.hasError()) {
@@ -266,8 +276,9 @@ public class InstitutionalTransactionOutboxMonitor {
         for (String candidateHash : monitoredHashes(attempt)) {
             var transaction = web3j.ethGetTransactionByHash(candidateHash).send();
             if (transaction != null && transaction.getTransaction().isPresent()) {
-                if (candidateHash.equalsIgnoreCase(hash)) {
-                    outboxService.markSubmitted(attempt, hash);
+                if (hash != null && !hash.isBlank()
+                    && !"REPLACEMENT_PENDING".equals(attempt.status())) {
+                    outboxService.markVisibleSubmitted(attempt, hash);
                 }
                 return MaterialState.VISIBLE;
             }
@@ -286,7 +297,9 @@ public class InstitutionalTransactionOutboxMonitor {
                     markMinedSuccess(attempt, candidateHash);
                     return MaterialState.MINED_SUCCESS;
                 }
-                outboxService.markMinedFailed(attempt, "Institutional transaction reverted on-chain");
+                outboxService.markMinedFailed(
+                    attempt, candidateHash, "Institutional transaction reverted on-chain"
+                );
                 return MaterialState.MINED_FAILED;
             }
         }
@@ -303,6 +316,21 @@ public class InstitutionalTransactionOutboxMonitor {
             return;
         }
         outboxService.markMinedSuccess(attempt, minedTxHash);
+    }
+
+    private void markBroadcastSubmitted(
+        InstitutionalTransactionOutboxService.Attempt attempt,
+        String txHash,
+        boolean replacementPrepared,
+        boolean materialPrepared
+    ) {
+        if (replacementPrepared) {
+            outboxService.markReplacementSubmitted(attempt, txHash);
+        } else if (materialPrepared) {
+            outboxService.markSubmittedAfterPreparation(attempt, txHash);
+        } else {
+            outboxService.markVisibleSubmitted(attempt, txHash);
+        }
     }
 
     private java.util.List<String> monitoredHashes(InstitutionalTransactionOutboxService.Attempt attempt) {
@@ -488,7 +516,7 @@ public class InstitutionalTransactionOutboxMonitor {
                     }
                 }
                 if (visible) {
-                    outboxService.markSubmitted(attempt, attempt.txHash());
+                    outboxService.markVisibleSubmitted(attempt, attempt.txHash());
                     return true;
                 }
             }
@@ -504,13 +532,13 @@ public class InstitutionalTransactionOutboxMonitor {
             var response = web3j.ethSendRawTransaction(attempt.signedRawTransaction()).send();
             if (response != null && !response.hasError()
                 && response.getTransactionHash() != null && !response.getTransactionHash().isBlank()) {
-                outboxService.markSubmitted(attempt, response.getTransactionHash());
+                outboxService.markVisibleSubmitted(attempt, response.getTransactionHash());
                 return true;
             }
             if (response != null && response.hasError() && response.getError() != null
                 && response.getError().getMessage() != null
                 && response.getError().getMessage().toLowerCase().contains("already known")) {
-                outboxService.markSubmitted(attempt, attempt.txHash());
+                outboxService.markVisibleSubmitted(attempt, attempt.txHash());
                 return true;
             }
         } catch (Exception ex) {

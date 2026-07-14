@@ -140,10 +140,13 @@ public class InstitutionalCheckInService {
                 int attempts = blocked ? record.attempts() : record.attempts() + 1;
                 if (ex.outcome() == InstitutionalWalletDispatchException.Outcome.PRE_BROADCAST_BLOCKED
                     || ex.outcome() == InstitutionalWalletDispatchException.Outcome.PRE_BROADCAST_TRANSIENT) {
-                    outboxService.markRetry(
+                    boolean retryPersisted = outboxService.markRetry(
                         record.id(), attempts, Instant.now(),
                         "Initial institutional check-in transaction was not broadcast; retrying"
                     );
+                    if (retryPersisted) {
+                        return queuedResponse(reservationKey, configuredSigner, record.txHash());
+                    }
                 } else if (ex.outcome() == InstitutionalWalletDispatchException.Outcome.PRE_BROADCAST_PERMANENT) {
                     outboxService.markFailed(
                         record.id(), attempts, "Initial institutional check-in preparation failed permanently"
@@ -152,9 +155,6 @@ public class InstitutionalCheckInService {
                     outboxService.markBroadcastUncertain(
                         record.id(), attempts, "Initial institutional check-in broadcast outcome is uncertain"
                     );
-                }
-                if (blocked) {
-                    return queuedResponse(reservationKey, configuredSigner, record.txHash());
                 }
                 throw new IllegalStateException(
                     ex.outcome() == InstitutionalWalletDispatchException.Outcome.PRE_BROADCAST_BLOCKED

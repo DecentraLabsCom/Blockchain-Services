@@ -290,12 +290,12 @@ public class PendingNonceFastRawTransactionManager extends FastRawTransactionMan
                 EthSendTransaction response = web3j.ethSendRawTransaction(blocker.signedRawTransaction()).send();
                 if (response != null && !response.hasError()
                     && response.getTransactionHash() != null && !response.getTransactionHash().isBlank()) {
-                    transactionOutboxService.markSubmitted(blocker, response.getTransactionHash());
+                    markVisibleSubmitted(blocker, response.getTransactionHash());
                 } else if (response != null && response.hasError()
                     && response.getError() != null
                     && response.getError().getMessage() != null
                     && response.getError().getMessage().toLowerCase().contains("already known")) {
-                    transactionOutboxService.markSubmitted(blocker, blocker.txHash());
+                    markVisibleSubmitted(blocker, blocker.txHash());
                 }
             } catch (Exception ignored) {
                 // Keep the wallet barrier in place when RPC reconciliation is unavailable.
@@ -305,12 +305,12 @@ public class PendingNonceFastRawTransactionManager extends FastRawTransactionMan
         try {
             var receiptResponse = web3j.ethGetTransactionReceipt(blocker.txHash()).send();
             if (receiptResponse != null && receiptResponse.getTransactionReceipt().isPresent()) {
-                transactionOutboxService.markSubmitted(blocker, blocker.txHash());
+                markVisibleSubmitted(blocker, blocker.txHash());
                 return;
             }
             var transactionResponse = web3j.ethGetTransactionByHash(blocker.txHash()).send();
             if (transactionResponse != null && transactionResponse.getTransaction().isPresent()) {
-                transactionOutboxService.markSubmitted(blocker, blocker.txHash());
+                markVisibleSubmitted(blocker, blocker.txHash());
                 return;
             }
         } catch (Exception ignored) {
@@ -322,18 +322,29 @@ public class PendingNonceFastRawTransactionManager extends FastRawTransactionMan
         }
         try {
             EthSendTransaction response = web3j.ethSendRawTransaction(blocker.signedRawTransaction()).send();
-            if (response != null && !response.hasError()
-                && response.getTransactionHash() != null && !response.getTransactionHash().isBlank()) {
-                transactionOutboxService.markSubmitted(blocker, response.getTransactionHash());
+                if (response != null && !response.hasError()
+                    && response.getTransactionHash() != null && !response.getTransactionHash().isBlank()) {
+                markVisibleSubmitted(blocker, response.getTransactionHash());
             } else if (response != null && response.hasError()
                 && response.getError() != null
                 && response.getError().getMessage() != null
                 && response.getError().getMessage().toLowerCase().contains("already known")) {
-                transactionOutboxService.markSubmitted(blocker, blocker.txHash());
+                markVisibleSubmitted(blocker, blocker.txHash());
             }
         } catch (Exception ignored) {
             // The unresolved row remains a deliberate barrier for the next attempt.
         }
+    }
+
+    private void markVisibleSubmitted(
+        InstitutionalTransactionOutboxService.Attempt attempt,
+        String txHash
+    ) {
+        if (attempt == null || txHash == null || txHash.isBlank()
+            || "SUBMITTED".equals(attempt.status())) {
+            return;
+        }
+        transactionOutboxService.markVisibleSubmitted(attempt, txHash);
     }
 
     private String operationFingerprint(String to, String data, BigInteger value) {
