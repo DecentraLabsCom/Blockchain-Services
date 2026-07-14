@@ -8,6 +8,7 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.lenient;
+import static org.mockito.Mockito.atLeastOnce;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -131,6 +132,49 @@ class SessionStartedOnChainPublisherServiceTest {
         );
         verify(transactionDispatcher, never()).dispatchPrepared(anyString(), any(), any(), any(), any(), any(), any());
         verify(onChainClient, never()).prepareSessionStarted(any(), any(), any(Integer.class));
+    }
+
+    @Test
+    void preparesAndBroadcastsARealSameNonceReplacementForAStalePendingAttestation() throws Exception {
+        SessionStartedOnChainPublisherService service = buildService(jdbcTemplate);
+        SessionStartedTransactionRecord replacement = mappedRecord(
+            "REPLACEMENT_PENDING", 1, "0xwallet", BigInteger.valueOf(47),
+            "0x" + "1".repeat(64), Instant.now().minusSeconds(600), "0xf861-old"
+        );
+        mockSubmittedQuery(List.of());
+        mockPendingQuery(replacement);
+        when(jdbcTemplate.update(anyString(), any(Object[].class))).thenReturn(1);
+        when(onChainClient.hasSessionStarted("0xabc")).thenReturn(false);
+        when(onChainClient.signerAddress()).thenReturn("0xwallet");
+        when(onChainClient.prepareSessionStarted(
+            any(), eq(BigInteger.valueOf(47)), eq(1), isNull(BigInteger.class)
+        )).thenReturn(new InstitutionalWalletTransactionDispatcher.PreparedTransaction(
+            "0xf861-new", "0x" + "2".repeat(64), BigInteger.valueOf(2)
+        ));
+        when(transactionDispatcher.dispatchPrepared(
+            eq("0xwallet"), eq(CHAIN_ID), eq(BigInteger.valueOf(47)), any(), any(), any(), any()
+        )).thenAnswer(invocation -> {
+            Function<BigInteger, InstitutionalWalletTransactionDispatcher.PreparedTransaction> preparer =
+                invocation.getArgument(4);
+            Consumer<InstitutionalWalletTransactionDispatcher.PreparedTransaction> preparedConsumer =
+                invocation.getArgument(5);
+            Consumer<String> hashConsumer = invocation.getArgument(6);
+            var prepared = preparer.apply(BigInteger.valueOf(47));
+            preparedConsumer.accept(prepared);
+            hashConsumer.accept(prepared.transactionHash());
+            return prepared.transactionHash();
+        });
+
+        assertThat(service.publishPending(10)).isEqualTo(1);
+
+        verify(onChainClient).prepareSessionStarted(
+            any(), eq(BigInteger.valueOf(47)), eq(1), isNull(BigInteger.class)
+        );
+        verify(transactionDispatcher).dispatchPrepared(
+            eq("0xwallet"), eq(CHAIN_ID), eq(BigInteger.valueOf(47)), any(), any(), any(), any()
+        );
+        verify(jdbcTemplate).update(contains("session_started_attestation_hash_history"), any(Object[].class));
+        verify(jdbcTemplate, atLeastOnce()).update(contains("onchain_version = onchain_version + 1"), any(Object[].class));
     }
 
     @Test
@@ -287,6 +331,31 @@ class SessionStartedOnChainPublisherServiceTest {
     }
 
     @Test
+    void transitionsAnExhaustedTransientPreBroadcastRetryToManualIntervention() throws Exception {
+        SessionStartedOnChainPublisherService service = buildService(jdbcTemplate);
+        ReflectionTestUtils.setField(service, "maxAttempts", 1);
+        mockSubmittedQuery(List.of());
+        mockPendingQuery("RETRY", 0, null, null, null, null);
+        when(jdbcTemplate.update(anyString(), any(Object[].class))).thenReturn(1);
+        when(onChainClient.hasSessionStarted("0xabc")).thenReturn(false);
+        when(onChainClient.signerAddress()).thenReturn("0xwallet");
+        org.mockito.Mockito.doThrow(new InstitutionalWalletDispatchException(
+            "temporary signing RPC failure",
+            InstitutionalWalletDispatchException.Outcome.PRE_BROADCAST_TRANSIENT,
+            new IllegalStateException("rpc unavailable")
+        )).when(transactionDispatcher).dispatchPrepared(
+            anyString(), isNull(), isNull(), any(), any(), any(), any()
+        );
+
+        assertThat(service.publishPending(10)).isZero();
+
+        verify(jdbcTemplate).update(
+            contains("CASE WHEN onchain_publish_attempts >= ?"),
+            eq(1), contains("temporary signing RPC failure"), eq(7L)
+        );
+    }
+
+    @Test
     void reconcilesUnknownSessionFromAuthoritativeContractState() throws Exception {
         SessionStartedOnChainPublisherService service = buildService(jdbcTemplate);
         SessionStartedTransactionRecord unknown = mappedRecord(
@@ -300,7 +369,7 @@ class SessionStartedOnChainPublisherServiceTest {
 
         assertThat(service.publishPending(10)).isEqualTo(1);
 
-        verify(jdbcTemplate).update(contains("onchain_status = 'STUCK_UNKNOWN'"), eq(7L));
+        verify(jdbcTemplate).update(contains("onchain_status = 'STUCK_UNKNOWN'"), isNull(), eq(7L));
         verify(onChainClient, never()).transactionStateStrict(anyString());
     }
 

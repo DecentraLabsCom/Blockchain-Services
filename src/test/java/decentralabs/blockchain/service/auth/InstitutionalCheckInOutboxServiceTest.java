@@ -40,7 +40,7 @@ class InstitutionalCheckInOutboxServiceTest {
 
     @Test
     @SuppressWarnings("unchecked")
-    void explicitTerminalRestartClearsThePreviousNonceAndTransactionHash() {
+    void terminalRestartPreservesNonceWhenFailedAfterReservation() {
         ObjectProvider<JdbcTemplate> provider = mock(ObjectProvider.class);
         JdbcTemplate jdbcTemplate = mock(JdbcTemplate.class);
         when(provider.getIfAvailable()).thenReturn(jdbcTemplate);
@@ -55,7 +55,8 @@ class InstitutionalCheckInOutboxServiceTest {
         assertThat(sql.getValue())
             .contains("status IN ('MINED_FAILED', 'FAILED')")
             .contains("tx_hash = NULL")
-            .contains("nonce = NULL")
+            .contains("nonce = CASE")
+            .contains("status = 'FAILED'")
             .contains("submitted_at = NULL");
     }
 

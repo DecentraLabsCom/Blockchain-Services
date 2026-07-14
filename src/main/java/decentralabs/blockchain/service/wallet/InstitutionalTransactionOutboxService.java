@@ -52,7 +52,8 @@ public class InstitutionalTransactionOutboxService {
         String txHash,
         Instant updatedAt,
         int attempts,
-        Instant createdAt
+        Instant createdAt,
+        long version
     ) {
         public BigInteger gasPrice() {
             return currentGasPrice;
@@ -77,7 +78,7 @@ public class InstitutionalTransactionOutboxService {
             Instant createdAt
         ) {
             this(id, chainId, walletAddress, operationKey, nonce, gasPrice, gasPrice, gasLimit,
-                toAddress, value, data, status, signedRawTransaction, txHash, updatedAt, attempts, createdAt);
+                toAddress, value, data, status, signedRawTransaction, txHash, updatedAt, attempts, createdAt, 0L);
         }
 
         public Attempt(
@@ -91,7 +92,7 @@ public class InstitutionalTransactionOutboxService {
             String txHash
         ) {
             this(id, chainId, walletAddress, operationKey, nonce, null, null, null, null, null, null,
-                status, signedRawTransaction, txHash, null, 0, null);
+                status, signedRawTransaction, txHash, null, 0, null, 0L);
         }
 
         public Attempt(
@@ -110,7 +111,7 @@ public class InstitutionalTransactionOutboxService {
             String txHash
         ) {
             this(id, chainId, walletAddress, operationKey, nonce, gasPrice, gasPrice, gasLimit, toAddress, value, data,
-                status, signedRawTransaction, txHash, null, 0, null);
+                status, signedRawTransaction, txHash, null, 0, null, 0L);
         }
 
         public Attempt(
@@ -130,7 +131,31 @@ public class InstitutionalTransactionOutboxService {
             Instant updatedAt
         ) {
             this(id, chainId, walletAddress, operationKey, nonce, gasPrice, gasPrice, gasLimit, toAddress, value, data,
-                status, signedRawTransaction, txHash, updatedAt, 0, null);
+                status, signedRawTransaction, txHash, updatedAt, 0, null, 0L);
+        }
+
+        public Attempt(
+            long id,
+            BigInteger chainId,
+            String walletAddress,
+            String operationKey,
+            BigInteger nonce,
+            BigInteger originalGasPrice,
+            BigInteger currentGasPrice,
+            BigInteger gasLimit,
+            String toAddress,
+            BigInteger value,
+            String data,
+            String status,
+            String signedRawTransaction,
+            String txHash,
+            Instant updatedAt,
+            int attempts,
+            Instant createdAt
+        ) {
+            this(id, chainId, walletAddress, operationKey, nonce, originalGasPrice, currentGasPrice,
+                gasLimit, toAddress, value, data, status, signedRawTransaction, txHash,
+                updatedAt, attempts, createdAt, 0L);
         }
     }
 
@@ -222,10 +247,11 @@ public class InstitutionalTransactionOutboxService {
             """
             UPDATE institutional_transaction_outbox
             SET signed_raw_transaction = ?, tx_hash = ?, current_gas_price = COALESCE(?, current_gas_price),
-                status = 'PREPARED', updated_at = CURRENT_TIMESTAMP
+                status = 'PREPARED', version = version + 1, updated_at = CURRENT_TIMESTAMP
             WHERE id = ? AND status IN ('RESERVED', 'PREPARED', 'RETRYABLE', 'REPLACEMENT_PENDING', 'STUCK_UNKNOWN')
+              AND version = ? AND tx_hash <=> ?
             """,
-            signedRawTransaction, expectedTxHash, gasPrice, attempt.id()
+            signedRawTransaction, expectedTxHash, gasPrice, attempt.id(), attempt.version(), attempt.txHash()
         );
         if (updated != 1) {
             throw new IllegalStateException("Institutional signed transaction could not be persisted before broadcast");
@@ -236,34 +262,52 @@ public class InstitutionalTransactionOutboxService {
         if (jdbcTemplate == null || attempt == null) {
             return;
         }
-        jdbcTemplate.update(
+        int updated = jdbcTemplate.update(
             """
             UPDATE institutional_transaction_outbox
             SET status = 'SUBMITTED', tx_hash = ?, last_error = NULL,
-                updated_at = CURRENT_TIMESTAMP
-            WHERE id = ? AND status IN ('RESERVED', 'PREPARED', 'RETRYABLE', 'REPLACEMENT_PENDING', 'STUCK_UNKNOWN')
+                version = version + 1, updated_at = CURRENT_TIMESTAMP
+            WHERE id = ? AND status IN ('PREPARED', 'RETRYABLE', 'REPLACEMENT_PENDING', 'STUCK_UNKNOWN')
+              AND tx_hash = ? AND version = ?
             """,
-            txHash, attempt.id()
+            txHash, attempt.id(), txHash, expectedSubmissionVersion(attempt)
         );
+        if (updated != 1) {
+            throw new IllegalStateException("Institutional transaction submission lost its fencing claim");
+        }
     }
 
     public void markRetryable(Attempt attempt, String error) {
         if (jdbcTemplate == null || attempt == null) {
             return;
         }
-        jdbcTemplate.update(
+        int updated = jdbcTemplate.update(
             """
             UPDATE institutional_transaction_outbox
             SET status = 'RETRYABLE', attempts = attempts + 1, last_error = ?,
-                updated_at = CURRENT_TIMESTAMP
+                version = version + 1, updated_at = CURRENT_TIMESTAMP
             WHERE id = ? AND status IN ('RESERVED', 'PREPARED', 'RETRYABLE', 'REPLACEMENT_PENDING', 'STUCK_UNKNOWN')
+              AND version = ?
             """,
-            truncate(error), attempt.id()
+            truncate(error), attempt.id(), expectedTransitionVersion(attempt)
         );
+        if (updated != 1) {
+            throw new IllegalStateException("Institutional retry update lost its fencing claim");
+        }
     }
 
     public void markMinedSuccess(Attempt attempt) {
-        updateTerminal(attempt, "MINED_SUCCESS", null);
+        markMinedSuccess(attempt, null);
+    }
+
+    /**
+     * Closes the operation using the hash whose receipt actually won. A
+     * replacement can mine after a later hash has already been persisted as
+     * the current submission, so the winning hash must be promoted for
+     * status consumers and external reconciliation.
+     */
+    public void markMinedSuccess(Attempt attempt, String minedTxHash) {
+        updateTerminal(attempt, "MINED_SUCCESS", null, minedTxHash);
     }
 
     public void markMinedFailed(Attempt attempt, String error) {
@@ -281,10 +325,11 @@ public class InstitutionalTransactionOutboxService {
         int updated = jdbcTemplate.update(
             """
             UPDATE institutional_transaction_outbox
-            SET status = 'REPLACEMENT_PENDING', last_error = ?, updated_at = CURRENT_TIMESTAMP
-            WHERE id = ? AND status = 'SUBMITTED'
+            SET status = 'REPLACEMENT_PENDING', last_error = ?, version = version + 1,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE id = ? AND status = 'SUBMITTED' AND tx_hash = ? AND version = ?
             """,
-            truncate(error), attempt.id()
+            truncate(error), attempt.id(), attempt.txHash(), attempt.version()
         );
         if (updated != 1) {
             throw new IllegalStateException("Institutional transaction replacement could not be claimed");
@@ -323,10 +368,11 @@ public class InstitutionalTransactionOutboxService {
             UPDATE institutional_transaction_outbox
             SET signed_raw_transaction = ?, tx_hash = ?, current_gas_price = ?,
                 status = 'PREPARED', attempts = attempts + 1, last_error = NULL,
-                updated_at = CURRENT_TIMESTAMP
+                version = version + 1, updated_at = CURRENT_TIMESTAMP
             WHERE id = ? AND status IN ('RETRYABLE', 'REPLACEMENT_PENDING')
+              AND tx_hash = ? AND version = ?
             """,
-            signedRawTransaction, replacementTxHash, gasPrice, attempt.id()
+            signedRawTransaction, replacementTxHash, gasPrice, attempt.id(), previousTxHash, attempt.version()
         );
         if (updated != 1) {
             throw new IllegalStateException("Institutional replacement could not be persisted before broadcast");
@@ -378,7 +424,7 @@ public class InstitutionalTransactionOutboxService {
             """
             SELECT id, chain_id, wallet_address, operation_key, nonce, original_gas_price, current_gas_price, gas_limit,
                    to_address, value_wei, data, status, signed_raw_transaction, tx_hash,
-                   updated_at, attempts, created_at
+                   updated_at, attempts, created_at, version
             FROM institutional_transaction_outbox
             WHERE status IN ('RESERVED', 'PREPARED', 'RETRYABLE', 'REPLACEMENT_PENDING')
                OR (status = 'STUCK_UNKNOWN' AND tx_hash IS NULL)
@@ -407,7 +453,7 @@ public class InstitutionalTransactionOutboxService {
             """
             SELECT id, chain_id, wallet_address, operation_key, nonce, original_gas_price, current_gas_price, gas_limit,
                    to_address, value_wei, data, status, signed_raw_transaction, tx_hash,
-                   updated_at, attempts, created_at
+                   updated_at, attempts, created_at, version
             FROM institutional_transaction_outbox
             WHERE chain_id = ? AND LOWER(wallet_address) = LOWER(?)
               AND (status IN ('RESERVED', 'PREPARED', 'RETRYABLE', 'REPLACEMENT_PENDING')
@@ -428,7 +474,7 @@ public class InstitutionalTransactionOutboxService {
             """
             SELECT id, chain_id, wallet_address, operation_key, nonce, original_gas_price, current_gas_price, gas_limit,
                    to_address, value_wei, data, status, signed_raw_transaction, tx_hash,
-                   updated_at, attempts, created_at
+                   updated_at, attempts, created_at, version
             FROM institutional_transaction_outbox
             WHERE status = ? AND tx_hash IS NOT NULL
             ORDER BY updated_at ASC, id ASC
@@ -452,7 +498,7 @@ public class InstitutionalTransactionOutboxService {
             """
             SELECT id, chain_id, wallet_address, operation_key, nonce, original_gas_price, current_gas_price, gas_limit,
                    to_address, value_wei, data, status, signed_raw_transaction, tx_hash,
-                   updated_at, attempts, created_at
+                   updated_at, attempts, created_at, version
             FROM institutional_transaction_outbox
             WHERE status = ? AND tx_hash IS NOT NULL
               AND chain_id = ? AND LOWER(wallet_address) = LOWER(?)
@@ -465,16 +511,22 @@ public class InstitutionalTransactionOutboxService {
     }
 
     private void updateTerminal(Attempt attempt, String status, String error) {
+        updateTerminal(attempt, status, error, null);
+    }
+
+    private void updateTerminal(Attempt attempt, String status, String error, String minedTxHash) {
         if (jdbcTemplate == null || attempt == null) {
             return;
         }
         jdbcTemplate.update(
             """
             UPDATE institutional_transaction_outbox
-            SET status = ?, last_error = ?, updated_at = CURRENT_TIMESTAMP
+            SET status = ?, tx_hash = COALESCE(?, tx_hash), last_error = ?,
+                version = version + 1, updated_at = CURRENT_TIMESTAMP
             WHERE id = ? AND status IN ('RESERVED', 'PREPARED', 'RETRYABLE', 'SUBMITTED', 'REPLACEMENT_PENDING', 'STUCK_UNKNOWN')
+              AND version = ?
             """,
-            status, error, attempt.id()
+            status, minedTxHash, error, attempt.id(), attempt.version()
         );
     }
 
@@ -484,7 +536,7 @@ public class InstitutionalTransactionOutboxService {
             """
             SELECT id, chain_id, wallet_address, operation_key, nonce, original_gas_price, current_gas_price, gas_limit,
                    to_address, value_wei, data, status, signed_raw_transaction, tx_hash,
-                   updated_at, attempts, created_at
+                   updated_at, attempts, created_at, version
             FROM institutional_transaction_outbox
             WHERE wallet_address = ? AND chain_id = ? AND operation_key = ?
             """ + lock,
@@ -499,7 +551,7 @@ public class InstitutionalTransactionOutboxService {
             """
             SELECT id, chain_id, wallet_address, operation_key, nonce, original_gas_price, current_gas_price, gas_limit,
                    to_address, value_wei, data, status, signed_raw_transaction, tx_hash,
-                   updated_at, attempts, created_at
+                   updated_at, attempts, created_at, version
             FROM institutional_transaction_outbox
             WHERE wallet_address = ? AND chain_id = ?
               AND status IN ('RESERVED', 'PREPARED', 'RETRYABLE', 'SUBMITTED', 'REPLACEMENT_PENDING', 'STUCK_UNKNOWN')
@@ -531,8 +583,20 @@ public class InstitutionalTransactionOutboxService {
             rs.getString("tx_hash"),
             rs.getTimestamp("updated_at") != null ? rs.getTimestamp("updated_at").toInstant() : null,
             rs.getInt("attempts"),
-            rs.getTimestamp("created_at") != null ? rs.getTimestamp("created_at").toInstant() : null
+            rs.getTimestamp("created_at") != null ? rs.getTimestamp("created_at").toInstant() : null,
+            rs.getLong("version")
         );
+    }
+
+    private long expectedTransitionVersion(Attempt attempt) {
+        boolean alreadyPersisted = "PREPARED".equals(attempt.status())
+            && attempt.signedRawTransaction() != null && !attempt.signedRawTransaction().isBlank()
+            && attempt.txHash() != null && !attempt.txHash().isBlank();
+        return attempt.version() + (alreadyPersisted ? 0L : 1L);
+    }
+
+    private long expectedSubmissionVersion(Attempt attempt) {
+        return expectedTransitionVersion(attempt);
     }
 
     private boolean hasDedicatedPublisherBlocker(String walletAddress, BigInteger chainId) {
@@ -541,7 +605,7 @@ public class InstitutionalTransactionOutboxService {
             SELECT COUNT(*)
             FROM institutional_checkin_outbox
             WHERE wallet_address = ? AND chain_id = ? AND nonce IS NOT NULL
-              AND status IN ('SUBMITTING', 'RETRY', 'STUCK_UNKNOWN')
+              AND status IN ('SUBMITTING', 'RETRY', 'FAILED', 'STUCK_UNKNOWN')
             """,
             Long.class,
             walletAddress,
@@ -555,7 +619,7 @@ public class InstitutionalTransactionOutboxService {
             SELECT COUNT(*)
             FROM session_started_attestations
             WHERE onchain_wallet_address = ? AND onchain_chain_id = ? AND onchain_nonce IS NOT NULL
-              AND onchain_status IN ('QUEUED', 'SUBMITTING', 'RETRY', 'STUCK_UNKNOWN', 'FAILED', 'MANUAL_INTERVENTION')
+              AND onchain_status IN ('QUEUED', 'SUBMITTING', 'RETRY', 'REPLACEMENT_PENDING', 'STUCK_UNKNOWN', 'FAILED', 'MANUAL_INTERVENTION')
             """,
             Long.class,
             walletAddress,

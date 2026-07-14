@@ -81,21 +81,33 @@ public class InstitutionalCheckInOutboxService {
 
     /**
      * Starts a new check-in generation only after the caller has revalidated
-     * the reservation. It never reuses a transaction hash or nonce from a
-     * terminal generation.
+     * the reservation. A FAILED row that already owns a nonce must retain that
+     * nonce so a retry cannot create a permanent gap in the wallet sequence.
+     * MINED_FAILED has consumed its nonce on-chain and may start with a new
+     * allocation.
      */
     public InstitutionalCheckInOutboxRecord restartTerminalFailure(long id) {
         requireConfigured();
         jdbcTemplate.update(
             """
             UPDATE institutional_checkin_outbox
-            SET status = 'PENDING',
+            SET wallet_address = CASE
+                    WHEN status = 'FAILED' AND nonce IS NOT NULL THEN wallet_address
+                    ELSE NULL
+                END,
+                chain_id = CASE
+                    WHEN status = 'FAILED' AND nonce IS NOT NULL THEN chain_id
+                    ELSE NULL
+                END,
+                nonce = CASE
+                    WHEN status = 'FAILED' AND nonce IS NOT NULL THEN nonce
+                    ELSE NULL
+                END,
+                status = 'PENDING',
                 attempts = 0,
                 next_attempt_at = CURRENT_TIMESTAMP,
                 tx_hash = NULL,
                 signed_raw_transaction = NULL,
-                chain_id = NULL,
-                nonce = NULL,
                 submitted_at = NULL,
                 mined_at = NULL,
                 last_error = NULL,

@@ -376,7 +376,7 @@ class InstitutionalTransactionOutboxMonitorTest {
 
         assertThat(monitor.monitor(web3j, 10)).isEqualTo(1);
 
-        verify(outboxService).markMinedSuccess(attempt);
+        verify(outboxService).markMinedSuccess(attempt, replacedHash);
         verify(web3j, org.mockito.Mockito.never()).ethGetTransactionByHash(any());
     }
 

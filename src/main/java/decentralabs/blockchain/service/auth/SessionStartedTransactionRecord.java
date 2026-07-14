@@ -12,5 +12,8 @@ record SessionStartedTransactionRecord(
     BigInteger transactionNonce,
     String transactionHash,
     Instant submittedAt,
-    String signedRawTransaction
+    String signedRawTransaction,
+    BigInteger originalGasPrice,
+    BigInteger currentGasPrice,
+    long version
 ) { }

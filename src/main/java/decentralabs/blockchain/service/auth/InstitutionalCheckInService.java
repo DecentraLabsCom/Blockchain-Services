@@ -153,6 +153,9 @@ public class InstitutionalCheckInService {
                         record.id(), attempts, "Initial institutional check-in broadcast outcome is uncertain"
                     );
                 }
+                if (blocked) {
+                    return queuedResponse(reservationKey, configuredSigner, record.txHash());
+                }
                 throw new IllegalStateException(
                     ex.outcome() == InstitutionalWalletDispatchException.Outcome.PRE_BROADCAST_BLOCKED
                         || ex.outcome() == InstitutionalWalletDispatchException.Outcome.PRE_BROADCAST_TRANSIENT
@@ -169,6 +172,18 @@ public class InstitutionalCheckInService {
         response.setTxHash(record.txHash());
         response.setTimestamp(System.currentTimeMillis() / 1000);
         response.setReason("Institutional check-in is already queued");
+        return response;
+    }
+
+    private CheckInResponse queuedResponse(String reservationKey, String signer, String txHash) {
+        CheckInResponse response = new CheckInResponse();
+        response.setValid(true);
+        response.setQueued(true);
+        response.setReservationKey(reservationKey);
+        response.setSigner(signer);
+        response.setTxHash(txHash);
+        response.setTimestamp(System.currentTimeMillis() / 1000);
+        response.setReason("CHECKIN_QUEUED");
         return response;
     }
 

@@ -126,6 +126,11 @@ public class SamlAuthController {
     public ResponseEntity<CheckInResponse> institutionalCheckIn(@RequestBody InstitutionalCheckInRequest request) {
         try {
             CheckInResponse response = institutionalCheckInService.checkIn(request);
+            if (response != null && Boolean.TRUE.equals(response.getQueued())) {
+                return ResponseEntity.status(202)
+                    .header("Retry-After", "2")
+                    .body(response);
+            }
             return ResponseEntity.ok(response);
         } catch (IllegalArgumentException e) {
             CheckInResponse response = new CheckInResponse();

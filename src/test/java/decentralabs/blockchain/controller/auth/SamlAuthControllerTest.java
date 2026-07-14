@@ -209,6 +209,30 @@ class SamlAuthControllerTest {
         }
 
         @Test
+        @DisplayName("Should acknowledge a queued institutional check-in without returning 500")
+        void shouldAcknowledgeQueuedInstitutionalCheckIn() throws Exception {
+            InstitutionalCheckInRequest request = new InstitutionalCheckInRequest();
+            request.setReservationKey("0x" + "a".repeat(64));
+            request.setSamlAssertion("assertion");
+
+            CheckInResponse response = new CheckInResponse();
+            response.setValid(true);
+            response.setQueued(true);
+            response.setReason("CHECKIN_QUEUED");
+
+            when(institutionalCheckInService.checkIn(any(InstitutionalCheckInRequest.class)))
+                .thenReturn(response);
+
+            mockMvc.perform(post("/auth/checkin-institutional")
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isAccepted())
+                .andExpect(header().string("Retry-After", "2"))
+                .andExpect(jsonPath("$.queued").value(true))
+                .andExpect(jsonPath("$.reason").value("CHECKIN_QUEUED"));
+        }
+
+        @Test
         @DisplayName("Should return 400 for invalid institutional check-in")
         void shouldReturn400ForInvalidInstitutionalCheckIn() throws Exception {
             InstitutionalCheckInRequest request = new InstitutionalCheckInRequest();

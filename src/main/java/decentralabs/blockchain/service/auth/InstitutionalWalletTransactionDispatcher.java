@@ -26,7 +26,11 @@ public class InstitutionalWalletTransactionDispatcher {
     private final WalletService walletService;
 
     /** Signed transaction material that is safe to persist before RPC. */
-    public record PreparedTransaction(String rawTransaction, String transactionHash) {
+    public record PreparedTransaction(String rawTransaction, String transactionHash, BigInteger gasPrice) {
+        public PreparedTransaction(String rawTransaction, String transactionHash) {
+            this(rawTransaction, transactionHash, null);
+        }
+
         public PreparedTransaction {
             if (rawTransaction == null || rawTransaction.isBlank()) {
                 throw new IllegalArgumentException("Signed raw transaction is required");

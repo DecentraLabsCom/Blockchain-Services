@@ -134,20 +134,32 @@ public class AdminNetworkAccessPolicy {
             return List.of(remoteAddr);
         }
 
-        Set<String> candidates = new LinkedHashSet<>();
-        if (isTrustedProxy(remoteAddr)) {
-            addForwardedCandidates(candidates, request.getHeader("X-Forwarded-For"));
+        Set<String> forwardedCandidates = new LinkedHashSet<>();
+        addForwardedCandidates(forwardedCandidates, request.getHeader("X-Forwarded-For"));
+        if (forwardedCandidates.isEmpty()) {
             String realIp = sanitizeIp(request.getHeader("X-Real-IP"));
             if (realIp != null) {
-                candidates.add(realIp);
+                forwardedCandidates.add(realIp);
             }
         }
 
-        if (candidates.isEmpty()) {
-            candidates.add(remoteAddr);
+        if (forwardedCandidates.isEmpty()) {
+            return List.of(remoteAddr);
         }
 
-        return new ArrayList<>(candidates);
+        List<String> chain = new ArrayList<>(forwardedCandidates);
+        for (int index = chain.size() - 1; index >= 0; index--) {
+            String candidate = chain.get(index);
+            if (!isTrustedProxy(candidate)) {
+                return List.of(candidate);
+            }
+        }
+
+        // An all-trusted chain is still useful for local/private access. The
+        // leftmost hop is the best available origin in that case; untrusted
+        // leftmost values cannot be reached once a real untrusted hop was
+        // found while walking from the right.
+        return List.of(chain.getFirst());
     }
 
     private void addForwardedCandidates(Set<String> candidates, String headerValue) {

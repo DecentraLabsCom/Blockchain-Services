@@ -71,11 +71,12 @@ public class SessionStartedOnChainPublisherService {
                        session_id, access_type, started_at, nonce, credential_hash,
                        client_proof_hash, signature, onchain_status, onchain_publish_attempts,
                        onchain_wallet_address, onchain_chain_id, onchain_nonce, onchain_tx_hash,
-                       onchain_signed_raw_transaction, onchain_submitted_at
+                       onchain_signed_raw_transaction, onchain_original_gas_price,
+                       onchain_current_gas_price, onchain_submitted_at, onchain_version
                 FROM session_started_attestations
                 WHERE onchain_published_at IS NULL
                   AND (
-                    (onchain_status IN ('QUEUED', 'RETRY', 'SUBMITTING')
+                    (onchain_status IN ('QUEUED', 'RETRY', 'SUBMITTING', 'REPLACEMENT_PENDING')
                      AND onchain_publish_attempts < ?)
                     OR (onchain_status = 'FAILED'
                         AND onchain_tx_hash IS NULL
@@ -120,6 +121,10 @@ public class SessionStartedOnChainPublisherService {
                 return true;
             }
 
+            if ("REPLACEMENT_PENDING".equals(record.status())) {
+                return publishReplacement(record);
+            }
+
             if (hasPersistedMaterial(record)) {
                 return resumePersistedSubmission(record);
             }
@@ -133,7 +138,7 @@ public class SessionStartedOnChainPublisherService {
                 existingNonce,
                 (chainId, nonce) -> markNonceReserved(submission.id(), walletAddress, chainId, nonce),
                 nonce -> onChainClient.prepareSessionStarted(submission, nonce, preparationAttempts(record)),
-                prepared -> markPrepared(submission.id(), prepared.rawTransaction(), prepared.transactionHash()),
+                prepared -> markPrepared(submission.id(), prepared),
                 hash -> markSubmitted(submission.id(), hash)
             );
             log.info(
@@ -164,16 +169,17 @@ public class SessionStartedOnChainPublisherService {
                 SET onchain_publish_locked_at = CURRENT_TIMESTAMP,
                     onchain_publish_attempts = CASE
                         WHEN onchain_status = 'FAILED' THEN 1
-                        ELSE onchain_publish_attempts + 1
+                    ELSE onchain_publish_attempts + 1
                     END,
                     onchain_status = 'SUBMITTING',
                     onchain_reservation_guard = reservation_key,
+                    onchain_version = onchain_version + 1,
                     onchain_publish_last_error = NULL,
                     updated_at = CURRENT_TIMESTAMP
                 WHERE id = ?
                   AND onchain_published_at IS NULL
                   AND (
-                    (onchain_status IN ('QUEUED', 'RETRY', 'SUBMITTING')
+                    (onchain_status IN ('QUEUED', 'RETRY', 'SUBMITTING', 'REPLACEMENT_PENDING')
                      AND onchain_publish_attempts < ?)
                     OR (onchain_status = 'FAILED'
                         AND onchain_tx_hash IS NULL
@@ -259,6 +265,109 @@ public class SessionStartedOnChainPublisherService {
         }
     }
 
+    private void markPrepared(
+        long id,
+        InstitutionalWalletTransactionDispatcher.PreparedTransaction prepared
+    ) {
+        markPrepared(id, prepared.rawTransaction(), prepared.transactionHash());
+        if (prepared.gasPrice() != null) {
+            jdbcTemplate.update(
+                """
+                UPDATE session_started_attestations
+                SET onchain_original_gas_price = COALESCE(onchain_original_gas_price, ?),
+                    onchain_current_gas_price = ?, updated_at = CURRENT_TIMESTAMP
+                WHERE id = ? AND onchain_status = 'SUBMITTING' AND onchain_tx_hash = ?
+                """,
+                prepared.gasPrice(), prepared.gasPrice(), id, prepared.transactionHash()
+            );
+        }
+    }
+
+    private boolean publishReplacement(SessionStartedTransactionRecord record)
+        throws InstitutionalWalletDispatchException {
+        if (record.transactionHash() == null || record.transactionNonce() == null
+            || record.walletAddress() == null || record.chainId() == null) {
+            throw new InstitutionalWalletDispatchException(
+                "SessionStarted replacement is missing its durable nonce or previous hash",
+                InstitutionalWalletDispatchException.Outcome.PRE_BROADCAST_PERMANENT,
+                new IllegalStateException("replacement material is incomplete")
+            );
+        }
+        String txHash = transactionDispatcher.dispatchPrepared(
+            onChainClient.signerAddress(),
+            record.chainId(),
+            record.transactionNonce(),
+            (chainId, nonce) -> { },
+            nonce -> onChainClient.prepareSessionStarted(
+                record.submission(), nonce, Math.max(1, record.attempts()), record.originalGasPrice()
+            ),
+            prepared -> markReplacementPrepared(record, prepared),
+            hash -> markReplacementSubmitted(record, hash)
+        );
+        log.info(
+            "Submitted SessionStarted replacement for reservation {} tx={}",
+            LogSanitizer.sanitize(record.submission().reservationKey()),
+            LogSanitizer.sanitize(txHash)
+        );
+        return true;
+    }
+
+    private void markReplacementPrepared(
+        SessionStartedTransactionRecord record,
+        InstitutionalWalletTransactionDispatcher.PreparedTransaction prepared
+    ) {
+        BigInteger gasPrice = prepared.gasPrice() != null ? prepared.gasPrice() : record.currentGasPrice();
+        if (gasPrice == null) {
+            throw new IllegalStateException("SessionStarted replacement gas price is missing");
+        }
+        jdbcTemplate.update(
+            """
+            INSERT INTO session_started_attestation_hash_history
+                (attestation_id, tx_hash, gas_price, replaced_at)
+            VALUES (?, ?, ?, CURRENT_TIMESTAMP)
+            ON DUPLICATE KEY UPDATE gas_price = VALUES(gas_price)
+            """,
+            record.submission().id(), record.transactionHash(),
+            record.currentGasPrice() != null ? record.currentGasPrice() : gasPrice
+        );
+        int updated = jdbcTemplate.update(
+            """
+            UPDATE session_started_attestations
+            SET onchain_signed_raw_transaction = ?, onchain_tx_hash = ?,
+                onchain_current_gas_price = ?,
+                onchain_original_gas_price = COALESCE(onchain_original_gas_price, ?),
+                onchain_status = 'SUBMITTING', onchain_publish_last_error = NULL,
+                onchain_version = onchain_version + 1, updated_at = CURRENT_TIMESTAMP
+            WHERE id = ? AND onchain_status = 'SUBMITTING'
+              AND onchain_tx_hash = ? AND onchain_version = ?
+            """,
+            prepared.rawTransaction(), prepared.transactionHash(), gasPrice,
+            record.originalGasPrice() != null ? record.originalGasPrice() : gasPrice,
+            record.submission().id(), record.transactionHash(), record.version() + 1
+        );
+        if (updated != 1) {
+            throw new IllegalStateException("SessionStarted replacement lost its fencing claim");
+        }
+    }
+
+    private void markReplacementSubmitted(SessionStartedTransactionRecord record, String txHash) {
+        int updated = jdbcTemplate.update(
+            """
+            UPDATE session_started_attestations
+            SET onchain_tx_hash = ?, onchain_status = 'SUBMITTED',
+                onchain_submitted_at = CURRENT_TIMESTAMP,
+                onchain_publish_locked_at = NULL, onchain_publish_last_error = NULL,
+                onchain_version = onchain_version + 1, updated_at = CURRENT_TIMESTAMP
+            WHERE id = ? AND onchain_status = 'SUBMITTING'
+              AND onchain_tx_hash = ? AND onchain_version = ?
+            """,
+            txHash, record.submission().id(), txHash, record.version() + 2
+        );
+        if (updated != 1) {
+            throw new IllegalStateException("SessionStarted replacement submission lost its fencing claim");
+        }
+    }
+
     private boolean hasPersistedMaterial(SessionStartedTransactionRecord record) {
         return record.signedRawTransaction() != null && !record.signedRawTransaction().isBlank()
             && record.transactionHash() != null && !record.transactionHash().isBlank();
@@ -334,8 +443,11 @@ public class SessionStartedOnChainPublisherService {
     }
 
     private void markPreBroadcastTransient(long id, Exception ex) {
-        updatePreBroadcastStatus(id, "RETRY", LogSanitizer.sanitize(ex.getMessage()), false);
-        log.warn("SessionStarted pre-broadcast publication will be retried for attestation {}: {}", id, ex.getMessage());
+        updateExhaustiblePreBroadcastRetry(id, LogSanitizer.sanitize(ex.getMessage()));
+        log.warn(
+            "SessionStarted pre-broadcast publication will be retried or require manual intervention for attestation {}: {}",
+            id, ex.getMessage()
+        );
     }
 
     private void markPreBroadcastPermanent(long id, Exception ex) {
@@ -364,6 +476,21 @@ public class SessionStartedOnChainPublisherService {
             refundAttempt,
             error,
             id
+        );
+    }
+
+    private void updateExhaustiblePreBroadcastRetry(long id, String error) {
+        jdbcTemplate.update(
+            """
+            UPDATE session_started_attestations
+            SET onchain_publish_locked_at = NULL,
+                onchain_status = CASE WHEN onchain_publish_attempts >= ?
+                    THEN 'MANUAL_INTERVENTION' ELSE 'RETRY' END,
+                onchain_publish_last_error = ?,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE id = ? AND onchain_status = 'SUBMITTING'
+            """,
+            maxPublishAttempts(), error, id
         );
     }
 
@@ -403,7 +530,8 @@ public class SessionStartedOnChainPublisherService {
                        session_id, access_type, started_at, nonce, credential_hash,
                        client_proof_hash, signature, onchain_status, onchain_publish_attempts,
                        onchain_wallet_address, onchain_chain_id, onchain_nonce, onchain_tx_hash,
-                       onchain_signed_raw_transaction, onchain_submitted_at
+                       onchain_signed_raw_transaction, onchain_original_gas_price,
+                       onchain_current_gas_price, onchain_submitted_at, onchain_version
                 FROM session_started_attestations
                 WHERE onchain_status = 'SUBMITTED'
                 ORDER BY onchain_submitted_at ASC, id ASC
@@ -418,15 +546,26 @@ public class SessionStartedOnChainPublisherService {
         int mined = 0;
         for (SessionStartedTransactionRecord record : submitted) {
             try {
-                SessionStartedOnChainClient.TransactionState state =
-                    onChainClient.transactionState(record.transactionHash());
-                if (state == SessionStartedOnChainClient.TransactionState.SUCCEEDED) {
-                    markMinedSuccess(record.submission().id(), record.transactionHash());
-                    mined++;
-                } else if (state == SessionStartedOnChainClient.TransactionState.FAILED) {
-                    markMinedFailed(record.submission().id(), record.transactionHash(), "SessionStarted transaction reverted on-chain");
-                } else if (isStuck(record)) {
-                    markPendingRetry(record);
+                boolean resolved = false;
+                for (String candidateHash : monitoredHashes(record)) {
+                    SessionStartedOnChainClient.TransactionState state =
+                        onChainClient.transactionState(candidateHash);
+                    if (state == SessionStartedOnChainClient.TransactionState.SUCCEEDED) {
+                        markMinedSuccessFromAnyHash(record, candidateHash);
+                        mined++;
+                        resolved = true;
+                        break;
+                    }
+                    if (state == SessionStartedOnChainClient.TransactionState.FAILED) {
+                        markMinedFailedFromAnyHash(
+                            record, candidateHash, "SessionStarted transaction reverted on-chain"
+                        );
+                        resolved = true;
+                        break;
+                    }
+                }
+                if (!resolved && isStuck(record)) {
+                    markPendingReplacement(record);
                 }
             } catch (RuntimeException ex) {
                 log.warn("Unable to monitor SessionStarted attestation {}: {}", record.submission().id(), ex.getMessage());
@@ -444,7 +583,8 @@ public class SessionStartedOnChainPublisherService {
                        session_id, access_type, started_at, nonce, credential_hash,
                        client_proof_hash, signature, onchain_status, onchain_publish_attempts,
                        onchain_wallet_address, onchain_chain_id, onchain_nonce, onchain_tx_hash,
-                       onchain_signed_raw_transaction, onchain_submitted_at
+                       onchain_signed_raw_transaction, onchain_original_gas_price,
+                       onchain_current_gas_price, onchain_submitted_at, onchain_version
                 FROM session_started_attestations
                 WHERE onchain_status = 'STUCK_UNKNOWN'
                 ORDER BY updated_at ASC, id ASC
@@ -460,30 +600,40 @@ public class SessionStartedOnChainPublisherService {
         for (SessionStartedTransactionRecord record : unknown) {
             try {
                 if (onChainClient.hasSessionStarted(record.submission().reservationKey())) {
-                    markUnknownMinedSuccess(record.submission().id());
+                    markUnknownMinedSuccess(record.submission().id(), null);
                     reconciled++;
                     continue;
                 }
-                boolean hasTransactionHash = record.transactionHash() != null && !record.transactionHash().isBlank();
-                if (hasTransactionHash) {
+                boolean visible = false;
+                boolean reconciledByHash = false;
+                for (String candidateHash : monitoredHashes(record)) {
                     SessionStartedOnChainClient.TransactionState state =
-                        onChainClient.transactionStateStrict(record.transactionHash());
+                        onChainClient.transactionStateStrict(candidateHash);
                     if (state == SessionStartedOnChainClient.TransactionState.SUCCEEDED) {
-                        markUnknownMinedSuccess(record.submission().id());
+                        markUnknownMinedSuccess(record.submission().id(), candidateHash);
                         reconciled++;
-                        continue;
+                        reconciledByHash = true;
+                        break;
                     }
                     if (state == SessionStartedOnChainClient.TransactionState.FAILED) {
-                        markUnknownMinedFailed(record, "SessionStarted transaction reverted on-chain");
-                        continue;
+                        markUnknownMinedFailed(
+                            record, candidateHash, "SessionStarted transaction reverted on-chain"
+                        );
+                        reconciledByHash = true;
+                        break;
                     }
-                    if (onChainClient.transactionVisible(record.transactionHash())) {
+                    if (onChainClient.transactionVisible(candidateHash)) {
+                        visible = true;
                         markUnknownRebroadcast(record, record.transactionHash());
-                        continue;
+                        reconciledByHash = true;
+                        break;
                     }
                 }
+                if (reconciledByHash) {
+                    continue;
+                }
                 if (record.transactionNonce() != null && record.walletAddress() != null
-                        && (!hasTransactionHash || !onChainClient.transactionVisible(record.transactionHash()))
+                        && !visible
                         && onChainClient.pendingNonce(record.walletAddress()).compareTo(record.transactionNonce()) <= 0) {
                     if (record.signedRawTransaction() != null && !record.signedRawTransaction().isBlank()) {
                         String rebroadcastHash = onChainClient.broadcastSignedRawTransaction(
@@ -504,29 +654,60 @@ public class SessionStartedOnChainPublisherService {
         return reconciled;
     }
 
-    private void markUnknownMinedSuccess(long id) {
+    private void markUnknownMinedSuccess(long id, String minedTxHash) {
         jdbcTemplate.update(
             """
             UPDATE session_started_attestations
-            SET onchain_status = 'MINED_SUCCESS', onchain_published_at = CURRENT_TIMESTAMP,
+            SET onchain_tx_hash = COALESCE(?, onchain_tx_hash),
+                onchain_status = 'MINED_SUCCESS', onchain_published_at = CURRENT_TIMESTAMP,
                 onchain_mined_at = CURRENT_TIMESTAMP, onchain_publish_locked_at = NULL,
                 onchain_publish_last_error = NULL, updated_at = CURRENT_TIMESTAMP
             WHERE id = ? AND onchain_status = 'STUCK_UNKNOWN'
             """,
-            id
+            minedTxHash, id
         );
     }
 
-    private void markUnknownMinedFailed(SessionStartedTransactionRecord record, String error) {
+    private List<String> monitoredHashes(SessionStartedTransactionRecord record) {
+        List<String> hashes = new java.util.ArrayList<>();
+        if (record.transactionHash() != null && !record.transactionHash().isBlank()) {
+            hashes.add(record.transactionHash());
+        }
+        try {
+            List<String> history = jdbcTemplate.query(
+                """
+                SELECT tx_hash FROM session_started_attestation_hash_history
+                WHERE attestation_id = ? ORDER BY replaced_at ASC, id ASC
+                """,
+                (rs, rowNum) -> rs.getString("tx_hash"), record.submission().id()
+            );
+            if (history != null) {
+                hashes.addAll(history);
+            }
+        } catch (RuntimeException ignored) {
+            // Keep the current hash usable while an older deployment is migrating.
+        }
+        return hashes.stream()
+            .filter(hash -> hash != null && !hash.isBlank())
+            .distinct()
+            .toList();
+    }
+
+    private void markUnknownMinedFailed(
+        SessionStartedTransactionRecord record,
+        String minedTxHash,
+        String error
+    ) {
         jdbcTemplate.update(
             """
             UPDATE session_started_attestations
-            SET onchain_status = 'MINED_FAILED', onchain_mined_at = CURRENT_TIMESTAMP,
+            SET onchain_tx_hash = COALESCE(?, onchain_tx_hash),
+                onchain_status = 'MINED_FAILED', onchain_mined_at = CURRENT_TIMESTAMP,
                 onchain_reservation_guard = NULL, onchain_publish_locked_at = NULL,
                 onchain_publish_last_error = ?, updated_at = CURRENT_TIMESTAMP
             WHERE id = ? AND onchain_status = 'STUCK_UNKNOWN' AND onchain_tx_hash <=> ?
             """,
-            error, record.submission().id(), record.transactionHash()
+            minedTxHash, error, record.submission().id(), record.transactionHash()
         );
     }
 
@@ -591,21 +772,61 @@ public class SessionStartedOnChainPublisherService {
         );
     }
 
-    private void markPendingRetry(SessionStartedTransactionRecord record) {
+    private void markPendingReplacement(SessionStartedTransactionRecord record) {
         boolean exhausted = record.attempts() >= maxPublishAttempts();
         jdbcTemplate.update(
             """
             UPDATE session_started_attestations
             SET onchain_status = ?, onchain_publish_locked_at = NULL,
-                onchain_publish_last_error = ?, updated_at = CURRENT_TIMESTAMP
+                onchain_publish_last_error = ?, onchain_version = onchain_version + 1,
+                updated_at = CURRENT_TIMESTAMP
             WHERE id = ? AND onchain_status = 'SUBMITTED' AND onchain_tx_hash = ?
+              AND onchain_version = ?
             """,
-            exhausted ? "STUCK_UNKNOWN" : "RETRY",
+            exhausted ? "STUCK_UNKNOWN" : "REPLACEMENT_PENDING",
             exhausted
                 ? "SessionStarted transaction remained pending after maximum broadcasts"
-                : "SessionStarted transaction is pending; retrying the same nonce with higher gas",
+            : "SessionStarted transaction remained visible without a receipt; replacement required",
             record.submission().id(),
-            record.transactionHash()
+            record.transactionHash(),
+            record.version()
+        );
+    }
+
+    private void markMinedSuccessFromAnyHash(
+        SessionStartedTransactionRecord record,
+        String observedHash
+    ) {
+        if (observedHash.equalsIgnoreCase(record.transactionHash())) {
+            markMinedSuccess(record.submission().id(), observedHash);
+            return;
+        }
+        jdbcTemplate.update(
+            """
+            UPDATE session_started_attestations
+            SET onchain_tx_hash = ?, onchain_status = 'MINED_SUCCESS', onchain_published_at = CURRENT_TIMESTAMP,
+                onchain_mined_at = CURRENT_TIMESTAMP, onchain_publish_locked_at = NULL,
+                onchain_publish_last_error = NULL, updated_at = CURRENT_TIMESTAMP
+            WHERE id = ? AND onchain_status = 'SUBMITTED' AND onchain_version = ?
+            """,
+            observedHash, record.submission().id(), record.version()
+        );
+    }
+
+    private void markMinedFailedFromAnyHash(
+        SessionStartedTransactionRecord record,
+        String observedHash,
+        String error
+    ) {
+        jdbcTemplate.update(
+            """
+            UPDATE session_started_attestations
+            SET onchain_tx_hash = ?, onchain_status = 'MINED_FAILED', onchain_mined_at = CURRENT_TIMESTAMP,
+                onchain_reservation_guard = NULL, onchain_publish_locked_at = NULL,
+                onchain_publish_last_error = ?, updated_at = CURRENT_TIMESTAMP
+            WHERE id = ? AND onchain_status = 'SUBMITTED' AND onchain_version = ?
+            """,
+            observedHash, error, record.submission().id(), record.version()
         );
     }
 
@@ -638,7 +859,12 @@ public class SessionStartedOnChainPublisherService {
             rs.getString("onchain_tx_hash"),
             rs.getTimestamp("onchain_submitted_at") != null
                 ? rs.getTimestamp("onchain_submitted_at").toInstant() : null,
-            rs.getString("onchain_signed_raw_transaction")
+            rs.getString("onchain_signed_raw_transaction"),
+            rs.getObject("onchain_original_gas_price") != null
+                ? rs.getBigDecimal("onchain_original_gas_price").toBigIntegerExact() : null,
+            rs.getObject("onchain_current_gas_price") != null
+                ? rs.getBigDecimal("onchain_current_gas_price").toBigIntegerExact() : null,
+            rs.getLong("onchain_version")
         );
     }
 }

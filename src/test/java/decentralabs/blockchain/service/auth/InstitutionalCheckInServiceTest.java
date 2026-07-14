@@ -164,7 +164,7 @@ class InstitutionalCheckInServiceTest {
     }
 
     @Test
-    void checkInMarksPreBroadcastFailureAsRetryable() throws Exception {
+    void checkInReturnsQueuedResponseWhenNonceAllocationIsBlocked() throws Exception {
         InstitutionalCheckInRequest request = validRequest();
         when(samlValidationService.validateSamlAssertionDetailed("valid-saml")).thenReturn(samlAttributes());
         when(marketplaceEndpointAuthService.enforceToken("market-token", null)).thenReturn(marketplaceClaims());
@@ -180,8 +180,11 @@ class InstitutionalCheckInServiceTest {
             new IllegalStateException("allocator blocked")
         ));
 
-        assertThatThrownBy(() -> service.checkIn(request)).isInstanceOf(IllegalStateException.class)
-            .hasMessageContaining("could not be prepared");
+        CheckInResponse response = service.checkIn(request);
+
+        assertThat(response.isValid()).isTrue();
+        assertThat(response.getQueued()).isTrue();
+        assertThat(response.getReason()).isEqualTo("CHECKIN_QUEUED");
 
         verify(outboxService).markRetry(
             eq(record.id()), eq(record.attempts()), any(),

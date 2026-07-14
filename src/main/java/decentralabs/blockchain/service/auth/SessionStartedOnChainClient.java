@@ -96,6 +96,15 @@ public class SessionStartedOnChainClient {
         BigInteger transactionNonce,
         int replacementAttempt
     ) {
+        return prepareSessionStarted(submission, transactionNonce, replacementAttempt, null);
+    }
+
+    public InstitutionalWalletTransactionDispatcher.PreparedTransaction prepareSessionStarted(
+        SessionStartedOnChainSubmission submission,
+        BigInteger transactionNonce,
+        int replacementAttempt,
+        BigInteger originalGasPriceWei
+    ) {
         validate(submission);
         if (transactionNonce == null || transactionNonce.signum() < 0) {
             throw new IllegalArgumentException("SessionStarted transaction nonce is required");
@@ -105,16 +114,21 @@ public class SessionStartedOnChainClient {
         long chainId = getChainId(web3j);
         validateDomainChainId(chainId);
         Function function = sessionStartedFunction(submission);
+        BigInteger gasPriceWei = gasPriceWeiForReplacement(replacementAttempt, originalGasPriceWei);
         RawTransaction raw = RawTransaction.createTransaction(
             transactionNonce,
-            toWei(gasPriceForReplacement(replacementAttempt)),
+            gasPriceWei,
             gasLimit,
             contractAddress,
             BigInteger.ZERO,
             FunctionEncoder.encode(function)
         );
         String rawHex = Numeric.toHexString(TransactionEncoder.signMessage(raw, chainId, credentials));
-        return new InstitutionalWalletTransactionDispatcher.PreparedTransaction(rawHex, Hash.sha3(rawHex));
+        return new InstitutionalWalletTransactionDispatcher.PreparedTransaction(
+            rawHex,
+            Hash.sha3(rawHex),
+            gasPriceWei
+        );
     }
 
     public String broadcastSignedRawTransaction(String rawTransaction) {
@@ -340,6 +354,15 @@ public class SessionStartedOnChainClient {
         int bumpPercent = Math.max(0, nonceReplacementGasBumpPercent);
         BigInteger multiplier = BigInteger.valueOf(100L + (long) attempts * bumpPercent);
         return base.multiply(multiplier).add(BigInteger.valueOf(99)).divide(BigInteger.valueOf(100));
+    }
+
+    private BigInteger gasPriceWeiForReplacement(int replacementAttempt, BigInteger originalGasPriceWei) {
+        BigInteger original = originalGasPriceWei != null && originalGasPriceWei.signum() > 0
+            ? originalGasPriceWei : toWei(gasPriceForReplacement(0));
+        int attempts = Math.max(0, replacementAttempt);
+        int bumpPercent = Math.max(0, nonceReplacementGasBumpPercent);
+        BigInteger multiplier = BigInteger.valueOf(100L + (long) attempts * bumpPercent);
+        return original.multiply(multiplier).add(BigInteger.valueOf(99)).divide(BigInteger.valueOf(100));
     }
 
     private byte[] toBytes32(String hex) {

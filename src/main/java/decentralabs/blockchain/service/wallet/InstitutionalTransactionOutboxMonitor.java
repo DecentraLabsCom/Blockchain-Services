@@ -219,7 +219,7 @@ public class InstitutionalTransactionOutboxMonitor {
                 var receipt = web3j.ethGetTransactionReceipt(hash).send();
                 if (receipt != null && receipt.getTransactionReceipt().isPresent()) {
                     if (receipt.getTransactionReceipt().orElseThrow().isStatusOK()) {
-                        outboxService.markMinedSuccess(attempt);
+                        markMinedSuccess(attempt, hash);
                     } else {
                         outboxService.markMinedFailed(attempt, "Institutional transaction reverted on-chain");
                     }
@@ -283,7 +283,7 @@ public class InstitutionalTransactionOutboxMonitor {
             var receipt = web3j.ethGetTransactionReceipt(candidateHash).send();
             if (receipt != null && receipt.getTransactionReceipt().isPresent()) {
                 if (receipt.getTransactionReceipt().orElseThrow().isStatusOK()) {
-                    outboxService.markMinedSuccess(attempt);
+                    markMinedSuccess(attempt, candidateHash);
                     return MaterialState.MINED_SUCCESS;
                 }
                 outboxService.markMinedFailed(attempt, "Institutional transaction reverted on-chain");
@@ -291,6 +291,18 @@ public class InstitutionalTransactionOutboxMonitor {
             }
         }
         return MaterialState.ABSENT;
+    }
+
+    private void markMinedSuccess(
+        InstitutionalTransactionOutboxService.Attempt attempt,
+        String minedTxHash
+    ) {
+        if (minedTxHash != null && attempt != null && attempt.txHash() != null
+            && minedTxHash.equalsIgnoreCase(attempt.txHash())) {
+            outboxService.markMinedSuccess(attempt);
+            return;
+        }
+        outboxService.markMinedSuccess(attempt, minedTxHash);
     }
 
     private java.util.List<String> monitoredHashes(InstitutionalTransactionOutboxService.Attempt attempt) {

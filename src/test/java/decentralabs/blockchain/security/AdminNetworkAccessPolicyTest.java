@@ -137,6 +137,27 @@ class AdminNetworkAccessPolicyTest {
     }
 
     @Test
+    void resolveClientIp_usesTheFirstUntrustedHopFromTheRight() {
+        MockHttpServletRequest request = new MockHttpServletRequest();
+        request.setRemoteAddr("172.17.0.10");
+        request.addHeader("X-Forwarded-For", "1.2.3.4, 198.51.100.25, 172.17.0.10");
+
+        assertThat(policy.resolveClientIp(request)).isEqualTo("198.51.100.25");
+    }
+
+    @Test
+    void privateAccessDoesNotTrustASpoofedLeftmostForwardedAddress() {
+        ReflectionTestUtils.setField(policy, "adminDashboardAllowPrivate", true);
+        ReflectionTestUtils.setField(policy, "allowPrivateNetworks", true);
+        ReflectionTestUtils.setField(policy, "configuredCidrs", "10.20.0.0/16");
+        MockHttpServletRequest request = new MockHttpServletRequest();
+        request.setRemoteAddr("172.17.0.10");
+        request.addHeader("X-Forwarded-For", "10.20.1.9, 203.0.113.20, 172.17.0.10");
+
+        assertThat(policy.isRequestAllowed(request, () -> true)).isFalse();
+    }
+
+    @Test
     void resolveClientIp_ignoresForwardedHeadersFromUntrustedRemote() {
         MockHttpServletRequest request = new MockHttpServletRequest();
         request.setRemoteAddr("10.20.1.5");

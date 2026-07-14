@@ -188,35 +188,41 @@ public class PendingNonceFastRawTransactionManager extends FastRawTransactionMan
         String signedHex = Numeric.toHexString(signedMessage);
         String expectedHash = Hash.sha3(signedHex);
         transactionOutboxService.markSigned(attempt, signedHex, expectedHash);
+        InstitutionalTransactionOutboxService.Attempt preparedAttempt = new InstitutionalTransactionOutboxService.Attempt(
+            attempt.id(), attempt.chainId(), attempt.walletAddress(), attempt.operationKey(), attempt.nonce(),
+            attempt.originalGasPrice(), attempt.currentGasPrice(), attempt.gasLimit(), attempt.toAddress(),
+            attempt.value(), attempt.data(), "RETRYABLE", null, null, attempt.updatedAt(),
+            attempt.attempts(), attempt.createdAt(), attempt.version()
+        );
 
         EthSendTransaction response;
         try {
             response = web3j.ethSendRawTransaction(signedHex).send();
         } catch (IOException ex) {
-            transactionOutboxService.markRetryable(attempt, ex.getMessage());
+            transactionOutboxService.markRetryable(preparedAttempt, ex.getMessage());
             throw ex;
         } catch (RuntimeException ex) {
-            transactionOutboxService.markRetryable(attempt, ex.getMessage());
+            transactionOutboxService.markRetryable(preparedAttempt, ex.getMessage());
             throw ex;
         }
 
         if (response == null) {
-            transactionOutboxService.markRetryable(attempt, "RPC returned no response");
+            transactionOutboxService.markRetryable(preparedAttempt, "RPC returned no response");
             throw new IOException("RPC returned no transaction response");
         }
         if (response.hasError()) {
             transactionOutboxService.markRetryable(
-                attempt,
+                preparedAttempt,
                 response.getError() != null ? response.getError().getMessage() : "Transaction broadcast failed"
             );
             return response;
         }
         String txHash = response.getTransactionHash();
         if (txHash == null || txHash.isBlank()) {
-            transactionOutboxService.markRetryable(attempt, "Transaction broadcast returned no hash");
+            transactionOutboxService.markRetryable(preparedAttempt, "Transaction broadcast returned no hash");
             return response;
         }
-        transactionOutboxService.markSubmitted(attempt, txHash);
+        transactionOutboxService.markSubmitted(preparedAttempt, txHash);
         return response;
     }
 
@@ -274,8 +280,9 @@ public class PendingNonceFastRawTransactionManager extends FastRawTransactionMan
             transactionOutboxService.markSigned(blocker, signedHex, expectedHash);
             blocker = new InstitutionalTransactionOutboxService.Attempt(
                 blocker.id(), blocker.chainId(), blocker.walletAddress(), blocker.operationKey(), blocker.nonce(),
-                blocker.gasPrice(), blocker.gasLimit(), blocker.toAddress(), blocker.value(), blocker.data(),
-                "PREPARED", signedHex, expectedHash
+                blocker.originalGasPrice(), blocker.currentGasPrice(), blocker.gasLimit(), blocker.toAddress(),
+                blocker.value(), blocker.data(), "PREPARED", signedHex, expectedHash, blocker.updatedAt(),
+                blocker.attempts(), blocker.createdAt(), blocker.version() + 1
             );
         }
         if (blocker.txHash() == null || blocker.txHash().isBlank()) {

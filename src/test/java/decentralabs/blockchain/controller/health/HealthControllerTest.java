@@ -268,6 +268,21 @@ class HealthControllerTest {
         }
 
         @Test
+        @DisplayName("Should count a failed pre-broadcast check-in that still owns a nonce")
+        void shouldCountFailedCheckInNonceAsBacklog() throws Exception {
+            setupHealthyEnvironment();
+            when(jdbcTemplate.queryForObject(
+                org.mockito.ArgumentMatchers.contains("status IN ('STUCK_UNKNOWN', 'FAILED') AND nonce IS NOT NULL"),
+                eq(Integer.class)
+            )).thenReturn(1);
+
+            mockMvc.perform(get("/health"))
+                .andExpect(status().isServiceUnavailable())
+                .andExpect(jsonPath("$.status").value("DEGRADED"))
+                .andExpect(jsonPath("$.nonce_backlog").value(1));
+        }
+
+        @Test
         @DisplayName("Should count unknown SessionStarted transactions from the attestation table")
         void shouldCountUnknownSessionStartedTransactionsFromAttestations() throws Exception {
             setupHealthyEnvironment();

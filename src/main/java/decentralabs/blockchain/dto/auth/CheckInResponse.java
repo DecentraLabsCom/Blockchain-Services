@@ -11,6 +11,7 @@ public class CheckInResponse {
     private String recoveredAddress;
     private String reason;
     private String txHash;
+    private Boolean queued;
 
     public boolean isValid() {
         return valid;
@@ -66,5 +67,13 @@ public class CheckInResponse {
 
     public void setTxHash(String txHash) {
         this.txHash = txHash;
+    }
+
+    public Boolean getQueued() {
+        return queued;
+    }
+
+    public void setQueued(boolean queued) {
+        this.queued = queued;
     }
 }
