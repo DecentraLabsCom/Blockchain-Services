@@ -36,9 +36,6 @@ public class AccessCredentialAuditService {
     @Value("${access.audit.observation-window-tolerance-seconds:30}")
     private long observationWindowToleranceSeconds = 30L;
 
-    @Value("${access.audit.observation-clock-skew-seconds:120}")
-    private long observationClockSkewSeconds = 120L;
-
     public AccessCredentialAuditService(
         ObjectProvider<JdbcTemplate> jdbcTemplateProvider,
         ObjectProvider<SessionStartedAttestationService> sessionStartedAttestationServiceProvider
@@ -153,6 +150,13 @@ public class AccessCredentialAuditService {
     }
 
     public SessionObservationResult recordSessionObserved(AccessCredentialSessionObservedRequest request) {
+        return recordSessionObserved(request, null);
+    }
+
+    public SessionObservationResult recordSessionObserved(
+        AccessCredentialSessionObservedRequest request,
+        ObserverTokenWindow observerTokenWindow
+    ) {
         if (jdbcTemplate == null) {
             log.debug("Access credential session observation skipped: no datasource configured");
             return SessionObservationResult.notRecorded();
@@ -165,9 +169,9 @@ public class AccessCredentialAuditService {
         }
 
         Long observedAt = firstNonNull(request.getObservedAt(), Instant.now().getEpochSecond());
-        long now = Instant.now().getEpochSecond();
-        if (Math.abs(now - observedAt) > Math.max(0L, observationClockSkewSeconds)) {
-            log.warn("Rejected access credential observation outside the accepted clock skew");
+        Long reportedAt = firstNonNull(request.getReportedAt(), Instant.now().getEpochSecond());
+        if (observerTokenWindow != null && !observerTokenWindow.contains(reportedAt)) {
+            log.warn("Rejected access credential observation outside the observer credential window");
             return SessionObservationResult.notRecorded();
         }
         String gatewayId = normalizeGatewayId(request.getGatewayId());
@@ -484,6 +488,12 @@ public class AccessCredentialAuditService {
 
         public boolean sessionObserved() {
             return sessionObservedAt != null;
+        }
+    }
+
+    public record ObserverTokenWindow(long issuedAt, long expiresAt) {
+        public boolean contains(long reportedAt) {
+            return reportedAt >= issuedAt && reportedAt <= expiresAt;
         }
     }
 

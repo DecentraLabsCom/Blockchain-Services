@@ -22,7 +22,9 @@ class ConfigurationMetadataTest {
                 "institutional.checkin.delegation.allow-http",
                 "institutional.checkin.delegation.allow-private-networks",
                 "access.audit.observation-window-tolerance-seconds",
-                "access.audit.observation-clock-skew-seconds"
+                "institutional.transaction-outbox.monitor.max-gas-price-wei",
+                "institutional.transaction-outbox.monitor.max-multiplier",
+                "institutional.transaction-outbox.monitor.max-estimated-transaction-cost-wei"
             );
         assertThat(properties.get("institutional.checkin.delegation.allow-http").path("type").asText())
             .isEqualTo("java.lang.Boolean");
@@ -32,8 +34,12 @@ class ConfigurationMetadataTest {
             .isFalse();
         assertThat(properties.get("access.audit.observation-window-tolerance-seconds").path("defaultValue").asLong())
             .isEqualTo(30L);
-        assertThat(properties.get("access.audit.observation-clock-skew-seconds").path("defaultValue").asLong())
-            .isEqualTo(120L);
+        assertThat(properties.get("institutional.transaction-outbox.monitor.max-gas-price-wei")
+            .path("defaultValue").asLong()).isEqualTo(100_000_000_000L);
+        assertThat(properties.get("institutional.transaction-outbox.monitor.max-multiplier")
+            .path("defaultValue").asDouble()).isEqualTo(3.0);
+        assertThat(properties.get("institutional.transaction-outbox.monitor.max-estimated-transaction-cost-wei")
+            .path("defaultValue").asLong()).isEqualTo(100_000_000_000_000_000L);
     }
 
     private Map<String, JsonNode> readProperties() throws Exception {

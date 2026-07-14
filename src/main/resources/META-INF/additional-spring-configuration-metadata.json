@@ -154,13 +154,13 @@
   {
     "name": "rate.limit.fmu.session-ticket.requests.per.minute",
     "type": "java.lang.Integer",
-    "description": "Per-gateway rate limit for observer-authenticated FMU session-ticket redemption requests.",
+    "description": "Independent rate limit for FMU session-ticket issue and redemption requests; issue requests use the validated booking targetGatewayId claim when available.",
     "defaultValue": 120
   },
   {
     "name": "rate.limit.fmu.session-ticket.requests.burst",
     "type": "java.lang.Integer",
-    "description": "Burst capacity per gateway for observer-authenticated FMU session-ticket redemption requests.",
+    "description": "Burst capacity for FMU session-ticket issue and redemption requests; issue requests use the validated booking targetGatewayId claim when available.",
     "defaultValue": 30
   },
   {
@@ -204,6 +204,24 @@
     "type": "java.lang.Integer",
     "description": "Percentage gas-price bump applied to retryable same-nonce generic replacements.",
     "defaultValue": 20
+  },
+  {
+    "name": "institutional.transaction-outbox.monitor.max-gas-price-wei",
+    "type": "java.math.BigInteger",
+    "description": "Absolute ceiling for generic institutional replacement gas prices in wei.",
+    "defaultValue": 100000000000
+  },
+  {
+    "name": "institutional.transaction-outbox.monitor.max-multiplier",
+    "type": "java.math.BigDecimal",
+    "description": "Maximum generic replacement gas-price multiple relative to the original price.",
+    "defaultValue": 3
+  },
+  {
+    "name": "institutional.transaction-outbox.monitor.max-estimated-transaction-cost-wei",
+    "type": "java.math.BigInteger",
+    "description": "Absolute ceiling for estimated generic transaction fee cost (gas price times gas limit) in wei.",
+    "defaultValue": 100000000000000000
   },
   {
     "name": "checkin.receipt.max-attempts",
@@ -1034,12 +1052,6 @@
     "type": "java.lang.Long",
     "description": "Tolerance in seconds when matching an observed access credential to its audit window.",
     "defaultValue": 30
-  },
-  {
-    "name": "access.audit.observation-clock-skew-seconds",
-    "type": "java.lang.Long",
-    "description": "Maximum accepted clock skew in seconds for access credential observations.",
-    "defaultValue": 120
   },
   {
     "name": "session.attestation.publisher.stuck-transaction-ms",

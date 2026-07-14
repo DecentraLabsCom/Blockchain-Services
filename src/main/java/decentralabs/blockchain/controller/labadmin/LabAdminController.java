@@ -3,6 +3,7 @@ package decentralabs.blockchain.controller.labadmin;
 import decentralabs.blockchain.dto.labadmin.LabAdminAssetResponse;
 import decentralabs.blockchain.dto.labadmin.LabAdminPublishRequest;
 import decentralabs.blockchain.dto.labadmin.LabAdminTransactionResponse;
+import decentralabs.blockchain.exception.IdempotencyKeyPayloadMismatchException;
 import decentralabs.blockchain.service.auth.JwtService;
 import decentralabs.blockchain.service.labadmin.LabAdminService;
 import decentralabs.blockchain.util.LogSanitizer;
@@ -16,6 +17,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.core.io.Resource;
 import org.springframework.http.CacheControl;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -106,6 +108,8 @@ public class LabAdminController {
                 ? labAdminService.publish(request, idempotencyKey)
                 : labAdminService.publish(request);
             return ResponseEntity.ok(response);
+        } catch (IdempotencyKeyPayloadMismatchException ex) {
+            return idempotencyConflict(ex);
         } catch (IllegalArgumentException | IllegalStateException ex) {
             return badRequest(ex);
         } catch (Exception ex) {
@@ -124,6 +128,8 @@ public class LabAdminController {
                 ? labAdminService.update(labId, request, idempotencyKey)
                 : labAdminService.update(labId, request);
             return ResponseEntity.ok(response);
+        } catch (IdempotencyKeyPayloadMismatchException ex) {
+            return idempotencyConflict(ex);
         } catch (IllegalArgumentException | IllegalStateException ex) {
             return badRequest(ex);
         } catch (Exception ex) {
@@ -141,6 +147,8 @@ public class LabAdminController {
                 ? labAdminService.deleteLab(labId, idempotencyKey)
                 : labAdminService.deleteLab(labId);
             return ResponseEntity.ok(response);
+        } catch (IdempotencyKeyPayloadMismatchException ex) {
+            return idempotencyConflict(ex);
         } catch (IllegalArgumentException | IllegalStateException ex) {
             return badRequest(ex);
         } catch (Exception ex) {
@@ -183,6 +191,8 @@ public class LabAdminController {
             return ResponseEntity.ok(hasText(idempotencyKey)
                 ? labAdminService.listLab(labId, true, idempotencyKey)
                 : labAdminService.listLab(labId, true));
+        } catch (IdempotencyKeyPayloadMismatchException ex) {
+            return idempotencyConflict(ex);
         } catch (IllegalArgumentException | IllegalStateException ex) {
             return badRequest(ex);
         } catch (Exception ex) {
@@ -199,6 +209,8 @@ public class LabAdminController {
             return ResponseEntity.ok(hasText(idempotencyKey)
                 ? labAdminService.listLab(labId, false, idempotencyKey)
                 : labAdminService.listLab(labId, false));
+        } catch (IdempotencyKeyPayloadMismatchException ex) {
+            return idempotencyConflict(ex);
         } catch (IllegalArgumentException | IllegalStateException ex) {
             return badRequest(ex);
         } catch (Exception ex) {
@@ -257,6 +269,15 @@ public class LabAdminController {
             "success", false,
             "error", clientMessage,
             "details", detail
+        ));
+    }
+
+    private ResponseEntity<Map<String, Object>> idempotencyConflict(IdempotencyKeyPayloadMismatchException ex) {
+        return ResponseEntity.status(HttpStatus.CONFLICT).body(Map.of(
+            "success", false,
+            "code", IdempotencyKeyPayloadMismatchException.CODE,
+            "message", ex.getMessage(),
+            "status", HttpStatus.CONFLICT.value()
         ));
     }
 

@@ -121,6 +121,12 @@ Important invariants:
   stored bytes. It must not overwrite that evidence with a replacement first.
 - `PRE_BROADCAST_RETRYABLE` returns to retry/backoff; only
   `BROADCAST_OUTCOME_UNKNOWN` becomes `STUCK_UNKNOWN`.
+- A pre-broadcast retry does not consume the maximum broadcast-attempt budget
+  and never releases `onchain_reservation_guard`; wallet contention therefore
+  cannot strand a durable SessionStarted attestation. Legacy `FAILED` rows with
+  no transaction hash or signed material are automatically reclaimed as
+  retryable rows. The health response exposes `session_started_failed` and
+  treats it as a degraded queue blocker until recovery completes.
 - Check-in, `SessionStarted` and generic institutional producers share nonce
   ownership but keep their own durable outbox records and monitors.
 
@@ -211,10 +217,12 @@ sequenceDiagram
     R->>B: Durable observation before session.created
 ```
 
-Redemption uses an independent token bucket per authenticated gateway, configured
-by `rate.limit.fmu.session-ticket.requests.*`. Issuance remains protected by the
-shared IP-based public-auth bucket because it authenticates the booking bearer,
-not the gateway observer.
+FMU ticket issue and redemption use an independent token bucket configured by
+`rate.limit.fmu.session-ticket.requests.*`. Issue requests are partitioned by
+the `targetGatewayId` claim of the validated booking bearer, so multiple
+gateways sharing an IP do not share the issue burst. Requests without a valid
+gateway claim fall back to an IP bucket. Ticket issuance still validates the
+booking bearer and its FMU claims.
 
 ## SAML, discovery and keys
 

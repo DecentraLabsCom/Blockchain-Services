@@ -6,6 +6,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import decentralabs.blockchain.service.auth.JwtService;
+import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.test.util.ReflectionTestUtils;
@@ -14,10 +16,14 @@ import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import org.springframework.security.authentication.TestingAuthenticationToken;
 import org.springframework.security.core.context.SecurityContextHolder;
 
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
+
 class PublicEndpointRateLimitFilterTest {
 
     private MockMvc mockMvc;
     private PublicEndpointRateLimitFilter filter;
+    private JwtService jwtService;
 
     @BeforeEach
     void setUp() {
@@ -29,7 +35,15 @@ class PublicEndpointRateLimitFilterTest {
         ReflectionTestUtils.setField(policy, "configuredCidrs", "");
         ReflectionTestUtils.setField(policy, "trustedProxyCidrs", "127.0.0.1/8,::1/128,172.16.0.0/12");
 
-        filter = new PublicEndpointRateLimitFilter(policy);
+        jwtService = mock(JwtService.class);
+        when(jwtService.validateToken("booking-a")).thenReturn(true);
+        when(jwtService.extractAllClaims("booking-a"))
+            .thenReturn(Map.of("targetGatewayId", "gateway-a"));
+        when(jwtService.validateToken("booking-b")).thenReturn(true);
+        when(jwtService.extractAllClaims("booking-b"))
+            .thenReturn(Map.of("targetGatewayId", "gateway-b"));
+
+        filter = new PublicEndpointRateLimitFilter(policy, jwtService);
         ReflectionTestUtils.setField(filter, "authRequestsPerMinute", 5);
         ReflectionTestUtils.setField(filter, "authRequestsBurst", 3);
         ReflectionTestUtils.setField(filter, "fmuSessionTicketRequestsPerMinute", 5);
@@ -168,6 +182,59 @@ class PublicEndpointRateLimitFilterTest {
         mockMvc.perform(post("/auth/fmu/session-ticket/redeem")
                 .with(req -> { req.setRemoteAddr(clientIp); return req; }))
             .andExpect(status().isOk());
+    }
+
+    @Test
+    void fmuSessionTicketIssue_usesAnIndependentBucketFromPublicAuth() throws Exception {
+        String clientIp = "10.10.10.13";
+        for (int i = 0; i < 3; i++) {
+            mockMvc.perform(post("/auth/authorize-and-issue")
+                    .with(req -> { req.setRemoteAddr(clientIp); return req; }))
+                .andExpect(status().isOk());
+        }
+
+        mockMvc.perform(post("/auth/fmu/session-ticket/issue")
+                .header("Authorization", "Bearer booking-a")
+                .with(req -> { req.setRemoteAddr(clientIp); return req; }))
+            .andExpect(status().isOk());
+    }
+
+    @Test
+    void fmuSessionTicketIssue_usesAnIndependentBucketPerGateway() throws Exception {
+        String clientIp = "10.10.10.14";
+        for (int i = 0; i < 3; i++) {
+            mockMvc.perform(post("/auth/fmu/session-ticket/issue")
+                    .header("Authorization", "Bearer booking-a")
+                    .with(req -> { req.setRemoteAddr(clientIp); return req; }))
+                .andExpect(status().isOk());
+        }
+        mockMvc.perform(post("/auth/fmu/session-ticket/issue")
+                .header("Authorization", "Bearer booking-a")
+                .with(req -> { req.setRemoteAddr(clientIp); return req; }))
+            .andExpect(status().isTooManyRequests());
+
+        mockMvc.perform(post("/auth/fmu/session-ticket/issue")
+                .header("Authorization", "Bearer booking-b")
+                .with(req -> { req.setRemoteAddr(clientIp); return req; }))
+            .andExpect(status().isOk());
+    }
+
+    @Test
+    void fmuSessionTicketIssue_doesNotTrustArbitraryGatewayHeader() throws Exception {
+        String clientIp = "10.10.10.15";
+        for (int i = 0; i < 3; i++) {
+            mockMvc.perform(post("/auth/fmu/session-ticket/issue")
+                    .header("Authorization", "Bearer invalid")
+                    .header("X-FMU-Gateway-ID", "rotating-gateway-" + i)
+                    .with(req -> { req.setRemoteAddr(clientIp); return req; }))
+                .andExpect(status().isOk());
+        }
+
+        mockMvc.perform(post("/auth/fmu/session-ticket/issue")
+                .header("Authorization", "Bearer invalid")
+                .header("X-FMU-Gateway-ID", "another-gateway")
+                .with(req -> { req.setRemoteAddr(clientIp); return req; }))
+            .andExpect(status().isTooManyRequests());
     }
 
     @Test

@@ -99,7 +99,7 @@ public class InstitutionalWalletNonceReservationService {
             SELECT COUNT(*)
             FROM session_started_attestations
             WHERE onchain_wallet_address = ? AND onchain_chain_id = ? AND onchain_nonce IS NOT NULL
-              AND onchain_status IN ('QUEUED', 'SUBMITTING', 'RETRY', 'STUCK_UNKNOWN')
+              AND onchain_status IN ('QUEUED', 'SUBMITTING', 'RETRY', 'STUCK_UNKNOWN', 'FAILED')
             """,
             Long.class,
             walletAddress,

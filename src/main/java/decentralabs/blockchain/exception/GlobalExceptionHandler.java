@@ -136,6 +136,23 @@ public class GlobalExceptionHandler {
     }
 
     /**
+     * An idempotency key may only be reused for the exact same transaction
+     * payload.
+     */
+    @ExceptionHandler(IdempotencyKeyPayloadMismatchException.class)
+    public ResponseEntity<Map<String, Object>> handleIdempotencyKeyPayloadMismatch(
+            IdempotencyKeyPayloadMismatchException ex) {
+        Map<String, Object> response = new HashMap<>();
+        response.put("success", false);
+        response.put("code", IdempotencyKeyPayloadMismatchException.CODE);
+        response.put("message", ex.getMessage());
+        response.put("status", HttpStatus.CONFLICT.value());
+
+        log.warn("Rejected idempotency key reuse with a different transaction payload");
+        return ResponseEntity.status(HttpStatus.CONFLICT).body(response);
+    }
+
+    /**
      * Handles security exceptions
      */
     @ExceptionHandler(SecurityException.class)

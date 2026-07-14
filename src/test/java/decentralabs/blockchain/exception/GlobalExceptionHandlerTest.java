@@ -253,4 +253,16 @@ class GlobalExceptionHandlerTest {
             assertEquals("An unexpected error occurred", response.getBody().get("message"));
         }
     }
+
+    @Test
+    void idempotencyKeyPayloadMismatchReturnsConflictWithStableCode() {
+        ResponseEntity<Map<String, Object>> response = handler.handleIdempotencyKeyPayloadMismatch(
+            new IdempotencyKeyPayloadMismatchException()
+        );
+
+        assertEquals(HttpStatus.CONFLICT, response.getStatusCode());
+        assertEquals(409, response.getBody().get("status"));
+        assertEquals("IDEMPOTENCY_KEY_PAYLOAD_MISMATCH", response.getBody().get("code"));
+        assertEquals(false, response.getBody().get("success"));
+    }
 }

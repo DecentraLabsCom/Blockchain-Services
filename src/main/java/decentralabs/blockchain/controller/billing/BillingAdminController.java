@@ -2,9 +2,12 @@ package decentralabs.blockchain.controller.billing;
 
 import decentralabs.blockchain.dto.billing.InstitutionalAdminRequest;
 import decentralabs.blockchain.dto.billing.InstitutionalAdminResponse;
+import decentralabs.blockchain.exception.IdempotencyKeyPayloadMismatchException;
+import java.util.Map;
 import decentralabs.blockchain.service.billing.InstitutionalAdminService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -31,7 +34,7 @@ public class BillingAdminController {
      * Wraps administrative contract operations with localhost+wallet checks.
      */
     @PostMapping("/admin/execute")
-    public ResponseEntity<InstitutionalAdminResponse> executeAdminOperation(
+    public ResponseEntity<?> executeAdminOperation(
         @RequestBody InstitutionalAdminRequest request
     ) {
         log.info("Received institutional admin request: {}", request.getOperation());
@@ -49,6 +52,8 @@ public class BillingAdminController {
             }
             log.warn("Admin operation {} failed: {}", request.getOperation(), response.getMessage());
             return ResponseEntity.badRequest().body(response);
+        } catch (IdempotencyKeyPayloadMismatchException e) {
+            return idempotencyConflict(e);
         } catch (Exception e) {
             log.error("Error processing admin request: {}", e.getMessage(), e);
             InstitutionalAdminResponse errorResponse =
@@ -62,7 +67,7 @@ public class BillingAdminController {
      * Executes a provider payout request server-side using the configured institutional wallet.
      */
     @PostMapping("/admin/request-provider-payout")
-    public ResponseEntity<InstitutionalAdminResponse> requestProviderPayout(
+    public ResponseEntity<?> requestProviderPayout(
         @RequestBody InstitutionalAdminRequest request,
         @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey
     ) {
@@ -86,6 +91,8 @@ public class BillingAdminController {
             }
             log.warn("Server-side provider payout request failed: {}", response.getMessage());
             return ResponseEntity.badRequest().body(response);
+        } catch (IdempotencyKeyPayloadMismatchException e) {
+            return idempotencyConflict(e);
         } catch (Exception e) {
             log.error("Error processing provider payout request: {}", e.getMessage(), e);
             InstitutionalAdminResponse errorResponse =
@@ -101,5 +108,14 @@ public class BillingAdminController {
             return ResponseEntity.ok(result);
         }
         return ResponseEntity.badRequest().body(result);
+    }
+
+    private ResponseEntity<Map<String, Object>> idempotencyConflict(IdempotencyKeyPayloadMismatchException ex) {
+        return ResponseEntity.status(HttpStatus.CONFLICT).body(Map.of(
+            "success", false,
+            "code", IdempotencyKeyPayloadMismatchException.CODE,
+            "message", ex.getMessage(),
+            "status", HttpStatus.CONFLICT.value()
+        ));
     }
 }

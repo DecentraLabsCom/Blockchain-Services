@@ -156,15 +156,41 @@ class AccessCredentialAuditServiceTest {
     }
 
     @Test
-    void shouldRejectAnObservationOutsideTheAcceptedClockSkew() {
+    void acceptsHistoricalObservedAtWhenReportedAtIsInsideObserverTokenWindow() {
+        AccessCredentialAuditService service = buildService(jdbcTemplate);
+        when(jdbcTemplate.update(anyString(), any(Object[].class))).thenReturn(1);
+        AccessCredentialSessionObservedRequest request = new AccessCredentialSessionObservedRequest();
+        request.setReservationKey("0xabc");
+        request.setJwtJti("jwt-jti");
+        request.setGatewayId("gateway-a");
+        request.setObservedAt(Instant.now().minusSeconds(600).getEpochSecond());
+        long reportedAt = Instant.now().getEpochSecond();
+        request.setReportedAt(reportedAt);
+
+        AccessCredentialAuditService.SessionObservationResult result = service.recordSessionObserved(
+            request,
+            new AccessCredentialAuditService.ObserverTokenWindow(reportedAt - 1, reportedAt + 60)
+        );
+
+        org.assertj.core.api.Assertions.assertThat(result.auditRecorded()).isTrue();
+        verify(jdbcTemplate).update(anyString(), any(Object[].class));
+    }
+
+    @Test
+    void rejectsReportedAtOutsideTheShortLivedObserverTokenWindow() {
         AccessCredentialAuditService service = buildService(jdbcTemplate);
         AccessCredentialSessionObservedRequest request = new AccessCredentialSessionObservedRequest();
         request.setReservationKey("0xabc");
         request.setJwtJti("jwt-jti");
         request.setGatewayId("gateway-a");
-        request.setObservedAt(Instant.now().minusSeconds(121).getEpochSecond());
+        request.setObservedAt(Instant.now().minusSeconds(600).getEpochSecond());
+        long now = Instant.now().getEpochSecond();
+        request.setReportedAt(now - 120);
 
-        AccessCredentialAuditService.SessionObservationResult result = service.recordSessionObserved(request);
+        AccessCredentialAuditService.SessionObservationResult result = service.recordSessionObserved(
+            request,
+            new AccessCredentialAuditService.ObserverTokenWindow(now - 60, now + 60)
+        );
 
         org.assertj.core.api.Assertions.assertThat(result.recorded()).isFalse();
         verify(jdbcTemplate, never()).update(anyString(), any(Object[].class));
@@ -258,7 +284,6 @@ class AccessCredentialAuditServiceTest {
         );
         ReflectionTestUtils.setField(service, "issuerBackendId", "test-backend");
         ReflectionTestUtils.setField(service, "observationWindowToleranceSeconds", 30L);
-        ReflectionTestUtils.setField(service, "observationClockSkewSeconds", 120L);
         return service;
     }
 

@@ -1,11 +1,14 @@
 package decentralabs.blockchain.service.wallet;
 
+import decentralabs.blockchain.exception.IdempotencyKeyPayloadMismatchException;
 import decentralabs.blockchain.service.auth.InstitutionalWalletNonceReservationService;
 import java.math.BigDecimal;
 import java.math.BigInteger;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.time.Instant;
+import java.util.Locale;
+import java.util.Objects;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
@@ -36,7 +39,8 @@ public class InstitutionalTransactionOutboxService {
         String walletAddress,
         String operationKey,
         BigInteger nonce,
-        BigInteger gasPrice,
+        BigInteger originalGasPrice,
+        BigInteger currentGasPrice,
         BigInteger gasLimit,
         String toAddress,
         BigInteger value,
@@ -48,6 +52,32 @@ public class InstitutionalTransactionOutboxService {
         int attempts,
         Instant createdAt
     ) {
+        public BigInteger gasPrice() {
+            return currentGasPrice;
+        }
+
+        public Attempt(
+            long id,
+            BigInteger chainId,
+            String walletAddress,
+            String operationKey,
+            BigInteger nonce,
+            BigInteger gasPrice,
+            BigInteger gasLimit,
+            String toAddress,
+            BigInteger value,
+            String data,
+            String status,
+            String signedRawTransaction,
+            String txHash,
+            Instant updatedAt,
+            int attempts,
+            Instant createdAt
+        ) {
+            this(id, chainId, walletAddress, operationKey, nonce, gasPrice, gasPrice, gasLimit,
+                toAddress, value, data, status, signedRawTransaction, txHash, updatedAt, attempts, createdAt);
+        }
+
         public Attempt(
             long id,
             BigInteger chainId,
@@ -58,7 +88,7 @@ public class InstitutionalTransactionOutboxService {
             String signedRawTransaction,
             String txHash
         ) {
-            this(id, chainId, walletAddress, operationKey, nonce, null, null, null, null, null,
+            this(id, chainId, walletAddress, operationKey, nonce, null, null, null, null, null, null,
                 status, signedRawTransaction, txHash, null, 0, null);
         }
 
@@ -77,7 +107,7 @@ public class InstitutionalTransactionOutboxService {
             String signedRawTransaction,
             String txHash
         ) {
-            this(id, chainId, walletAddress, operationKey, nonce, gasPrice, gasLimit, toAddress, value, data,
+            this(id, chainId, walletAddress, operationKey, nonce, gasPrice, gasPrice, gasLimit, toAddress, value, data,
                 status, signedRawTransaction, txHash, null, 0, null);
         }
 
@@ -97,7 +127,7 @@ public class InstitutionalTransactionOutboxService {
             String txHash,
             Instant updatedAt
         ) {
-            this(id, chainId, walletAddress, operationKey, nonce, gasPrice, gasLimit, toAddress, value, data,
+            this(id, chainId, walletAddress, operationKey, nonce, gasPrice, gasPrice, gasLimit, toAddress, value, data,
                 status, signedRawTransaction, txHash, updatedAt, 0, null);
         }
     }
@@ -117,6 +147,9 @@ public class InstitutionalTransactionOutboxService {
         requireConfigured();
         Attempt existing = find(walletAddress, chainId, operationKey, true);
         if (existing != null) {
+            if (!samePayload(existing, gasLimit, toAddress, value, data)) {
+                throw new IdempotencyKeyPayloadMismatchException();
+            }
             return existing;
         }
 
@@ -136,14 +169,33 @@ public class InstitutionalTransactionOutboxService {
         jdbcTemplate.update(
             """
             INSERT INTO institutional_transaction_outbox (
-                chain_id, wallet_address, operation_key, nonce, gas_price, gas_limit,
+                chain_id, wallet_address, operation_key, nonce, original_gas_price, current_gas_price, gas_limit,
                 to_address, value_wei, data, status, attempts, created_at, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'RESERVED', 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'RESERVED', 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
             """,
-            chainId, walletAddress, operationKey, nonce, gasPrice, gasLimit,
+            chainId, walletAddress, operationKey, nonce, gasPrice, gasPrice, gasLimit,
             toAddress, value, data
         );
         return find(walletAddress, chainId, operationKey, true);
+    }
+
+    private boolean samePayload(
+        Attempt existing,
+        BigInteger gasLimit,
+        String toAddress,
+        BigInteger value,
+        String data
+    ) {
+        return Objects.equals(existing.gasLimit(), gasLimit)
+            && Objects.equals(existing.value(), value)
+            && equalHex(existing.toAddress(), toAddress)
+            && equalHex(existing.data(), data);
+    }
+
+    private boolean equalHex(String left, String right) {
+        String normalizedLeft = left == null ? null : left.trim().toLowerCase(Locale.ROOT);
+        String normalizedRight = right == null ? null : right.trim().toLowerCase(Locale.ROOT);
+        return Objects.equals(normalizedLeft, normalizedRight);
     }
 
     public Attempt findBlocking(String walletAddress, BigInteger chainId) {
@@ -169,7 +221,7 @@ public class InstitutionalTransactionOutboxService {
         int updated = jdbcTemplate.update(
             """
             UPDATE institutional_transaction_outbox
-            SET signed_raw_transaction = ?, tx_hash = ?, gas_price = COALESCE(?, gas_price),
+            SET signed_raw_transaction = ?, tx_hash = ?, current_gas_price = COALESCE(?, current_gas_price),
                 status = 'PREPARED', updated_at = CURRENT_TIMESTAMP
             WHERE id = ? AND status IN ('RESERVED', 'PREPARED', 'RETRYABLE', 'STUCK_UNKNOWN')
             """,
@@ -249,11 +301,12 @@ public class InstitutionalTransactionOutboxService {
         }
         return jdbcTemplate.query(
             """
-            SELECT id, chain_id, wallet_address, operation_key, nonce, gas_price, gas_limit,
+            SELECT id, chain_id, wallet_address, operation_key, nonce, original_gas_price, current_gas_price, gas_limit,
                    to_address, value_wei, data, status, signed_raw_transaction, tx_hash,
                    updated_at, attempts, created_at
             FROM institutional_transaction_outbox
             WHERE status IN ('RESERVED', 'PREPARED', 'RETRYABLE')
+               OR (status = 'STUCK_UNKNOWN' AND tx_hash IS NULL)
             ORDER BY nonce ASC, id ASC
             LIMIT ?
             """,
@@ -277,12 +330,13 @@ public class InstitutionalTransactionOutboxService {
         }
         return jdbcTemplate.query(
             """
-            SELECT id, chain_id, wallet_address, operation_key, nonce, gas_price, gas_limit,
+            SELECT id, chain_id, wallet_address, operation_key, nonce, original_gas_price, current_gas_price, gas_limit,
                    to_address, value_wei, data, status, signed_raw_transaction, tx_hash,
                    updated_at, attempts, created_at
             FROM institutional_transaction_outbox
             WHERE chain_id = ? AND LOWER(wallet_address) = LOWER(?)
-              AND status IN ('RESERVED', 'PREPARED', 'RETRYABLE')
+              AND (status IN ('RESERVED', 'PREPARED', 'RETRYABLE')
+                   OR (status = 'STUCK_UNKNOWN' AND tx_hash IS NULL))
             ORDER BY nonce ASC, id ASC
             LIMIT ?
             """,
@@ -297,7 +351,7 @@ public class InstitutionalTransactionOutboxService {
         }
         return jdbcTemplate.query(
             """
-            SELECT id, chain_id, wallet_address, operation_key, nonce, gas_price, gas_limit,
+            SELECT id, chain_id, wallet_address, operation_key, nonce, original_gas_price, current_gas_price, gas_limit,
                    to_address, value_wei, data, status, signed_raw_transaction, tx_hash,
                    updated_at, attempts, created_at
             FROM institutional_transaction_outbox
@@ -321,7 +375,7 @@ public class InstitutionalTransactionOutboxService {
         }
         return jdbcTemplate.query(
             """
-            SELECT id, chain_id, wallet_address, operation_key, nonce, gas_price, gas_limit,
+            SELECT id, chain_id, wallet_address, operation_key, nonce, original_gas_price, current_gas_price, gas_limit,
                    to_address, value_wei, data, status, signed_raw_transaction, tx_hash,
                    updated_at, attempts, created_at
             FROM institutional_transaction_outbox
@@ -353,7 +407,7 @@ public class InstitutionalTransactionOutboxService {
         String lock = forUpdate ? " FOR UPDATE" : "";
         var rows = jdbcTemplate.query(
             """
-            SELECT id, chain_id, wallet_address, operation_key, nonce, gas_price, gas_limit,
+            SELECT id, chain_id, wallet_address, operation_key, nonce, original_gas_price, current_gas_price, gas_limit,
                    to_address, value_wei, data, status, signed_raw_transaction, tx_hash,
                    updated_at, attempts, created_at
             FROM institutional_transaction_outbox
@@ -368,7 +422,7 @@ public class InstitutionalTransactionOutboxService {
     private Attempt findBlockingInternal(String walletAddress, BigInteger chainId) {
         var rows = jdbcTemplate.query(
             """
-            SELECT id, chain_id, wallet_address, operation_key, nonce, gas_price, gas_limit,
+            SELECT id, chain_id, wallet_address, operation_key, nonce, original_gas_price, current_gas_price, gas_limit,
                    to_address, value_wei, data, status, signed_raw_transaction, tx_hash,
                    updated_at, attempts, created_at
             FROM institutional_transaction_outbox
@@ -391,7 +445,8 @@ public class InstitutionalTransactionOutboxService {
             rs.getString("wallet_address"),
             rs.getString("operation_key"),
             decimalAsBigInteger(rs.getBigDecimal("nonce")),
-            decimalAsBigInteger(rs.getBigDecimal("gas_price")),
+            decimalAsBigInteger(rs.getBigDecimal("original_gas_price")),
+            decimalAsBigInteger(rs.getBigDecimal("current_gas_price")),
             decimalAsBigInteger(rs.getBigDecimal("gas_limit")),
             rs.getString("to_address"),
             decimalAsBigInteger(rs.getBigDecimal("value_wei")),
@@ -425,7 +480,7 @@ public class InstitutionalTransactionOutboxService {
             SELECT COUNT(*)
             FROM session_started_attestations
             WHERE onchain_wallet_address = ? AND onchain_chain_id = ? AND onchain_nonce IS NOT NULL
-              AND onchain_status IN ('QUEUED', 'SUBMITTING', 'RETRY', 'STUCK_UNKNOWN')
+              AND onchain_status IN ('QUEUED', 'SUBMITTING', 'RETRY', 'STUCK_UNKNOWN', 'FAILED')
             """,
             Long.class,
             walletAddress,

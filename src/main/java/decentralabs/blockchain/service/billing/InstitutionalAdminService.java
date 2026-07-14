@@ -1,6 +1,7 @@
 package decentralabs.blockchain.service.billing;
 
 import decentralabs.blockchain.contract.Diamond;
+import decentralabs.blockchain.exception.IdempotencyKeyPayloadMismatchException;
 import decentralabs.blockchain.service.RateLimitService;
 import decentralabs.blockchain.service.health.LabMetadataService;
 import decentralabs.blockchain.service.persistence.AntiReplayService;
@@ -188,6 +189,8 @@ public class InstitutionalAdminService {
             // Step 3: Execute the requested operation
             return executeOperation(request);
 
+        } catch (IdempotencyKeyPayloadMismatchException e) {
+            throw e;
         } catch (Exception e) {
             log.error("Error executing admin operation: {}", LogSanitizer.sanitize(e.getMessage()), e);
             return InstitutionalAdminResponse.error("Administrative operation failed: " + e.getMessage());
@@ -229,6 +232,8 @@ public class InstitutionalAdminService {
             }
 
             return requestProviderPayout(credentials, request, idempotencyKey);
+        } catch (IdempotencyKeyPayloadMismatchException e) {
+            throw e;
         } catch (Exception e) {
             log.error("Error executing server-side payout request: {}", LogSanitizer.sanitize(e.getMessage()), e);
             return InstitutionalAdminResponse.error("Payout request failed: " + e.getMessage());

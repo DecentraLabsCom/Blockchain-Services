@@ -107,8 +107,16 @@ stateDiagram-v2
 
 The check-in and `SessionStarted` outboxes have dedicated monitors. Generic
 institutional transactions use `institutional_transaction_outbox` and its
-monitor. A missing hash is never treated as proof that a transaction was not
-broadcast.
+monitor. The outbox keeps `original_gas_price` separate from
+`current_gas_price`; replacement gas is bounded by the configured absolute
+price, original-price multiple, and estimated fee-cost ceilings. A missing
+hash is never treated as proof that a transaction was not broadcast.
+
+`SessionStarted` pre-broadcast contention is retryable independently of the
+broadcast-attempt limit: it returns to `RETRY`, keeps the reservation guard and
+does not spend an attempt. Rows left as legacy `FAILED` without a transaction
+hash or signed raw material are automatically reclaimed. `/health` reports
+`session_started_failed` and degrades while such a blocker remains.
 
 ## Documentation map
 

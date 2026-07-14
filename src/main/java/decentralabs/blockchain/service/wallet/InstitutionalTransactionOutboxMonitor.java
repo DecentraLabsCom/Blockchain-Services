@@ -1,6 +1,8 @@
 package decentralabs.blockchain.service.wallet;
 
+import java.math.BigDecimal;
 import java.math.BigInteger;
+import java.math.RoundingMode;
 import java.time.Duration;
 import java.time.Instant;
 import org.web3j.crypto.Credentials;
@@ -55,6 +57,15 @@ public class InstitutionalTransactionOutboxMonitor {
 
     @Value("${institutional.transaction-outbox.monitor.gas-bump-percent:20}")
     private int gasBumpPercent = 20;
+
+    @Value("${institutional.transaction-outbox.monitor.max-gas-price-wei:100000000000}")
+    private BigInteger maxGasPriceWei = BigInteger.valueOf(100_000_000_000L);
+
+    @Value("${institutional.transaction-outbox.monitor.max-multiplier:3}")
+    private BigDecimal maxMultiplier = BigDecimal.valueOf(3L);
+
+    @Value("${institutional.transaction-outbox.monitor.max-estimated-transaction-cost-wei:100000000000000000}")
+    private BigInteger maxEstimatedTransactionCost = BigInteger.valueOf(100_000_000_000_000_000L);
 
     @Scheduled(fixedDelayString = "${institutional.transaction-outbox.monitor.interval-ms:5000}")
     public void monitorScheduled() {
@@ -151,7 +162,8 @@ public class InstitutionalTransactionOutboxMonitor {
                 || !credentials.getAddress().equalsIgnoreCase(attempt.walletAddress())) {
                 return false;
             }
-            if (requiresManualIntervention(attempt)) {
+            boolean reconstructingReservedMaterial = needsReconstruction(attempt);
+            if (!reconstructingReservedMaterial && requiresManualIntervention(attempt)) {
                 outboxService.markStuckUnknown(
                     attempt, "Institutional transaction exceeded the retry budget; manual intervention required"
                 );
@@ -268,14 +280,49 @@ public class InstitutionalTransactionOutboxMonitor {
     }
 
     private BigInteger gasPriceForAttempt(InstitutionalTransactionOutboxService.Attempt attempt) {
-        BigInteger base = attempt.gasPrice();
-        if (base == null) {
-            return null;
+        BigInteger original = attempt.originalGasPrice() != null
+            ? attempt.originalGasPrice() : attempt.gasPrice();
+        if (original == null || original.signum() <= 0) {
+            throw new IllegalStateException("Institutional transaction original gas price is missing");
         }
         int bump = Math.max(0, gasBumpPercent);
-        int retries = Math.max(1, attempt.attempts());
+        int retries = Math.max(0, attempt.attempts());
         BigInteger multiplier = BigInteger.valueOf(100L + (long) bump * retries);
-        return base.multiply(multiplier).add(BigInteger.valueOf(99)).divide(BigInteger.valueOf(100));
+        BigInteger desired = original.multiply(multiplier).add(BigInteger.valueOf(99)).divide(BigInteger.valueOf(100));
+        BigInteger allowed = null;
+
+        if (maxMultiplier != null && maxMultiplier.signum() > 0) {
+            allowed = maxMultiplier.multiply(new BigDecimal(original))
+                .setScale(0, RoundingMode.FLOOR).toBigInteger();
+        }
+        if (maxGasPriceWei != null && maxGasPriceWei.signum() > 0) {
+            allowed = cap(allowed, maxGasPriceWei);
+        }
+        if (maxEstimatedTransactionCost != null && maxEstimatedTransactionCost.signum() > 0
+            && attempt.gasLimit() != null && attempt.gasLimit().signum() > 0) {
+            allowed = cap(allowed, maxEstimatedTransactionCost.divide(attempt.gasLimit()));
+        }
+        if (allowed == null) {
+            allowed = desired;
+        }
+        if (allowed.compareTo(original) < 0) {
+            throw new IllegalStateException("Institutional transaction original gas price exceeds configured limits");
+        }
+        return min(desired, allowed);
+    }
+
+    private boolean needsReconstruction(InstitutionalTransactionOutboxService.Attempt attempt) {
+        return attempt != null
+            && (attempt.signedRawTransaction() == null || attempt.signedRawTransaction().isBlank())
+            && (attempt.txHash() == null || attempt.txHash().isBlank());
+    }
+
+    private BigInteger min(BigInteger left, BigInteger right) {
+        return left.compareTo(right) <= 0 ? left : right;
+    }
+
+    private BigInteger cap(BigInteger current, BigInteger candidate) {
+        return current == null ? candidate : min(current, candidate);
     }
 
     private boolean requiresManualIntervention(InstitutionalTransactionOutboxService.Attempt attempt) {
@@ -347,8 +394,7 @@ public class InstitutionalTransactionOutboxMonitor {
         Web3j web3j,
         InstitutionalTransactionOutboxService.Attempt attempt
     ) {
-        if (attempt.signedRawTransaction() == null || attempt.signedRawTransaction().isBlank()
-            || attempt.nonce() == null) {
+        if (attempt == null || attempt.nonce() == null) {
             return false;
         }
         try {
@@ -364,8 +410,12 @@ public class InstitutionalTransactionOutboxMonitor {
                 }
                 var transactionResponse = web3j.ethGetTransactionByHash(attempt.txHash()).send();
                 if (transactionResponse != null && transactionResponse.getTransaction().isPresent()) {
-                    return false;
+                    outboxService.markSubmitted(attempt, attempt.txHash());
+                    return true;
                 }
+            }
+            if (attempt.signedRawTransaction() == null || attempt.signedRawTransaction().isBlank()) {
+                return false;
             }
             BigInteger pendingNonce = web3j.ethGetTransactionCount(
                 attempt.walletAddress(), DefaultBlockParameterName.PENDING

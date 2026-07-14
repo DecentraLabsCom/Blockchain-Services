@@ -1,6 +1,7 @@
 package decentralabs.blockchain.controller.auth;
 
 import decentralabs.blockchain.dto.auth.AccessCredentialSessionObservedRequest;
+import decentralabs.blockchain.security.SessionObserverAuthenticationFilter;
 import decentralabs.blockchain.service.auth.AccessCredentialAuditService;
 import decentralabs.blockchain.service.auth.SessionStartedAttestationService;
 import java.util.List;
@@ -46,7 +47,16 @@ public class AccessCredentialAuditController {
             ));
         }
 
-        AccessCredentialAuditService.SessionObservationResult result = auditService.recordSessionObserved(request);
+        AccessCredentialAuditService.SessionObservationResult result;
+        if (authentication != null
+            && authentication.getDetails() instanceof SessionObserverAuthenticationFilter.ObserverTokenWindow window) {
+            result = auditService.recordSessionObserved(
+                request,
+                new AccessCredentialAuditService.ObserverTokenWindow(window.issuedAt(), window.expiresAt())
+            );
+        } else {
+            result = auditService.recordSessionObserved(request);
+        }
         return ResponseEntity.ok(Map.of(
             "recorded", result.recorded(),
             "auditRecorded", result.auditRecorded(),

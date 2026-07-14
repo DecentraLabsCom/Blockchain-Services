@@ -74,10 +74,16 @@ public class SessionStartedOnChainPublisherService {
                        onchain_signed_raw_transaction, onchain_submitted_at
                 FROM session_started_attestations
                 WHERE onchain_published_at IS NULL
-                  AND onchain_status IN ('QUEUED', 'RETRY', 'SUBMITTING')
-                  AND onchain_publish_attempts < ?
                   AND (
-                    onchain_publish_locked_at IS NULL
+                    (onchain_status IN ('QUEUED', 'RETRY', 'SUBMITTING')
+                     AND onchain_publish_attempts < ?)
+                    OR (onchain_status = 'FAILED'
+                        AND onchain_tx_hash IS NULL
+                        AND onchain_signed_raw_transaction IS NULL)
+                  )
+                  AND (
+                    onchain_status = 'FAILED'
+                    OR onchain_publish_locked_at IS NULL
                     OR onchain_publish_locked_at < ?
                   )
                 ORDER BY created_at ASC, id ASC
@@ -126,7 +132,7 @@ public class SessionStartedOnChainPublisherService {
                 record.chainId(),
                 existingNonce,
                 (chainId, nonce) -> markNonceReserved(submission.id(), walletAddress, chainId, nonce),
-                nonce -> onChainClient.prepareSessionStarted(submission, nonce, record.attempts()),
+                nonce -> onChainClient.prepareSessionStarted(submission, nonce, preparationAttempts(record)),
                 prepared -> markPrepared(submission.id(), prepared.rawTransaction(), prepared.transactionHash()),
                 hash -> markSubmitted(submission.id(), hash)
             );
@@ -138,13 +144,13 @@ public class SessionStartedOnChainPublisherService {
             return true;
         } catch (InstitutionalWalletDispatchException ex) {
             if (ex.outcome() == InstitutionalWalletDispatchException.Outcome.PRE_BROADCAST_RETRYABLE) {
-                markFailed(submission.id(), ex);
+                markPreBroadcastRetry(submission.id(), ex);
             } else {
                 markBroadcastUncertain(submission.id(), ex);
             }
             return false;
         } catch (Exception ex) {
-            markFailed(submission.id(), ex);
+            markPreBroadcastRetry(submission.id(), ex);
             return false;
         }
     }
@@ -155,17 +161,26 @@ public class SessionStartedOnChainPublisherService {
                 """
                 UPDATE session_started_attestations
                 SET onchain_publish_locked_at = CURRENT_TIMESTAMP,
-                    onchain_publish_attempts = onchain_publish_attempts + 1,
+                    onchain_publish_attempts = CASE
+                        WHEN onchain_status = 'FAILED' THEN 1
+                        ELSE onchain_publish_attempts + 1
+                    END,
                     onchain_status = 'SUBMITTING',
                     onchain_reservation_guard = reservation_key,
                     onchain_publish_last_error = NULL,
                     updated_at = CURRENT_TIMESTAMP
                 WHERE id = ?
                   AND onchain_published_at IS NULL
-                  AND onchain_status IN ('QUEUED', 'RETRY', 'SUBMITTING')
-                  AND onchain_publish_attempts < ?
                   AND (
-                    onchain_publish_locked_at IS NULL
+                    (onchain_status IN ('QUEUED', 'RETRY', 'SUBMITTING')
+                     AND onchain_publish_attempts < ?)
+                    OR (onchain_status = 'FAILED'
+                        AND onchain_tx_hash IS NULL
+                        AND onchain_signed_raw_transaction IS NULL)
+                  )
+                  AND (
+                    onchain_status = 'FAILED'
+                    OR onchain_publish_locked_at IS NULL
                     OR onchain_publish_locked_at < ?
                   )
                 """,
@@ -187,7 +202,7 @@ public class SessionStartedOnChainPublisherService {
             SET onchain_status = 'SUPERSEDED', onchain_publish_locked_at = NULL,
                 onchain_publish_last_error = 'Another attestation owns the reservation on-chain publication',
                 updated_at = CURRENT_TIMESTAMP
-            WHERE id = ? AND onchain_status IN ('QUEUED', 'RETRY', 'SUBMITTING')
+            WHERE id = ? AND onchain_status IN ('QUEUED', 'RETRY', 'SUBMITTING', 'FAILED')
             """,
             id
         );
@@ -248,6 +263,10 @@ public class SessionStartedOnChainPublisherService {
             && record.transactionHash() != null && !record.transactionHash().isBlank();
     }
 
+    private int preparationAttempts(SessionStartedTransactionRecord record) {
+        return "FAILED".equals(record.status()) ? 0 : record.attempts();
+    }
+
     private boolean resumePersistedSubmission(SessionStartedTransactionRecord record)
         throws InstitutionalWalletDispatchException {
         String txHash = record.transactionHash();
@@ -303,30 +322,22 @@ public class SessionStartedOnChainPublisherService {
         );
     }
 
-    private void markFailed(long id, Exception ex) {
+    private void markPreBroadcastRetry(long id, Exception ex) {
         String error = LogSanitizer.sanitize(ex.getMessage());
         jdbcTemplate.update(
             """
             UPDATE session_started_attestations
-            SET onchain_publish_locked_at = CURRENT_TIMESTAMP,
-                onchain_status = CASE
-                    WHEN onchain_publish_attempts >= ? THEN 'FAILED'
-                    ELSE 'RETRY'
-                END,
-                onchain_reservation_guard = CASE
-                    WHEN onchain_publish_attempts >= ? THEN NULL
-                    ELSE onchain_reservation_guard
-                END,
+            SET onchain_publish_locked_at = NULL,
+                onchain_status = 'RETRY',
+                onchain_publish_attempts = GREATEST(onchain_publish_attempts - 1, 0),
                 onchain_publish_last_error = ?,
                 updated_at = CURRENT_TIMESTAMP
             WHERE id = ? AND onchain_status = 'SUBMITTING'
             """,
-            maxPublishAttempts(),
-            maxPublishAttempts(),
             error,
             id
         );
-        log.warn("SessionStarted on-chain publication failed for attestation {}: {}", id, error);
+        log.warn("SessionStarted pre-broadcast publication will be retried for attestation {}: {}", id, error);
     }
 
     private void markBroadcastUncertain(long id, InstitutionalWalletDispatchException ex) {
@@ -437,6 +448,10 @@ public class SessionStartedOnChainPublisherService {
                     }
                     if (state == SessionStartedOnChainClient.TransactionState.FAILED) {
                         markUnknownMinedFailed(record, "SessionStarted transaction reverted on-chain");
+                        continue;
+                    }
+                    if (onChainClient.transactionVisible(record.transactionHash())) {
+                        markUnknownRebroadcast(record, record.transactionHash());
                         continue;
                     }
                 }

@@ -14,6 +14,7 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.Base64;
+import java.util.Date;
 import java.util.List;
 import java.util.Map;
 import javax.crypto.SecretKey;
@@ -37,6 +38,8 @@ public class SessionObserverAuthenticationFilter extends OncePerRequestFilter {
 
     @Value("${security.session-observer.credentials-json:{}}")
     private String credentialsJson;
+
+    public record ObserverTokenWindow(long issuedAt, long expiresAt) { }
 
     public SessionObserverAuthenticationFilter(ObjectMapper objectMapper) {
         this.objectMapper = objectMapper;
@@ -78,19 +81,24 @@ public class SessionObserverAuthenticationFilter extends OncePerRequestFilter {
                 .build()
                 .parseSignedClaims(token)
                 .getPayload();
-            if (!claims.getAudience().contains(AUDIENCE)
+            Date issuedAt = claims.getIssuedAt();
+            Date expiration = claims.getExpiration();
+            if (claims.getAudience() == null || !claims.getAudience().contains(AUDIENCE)
                 || !SCOPE.equals(claims.get("scope", String.class))
-                || claims.getExpiration() == null
-                || !claims.getExpiration().toInstant().isAfter(Instant.now())) {
+                || issuedAt == null
+                || expiration == null
+                || !expiration.toInstant().isAfter(Instant.now())) {
                 throw new IllegalArgumentException("Invalid session observer claims");
             }
-            SecurityContextHolder.getContext().setAuthentication(
-                new UsernamePasswordAuthenticationToken(
-                    gatewayId,
-                    null,
-                    List.of(new SimpleGrantedAuthority("ROLE_SESSION_OBSERVER"))
-                )
+            UsernamePasswordAuthenticationToken authentication = new UsernamePasswordAuthenticationToken(
+                gatewayId,
+                null,
+                List.of(new SimpleGrantedAuthority("ROLE_SESSION_OBSERVER"))
             );
+            authentication.setDetails(new ObserverTokenWindow(
+                issuedAt.toInstant().getEpochSecond(), expiration.toInstant().getEpochSecond()
+            ));
+            SecurityContextHolder.getContext().setAuthentication(authentication);
             filterChain.doFilter(request, response);
         } catch (Exception ex) {
             SecurityContextHolder.clearContext();

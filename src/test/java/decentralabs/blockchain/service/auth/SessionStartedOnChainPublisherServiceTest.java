@@ -231,10 +231,34 @@ class SessionStartedOnChainPublisherServiceTest {
         assertThat(service.publishPending(10)).isZero();
 
         verify(jdbcTemplate).update(
-            contains("onchain_status = CASE"),
-            eq(1), eq(1), eq("nonce allocation blocked"), eq(7L)
+            contains("onchain_status = 'RETRY'"),
+            eq("nonce allocation blocked"), eq(7L)
         );
         verify(jdbcTemplate, never()).update(contains("onchain_status = 'STUCK_UNKNOWN'"), any(Object[].class));
+    }
+
+    @Test
+    void automaticallyReopensLegacyFailedPreBroadcastAttestation() throws Exception {
+        SessionStartedOnChainPublisherService service = buildService(jdbcTemplate);
+        mockSubmittedQuery(List.of());
+        mockPendingQuery("FAILED", 5, null, null, null, null);
+        when(jdbcTemplate.update(anyString(), any(Object[].class))).thenReturn(1);
+        when(onChainClient.hasSessionStarted("0xabc")).thenReturn(false);
+        when(onChainClient.signerAddress()).thenReturn("0xwallet");
+        when(onChainClient.prepareSessionStarted(any(), eq(BigInteger.valueOf(45)), eq(0)))
+            .thenReturn(prepared("0x" + "a".repeat(64)));
+        mockDispatch(BigInteger.valueOf(45), "0x" + "a".repeat(64));
+
+        assertThat(service.publishPending(10)).isEqualTo(1);
+
+        verify(jdbcTemplate).query(
+            contains("onchain_status = 'FAILED'"), anyTransactionRowMapper(), any(Object[].class)
+        );
+        verify(jdbcTemplate).update(
+            contains("WHEN onchain_status = 'FAILED' THEN 1"),
+            eq(7L), eq(1), any(Timestamp.class)
+        );
+        verify(jdbcTemplate).update(contains("onchain_status = 'SUBMITTED'"), eq("0x" + "a".repeat(64)), eq(7L));
     }
 
     @Test
@@ -277,6 +301,30 @@ class SessionStartedOnChainPublisherServiceTest {
         verify(jdbcTemplate).update(
             contains("onchain_status = 'RETRY'"), any(String.class), eq(7L), eq(hash)
         );
+    }
+
+    @Test
+    void returnsVisibleUnknownSessionToSubmittedMonitoring() throws Exception {
+        SessionStartedOnChainPublisherService service = buildService(jdbcTemplate);
+        String hash = "0x" + "a".repeat(64);
+        SessionStartedTransactionRecord unknown = mappedRecord(
+            "STUCK_UNKNOWN", 5, "0xwallet", BigInteger.valueOf(45), hash,
+            Instant.now().minusSeconds(60)
+        );
+        mockUnknownQuery(List.of(unknown));
+        mockSubmittedQuery(List.of());
+        mockPendingEmpty();
+        when(onChainClient.hasSessionStarted("0xabc")).thenReturn(false);
+        when(onChainClient.transactionStateStrict(hash)).thenReturn(SessionStartedOnChainClient.TransactionState.PENDING);
+        when(onChainClient.transactionVisible(hash)).thenReturn(true);
+
+        assertThat(service.publishPending(10)).isZero();
+
+        verify(jdbcTemplate).update(
+            contains("onchain_status = 'SUBMITTED'"), eq(hash), eq(7L), eq(hash)
+        );
+        verify(onChainClient, never()).pendingNonce(anyString());
+        verify(onChainClient, never()).broadcastSignedRawTransaction(anyString());
     }
 
     private SessionStartedOnChainPublisherService buildService(JdbcTemplate template) {

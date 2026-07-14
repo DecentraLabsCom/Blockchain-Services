@@ -1,5 +1,6 @@
 package decentralabs.blockchain.security;
 
+import decentralabs.blockchain.service.auth.JwtService;
 import decentralabs.blockchain.util.LogSanitizer;
 import io.github.bucket4j.Bandwidth;
 import io.github.bucket4j.Bucket;
@@ -9,6 +10,8 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.core.annotation.Order;
 import jakarta.annotation.Nonnull;
 import org.springframework.security.core.Authentication;
@@ -35,14 +38,16 @@ import java.util.concurrent.ConcurrentHashMap;
  * - /auth/jwks
  * - /.well-known/*
  * 
- * Uses a token bucket algorithm per IP address, with an independent
- * per-gateway bucket for observer-authenticated FMU ticket redemption.
+ * Uses a token bucket algorithm per IP address for ordinary public-auth
+ * endpoints. FMU ticket issue and redemption use an independent bucket; issue
+ * traffic is partitioned by the validated booking JWT's target gateway.
  */
 @Component
 @Order(1) // After LocalhostOnlyFilter
 @Slf4j
 public class PublicEndpointRateLimitFilter extends OncePerRequestFilter {
     private final AdminNetworkAccessPolicy adminNetworkAccessPolicy;
+    private final JwtService jwtService;
 
     @Value("${rate.limit.auth.requests.per.minute:30}")
     private int authRequestsPerMinute;
@@ -69,8 +74,25 @@ public class PublicEndpointRateLimitFilter extends OncePerRequestFilter {
     // Maximum buckets to prevent memory exhaustion
     private static final int MAX_BUCKETS = 50000;
 
-    public PublicEndpointRateLimitFilter(AdminNetworkAccessPolicy adminNetworkAccessPolicy) {
+    @Autowired
+    public PublicEndpointRateLimitFilter(
+            AdminNetworkAccessPolicy adminNetworkAccessPolicy,
+            ObjectProvider<JwtService> jwtServiceProvider
+    ) {
         this.adminNetworkAccessPolicy = adminNetworkAccessPolicy;
+        this.jwtService = jwtServiceProvider.getIfAvailable();
+    }
+
+    public PublicEndpointRateLimitFilter(
+            AdminNetworkAccessPolicy adminNetworkAccessPolicy,
+            JwtService jwtService
+    ) {
+        this.adminNetworkAccessPolicy = adminNetworkAccessPolicy;
+        this.jwtService = jwtService;
+    }
+
+    public PublicEndpointRateLimitFilter(AdminNetworkAccessPolicy adminNetworkAccessPolicy) {
+        this(adminNetworkAccessPolicy, (JwtService) null);
     }
 
     @Override
@@ -88,20 +110,16 @@ public class PublicEndpointRateLimitFilter extends OncePerRequestFilter {
         String path = request.getRequestURI();
         String clientIp = getClientIp(request);
 
-        // Observer-authenticated ticket redemption is isolated from the shared
-        // public-auth bucket. Issue remains IP-limited because it authenticates
-        // the booking bearer rather than the gateway observer.
+        // FMU ticket traffic is isolated from the shared public-auth bucket.
+        // Issue traffic is partitioned only from a validated booking JWT; an
+        // arbitrary request header must not be able to rotate rate-limit keys.
         if (isFmuSessionTicketEndpoint(path)) {
-            if (isFmuSessionTicketRedeemEndpoint(path)) {
-                String bucketKey = observerBucketKey(clientIp);
-                if (!checkFmuSessionTicketRateLimit(bucketKey)) {
-                    log.warn("Rate limit exceeded for FMU session-ticket redemption: bucket={}",
-                        LogSanitizer.sanitize(bucketKey));
-                    sendRateLimitResponse(response);
-                    return;
-                }
-            } else if (!checkAuthRateLimit(clientIp)) {
-                log.warn("Rate limit exceeded for auth endpoint: path={}, ip={}", LogSanitizer.sanitize(path), maskIp(clientIp));
+            String bucketKey = isFmuSessionTicketRedeemEndpoint(path)
+                ? observerBucketKey(clientIp)
+                : fmuIssueBucketKey(request, clientIp);
+            if (!checkFmuSessionTicketRateLimit(bucketKey)) {
+                log.warn("Rate limit exceeded for FMU session-ticket endpoint: path={}, bucket={}",
+                    LogSanitizer.sanitize(path), LogSanitizer.sanitize(bucketKey));
                 sendRateLimitResponse(response);
                 return;
             }
@@ -215,6 +233,46 @@ public class PublicEndpointRateLimitFilter extends OncePerRequestFilter {
         // servlet filter. Fall back to the trusted client address if a custom
         // filter ordering or an invalid request leaves no observer identity.
         return "ip:" + (clientIp == null ? "unknown" : clientIp);
+    }
+
+    private String fmuIssueBucketKey(HttpServletRequest request, String clientIp) {
+        String gatewayId = validatedBookingGatewayId(request);
+        if (gatewayId != null) {
+            return "gateway:" + gatewayId;
+        }
+        return "ip:" + (clientIp == null ? "unknown" : clientIp);
+    }
+
+    private String validatedBookingGatewayId(HttpServletRequest request) {
+        if (jwtService == null) {
+            return null;
+        }
+        String authorization = request.getHeader("Authorization");
+        if (authorization == null || !authorization.regionMatches(true, 0, "Bearer ", 0, "Bearer ".length())) {
+            return null;
+        }
+
+        String token = authorization.substring("Bearer ".length()).trim();
+        if (token.isBlank() || !jwtService.validateToken(token)) {
+            return null;
+        }
+
+        try {
+            Map<String, Object> claims = jwtService.extractAllClaims(token);
+            Object claim = claims.get("targetGatewayId");
+            if (!(claim instanceof String gatewayId)) {
+                return null;
+            }
+            String normalized = gatewayId.trim().toLowerCase(Locale.ROOT);
+            return !normalized.isBlank()
+                    && normalized.length() <= 255
+                    && normalized.matches("[a-z0-9][a-z0-9._:-]*")
+                ? normalized
+                : null;
+        } catch (RuntimeException ex) {
+            log.debug("Unable to extract target gateway from FMU booking JWT for rate limiting", ex);
+            return null;
+        }
     }
 
     private String maskIp(String ip) {

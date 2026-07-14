@@ -15,6 +15,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import decentralabs.blockchain.dto.labadmin.LabAdminPublishRequest;
+import decentralabs.blockchain.exception.IdempotencyKeyPayloadMismatchException;
 import decentralabs.blockchain.service.auth.JwtService;
 import decentralabs.blockchain.service.labadmin.LabAdminService;
 import decentralabs.blockchain.service.labadmin.LabAdminService.LabAdminDeleteAssetResponse;
@@ -69,6 +70,21 @@ class LabAdminControllerTest {
             .andExpect(status().isBadRequest())
             .andExpect(jsonPath("$.success").value(false))
             .andExpect(jsonPath("$.error").value("Metadata URL is required"));
+    }
+
+    @Test
+    void publishRejectsIdempotencyKeyPayloadMismatch() throws Exception {
+        when(labAdminService.publish(any(LabAdminPublishRequest.class), anyString()))
+            .thenThrow(new IdempotencyKeyPayloadMismatchException());
+
+        mockMvc.perform(post("/lab-admin/labs")
+                .header("Idempotency-Key", "publish-command-1")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"metadataUrl\":\"https://lab.example.edu/metadata.json\"}"))
+            .andExpect(status().isConflict())
+            .andExpect(jsonPath("$.success").value(false))
+            .andExpect(jsonPath("$.code").value("IDEMPOTENCY_KEY_PAYLOAD_MISMATCH"))
+            .andExpect(jsonPath("$.status").value(409));
     }
 
     @Test

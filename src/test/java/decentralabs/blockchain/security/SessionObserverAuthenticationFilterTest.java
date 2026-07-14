@@ -49,6 +49,8 @@ class SessionObserverAuthenticationFilterTest {
         assertThat(SecurityContextHolder.getContext().getAuthentication().getAuthorities())
             .extracting("authority")
             .containsExactly("ROLE_SESSION_OBSERVER");
+        assertThat(SecurityContextHolder.getContext().getAuthentication().getDetails())
+            .isInstanceOf(SessionObserverAuthenticationFilter.ObserverTokenWindow.class);
     }
 
     @Test

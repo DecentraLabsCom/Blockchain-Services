@@ -117,7 +117,7 @@ class InstitutionalTransactionOutboxMonitorTest {
     }
 
     @Test
-    void doesNotRebroadcastStuckUnknownWhenTransactionIsVisible() throws Exception {
+    void returnsVisibleStuckUnknownToSubmittedMonitoring() throws Exception {
         var attempt = attempt("STUCK_UNKNOWN", "0x" + "2".repeat(64), "0xf861");
         when(outboxService.findSubmitted(any(), any(), org.mockito.ArgumentMatchers.eq(10))).thenReturn(List.of());
         when(outboxService.findStuckUnknown(any(), any(), org.mockito.ArgumentMatchers.eq(10))).thenReturn(List.of(attempt));
@@ -130,11 +130,11 @@ class InstitutionalTransactionOutboxMonitorTest {
             outboxService, walletService, institutionalWalletService
         );
 
-        assertThat(monitor.monitor(web3j, 10)).isZero();
+        assertThat(monitor.monitor(web3j, 10)).isEqualTo(1);
 
         verify(web3j, org.mockito.Mockito.never()).ethGetTransactionCount(any(), any());
         verify(web3j, org.mockito.Mockito.never()).ethSendRawTransaction(any());
-        verify(outboxService, org.mockito.Mockito.never()).markSubmitted(any(), any());
+        verify(outboxService).markSubmitted(attempt, attempt.txHash());
     }
 
     @Test
@@ -200,6 +200,72 @@ class InstitutionalTransactionOutboxMonitorTest {
     }
 
     @Test
+    void calculatesReplacementGasFromOriginalPriceInsteadOfCurrentPrice() throws Exception {
+        var base = attemptWithGasPrices(
+            "RETRYABLE", "0x" + "6".repeat(64), "0xf861", BigInteger.ONE, BigInteger.valueOf(2)
+        );
+        var attempt = new InstitutionalTransactionOutboxService.Attempt(
+            base.id(), base.chainId(), base.walletAddress(), base.operationKey(), base.nonce(),
+            base.originalGasPrice(), base.currentGasPrice(), base.gasLimit(), base.toAddress(), base.value(),
+            base.data(), base.status(), base.signedRawTransaction(), base.txHash(), Instant.now(), 2,
+            Instant.now()
+        );
+        when(outboxService.findRecoveryCandidates(any(), any(), org.mockito.ArgumentMatchers.eq(10)))
+            .thenReturn(List.of(attempt));
+        when(outboxService.findSubmitted(any(), any(), org.mockito.ArgumentMatchers.eq(10))).thenReturn(List.of());
+        when(outboxService.findStuckUnknown(any(), any(), org.mockito.ArgumentMatchers.eq(10))).thenReturn(List.of());
+        when(institutionalWalletService.getInstitutionalCredentials()).thenReturn(CREDENTIALS);
+        mockMissingTransaction(attempt);
+        EthSendTransaction sendResponse = new EthSendTransaction();
+        sendResponse.setResult("0x" + "7".repeat(64));
+        doReturn(requestReturning(sendResponse)).when(web3j).ethSendRawTransaction(any());
+
+        InstitutionalTransactionOutboxMonitor monitor = new InstitutionalTransactionOutboxMonitor(
+            outboxService, walletService, institutionalWalletService
+        );
+        ReflectionTestUtils.setField(monitor, "gasBumpPercent", 20);
+
+        assertThat(monitor.monitor(web3j, 10)).isEqualTo(1);
+
+        verify(outboxService).markSigned(eq(attempt), any(), any(), eq(BigInteger.valueOf(2)));
+    }
+
+    @Test
+    void capsReplacementGasByConfiguredPriceMultiplierAndTransactionCost() throws Exception {
+        var base = attemptWithGasPrices(
+            "RETRYABLE", "0x" + "8".repeat(64), "0xf861", BigInteger.TEN, BigInteger.valueOf(20)
+        );
+        var attempt = new InstitutionalTransactionOutboxService.Attempt(
+            base.id(), base.chainId(), base.walletAddress(), base.operationKey(), base.nonce(),
+            base.originalGasPrice(), base.currentGasPrice(), base.gasLimit(), base.toAddress(), base.value(),
+            base.data(), base.status(), base.signedRawTransaction(), base.txHash(), Instant.now(), 10,
+            Instant.now()
+        );
+        when(outboxService.findRecoveryCandidates(any(), any(), org.mockito.ArgumentMatchers.eq(10)))
+            .thenReturn(List.of(attempt));
+        when(outboxService.findSubmitted(any(), any(), org.mockito.ArgumentMatchers.eq(10))).thenReturn(List.of());
+        when(outboxService.findStuckUnknown(any(), any(), org.mockito.ArgumentMatchers.eq(10))).thenReturn(List.of());
+        when(institutionalWalletService.getInstitutionalCredentials()).thenReturn(CREDENTIALS);
+        mockMissingTransaction(attempt);
+        EthSendTransaction sendResponse = new EthSendTransaction();
+        sendResponse.setResult("0x" + "9".repeat(64));
+        doReturn(requestReturning(sendResponse)).when(web3j).ethSendRawTransaction(any());
+
+        InstitutionalTransactionOutboxMonitor monitor = new InstitutionalTransactionOutboxMonitor(
+            outboxService, walletService, institutionalWalletService
+        );
+        ReflectionTestUtils.setField(monitor, "gasBumpPercent", 20);
+        ReflectionTestUtils.setField(monitor, "maxMultiplier", new java.math.BigDecimal("2"));
+        ReflectionTestUtils.setField(monitor, "maxGasPriceWei", BigInteger.valueOf(18));
+        ReflectionTestUtils.setField(monitor, "maxEstimatedTransactionCost", BigInteger.valueOf(378_000));
+        ReflectionTestUtils.setField(monitor, "maxAttempts", 20);
+
+        assertThat(monitor.monitor(web3j, 10)).isEqualTo(1);
+
+        verify(outboxService).markSigned(eq(attempt), any(), any(), eq(BigInteger.valueOf(18)));
+    }
+
+    @Test
     void marksStaleSubmittedTransactionUnknownWhenNonceHasNotAdvanced() throws Exception {
         var attempt = attempt("SUBMITTED", "0x" + "e".repeat(64), "0xf861", Instant.now().minusSeconds(600));
         when(outboxService.findSubmitted(any(), any(), org.mockito.ArgumentMatchers.eq(10))).thenReturn(List.of(attempt));
@@ -254,7 +320,7 @@ class InstitutionalTransactionOutboxMonitorTest {
 
     @Test
     void reconstructsReservedTransactionAfterRestartBeforeBroadcasting() throws Exception {
-        var attempt = attempt("RESERVED", null, null);
+        var attempt = attempt("RESERVED", null, null, Instant.now().minusSeconds(1800));
         when(outboxService.findRecoveryCandidates(any(), any(), org.mockito.ArgumentMatchers.eq(10))).thenReturn(List.of(attempt));
         when(outboxService.findSubmitted(any(), any(), org.mockito.ArgumentMatchers.eq(10))).thenReturn(List.of());
         when(outboxService.findStuckUnknown(any(), any(), org.mockito.ArgumentMatchers.eq(10))).thenReturn(List.of());
@@ -275,6 +341,31 @@ class InstitutionalTransactionOutboxMonitorTest {
 
         verify(outboxService).markSigned(any(), any(), any());
         verify(outboxService).markSubmitted(attempt, "0x" + "d".repeat(64));
+    }
+
+    @Test
+    void recoversLegacyUnknownRowWithoutHashByReconstructingItsMaterial() throws Exception {
+        var attempt = attempt("STUCK_UNKNOWN", null, null, Instant.now().minusSeconds(1800));
+        when(outboxService.findRecoveryCandidates(any(), any(), org.mockito.ArgumentMatchers.eq(10)))
+            .thenReturn(List.of(attempt));
+        when(outboxService.findSubmitted(any(), any(), org.mockito.ArgumentMatchers.eq(10))).thenReturn(List.of());
+        when(outboxService.findStuckUnknown(any(), any(), org.mockito.ArgumentMatchers.eq(10))).thenReturn(List.of());
+        when(institutionalWalletService.getInstitutionalCredentials()).thenReturn(CREDENTIALS);
+        EthGetTransactionReceipt receiptResponse = mock(EthGetTransactionReceipt.class);
+        when(receiptResponse.getTransactionReceipt()).thenReturn(Optional.empty());
+        doReturn(requestReturning(receiptResponse)).when(web3j).ethGetTransactionReceipt(any());
+        EthSendTransaction sendResponse = new EthSendTransaction();
+        sendResponse.setResult("0x" + "a".repeat(64));
+        doReturn(requestReturning(sendResponse)).when(web3j).ethSendRawTransaction(any());
+
+        InstitutionalTransactionOutboxMonitor monitor = new InstitutionalTransactionOutboxMonitor(
+            outboxService, walletService, institutionalWalletService
+        );
+
+        assertThat(monitor.monitor(web3j, 10)).isEqualTo(1);
+
+        verify(outboxService).markSigned(any(), any(), any());
+        verify(outboxService).markSubmitted(attempt, "0x" + "a".repeat(64));
     }
 
     @Test
@@ -310,11 +401,21 @@ class InstitutionalTransactionOutboxMonitorTest {
         );
     }
 
+    private InstitutionalTransactionOutboxService.Attempt attemptWithGasPrices(
+        String status, String hash, String raw, BigInteger originalGasPrice, BigInteger currentGasPrice
+    ) {
+        return new InstitutionalTransactionOutboxService.Attempt(
+            1L, BigInteger.valueOf(11155111L), CREDENTIALS.getAddress(), "operation-key", BigInteger.valueOf(14),
+            originalGasPrice, currentGasPrice, BigInteger.valueOf(21_000), "0xto", BigInteger.ZERO, "0x",
+            status, raw, hash, Instant.now(), 0, Instant.now()
+        );
+    }
+
     private void mockMissingReceipt(InstitutionalTransactionOutboxService.Attempt attempt) throws Exception {
         EthGetTransactionReceipt receiptResponse = mock(EthGetTransactionReceipt.class);
         when(receiptResponse.getTransactionReceipt()).thenReturn(Optional.empty());
         doReturn(requestReturning(receiptResponse)).when(web3j)
-            .ethGetTransactionReceipt(attempt.txHash());
+            .ethGetTransactionReceipt(any());
     }
 
     private void mockMissingTransaction(InstitutionalTransactionOutboxService.Attempt attempt) throws Exception {
@@ -322,7 +423,7 @@ class InstitutionalTransactionOutboxMonitorTest {
         EthTransaction transactionResponse = mock(EthTransaction.class);
         when(transactionResponse.getTransaction()).thenReturn(Optional.empty());
         doReturn(requestReturning(transactionResponse)).when(web3j)
-            .ethGetTransactionByHash(attempt.txHash());
+            .ethGetTransactionByHash(any());
     }
 
     private static <T extends org.web3j.protocol.core.Response<?>> Request<?, T> requestReturning(T response) {

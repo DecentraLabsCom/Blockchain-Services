@@ -176,8 +176,13 @@ public class PendingNonceFastRawTransactionManager extends FastRawTransactionMan
             return existing;
         }
 
+        BigInteger effectiveGasPrice = attempt.gasPrice() != null ? attempt.gasPrice() : gasPrice;
+        BigInteger effectiveGasLimit = attempt.gasLimit() != null ? attempt.gasLimit() : gasLimit;
+        String effectiveTo = attempt.toAddress() != null ? attempt.toAddress() : to;
+        BigInteger effectiveValue = attempt.value() != null ? attempt.value() : value;
+        String effectiveData = attempt.data() != null ? attempt.data() : data;
         RawTransaction rawTransaction = RawTransaction.createTransaction(
-            attempt.nonce(), gasPrice, gasLimit, to, value, data
+            attempt.nonce(), effectiveGasPrice, effectiveGasLimit, effectiveTo, effectiveValue, effectiveData
         );
         byte[] signedMessage = TransactionEncoder.signMessage(rawTransaction, chainId.longValueExact(), credentials);
         String signedHex = Numeric.toHexString(signedMessage);

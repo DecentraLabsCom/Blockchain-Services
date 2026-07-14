@@ -230,9 +230,11 @@ class HealthControllerTest {
                 .andExpect(jsonPath("$.nonce_backlog").doesNotExist())
                 .andExpect(jsonPath("$.access_deliveries_stuck").doesNotExist())
                 .andExpect(jsonPath("$.session_started_unknown").doesNotExist())
+                .andExpect(jsonPath("$.session_started_failed").doesNotExist())
                 .andExpect(jsonPath("$.queue_health_errors.nonce_backlog").value("DATABASE_UNAVAILABLE"))
                 .andExpect(jsonPath("$.queue_health_errors.access_deliveries_stuck").value("DATABASE_UNAVAILABLE"))
                 .andExpect(jsonPath("$.queue_health_errors.session_started_unknown").value("DATABASE_UNAVAILABLE"))
+                .andExpect(jsonPath("$.queue_health_errors.session_started_failed").value("DATABASE_UNAVAILABLE"))
                 .andExpect(jsonPath("$.queue_health_errors.institutional_transactions_stuck").value("DATABASE_UNAVAILABLE"));
         }
 
@@ -275,10 +277,26 @@ class HealthControllerTest {
                 .andExpect(jsonPath("$.session_started_unknown").value(0))
                 .andExpect(jsonPath("$.queue_health_errors").isEmpty());
 
-            verify(jdbcTemplate).queryForObject(
+            verify(jdbcTemplate, org.mockito.Mockito.times(2)).queryForObject(
                 org.mockito.ArgumentMatchers.contains("FROM session_started_attestations"),
                 eq(Integer.class)
             );
+        }
+
+        @Test
+        @DisplayName("Should degrade when a failed SessionStarted attestation remains unsettled")
+        void shouldCountFailedSessionStartedTransactionsAsBlockers() throws Exception {
+            setupHealthyEnvironment();
+            when(jdbcTemplate.queryForObject(
+                org.mockito.ArgumentMatchers.contains("onchain_status = 'FAILED'"),
+                eq(Integer.class)
+            )).thenReturn(1);
+
+            mockMvc.perform(get("/health"))
+                .andExpect(status().isServiceUnavailable())
+                .andExpect(jsonPath("$.status").value("DEGRADED"))
+                .andExpect(jsonPath("$.session_started_failed").value(1))
+                .andExpect(jsonPath("$.queue_health_errors").isEmpty());
         }
 
         @Test

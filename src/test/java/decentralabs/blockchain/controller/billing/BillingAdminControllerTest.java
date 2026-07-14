@@ -5,6 +5,7 @@ import decentralabs.blockchain.controller.TestSecurityConfig;
 import decentralabs.blockchain.dto.billing.InstitutionalAdminRequest;
 import decentralabs.blockchain.dto.billing.InstitutionalAdminRequest.AdminOperation;
 import decentralabs.blockchain.dto.billing.InstitutionalAdminResponse;
+import decentralabs.blockchain.exception.IdempotencyKeyPayloadMismatchException;
 import decentralabs.blockchain.service.billing.InstitutionalAdminService;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -172,6 +173,30 @@ class BillingAdminControllerTest {
                 .content(objectMapper.writeValueAsString(request)))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.transactionHash").value("0xcollect"));
+    }
+
+    @Test
+    void requestProviderPayoutRejectsIdempotencyKeyPayloadMismatch() throws Exception {
+        when(adminService.requestProviderPayoutWithConfiguredWallet("3", "50", "payout-command-1"))
+            .thenThrow(new IdempotencyKeyPayloadMismatchException());
+
+        InstitutionalAdminRequest request = new InstitutionalAdminRequest();
+        request.setLabId("3");
+        request.setMaxBatch("50");
+
+        mockMvc.perform(post("/billing/admin/request-provider-payout")
+                .with(csrf())
+                .header("Idempotency-Key", "payout-command-1")
+                .with(request1 -> {
+                    request1.setRemoteAddr("127.0.0.1");
+                    return request1;
+                })
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(request)))
+            .andExpect(status().isConflict())
+            .andExpect(jsonPath("$.success").value(false))
+            .andExpect(jsonPath("$.code").value("IDEMPOTENCY_KEY_PAYLOAD_MISMATCH"))
+            .andExpect(jsonPath("$.status").value(409));
     }
 
     @Test

@@ -26,6 +26,11 @@ class RateLimitTestController {
         return "ok";
     }
 
+    @PostMapping("/auth/fmu/session-ticket/issue")
+    public String issueFmuSessionTicket() {
+        return "ok";
+    }
+
     @GetMapping("/auth/jwks")
     public String jwks() {
         return "{\"keys\":[]}";
