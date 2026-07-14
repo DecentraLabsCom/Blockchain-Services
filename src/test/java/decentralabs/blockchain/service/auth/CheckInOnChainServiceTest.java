@@ -296,6 +296,31 @@ class CheckInOnChainServiceTest {
 
     }
 
+    @Test
+    void replacementGasUsesTheDurableCurrentPrice() throws Exception {
+        when(institutionalWalletService.getInstitutionalCredentials()).thenReturn(credentials);
+        when(walletService.getWeb3jInstance()).thenReturn(web3j);
+        stubChainId(11155111L);
+        ReflectionTestUtils.setField(service, "nonceReplacementGasBumpPercent", 15);
+
+        BigInteger originalGasPrice = BigInteger.valueOf(2_000_000_000L);
+        BigInteger currentGasPrice = BigInteger.valueOf(2_500_000_000L);
+        InstitutionalWalletTransactionDispatcher.PreparedTransaction prepared =
+            service.prepareSignedCheckIn(
+                credentials.getAddress(),
+                "0x" + "1".repeat(64),
+                "0x" + "2".repeat(64),
+                1234L,
+                "0x" + "00".repeat(65),
+                BigInteger.valueOf(7),
+                originalGasPrice,
+                currentGasPrice,
+                1
+            );
+
+        assertThat(prepared.gasPrice()).isEqualTo(BigInteger.valueOf(2_875_000_000L));
+    }
+
     private void stubNonceChecks(BigInteger pendingNonce, BigInteger latestNonce) throws Exception {
         @SuppressWarnings("unchecked")
         Request<?, EthGetTransactionCount> pendingRequest = (Request<?, EthGetTransactionCount>) mock(Request.class);

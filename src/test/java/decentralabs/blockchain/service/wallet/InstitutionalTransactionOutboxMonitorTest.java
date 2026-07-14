@@ -3,6 +3,7 @@ package decentralabs.blockchain.service.wallet;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.doReturn;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -155,6 +156,34 @@ class InstitutionalTransactionOutboxMonitorTest {
         assertThat(monitor.monitor(web3j, 10)).isEqualTo(1);
 
         verify(outboxService).markVisibleSubmitted(attempt, attempt.txHash());
+        verify(web3j, org.mockito.Mockito.never()).ethSendRawTransaction(any());
+    }
+
+    @Test
+    void doesNotCompensateWhenAnotherWorkerWinsReplacementFencing() throws Exception {
+        var base = attempt("RETRYABLE", "0x" + "a".repeat(64), "0xf861");
+        var attempt = new InstitutionalTransactionOutboxService.Attempt(
+            base.id(), base.chainId(), base.walletAddress(), base.operationKey(), base.nonce(),
+            base.originalGasPrice(), base.currentGasPrice(), base.gasLimit(), base.toAddress(), base.value(),
+            base.data(), base.status(), base.signedRawTransaction(), base.txHash(), base.updatedAt(), 1,
+            base.createdAt()
+        );
+        when(outboxService.findRecoveryCandidates(any(), any(), org.mockito.ArgumentMatchers.eq(10)))
+            .thenReturn(List.of(attempt));
+        when(outboxService.findSubmitted(any(), any(), org.mockito.ArgumentMatchers.eq(10))).thenReturn(List.of());
+        when(outboxService.findStuckUnknown(any(), any(), org.mockito.ArgumentMatchers.eq(10))).thenReturn(List.of());
+        when(institutionalWalletService.getInstitutionalCredentials()).thenReturn(CREDENTIALS);
+        mockMissingTransaction(attempt);
+        doThrow(new InstitutionalTransactionOutboxService.FencingClaimLostException("winner updated the row"))
+            .when(outboxService).markReplacementPrepared(any(), any(), any(), any(), any());
+
+        InstitutionalTransactionOutboxMonitor monitor = new InstitutionalTransactionOutboxMonitor(
+            outboxService, walletService, institutionalWalletService
+        );
+
+        assertThat(monitor.monitor(web3j, 10)).isZero();
+
+        verify(outboxService, org.mockito.Mockito.never()).markRetryable(any(), any());
         verify(web3j, org.mockito.Mockito.never()).ethSendRawTransaction(any());
     }
 

@@ -146,7 +146,55 @@ class InstitutionalCheckInOutboxProcessorTest {
         verify(outboxService, never()).markBroadcastUncertain(anyLong(), anyInt(), anyString());
     }
 
+    @Test
+    void preservesReplacementIntentAcrossClaimAndReload() throws Exception {
+        var due = record("REPLACEMENT_PENDING", 2);
+        var claimed = new InstitutionalCheckInOutboxRecord(
+            due.id(), due.reservationKey(), due.labId(), due.institutionalWallet(), due.pucHash(),
+            due.accessSessionId(), "SUBMITTING", due.attempts(), due.nextAttemptAt(), due.txHash(),
+            due.walletAddress(), due.chainId(), due.nonce(), due.submittedAt(), due.version() + 1,
+            due.signedRawTransaction()
+        );
+        when(outboxService.claim(due.id())).thenReturn(true);
+        when(outboxService.findById(due.id())).thenReturn(claimed);
+        when(bookingService.getCheckInBookingInfo(any(), any(), any(), eq(null)))
+            .thenReturn(Map.of("reservationStatus", BigInteger.ONE));
+
+        processor.process(due);
+
+        verify(nonceDispatcher).dispatch(claimed, true);
+        verify(nonceDispatcher, never()).dispatch(claimed);
+    }
+
+    @Test
+    void rePreparesMaterialRetainedByFailedReservedNonceInsteadOfRebroadcastingIt() throws Exception {
+        var due = new InstitutionalCheckInOutboxRecord(
+            2L, "0xfailed", "42", "0x1111111111111111111111111111111111111111", "0xpuchash",
+            "session-2", "PENDING", 0, Instant.now(), "0x" + "a".repeat(64),
+            "0x1111111111111111111111111111111111111111", BigInteger.ONE, BigInteger.valueOf(12),
+            Instant.now(), 3L, "0xold-raw"
+        );
+        var claimed = new InstitutionalCheckInOutboxRecord(
+            due.id(), due.reservationKey(), due.labId(), due.institutionalWallet(), due.pucHash(),
+            due.accessSessionId(), "SUBMITTING", due.attempts(), due.nextAttemptAt(), due.txHash(),
+            due.walletAddress(), due.chainId(), due.nonce(), due.submittedAt(), due.version() + 1,
+            due.signedRawTransaction()
+        );
+        when(outboxService.claim(due.id())).thenReturn(true);
+        when(outboxService.findById(due.id())).thenReturn(claimed);
+        when(bookingService.getCheckInBookingInfo(any(), any(), any(), eq(null)))
+            .thenReturn(Map.of("reservationStatus", BigInteger.ONE));
+
+        processor.process(due);
+
+        verify(nonceDispatcher).dispatch(claimed, true);
+    }
+
     private InstitutionalCheckInOutboxRecord record(int attempts) {
+        return record("PENDING", attempts);
+    }
+
+    private InstitutionalCheckInOutboxRecord record(String status, int attempts) {
         return new InstitutionalCheckInOutboxRecord(
             1L,
             "0xabc",
@@ -154,7 +202,7 @@ class InstitutionalCheckInOutboxProcessorTest {
             "0x1111111111111111111111111111111111111111",
             "0xpuchash",
             "session-1",
-            "PENDING",
+            status,
             attempts,
             Instant.now(),
             null,

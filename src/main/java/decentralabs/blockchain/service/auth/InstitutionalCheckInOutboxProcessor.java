@@ -49,6 +49,8 @@ public class InstitutionalCheckInOutboxProcessor {
         if (record == null || !outboxService.claim(record.id())) {
             return;
         }
+        boolean replacementRequested = "REPLACEMENT_PENDING".equalsIgnoreCase(record.status())
+            || ("PENDING".equalsIgnoreCase(record.status()) && hasPersistedMaterial(record));
 
         InstitutionalCheckInOutboxRecord claimed;
         try {
@@ -66,7 +68,11 @@ public class InstitutionalCheckInOutboxProcessor {
                 return;
             }
 
-            nonceDispatcher.dispatch(claimed);
+            if (replacementRequested) {
+                nonceDispatcher.dispatch(claimed, true);
+            } else {
+                nonceDispatcher.dispatch(claimed);
+            }
         } catch (InstitutionalWalletDispatchException ex) {
             switch (ex.outcome()) {
                 case PRE_BROADCAST_BLOCKED -> scheduleBlockedRetry(claimed, ex);
@@ -153,5 +159,11 @@ public class InstitutionalCheckInOutboxProcessor {
         int exponent = Math.min(Math.max(0, attempts - 1), 10);
         long delay = base * (1L << exponent);
         return Math.min(delay, max);
+    }
+
+    private boolean hasPersistedMaterial(InstitutionalCheckInOutboxRecord record) {
+        return record != null
+            && ((record.signedRawTransaction() != null && !record.signedRawTransaction().isBlank())
+                || (record.txHash() != null && !record.txHash().isBlank()));
     }
 }

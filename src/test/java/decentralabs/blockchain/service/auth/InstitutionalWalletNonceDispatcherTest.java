@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.when;
@@ -54,7 +55,10 @@ class InstitutionalWalletNonceDispatcherTest {
                     "0x01", response.getTxHash()
                 )
             );
-        when(submissionService.prepare("0xabc", "0xpuchash", BigInteger.valueOf(47), 0)).thenReturn(prepared);
+        when(submissionService.prepare(
+            eq("0xabc"), eq("0xpuchash"), eq(BigInteger.valueOf(47)),
+            isNull(BigInteger.class), isNull(BigInteger.class), eq(0)
+        )).thenReturn(prepared);
         BigInteger chainId = BigInteger.valueOf(11155111);
         when(transactionDispatcher.dispatchPrepared(eq("0xsigner"), eq(null), eq(null), any(), any(), any(), any()))
             .thenAnswer(invocation -> {
@@ -87,7 +91,10 @@ class InstitutionalWalletNonceDispatcherTest {
             Instant.now(), null, "0xsigner", BigInteger.ONE, BigInteger.valueOf(48), Instant.now(), 0L
         );
         when(submissionService.signerAddress()).thenReturn("0xsigner");
-        when(submissionService.prepare("0xdef", "0xpuchash", BigInteger.valueOf(48), 1))
+        when(submissionService.prepare(
+            eq("0xdef"), eq("0xpuchash"), eq(BigInteger.valueOf(48)),
+            isNull(BigInteger.class), isNull(BigInteger.class), eq(1)
+        ))
             .thenThrow(new IllegalStateException("rpc response lost"));
         when(transactionDispatcher.dispatchPrepared(
             eq("0xsigner"), eq(BigInteger.ONE), eq(BigInteger.valueOf(48)), any(), any(), any(), any()
@@ -104,7 +111,10 @@ class InstitutionalWalletNonceDispatcherTest {
             .isInstanceOf(IllegalStateException.class)
             .hasMessageContaining("rpc response lost");
 
-        verify(submissionService).prepare("0xdef", "0xpuchash", BigInteger.valueOf(48), 1);
+        verify(submissionService).prepare(
+            eq("0xdef"), eq("0xpuchash"), eq(BigInteger.valueOf(48)),
+            isNull(BigInteger.class), isNull(BigInteger.class), eq(1)
+        );
         verify(transactionDispatcher).dispatchPrepared(
             eq("0xsigner"), eq(BigInteger.ONE), eq(BigInteger.valueOf(48)), any(), any(), any(), any()
         );
@@ -132,8 +142,64 @@ class InstitutionalWalletNonceDispatcherTest {
         assertThat(result.getTxHash()).isEqualTo(previousHash);
         verify(transactionDispatcher).rebroadcastPrepared(any());
         verify(outboxService).markSubmitted(record, previousHash);
-        verify(submissionService, never()).prepare(any(), any(), any(), anyInt());
+        verify(submissionService, never()).prepare(any(), any(), any(), any(), any(), anyInt());
         verify(transactionDispatcher, never()).dispatchPrepared(any(), any(), any(), any(), any(), any(), any());
+    }
+
+    @Test
+    void replacementClaimPreparesNewGasWithTheExistingNonce() throws Exception {
+        String previousHash = "0x" + "b".repeat(64);
+        String replacementHash = "0x" + "d".repeat(64);
+        InstitutionalCheckInOutboxRecord record = new InstitutionalCheckInOutboxRecord(
+            11L, "0xreplacement", "42", "0xpayer", "0xpuchash", "session-11", "SUBMITTING", 2,
+            Instant.now(), previousHash, "0xsigner", BigInteger.ONE, BigInteger.valueOf(51),
+            Instant.now(), 4L, "0xold-raw", BigInteger.valueOf(100), BigInteger.valueOf(120), 1L
+        );
+        CheckInResponse response = new CheckInResponse();
+        response.setTxHash(replacementHash);
+        when(submissionService.signerAddress()).thenReturn("0xsigner");
+        when(submissionService.prepare(
+            "0xreplacement", "0xpuchash", BigInteger.valueOf(51),
+            BigInteger.valueOf(100), BigInteger.valueOf(120), 2
+        )).thenReturn(new InstitutionalCheckInSubmissionService.PreparedCheckIn(
+            response,
+            new InstitutionalWalletTransactionDispatcher.PreparedTransaction(
+                "0xnew-raw", replacementHash, BigInteger.valueOf(120)
+            )
+        ));
+        when(outboxService.markSubmittedAfterPreparation(any(), eq(replacementHash))).thenReturn(true);
+        when(transactionDispatcher.dispatchPrepared(
+            eq("0xsigner"), eq(BigInteger.ONE), eq(BigInteger.valueOf(51)), any(), any(), any(), any()
+        )).thenAnswer(invocation -> {
+            java.util.function.Function<BigInteger, InstitutionalWalletTransactionDispatcher.PreparedTransaction> prepare =
+                invocation.getArgument(4);
+            java.util.function.Consumer<InstitutionalWalletTransactionDispatcher.PreparedTransaction> persistPrepared =
+                invocation.getArgument(5);
+            java.util.function.Consumer<String> persistHash = invocation.getArgument(6);
+            var prepared = prepare.apply(BigInteger.valueOf(51));
+            persistPrepared.accept(prepared);
+            persistHash.accept(prepared.transactionHash());
+            return prepared.transactionHash();
+        });
+
+        InstitutionalWalletNonceDispatcher dispatcher = new InstitutionalWalletNonceDispatcher(
+            outboxService, submissionService, transactionDispatcher
+        );
+
+        CheckInResponse result = dispatcher.dispatch(record, true);
+
+        assertThat(result).isSameAs(response);
+        verify(submissionService).prepare(
+            "0xreplacement", "0xpuchash", BigInteger.valueOf(51),
+            BigInteger.valueOf(100), BigInteger.valueOf(120), 2
+        );
+        verify(transactionDispatcher).dispatchPrepared(
+            eq("0xsigner"), eq(BigInteger.ONE), eq(BigInteger.valueOf(51)), any(), any(), any(), any()
+        );
+        verify(transactionDispatcher, never()).rebroadcastPrepared(any());
+        verify(outboxService).markPrepared(
+            eq(record), any(InstitutionalWalletTransactionDispatcher.PreparedTransaction.class)
+        );
     }
 
     @Test
@@ -152,7 +218,7 @@ class InstitutionalWalletNonceDispatcherTest {
             .extracting("outcome")
             .isEqualTo(InstitutionalWalletDispatchException.Outcome.PRE_BROADCAST_PERMANENT);
 
-        verify(submissionService, never()).prepare(any(), any(), any(), anyInt());
+        verify(submissionService, never()).prepare(any(), any(), any(), any(), any(), anyInt());
         verify(transactionDispatcher, never()).dispatchPrepared(any(), any(), any(), any(), any(), any(), any());
     }
 }

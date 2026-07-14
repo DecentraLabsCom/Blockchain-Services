@@ -21,7 +21,8 @@ public record InstitutionalCheckInOutboxRecord(
     long version,
     String signedRawTransaction,
     BigInteger originalGasPrice,
-    BigInteger currentGasPrice
+    BigInteger currentGasPrice,
+    long generation
 ) {
     public InstitutionalCheckInOutboxRecord(
         long id, String reservationKey, String labId, String institutionalWallet,
@@ -30,7 +31,7 @@ public record InstitutionalCheckInOutboxRecord(
         Instant submittedAt
     ) {
         this(id, reservationKey, labId, institutionalWallet, pucHash, accessSessionId,
-            status, attempts, nextAttemptAt, txHash, walletAddress, null, nonce, submittedAt, 0L, null, null, null);
+            status, attempts, nextAttemptAt, txHash, walletAddress, null, nonce, submittedAt, 0L, null, null, null, 1L);
     }
 
     public InstitutionalCheckInOutboxRecord(
@@ -40,7 +41,7 @@ public record InstitutionalCheckInOutboxRecord(
         BigInteger nonce, Instant submittedAt, long version
     ) {
         this(id, reservationKey, labId, institutionalWallet, pucHash, accessSessionId,
-            status, attempts, nextAttemptAt, txHash, walletAddress, chainId, nonce, submittedAt, version, null, null, null);
+            status, attempts, nextAttemptAt, txHash, walletAddress, chainId, nonce, submittedAt, version, null, null, null, 1L);
     }
 
     public InstitutionalCheckInOutboxRecord(
@@ -51,6 +52,6 @@ public record InstitutionalCheckInOutboxRecord(
     ) {
         this(id, reservationKey, labId, institutionalWallet, pucHash, accessSessionId,
             status, attempts, nextAttemptAt, txHash, walletAddress, chainId, nonce,
-            submittedAt, version, signedRawTransaction, null, null);
+            submittedAt, version, signedRawTransaction, null, null, 1L);
     }
 }

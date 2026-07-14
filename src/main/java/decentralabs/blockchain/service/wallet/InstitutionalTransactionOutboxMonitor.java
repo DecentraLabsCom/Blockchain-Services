@@ -254,8 +254,22 @@ public class InstitutionalTransactionOutboxMonitor {
                     response.getError() != null ? response.getError().getMessage() : "Institutional transaction broadcast failed"
                 );
             }
+        } catch (InstitutionalTransactionOutboxService.FencingClaimLostException ex) {
+            log.debug(
+                "Institutional transaction {} was updated by another monitor worker; skipping compensation",
+                attempt == null ? -1L : attempt.id()
+            );
+            return false;
         } catch (Exception ex) {
-            outboxService.markRetryable(attempt, ex.getMessage());
+            try {
+                outboxService.markRetryable(attempt, ex.getMessage());
+            } catch (InstitutionalTransactionOutboxService.FencingClaimLostException fencingLost) {
+                log.debug(
+                    "Institutional transaction {} lost its fencing claim while compensating; leaving winner state intact",
+                    attempt == null ? -1L : attempt.id()
+                );
+                return false;
+            }
             long attemptId = attempt == null ? -1L : attempt.id();
             log.warn("Unable to recover reserved institutional transaction {}: {}", attemptId, ex.getMessage());
         }

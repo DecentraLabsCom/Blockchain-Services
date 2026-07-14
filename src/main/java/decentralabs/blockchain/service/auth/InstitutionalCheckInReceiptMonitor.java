@@ -128,7 +128,7 @@ public class InstitutionalCheckInReceiptMonitor {
             boolean resolved = false;
             for (String candidateHash : monitoredHashes(record)) {
                 CheckInOnChainService.TransactionState state =
-                    checkInOnChainService.transactionState(candidateHash);
+                    checkInOnChainService.transactionStateStrict(candidateHash);
                 if (state == CheckInOnChainService.TransactionState.SUCCEEDED) {
                     outboxService.markSubmittedMinedSuccess(record, candidateHash);
                     resolved = true;
@@ -169,7 +169,7 @@ public class InstitutionalCheckInReceiptMonitor {
         if (record.txHash() != null && !record.txHash().isBlank()) {
             hashes.add(record.txHash());
         }
-        List<String> history = outboxService.findReplacedHashes(record.id());
+        List<String> history = outboxService.findReplacedHashes(record.id(), record.generation());
         if (history != null) {
             history.stream()
                 .filter(hash -> hash != null && !hash.isBlank())

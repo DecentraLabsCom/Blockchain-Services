@@ -51,6 +51,8 @@ public class CheckInOnChainService {
         long timestamp,
         String signature,
         BigInteger nonce,
+        BigInteger originalGasPrice,
+        BigInteger currentGasPrice,
         int replacementAttempt
     ) {
         if (nonce == null || nonce.signum() < 0) {
@@ -63,15 +65,18 @@ public class CheckInOnChainService {
             throw new IllegalStateException("Unable to verify connected chainId for check-in publication");
         }
         String encoded = encodeCheckIn(signer, reservationKey, pucHash, timestamp, signature);
+        BigInteger gasPriceWei = gasPriceForReplacement(
+            originalGasPrice, currentGasPrice, replacementAttempt
+        );
         RawTransaction raw = RawTransaction.createTransaction(
-            nonce, toWei(gasPriceForReplacement(replacementAttempt)), gasLimit,
+            nonce, gasPriceWei, gasLimit,
             contractAddress, BigInteger.ZERO, encoded
         );
         String rawHex = Numeric.toHexString(TransactionEncoder.signMessage(raw, chainId, credentials));
         return new InstitutionalWalletTransactionDispatcher.PreparedTransaction(
             rawHex,
             Hash.sha3(rawHex),
-            toWei(gasPriceForReplacement(replacementAttempt))
+            gasPriceWei
         );
     }
 
@@ -415,6 +420,31 @@ public class CheckInOnChainService {
         BigInteger bumpPercent = BigInteger.valueOf(Math.max(1, nonceReplacementGasBumpPercent));
         BigInteger multiplier = BigInteger.valueOf(100L + bumpPercent.longValue() * replacementAttempt);
         return gasPriceGwei.multiply(multiplier).add(BigInteger.valueOf(99)).divide(BigInteger.valueOf(100));
+    }
+
+    private BigInteger gasPriceForReplacement(
+        BigInteger originalGasPriceWei,
+        BigInteger currentGasPriceWei,
+        int replacementAttempt
+    ) {
+        BigInteger baseWei = positive(currentGasPriceWei)
+            ? currentGasPriceWei
+            : positive(originalGasPriceWei)
+                ? originalGasPriceWei
+                : toWei(gasPriceGwei);
+        if (!positive(baseWei)) {
+            throw new IllegalStateException("Check-in gas price is not configured");
+        }
+        if (replacementAttempt <= 0) {
+            return baseWei;
+        }
+        BigInteger bumpPercent = BigInteger.valueOf(Math.max(1, nonceReplacementGasBumpPercent));
+        BigInteger multiplier = BigInteger.valueOf(100L + bumpPercent.longValue());
+        return baseWei.multiply(multiplier).add(BigInteger.valueOf(99)).divide(BigInteger.valueOf(100));
+    }
+
+    private boolean positive(BigInteger value) {
+        return value != null && value.signum() > 0;
     }
 
     private String normalizeBytes32(String value) {

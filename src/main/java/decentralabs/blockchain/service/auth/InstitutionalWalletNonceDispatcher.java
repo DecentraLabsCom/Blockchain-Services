@@ -18,6 +18,18 @@ public class InstitutionalWalletNonceDispatcher {
     private final InstitutionalWalletTransactionDispatcher transactionDispatcher;
 
     public CheckInResponse dispatch(InstitutionalCheckInOutboxRecord record) throws InstitutionalWalletDispatchException {
+        return dispatch(record, false);
+    }
+
+    /**
+     * Dispatches a claimed row while preserving whether the claim requested a
+     * replacement. A row claimed from REPLACEMENT_PENDING must not be treated
+     * as a stale crash recovery just because claim() changed its status to
+     * SUBMITTING before the row was reloaded.
+     */
+    public CheckInResponse dispatch(
+        InstitutionalCheckInOutboxRecord record, boolean replacementRequested
+    ) throws InstitutionalWalletDispatchException {
         if (record == null) {
             throw new InstitutionalWalletDispatchException(
                 "Institutional check-in outbox record is required",
@@ -30,7 +42,8 @@ public class InstitutionalWalletNonceDispatcher {
         // have died before the broadcast/status transition. Resume that exact
         // material first. RETRY rows are handled by the receipt monitor's
         // replacement policy and may deliberately prepare a higher-gas tx.
-        if ("SUBMITTING".equalsIgnoreCase(record.status()) && hasPersistedMaterial(record)) {
+        if (!replacementRequested
+            && "SUBMITTING".equalsIgnoreCase(record.status()) && hasPersistedMaterial(record)) {
             if (record.walletAddress() == null || !walletAddress.equalsIgnoreCase(record.walletAddress())) {
                 throw new InstitutionalWalletDispatchException(
                     "Persisted institutional transaction belongs to a different wallet",
@@ -73,7 +86,8 @@ public class InstitutionalWalletNonceDispatcher {
             (chainId, nonce) -> outboxService.markNonceReserved(record.id(), walletAddress, chainId, nonce),
             nonce -> {
                 InstitutionalCheckInSubmissionService.PreparedCheckIn prepared = submissionService.prepare(
-                    record.reservationKey(), record.pucHash(), nonce, Math.max(0, record.attempts())
+                    record.reservationKey(), record.pucHash(), nonce,
+                    record.originalGasPrice(), record.currentGasPrice(), Math.max(0, record.attempts())
                 );
                 response[0] = prepared.response();
                 return prepared.transaction();

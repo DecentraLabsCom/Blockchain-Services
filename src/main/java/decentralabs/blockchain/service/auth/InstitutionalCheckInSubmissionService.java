@@ -73,7 +73,14 @@ public class InstitutionalCheckInSubmissionService {
         return response;
     }
 
-    public PreparedCheckIn prepare(String reservationKey, String pucHash, BigInteger nonce, int replacementAttempt) {
+    public PreparedCheckIn prepare(
+        String reservationKey,
+        String pucHash,
+        BigInteger nonce,
+        BigInteger originalGasPrice,
+        BigInteger currentGasPrice,
+        int replacementAttempt
+    ) {
         Credentials credentials = institutionalWalletService.getInstitutionalCredentials();
         String signer = credentials.getAddress();
         String normalizedReservationKey = PucHashUtil.normalizeBytes32(reservationKey);
@@ -86,7 +93,7 @@ public class InstitutionalCheckInSubmissionService {
         InstitutionalWalletTransactionDispatcher.PreparedTransaction transaction =
             checkInOnChainService.prepareSignedCheckIn(
                 signer, normalizedReservationKey, normalizedPucHash, timestamp,
-                signature, nonce, replacementAttempt
+                signature, nonce, originalGasPrice, currentGasPrice, replacementAttempt
             );
         CheckInResponse response = new CheckInResponse();
         response.setValid(true);

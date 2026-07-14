@@ -1,6 +1,7 @@
 package decentralabs.blockchain.service.auth;
 
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.never;
@@ -32,7 +33,7 @@ class InstitutionalCheckInReceiptMonitorTest {
             3L, "0xabc", "42", "0xpayer", "0xpuchash", "session", "SUBMITTED", 2,
             Instant.now(), "0x" + "a".repeat(64), "0xsigner", BigInteger.valueOf(12), Instant.now().minusSeconds(1)
         );
-        when(checkInOnChainService.transactionState(record.txHash()))
+        when(checkInOnChainService.transactionStateStrict(record.txHash()))
             .thenReturn(CheckInOnChainService.TransactionState.PENDING);
 
         monitor.monitor(record);
@@ -48,7 +49,7 @@ class InstitutionalCheckInReceiptMonitorTest {
             4L, "0xdef", "42", "0xpayer", "0xpuchash", "session", "SUBMITTED", 7,
             Instant.now(), "0x" + "b".repeat(64), "0xsigner", BigInteger.valueOf(13), Instant.now().minusSeconds(1)
         );
-        when(checkInOnChainService.transactionState(record.txHash()))
+        when(checkInOnChainService.transactionStateStrict(record.txHash()))
             .thenReturn(CheckInOnChainService.TransactionState.PENDING);
 
         monitor.monitor(record);
@@ -112,15 +113,37 @@ class InstitutionalCheckInReceiptMonitorTest {
             Instant.now(), currentHash, "0xsigner", BigInteger.ONE, BigInteger.valueOf(18),
             Instant.now().minusSeconds(1), 4L
         );
-        when(outboxService.findReplacedHashes(record.id())).thenReturn(java.util.List.of(historicalHash));
-        when(checkInOnChainService.transactionState(currentHash))
+        when(outboxService.findReplacedHashes(record.id(), record.generation()))
+            .thenReturn(java.util.List.of(historicalHash));
+        when(checkInOnChainService.transactionStateStrict(currentHash))
             .thenReturn(CheckInOnChainService.TransactionState.PENDING);
-        when(checkInOnChainService.transactionState(historicalHash))
+        when(checkInOnChainService.transactionStateStrict(historicalHash))
             .thenReturn(CheckInOnChainService.TransactionState.SUCCEEDED);
 
         monitor.monitor(record);
 
         verify(outboxService).markSubmittedMinedSuccess(record, historicalHash);
+    }
+
+    @Test
+    void doesNotConsumeReplacementBudgetWhenReceiptRpcFails() {
+        ReflectionTestUtils.setField(monitor, "stuckTransactionMs", 1L);
+        InstitutionalCheckInOutboxRecord record = new InstitutionalCheckInOutboxRecord(
+            18L, "0xabc", "42", "0xpayer", "0xpuchash", "session", "SUBMITTED", 2,
+            Instant.now(), "0x" + "3".repeat(64), "0xsigner", BigInteger.ONE,
+            Instant.now().minusSeconds(60)
+        );
+        when(checkInOnChainService.transactionStateStrict(record.txHash()))
+            .thenThrow(new IllegalStateException("RPC unavailable"));
+
+        monitor.monitor(record);
+
+        verify(checkInOnChainService).transactionStateStrict(record.txHash());
+        verify(checkInOnChainService, never()).transactionState(record.txHash());
+        verify(outboxService, never()).markReplacementPending(any(), anyInt(), any(), any());
+        verify(outboxService, never()).markStuckUnknown(any(), anyInt(), any());
+        verify(outboxService, never()).markSubmittedMinedSuccess(any(), any());
+        verify(outboxService, never()).markSubmittedMinedFailed(any(), any(), any());
     }
 
     @Test

@@ -58,7 +58,7 @@ public class InstitutionalCheckInOutboxService {
         requireConfigured();
         return jdbcTemplate.queryForObject(
             """
-            SELECT id, reservation_key, lab_id, institutional_wallet, puc_hash,
+            SELECT id, generation, reservation_key, lab_id, institutional_wallet, puc_hash,
                    access_session_id, status, attempts, next_attempt_at, tx_hash, signed_raw_transaction,
                    wallet_address, chain_id, nonce, submitted_at, version, original_gas_price, current_gas_price
             FROM institutional_checkin_outbox WHERE reservation_key = ?
@@ -72,7 +72,7 @@ public class InstitutionalCheckInOutboxService {
         requireConfigured();
         return jdbcTemplate.queryForObject(
             """
-            SELECT id, reservation_key, lab_id, institutional_wallet, puc_hash,
+            SELECT id, generation, reservation_key, lab_id, institutional_wallet, puc_hash,
                    access_session_id, status, attempts, next_attempt_at, tx_hash, signed_raw_transaction,
                    wallet_address, chain_id, nonce, submitted_at, version, original_gas_price, current_gas_price
             FROM institutional_checkin_outbox WHERE id = ?
@@ -106,11 +106,22 @@ public class InstitutionalCheckInOutboxService {
                     WHEN status = 'FAILED' AND nonce IS NOT NULL THEN nonce
                     ELSE NULL
                 END,
+                generation = CASE
+                    WHEN status = 'MINED_FAILED'
+                      OR (status = 'FAILED' AND nonce IS NULL) THEN generation + 1
+                    ELSE generation
+                END,
                 status = 'PENDING',
                 attempts = 0,
                 next_attempt_at = CURRENT_TIMESTAMP,
-                tx_hash = NULL,
-                signed_raw_transaction = NULL,
+                tx_hash = CASE
+                    WHEN status = 'FAILED' AND nonce IS NOT NULL THEN tx_hash
+                    ELSE NULL
+                END,
+                signed_raw_transaction = CASE
+                    WHEN status = 'FAILED' AND nonce IS NOT NULL THEN signed_raw_transaction
+                    ELSE NULL
+                END,
                 submitted_at = NULL,
                 mined_at = NULL,
                 last_error = NULL,
@@ -131,7 +142,7 @@ public class InstitutionalCheckInOutboxService {
             Instant staleProcessingCutoff = now.minusSeconds(PROCESSING_STALE_AFTER_SECONDS);
             return jdbcTemplate.query(
                 """
-                SELECT id, reservation_key, lab_id, institutional_wallet, puc_hash,
+                SELECT id, generation, reservation_key, lab_id, institutional_wallet, puc_hash,
                        access_session_id, status, attempts, next_attempt_at, tx_hash, signed_raw_transaction,
                        wallet_address, chain_id, nonce, submitted_at, version, original_gas_price, current_gas_price
                 FROM institutional_checkin_outbox
@@ -226,7 +237,7 @@ public class InstitutionalCheckInOutboxService {
         try {
             return jdbcTemplate.query(
                 """
-                SELECT id, reservation_key, lab_id, institutional_wallet, puc_hash,
+                SELECT id, generation, reservation_key, lab_id, institutional_wallet, puc_hash,
                        access_session_id, status, attempts, next_attempt_at, tx_hash, signed_raw_transaction,
                        wallet_address, chain_id, nonce, submitted_at, version, original_gas_price, current_gas_price
                 FROM institutional_checkin_outbox
@@ -250,7 +261,7 @@ public class InstitutionalCheckInOutboxService {
         try {
             return jdbcTemplate.query(
                 """
-                SELECT id, reservation_key, lab_id, institutional_wallet, puc_hash,
+                SELECT id, generation, reservation_key, lab_id, institutional_wallet, puc_hash,
                        access_session_id, status, attempts, next_attempt_at, tx_hash, signed_raw_transaction,
                        wallet_address, chain_id, nonce, submitted_at, version, original_gas_price, current_gas_price
                 FROM institutional_checkin_outbox
@@ -267,7 +278,7 @@ public class InstitutionalCheckInOutboxService {
         }
     }
 
-    public List<String> findReplacedHashes(long outboxId) {
+    public List<String> findReplacedHashes(long outboxId, long generation) {
         if (jdbcTemplate == null) {
             return List.of();
         }
@@ -275,11 +286,11 @@ public class InstitutionalCheckInOutboxService {
             """
             SELECT tx_hash
             FROM institutional_checkin_outbox_hash_history
-            WHERE outbox_id = ?
+            WHERE outbox_id = ? AND generation = ?
             ORDER BY replaced_at ASC, id ASC
             """,
             (rs, rowNum) -> rs.getString("tx_hash"),
-            outboxId
+            outboxId, generation
         );
     }
 
@@ -446,15 +457,18 @@ public class InstitutionalCheckInOutboxService {
         }
         BigInteger gasPrice = prepared.gasPrice() != null
             ? prepared.gasPrice() : record.currentGasPrice();
+        BigInteger previousGasPrice = record.currentGasPrice() != null
+            ? record.currentGasPrice() : record.originalGasPrice();
         if (record.txHash() != null && !record.txHash().isBlank()) {
             jdbcTemplate.update(
                 """
                 INSERT INTO institutional_checkin_outbox_hash_history
-                    (outbox_id, tx_hash, gas_price, replaced_at)
-                VALUES (?, ?, ?, CURRENT_TIMESTAMP)
+                    (outbox_id, generation, tx_hash, gas_price, replaced_at)
+                VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
                 ON DUPLICATE KEY UPDATE gas_price = VALUES(gas_price)
                 """,
-                record.id(), record.txHash(), gasPrice != null ? gasPrice : BigInteger.ZERO
+                record.id(), record.generation(), record.txHash(),
+                previousGasPrice != null ? previousGasPrice : BigInteger.ZERO
             );
         }
         int updated = jdbcTemplate.update(
@@ -464,10 +478,11 @@ public class InstitutionalCheckInOutboxService {
                 original_gas_price = COALESCE(original_gas_price, ?),
                 current_gas_price = COALESCE(?, current_gas_price),
                 updated_at = CURRENT_TIMESTAMP, version = version + 1
-            WHERE id = ? AND status = 'SUBMITTING' AND tx_hash <=> ? AND version = ?
+            WHERE id = ? AND generation = ? AND status = 'SUBMITTING'
+              AND tx_hash <=> ? AND version = ?
             """,
             prepared.rawTransaction(), prepared.transactionHash(), gasPrice, gasPrice,
-            record.id(), record.txHash(), record.version()
+            record.id(), record.generation(), record.txHash(), record.version()
         );
         if (updated != 1) {
             throw new IllegalStateException("Check-in signed transaction lost its fencing claim");
@@ -512,6 +527,10 @@ public class InstitutionalCheckInOutboxService {
 
     private InstitutionalCheckInOutboxRecord mapRow(ResultSet rs) throws SQLException {
         Timestamp nextAttempt = rs.getTimestamp("next_attempt_at");
+        long generation = rs.getLong("generation");
+        if (rs.wasNull() || generation <= 0) {
+            generation = 1L;
+        }
         return new InstitutionalCheckInOutboxRecord(
             rs.getLong("id"),
             rs.getString("reservation_key"),
@@ -530,7 +549,8 @@ public class InstitutionalCheckInOutboxService {
             rs.getLong("version"),
             rs.getString("signed_raw_transaction"),
             rs.getObject("original_gas_price", BigInteger.class),
-            rs.getObject("current_gas_price", BigInteger.class)
+            rs.getObject("current_gas_price", BigInteger.class),
+            generation
         );
     }
 

@@ -254,7 +254,9 @@ public class InstitutionalTransactionOutboxService {
             signedRawTransaction, expectedTxHash, gasPrice, attempt.id(), attempt.version(), attempt.txHash()
         );
         if (updated != 1) {
-            throw new IllegalStateException("Institutional signed transaction could not be persisted before broadcast");
+            throw new FencingClaimLostException(
+                "Institutional signed transaction could not be persisted before broadcast"
+            );
         }
     }
 
@@ -282,7 +284,7 @@ public class InstitutionalTransactionOutboxService {
             txHash, attempt.id(), txHash, expectedSubmissionVersion(attempt)
         );
         if (updated != 1) {
-            throw new IllegalStateException("Institutional transaction submission lost its fencing claim");
+            throw new FencingClaimLostException("Institutional transaction submission lost its fencing claim");
         }
     }
 
@@ -307,7 +309,9 @@ public class InstitutionalTransactionOutboxService {
             txHash, attempt.id(), txHash, attempt.version()
         );
         if (updated != 1) {
-            throw new IllegalStateException("Institutional visible transaction submission lost its fencing claim");
+            throw new FencingClaimLostException(
+                "Institutional visible transaction submission lost its fencing claim"
+            );
         }
     }
 
@@ -330,7 +334,7 @@ public class InstitutionalTransactionOutboxService {
             txHash, attempt.id(), txHash, attempt.version() + 1L
         );
         if (updated != 1) {
-            throw new IllegalStateException("Institutional replacement submission lost its fencing claim");
+            throw new FencingClaimLostException("Institutional replacement submission lost its fencing claim");
         }
     }
 
@@ -349,7 +353,7 @@ public class InstitutionalTransactionOutboxService {
             truncate(error), attempt.id(), expectedTransitionVersion(attempt)
         );
         if (updated != 1) {
-            throw new IllegalStateException("Institutional retry update lost its fencing claim");
+            throw new FencingClaimLostException("Institutional retry update lost its fencing claim");
         }
     }
 
@@ -393,7 +397,7 @@ public class InstitutionalTransactionOutboxService {
             truncate(error), attempt.id(), attempt.txHash(), attempt.version()
         );
         if (updated != 1) {
-            throw new IllegalStateException("Institutional transaction replacement could not be claimed");
+            throw new FencingClaimLostException("Institutional transaction replacement could not be claimed");
         }
     }
 
@@ -436,7 +440,9 @@ public class InstitutionalTransactionOutboxService {
             signedRawTransaction, replacementTxHash, gasPrice, attempt.id(), previousTxHash, attempt.version()
         );
         if (updated != 1) {
-            throw new IllegalStateException("Institutional replacement could not be persisted before broadcast");
+            throw new FencingClaimLostException(
+                "Institutional replacement could not be persisted before broadcast"
+            );
         }
     }
 
@@ -708,6 +714,16 @@ public class InstitutionalTransactionOutboxService {
 
     public static class TransactionBlockedException extends RuntimeException {
         public TransactionBlockedException(String message) {
+            super(message);
+        }
+    }
+
+    /**
+     * The row was changed by another worker after this worker read it. This is
+     * a normal distributed-worker outcome, not a retryable transaction failure.
+     */
+    public static class FencingClaimLostException extends IllegalStateException {
+        public FencingClaimLostException(String message) {
             super(message);
         }
     }

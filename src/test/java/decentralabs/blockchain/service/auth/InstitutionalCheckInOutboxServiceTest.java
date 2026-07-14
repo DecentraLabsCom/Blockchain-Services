@@ -54,7 +54,9 @@ class InstitutionalCheckInOutboxServiceTest {
         verify(jdbcTemplate).update(sql.capture(), org.mockito.Mockito.eq(7L));
         assertThat(sql.getValue())
             .contains("status IN ('MINED_FAILED', 'FAILED')")
-            .contains("tx_hash = NULL")
+            .contains("tx_hash = CASE")
+            .contains("signed_raw_transaction = CASE")
+            .contains("generation = CASE")
             .contains("nonce = CASE")
             .contains("status = 'FAILED'")
             .contains("submitted_at = NULL");
