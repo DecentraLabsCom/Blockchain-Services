@@ -157,13 +157,13 @@ class InstitutionalWalletTransactionDispatcherTest {
             ignored -> { }, ignored -> { }
         )).isInstanceOf(InstitutionalWalletDispatchException.class)
             .extracting("outcome")
-            .isEqualTo(InstitutionalWalletDispatchException.Outcome.PRE_BROADCAST_RETRYABLE);
+            .isEqualTo(InstitutionalWalletDispatchException.Outcome.PRE_BROADCAST_BLOCKED);
 
         verify(web3j, never()).ethSendRawTransaction(any());
     }
 
     @Test
-    void classifiesPreparationFailureAsPreBroadcastRetryable() throws Exception {
+    void classifiesPreparationFailureAsPreBroadcastPermanent() throws Exception {
         when(walletService.getWeb3jInstance()).thenReturn(web3j);
         doReturn(chainIdRequest).when(web3j).ethChainId();
         EthChainId chainIdResponse = new EthChainId();
@@ -179,7 +179,29 @@ class InstitutionalWalletTransactionDispatcherTest {
             ignored -> { }, ignored -> { }
         )).isInstanceOf(InstitutionalWalletDispatchException.class)
             .extracting("outcome")
-            .isEqualTo(InstitutionalWalletDispatchException.Outcome.PRE_BROADCAST_RETRYABLE);
+            .isEqualTo(InstitutionalWalletDispatchException.Outcome.PRE_BROADCAST_PERMANENT);
+
+        verify(web3j, never()).ethSendRawTransaction(any());
+    }
+
+    @Test
+    void classifiesRpcPreparationFailureAsPreBroadcastTransient() throws Exception {
+        when(walletService.getWeb3jInstance()).thenReturn(web3j);
+        doReturn(chainIdRequest).when(web3j).ethChainId();
+        EthChainId chainIdResponse = new EthChainId();
+        chainIdResponse.setResult("0x1");
+        when(chainIdRequest.send()).thenReturn(chainIdResponse);
+
+        InstitutionalWalletTransactionDispatcher dispatcher =
+            new InstitutionalWalletTransactionDispatcher(nonceReservationService, walletService);
+
+        assertThatThrownBy(() -> dispatcher.dispatchPrepared(
+            "0xwallet", BigInteger.ONE, BigInteger.valueOf(48), (ignoredChain, ignoredNonce) -> { },
+            ignored -> { throw new IllegalStateException("RPC timeout while estimating gas"); },
+            ignored -> { }, ignored -> { }
+        )).isInstanceOf(InstitutionalWalletDispatchException.class)
+            .extracting("outcome")
+            .isEqualTo(InstitutionalWalletDispatchException.Outcome.PRE_BROADCAST_TRANSIENT);
 
         verify(web3j, never()).ethSendRawTransaction(any());
     }

@@ -58,18 +58,22 @@ public class InstitutionalCheckInOutboxProcessor {
 
             nonceDispatcher.dispatch(record);
         } catch (InstitutionalWalletDispatchException ex) {
-            if (ex.outcome() == InstitutionalWalletDispatchException.Outcome.PRE_BROADCAST_RETRYABLE) {
-                handleFailure(record, ex);
-                return;
+            switch (ex.outcome()) {
+                case PRE_BROADCAST_BLOCKED -> scheduleBlockedRetry(record, ex);
+                case PRE_BROADCAST_TRANSIENT -> handleFailure(record, ex);
+                case PRE_BROADCAST_PERMANENT -> outboxService.markFailed(
+                    record.id(), record.attempts() + 1, LogSanitizer.sanitize(ex.getMessage())
+                );
+                case BROADCAST_OUTCOME_UNKNOWN -> {
+                    int attempts = record.attempts() + 1;
+                    String message = LogSanitizer.sanitize(ex.getMessage());
+                    log.warn(
+                        "Institutional check-in broadcast outcome is uncertain for reservation {}: {}",
+                        LogSanitizer.sanitize(record.reservationKey()), message
+                    );
+                    outboxService.markBroadcastUncertain(record.id(), attempts, message);
+                }
             }
-            int attempts = record.attempts() + 1;
-            String message = LogSanitizer.sanitize(ex.getMessage());
-            log.warn(
-                "Institutional check-in broadcast outcome is uncertain for reservation {}: {}",
-                LogSanitizer.sanitize(record.reservationKey()),
-                message
-            );
-            outboxService.markBroadcastUncertain(record.id(), attempts, message);
         } catch (Exception ex) {
             handleFailure(record, ex);
         }
@@ -124,6 +128,13 @@ public class InstitutionalCheckInOutboxProcessor {
             message
         );
         outboxService.markRetry(record.id(), attempts, nextAttempt, message);
+    }
+
+    private void scheduleBlockedRetry(InstitutionalCheckInOutboxRecord record, Exception ex) {
+        String message = LogSanitizer.sanitize(ex.getMessage());
+        outboxService.markRetry(
+            record.id(), record.attempts(), Instant.now().plusMillis(retryDelayMs(Math.max(1, record.attempts()))), message
+        );
     }
 
     private long retryDelayMs(int attempts) {

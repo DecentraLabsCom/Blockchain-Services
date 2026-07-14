@@ -153,7 +153,7 @@ public class PendingNonceFastRawTransactionManager extends FastRawTransactionMan
         BigInteger pendingNonce = readPendingNonce();
         String operationKey = configuredOperationKey != null
             ? configuredOperationKey
-            : operationFingerprint(gasLimit, to, data, value);
+            : operationFingerprint(to, data, value);
         reconcileBlockingAttempt();
         InstitutionalTransactionOutboxService.Attempt attempt;
         try {
@@ -329,14 +329,13 @@ public class PendingNonceFastRawTransactionManager extends FastRawTransactionMan
         }
     }
 
-    private String operationFingerprint(BigInteger gasLimit, String to, String data, BigInteger value) {
+    private String operationFingerprint(String to, String data, BigInteger value) {
         String canonical = String.join(
             "|",
             credentials.getAddress().toLowerCase(),
             chainId.toString(),
             to == null ? "" : to.toLowerCase(),
             value == null ? "0" : value.toString(),
-            gasLimit == null ? "0" : gasLimit.toString(),
             data == null ? "" : data.toLowerCase()
         );
         try {

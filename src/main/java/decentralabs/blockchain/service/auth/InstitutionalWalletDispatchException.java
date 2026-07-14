@@ -2,12 +2,15 @@ package decentralabs.blockchain.service.auth;
 
 /**
  * Checked dispatch failure with an explicit boundary classification. Only a
- * failure after eth_sendRawTransaction was entered is uncertain; allocator,
- * preparation and persistence failures are safe to retry as a new attempt.
+ * failure after eth_sendRawTransaction was entered is uncertain. Before that
+ * boundary, nonce contention, transient infrastructure failures and permanent
+ * preparation failures are classified separately.
  */
 public class InstitutionalWalletDispatchException extends Exception {
     public enum Outcome {
-        PRE_BROADCAST_RETRYABLE,
+        PRE_BROADCAST_BLOCKED,
+        PRE_BROADCAST_TRANSIENT,
+        PRE_BROADCAST_PERMANENT,
         BROADCAST_OUTCOME_UNKNOWN
     }
 

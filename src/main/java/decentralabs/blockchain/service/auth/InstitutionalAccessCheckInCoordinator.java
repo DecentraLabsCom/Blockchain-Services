@@ -83,11 +83,17 @@ public class InstitutionalAccessCheckInCoordinator {
         try {
             nonceDispatcher.dispatch(record);
         } catch (InstitutionalWalletDispatchException ex) {
-            int attempts = record.attempts() + 1;
-            if (ex.outcome() == InstitutionalWalletDispatchException.Outcome.PRE_BROADCAST_RETRYABLE) {
+            boolean blocked = ex.outcome() == InstitutionalWalletDispatchException.Outcome.PRE_BROADCAST_BLOCKED;
+            int attempts = blocked ? record.attempts() : record.attempts() + 1;
+            if (ex.outcome() == InstitutionalWalletDispatchException.Outcome.PRE_BROADCAST_BLOCKED
+                || ex.outcome() == InstitutionalWalletDispatchException.Outcome.PRE_BROADCAST_TRANSIENT) {
                 outboxService.markRetry(
                     record.id(), attempts, Instant.now(),
                     "Initial institutional check-in transaction was not broadcast; retrying"
+                );
+            } else if (ex.outcome() == InstitutionalWalletDispatchException.Outcome.PRE_BROADCAST_PERMANENT) {
+                outboxService.markFailed(
+                    record.id(), attempts, "Initial institutional check-in preparation failed permanently"
                 );
             } else {
                 outboxService.markBroadcastUncertain(

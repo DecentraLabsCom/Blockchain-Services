@@ -164,7 +164,7 @@ class InstitutionalAccessCheckInCoordinatorTest {
         when(outboxService.enqueueAccessGranted(any(), any(), any(), any(), any())).thenReturn(pending);
         when(outboxService.claim(pending.id())).thenReturn(true);
         when(nonceDispatcher.dispatch(pending)).thenThrow(new InstitutionalWalletDispatchException(
-            "blocked", InstitutionalWalletDispatchException.Outcome.PRE_BROADCAST_RETRYABLE,
+            "blocked", InstitutionalWalletDispatchException.Outcome.PRE_BROADCAST_BLOCKED,
             new IllegalStateException("allocator blocked")
         ));
 
@@ -175,7 +175,7 @@ class InstitutionalAccessCheckInCoordinatorTest {
         );
 
         verify(outboxService).markRetry(
-            eq(pending.id()), eq(pending.attempts() + 1), any(Instant.class),
+            eq(pending.id()), eq(pending.attempts()), any(Instant.class),
             eq("Initial institutional check-in transaction was not broadcast; retrying")
         );
         verify(outboxService, never()).markBroadcastUncertain(any(Long.class), any(Integer.class), any());

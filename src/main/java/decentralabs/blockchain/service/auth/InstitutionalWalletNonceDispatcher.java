@@ -20,7 +20,7 @@ public class InstitutionalWalletNonceDispatcher {
         if (record == null) {
             throw new InstitutionalWalletDispatchException(
                 "Institutional check-in outbox record is required",
-                InstitutionalWalletDispatchException.Outcome.PRE_BROADCAST_RETRYABLE,
+                InstitutionalWalletDispatchException.Outcome.PRE_BROADCAST_PERMANENT,
                 new IllegalArgumentException("Missing institutional check-in outbox record")
             );
         }
@@ -33,7 +33,7 @@ public class InstitutionalWalletNonceDispatcher {
             if (record.walletAddress() == null || !walletAddress.equalsIgnoreCase(record.walletAddress())) {
                 throw new InstitutionalWalletDispatchException(
                     "Persisted institutional transaction belongs to a different wallet",
-                    InstitutionalWalletDispatchException.Outcome.PRE_BROADCAST_RETRYABLE,
+                    InstitutionalWalletDispatchException.Outcome.PRE_BROADCAST_PERMANENT,
                     new IllegalStateException("Signer and persisted transaction wallet do not match")
                 );
             }
@@ -46,7 +46,7 @@ public class InstitutionalWalletNonceDispatcher {
             } catch (IllegalArgumentException ex) {
                 throw new InstitutionalWalletDispatchException(
                     "Persisted institutional transaction material is incomplete",
-                    InstitutionalWalletDispatchException.Outcome.PRE_BROADCAST_RETRYABLE,
+                    InstitutionalWalletDispatchException.Outcome.PRE_BROADCAST_PERMANENT,
                     ex
                 );
             }

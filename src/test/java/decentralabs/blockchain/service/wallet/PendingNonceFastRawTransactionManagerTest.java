@@ -157,13 +157,13 @@ class PendingNonceFastRawTransactionManagerTest {
         )).isInstanceOf(RuntimeException.class);
 
         EthSendTransaction retry = durableManager.sendTransaction(
-            BigInteger.valueOf(2_100_000_000L), BigInteger.valueOf(300_000),
+            BigInteger.valueOf(2_100_000_000L), BigInteger.valueOf(301_000),
             "0x0000000000000000000000000000000000000001", "0x1234", BigInteger.ZERO
         );
 
         assertThat(retry.getTransactionHash()).isEqualTo("0x" + "a".repeat(64));
         EthSendTransaction nextOperation = durableManager.sendTransaction(
-            BigInteger.valueOf(2_200_000_000L), BigInteger.valueOf(300_000),
+            BigInteger.valueOf(2_200_000_000L), BigInteger.valueOf(302_000),
             "0x0000000000000000000000000000000000000001", "0x1234", BigInteger.ZERO
         );
         assertThat(nextOperation.getTransactionHash()).isEqualTo("0x" + "a".repeat(64));

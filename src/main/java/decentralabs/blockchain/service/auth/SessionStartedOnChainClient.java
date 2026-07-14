@@ -289,8 +289,7 @@ public class SessionStartedOnChainClient {
             }
             return id.getChainId().longValue();
         } catch (Exception ex) {
-            log.warn("Unable to resolve chainId for SessionStarted publication: {}", ex.getMessage());
-            return 0L;
+            throw new IllegalStateException("RPC could not resolve chainId for SessionStarted publication", ex);
         }
     }
 

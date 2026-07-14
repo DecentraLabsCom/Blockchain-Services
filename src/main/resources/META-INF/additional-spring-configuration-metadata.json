@@ -164,6 +164,18 @@
     "defaultValue": 30
   },
   {
+    "name": "rate.limit.fmu.session-ticket.ip.requests.per.minute",
+    "type": "java.lang.Integer",
+    "description": "Cheap per-IP FMU session-ticket limit applied before observer or booking JWT verification.",
+    "defaultValue": 600
+  },
+  {
+    "name": "rate.limit.fmu.session-ticket.ip.requests.burst",
+    "type": "java.lang.Integer",
+    "description": "Burst capacity for the cheap per-IP FMU session-ticket limit applied before authentication.",
+    "defaultValue": 60
+  },
+  {
     "name": "institutional.transaction-outbox.monitor.enabled",
     "type": "java.lang.Boolean",
     "description": "Enable monitoring and same-nonce recovery for generic institutional transactions.",

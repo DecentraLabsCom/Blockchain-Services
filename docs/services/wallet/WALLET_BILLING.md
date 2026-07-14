@@ -129,15 +129,16 @@ Lab-admin mutations accept an optional `Idempotency-Key` header for the same
 purpose, as does the server-side provider-payout endpoint. Operators can tune
 recovery of vanished generic submissions with
 `INSTITUTIONAL_TRANSACTION_OUTBOX_SUBMITTED_STALE_AFTER_MS` (default two
-minutes); stale rows become `STUCK_UNKNOWN` and are rebroadcast from their
-persisted raw transaction before later wallet work proceeds. The generic
-monitor always checks receipt and node visibility before reading the pending
-nonce, including for `STUCK_UNKNOWN` rows. Retryable replacements reuse the
-same nonce and apply `INSTITUTIONAL_TRANSACTION_OUTBOX_MONITOR_GAS_BUMP_PERCENT`
-(default 20%). `INSTITUTIONAL_TRANSACTION_OUTBOX_MONITOR_MAX_ATTEMPTS` (10)
-and `INSTITUTIONAL_TRANSACTION_OUTBOX_MONITOR_MAX_PENDING_MS` (15 minutes)
-bound automatic recovery; an exhausted row remains `STUCK_UNKNOWN` and is
-reported for manual intervention rather than being retransmitted indefinitely.
+minutes); a visible stale row becomes `REPLACEMENT_PENDING`, keeps its nonce
+and payload, and receives a bounded same-nonce replacement. Every superseded
+hash is retained in replacement history and is reconciled alongside the
+current hash. The generic monitor always checks receipts and node visibility
+before reading the pending nonce, including for `STUCK_UNKNOWN` rows. Retryable
+replacements apply `INSTITUTIONAL_TRANSACTION_OUTBOX_MONITOR_GAS_BUMP_PERCENT`
+(default 20%) from the original gas price. The max-attempts and max-pending
+settings bound automatic recovery; an exhausted row remains
+`STUCK_UNKNOWN` and is reported for manual intervention rather than being
+retransmitted indefinitely.
 
 ### Read-only administration
 

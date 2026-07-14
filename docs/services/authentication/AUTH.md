@@ -119,14 +119,15 @@ Important invariants:
   first `eth_sendRawTransaction` call.
 - A stale `SUBMITTING` row first looks up its stored hash and retransmits the
   stored bytes. It must not overwrite that evidence with a replacement first.
-- `PRE_BROADCAST_RETRYABLE` returns to retry/backoff; only
+- `PRE_BROADCAST_BLOCKED` returns to `RETRY` without consuming an attempt;
+  `PRE_BROADCAST_TRANSIENT` consumes the retry budget; and
+  `PRE_BROADCAST_PERMANENT` becomes `MANUAL_INTERVENTION`. Only
   `BROADCAST_OUTCOME_UNKNOWN` becomes `STUCK_UNKNOWN`.
-- A pre-broadcast retry does not consume the maximum broadcast-attempt budget
-  and never releases `onchain_reservation_guard`; wallet contention therefore
-  cannot strand a durable SessionStarted attestation. Legacy `FAILED` rows with
-  no transaction hash or signed material are automatically reclaimed as
-  retryable rows. The health response exposes `session_started_failed` and
-  treats it as a degraded queue blocker until recovery completes.
+- Blocked pre-broadcast publication never releases
+  `onchain_reservation_guard`; wallet contention therefore cannot strand a
+  durable SessionStarted attestation. A mined revert becomes `MINED_FAILED`.
+  The health response exposes failed/manual rows and stale `RETRY` or
+  `SUBMITTING` rows as degraded queue blockers.
 - Check-in, `SessionStarted` and generic institutional producers share nonce
   ownership but keep their own durable outbox records and monitors.
 

@@ -171,32 +171,43 @@ public class InstitutionalTransactionOutboxMonitor {
             }
             String raw = attempt.signedRawTransaction();
             String hash = attempt.txHash();
+            boolean replacementPending = "REPLACEMENT_PENDING".equals(attempt.status());
+            boolean retryableReplacement = "RETRYABLE".equals(attempt.status()) && attempt.attempts() > 0;
             if (raw == null || raw.isBlank()) {
                 if (attempt.gasPrice() == null || attempt.gasLimit() == null || attempt.toAddress() == null
                     || attempt.value() == null || attempt.data() == null || attempt.nonce() == null) {
                     return false;
                 }
-                BigInteger gasPrice = gasPriceForAttempt(attempt);
+                BigInteger gasPrice = gasPriceForAttempt(attempt, replacementPending || retryableReplacement
+                    ? attempt.attempts() + 1 : attempt.attempts());
                 raw = sign(attempt, credentials, gasPrice);
                 hash = Hash.sha3(raw);
-                if ("RETRYABLE".equals(attempt.status()) && attempt.attempts() > 0) {
-                    outboxService.markSigned(attempt, raw, hash, gasPrice);
+                if ((replacementPending || retryableReplacement) && attempt.txHash() != null
+                    && !attempt.txHash().isBlank()) {
+                    outboxService.markReplacementPrepared(attempt, attempt.txHash(), raw, hash, gasPrice);
                 } else {
                     outboxService.markSigned(attempt, raw, hash);
                 }
-            } else if ("RETRYABLE".equals(attempt.status()) && attempt.attempts() > 0) {
+            } else if (replacementPending || retryableReplacement) {
                 // A retryable error was classified before the broadcast outcome
                 // became uncertain. Check the persisted material first; only
                 // then create a same-nonce replacement with a bounded gas bump.
                 MaterialState state = inspectPersistedMaterial(web3j, attempt, hash);
                 if (state == MaterialState.MINED_SUCCESS || state == MaterialState.MINED_FAILED
-                    || state == MaterialState.VISIBLE) {
+                    || (state == MaterialState.VISIBLE && !replacementPending)) {
                     return true;
                 }
-                BigInteger gasPrice = gasPriceForAttempt(attempt);
+                BigInteger gasPrice = gasPriceForAttempt(attempt, attempt.attempts() + 1);
                 raw = sign(attempt, credentials, gasPrice);
                 hash = Hash.sha3(raw);
-                outboxService.markSigned(attempt, raw, hash, gasPrice);
+                if (attempt.txHash() != null && !attempt.txHash().isBlank()) {
+                    outboxService.markReplacementPrepared(attempt, attempt.txHash(), raw, hash, gasPrice);
+                } else {
+                    // There is no prior hash to reconcile when a legacy row has
+                    // only partial signed material; persist the bounded material
+                    // without inventing history for an unknown hash.
+                    outboxService.markSigned(attempt, raw, hash, gasPrice);
+                }
             } else if (hash != null && !hash.isBlank()) {
                 MaterialState state = inspectPersistedMaterial(web3j, attempt, hash);
                 if (state == MaterialState.MINED_SUCCESS || state == MaterialState.MINED_FAILED
@@ -248,21 +259,55 @@ public class InstitutionalTransactionOutboxMonitor {
         InstitutionalTransactionOutboxService.Attempt attempt,
         String hash
     ) throws Exception {
-        var receipt = web3j.ethGetTransactionReceipt(hash).send();
-        if (receipt != null && receipt.getTransactionReceipt().isPresent()) {
-            if (receipt.getTransactionReceipt().orElseThrow().isStatusOK()) {
-                outboxService.markMinedSuccess(attempt);
-                return MaterialState.MINED_SUCCESS;
-            }
-            outboxService.markMinedFailed(attempt, "Institutional transaction reverted on-chain");
-            return MaterialState.MINED_FAILED;
+        MaterialState receiptState = inspectReceipts(web3j, attempt);
+        if (receiptState != MaterialState.ABSENT) {
+            return receiptState;
         }
-        var transaction = web3j.ethGetTransactionByHash(hash).send();
-        if (transaction != null && transaction.getTransaction().isPresent()) {
-            outboxService.markSubmitted(attempt, hash);
-            return MaterialState.VISIBLE;
+        for (String candidateHash : monitoredHashes(attempt)) {
+            var transaction = web3j.ethGetTransactionByHash(candidateHash).send();
+            if (transaction != null && transaction.getTransaction().isPresent()) {
+                if (candidateHash.equalsIgnoreCase(hash)) {
+                    outboxService.markSubmitted(attempt, hash);
+                }
+                return MaterialState.VISIBLE;
+            }
         }
         return MaterialState.ABSENT;
+    }
+
+    private MaterialState inspectReceipts(
+        Web3j web3j,
+        InstitutionalTransactionOutboxService.Attempt attempt
+    ) throws Exception {
+        for (String candidateHash : monitoredHashes(attempt)) {
+            var receipt = web3j.ethGetTransactionReceipt(candidateHash).send();
+            if (receipt != null && receipt.getTransactionReceipt().isPresent()) {
+                if (receipt.getTransactionReceipt().orElseThrow().isStatusOK()) {
+                    outboxService.markMinedSuccess(attempt);
+                    return MaterialState.MINED_SUCCESS;
+                }
+                outboxService.markMinedFailed(attempt, "Institutional transaction reverted on-chain");
+                return MaterialState.MINED_FAILED;
+            }
+        }
+        return MaterialState.ABSENT;
+    }
+
+    private java.util.List<String> monitoredHashes(InstitutionalTransactionOutboxService.Attempt attempt) {
+        java.util.List<String> hashes = new java.util.ArrayList<>();
+        if (attempt != null && attempt.txHash() != null && !attempt.txHash().isBlank()) {
+            hashes.add(attempt.txHash());
+        }
+        if (attempt != null) {
+            java.util.List<String> history = outboxService.findReplacedHashes(attempt.id());
+            if (history != null) {
+                history.stream()
+                    .filter(hash -> hash != null && !hash.isBlank())
+                    .filter(hash -> hashes.stream().noneMatch(existing -> existing.equalsIgnoreCase(hash)))
+                    .forEach(hashes::add);
+            }
+        }
+        return hashes;
     }
 
     private String sign(
@@ -279,14 +324,17 @@ public class InstitutionalTransactionOutboxMonitor {
         ));
     }
 
-    private BigInteger gasPriceForAttempt(InstitutionalTransactionOutboxService.Attempt attempt) {
+    private BigInteger gasPriceForAttempt(
+        InstitutionalTransactionOutboxService.Attempt attempt,
+        int replacementAttempt
+    ) {
         BigInteger original = attempt.originalGasPrice() != null
             ? attempt.originalGasPrice() : attempt.gasPrice();
         if (original == null || original.signum() <= 0) {
             throw new IllegalStateException("Institutional transaction original gas price is missing");
         }
         int bump = Math.max(0, gasBumpPercent);
-        int retries = Math.max(0, attempt.attempts());
+        int retries = Math.max(0, replacementAttempt);
         BigInteger multiplier = BigInteger.valueOf(100L + (long) bump * retries);
         BigInteger desired = original.multiply(multiplier).add(BigInteger.valueOf(99)).divide(BigInteger.valueOf(100));
         BigInteger allowed = null;
@@ -342,18 +390,34 @@ public class InstitutionalTransactionOutboxMonitor {
         InstitutionalTransactionOutboxService.Attempt attempt
     ) {
         try {
-            var receiptResponse = web3j.ethGetTransactionReceipt(attempt.txHash()).send();
-            if (receiptResponse != null && receiptResponse.getTransactionReceipt().isPresent()) {
-                if (receiptResponse.getTransactionReceipt().orElseThrow().isStatusOK()) {
-                    outboxService.markMinedSuccess(attempt);
-                } else {
-                    outboxService.markMinedFailed(attempt, "Institutional transaction reverted on-chain");
-                }
+            MaterialState receiptState = inspectReceipts(web3j, attempt);
+            if (receiptState == MaterialState.MINED_SUCCESS || receiptState == MaterialState.MINED_FAILED) {
                 return true;
             }
 
-            var transactionResponse = web3j.ethGetTransactionByHash(attempt.txHash()).send();
-            if (transactionResponse != null && transactionResponse.getTransaction().isPresent()) {
+            boolean visible = false;
+            for (String hash : monitoredHashes(attempt)) {
+                var transactionResponse = web3j.ethGetTransactionByHash(hash).send();
+                if (transactionResponse != null && transactionResponse.getTransaction().isPresent()) {
+                    visible = true;
+                    break;
+                }
+            }
+            if (visible) {
+                if (isSubmittedStale(attempt)) {
+                    if (requiresManualIntervention(attempt)) {
+                        outboxService.markStuckUnknown(
+                            attempt,
+                            "Institutional transaction exceeded the replacement budget; manual intervention required"
+                        );
+                    } else {
+                        outboxService.markReplacementPending(
+                            attempt,
+                            "Submitted transaction remained visible without a receipt; replacement required"
+                        );
+                    }
+                    return true;
+                }
                 return false;
             }
 
@@ -399,17 +463,19 @@ public class InstitutionalTransactionOutboxMonitor {
         }
         try {
             if (attempt.txHash() != null && !attempt.txHash().isBlank()) {
-                var receiptResponse = web3j.ethGetTransactionReceipt(attempt.txHash()).send();
-                if (receiptResponse != null && receiptResponse.getTransactionReceipt().isPresent()) {
-                    if (receiptResponse.getTransactionReceipt().orElseThrow().isStatusOK()) {
-                        outboxService.markMinedSuccess(attempt);
-                    } else {
-                        outboxService.markMinedFailed(attempt, "Institutional transaction reverted on-chain");
-                    }
+                MaterialState receiptState = inspectReceipts(web3j, attempt);
+                if (receiptState == MaterialState.MINED_SUCCESS || receiptState == MaterialState.MINED_FAILED) {
                     return true;
                 }
-                var transactionResponse = web3j.ethGetTransactionByHash(attempt.txHash()).send();
-                if (transactionResponse != null && transactionResponse.getTransaction().isPresent()) {
+                boolean visible = false;
+                for (String hash : monitoredHashes(attempt)) {
+                    var transactionResponse = web3j.ethGetTransactionByHash(hash).send();
+                    if (transactionResponse != null && transactionResponse.getTransaction().isPresent()) {
+                        visible = true;
+                        break;
+                    }
+                }
+                if (visible) {
                     outboxService.markSubmitted(attempt, attempt.txHash());
                     return true;
                 }

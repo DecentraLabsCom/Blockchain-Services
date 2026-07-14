@@ -64,7 +64,7 @@ public class InstitutionalWalletNonceReservationService {
             SELECT id
             FROM institutional_transaction_outbox
             WHERE wallet_address = ? AND chain_id = ?
-              AND status IN ('RESERVED', 'PREPARED', 'RETRYABLE', 'STUCK_UNKNOWN')
+              AND status IN ('RESERVED', 'PREPARED', 'RETRYABLE', 'SUBMITTED', 'REPLACEMENT_PENDING', 'STUCK_UNKNOWN')
             ORDER BY nonce ASC
             LIMIT 1
             FOR UPDATE
@@ -99,7 +99,7 @@ public class InstitutionalWalletNonceReservationService {
             SELECT COUNT(*)
             FROM session_started_attestations
             WHERE onchain_wallet_address = ? AND onchain_chain_id = ? AND onchain_nonce IS NOT NULL
-              AND onchain_status IN ('QUEUED', 'SUBMITTING', 'RETRY', 'STUCK_UNKNOWN', 'FAILED')
+              AND onchain_status IN ('QUEUED', 'SUBMITTING', 'RETRY', 'STUCK_UNKNOWN', 'FAILED', 'MANUAL_INTERVENTION')
             """,
             Long.class,
             walletAddress,

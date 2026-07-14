@@ -143,14 +143,15 @@ public class SessionStartedOnChainPublisherService {
             );
             return true;
         } catch (InstitutionalWalletDispatchException ex) {
-            if (ex.outcome() == InstitutionalWalletDispatchException.Outcome.PRE_BROADCAST_RETRYABLE) {
-                markPreBroadcastRetry(submission.id(), ex);
-            } else {
-                markBroadcastUncertain(submission.id(), ex);
+            switch (ex.outcome()) {
+                case PRE_BROADCAST_BLOCKED -> markPreBroadcastBlocked(submission.id());
+                case PRE_BROADCAST_TRANSIENT -> markPreBroadcastTransient(submission.id(), ex);
+                case PRE_BROADCAST_PERMANENT -> markPreBroadcastPermanent(submission.id(), ex);
+                case BROADCAST_OUTCOME_UNKNOWN -> markBroadcastUncertain(submission.id(), ex);
             }
             return false;
         } catch (Exception ex) {
-            markPreBroadcastRetry(submission.id(), ex);
+            markPreBroadcastTransient(submission.id(), ex);
             return false;
         }
     }
@@ -322,22 +323,48 @@ public class SessionStartedOnChainPublisherService {
         );
     }
 
-    private void markPreBroadcastRetry(long id, Exception ex) {
-        String error = LogSanitizer.sanitize(ex.getMessage());
+    private void markPreBroadcastBlocked(long id) {
+        updatePreBroadcastStatus(
+            id,
+            "RETRY",
+            "SessionStarted publication is blocked by another institutional wallet transaction; retrying",
+            true
+        );
+        log.info("SessionStarted publication remains queued behind a wallet blocker for attestation {}", id);
+    }
+
+    private void markPreBroadcastTransient(long id, Exception ex) {
+        updatePreBroadcastStatus(id, "RETRY", LogSanitizer.sanitize(ex.getMessage()), false);
+        log.warn("SessionStarted pre-broadcast publication will be retried for attestation {}: {}", id, ex.getMessage());
+    }
+
+    private void markPreBroadcastPermanent(long id, Exception ex) {
+        updatePreBroadcastStatus(
+            id,
+            "MANUAL_INTERVENTION",
+            "Permanent pre-broadcast SessionStarted failure: " + LogSanitizer.sanitize(ex.getMessage()),
+            false
+        );
+        log.error("SessionStarted publication requires manual intervention for attestation {}: {}", id, ex.getMessage());
+    }
+
+    private void updatePreBroadcastStatus(long id, String status, String error, boolean refundAttempt) {
         jdbcTemplate.update(
             """
             UPDATE session_started_attestations
             SET onchain_publish_locked_at = NULL,
-                onchain_status = 'RETRY',
-                onchain_publish_attempts = GREATEST(onchain_publish_attempts - 1, 0),
+                onchain_status = ?,
+                onchain_publish_attempts = CASE WHEN ? THEN GREATEST(onchain_publish_attempts - 1, 0)
+                    ELSE onchain_publish_attempts END,
                 onchain_publish_last_error = ?,
                 updated_at = CURRENT_TIMESTAMP
             WHERE id = ? AND onchain_status = 'SUBMITTING'
             """,
+            status,
+            refundAttempt,
             error,
             id
         );
-        log.warn("SessionStarted pre-broadcast publication will be retried for attestation {}: {}", id, error);
     }
 
     private void markBroadcastUncertain(long id, InstitutionalWalletDispatchException ex) {

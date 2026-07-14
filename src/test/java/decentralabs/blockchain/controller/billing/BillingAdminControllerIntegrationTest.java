@@ -11,6 +11,7 @@ import decentralabs.blockchain.SecurityConfig;
 import decentralabs.blockchain.security.AccessTokenAuthenticationFilter;
 import decentralabs.blockchain.security.AdminNetworkAccessPolicy;
 import decentralabs.blockchain.security.LocalhostOnlyFilter;
+import decentralabs.blockchain.security.PreAuthenticationRateLimitFilter;
 import decentralabs.blockchain.security.PublicEndpointRateLimitFilter;
 import decentralabs.blockchain.security.SessionObserverAuthenticationFilter;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -183,6 +184,7 @@ class BillingAdminControllerIntegrationTest {
         SessionObserverAuthenticationFilter.class,
         AdminNetworkAccessPolicy.class,
         LocalhostOnlyFilter.class,
+        PreAuthenticationRateLimitFilter.class,
         PublicEndpointRateLimitFilter.class,
         BillingAdminController.class
     })

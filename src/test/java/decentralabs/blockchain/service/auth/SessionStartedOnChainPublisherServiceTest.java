@@ -222,7 +222,7 @@ class SessionStartedOnChainPublisherServiceTest {
         when(onChainClient.signerAddress()).thenReturn("0xwallet");
         org.mockito.Mockito.doThrow(new InstitutionalWalletDispatchException(
             "nonce allocation blocked",
-            InstitutionalWalletDispatchException.Outcome.PRE_BROADCAST_RETRYABLE,
+            InstitutionalWalletDispatchException.Outcome.PRE_BROADCAST_BLOCKED,
             new IllegalStateException("wallet busy")
         )).when(transactionDispatcher).dispatchPrepared(
             anyString(), isNull(), isNull(), any(), any(), any(), any()
@@ -231,10 +231,35 @@ class SessionStartedOnChainPublisherServiceTest {
         assertThat(service.publishPending(10)).isZero();
 
         verify(jdbcTemplate).update(
-            contains("onchain_status = 'RETRY'"),
-            eq("nonce allocation blocked"), eq(7L)
+            contains("onchain_status = ?"),
+            eq("RETRY"), eq(true), contains("blocked by another institutional wallet transaction"), eq(7L)
         );
         verify(jdbcTemplate, never()).update(contains("onchain_status = 'STUCK_UNKNOWN'"), any(Object[].class));
+    }
+
+    @Test
+    void sendsPermanentPreparationFailureToManualIntervention() throws Exception {
+        SessionStartedOnChainPublisherService service = buildService(jdbcTemplate);
+        mockSubmittedQuery(List.of());
+        mockPendingQuery("QUEUED", 0, null, null, null, null);
+        when(jdbcTemplate.update(anyString(), any(Object[].class))).thenReturn(1);
+        when(onChainClient.hasSessionStarted("0xabc")).thenReturn(false);
+        when(onChainClient.signerAddress()).thenReturn("0xwallet");
+        org.mockito.Mockito.doThrow(new InstitutionalWalletDispatchException(
+            "signed transaction encoding is invalid",
+            InstitutionalWalletDispatchException.Outcome.PRE_BROADCAST_PERMANENT,
+            new IllegalArgumentException("bad calldata")
+        )).when(transactionDispatcher).dispatchPrepared(
+            anyString(), isNull(), isNull(), any(), any(), any(), any()
+        );
+
+        assertThat(service.publishPending(10)).isZero();
+
+        verify(jdbcTemplate).update(
+            contains("onchain_status = ?"),
+            eq("MANUAL_INTERVENTION"), eq(false),
+            contains("Permanent pre-broadcast SessionStarted failure"), eq(7L)
+        );
     }
 
     @Test

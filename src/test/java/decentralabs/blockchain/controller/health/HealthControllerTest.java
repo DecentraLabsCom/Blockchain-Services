@@ -288,7 +288,7 @@ class HealthControllerTest {
         void shouldCountFailedSessionStartedTransactionsAsBlockers() throws Exception {
             setupHealthyEnvironment();
             when(jdbcTemplate.queryForObject(
-                org.mockito.ArgumentMatchers.contains("onchain_status = 'FAILED'"),
+                org.mockito.ArgumentMatchers.contains("('FAILED', 'MANUAL_INTERVENTION', 'MINED_FAILED')"),
                 eq(Integer.class)
             )).thenReturn(1);
 
@@ -297,6 +297,20 @@ class HealthControllerTest {
                 .andExpect(jsonPath("$.status").value("DEGRADED"))
                 .andExpect(jsonPath("$.session_started_failed").value(1))
                 .andExpect(jsonPath("$.queue_health_errors").isEmpty());
+        }
+
+        @Test
+        @DisplayName("Should count a reverted SessionStarted transaction as failed")
+        void shouldCountMinedFailedSessionStartedTransactionsAsBlockers() throws Exception {
+            setupHealthyEnvironment();
+            when(jdbcTemplate.queryForObject(
+                org.mockito.ArgumentMatchers.contains("('FAILED', 'MANUAL_INTERVENTION', 'MINED_FAILED')"),
+                eq(Integer.class)
+            )).thenReturn(1);
+
+            mockMvc.perform(get("/health"))
+                .andExpect(status().isServiceUnavailable())
+                .andExpect(jsonPath("$.session_started_failed").value(1));
         }
 
         @Test

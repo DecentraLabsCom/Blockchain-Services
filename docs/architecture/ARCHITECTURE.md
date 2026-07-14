@@ -97,9 +97,11 @@ stateDiagram-v2
     PENDING --> RESERVED: reserve nonce
     RESERVED --> PREPARED: sign + persist raw/hash
     PREPARED --> SUBMITTED: broadcast accepted / already known
+    SUBMITTED --> REPLACEMENT_PENDING: visible and stale
+    REPLACEMENT_PENDING --> PREPARED: bounded same-nonce replacement persisted
     SUBMITTED --> MINED_SUCCESS: receipt success
     SUBMITTED --> MINED_FAILED: receipt revert
-    PREPARED --> RETRY: proven pre-broadcast failure
+    PREPARED --> RETRYABLE: proven pre-broadcast failure
     SUBMITTED --> STUCK_UNKNOWN: RPC outcome uncertain
     STUCK_UNKNOWN --> SUBMITTED: reconciler proves safe retry
     SUBMITTED --> SUBMITTED: same-nonce replacement
@@ -114,9 +116,10 @@ hash is never treated as proof that a transaction was not broadcast.
 
 `SessionStarted` pre-broadcast contention is retryable independently of the
 broadcast-attempt limit: it returns to `RETRY`, keeps the reservation guard and
-does not spend an attempt. Rows left as legacy `FAILED` without a transaction
-hash or signed raw material are automatically reclaimed. `/health` reports
-`session_started_failed` and degrades while such a blocker remains.
+does not spend an attempt. Transient preparation failures consume the retry
+budget; permanent preparation failures become `MANUAL_INTERVENTION` and are
+not automatically reopened. A mined revert is `MINED_FAILED`; `/health` reports
+it, together with manual-intervention rows and stale `RETRY`/`SUBMITTING` rows.
 
 ## Documentation map
 

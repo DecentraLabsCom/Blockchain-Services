@@ -263,8 +263,12 @@ public class HealthController {
     }
 
     private HealthCount countFailedSessionStartedTransactions() {
+        int threshold = boundedQueueThreshold();
         return countHealthRows(
-            "SELECT COUNT(*) FROM session_started_attestations WHERE onchain_status = 'FAILED'",
+            "SELECT COUNT(*) FROM session_started_attestations WHERE onchain_status IN "
+                + "('FAILED', 'MANUAL_INTERVENTION', 'MINED_FAILED') OR "
+                + "(onchain_status IN ('RETRY', 'SUBMITTING') AND updated_at < DATE_SUB(CURRENT_TIMESTAMP, INTERVAL "
+                + threshold + " SECOND))",
             "21"
         );
     }
@@ -273,7 +277,7 @@ public class HealthController {
         int threshold = boundedQueueThreshold();
         return countHealthRows(
             "SELECT COUNT(*) FROM institutional_transaction_outbox WHERE "
-                + "status = 'STUCK_UNKNOWN' OR (status IN ('RESERVED', 'PREPARED', 'RETRYABLE', 'SUBMITTED') "
+                + "status = 'STUCK_UNKNOWN' OR (status IN ('RESERVED', 'PREPARED', 'RETRYABLE', 'SUBMITTED', 'REPLACEMENT_PENDING') "
                 + "AND updated_at < DATE_SUB(CURRENT_TIMESTAMP, INTERVAL "
                 + threshold + " SECOND))",
             "28"

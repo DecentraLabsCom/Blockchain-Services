@@ -12,6 +12,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import decentralabs.blockchain.security.AccessTokenAuthenticationFilter;
 import decentralabs.blockchain.security.AdminNetworkAccessPolicy;
 import decentralabs.blockchain.security.LocalhostOnlyFilter;
+import decentralabs.blockchain.security.PreAuthenticationRateLimitFilter;
 import decentralabs.blockchain.security.PublicEndpointRateLimitFilter;
 import decentralabs.blockchain.security.SessionObserverAuthenticationFilter;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -52,6 +53,8 @@ import org.springframework.web.bind.annotation.RestController;
     "rate.limit.auth.requests.per.minute=2",
     "rate.limit.auth.requests.burst=1",
     "rate.limit.jwks.requests.per.minute=2",
+    "rate.limit.fmu.session-ticket.ip.requests.per.minute=2",
+    "rate.limit.fmu.session-ticket.ip.requests.burst=1",
     "spring.autoconfigure.exclude="
         + "org.springframework.boot.jdbc.autoconfigure.DataSourceAutoConfiguration,"
         + "org.springframework.boot.jdbc.autoconfigure.DataSourceTransactionManagerAutoConfiguration,"
@@ -69,16 +72,20 @@ class SecurityConfigIntegrationTest {
 
     private final PublicEndpointRateLimitFilter publicEndpointRateLimitFilter;
 
+    private final PreAuthenticationRateLimitFilter preAuthenticationRateLimitFilter;
+
     private final AdminNetworkAccessPolicy adminNetworkAccessPolicy;
 
     @Autowired
     SecurityConfigIntegrationTest(WebApplicationContext webApplicationContext,
                                   LocalhostOnlyFilter localhostOnlyFilter,
                                   PublicEndpointRateLimitFilter publicEndpointRateLimitFilter,
+                                  PreAuthenticationRateLimitFilter preAuthenticationRateLimitFilter,
                                   AdminNetworkAccessPolicy adminNetworkAccessPolicy) {
         this.webApplicationContext = webApplicationContext;
         this.localhostOnlyFilter = localhostOnlyFilter;
         this.publicEndpointRateLimitFilter = publicEndpointRateLimitFilter;
+        this.preAuthenticationRateLimitFilter = preAuthenticationRateLimitFilter;
         this.adminNetworkAccessPolicy = adminNetworkAccessPolicy;
     }
 
@@ -92,8 +99,10 @@ class SecurityConfigIntegrationTest {
         ReflectionTestUtils.setField(adminNetworkAccessPolicy, "accessTokenRequired", true);
         ((java.util.Map<?, ?>) ReflectionTestUtils.getField(publicEndpointRateLimitFilter, "authBuckets")).clear();
         ((java.util.Map<?, ?>) ReflectionTestUtils.getField(publicEndpointRateLimitFilter, "jwksBuckets")).clear();
+        ((java.util.Map<?, ?>) ReflectionTestUtils.getField(preAuthenticationRateLimitFilter,
+            "fmuSessionTicketIpBuckets")).clear();
         mockMvc = MockMvcBuilders.webAppContextSetup(webApplicationContext)
-            .addFilters(localhostOnlyFilter, publicEndpointRateLimitFilter)
+            .addFilters(localhostOnlyFilter)
             .apply(springSecurity())
             .build();
     }
@@ -270,6 +279,30 @@ class SecurityConfigIntegrationTest {
     }
 
     @Test
+    void fmuSessionTicketRedeemRateLimitRunsBeforeInvalidObserverAuthentication() throws Exception {
+        String clientIp = "172.17.0.11";
+        mockMvc.perform(post("/auth/fmu/session-ticket/redeem")
+                .header("Authorization", "Bearer invalid-observer-token")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{}")
+                .with(req -> {
+                    req.setRemoteAddr(clientIp);
+                    return req;
+                }))
+            .andExpect(status().isUnauthorized());
+
+        mockMvc.perform(post("/auth/fmu/session-ticket/redeem")
+                .header("Authorization", "Bearer another-invalid-observer-token")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{}")
+                .with(req -> {
+                    req.setRemoteAddr(clientIp);
+                    return req;
+                }))
+            .andExpect(status().isTooManyRequests());
+    }
+
+    @Test
     void accessCredentialEndpoint_isAccessibleWithoutSpringAuthentication() throws Exception {
         mockMvc.perform(post("/auth/access-credential")
                 .contentType(MediaType.APPLICATION_JSON)
@@ -371,6 +404,7 @@ class SecurityConfigIntegrationTest {
         SessionObserverAuthenticationFilter.class,
         AdminNetworkAccessPolicy.class,
         LocalhostOnlyFilter.class,
+        PreAuthenticationRateLimitFilter.class,
         PublicEndpointRateLimitFilter.class,
         TestEndpoints.class
     })

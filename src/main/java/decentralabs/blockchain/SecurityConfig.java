@@ -9,6 +9,7 @@ import java.util.Set;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.boot.web.servlet.FilterRegistrationBean;
 import org.springframework.http.HttpMethod;
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
@@ -20,6 +21,8 @@ import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 import org.springframework.web.cors.CorsConfigurationSource;
 
 import decentralabs.blockchain.security.AccessTokenAuthenticationFilter;
+import decentralabs.blockchain.security.PreAuthenticationRateLimitFilter;
+import decentralabs.blockchain.security.PublicEndpointRateLimitFilter;
 import decentralabs.blockchain.security.SessionObserverAuthenticationFilter;
 import decentralabs.blockchain.service.BackendUrlResolver;
 
@@ -73,15 +76,21 @@ public class SecurityConfig {
     private boolean providersEnabled;
 
     private final AccessTokenAuthenticationFilter accessTokenAuthenticationFilter;
+    private final PreAuthenticationRateLimitFilter preAuthenticationRateLimitFilter;
+    private final PublicEndpointRateLimitFilter publicEndpointRateLimitFilter;
     private final SessionObserverAuthenticationFilter sessionObserverAuthenticationFilter;
     private final BackendUrlResolver backendUrlResolver;
 
     public SecurityConfig(
         AccessTokenAuthenticationFilter accessTokenAuthenticationFilter,
+        PreAuthenticationRateLimitFilter preAuthenticationRateLimitFilter,
+        PublicEndpointRateLimitFilter publicEndpointRateLimitFilter,
         SessionObserverAuthenticationFilter sessionObserverAuthenticationFilter,
         BackendUrlResolver backendUrlResolver
     ) {
         this.accessTokenAuthenticationFilter = accessTokenAuthenticationFilter;
+        this.preAuthenticationRateLimitFilter = preAuthenticationRateLimitFilter;
+        this.publicEndpointRateLimitFilter = publicEndpointRateLimitFilter;
         this.sessionObserverAuthenticationFilter = sessionObserverAuthenticationFilter;
         this.backendUrlResolver = backendUrlResolver;
     }
@@ -162,9 +171,29 @@ public class SecurityConfig {
                 authorize.anyRequest().denyAll();
             })
             .addFilterBefore(sessionObserverAuthenticationFilter, UsernamePasswordAuthenticationFilter.class)
-            .addFilterBefore(accessTokenAuthenticationFilter, SessionObserverAuthenticationFilter.class);
+            .addFilterBefore(accessTokenAuthenticationFilter, SessionObserverAuthenticationFilter.class)
+            .addFilterBefore(preAuthenticationRateLimitFilter, SessionObserverAuthenticationFilter.class)
+            .addFilterAfter(publicEndpointRateLimitFilter, SessionObserverAuthenticationFilter.class);
 
         return http.build();
+    }
+
+    @Bean
+    public FilterRegistrationBean<PreAuthenticationRateLimitFilter> preAuthenticationRateLimitFilterRegistration(
+        PreAuthenticationRateLimitFilter filter
+    ) {
+        FilterRegistrationBean<PreAuthenticationRateLimitFilter> registration = new FilterRegistrationBean<>(filter);
+        registration.setEnabled(false);
+        return registration;
+    }
+
+    @Bean
+    public FilterRegistrationBean<PublicEndpointRateLimitFilter> publicEndpointRateLimitFilterRegistration(
+        PublicEndpointRateLimitFilter filter
+    ) {
+        FilterRegistrationBean<PublicEndpointRateLimitFilter> registration = new FilterRegistrationBean<>(filter);
+        registration.setEnabled(false);
+        return registration;
     }
 
     @Bean

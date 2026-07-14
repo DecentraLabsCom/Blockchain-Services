@@ -32,7 +32,7 @@ class InstitutionalWalletNonceDispatcherTest {
         assertThatThrownBy(() -> dispatcher.dispatch(null))
             .isInstanceOf(InstitutionalWalletDispatchException.class)
             .extracting("outcome")
-            .isEqualTo(InstitutionalWalletDispatchException.Outcome.PRE_BROADCAST_RETRYABLE);
+            .isEqualTo(InstitutionalWalletDispatchException.Outcome.PRE_BROADCAST_PERMANENT);
 
         verify(submissionService, never()).signerAddress();
     }
@@ -148,7 +148,7 @@ class InstitutionalWalletNonceDispatcherTest {
         ).dispatch(record))
             .isInstanceOf(InstitutionalWalletDispatchException.class)
             .extracting("outcome")
-            .isEqualTo(InstitutionalWalletDispatchException.Outcome.PRE_BROADCAST_RETRYABLE);
+            .isEqualTo(InstitutionalWalletDispatchException.Outcome.PRE_BROADCAST_PERMANENT);
 
         verify(submissionService, never()).prepare(any(), any(), any(), anyInt());
         verify(transactionDispatcher, never()).dispatchPrepared(any(), any(), any(), any(), any(), any(), any());

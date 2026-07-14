@@ -1,8 +1,10 @@
 package decentralabs.blockchain.service.auth;
 
+import decentralabs.blockchain.service.wallet.InstitutionalTransactionOutboxService;
 import decentralabs.blockchain.service.wallet.WalletService;
 import java.math.BigInteger;
 import java.io.IOException;
+import java.util.Locale;
 import java.util.function.Consumer;
 import java.util.function.BiConsumer;
 import java.util.function.Function;
@@ -59,25 +61,34 @@ public class InstitutionalWalletTransactionDispatcher {
         } catch (RuntimeException ex) {
             throw new InstitutionalWalletDispatchException(
                 "Institutional transaction could not be prepared before broadcast",
-                InstitutionalWalletDispatchException.Outcome.PRE_BROADCAST_RETRYABLE,
+                classifyPreBroadcastFailure(ex),
                 ex
             );
         }
         BigInteger nonce = allocation[1];
 
         // Preparation and its durable write happen before any network side
-        // effect. Preparation errors are ordinary retryable failures.
+        // effect. A malformed/invalid transaction is permanent; RPC or
+        // persistence failures remain transient.
         PreparedTransaction prepared;
         try {
             prepared = prepare.apply(nonce);
             if (prepared == null) {
                 throw new IllegalStateException("Transaction preparation returned no transaction");
             }
-            persistPrepared.accept(prepared);
         } catch (RuntimeException ex) {
             throw new InstitutionalWalletDispatchException(
                 "Institutional transaction could not be prepared before broadcast",
-                InstitutionalWalletDispatchException.Outcome.PRE_BROADCAST_RETRYABLE,
+                classifyPreBroadcastFailure(ex),
+                ex
+            );
+        }
+        try {
+            persistPrepared.accept(prepared);
+        } catch (RuntimeException ex) {
+            throw new InstitutionalWalletDispatchException(
+                "Institutional signed transaction could not be persisted before broadcast",
+                InstitutionalWalletDispatchException.Outcome.PRE_BROADCAST_TRANSIENT,
                 ex
             );
         }
@@ -122,7 +133,7 @@ public class InstitutionalWalletTransactionDispatcher {
         if (prepared == null) {
             throw new InstitutionalWalletDispatchException(
                 "Persisted institutional transaction is missing",
-                InstitutionalWalletDispatchException.Outcome.PRE_BROADCAST_RETRYABLE,
+                InstitutionalWalletDispatchException.Outcome.PRE_BROADCAST_PERMANENT,
                 new IllegalArgumentException("Prepared transaction is required")
             );
         }
@@ -211,7 +222,7 @@ public class InstitutionalWalletTransactionDispatcher {
             } catch (RuntimeException ex) {
                 throw new InstitutionalWalletDispatchException(
                     "Institutional nonce allocation is currently blocked",
-                    InstitutionalWalletDispatchException.Outcome.PRE_BROADCAST_RETRYABLE,
+                    classifyNonceFailure(ex),
                     ex
                 );
             }
@@ -226,6 +237,63 @@ public class InstitutionalWalletTransactionDispatcher {
     private boolean isAlreadyKnown(String error) {
         String normalized = error == null ? "" : error.toLowerCase();
         return normalized.contains("already known") || normalized.contains("known transaction");
+    }
+
+    private InstitutionalWalletDispatchException.Outcome classifyNonceFailure(RuntimeException ex) {
+        return isNonceContention(ex)
+            ? InstitutionalWalletDispatchException.Outcome.PRE_BROADCAST_BLOCKED
+            : InstitutionalWalletDispatchException.Outcome.PRE_BROADCAST_TRANSIENT;
+    }
+
+    private InstitutionalWalletDispatchException.Outcome classifyPreBroadcastFailure(RuntimeException ex) {
+        if (isNonceContention(ex)) {
+            return InstitutionalWalletDispatchException.Outcome.PRE_BROADCAST_BLOCKED;
+        }
+        return isTransientFailure(ex)
+            ? InstitutionalWalletDispatchException.Outcome.PRE_BROADCAST_TRANSIENT
+            : InstitutionalWalletDispatchException.Outcome.PRE_BROADCAST_PERMANENT;
+    }
+
+    private boolean isNonceContention(Throwable error) {
+        Throwable current = error;
+        while (current != null) {
+            if (current instanceof InstitutionalWalletNonceReservationService.TransactionBlockedException
+                || current instanceof InstitutionalTransactionOutboxService.TransactionBlockedException) {
+                return true;
+            }
+            String message = current.getMessage();
+            if (message != null) {
+                String normalized = message.toLowerCase(Locale.ROOT);
+                if (normalized.contains("wallet") && (normalized.contains("blocked")
+                    || normalized.contains("unresolved") || normalized.contains("contention"))) {
+                    return true;
+                }
+            }
+            current = current.getCause();
+        }
+        return false;
+    }
+
+    private boolean isTransientFailure(Throwable error) {
+        Throwable current = error;
+        while (current != null) {
+            if (current instanceof IOException || current instanceof java.net.ConnectException
+                || current instanceof java.net.SocketTimeoutException
+                || current instanceof org.springframework.dao.DataAccessException) {
+                return true;
+            }
+            String message = current.getMessage();
+            if (message != null) {
+                String normalized = message.toLowerCase(Locale.ROOT);
+                if (normalized.contains("rpc") || normalized.contains("timeout")
+                    || normalized.contains("timed out") || normalized.contains("connection")
+                    || normalized.contains("network") || normalized.contains("database")) {
+                    return true;
+                }
+            }
+            current = current.getCause();
+        }
+        return false;
     }
 
     private BigInteger pendingNonce(Web3j web3j, String walletAddress) {

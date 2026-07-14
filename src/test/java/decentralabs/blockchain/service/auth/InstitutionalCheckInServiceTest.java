@@ -176,7 +176,7 @@ class InstitutionalCheckInServiceTest {
         when(outboxService.enqueueAccessGranted(any(), any(), any(), any(), any())).thenReturn(record);
         when(outboxService.claim(record.id())).thenReturn(true);
         when(nonceDispatcher.dispatch(record)).thenThrow(new InstitutionalWalletDispatchException(
-            "blocked", InstitutionalWalletDispatchException.Outcome.PRE_BROADCAST_RETRYABLE,
+            "blocked", InstitutionalWalletDispatchException.Outcome.PRE_BROADCAST_BLOCKED,
             new IllegalStateException("allocator blocked")
         ));
 
@@ -184,7 +184,7 @@ class InstitutionalCheckInServiceTest {
             .hasMessageContaining("could not be prepared");
 
         verify(outboxService).markRetry(
-            eq(record.id()), eq(record.attempts() + 1), any(),
+            eq(record.id()), eq(record.attempts()), any(),
             eq("Initial institutional check-in transaction was not broadcast; retrying")
         );
         verify(outboxService, never()).markBroadcastUncertain(any(Long.class), any(Integer.class), any());

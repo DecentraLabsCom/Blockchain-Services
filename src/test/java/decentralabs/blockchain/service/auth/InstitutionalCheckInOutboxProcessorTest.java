@@ -136,13 +136,13 @@ class InstitutionalCheckInOutboxProcessorTest {
             .thenReturn(Map.of("reservationStatus", BigInteger.ONE));
         org.mockito.Mockito.doThrow(new InstitutionalWalletDispatchException(
             "nonce allocation blocked",
-            InstitutionalWalletDispatchException.Outcome.PRE_BROADCAST_RETRYABLE,
+            InstitutionalWalletDispatchException.Outcome.PRE_BROADCAST_BLOCKED,
             new IllegalStateException("wallet busy")
         )).when(nonceDispatcher).dispatch(record);
 
         processor.process(record);
 
-        verify(outboxService).markRetry(eq(1L), eq(2), any(Instant.class), eq("nonce allocation blocked"));
+        verify(outboxService).markRetry(eq(1L), eq(1), any(Instant.class), eq("nonce allocation blocked"));
         verify(outboxService, never()).markBroadcastUncertain(anyLong(), anyInt(), anyString());
     }
 

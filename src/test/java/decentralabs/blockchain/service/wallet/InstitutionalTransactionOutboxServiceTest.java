@@ -53,11 +53,31 @@ class InstitutionalTransactionOutboxServiceTest {
         assertThatThrownBy(() -> service.reserveOrLoad(
             existing.walletAddress(), existing.chainId(), BigInteger.TEN, existing.operationKey(),
             BigInteger.valueOf(2_000_000_000L), BigInteger.valueOf(21001),
-            existing.toAddress(), existing.value(), existing.data()
+            existing.toAddress(), existing.value(), "0x5678"
         ))
             .isInstanceOf(IdempotencyKeyPayloadMismatchException.class)
             .hasMessageContaining("different transaction payload");
 
+        verifyNoInteractions(nonceReservationService);
+    }
+
+    @Test
+    void reusesAnIdempotencyKeyWhenOnlyGasLimitChanges() {
+        InstitutionalTransactionOutboxService.Attempt existing = attempt(
+            "0x1111111111111111111111111111111111111111",
+            BigInteger.valueOf(21000),
+            BigInteger.ZERO,
+            "0x1234"
+        );
+        stubExisting(existing);
+
+        InstitutionalTransactionOutboxService.Attempt result = service.reserveOrLoad(
+            existing.walletAddress(), existing.chainId(), BigInteger.TEN, existing.operationKey(),
+            BigInteger.valueOf(2_000_000_000L), BigInteger.valueOf(21001),
+            existing.toAddress(), existing.value(), existing.data()
+        );
+
+        assertThat(result).isSameAs(existing);
         verifyNoInteractions(nonceReservationService);
     }
 
