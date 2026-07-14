@@ -1,346 +1,216 @@
 ---
-description: >-
-  Blockchain services connecting your institutional users and lab access control system to the blockchain
+description: Canonical Spring Boot backend for institutional identity, funding, lab access and on-chain operations.
 ---
 
-# Blockchain Services
+# DecentraLabs blockchain services
 
-Spring Boot service for DecentraLabs that provides:
+`Lab Gateway/blockchain-services` is the canonical Java 21 / Spring Boot backend
+for the DecentraLabs gateway ecosystem. It is also publishable as a standalone
+WAR for an institution that only needs consumer funding and wallet operations.
 
-- Authentication and authorization (`SAML`, `WebAuthn` onboarding, JWT/JWKS)
-- Institutional wallet and treasury operations
-- Intent submission and authorization flows
-- Provider/consumer institutional provisioning
+The service owns four areas:
 
-While it is designed so that it can be deployed as an independent container (use case for lab institutional consumers), it is also included in the Lab Gateway (use case for lab institutional providers). 
+- institutional authentication and access delivery (SAML, Marketplace JWT,
+  WebAuthn, JWKS and opaque access codes);
+- institutional wallet, service-credit funding and billing administration;
+- signed intent intake, WebAuthn authorization and on-chain execution;
+- provider/consumer registration and gateway configuration.
 
-## Operating Modes
+See the [documentation index](SUMMARY.md) and the
+[architecture guide](docs/architecture/ARCHITECTURE.md) before changing a cross-service
+flow.
 
-`blockchain-services` supports two deployment modes:
+## Operating modes
 
-1. `provider+consumer` mode
-   This is the full mode used when `blockchain-services` runs together with Lab Gateway. The institution acts as a lab provider and can also fund reservations for its own users.
-   Available capabilities:
-   - SAML/OIDC/JWKS authentication endpoints
-   - provider registration and provider provisioning tokens
-   - provider settlement and payout operations
-   - wallet, treasury, intents, and consumer funding flows
+| Mode | Enablement | Intended use | Provider/auth endpoints |
+| --- | --- | --- | --- |
+| Provider + consumer | `FEATURES_PROVIDERS_ENABLED=true` | Full Lab Gateway backend | Enabled |
+| Consumer-only | `FEATURES_PROVIDERS_ENABLED=false` (default) | Standalone institution funding its own reservations | Disabled |
 
-2. `consumer-only` mode
-   This is the standalone mode for institutions that do not publish labs and do not provide auth endpoints for third-party access. The institution only funds reservation and access costs for its own users.
-   Available capabilities:
-   - institutional wallet creation/import
-   - treasury and reservation funding operations
-   - consumer provisioning token application and consumer registration
-   - intents and local administrative dashboard
-   Not available in this mode:
-   - SAML/OIDC/JWKS provider endpoints
-   - manual provider registration UI
-   - provider settlement and payout operations
-
-<figure><img src=".gitbook/assets/DecentraLabs - Lab Access.png" alt=""><figcaption></figcaption></figure>
-
-This service provides four main components:
-
-1. **Authentication and Authorization Service**: institutional SAML2 JWT authentication, OIDC/JWKS discovery, and WebAuthn support.
-2. **Institutional Wallet and Treasury**: Ethereum wallet management and treasury operations for institutional lab providers and consumers.
-3. **Intent Authorization and Execution**: signed intent intake, WebAuthn ceremony, and on-chain execution/status tracking.
-4. **Institution Provisioning**: provider/consumer token application and Marketplace registration flows.
-
-Together, they bridge institutional access control systems (such as **Lab Gateway**) with blockchain smart contracts in one backend.
-
-## ✨ Key Features
-
-### Authentication and Authorization Service
-- **SAML2 Integration**: SSO and combined authorization flow (`/auth/authorize-and-issue`).
-- **JWT Management**: OIDC/JWKS discovery, JWT issuance, and claim/scope-based access checks.
-- **Smart Contract Validation**: direct on-chain reservation/booking queries for booking-aware flows.
-
-### Institutional Wallet and Treasury
-- **Wallet Management**: create/import/reveal institutional wallets encrypted at rest (AES-256-GCM + PBKDF2).
-- **Multi-Network Support**: Mainnet/Sepolia operations with active-network switching and RPC fallback.
-- **Treasury Operations**: deposits, withdrawals, spending limits/periods, and institutional financial stats.
-- **Reservation Engine**: metadata-driven auto-approval/denial hooks for reservation requests.
-- **Event Monitoring**: contract event listener status and resilient event processing.
-
-### Intents and Provisioning
-- **Intent Authorization**: signed intent intake with JWT scope checks, SAML/WebAuthn validation, and EIP-712 verification.
-- **WebAuthn Ceremony**: authorize/status/complete flow for intent execution.
-- **Institution Provisioning**: provider/consumer token application, Marketplace JWKS validation, and registration flows.
-
-## 🏗️ Architecture Overview
+`FEATURES_PROVIDERS_REGISTRATION_ENABLED` independently controls provider
+registration. `FEATURES_ORGANIZATIONS_ENABLED` controls organization features.
+The parent Lab Gateway selects Full versus Lite at the gateway boundary; a Lite
+gateway does not become the primary identity authority merely because this
+backend is present.
 
 ```mermaid
 flowchart LR
-    Users["End users"] --> Marketplace["Marketplace dApp"]
-    Marketplace <--> Auth["Auth Service<br/>SAML / JWT / booking checks"]
-    Auth <--> Contracts["Smart Contracts<br/>reservations / credits"]
-
-    Auth --> Wallet["Wallet and Treasury<br/>wallets / billing / events"]
-    Wallet --> Contracts
-    Marketplace --> Intents["Intents<br/>submit / authorize / execute"]
-    Intents --> Contracts
-    Marketplace --> Config["Institution Config<br/>provider / consumer tokens"]
-    Config --> Contracts
-    Auth --> Gateway["Lab Gateway<br/>Guacamole / FMU access"]
+    Full["Lab Gateway Full<br/>ISSUER empty/local"] --> Backend["blockchain-services"]
+    Lite["Lab Gateway Lite<br/>ISSUER points to Full /auth"] -->|access and observation| Full
+    Standalone["Standalone consumer"] --> Backend
+    Backend --> Contracts[("Smart Contracts")]
+    Backend --> DB[("MySQL / Flyway")]
 ```
 
-## 🔌 API Overview
+## API map
 
-### Auth and identity
+The following is a navigation map, not a generated OpenAPI contract. Paths are
+implemented by the controllers in `src/main/java/decentralabs/blockchain/controller`.
+
+### Public identity and access (provider mode)
 
 - `GET /.well-known/openid-configuration`
 - `GET /auth/jwks`
 - `POST /auth/authorize-and-issue`
+- `POST /auth/access-credential`
 - `POST /auth/checkin-institutional`
-- `POST /webauthn/register`
-- `POST /webauthn/revoke`
+- `POST /auth/access-code/redeem`
+- `POST /auth/fmu/session-ticket/issue`
+- `POST /auth/fmu/session-ticket/redeem`
+- `POST /auth/fmu/provider-describe-token`
+- `POST /webauthn/register` and `POST /webauthn/revoke`
+- `GET /onboarding/webauthn/key-status/{stableUserId}`
 - `POST /onboarding/webauthn/options`
 - `POST /onboarding/webauthn/complete`
+- `GET /onboarding/webauthn/status/{sessionId}`
+- `GET /onboarding/webauthn/ceremony/{sessionId}`
 
-These endpoints are only active in `provider+consumer` mode.
+The SAML/provider controllers are conditional on `FEATURES_PROVIDERS_ENABLED`.
+FMU ticket issuance validates a booking bearer; redemption requires a
+per-gateway session-observer credential.
 
-### Wallet and billing administration
-
-- `POST /wallet/create`
-- `POST /wallet/import`
-- `POST /wallet/reveal`
-- `GET /wallet/{address}/balance`
-- `GET /wallet/{address}/transactions`
-- `GET /wallet/listen-events`
-- `GET /wallet/networks`
-- `POST /wallet/switch-network`
-- `POST /billing/admin/execute`
-- `GET /billing/admin/status`
-- `GET /billing/admin/balance`
-- `GET /billing/admin/transactions`
-- `GET /billing/admin/contract-info`
-- `GET /billing/admin/treasury-info`
-- `GET /billing/admin/top-spenders`
-- `GET|POST /billing/admin/notifications`
-- `POST /billing/admin/notifications/send`
-- `POST /billing/admin/notifications/test`
-
-### Intents and provisioning
+### Intents
 
 - `POST /intents`
 - `GET /intents/{requestId}`
+- `POST /intents/{requestId}/registration-mined`
 - `POST /intents/authorize`
 - `GET /intents/authorize/status/{sessionId}`
 - `GET /intents/authorize/ceremony/{sessionId}`
 - `POST /intents/authorize/complete`
-- `GET /institution-config/status`
-- `POST /institution-config/save-and-register`
-- `POST /institution-config/retry-registration`
-- `POST /institution-config/apply-provider-token`
-- `POST /institution-config/apply-consumer-token`
+- `POST /intents/authorize/client-error`
 
-`/institution-config/save-and-register`, `/institution-config/retry-registration`, and `/institution-config/apply-provider-token` are provider-only flows.
-`/institution-config/apply-consumer-token` is the consumer-only registration flow.
+When `INTENTS_AUTH_ENABLED=true` (default), submit operations require the
+configured submit scope and reads require the configured status scope. The
+browser ceremony and completion are intentionally session-bound; see the
+[intent guide](docs/services/intents/INTENTS_PROVISIONING.md).
 
-## 🚀 Quick Start (Local)
+### Wallet, billing and provisioning
 
-### Consumer-only standalone
+- Wallet: `POST /wallet/create`, `POST /wallet/import`, `POST /wallet/reveal`,
+  `GET /wallet/{address}/balance`, `GET /wallet/{address}/transactions`,
+  `GET /wallet/listen-events`, `GET /wallet/networks`,
+  `POST /wallet/switch-network`.
+- Billing administration: `/billing/admin/**`, funding orders and provider
+  receivables. Read-only and mutating routes are listed in the
+  [wallet/billing guide](docs/services/wallet/WALLET_BILLING.md).
+- Provisioning: `GET /institution-config/status` and the four
+  `POST /institution-config/*` flows.
+- Compliance exports: `/billing/compliance/**`.
+- Lab administration: `/lab-admin/**` and `/lab-content/**`.
 
-1. Build:
+These surfaces are network-restricted by `LocalhostOnlyFilter`; billing admin
+also requires a valid internal/access token according to deployment mode.
+
+### Health and metrics
+
+- `GET /health` — detailed application status, including durable queue health.
+- `GET /actuator/health/liveness`
+- `GET /actuator/health/readiness`
+- `GET /actuator/prometheus`
+- `GET /actuator/metrics`
+- `GET /actuator/info`
+
+Use readiness for an orchestrator. A `DEGRADED` detailed health response is not
+equivalent to a process that is unavailable; inspect `queue_health_errors` and
+the individual component statuses.
+
+`GET /health` is the detailed application status page. It reports the operating
+mode, key and registration checks, nonce/outbox backlog counters and queue
+errors. A database or migration query failure is represented by a `null` count
+and an error code; it must not be mistaken for an empty queue.
+
+## Reservation notifications
+
+Email/ICS notifications are optional and disabled by the `noop` driver unless
+enabled through `NOTIFICATIONS_MAIL_ENABLED`. Configure the SMTP or Microsoft
+Graph driver with the `NOTIFICATIONS_MAIL_*` variables and use
+`GET|POST /billing/admin/notifications` to inspect or update runtime settings.
+The notification service includes the lab, reservation window, renter, payer
+and transaction reference when those values are available.
+
+## Local development
+
+Prerequisites: Java 21 and a POSIX shell or PowerShell. MySQL is required for
+durable tickets, outboxes, WebAuthn and audit flows; the unit-test suite uses
+its configured test infrastructure.
 
 ```bash
-./mvnw clean package -DskipTests
-```
-
-2. Run with consumer mode defaults or set them explicitly:
-
-```bash
-FEATURES_PROVIDERS_ENABLED=false \
-FEATURES_PROVIDERS_REGISTRATION_ENABLED=false \
+./mvnw test
+./mvnw -DskipTests package
 java -jar target/blockchain-services-1.0-SNAPSHOT.war
 ```
 
-3. Open `http://localhost:8080/wallet-dashboard`, create or import the institutional wallet, and apply a consumer provisioning token.
+For a local consumer-only process, leave the provider flags at their defaults
+and open `http://localhost:8080/wallet-dashboard/`. For a Full gateway, enable
+the provider flags and use the parent repository's Docker Compose topology.
 
-4. Verify:
+## Docker and configuration
 
-- `http://localhost:8080/health`
-- `http://localhost:8080/wallet-dashboard`
-
-### Provider+consumer with Lab Gateway
-
-1. Build:
-
-```bash
-./mvnw clean package -DskipTests
-```
-
-2. Run:
-
-```bash
-java -jar target/blockchain-services-1.0-SNAPSHOT.war
-```
-
-3. Verify:
-
-- `http://localhost:8080/health`
-- `http://localhost:8080/wallet-dashboard`
-
-## 🐳 Quick Start (Docker)
-
-1. Copy template env:
+The local compose file in this repository is useful for a standalone backend:
 
 ```bash
 cp .env.example .env
-```
-
-2. Provide JWT keys in `./config/keys` (or adjust `PRIVATE_KEY_PATH` / `PUBLIC_KEY_PATH`).
-
-3. Start:
-
-```bash
 docker compose up -d
 ```
 
-4. Open `http://localhost:8080/wallet-dashboard` to create/import the institutional wallet.
+For the integrated gateway, use the parent `Lab Gateway/docker-compose.yml` and
+its root `.env`; do not run two copies of the backend against the same port or
+database. Persist `/app/data`, the MySQL volume, and the mounted key material.
 
-For consumer-only standalone deployments, keep:
+Important configuration groups:
 
-```env
-FEATURES_PROVIDERS_ENABLED=false
-FEATURES_PROVIDERS_REGISTRATION_ENABLED=false
-ADMIN_DASHBOARD_LOCAL_ONLY=true
-ADMIN_DASHBOARD_ALLOW_PRIVATE=false
-ADMIN_ALLOWED_CIDRS=
-SECURITY_ALLOW_PRIVATE_NETWORKS=false
+- contract and RPC: `CONTRACT_ADDRESS`, `BLOCKCHAIN_NETWORK_ACTIVE`,
+  `ETHEREUM_*_RPC_URL`;
+- wallet: `WALLET_FILE_PATH`, `WALLET_CONFIG_KEY_FILE`,
+  `INSTITUTIONAL_WALLET_*`;
+- identity: `PRIVATE_KEY_PATH`, `PUBLIC_KEY_PATH`, Marketplace public-key URL,
+  SAML trust and metadata settings;
+- admin boundary: `ADMIN_DASHBOARD_LOCAL_ONLY`,
+  `ADMIN_DASHBOARD_ALLOW_PRIVATE`, `ADMIN_ALLOWED_CIDRS`,
+  `SECURITY_ALLOW_PRIVATE_NETWORKS`, `ADMIN_ACCESS_TOKEN_*`;
+- durable backend: `SPRING_DATASOURCE_*` and the outbox/monitor intervals.
+
+Configuration precedence is environment/secrets manager, then local `.env`,
+then `application.properties`. The generated wallet configuration under the
+persistent data directory is an additional wallet-specific source and must be
+backed up together with its encryption key.
+
+The tracked `.env.example` is the authoritative list of deployable environment
+names. Never commit `.env`, private keys, wallet files or database volumes.
+
+## Security baseline
+
+- Keep admin, wallet, billing, lab-admin and provisioning routes behind the
+  localhost/private-network policy and a strong access token.
+- Use SAML whitelist mode in production even though the development default is
+  `SAML_IDP_TRUST_MODE=any`.
+- Keep metadata HTTP disabled and restrict trusted proxy CIDRs.
+- Persist `/app/data` and MySQL before enabling durable access, ticket or wallet
+  flows.
+- Keep session-observer and gateway credentials per gateway; do not reuse one
+  secret across Full/Lite instances.
+
+See [Security Configuration](docs/security/SECURITY.md) and
+[Authentication and access evidence](docs/services/authentication/AUTH.md) for the complete
+boundary and recovery rules.
+
+## Verification and release
+
+Before a change is released:
+
+```bash
+./mvnw test
+./mvnw -DskipTests package
 ```
 
-For full Lab Gateway deployments, enable the full provider surface:
+Flyway migrations are under `src/main/resources/db/migration`. The release
+workflow publishes the WAR and checksum from `target/`; keep migrations,
+configuration metadata and the endpoint guides in the same change.
 
-```env
-FEATURES_PROVIDERS_ENABLED=true
-FEATURES_PROVIDERS_REGISTRATION_ENABLED=true
-```
+## Contributing
 
-If you want `wallet-dashboard` and the wallet/billing administrative routes to be reachable from private network ranges instead of localhost only, use:
-
-```env
-ADMIN_DASHBOARD_LOCAL_ONLY=true
-ADMIN_DASHBOARD_ALLOW_PRIVATE=true
-SECURITY_ALLOW_PRIVATE_NETWORKS=true
-ADMIN_ALLOWED_CIDRS=10.20.0.0/16,192.168.50.0/24
-ADMIN_ACCESS_TOKEN_REQUIRED=true
-ADMIN_ACCESS_TOKEN=your_strong_token
-```
-
-Leave `ADMIN_ALLOWED_CIDRS` empty if you want to allow any private range. Set it if you want access limited to specific private subnets only.
-If you disable `ADMIN_DASHBOARD_LOCAL_ONLY`, keep `ADMIN_ACCESS_TOKEN_REQUIRED=true` and send the token via header or cookie, not query string.
-
-## ⚙️ Configuration Files
-
-**Repository structure:**
-```
-.env.example                  # Environment template (tracked in git)
-.env                          # Local config (gitignored)
-data/
-└── wallet-config.properties  # Auto-generated wallet address + encrypted password (gitignored)
-keys/                         # RSA keys (gitignored)
-├── private_key.pem           # JWT signing key
-└── public_key.pem            # JWT verification key
-src/main/resources/
-└── application.properties    # Compiled into WAR
-```
-
-**Docker container structure:**
-```
-/app/
-├── blockchain-services.war   # Application
-├── config/
-│   └── keys/                 # Mounted from ./keys
-│       ├── private_key.pem
-│       └── public_key.pem
-├── data/                     # Persistent volume
-│   └── wallets.json          # Encrypted wallets
-└── logs/                     # Mounted from ./logs
-```
-
-> 💡 Configuration priority: Environment variables > `.env` (local file) > application.properties.
-> For the institutional wallet specifically: env vars / secrets manager > `wallet-config.properties` (auto-generated `institutional.wallet.address` + encrypted password) > persisted wallet metadata.
-
-## 🔒 Security Essentials
-
-- Never commit secrets or private keys.
-- Keep wallet/billing routes behind trusted network/proxy boundaries.
-- If private-network access is enabled, enforce `ADMIN_ACCESS_TOKEN`.
-- Keep SAML trust mode on whitelist for production.
-- In `consumer-only` mode, JWT signing keys are not required for readiness because provider auth endpoints are disabled.
-
-## 🔔 Reservation Notifications (email + ICS)
-
-- Enable with `NOTIFICATIONS_MAIL_ENABLED=true` and choose driver `NOTIFICATIONS_MAIL_DRIVER=smtp|graph|noop` (default: noop).
-- Common settings: `NOTIFICATIONS_MAIL_FROM`, `NOTIFICATIONS_MAIL_DEFAULT_TO` (comma-separated), and `NOTIFICATIONS_MAIL_TIMEZONE` (IANA zone, e.g., `Europe/Madrid`).
-- SMTP driver: configure `NOTIFICATIONS_MAIL_SMTP_HOST`, `PORT`, `USERNAME`, `PASSWORD`, plus `NOTIFICATIONS_MAIL_SMTP_STARTTLS` when required.
-- Microsoft Graph driver: `NOTIFICATIONS_MAIL_GRAPH_TENANT_ID`, `CLIENT_ID`, `CLIENT_SECRET`, `GRAPH_FROM` (UPN/mailbox with Mail.Send app permission).
-- ICS invite attached when start/end are available; subject `Reserva aprobada: <lab>` and body includes lab, window, renter, payer, and tx hash.
-- Runtime config (localhost): `GET/POST /billing/admin/notifications` to view/update settings; persisted at `./data/notifications-config.json`.
-
-## 📊 Monitoring & Health Checks
-
-Actuator endpoints for monitoring and Kubernetes probes (restrict `/actuator/**` at the proxy if exposed publicly):
-
-- `GET /actuator/health/liveness` (liveness probe)
-- `GET /actuator/health/readiness` (readiness probe)
-- `GET /actuator/prometheus` (Prometheus scrape)
-- `GET /actuator/metrics` (metrics index)
-- `GET /actuator/info` (service metadata)
-
-Use `/actuator/health/readiness` for Docker and orchestrator health checks. Keep `/health` for detailed, app-specific status pages:
-
-Health endpoint available at `/health`:
-
-```json
-{
-  "status": "UP",
-  "operating_mode": "consumer-only",
-  "timestamp": "2025-11-09T12:00:00Z",
-  "service": "blockchain-services",
-  "version": "1.0.0",
-  "marketplace_key_cached": true,
-  "institution_registered": true,
-  "jwt_validation": "ready",
-  "nonce_backlog": 0,
-  "access_deliveries_stuck": 0,
-  "session_started_unknown": 0,
-  "queue_health_errors": {},
-  "endpoints": {
-    "authorize-and-issue": "disabled (providers flag off)",
-    "checkin-institutional": "disabled (providers flag off)",
-    "jwks": "disabled (providers flag off)",
-    "wallet-create": "available (localhost)",
-    "wallet-balance": "available (localhost)",
-    "billing": "available (localhost)",
-    "health": "available"
-  }
-}
-```
-
-The durable-queue counts are numeric only when their queries succeed. A database outage,
-missing Flyway migration, or other query failure returns the affected count as `null`,
-sets `/health` to `DEGRADED`, and records `DATABASE_UNAVAILABLE`, `MIGRATION_MISSING`,
-or `QUERY_FAILED` under `queue_health_errors`. A positive numeric count is a real backlog,
-not a query-error sentinel.
-
-Institutional check-in and `SessionStarted` publishers persist the wallet nonce owner
-before broadcast. Rows that exhaust replacement attempts enter `STUCK_UNKNOWN`; a
-scheduled reconciler first checks authoritative contract state and receipts, and only
-requeues when the node also proves that the hash is absent and the stored nonce remains
-unconsumed. `SessionStarted` additionally uses a unique per-reservation publication guard
-so concurrent attestations cannot produce multiple transactions for one reservation.
-
-## 🤝 Contributing
-
-1. Fork the project
-2. Create feature branch (`git checkout -b feature/AmazingFeature`)
-3. Commit changes (`git commit -m 'Add AmazingFeature'`)
-4. Push to branch (`git push origin feature/AmazingFeature`)
-5. Open Pull Request
-
-## 📄 License
-
-See [LICENSE](LICENSE) file for details.
+Keep changes on a feature branch, add or update tests for behavior changes, and
+update the relevant document in [SUMMARY.md](SUMMARY.md). The executable
+configuration and controller mappings are the source of truth; documentation
+must not advertise a route or scheduler that is not present in this repository.
