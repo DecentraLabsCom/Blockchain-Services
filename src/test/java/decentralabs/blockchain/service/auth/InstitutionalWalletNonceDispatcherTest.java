@@ -13,6 +13,9 @@ import static org.mockito.Mockito.when;
 import decentralabs.blockchain.dto.auth.CheckInResponse;
 import java.math.BigInteger;
 import java.time.Instant;
+import java.util.function.BiConsumer;
+import java.util.function.Consumer;
+import java.util.function.Function;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
@@ -56,13 +59,14 @@ class InstitutionalWalletNonceDispatcherTest {
         when(transactionDispatcher.dispatchPrepared(
             eq("0xsigner"), eq(null), eq(null), any(), any(), any(), any()
         )).thenAnswer(invocation -> {
-            var persistNonce = invocation.getArgument(3, java.util.function.BiConsumer.class);
-            var prepare = invocation.getArgument(4, java.util.function.Function.class);
-            var persistPrepared = invocation.getArgument(5, java.util.function.Consumer.class);
-            var persistHash = invocation.getArgument(6, java.util.function.Consumer.class);
+            BiConsumer<BigInteger, BigInteger> persistNonce = invocation.getArgument(3);
+            Function<BigInteger, InstitutionalWalletTransactionDispatcher.PreparedTransaction> prepare =
+                invocation.getArgument(4);
+            Consumer<InstitutionalWalletTransactionDispatcher.PreparedTransaction> persistPrepared =
+                invocation.getArgument(5);
+            Consumer<String> persistHash = invocation.getArgument(6);
             persistNonce.accept(BigInteger.ONE, BigInteger.valueOf(47));
-            var prepared = (InstitutionalWalletTransactionDispatcher.PreparedTransaction)
-                prepare.apply(BigInteger.valueOf(47));
+            var prepared = prepare.apply(BigInteger.valueOf(47));
             persistPrepared.accept(prepared);
             persistHash.accept(prepared.transactionHash());
             return prepared.transactionHash();
@@ -121,11 +125,12 @@ class InstitutionalWalletNonceDispatcherTest {
         when(transactionDispatcher.dispatchPrepared(
             eq("0xsigner"), eq(BigInteger.ONE), eq(BigInteger.valueOf(51)), any(), any(), any(), any()
         )).thenAnswer(invocation -> {
-            var prepare = invocation.getArgument(4, java.util.function.Function.class);
-            var persistPrepared = invocation.getArgument(5, java.util.function.Consumer.class);
-            var persistHash = invocation.getArgument(6, java.util.function.Consumer.class);
-            var prepared = (InstitutionalWalletTransactionDispatcher.PreparedTransaction)
-                prepare.apply(BigInteger.valueOf(51));
+            Function<BigInteger, InstitutionalWalletTransactionDispatcher.PreparedTransaction> prepare =
+                invocation.getArgument(4);
+            Consumer<InstitutionalWalletTransactionDispatcher.PreparedTransaction> persistPrepared =
+                invocation.getArgument(5);
+            Consumer<String> persistHash = invocation.getArgument(6);
+            var prepared = prepare.apply(BigInteger.valueOf(51));
             persistPrepared.accept(prepared);
             persistHash.accept(prepared.transactionHash());
             return prepared.transactionHash();
