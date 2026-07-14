@@ -23,6 +23,9 @@ import org.web3j.abi.datatypes.Function;
 import org.web3j.abi.datatypes.generated.Bytes32;
 import org.web3j.abi.datatypes.generated.Uint64;
 import org.web3j.crypto.Credentials;
+import org.web3j.crypto.Hash;
+import org.web3j.crypto.RawTransaction;
+import org.web3j.crypto.TransactionEncoder;
 import org.web3j.protocol.Web3j;
 import org.web3j.protocol.core.DefaultBlockParameterName;
 import org.web3j.protocol.core.methods.response.EthChainId;
@@ -40,6 +43,62 @@ public class CheckInOnChainService {
     private final WalletService walletService;
     private final InstitutionalWalletService institutionalWalletService;
     private final ConcurrentMap<String, Object> transactionSubmissionLocks = new ConcurrentHashMap<>();
+
+    public InstitutionalWalletTransactionDispatcher.PreparedTransaction prepareSignedCheckIn(
+        String signer,
+        String reservationKey,
+        String pucHash,
+        long timestamp,
+        String signature,
+        BigInteger nonce,
+        int replacementAttempt
+    ) {
+        if (nonce == null || nonce.signum() < 0) {
+            throw new IllegalArgumentException("Check-in transaction nonce is required");
+        }
+        Credentials credentials = institutionalWalletService.getInstitutionalCredentials();
+        Web3j web3j = walletService.getWeb3jInstance();
+        long chainId = getChainId(web3j);
+        if (chainId <= 0) {
+            throw new IllegalStateException("Unable to verify connected chainId for check-in publication");
+        }
+        String encoded = encodeCheckIn(signer, reservationKey, pucHash, timestamp, signature);
+        RawTransaction raw = RawTransaction.createTransaction(
+            nonce, toWei(gasPriceForReplacement(replacementAttempt)), gasLimit,
+            contractAddress, BigInteger.ZERO, encoded
+        );
+        String rawHex = Numeric.toHexString(TransactionEncoder.signMessage(raw, chainId, credentials));
+        return new InstitutionalWalletTransactionDispatcher.PreparedTransaction(rawHex, Hash.sha3(rawHex));
+    }
+
+    public String broadcastSignedRawTransaction(String rawTransaction) {
+        if (rawTransaction == null || rawTransaction.isBlank()) {
+            throw new IllegalArgumentException("Signed raw transaction is required");
+        }
+        try {
+            EthSendTransaction response = walletService.getWeb3jInstance()
+                .ethSendRawTransaction(rawTransaction).send();
+            if (response == null) {
+                throw new IllegalStateException("RPC returned no transaction response");
+            }
+            if (response.hasError()) {
+                String message = response.getError() != null ? response.getError().getMessage() : "broadcast_failed";
+                String normalized = message == null ? "" : message.toLowerCase();
+                if (!normalized.contains("already known") && !normalized.contains("known transaction")) {
+                    throw new IllegalStateException("Transaction broadcast failed: " + message);
+                }
+            }
+            String expectedHash = Hash.sha3(rawTransaction);
+            String returnedHash = response.getTransactionHash();
+            if (returnedHash != null && !returnedHash.isBlank()
+                && !returnedHash.equalsIgnoreCase(expectedHash)) {
+                throw new IllegalStateException("Node returned a hash different from the signed transaction");
+            }
+            return expectedHash;
+        } catch (IOException ex) {
+            throw new IllegalStateException("Failed to broadcast signed check-in transaction", ex);
+        }
+    }
 
     @Value("${contract.address}")
     private String contractAddress;
@@ -269,6 +328,27 @@ public class CheckInOnChainService {
             }
         }
         return txHash;
+    }
+
+    private String encodeCheckIn(
+        String signer,
+        String reservationKey,
+        String pucHash,
+        long timestamp,
+        String signature
+    ) {
+        Function function = new Function(
+            "checkInReservationWithSignature",
+            List.of(
+                new Bytes32(Numeric.hexStringToByteArray(normalizeBytes32(reservationKey))),
+                new Address(signer),
+                new Bytes32(Numeric.hexStringToByteArray(normalizeBytes32(pucHash))),
+                new Uint64(BigInteger.valueOf(timestamp)),
+                new DynamicBytes(Numeric.hexStringToByteArray(signature))
+            ),
+            List.of()
+        );
+        return FunctionEncoder.encode(function);
     }
 
     private TransactionReceipt waitForReceipt(Web3j web3j, String txHash) {

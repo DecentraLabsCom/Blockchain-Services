@@ -3,18 +3,28 @@ package decentralabs.blockchain.service.auth;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.doReturn;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
 
 import java.math.BigInteger;
+import java.util.List;
 import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InOrder;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jdbc.core.RowMapper;
 
 @ExtendWith(MockitoExtension.class)
 class InstitutionalWalletNonceReservationServiceTest {
     @Mock private InstitutionalCheckInOutboxService nonceStore;
+    @Mock private JdbcTemplate jdbcTemplate;
+    @Mock private ObjectProvider<JdbcTemplate> jdbcTemplateProvider;
 
     @Test
     void reservesAndAssociatesNonceBeforeReturningToTheBroadcaster() {
@@ -46,5 +56,23 @@ class InstitutionalWalletNonceReservationServiceTest {
 
         assertThat(service.reserve("0xwallet", BigInteger.ONE, BigInteger.valueOf(8)))
             .isEqualTo(BigInteger.valueOf(10));
+    }
+
+    @Test
+    void sharedAllocatorRefusesToSkipAnUnresolvedGenericAttempt() {
+        when(jdbcTemplateProvider.getIfAvailable()).thenReturn(jdbcTemplate);
+        doReturn(List.of("blocker")).when(jdbcTemplate).query(
+            anyString(),
+            org.mockito.ArgumentMatchers.<RowMapper<Object>>any(),
+            any(),
+            any()
+        );
+        when(nonceStore.reserveNextNonce(BigInteger.ONE, "0xwallet", BigInteger.valueOf(8)))
+            .thenReturn(BigInteger.TEN);
+
+        var service = new InstitutionalWalletNonceReservationService(nonceStore, jdbcTemplateProvider);
+
+        assertThatThrownBy(() -> service.reserve("0xwallet", BigInteger.ONE, BigInteger.valueOf(8)))
+            .isInstanceOf(InstitutionalWalletNonceReservationService.TransactionBlockedException.class);
     }
 }

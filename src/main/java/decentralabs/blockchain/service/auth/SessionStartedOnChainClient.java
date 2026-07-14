@@ -23,6 +23,9 @@ import org.web3j.abi.datatypes.Utf8String;
 import org.web3j.abi.datatypes.generated.Bytes32;
 import org.web3j.abi.datatypes.generated.Uint64;
 import org.web3j.crypto.Credentials;
+import org.web3j.crypto.Hash;
+import org.web3j.crypto.RawTransaction;
+import org.web3j.crypto.TransactionEncoder;
 import org.web3j.protocol.Web3j;
 import org.web3j.protocol.core.DefaultBlockParameterName;
 import org.web3j.protocol.core.methods.request.Transaction;
@@ -88,6 +91,61 @@ public class SessionStartedOnChainClient {
         return institutionalWalletService.getInstitutionalCredentials().getAddress();
     }
 
+    public InstitutionalWalletTransactionDispatcher.PreparedTransaction prepareSessionStarted(
+        SessionStartedOnChainSubmission submission,
+        BigInteger transactionNonce,
+        int replacementAttempt
+    ) {
+        validate(submission);
+        if (transactionNonce == null || transactionNonce.signum() < 0) {
+            throw new IllegalArgumentException("SessionStarted transaction nonce is required");
+        }
+        Credentials credentials = institutionalWalletService.getInstitutionalCredentials();
+        Web3j web3j = walletService.getWeb3jInstance();
+        long chainId = getChainId(web3j);
+        validateDomainChainId(chainId);
+        Function function = sessionStartedFunction(submission);
+        RawTransaction raw = RawTransaction.createTransaction(
+            transactionNonce,
+            toWei(gasPriceForReplacement(replacementAttempt)),
+            gasLimit,
+            contractAddress,
+            BigInteger.ZERO,
+            FunctionEncoder.encode(function)
+        );
+        String rawHex = Numeric.toHexString(TransactionEncoder.signMessage(raw, chainId, credentials));
+        return new InstitutionalWalletTransactionDispatcher.PreparedTransaction(rawHex, Hash.sha3(rawHex));
+    }
+
+    public String broadcastSignedRawTransaction(String rawTransaction) {
+        if (rawTransaction == null || rawTransaction.isBlank()) {
+            throw new IllegalArgumentException("Signed raw transaction is required");
+        }
+        try {
+            EthSendTransaction response = walletService.getWeb3jInstance()
+                .ethSendRawTransaction(rawTransaction).send();
+            if (response == null) {
+                throw new IllegalStateException("RPC returned no transaction response");
+            }
+            if (response.hasError()) {
+                String message = response.getError() != null ? response.getError().getMessage() : "broadcast_failed";
+                String normalized = message == null ? "" : message.toLowerCase();
+                if (!normalized.contains("already known") && !normalized.contains("known transaction")) {
+                    throw new IllegalStateException("Transaction broadcast failed: " + message);
+                }
+            }
+            String expectedHash = Hash.sha3(rawTransaction);
+            String returnedHash = response.getTransactionHash();
+            if (returnedHash != null && !returnedHash.isBlank()
+                && !returnedHash.equalsIgnoreCase(expectedHash)) {
+                throw new IllegalStateException("Node returned a hash different from the signed transaction");
+            }
+            return expectedHash;
+        } catch (IOException ex) {
+            throw new IllegalStateException("Failed to broadcast signed SessionStarted transaction", ex);
+        }
+    }
+
     public String markSessionStarted(
         SessionStartedOnChainSubmission submission,
         BigInteger transactionNonce,
@@ -146,6 +204,27 @@ public class SessionStartedOnChainClient {
         }
 
         return txHash;
+    }
+
+    private Function sessionStartedFunction(SessionStartedOnChainSubmission submission) {
+        return new Function(
+            "markSessionStarted",
+            List.of(new DynamicStruct(
+                new Address(normalizeAddress(submission.signerAddress())),
+                new Bytes32(toBytes32(submission.reservationKey())),
+                new Utf8String(nullToEmpty(submission.labId())),
+                new Bytes32(toBytes32(submission.pucHash())),
+                new Utf8String(nullToEmpty(submission.gatewayId())),
+                new Utf8String(nullToEmpty(submission.sessionId())),
+                new Utf8String(nullToEmpty(submission.accessType())),
+                new Uint64(BigInteger.valueOf(submission.startedAt())),
+                new Bytes32(toBytes32(submission.nonce())),
+                new Bytes32(toBytes32(submission.credentialHash())),
+                new Bytes32(toBytes32(submission.clientProofHash())),
+                new DynamicBytes(Numeric.hexStringToByteArray(submission.signature()))
+            )),
+            List.of()
+        );
     }
 
     public TransactionState transactionState(String txHash) {

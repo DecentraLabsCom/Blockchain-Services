@@ -58,7 +58,7 @@ public class InstitutionalCheckInOutboxService {
         return jdbcTemplate.queryForObject(
             """
             SELECT id, reservation_key, lab_id, institutional_wallet, puc_hash,
-                   access_session_id, status, attempts, next_attempt_at, tx_hash, wallet_address, chain_id, nonce, submitted_at, version
+                   access_session_id, status, attempts, next_attempt_at, tx_hash, signed_raw_transaction, wallet_address, chain_id, nonce, submitted_at, version
             FROM institutional_checkin_outbox WHERE reservation_key = ?
             """,
             (rs, rowNum) -> mapRow(rs),
@@ -71,7 +71,7 @@ public class InstitutionalCheckInOutboxService {
         return jdbcTemplate.queryForObject(
             """
             SELECT id, reservation_key, lab_id, institutional_wallet, puc_hash,
-                   access_session_id, status, attempts, next_attempt_at, tx_hash, wallet_address, chain_id, nonce, submitted_at, version
+                   access_session_id, status, attempts, next_attempt_at, tx_hash, signed_raw_transaction, wallet_address, chain_id, nonce, submitted_at, version
             FROM institutional_checkin_outbox WHERE id = ?
             """,
             (rs, rowNum) -> mapRow(rs),
@@ -93,6 +93,7 @@ public class InstitutionalCheckInOutboxService {
                 attempts = 0,
                 next_attempt_at = CURRENT_TIMESTAMP,
                 tx_hash = NULL,
+                signed_raw_transaction = NULL,
                 chain_id = NULL,
                 nonce = NULL,
                 submitted_at = NULL,
@@ -116,7 +117,7 @@ public class InstitutionalCheckInOutboxService {
             return jdbcTemplate.query(
                 """
                 SELECT id, reservation_key, lab_id, institutional_wallet, puc_hash,
-                       access_session_id, status, attempts, next_attempt_at, tx_hash, wallet_address, chain_id, nonce, submitted_at, version
+                       access_session_id, status, attempts, next_attempt_at, tx_hash, signed_raw_transaction, wallet_address, chain_id, nonce, submitted_at, version
                 FROM institutional_checkin_outbox
                 WHERE (status IN ('PENDING', 'RETRY') AND next_attempt_at <= ?)
                    OR (status = 'SUBMITTING' AND updated_at <= ?)
@@ -210,7 +211,7 @@ public class InstitutionalCheckInOutboxService {
             return jdbcTemplate.query(
                 """
                 SELECT id, reservation_key, lab_id, institutional_wallet, puc_hash,
-                       access_session_id, status, attempts, next_attempt_at, tx_hash, wallet_address, chain_id, nonce, submitted_at, version
+                       access_session_id, status, attempts, next_attempt_at, tx_hash, signed_raw_transaction, wallet_address, chain_id, nonce, submitted_at, version
                 FROM institutional_checkin_outbox
                 WHERE status = 'SUBMITTED'
                 ORDER BY updated_at ASC, id ASC
@@ -233,7 +234,7 @@ public class InstitutionalCheckInOutboxService {
             return jdbcTemplate.query(
                 """
                 SELECT id, reservation_key, lab_id, institutional_wallet, puc_hash,
-                       access_session_id, status, attempts, next_attempt_at, tx_hash, wallet_address, chain_id, nonce, submitted_at, version
+                       access_session_id, status, attempts, next_attempt_at, tx_hash, signed_raw_transaction, wallet_address, chain_id, nonce, submitted_at, version
                 FROM institutional_checkin_outbox
                 WHERE status = 'STUCK_UNKNOWN'
                 ORDER BY updated_at ASC, id ASC
@@ -349,6 +350,25 @@ public class InstitutionalCheckInOutboxService {
         );
     }
 
+    public void markPrepared(long id, String rawTransaction, String txHash) {
+        if (jdbcTemplate == null) {
+            return;
+        }
+        int updated = jdbcTemplate.update(
+            """
+            UPDATE institutional_checkin_outbox
+            SET signed_raw_transaction = ?, tx_hash = ?, updated_at = CURRENT_TIMESTAMP
+            WHERE id = ? AND status = 'SUBMITTING'
+            """,
+            rawTransaction,
+            txHash,
+            id
+        );
+        if (updated != 1) {
+            throw new IllegalStateException("Check-in signed transaction could not be persisted before broadcast");
+        }
+    }
+
     public void markBroadcastUncertain(long id, int attempts, String error) {
         if (jdbcTemplate == null) {
             return;
@@ -387,7 +407,8 @@ public class InstitutionalCheckInOutboxService {
             rs.getObject("chain_id", BigInteger.class),
             rs.getObject("nonce", BigInteger.class),
             rs.getTimestamp("submitted_at") != null ? rs.getTimestamp("submitted_at").toInstant() : null,
-            rs.getLong("version")
+            rs.getLong("version"),
+            rs.getString("signed_raw_transaction")
         );
     }
 
@@ -497,6 +518,22 @@ public class InstitutionalCheckInOutboxService {
             WHERE id = ? AND status = 'STUCK_UNKNOWN' AND tx_hash <=> ? AND version = ?
             """,
             Timestamp.from(nextAttemptAt), truncate(reason), record.id(), record.txHash(), record.version()
+        ) == 1;
+    }
+
+    public boolean markUnknownRebroadcast(InstitutionalCheckInOutboxRecord record, String txHash) {
+        if (jdbcTemplate == null || record == null) {
+            return false;
+        }
+        return jdbcTemplate.update(
+            """
+            UPDATE institutional_checkin_outbox
+            SET status = 'SUBMITTED', tx_hash = COALESCE(?, tx_hash),
+                submitted_at = COALESCE(submitted_at, CURRENT_TIMESTAMP),
+                last_error = NULL, version = version + 1, updated_at = CURRENT_TIMESTAMP
+            WHERE id = ? AND status = 'STUCK_UNKNOWN' AND tx_hash <=> ? AND version = ?
+            """,
+            txHash, record.id(), record.txHash(), record.version()
         ) == 1;
     }
 

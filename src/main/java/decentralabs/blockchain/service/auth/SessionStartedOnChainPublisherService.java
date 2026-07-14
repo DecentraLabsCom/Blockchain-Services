@@ -70,7 +70,8 @@ public class SessionStartedOnChainPublisherService {
                 SELECT id, reservation_key, lab_id, puc_hash, signer_address, gateway_id,
                        session_id, access_type, started_at, nonce, credential_hash,
                        client_proof_hash, signature, onchain_status, onchain_publish_attempts,
-                       onchain_wallet_address, onchain_chain_id, onchain_nonce, onchain_tx_hash, onchain_submitted_at
+                       onchain_wallet_address, onchain_chain_id, onchain_nonce, onchain_tx_hash,
+                       onchain_signed_raw_transaction, onchain_submitted_at
                 FROM session_started_attestations
                 WHERE onchain_published_at IS NULL
                   AND onchain_status IN ('QUEUED', 'RETRY', 'SUBMITTING')
@@ -116,12 +117,13 @@ public class SessionStartedOnChainPublisherService {
             String walletAddress = onChainClient.signerAddress();
             BigInteger existingNonce = walletAddress.equalsIgnoreCase(record.walletAddress())
                 ? record.transactionNonce() : null;
-            String txHash = transactionDispatcher.dispatch(
+            String txHash = transactionDispatcher.dispatchPrepared(
                 walletAddress,
                 record.chainId(),
                 existingNonce,
                 (chainId, nonce) -> markNonceReserved(submission.id(), walletAddress, chainId, nonce),
-                nonce -> onChainClient.markSessionStarted(submission, nonce, record.attempts()),
+                nonce -> onChainClient.prepareSessionStarted(submission, nonce, record.attempts()),
+                prepared -> markPrepared(submission.id(), prepared.rawTransaction(), prepared.transactionHash()),
                 hash -> markSubmitted(submission.id(), hash)
             );
             log.info(
@@ -217,6 +219,22 @@ public class SessionStartedOnChainPublisherService {
         );
     }
 
+    private void markPrepared(long id, String rawTransaction, String txHash) {
+        int updated = jdbcTemplate.update(
+            """
+            UPDATE session_started_attestations
+            SET onchain_signed_raw_transaction = ?, onchain_tx_hash = ?, updated_at = CURRENT_TIMESTAMP
+            WHERE id = ? AND onchain_status = 'SUBMITTING'
+            """,
+            rawTransaction,
+            txHash,
+            id
+        );
+        if (updated != 1) {
+            throw new IllegalStateException("SessionStarted signed transaction could not be persisted before broadcast");
+        }
+    }
+
     private void markAlreadyRecorded(long id) {
         jdbcTemplate.update(
             """
@@ -294,7 +312,8 @@ public class SessionStartedOnChainPublisherService {
                 SELECT id, reservation_key, lab_id, puc_hash, signer_address, gateway_id,
                        session_id, access_type, started_at, nonce, credential_hash,
                        client_proof_hash, signature, onchain_status, onchain_publish_attempts,
-                       onchain_wallet_address, onchain_chain_id, onchain_nonce, onchain_tx_hash, onchain_submitted_at
+                       onchain_wallet_address, onchain_chain_id, onchain_nonce, onchain_tx_hash,
+                       onchain_signed_raw_transaction, onchain_submitted_at
                 FROM session_started_attestations
                 WHERE onchain_status = 'SUBMITTED'
                 ORDER BY onchain_submitted_at ASC, id ASC
@@ -334,7 +353,8 @@ public class SessionStartedOnChainPublisherService {
                 SELECT id, reservation_key, lab_id, puc_hash, signer_address, gateway_id,
                        session_id, access_type, started_at, nonce, credential_hash,
                        client_proof_hash, signature, onchain_status, onchain_publish_attempts,
-                       onchain_wallet_address, onchain_chain_id, onchain_nonce, onchain_tx_hash, onchain_submitted_at
+                       onchain_wallet_address, onchain_chain_id, onchain_nonce, onchain_tx_hash,
+                       onchain_signed_raw_transaction, onchain_submitted_at
                 FROM session_started_attestations
                 WHERE onchain_status = 'STUCK_UNKNOWN'
                 ORDER BY updated_at ASC, id ASC
@@ -371,6 +391,13 @@ public class SessionStartedOnChainPublisherService {
                 if (record.transactionNonce() != null && record.walletAddress() != null
                         && (!hasTransactionHash || !onChainClient.transactionVisible(record.transactionHash()))
                         && onChainClient.pendingNonce(record.walletAddress()).compareTo(record.transactionNonce()) <= 0) {
+                    if (record.signedRawTransaction() != null && !record.signedRawTransaction().isBlank()) {
+                        String rebroadcastHash = onChainClient.broadcastSignedRawTransaction(
+                            record.signedRawTransaction()
+                        );
+                        markUnknownRebroadcast(record, rebroadcastHash);
+                        continue;
+                    }
                     markUnknownRetry(record);
                 }
             } catch (RuntimeException ex) {
@@ -421,6 +448,20 @@ public class SessionStartedOnChainPublisherService {
             """,
             "Reconciler proved the transaction absent and its nonce unconsumed; retrying the same nonce",
             record.submission().id(), record.transactionHash()
+        );
+    }
+
+    private void markUnknownRebroadcast(SessionStartedTransactionRecord record, String txHash) {
+        jdbcTemplate.update(
+            """
+            UPDATE session_started_attestations
+            SET onchain_status = 'SUBMITTED', onchain_tx_hash = COALESCE(?, onchain_tx_hash),
+                onchain_submitted_at = COALESCE(onchain_submitted_at, CURRENT_TIMESTAMP),
+                onchain_publish_locked_at = NULL, onchain_publish_last_error = NULL,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE id = ? AND onchain_status = 'STUCK_UNKNOWN' AND onchain_tx_hash <=> ?
+            """,
+            txHash, record.submission().id(), record.transactionHash()
         );
     }
 
@@ -502,7 +543,8 @@ public class SessionStartedOnChainPublisherService {
             rs.getObject("onchain_nonce") != null ? rs.getBigDecimal("onchain_nonce").toBigIntegerExact() : null,
             rs.getString("onchain_tx_hash"),
             rs.getTimestamp("onchain_submitted_at") != null
-                ? rs.getTimestamp("onchain_submitted_at").toInstant() : null
+                ? rs.getTimestamp("onchain_submitted_at").toInstant() : null,
+            rs.getString("onchain_signed_raw_transaction")
         );
     }
 }

@@ -11,5 +11,6 @@ record SessionStartedTransactionRecord(
     BigInteger chainId,
     BigInteger transactionNonce,
     String transactionHash,
-    Instant submittedAt
+    Instant submittedAt,
+    String signedRawTransaction
 ) { }

@@ -21,17 +21,19 @@ public class InstitutionalWalletNonceDispatcher {
         BigInteger existingNonce = record.nonce() != null && walletAddress.equalsIgnoreCase(record.walletAddress())
             ? record.nonce() : null;
         final CheckInResponse[] response = new CheckInResponse[1];
-        transactionDispatcher.dispatch(
+        transactionDispatcher.dispatchPrepared(
             walletAddress,
             record.chainId(),
             existingNonce,
             (chainId, nonce) -> outboxService.markNonceReserved(record.id(), walletAddress, chainId, nonce),
             nonce -> {
-                response[0] = submissionService.submit(
+                InstitutionalCheckInSubmissionService.PreparedCheckIn prepared = submissionService.prepare(
                     record.reservationKey(), record.pucHash(), nonce, Math.max(0, record.attempts())
                 );
-                return response[0] != null ? response[0].getTxHash() : null;
+                response[0] = prepared.response();
+                return prepared.transaction();
             },
+            prepared -> outboxService.markPrepared(record.id(), prepared.rawTransaction(), prepared.transactionHash()),
             txHash -> outboxService.markSubmitted(record.id(), txHash)
         );
         return response[0];

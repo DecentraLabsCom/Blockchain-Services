@@ -21,6 +21,7 @@ import org.web3j.protocol.core.DefaultBlockParameter;
 import org.web3j.protocol.core.Request;
 import org.web3j.protocol.core.methods.response.EthGetTransactionCount;
 import org.web3j.protocol.core.methods.response.EthChainId;
+import org.web3j.protocol.core.methods.response.EthSendTransaction;
 
 @ExtendWith(MockitoExtension.class)
 class InstitutionalWalletTransactionDispatcherTest {
@@ -29,6 +30,7 @@ class InstitutionalWalletTransactionDispatcherTest {
     @Mock private Web3j web3j;
     @Mock private Request<?, EthGetTransactionCount> nonceRequest;
     @Mock private Request<?, EthChainId> chainIdRequest;
+    @Mock private Request<?, EthSendTransaction> sendRequest;
 
     @Test
     void reservesPersistsBroadcastsAndStoresHashInsideOneDispatch() throws Exception {
@@ -54,10 +56,15 @@ class InstitutionalWalletTransactionDispatcherTest {
         AtomicReference<BigInteger> persistedNonce = new AtomicReference<>();
         AtomicReference<BigInteger> persistedChainId = new AtomicReference<>();
         AtomicReference<String> persistedHash = new AtomicReference<>();
+        String expectedHash = "0x" + "a".repeat(64);
+        EthSendTransaction sendResponse = new EthSendTransaction();
+        sendResponse.setResult(expectedHash);
+        doReturn(sendRequest).when(web3j).ethSendRawTransaction("0x01");
+        when(sendRequest.send()).thenReturn(sendResponse);
         InstitutionalWalletTransactionDispatcher dispatcher =
             new InstitutionalWalletTransactionDispatcher(nonceReservationService, walletService);
 
-        String hash = dispatcher.dispatch(
+        String hash = dispatcher.dispatchPrepared(
             "0xwallet",
             null,
             null,
@@ -65,7 +72,8 @@ class InstitutionalWalletTransactionDispatcherTest {
                 persistedChainId.set(chainId);
                 persistedNonce.set(nonce);
             },
-            nonce -> "0x" + "a".repeat(64),
+            nonce -> new InstitutionalWalletTransactionDispatcher.PreparedTransaction("0x01", expectedHash),
+            prepared -> { assertThat(persistedHash.get()).isNull(); },
             persistedHash::set
         );
 
@@ -88,15 +96,24 @@ class InstitutionalWalletTransactionDispatcherTest {
         InstitutionalWalletTransactionDispatcher dispatcher =
             new InstitutionalWalletTransactionDispatcher(nonceReservationService, walletService);
 
-        assertThatThrownBy(() -> dispatcher.dispatch(
+        String hash = "0x" + "b".repeat(64);
+        doReturn(sendRequest).when(web3j).ethSendRawTransaction("0x01");
+        try {
+            when(sendRequest.send()).thenThrow(new java.io.IOException("rpc response lost"));
+        } catch (java.io.IOException ex) {
+            throw new AssertionError(ex);
+        }
+
+        assertThatThrownBy(() -> dispatcher.dispatchPrepared(
             "0xwallet",
             BigInteger.ONE,
             BigInteger.valueOf(48),
             (ignoredChain, ignoredNonce) -> { },
-            ignored -> { throw new IllegalStateException("rpc response lost"); },
+            ignored -> new InstitutionalWalletTransactionDispatcher.PreparedTransaction("0x01", hash),
+            ignored -> { },
             ignored -> { }
         )).isInstanceOf(InstitutionalWalletDispatchException.class)
-            .hasCauseInstanceOf(IllegalStateException.class);
+            .hasCauseInstanceOf(java.io.IOException.class);
 
         verify(nonceReservationService, never()).reserveAndPersist(eq("0xwallet"), any(), any(), any());
     }

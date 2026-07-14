@@ -15,6 +15,11 @@ public class InstitutionalCheckInSubmissionService {
     private final Eip712CheckInVerifier checkInVerifier;
     private final CheckInOnChainService checkInOnChainService;
 
+    public record PreparedCheckIn(
+        CheckInResponse response,
+        InstitutionalWalletTransactionDispatcher.PreparedTransaction transaction
+    ) { }
+
     public InstitutionalCheckInSubmissionService(
         InstitutionalWalletService institutionalWalletService,
         Eip712CheckInVerifier checkInVerifier,
@@ -66,6 +71,30 @@ public class InstitutionalCheckInSubmissionService {
         response.setTimestamp(timestamp);
         response.setTxHash(txHash);
         return response;
+    }
+
+    public PreparedCheckIn prepare(String reservationKey, String pucHash, BigInteger nonce, int replacementAttempt) {
+        Credentials credentials = institutionalWalletService.getInstitutionalCredentials();
+        String signer = credentials.getAddress();
+        String normalizedReservationKey = PucHashUtil.normalizeBytes32(reservationKey);
+        String normalizedPucHash = PucHashUtil.normalizeBytes32(pucHash);
+        long timestamp = System.currentTimeMillis() / 1000;
+        byte[] digest = checkInVerifier.buildDigest(
+            signer, normalizedReservationKey, normalizedPucHash, timestamp
+        );
+        String signature = signatureToHex(Sign.signMessage(digest, credentials.getEcKeyPair(), false));
+        InstitutionalWalletTransactionDispatcher.PreparedTransaction transaction =
+            checkInOnChainService.prepareSignedCheckIn(
+                signer, normalizedReservationKey, normalizedPucHash, timestamp,
+                signature, nonce, replacementAttempt
+            );
+        CheckInResponse response = new CheckInResponse();
+        response.setValid(true);
+        response.setSigner(signer);
+        response.setReservationKey(normalizedReservationKey);
+        response.setTimestamp(timestamp);
+        response.setTxHash(transaction.transactionHash());
+        return new PreparedCheckIn(response, transaction);
     }
 
     private String signatureToHex(Sign.SignatureData signatureData) {

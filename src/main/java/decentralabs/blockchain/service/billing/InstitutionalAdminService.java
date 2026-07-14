@@ -5,6 +5,7 @@ import decentralabs.blockchain.service.RateLimitService;
 import decentralabs.blockchain.service.health.LabMetadataService;
 import decentralabs.blockchain.service.persistence.AntiReplayService;
 import decentralabs.blockchain.service.wallet.InstitutionalWalletService;
+import decentralabs.blockchain.service.wallet.InstitutionalTxManagerProvider;
 import decentralabs.blockchain.service.wallet.WalletService;
 import decentralabs.blockchain.security.AdminNetworkAccessPolicy;
 import decentralabs.blockchain.dto.billing.InstitutionalAdminRequest;
@@ -13,6 +14,7 @@ import decentralabs.blockchain.util.CreditUnitConverter;
 import decentralabs.blockchain.util.EthereumAddressValidator;
 import decentralabs.blockchain.util.LogSanitizer;
 import jakarta.servlet.http.HttpServletRequest;
+import java.io.IOException;
 import java.math.BigDecimal;
 import java.math.BigInteger;
 import java.math.RoundingMode;
@@ -21,8 +23,8 @@ import java.security.MessageDigest;
 import java.util.LinkedHashMap;
 import java.util.Locale;
 import java.util.Map;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.web3j.abi.FunctionEncoder;
@@ -46,7 +48,6 @@ import org.web3j.utils.Numeric;
  * Secured by localhost access and wallet ownership validation
  */
 @Service
-@RequiredArgsConstructor
 @Slf4j
 public class InstitutionalAdminService {
     private static final BigInteger RECEIVABLE_ACCRUED = BigInteger.ONE;
@@ -68,6 +69,7 @@ public class InstitutionalAdminService {
     private final Eip712BillingAdminVerifier adminVerifier;
     private final AntiReplayService antiReplayService;
     private final AdminNetworkAccessPolicy adminNetworkAccessPolicy;
+    private final InstitutionalTxManagerProvider txManagerProvider;
 
     private static final int LAB_TOKEN_DECIMALS = CreditUnitConverter.CREDIT_DECIMALS;
     private static final long SIGNATURE_MAX_AGE_MS = 5 * 60 * 1000;
@@ -86,6 +88,61 @@ public class InstitutionalAdminService {
 
     @Value("${security.access-token.required:true}")
     private boolean accessTokenRequired;
+
+    @Autowired
+    public InstitutionalAdminService(
+        Web3j web3j,
+        HttpServletRequest request,
+        RateLimitService rateLimitService,
+        LabMetadataService labMetadataService,
+        InstitutionalWalletService institutionalWalletService,
+        WalletService walletService,
+        InstitutionalAnalyticsService analyticsService,
+        Eip712BillingAdminVerifier adminVerifier,
+        AntiReplayService antiReplayService,
+        AdminNetworkAccessPolicy adminNetworkAccessPolicy,
+        InstitutionalTxManagerProvider txManagerProvider
+    ) {
+        this.web3j = web3j;
+        this.request = request;
+        this.rateLimitService = rateLimitService;
+        this.labMetadataService = labMetadataService;
+        this.institutionalWalletService = institutionalWalletService;
+        this.walletService = walletService;
+        this.analyticsService = analyticsService;
+        this.adminVerifier = adminVerifier;
+        this.antiReplayService = antiReplayService;
+        this.adminNetworkAccessPolicy = adminNetworkAccessPolicy;
+        this.txManagerProvider = txManagerProvider;
+    }
+
+    /** Constructor retained for focused tests that instantiate the service without Spring. */
+    InstitutionalAdminService(
+        Web3j web3j,
+        HttpServletRequest request,
+        RateLimitService rateLimitService,
+        LabMetadataService labMetadataService,
+        InstitutionalWalletService institutionalWalletService,
+        WalletService walletService,
+        InstitutionalAnalyticsService analyticsService,
+        Eip712BillingAdminVerifier adminVerifier,
+        AntiReplayService antiReplayService,
+        AdminNetworkAccessPolicy adminNetworkAccessPolicy
+    ) {
+        this(
+            web3j,
+            request,
+            rateLimitService,
+            labMetadataService,
+            institutionalWalletService,
+            walletService,
+            analyticsService,
+            adminVerifier,
+            antiReplayService,
+            adminNetworkAccessPolicy,
+            null
+        );
+    }
 
     @Value("${billing.collect.max-batch:50}")
     private int defaultCollectMaxBatch;
@@ -780,11 +837,37 @@ public class InstitutionalAdminService {
         // Encode function call
         String encodedFunction = FunctionEncoder.encode(function);
 
-        // Get nonce
+        if (txManagerProvider != null) {
+            EthGetTransactionCount pendingResponse = web3j.ethGetTransactionCount(
+                credentials.getAddress(), DefaultBlockParameterName.PENDING
+            ).send();
+            BigInteger pendingNonce = pendingResponse != null ? pendingResponse.getTransactionCount() : null;
+            if (pendingNonce == null) {
+                throw new IOException("Node returned no pending nonce for institutional admin transaction");
+            }
+            BigInteger gasPrice = resolveGasPriceWei();
+            BigInteger gasLimit = resolveContractGasLimit(credentials.getAddress(), pendingNonce, encodedFunction);
+            EthSendTransaction managed = txManagerProvider.get(web3j).sendTransaction(
+                gasPrice,
+                gasLimit,
+                contractAddress,
+                encodedFunction,
+                BigInteger.ZERO
+            );
+            if (managed == null || managed.hasError()) {
+                String error = managed != null && managed.getError() != null
+                    ? managed.getError().getMessage()
+                    : "Transaction broadcast returned no response";
+                throw new RuntimeException("Transaction failed: " + error);
+            }
+            return managed.getTransactionHash();
+        }
+
+        // Legacy constructor path is used only by focused unit tests; runtime
+        // wiring always supplies the durable institutional transaction manager.
         EthGetTransactionCount ethGetTransactionCount = web3j.ethGetTransactionCount(
             credentials.getAddress(), DefaultBlockParameterName.LATEST).send();
         BigInteger nonce = ethGetTransactionCount.getTransactionCount();
-
         BigInteger gasPrice = resolveGasPriceWei();
         BigInteger gasLimit = resolveContractGasLimit(credentials.getAddress(), nonce, encodedFunction);
 

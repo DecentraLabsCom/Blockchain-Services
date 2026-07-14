@@ -78,6 +78,13 @@ public class InstitutionalCheckInReceiptMonitor {
             }
             BigInteger pendingNonce = checkInOnChainService.pendingNonce(record.walletAddress());
             if (pendingNonce.compareTo(record.nonce()) <= 0) {
+                if (record.signedRawTransaction() != null && !record.signedRawTransaction().isBlank()) {
+                    String rebroadcastHash = checkInOnChainService.broadcastSignedRawTransaction(
+                        record.signedRawTransaction()
+                    );
+                    outboxService.markUnknownRebroadcast(record, rebroadcastHash);
+                    return;
+                }
                 outboxService.markUnknownRetry(
                     record,
                     Instant.now(),

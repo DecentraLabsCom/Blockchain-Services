@@ -21,7 +21,6 @@ import org.web3j.protocol.Web3j;
 import org.web3j.protocol.core.Request;
 import org.web3j.protocol.core.methods.response.EthChainId;
 import org.web3j.tx.TransactionManager;
-import decentralabs.blockchain.service.auth.InstitutionalWalletNonceReservationService;
 
 @ExtendWith(MockitoExtension.class)
 class InstitutionalTxManagerProviderTest {
@@ -39,13 +38,13 @@ class InstitutionalTxManagerProviderTest {
     private Web3j otherWeb3j;
 
     @Mock
-    private InstitutionalWalletNonceReservationService nonceReservationService;
+    private InstitutionalTransactionOutboxService transactionOutboxService;
 
     private InstitutionalTxManagerProvider provider;
 
     @BeforeEach
     void setUp() {
-        provider = new InstitutionalTxManagerProvider(institutionalWalletService, nonceReservationService);
+        provider = new InstitutionalTxManagerProvider(institutionalWalletService, transactionOutboxService);
     }
 
     @Test
