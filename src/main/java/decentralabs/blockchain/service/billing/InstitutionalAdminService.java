@@ -23,6 +23,7 @@ import java.security.MessageDigest;
 import java.util.LinkedHashMap;
 import java.util.Locale;
 import java.util.Map;
+import java.util.UUID;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
@@ -197,6 +198,12 @@ public class InstitutionalAdminService {
      * Executes provider payout request using the institutional wallet configured on the server.
      */
     public InstitutionalAdminResponse requestProviderPayoutWithConfiguredWallet(String labId, String maxBatch) {
+        return requestProviderPayoutWithConfiguredWallet(labId, maxBatch, null);
+    }
+
+    public InstitutionalAdminResponse requestProviderPayoutWithConfiguredWallet(
+        String labId, String maxBatch, String idempotencyKey
+    ) {
         try {
             if (!isLocalhostRequest()) {
                 return InstitutionalAdminResponse.error("Access denied: administrative operations only allowed from localhost");
@@ -221,7 +228,7 @@ public class InstitutionalAdminService {
                 return InstitutionalAdminResponse.error(roleError);
             }
 
-            return requestProviderPayout(credentials, request);
+            return requestProviderPayout(credentials, request, idempotencyKey);
         } catch (Exception e) {
             log.error("Error executing server-side payout request: {}", LogSanitizer.sanitize(e.getMessage()), e);
             return InstitutionalAdminResponse.error("Payout request failed: " + e.getMessage());
@@ -433,7 +440,7 @@ public class InstitutionalAdminService {
                 return authorizeBackend(credentials, request);
 
             case REVOKE_BACKEND:
-                return revokeBackend(credentials);
+                return revokeBackend(credentials, request);
 
             case ADMIN_RESET_BACKEND:
                 return adminResetBackend(credentials, request);
@@ -445,7 +452,7 @@ public class InstitutionalAdminService {
                 return setSpendingPeriod(credentials, request);
 
             case RESET_SPENDING_PERIOD:
-                return resetSpendingPeriod(credentials);
+                return resetSpendingPeriod(credentials, request);
 
             case ISSUE_SERVICE_CREDITS:
                 return issueServiceCredits(credentials, request);
@@ -471,7 +478,7 @@ public class InstitutionalAdminService {
 
         Function function = Diamond.authorizeBackendFunction(request.getBackendAddress());
 
-        String txHash = sendTransaction(credentials, function);
+        String txHash = sendTransaction(credentials, function, operationKey(request));
         recordAdminTransaction(
             credentials.getAddress(),
             txHash,
@@ -486,11 +493,13 @@ public class InstitutionalAdminService {
         );
     }
 
-    private InstitutionalAdminResponse revokeBackend(Credentials credentials) throws Exception {
+    private InstitutionalAdminResponse revokeBackend(
+        Credentials credentials, InstitutionalAdminRequest request
+    ) throws Exception {
         log.info("Revoking backend access request received.");
         Function function = Diamond.revokeBackendFunction();
 
-        String txHash = sendTransaction(credentials, function);
+        String txHash = sendTransaction(credentials, function, operationKey(request));
         recordAdminTransaction(
             credentials.getAddress(),
             txHash,
@@ -516,7 +525,7 @@ public class InstitutionalAdminService {
 
         Function function = Diamond.adminResetBackendFunction(request.getProviderAddress(), backendAddress);
 
-        String txHash = sendTransaction(credentials, function);
+        String txHash = sendTransaction(credentials, function, operationKey(request));
         recordAdminTransaction(
             credentials.getAddress(),
             txHash,
@@ -539,7 +548,7 @@ public class InstitutionalAdminService {
         BigInteger limit = EthereumAddressValidator.parseBigInteger(request.getSpendingLimit(), "spendingLimit");
         Function function = Diamond.setInstitutionalUserLimitFunction(limit);
 
-        String txHash = sendTransaction(credentials, function);
+        String txHash = sendTransaction(credentials, function, operationKey(request));
         recordAdminTransaction(
             credentials.getAddress(),
             txHash,
@@ -562,7 +571,7 @@ public class InstitutionalAdminService {
         BigInteger period = EthereumAddressValidator.parseBigInteger(request.getSpendingPeriod(), "spendingPeriod");
         Function function = Diamond.setInstitutionalSpendingPeriodFunction(period);
 
-        String txHash = sendTransaction(credentials, function);
+        String txHash = sendTransaction(credentials, function, operationKey(request));
         recordAdminTransaction(
             credentials.getAddress(),
             txHash,
@@ -577,11 +586,13 @@ public class InstitutionalAdminService {
         ).withSpendingPeriod(request.getSpendingPeriod());
     }
 
-    private InstitutionalAdminResponse resetSpendingPeriod(Credentials credentials) throws Exception {
+    private InstitutionalAdminResponse resetSpendingPeriod(
+        Credentials credentials, InstitutionalAdminRequest request
+    ) throws Exception {
         log.info("Resetting spending period request received.");
         Function function = Diamond.resetInstitutionalSpendingPeriodFunction();
 
-        String txHash = sendTransaction(credentials, function);
+        String txHash = sendTransaction(credentials, function, operationKey(request));
         recordAdminTransaction(
             credentials.getAddress(),
             txHash,
@@ -598,7 +609,7 @@ public class InstitutionalAdminService {
 
     public void resetSpendingPeriodAfterRegistration() throws Exception {
         Credentials credentials = institutionalWalletService.getInstitutionalCredentials();
-        resetSpendingPeriod(credentials);
+        resetSpendingPeriod(credentials, null);
     }
 
     private InstitutionalAdminResponse issueServiceCredits(Credentials credentials, InstitutionalAdminRequest request) throws Exception {
@@ -621,7 +632,7 @@ public class InstitutionalAdminService {
             referenceToBytes32(request.getReference())
         );
 
-        String txHash = sendTransaction(credentials, function);
+        String txHash = sendTransaction(credentials, function, operationKey(request));
         recordAdminTransaction(
             credentials.getAddress(),
             txHash,
@@ -656,7 +667,7 @@ public class InstitutionalAdminService {
             referenceToBytes32(request.getReference())
         );
 
-        String txHash = sendTransaction(credentials, function);
+        String txHash = sendTransaction(credentials, function, operationKey(request));
         recordAdminTransaction(
             credentials.getAddress(),
             txHash,
@@ -671,7 +682,15 @@ public class InstitutionalAdminService {
         );
     }
 
-    private InstitutionalAdminResponse requestProviderPayout(Credentials credentials, InstitutionalAdminRequest request) throws Exception {
+    private InstitutionalAdminResponse requestProviderPayout(
+        Credentials credentials, InstitutionalAdminRequest request
+    ) throws Exception {
+        return requestProviderPayout(credentials, request, null);
+    }
+
+    private InstitutionalAdminResponse requestProviderPayout(
+        Credentials credentials, InstitutionalAdminRequest request, String idempotencyKey
+    ) throws Exception {
         if (request.getLabId() == null || request.getLabId().isBlank()) {
             return InstitutionalAdminResponse.error("Lab ID required for payout request");
         }
@@ -695,7 +714,7 @@ public class InstitutionalAdminService {
         Function function = Diamond.requestProviderPayoutFunction(labId, maxBatch);
         String labDisplayName = resolveLabDisplayName(labId);
 
-        String txHash = sendTransaction(credentials, function);
+        String txHash = sendTransaction(credentials, function, operationKey(request, idempotencyKey));
         recordAdminTransaction(
             credentials.getAddress(),
             txHash,
@@ -758,7 +777,7 @@ public class InstitutionalAdminService {
             referenceToBytes32(request.getReference())
         );
 
-        String txHash = sendTransaction(credentials, function);
+        String txHash = sendTransaction(credentials, function, operationKey(request));
         recordAdminTransaction(
             credentials.getAddress(),
             txHash,
@@ -828,7 +847,9 @@ public class InstitutionalAdminService {
     /**
      * Send a transaction to the blockchain
      */
-    private synchronized String sendTransaction(Credentials credentials, Function function) throws Exception {
+    private synchronized String sendTransaction(
+        Credentials credentials, Function function, String operationKey
+    ) throws Exception {
         // Rate limiting check
         if (!rateLimitService.allowTransaction(credentials.getAddress())) {
             throw new RuntimeException("Rate limit exceeded. Too many transactions per hour.");
@@ -847,7 +868,7 @@ public class InstitutionalAdminService {
             }
             BigInteger gasPrice = resolveGasPriceWei();
             BigInteger gasLimit = resolveContractGasLimit(credentials.getAddress(), pendingNonce, encodedFunction);
-            EthSendTransaction managed = txManagerProvider.get(web3j, "billing:" + encodedFunction).sendTransaction(
+            EthSendTransaction managed = txManagerProvider.get(web3j, operationKey).sendTransaction(
                 gasPrice,
                 gasLimit,
                 contractAddress,
@@ -897,6 +918,39 @@ public class InstitutionalAdminService {
         }
 
         return ethSendTransaction.getTransactionHash();
+    }
+
+    /**
+     * Derives idempotency from the signed command instance, never from calldata
+     * alone. A new signature/timestamp is a new legitimate command; retrying
+     * the same signed command retains the same outbox key.
+     */
+    private String operationKey(InstitutionalAdminRequest request) {
+        return operationKey(request, null);
+    }
+
+    private String operationKey(InstitutionalAdminRequest request, String idempotencyKey) {
+        String operation = request != null && request.getOperation() != null
+            ? request.getOperation().name().toLowerCase(Locale.ROOT)
+            : "internal";
+        if (idempotencyKey != null && !idempotencyKey.isBlank()) {
+            return "billing:" + operation + ":idempotency:" + sha256(idempotencyKey.trim());
+        }
+        if (request != null && request.getTimestamp() != null
+            && request.getTimestamp() > 0
+            && request.getSignature() != null && !request.getSignature().isBlank()) {
+            return "billing:" + operation + ":" + request.getTimestamp() + ":" + sha256(request.getSignature());
+        }
+        return "billing:" + operation + ":" + UUID.randomUUID();
+    }
+
+    private String sha256(String value) {
+        try {
+            return Numeric.toHexStringNoPrefix(MessageDigest.getInstance("SHA-256")
+                .digest(value.getBytes(StandardCharsets.UTF_8)));
+        } catch (Exception ex) {
+            throw new IllegalStateException("SHA-256 is not available", ex);
+        }
     }
 
     private BigInteger resolveGasPriceWei() {

@@ -4,6 +4,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -104,6 +105,21 @@ class LabAdminControllerTest {
             .andExpect(status().isBadRequest())
             .andExpect(jsonPath("$.success").value(false))
             .andExpect(jsonPath("$.error").value("Lab is not owned by this provider wallet"));
+    }
+
+    @Test
+    void forwardsIdempotencyKeyForDistinctLabAdminCommandInstances() throws Exception {
+        when(labAdminService.listLab(BigInteger.valueOf(5), true, "list-command-2"))
+            .thenReturn(new decentralabs.blockchain.dto.labadmin.LabAdminTransactionResponse(
+                true, "listLab", "0xtx", "0x1", BigInteger.valueOf(5), "https://lab.example.edu/metadata.json"
+            ));
+
+        mockMvc.perform(post("/lab-admin/labs/5/list")
+                .header("Idempotency-Key", "list-command-2"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.action").value("listLab"));
+
+        verify(labAdminService).listLab(BigInteger.valueOf(5), true, "list-command-2");
     }
 
     @Test

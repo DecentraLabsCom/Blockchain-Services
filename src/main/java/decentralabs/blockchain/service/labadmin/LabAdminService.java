@@ -170,6 +170,15 @@ public class LabAdminService {
     }
 
     public LabAdminTransactionResponse publish(LabAdminPublishRequest request) throws Exception {
+        return publish(request, null);
+    }
+
+    /**
+     * Publishes one business command.  The optional idempotency key belongs to
+     * the HTTP command instance; it must not be derived only from the metadata
+     * or calldata because a later publish can legitimately repeat those values.
+     */
+    public LabAdminTransactionResponse publish(LabAdminPublishRequest request, String idempotencyKey) throws Exception {
         String wallet = requireProviderWallet();
         String uri = resolveMetadataUri(request);
         BigInteger price = requireNonNegative(request.price(), "price");
@@ -201,7 +210,10 @@ public class LabAdminService {
         }
 
         try {
-            Diamond diamond = loadWritableDiamond("lab-admin:publish:" + pendingKey);
+            String operationBusinessId = idempotencyKey != null && !idempotencyKey.isBlank()
+                ? "request"
+                : pendingKey;
+            Diamond diamond = loadWritableDiamond(operationKey("publish", operationBusinessId, idempotencyKey));
             TransactionReceipt receipt = listImmediately
                 ? diamond.addAndListLab(uri, price, accessURI, accessKey, resourceType).send()
                 : diamond.addLab(uri, price, accessURI, accessKey, resourceType).send();
@@ -221,6 +233,12 @@ public class LabAdminService {
     }
 
     public LabAdminTransactionResponse update(BigInteger labId, LabAdminPublishRequest request) throws Exception {
+        return update(labId, request, null);
+    }
+
+    public LabAdminTransactionResponse update(
+        BigInteger labId, LabAdminPublishRequest request, String idempotencyKey
+    ) throws Exception {
         requireOwnedLab(labId);
         String uri = resolveMetadataUri(request);
         BigInteger price = requireNonNegative(request.price(), "price");
@@ -245,7 +263,7 @@ public class LabAdminService {
             log.debug("Unable to compare current on-chain lab state for lab {}; proceeding with updateLab", labId, ex);
         }
 
-        TransactionReceipt receipt = loadWritableDiamond("lab-admin:update:" + labId)
+        TransactionReceipt receipt = loadWritableDiamond(operationKey("update", labId, idempotencyKey))
             .updateLab(labId, uri, price, accessURI, accessKey, resourceType)
             .send();
         return new LabAdminTransactionResponse(
@@ -259,9 +277,14 @@ public class LabAdminService {
     }
 
     public LabAdminTransactionResponse deleteLab(BigInteger labId) throws Exception {
+        return deleteLab(labId, null);
+    }
+
+    public LabAdminTransactionResponse deleteLab(BigInteger labId, String idempotencyKey) throws Exception {
         requireOwnedLab(labId);
         String uri = walletService.getLabTokenUri(labId).orElse(null);
-        TransactionReceipt receipt = loadWritableDiamond("lab-admin:delete:" + labId).deleteLab(labId).send();
+        TransactionReceipt receipt = loadWritableDiamond(operationKey("delete", labId, idempotencyKey))
+            .deleteLab(labId).send();
         return new LabAdminTransactionResponse(
             true,
             "deleteLab",
@@ -273,10 +296,16 @@ public class LabAdminService {
     }
 
     public LabAdminTransactionResponse listLab(BigInteger labId, boolean listed) throws Exception {
+        return listLab(labId, listed, null);
+    }
+
+    public LabAdminTransactionResponse listLab(
+        BigInteger labId, boolean listed, String idempotencyKey
+    ) throws Exception {
         requireOwnedLab(labId);
         TransactionReceipt receipt = listed
-            ? loadWritableDiamond("lab-admin:list:" + labId).listLab(labId).send()
-            : loadWritableDiamond("lab-admin:unlist:" + labId).unlistLab(labId).send();
+            ? loadWritableDiamond(operationKey("list", labId, idempotencyKey)).listLab(labId).send()
+            : loadWritableDiamond(operationKey("unlist", labId, idempotencyKey)).unlistLab(labId).send();
         return new LabAdminTransactionResponse(
             true,
             listed ? "listLab" : "unlistLab",
@@ -414,6 +443,14 @@ public class LabAdminService {
 
     private String pendingPublishKey(String wallet, String uri) {
         return (wallet == null ? "" : wallet.toLowerCase(Locale.ROOT)) + "|" + (uri == null ? "" : uri);
+    }
+
+    private String operationKey(String action, Object businessId, String idempotencyKey) {
+        String instance = idempotencyKey == null ? "" : idempotencyKey.trim();
+        if (instance.isBlank()) {
+            instance = UUID.randomUUID().toString();
+        }
+        return "lab-admin:" + action + ":" + String.valueOf(businessId) + ":" + instance;
     }
 
     private String requireProviderWallet() {

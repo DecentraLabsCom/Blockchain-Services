@@ -9,6 +9,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
@@ -62,14 +63,18 @@ public class BillingAdminController {
      */
     @PostMapping("/admin/request-provider-payout")
     public ResponseEntity<InstitutionalAdminResponse> requestProviderPayout(
-        @RequestBody InstitutionalAdminRequest request
+        @RequestBody InstitutionalAdminRequest request,
+        @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey
     ) {
         log.info("Received server-side provider payout request for lab {}", request.getLabId());
         try {
-            InstitutionalAdminResponse response = adminService.requestProviderPayoutWithConfiguredWallet(
-                request.getLabId(),
-                request.getMaxBatch()
-            );
+            InstitutionalAdminResponse response = idempotencyKey != null && !idempotencyKey.isBlank()
+                ? adminService.requestProviderPayoutWithConfiguredWallet(
+                    request.getLabId(), request.getMaxBatch(), idempotencyKey
+                )
+                : adminService.requestProviderPayoutWithConfiguredWallet(
+                    request.getLabId(), request.getMaxBatch()
+                );
             if (response == null) {
                 log.error("Admin service returned null response for payout request on lab {}", request.getLabId());
                 return ResponseEntity.internalServerError()

@@ -114,6 +114,10 @@ public class SessionStartedOnChainPublisherService {
                 return true;
             }
 
+            if (hasPersistedMaterial(record)) {
+                return resumePersistedSubmission(record);
+            }
+
             String walletAddress = onChainClient.signerAddress();
             BigInteger existingNonce = walletAddress.equalsIgnoreCase(record.walletAddress())
                 ? record.transactionNonce() : null;
@@ -237,6 +241,50 @@ public class SessionStartedOnChainPublisherService {
         if (updated != 1) {
             throw new IllegalStateException("SessionStarted signed transaction could not be persisted before broadcast");
         }
+    }
+
+    private boolean hasPersistedMaterial(SessionStartedTransactionRecord record) {
+        return record.signedRawTransaction() != null && !record.signedRawTransaction().isBlank()
+            && record.transactionHash() != null && !record.transactionHash().isBlank();
+    }
+
+    private boolean resumePersistedSubmission(SessionStartedTransactionRecord record)
+        throws InstitutionalWalletDispatchException {
+        String txHash = record.transactionHash();
+        try {
+            SessionStartedOnChainClient.TransactionState state = onChainClient.transactionStateStrict(txHash);
+            if (state == SessionStartedOnChainClient.TransactionState.SUCCEEDED) {
+                markMinedSuccess(record.submission().id(), txHash);
+                return true;
+            }
+            if (state == SessionStartedOnChainClient.TransactionState.FAILED) {
+                markMinedFailed(record.submission().id(), txHash, "SessionStarted transaction reverted on-chain");
+                return false;
+            }
+            if (onChainClient.transactionVisible(txHash)) {
+                markSubmitted(record.submission().id(), txHash);
+                return true;
+            }
+        } catch (RuntimeException ex) {
+            throw new InstitutionalWalletDispatchException(
+                "Persisted SessionStarted transaction outcome is uncertain",
+                InstitutionalWalletDispatchException.Outcome.BROADCAST_OUTCOME_UNKNOWN,
+                ex
+            );
+        }
+
+        String rebroadcastHash = transactionDispatcher.rebroadcastPrepared(
+            new InstitutionalWalletTransactionDispatcher.PreparedTransaction(
+                record.signedRawTransaction(), txHash
+            )
+        );
+        markSubmitted(record.submission().id(), rebroadcastHash);
+        log.info(
+            "Rebroadcast persisted SessionStarted transaction for reservation {} tx={}",
+            LogSanitizer.sanitize(record.submission().reservationKey()),
+            LogSanitizer.sanitize(rebroadcastHash)
+        );
+        return true;
     }
 
     private void markAlreadyRecorded(long id) {

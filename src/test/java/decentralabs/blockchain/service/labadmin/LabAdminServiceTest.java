@@ -189,4 +189,20 @@ class LabAdminServiceTest {
             BigInteger.ONE
         )).isFalse();
     }
+
+    @Test
+    void labAdminOperationKeyChangesPerCommandInstance() {
+        String first = ReflectionTestUtils.invokeMethod(
+            service, "operationKey", "list", BigInteger.valueOf(4), "list-command-1"
+        );
+        String retry = ReflectionTestUtils.invokeMethod(
+            service, "operationKey", "list", BigInteger.valueOf(4), "list-command-1"
+        );
+        String next = ReflectionTestUtils.invokeMethod(
+            service, "operationKey", "list", BigInteger.valueOf(4), "list-command-2"
+        );
+
+        assertThat(first).isEqualTo(retry);
+        assertThat(next).isNotEqualTo(first);
+    }
 }

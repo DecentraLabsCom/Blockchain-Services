@@ -182,6 +182,30 @@
     "defaultValue": 20
   },
   {
+    "name": "institutional.transaction-outbox.monitor.submitted-stale-after-ms",
+    "type": "java.lang.Long",
+    "description": "Age after which a submitted generic transaction missing from the node is moved to exact-material recovery.",
+    "defaultValue": 120000
+  },
+  {
+    "name": "institutional.transaction-outbox.monitor.max-attempts",
+    "type": "java.lang.Integer",
+    "description": "Maximum generic outbox recovery attempts before manual intervention is required.",
+    "defaultValue": 10
+  },
+  {
+    "name": "institutional.transaction-outbox.monitor.max-pending-ms",
+    "type": "java.lang.Long",
+    "description": "Maximum age of a generic outbox attempt before the monitor stops retransmitting it.",
+    "defaultValue": 900000
+  },
+  {
+    "name": "institutional.transaction-outbox.monitor.gas-bump-percent",
+    "type": "java.lang.Integer",
+    "description": "Percentage gas-price bump applied to retryable same-nonce generic replacements.",
+    "defaultValue": 20
+  },
+  {
     "name": "checkin.receipt.max-attempts",
     "type": "java.lang.Integer",
     "description": "Maximum number of eth_getTransactionReceipt polling attempts before institutional check-in is treated as unconfirmed.",

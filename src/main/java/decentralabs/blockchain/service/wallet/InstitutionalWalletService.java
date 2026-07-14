@@ -485,6 +485,25 @@ public class InstitutionalWalletService {
             cachedCredentials = null;
         }
     }
+
+    /**
+     * Applies a wallet create/import result to the running service.  Wallet
+     * administration is intentionally hot-reloadable; keeping the old
+     * @Value-bound address or cached credentials after a rotation would make
+     * the outbox monitor sign with a different wallet than the active one.
+     */
+    public synchronized void configureRuntimeWallet(String address, String password) {
+        if (address == null || address.isBlank()) {
+            throw new IllegalArgumentException("Institutional wallet address is required");
+        }
+        if (password == null || password.isBlank()) {
+            throw new IllegalArgumentException("Institutional wallet password is required");
+        }
+        institutionalWalletAddress = address.trim();
+        institutionalWalletPassword = password;
+        cachedCredentials = null;
+        initializeInstitutionalWallet();
+    }
     
     /**
      * Checks if the institutional wallet is properly configured and available.

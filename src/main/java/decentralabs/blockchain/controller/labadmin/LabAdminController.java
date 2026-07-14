@@ -25,6 +25,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.servlet.HandlerMapping;
@@ -96,9 +97,14 @@ public class LabAdminController {
     }
 
     @PostMapping("/lab-admin/labs")
-    public ResponseEntity<?> publish(@RequestBody LabAdminPublishRequest request) {
+    public ResponseEntity<?> publish(
+        @RequestBody LabAdminPublishRequest request,
+        @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey
+    ) {
         try {
-            LabAdminTransactionResponse response = labAdminService.publish(request);
+            LabAdminTransactionResponse response = hasText(idempotencyKey)
+                ? labAdminService.publish(request, idempotencyKey)
+                : labAdminService.publish(request);
             return ResponseEntity.ok(response);
         } catch (IllegalArgumentException | IllegalStateException ex) {
             return badRequest(ex);
@@ -108,9 +114,15 @@ public class LabAdminController {
     }
 
     @PutMapping("/lab-admin/labs/{labId}")
-    public ResponseEntity<?> update(@PathVariable BigInteger labId, @RequestBody LabAdminPublishRequest request) {
+    public ResponseEntity<?> update(
+        @PathVariable BigInteger labId,
+        @RequestBody LabAdminPublishRequest request,
+        @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey
+    ) {
         try {
-            LabAdminTransactionResponse response = labAdminService.update(labId, request);
+            LabAdminTransactionResponse response = hasText(idempotencyKey)
+                ? labAdminService.update(labId, request, idempotencyKey)
+                : labAdminService.update(labId, request);
             return ResponseEntity.ok(response);
         } catch (IllegalArgumentException | IllegalStateException ex) {
             return badRequest(ex);
@@ -120,9 +132,14 @@ public class LabAdminController {
     }
 
     @DeleteMapping("/lab-admin/labs/{labId}")
-    public ResponseEntity<?> deleteLab(@PathVariable BigInteger labId) {
+    public ResponseEntity<?> deleteLab(
+        @PathVariable BigInteger labId,
+        @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey
+    ) {
         try {
-            LabAdminTransactionResponse response = labAdminService.deleteLab(labId);
+            LabAdminTransactionResponse response = hasText(idempotencyKey)
+                ? labAdminService.deleteLab(labId, idempotencyKey)
+                : labAdminService.deleteLab(labId);
             return ResponseEntity.ok(response);
         } catch (IllegalArgumentException | IllegalStateException ex) {
             return badRequest(ex);
@@ -158,9 +175,14 @@ public class LabAdminController {
     }
 
     @PostMapping("/lab-admin/labs/{labId}/list")
-    public ResponseEntity<?> listLab(@PathVariable BigInteger labId) {
+    public ResponseEntity<?> listLab(
+        @PathVariable BigInteger labId,
+        @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey
+    ) {
         try {
-            return ResponseEntity.ok(labAdminService.listLab(labId, true));
+            return ResponseEntity.ok(hasText(idempotencyKey)
+                ? labAdminService.listLab(labId, true, idempotencyKey)
+                : labAdminService.listLab(labId, true));
         } catch (IllegalArgumentException | IllegalStateException ex) {
             return badRequest(ex);
         } catch (Exception ex) {
@@ -169,9 +191,14 @@ public class LabAdminController {
     }
 
     @PostMapping("/lab-admin/labs/{labId}/unlist")
-    public ResponseEntity<?> unlistLab(@PathVariable BigInteger labId) {
+    public ResponseEntity<?> unlistLab(
+        @PathVariable BigInteger labId,
+        @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey
+    ) {
         try {
-            return ResponseEntity.ok(labAdminService.listLab(labId, false));
+            return ResponseEntity.ok(hasText(idempotencyKey)
+                ? labAdminService.listLab(labId, false, idempotencyKey)
+                : labAdminService.listLab(labId, false));
         } catch (IllegalArgumentException | IllegalStateException ex) {
             return badRequest(ex);
         } catch (Exception ex) {
@@ -231,5 +258,9 @@ public class LabAdminController {
             "error", clientMessage,
             "details", detail
         ));
+    }
+
+    private boolean hasText(String value) {
+        return value != null && !value.isBlank();
     }
 }

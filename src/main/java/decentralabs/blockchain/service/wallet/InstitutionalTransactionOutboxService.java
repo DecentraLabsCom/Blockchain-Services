@@ -5,6 +5,7 @@ import java.math.BigDecimal;
 import java.math.BigInteger;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.time.Instant;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
@@ -42,7 +43,10 @@ public class InstitutionalTransactionOutboxService {
         String data,
         String status,
         String signedRawTransaction,
-        String txHash
+        String txHash,
+        Instant updatedAt,
+        int attempts,
+        Instant createdAt
     ) {
         public Attempt(
             long id,
@@ -55,7 +59,46 @@ public class InstitutionalTransactionOutboxService {
             String txHash
         ) {
             this(id, chainId, walletAddress, operationKey, nonce, null, null, null, null, null,
-                status, signedRawTransaction, txHash);
+                status, signedRawTransaction, txHash, null, 0, null);
+        }
+
+        public Attempt(
+            long id,
+            BigInteger chainId,
+            String walletAddress,
+            String operationKey,
+            BigInteger nonce,
+            BigInteger gasPrice,
+            BigInteger gasLimit,
+            String toAddress,
+            BigInteger value,
+            String data,
+            String status,
+            String signedRawTransaction,
+            String txHash
+        ) {
+            this(id, chainId, walletAddress, operationKey, nonce, gasPrice, gasLimit, toAddress, value, data,
+                status, signedRawTransaction, txHash, null, 0, null);
+        }
+
+        public Attempt(
+            long id,
+            BigInteger chainId,
+            String walletAddress,
+            String operationKey,
+            BigInteger nonce,
+            BigInteger gasPrice,
+            BigInteger gasLimit,
+            String toAddress,
+            BigInteger value,
+            String data,
+            String status,
+            String signedRawTransaction,
+            String txHash,
+            Instant updatedAt
+        ) {
+            this(id, chainId, walletAddress, operationKey, nonce, gasPrice, gasLimit, toAddress, value, data,
+                status, signedRawTransaction, txHash, updatedAt, 0, null);
         }
     }
 
@@ -111,16 +154,26 @@ public class InstitutionalTransactionOutboxService {
     }
 
     public void markSigned(Attempt attempt, String signedRawTransaction, String expectedTxHash) {
+        markSigned(attempt, signedRawTransaction, expectedTxHash, attempt == null ? null : attempt.gasPrice());
+    }
+
+    public void markSigned(
+        Attempt attempt,
+        String signedRawTransaction,
+        String expectedTxHash,
+        BigInteger gasPrice
+    ) {
         if (jdbcTemplate == null || attempt == null) {
             return;
         }
         int updated = jdbcTemplate.update(
             """
             UPDATE institutional_transaction_outbox
-            SET signed_raw_transaction = ?, tx_hash = ?, status = 'PREPARED', updated_at = CURRENT_TIMESTAMP
+            SET signed_raw_transaction = ?, tx_hash = ?, gas_price = COALESCE(?, gas_price),
+                status = 'PREPARED', updated_at = CURRENT_TIMESTAMP
             WHERE id = ? AND status IN ('RESERVED', 'PREPARED', 'RETRYABLE', 'STUCK_UNKNOWN')
             """,
-            signedRawTransaction, expectedTxHash, attempt.id()
+            signedRawTransaction, expectedTxHash, gasPrice, attempt.id()
         );
         if (updated != 1) {
             throw new IllegalStateException("Institutional signed transaction could not be persisted before broadcast");
@@ -173,8 +226,21 @@ public class InstitutionalTransactionOutboxService {
         return findByStatus("SUBMITTED", limit);
     }
 
+    /**
+     * Returns submitted attempts belonging to the currently selected chain and
+     * wallet.  The monitor must use this scoped variant so a runtime network or
+     * wallet switch cannot make it inspect historical rows with the wrong RPC.
+     */
+    public java.util.List<Attempt> findSubmitted(BigInteger chainId, String walletAddress, int limit) {
+        return findByStatus("SUBMITTED", chainId, walletAddress, limit);
+    }
+
     public java.util.List<Attempt> findStuckUnknown(int limit) {
         return findByStatus("STUCK_UNKNOWN", limit);
+    }
+
+    public java.util.List<Attempt> findStuckUnknown(BigInteger chainId, String walletAddress, int limit) {
+        return findByStatus("STUCK_UNKNOWN", chainId, walletAddress, limit);
     }
 
     public java.util.List<Attempt> findRecoveryCandidates(int limit) {
@@ -184,7 +250,8 @@ public class InstitutionalTransactionOutboxService {
         return jdbcTemplate.query(
             """
             SELECT id, chain_id, wallet_address, operation_key, nonce, gas_price, gas_limit,
-                   to_address, value_wei, data, status, signed_raw_transaction, tx_hash
+                   to_address, value_wei, data, status, signed_raw_transaction, tx_hash,
+                   updated_at, attempts, created_at
             FROM institutional_transaction_outbox
             WHERE status IN ('RESERVED', 'PREPARED', 'RETRYABLE')
             ORDER BY nonce ASC, id ASC
@@ -195,6 +262,35 @@ public class InstitutionalTransactionOutboxService {
         );
     }
 
+    /**
+     * Returns recoverable attempts only for the active chain/wallet context.
+     * Rows from a previous network or rotated wallet remain durable for
+     * historical reconciliation but are quarantined from this monitor.
+     */
+    public java.util.List<Attempt> findRecoveryCandidates(
+        BigInteger chainId,
+        String walletAddress,
+        int limit
+    ) {
+        if (jdbcTemplate == null || chainId == null || walletAddress == null || walletAddress.isBlank()) {
+            return java.util.List.of();
+        }
+        return jdbcTemplate.query(
+            """
+            SELECT id, chain_id, wallet_address, operation_key, nonce, gas_price, gas_limit,
+                   to_address, value_wei, data, status, signed_raw_transaction, tx_hash,
+                   updated_at, attempts, created_at
+            FROM institutional_transaction_outbox
+            WHERE chain_id = ? AND LOWER(wallet_address) = LOWER(?)
+              AND status IN ('RESERVED', 'PREPARED', 'RETRYABLE')
+            ORDER BY nonce ASC, id ASC
+            LIMIT ?
+            """,
+            (rs, rowNum) -> mapRow(rs),
+            chainId, walletAddress, Math.max(1, limit)
+        );
+    }
+
     private java.util.List<Attempt> findByStatus(String status, int limit) {
         if (jdbcTemplate == null) {
             return java.util.List.of();
@@ -202,7 +298,8 @@ public class InstitutionalTransactionOutboxService {
         return jdbcTemplate.query(
             """
             SELECT id, chain_id, wallet_address, operation_key, nonce, gas_price, gas_limit,
-                   to_address, value_wei, data, status, signed_raw_transaction, tx_hash
+                   to_address, value_wei, data, status, signed_raw_transaction, tx_hash,
+                   updated_at, attempts, created_at
             FROM institutional_transaction_outbox
             WHERE status = ? AND tx_hash IS NOT NULL
             ORDER BY updated_at ASC, id ASC
@@ -210,6 +307,31 @@ public class InstitutionalTransactionOutboxService {
             """,
             (rs, rowNum) -> mapRow(rs),
             status, Math.max(1, limit)
+        );
+    }
+
+    private java.util.List<Attempt> findByStatus(
+        String status,
+        BigInteger chainId,
+        String walletAddress,
+        int limit
+    ) {
+        if (jdbcTemplate == null || chainId == null || walletAddress == null || walletAddress.isBlank()) {
+            return java.util.List.of();
+        }
+        return jdbcTemplate.query(
+            """
+            SELECT id, chain_id, wallet_address, operation_key, nonce, gas_price, gas_limit,
+                   to_address, value_wei, data, status, signed_raw_transaction, tx_hash,
+                   updated_at, attempts, created_at
+            FROM institutional_transaction_outbox
+            WHERE status = ? AND tx_hash IS NOT NULL
+              AND chain_id = ? AND LOWER(wallet_address) = LOWER(?)
+            ORDER BY updated_at ASC, id ASC
+            LIMIT ?
+            """,
+            (rs, rowNum) -> mapRow(rs),
+            status, chainId, walletAddress, Math.max(1, limit)
         );
     }
 
@@ -232,7 +354,8 @@ public class InstitutionalTransactionOutboxService {
         var rows = jdbcTemplate.query(
             """
             SELECT id, chain_id, wallet_address, operation_key, nonce, gas_price, gas_limit,
-                   to_address, value_wei, data, status, signed_raw_transaction, tx_hash
+                   to_address, value_wei, data, status, signed_raw_transaction, tx_hash,
+                   updated_at, attempts, created_at
             FROM institutional_transaction_outbox
             WHERE wallet_address = ? AND chain_id = ? AND operation_key = ?
             """ + lock,
@@ -246,7 +369,8 @@ public class InstitutionalTransactionOutboxService {
         var rows = jdbcTemplate.query(
             """
             SELECT id, chain_id, wallet_address, operation_key, nonce, gas_price, gas_limit,
-                   to_address, value_wei, data, status, signed_raw_transaction, tx_hash
+                   to_address, value_wei, data, status, signed_raw_transaction, tx_hash,
+                   updated_at, attempts, created_at
             FROM institutional_transaction_outbox
             WHERE wallet_address = ? AND chain_id = ?
               AND status IN ('RESERVED', 'PREPARED', 'RETRYABLE', 'STUCK_UNKNOWN')
@@ -274,7 +398,10 @@ public class InstitutionalTransactionOutboxService {
             rs.getString("data"),
             rs.getString("status"),
             rs.getString("signed_raw_transaction"),
-            rs.getString("tx_hash")
+            rs.getString("tx_hash"),
+            rs.getTimestamp("updated_at") != null ? rs.getTimestamp("updated_at").toInstant() : null,
+            rs.getInt("attempts"),
+            rs.getTimestamp("created_at") != null ? rs.getTimestamp("created_at").toInstant() : null
         );
     }
 

@@ -34,6 +34,6 @@ public class WalletAdministrationService {
         }
 
         institutionalWalletService.saveConfigToFile(response.getAddress(), password);
-        institutionalWalletService.initializeInstitutionalWallet();
+        institutionalWalletService.configureRuntimeWallet(response.getAddress(), password);
     }
 }

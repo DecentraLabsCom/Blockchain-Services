@@ -148,12 +148,37 @@ class InstitutionalAccessCheckInCoordinatorTest {
             Map.of("reservationKey", "0xabc", "lab", BigInteger.valueOf(42), "reservationStatus", BigInteger.ONE)
         );
 
-        verify(outboxService).markRetry(
+        verify(outboxService).markBroadcastUncertain(
             eq(pending.id()),
             eq(pending.attempts() + 1),
-            any(Instant.class),
             eq("Initial institutional check-in broadcast outcome is uncertain")
         );
+    }
+
+    @Test
+    void retriesImmediateDispatchOnlyWhenFailureHappenedBeforeBroadcast() throws Exception {
+        when(institutionalWalletService.getInstitutionalWalletAddress())
+            .thenReturn("0x9999999999999999999999999999999999999999");
+        when(directoryService.isAuthorizedCheckInSigner(any(), any())).thenReturn(true);
+        InstitutionalCheckInOutboxRecord pending = record("PENDING");
+        when(outboxService.enqueueAccessGranted(any(), any(), any(), any(), any())).thenReturn(pending);
+        when(outboxService.claim(pending.id())).thenReturn(true);
+        when(nonceDispatcher.dispatch(pending)).thenThrow(new InstitutionalWalletDispatchException(
+            "blocked", InstitutionalWalletDispatchException.Outcome.PRE_BROADCAST_RETRYABLE,
+            new IllegalStateException("allocator blocked")
+        ));
+
+        coordinator.recordAccessGranted(
+            request(),
+            claims(),
+            Map.of("reservationKey", "0xabc", "lab", BigInteger.valueOf(42), "reservationStatus", BigInteger.ONE)
+        );
+
+        verify(outboxService).markRetry(
+            eq(pending.id()), eq(pending.attempts() + 1), any(Instant.class),
+            eq("Initial institutional check-in transaction was not broadcast; retrying")
+        );
+        verify(outboxService, never()).markBroadcastUncertain(any(Long.class), any(Integer.class), any());
     }
 
     @Test

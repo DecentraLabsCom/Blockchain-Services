@@ -152,6 +152,29 @@ class BillingAdminControllerTest {
     }
 
     @Test
+    void forwardsIdempotencyKeyForProviderPayoutCommand() throws Exception {
+        InstitutionalAdminResponse success = InstitutionalAdminResponse.success("ok", "0xcollect", "COLLECT_LAB_PAYOUT");
+        when(adminService.requestProviderPayoutWithConfiguredWallet("3", "50", "payout-command-1"))
+            .thenReturn(success);
+
+        InstitutionalAdminRequest request = new InstitutionalAdminRequest();
+        request.setLabId("3");
+        request.setMaxBatch("50");
+
+        mockMvc.perform(post("/billing/admin/request-provider-payout")
+                .with(csrf())
+                .header("Idempotency-Key", "payout-command-1")
+                .with(request1 -> {
+                    request1.setRemoteAddr("127.0.0.1");
+                    return request1;
+                })
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(request)))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.transactionHash").value("0xcollect"));
+    }
+
+    @Test
     void requestProviderPayoutReturnsBadRequestWhenServiceRejects() throws Exception {
         InstitutionalAdminResponse failure = InstitutionalAdminResponse.error("collect failed");
         when(adminService.requestProviderPayoutWithConfiguredWallet("3", "50")).thenReturn(failure);

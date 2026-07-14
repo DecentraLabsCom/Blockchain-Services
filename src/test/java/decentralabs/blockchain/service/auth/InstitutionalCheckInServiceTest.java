@@ -139,6 +139,58 @@ class InstitutionalCheckInServiceTest {
     }
 
     @Test
+    void checkInMarksBroadcastOutcomeUnknownInsteadOfRetryingWithNewMaterial() throws Exception {
+        InstitutionalCheckInRequest request = validRequest();
+        when(samlValidationService.validateSamlAssertionDetailed("valid-saml")).thenReturn(samlAttributes());
+        when(marketplaceEndpointAuthService.enforceToken("market-token", null)).thenReturn(marketplaceClaims());
+        when(bookingService.getCheckInBookingInfo(any(), eq("0xabc"), eq("42"), eq("puc-123")))
+            .thenReturn(Map.of("reservationKey", "0xabc"));
+        when(institutionalWalletService.getInstitutionalWalletAddress()).thenReturn(credentials.getAddress());
+        when(directoryService.isAuthorizedCheckInSigner(any(), any())).thenReturn(true);
+        InstitutionalCheckInOutboxRecord record = queuedRecord();
+        when(outboxService.enqueueAccessGranted(any(), any(), any(), any(), any())).thenReturn(record);
+        when(outboxService.claim(record.id())).thenReturn(true);
+        when(nonceDispatcher.dispatch(record)).thenThrow(new InstitutionalWalletDispatchException(
+            "uncertain", new IllegalStateException("response lost after broadcast")
+        ));
+
+        assertThatThrownBy(() -> service.checkIn(request)).isInstanceOf(IllegalStateException.class)
+            .hasMessageContaining("could not be confirmed");
+
+        verify(outboxService).markBroadcastUncertain(
+            eq(record.id()), eq(record.attempts() + 1), eq("Initial institutional check-in broadcast outcome is uncertain")
+        );
+        verify(outboxService, never()).markRetry(any(Long.class), any(Integer.class), any(), any());
+    }
+
+    @Test
+    void checkInMarksPreBroadcastFailureAsRetryable() throws Exception {
+        InstitutionalCheckInRequest request = validRequest();
+        when(samlValidationService.validateSamlAssertionDetailed("valid-saml")).thenReturn(samlAttributes());
+        when(marketplaceEndpointAuthService.enforceToken("market-token", null)).thenReturn(marketplaceClaims());
+        when(bookingService.getCheckInBookingInfo(any(), eq("0xabc"), eq("42"), eq("puc-123")))
+            .thenReturn(Map.of("reservationKey", "0xabc"));
+        when(institutionalWalletService.getInstitutionalWalletAddress()).thenReturn(credentials.getAddress());
+        when(directoryService.isAuthorizedCheckInSigner(any(), any())).thenReturn(true);
+        InstitutionalCheckInOutboxRecord record = queuedRecord();
+        when(outboxService.enqueueAccessGranted(any(), any(), any(), any(), any())).thenReturn(record);
+        when(outboxService.claim(record.id())).thenReturn(true);
+        when(nonceDispatcher.dispatch(record)).thenThrow(new InstitutionalWalletDispatchException(
+            "blocked", InstitutionalWalletDispatchException.Outcome.PRE_BROADCAST_RETRYABLE,
+            new IllegalStateException("allocator blocked")
+        ));
+
+        assertThatThrownBy(() -> service.checkIn(request)).isInstanceOf(IllegalStateException.class)
+            .hasMessageContaining("could not be prepared");
+
+        verify(outboxService).markRetry(
+            eq(record.id()), eq(record.attempts() + 1), any(),
+            eq("Initial institutional check-in transaction was not broadcast; retrying")
+        );
+        verify(outboxService, never()).markBroadcastUncertain(any(Long.class), any(Integer.class), any());
+    }
+
+    @Test
     void checkInShouldReturnSuccessWhenReservationAccessAlreadyAuthorized() throws Exception {
         InstitutionalCheckInRequest request = validRequest();
 

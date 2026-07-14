@@ -97,6 +97,26 @@ class InstitutionalWalletServiceTest {
     }
 
     @Test
+    void configureRuntimeWalletReplacesAddressAndCachedCredentials() {
+        String rotatedPrivateKey = "0x" + "11".repeat(32);
+        Credentials rotatedCredentials = Credentials.create(rotatedPrivateKey);
+        when(persistenceService.getWallet(CREDENTIALS.getAddress())).thenReturn("encrypted-old");
+        when(walletService.decryptPrivateKey("encrypted-old", "secret")).thenReturn(PRIVATE_KEY);
+        institutionalWalletService.getInstitutionalCredentials();
+
+        when(persistenceService.getWallet(rotatedCredentials.getAddress())).thenReturn("encrypted-new");
+        when(walletService.decryptPrivateKey("encrypted-new", "rotated-secret")).thenReturn(rotatedPrivateKey);
+
+        institutionalWalletService.configureRuntimeWallet(rotatedCredentials.getAddress(), "rotated-secret");
+
+        assertThat(institutionalWalletService.getInstitutionalWalletAddress())
+            .isEqualTo(rotatedCredentials.getAddress());
+        assertThat(institutionalWalletService.getInstitutionalCredentials().getAddress())
+            .isEqualTo(rotatedCredentials.getAddress());
+        verify(walletService).decryptPrivateKey("encrypted-new", "rotated-secret");
+    }
+
+    @Test
     void isConfiguredReturnsTrueOnlyWhenWalletPresent() {
         when(persistenceService.getWallet(CREDENTIALS.getAddress())).thenReturn("encrypted");
         assertThat(institutionalWalletService.isConfigured()).isTrue();

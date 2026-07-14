@@ -108,6 +108,32 @@ class SessionStartedOnChainPublisherServiceTest {
     }
 
     @Test
+    void rebroadcastsPersistedSessionStartedMaterialBeforePreparingReplacement() throws Exception {
+        SessionStartedOnChainPublisherService service = buildService(jdbcTemplate);
+        String hash = "0x" + "9".repeat(64);
+        String raw = "0xf861-persisted";
+        SessionStartedTransactionRecord stale = mappedRecord(
+            "SUBMITTING", 2, "0xwallet", BigInteger.valueOf(47), hash,
+            Instant.now().minusSeconds(600), raw
+        );
+        mockSubmittedQuery(List.of());
+        mockPendingQuery(stale);
+        when(jdbcTemplate.update(anyString(), any(Object[].class))).thenReturn(1);
+        when(onChainClient.hasSessionStarted("0xabc")).thenReturn(false);
+        when(onChainClient.transactionStateStrict(hash)).thenReturn(SessionStartedOnChainClient.TransactionState.PENDING);
+        when(onChainClient.transactionVisible(hash)).thenReturn(false);
+        when(transactionDispatcher.rebroadcastPrepared(any())).thenReturn(hash);
+
+        assertThat(service.publishPending(10)).isEqualTo(1);
+
+        verify(transactionDispatcher).rebroadcastPrepared(
+            eq(new InstitutionalWalletTransactionDispatcher.PreparedTransaction(raw, hash))
+        );
+        verify(transactionDispatcher, never()).dispatchPrepared(anyString(), any(), any(), any(), any(), any(), any());
+        verify(onChainClient, never()).prepareSessionStarted(any(), any(), any(Integer.class));
+    }
+
+    @Test
     void marksAlreadyRecordedSessionWithoutBroadcast() throws Exception {
         SessionStartedOnChainPublisherService service = buildService(jdbcTemplate);
         mockSubmittedQuery(List.of());
@@ -287,11 +313,24 @@ class SessionStartedOnChainPublisherServiceTest {
         });
     }
 
+    private void mockPendingQuery(SessionStartedTransactionRecord record) {
+        when(jdbcTemplate.query(
+            contains("onchain_status IN"), anyTransactionRowMapper(), any(Object[].class)
+        )).thenAnswer(invocation -> List.of(record));
+    }
+
     private SessionStartedTransactionRecord mappedRecord(
         String status, int attempts, String wallet, BigInteger txNonce, String hash, Instant submittedAt
     ) throws Exception {
+        return mappedRecord(status, attempts, wallet, txNonce, hash, submittedAt, null);
+    }
+
+    private SessionStartedTransactionRecord mappedRecord(
+        String status, int attempts, String wallet, BigInteger txNonce, String hash,
+        Instant submittedAt, String rawTransaction
+    ) throws Exception {
         RowMapper<SessionStartedTransactionRecord> mapper = extractMapper();
-        return mapRow(mapper, status, attempts, wallet, txNonce, hash, submittedAt);
+        return mapRow(mapper, status, attempts, wallet, txNonce, hash, submittedAt, rawTransaction);
     }
 
     @SuppressWarnings("unchecked")
@@ -305,6 +344,13 @@ class SessionStartedOnChainPublisherServiceTest {
     private SessionStartedTransactionRecord mapRow(
         RowMapper<?> mapper, String status, int attempts, String wallet,
         BigInteger txNonce, String hash, Instant submittedAt
+    ) throws Exception {
+        return mapRow(mapper, status, attempts, wallet, txNonce, hash, submittedAt, null);
+    }
+
+    private SessionStartedTransactionRecord mapRow(
+        RowMapper<?> mapper, String status, int attempts, String wallet,
+        BigInteger txNonce, String hash, Instant submittedAt, String rawTransaction
     ) throws Exception {
         ResultSet rs = org.mockito.Mockito.mock(ResultSet.class);
         when(rs.getLong("id")).thenReturn(7L);
@@ -332,6 +378,7 @@ class SessionStartedOnChainPublisherServiceTest {
         when(rs.getString("onchain_tx_hash")).thenReturn(hash);
         when(rs.getTimestamp("onchain_submitted_at"))
             .thenReturn(submittedAt == null ? null : Timestamp.from(submittedAt));
+        when(rs.getString("onchain_signed_raw_transaction")).thenReturn(rawTransaction);
         @SuppressWarnings("unchecked")
         SessionStartedTransactionRecord record =
             ((RowMapper<SessionStartedTransactionRecord>) mapper).mapRow(rs, 0);

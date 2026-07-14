@@ -38,6 +38,14 @@ Wallet private keys are encrypted at rest. The runtime persists the wallet data
 under `WALLET_FILE_PATH`; the wallet-config encryption key is supplied by
 `WALLET_CONFIG_ENCRYPTION_KEY` or persisted at `WALLET_CONFIG_KEY_FILE`.
 
+The generic institutional transaction outbox is scoped on every monitor pass to
+the RPC chain ID and institutional wallet address currently active in the
+process. Rows from a previous network or rotated wallet remain durable but are
+quarantined from signing, receipt lookup and nonce recovery; reconcile them
+only after restoring the matching RPC and wallet configuration. This boundary
+is required because `/wallet/switch-network` can change the active RPC while
+the service is running.
+
 ## Billing and funding API
 
 Funding-order and credit-account routes are available under `/billing`:
@@ -111,6 +119,25 @@ The response confirms dispatch or a known failure; it is not a substitute for
 receipt reconciliation. For server-side provider payout use
 `POST /billing/admin/request-provider-payout`; inspect a submitted operation
 with `GET /billing/admin/transaction-status?txHash=...`.
+
+The durable outbox key is derived from the signed command instance (timestamp
+and signature), not from calldata alone. Retries within the same processing
+context retain that key; a new signed timestamp is a new command and receives
+its own nonce. The HTTP anti-replay check still rejects a duplicate request
+received as a second external submission.
+Lab-admin mutations accept an optional `Idempotency-Key` header for the same
+purpose, as does the server-side provider-payout endpoint. Operators can tune
+recovery of vanished generic submissions with
+`INSTITUTIONAL_TRANSACTION_OUTBOX_SUBMITTED_STALE_AFTER_MS` (default two
+minutes); stale rows become `STUCK_UNKNOWN` and are rebroadcast from their
+persisted raw transaction before later wallet work proceeds. The generic
+monitor always checks receipt and node visibility before reading the pending
+nonce, including for `STUCK_UNKNOWN` rows. Retryable replacements reuse the
+same nonce and apply `INSTITUTIONAL_TRANSACTION_OUTBOX_MONITOR_GAS_BUMP_PERCENT`
+(default 20%). `INSTITUTIONAL_TRANSACTION_OUTBOX_MONITOR_MAX_ATTEMPTS` (10)
+and `INSTITUTIONAL_TRANSACTION_OUTBOX_MONITOR_MAX_PENDING_MS` (15 minutes)
+bound automatic recovery; an exhausted row remains `STUCK_UNKNOWN` and is
+reported for manual intervention rather than being retransmitted indefinitely.
 
 ### Read-only administration
 

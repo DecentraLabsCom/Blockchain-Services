@@ -82,12 +82,25 @@ public class InstitutionalAccessCheckInCoordinator {
         }
         try {
             nonceDispatcher.dispatch(record);
-        } catch (Exception ex) {
+        } catch (InstitutionalWalletDispatchException ex) {
+            int attempts = record.attempts() + 1;
+            if (ex.outcome() == InstitutionalWalletDispatchException.Outcome.PRE_BROADCAST_RETRYABLE) {
+                outboxService.markRetry(
+                    record.id(), attempts, Instant.now(),
+                    "Initial institutional check-in transaction was not broadcast; retrying"
+                );
+            } else {
+                outboxService.markBroadcastUncertain(
+                    record.id(), attempts,
+                    "Initial institutional check-in broadcast outcome is uncertain"
+                );
+            }
+        } catch (RuntimeException ex) {
+            // Non-classified failures happen before the dispatcher can establish
+            // a broadcast boundary and are therefore safe to retry.
             outboxService.markRetry(
-                record.id(),
-                record.attempts() + 1,
-                Instant.now(),
-                "Initial institutional check-in broadcast outcome is uncertain"
+                record.id(), record.attempts() + 1, Instant.now(),
+                "Initial institutional check-in transaction was not broadcast; retrying"
             );
         }
     }

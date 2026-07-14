@@ -136,14 +136,17 @@ public class InstitutionalCheckInService {
             try {
                 return nonceDispatcher.dispatch(record);
             } catch (InstitutionalWalletDispatchException ex) {
-                outboxService.markRetry(
-                    record.id(),
-                    record.attempts() + 1,
-                    Instant.now(),
-                    ex.outcome() == InstitutionalWalletDispatchException.Outcome.PRE_BROADCAST_RETRYABLE
-                        ? "Initial institutional check-in transaction was not broadcast; retrying"
-                        : "Initial institutional check-in broadcast outcome is uncertain"
-                );
+                int attempts = record.attempts() + 1;
+                if (ex.outcome() == InstitutionalWalletDispatchException.Outcome.PRE_BROADCAST_RETRYABLE) {
+                    outboxService.markRetry(
+                        record.id(), attempts, Instant.now(),
+                        "Initial institutional check-in transaction was not broadcast; retrying"
+                    );
+                } else {
+                    outboxService.markBroadcastUncertain(
+                        record.id(), attempts, "Initial institutional check-in broadcast outcome is uncertain"
+                    );
+                }
                 throw new IllegalStateException(
                     ex.outcome() == InstitutionalWalletDispatchException.Outcome.PRE_BROADCAST_RETRYABLE
                         ? "Institutional check-in submission could not be prepared"

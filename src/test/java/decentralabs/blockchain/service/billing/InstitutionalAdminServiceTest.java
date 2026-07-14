@@ -90,6 +90,29 @@ class InstitutionalAdminServiceTest {
         lenient().when(walletService.isLabOwnedByProvider(any(), any())).thenReturn(true);
     }
 
+    @Test
+    void operationKeyUsesSignedCommandInstanceRatherThanCalldataOnly() {
+        InstitutionalAdminRequest first = new InstitutionalAdminRequest();
+        first.setOperation(AdminOperation.SET_SPENDING_PERIOD);
+        first.setTimestamp(1_700_000_000_000L);
+        first.setSignature("signature-one");
+        InstitutionalAdminRequest same = new InstitutionalAdminRequest();
+        same.setOperation(AdminOperation.SET_SPENDING_PERIOD);
+        same.setTimestamp(first.getTimestamp());
+        same.setSignature(first.getSignature());
+        InstitutionalAdminRequest second = new InstitutionalAdminRequest();
+        second.setOperation(AdminOperation.SET_SPENDING_PERIOD);
+        second.setTimestamp(first.getTimestamp() + 1);
+        second.setSignature("signature-two");
+
+        String firstKey = ReflectionTestUtils.invokeMethod(adminService, "operationKey", first);
+        String sameKey = ReflectionTestUtils.invokeMethod(adminService, "operationKey", same);
+        String secondKey = ReflectionTestUtils.invokeMethod(adminService, "operationKey", second);
+
+        assertThat(firstKey).isEqualTo(sameKey);
+        assertThat(secondKey).isNotEqualTo(firstKey);
+    }
+
     @Nested
     @DisplayName("Localhost Access Validation Tests")
     class LocalhostAccessValidationTests {
