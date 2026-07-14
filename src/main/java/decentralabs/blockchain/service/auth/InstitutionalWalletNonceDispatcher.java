@@ -17,7 +17,48 @@ public class InstitutionalWalletNonceDispatcher {
     private final InstitutionalWalletTransactionDispatcher transactionDispatcher;
 
     public CheckInResponse dispatch(InstitutionalCheckInOutboxRecord record) throws InstitutionalWalletDispatchException {
+        if (record == null) {
+            throw new InstitutionalWalletDispatchException(
+                "Institutional check-in outbox record is required",
+                InstitutionalWalletDispatchException.Outcome.PRE_BROADCAST_RETRYABLE,
+                new IllegalArgumentException("Missing institutional check-in outbox record")
+            );
+        }
         String walletAddress = submissionService.signerAddress();
+        // A stale SUBMITTING row means signing completed but the process may
+        // have died before the broadcast/status transition. Resume that exact
+        // material first. RETRY rows are handled by the receipt monitor's
+        // replacement policy and may deliberately prepare a higher-gas tx.
+        if ("SUBMITTING".equalsIgnoreCase(record.status()) && hasPersistedMaterial(record)) {
+            if (record.walletAddress() == null || !walletAddress.equalsIgnoreCase(record.walletAddress())) {
+                throw new InstitutionalWalletDispatchException(
+                    "Persisted institutional transaction belongs to a different wallet",
+                    InstitutionalWalletDispatchException.Outcome.PRE_BROADCAST_RETRYABLE,
+                    new IllegalStateException("Signer and persisted transaction wallet do not match")
+                );
+            }
+
+            InstitutionalWalletTransactionDispatcher.PreparedTransaction persisted;
+            try {
+                persisted = new InstitutionalWalletTransactionDispatcher.PreparedTransaction(
+                    record.signedRawTransaction(), record.txHash()
+                );
+            } catch (IllegalArgumentException ex) {
+                throw new InstitutionalWalletDispatchException(
+                    "Persisted institutional transaction material is incomplete",
+                    InstitutionalWalletDispatchException.Outcome.PRE_BROADCAST_RETRYABLE,
+                    ex
+                );
+            }
+            String txHash = transactionDispatcher.rebroadcastPrepared(persisted);
+            outboxService.markSubmitted(record.id(), txHash);
+            CheckInResponse response = new CheckInResponse();
+            response.setValid(true);
+            response.setSigner(walletAddress);
+            response.setReservationKey(record.reservationKey());
+            response.setTxHash(txHash);
+            return response;
+        }
         BigInteger existingNonce = record.nonce() != null && walletAddress.equalsIgnoreCase(record.walletAddress())
             ? record.nonce() : null;
         final CheckInResponse[] response = new CheckInResponse[1];
@@ -37,5 +78,13 @@ public class InstitutionalWalletNonceDispatcher {
             txHash -> outboxService.markSubmitted(record.id(), txHash)
         );
         return response[0];
+    }
+
+    private boolean hasPersistedMaterial(InstitutionalCheckInOutboxRecord record) {
+        return hasText(record.signedRawTransaction()) || hasText(record.txHash());
+    }
+
+    private boolean hasText(String value) {
+        return value != null && !value.isBlank();
     }
 }

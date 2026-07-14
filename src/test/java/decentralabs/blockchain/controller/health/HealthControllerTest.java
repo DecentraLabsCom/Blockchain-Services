@@ -232,7 +232,8 @@ class HealthControllerTest {
                 .andExpect(jsonPath("$.session_started_unknown").doesNotExist())
                 .andExpect(jsonPath("$.queue_health_errors.nonce_backlog").value("DATABASE_UNAVAILABLE"))
                 .andExpect(jsonPath("$.queue_health_errors.access_deliveries_stuck").value("DATABASE_UNAVAILABLE"))
-                .andExpect(jsonPath("$.queue_health_errors.session_started_unknown").value("DATABASE_UNAVAILABLE"));
+                .andExpect(jsonPath("$.queue_health_errors.session_started_unknown").value("DATABASE_UNAVAILABLE"))
+                .andExpect(jsonPath("$.queue_health_errors.institutional_transactions_stuck").value("DATABASE_UNAVAILABLE"));
         }
 
         @Test

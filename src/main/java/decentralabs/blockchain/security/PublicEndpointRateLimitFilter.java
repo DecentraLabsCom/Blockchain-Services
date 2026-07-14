@@ -11,11 +11,14 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.annotation.Order;
 import jakarta.annotation.Nonnull;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.IOException;
 import java.time.Duration;
+import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -32,7 +35,8 @@ import java.util.concurrent.ConcurrentHashMap;
  * - /auth/jwks
  * - /.well-known/*
  * 
- * Uses a token bucket algorithm per IP address.
+ * Uses a token bucket algorithm per IP address, with an independent
+ * per-gateway bucket for observer-authenticated FMU ticket redemption.
  */
 @Component
 @Order(1) // After LocalhostOnlyFilter
@@ -46,6 +50,12 @@ public class PublicEndpointRateLimitFilter extends OncePerRequestFilter {
     @Value("${rate.limit.auth.requests.burst:10}")
     private int authRequestsBurst;
 
+    @Value("${rate.limit.fmu.session-ticket.requests.per.minute:120}")
+    private int fmuSessionTicketRequestsPerMinute;
+
+    @Value("${rate.limit.fmu.session-ticket.requests.burst:30}")
+    private int fmuSessionTicketRequestsBurst;
+
     @Value("${rate.limit.jwks.requests.per.minute:120}")
     private int jwksRequestsPerMinute;
 
@@ -53,6 +63,7 @@ public class PublicEndpointRateLimitFilter extends OncePerRequestFilter {
     private boolean rateLimitEnabled;
 
     private final Map<String, Bucket> authBuckets = new ConcurrentHashMap<>();
+    private final Map<String, Bucket> fmuSessionTicketBuckets = new ConcurrentHashMap<>();
     private final Map<String, Bucket> jwksBuckets = new ConcurrentHashMap<>();
 
     // Maximum buckets to prevent memory exhaustion
@@ -77,8 +88,24 @@ public class PublicEndpointRateLimitFilter extends OncePerRequestFilter {
         String path = request.getRequestURI();
         String clientIp = getClientIp(request);
 
-        // Check if this is a rate-limited endpoint
-        if (isAuthEndpoint(path)) {
+        // Observer-authenticated ticket redemption is isolated from the shared
+        // public-auth bucket. Issue remains IP-limited because it authenticates
+        // the booking bearer rather than the gateway observer.
+        if (isFmuSessionTicketEndpoint(path)) {
+            if (isFmuSessionTicketRedeemEndpoint(path)) {
+                String bucketKey = observerBucketKey(clientIp);
+                if (!checkFmuSessionTicketRateLimit(bucketKey)) {
+                    log.warn("Rate limit exceeded for FMU session-ticket redemption: bucket={}",
+                        LogSanitizer.sanitize(bucketKey));
+                    sendRateLimitResponse(response);
+                    return;
+                }
+            } else if (!checkAuthRateLimit(clientIp)) {
+                log.warn("Rate limit exceeded for auth endpoint: path={}, ip={}", LogSanitizer.sanitize(path), maskIp(clientIp));
+                sendRateLimitResponse(response);
+                return;
+            }
+        } else if (isAuthEndpoint(path)) {
             if (!checkAuthRateLimit(clientIp)) {
                 log.warn("Rate limit exceeded for auth endpoint: path={}, ip={}", LogSanitizer.sanitize(path), maskIp(clientIp));
                 sendRateLimitResponse(response);
@@ -100,9 +127,16 @@ public class PublicEndpointRateLimitFilter extends OncePerRequestFilter {
                 || path.startsWith("/auth/checkin-institutional")
                 || path.startsWith("/auth/access-credential")
                 || path.startsWith("/auth/access-code")
-                || path.startsWith("/auth/fmu/session-ticket")
                 || path.startsWith("/onboarding/webauthn")
                 || path.startsWith("/webauthn");
+    }
+
+    private boolean isFmuSessionTicketEndpoint(String path) {
+        return path.startsWith("/auth/fmu/session-ticket");
+    }
+
+    private boolean isFmuSessionTicketRedeemEndpoint(String path) {
+        return "/auth/fmu/session-ticket/redeem".equals(path);
     }
 
     private boolean isJwksEndpoint(String path) {
@@ -113,6 +147,12 @@ public class PublicEndpointRateLimitFilter extends OncePerRequestFilter {
     private boolean checkAuthRateLimit(String clientIp) {
         cleanupBucketsIfNeeded(authBuckets);
         Bucket bucket = authBuckets.computeIfAbsent(clientIp, k -> createAuthBucket());
+        return bucket.tryConsume(1);
+    }
+
+    private boolean checkFmuSessionTicketRateLimit(String bucketKey) {
+        cleanupBucketsIfNeeded(fmuSessionTicketBuckets);
+        Bucket bucket = fmuSessionTicketBuckets.computeIfAbsent(bucketKey, k -> createFmuSessionTicketBucket());
         return bucket.tryConsume(1);
     }
 
@@ -127,6 +167,15 @@ public class PublicEndpointRateLimitFilter extends OncePerRequestFilter {
                 .addLimit(Bandwidth.builder()
                         .capacity(authRequestsBurst)
                         .refillGreedy(authRequestsPerMinute, Duration.ofMinutes(1))
+                        .build())
+                .build();
+    }
+
+    private Bucket createFmuSessionTicketBucket() {
+        return Bucket.builder()
+                .addLimit(Bandwidth.builder()
+                        .capacity(fmuSessionTicketRequestsBurst)
+                        .refillGreedy(fmuSessionTicketRequestsPerMinute, Duration.ofMinutes(1))
                         .build())
                 .build();
     }
@@ -150,6 +199,22 @@ public class PublicEndpointRateLimitFilter extends OncePerRequestFilter {
     private String getClientIp(HttpServletRequest request) {
         String resolved = adminNetworkAccessPolicy.resolveClientIp(request);
         return resolved == null || resolved.isBlank() ? request.getRemoteAddr() : resolved;
+    }
+
+    private String observerBucketKey(String clientIp) {
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        if (authentication != null
+                && authentication.isAuthenticated()
+                && authentication.getAuthorities().stream()
+                    .anyMatch(authority -> "ROLE_SESSION_OBSERVER".equals(authority.getAuthority()))
+                && authentication.getName() != null
+                && !authentication.getName().isBlank()) {
+            return "gateway:" + authentication.getName().trim().toLowerCase(Locale.ROOT);
+        }
+        // Authentication normally runs in the security chain before this
+        // servlet filter. Fall back to the trusted client address if a custom
+        // filter ordering or an invalid request leaves no observer identity.
+        return "ip:" + (clientIp == null ? "unknown" : clientIp);
     }
 
     private String maskIp(String ip) {

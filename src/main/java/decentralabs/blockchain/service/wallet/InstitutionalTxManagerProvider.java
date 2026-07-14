@@ -23,6 +23,7 @@ public class InstitutionalTxManagerProvider {
     private TransactionManager txManager;
     private Web3j currentWeb3j;
     private Long currentChainId;
+    private String currentOperationKey;
 
     public InstitutionalTxManagerProvider(
         InstitutionalWalletService institutionalWalletService,
@@ -33,6 +34,15 @@ public class InstitutionalTxManagerProvider {
     }
 
     public TransactionManager get(Web3j web3j) {
+        return get(web3j, null);
+    }
+
+    /**
+     * Returns a manager bound to a durable business operation key. The key is
+     * retained when a caller retries with a replacement gas price, so both
+     * broadcasts resolve to the same outbox row and nonce.
+     */
+    public TransactionManager get(Web3j web3j, String operationKey) {
         if (web3j == null) {
             throw new IllegalArgumentException("web3j is required");
         }
@@ -41,14 +51,16 @@ public class InstitutionalTxManagerProvider {
             if (txManager == null
                 || currentWeb3j != web3j
                 || currentChainId == null
-                || !Objects.equals(currentChainId, chainId)) {
+                || !Objects.equals(currentChainId, chainId)
+                || !Objects.equals(currentOperationKey, operationKey)) {
                 Credentials credentials = institutionalWalletService.getInstitutionalCredentials();
                 TransactionReceiptProcessor receiptProcessor = new PollingTransactionReceiptProcessor(web3j, 1500, 40);
                 txManager = new PendingNonceFastRawTransactionManager(
-                    web3j, credentials, chainId, receiptProcessor, transactionOutboxService
+                    web3j, credentials, chainId, receiptProcessor, transactionOutboxService, operationKey
                 );
                 currentWeb3j = web3j;
                 currentChainId = chainId;
+                currentOperationKey = operationKey;
                 log.info("Institutional tx manager initialized (chainId={})", chainId);
             }
         }

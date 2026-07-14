@@ -64,7 +64,7 @@ public class InstitutionalWalletNonceReservationService {
             SELECT id
             FROM institutional_transaction_outbox
             WHERE wallet_address = ? AND chain_id = ?
-              AND status IN ('RESERVED', 'RETRYABLE')
+              AND status IN ('RESERVED', 'PREPARED', 'RETRYABLE', 'STUCK_UNKNOWN')
             ORDER BY nonce ASC
             LIMIT 1
             FOR UPDATE

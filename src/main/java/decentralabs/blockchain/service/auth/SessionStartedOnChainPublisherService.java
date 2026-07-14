@@ -133,7 +133,11 @@ public class SessionStartedOnChainPublisherService {
             );
             return true;
         } catch (InstitutionalWalletDispatchException ex) {
-            markBroadcastUncertain(submission.id(), ex);
+            if (ex.outcome() == InstitutionalWalletDispatchException.Outcome.PRE_BROADCAST_RETRYABLE) {
+                markFailed(submission.id(), ex);
+            } else {
+                markBroadcastUncertain(submission.id(), ex);
+            }
             return false;
         } catch (Exception ex) {
             markFailed(submission.id(), ex);
@@ -256,7 +260,7 @@ public class SessionStartedOnChainPublisherService {
         jdbcTemplate.update(
             """
             UPDATE session_started_attestations
-            SET onchain_publish_locked_at = NULL,
+            SET onchain_publish_locked_at = CURRENT_TIMESTAMP,
                 onchain_status = CASE
                     WHEN onchain_publish_attempts >= ? THEN 'FAILED'
                     ELSE 'RETRY'

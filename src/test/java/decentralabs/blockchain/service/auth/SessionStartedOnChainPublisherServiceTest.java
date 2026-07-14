@@ -187,6 +187,31 @@ class SessionStartedOnChainPublisherServiceTest {
     }
 
     @Test
+    void retriesWhenNonceAllocationFailsBeforeBroadcast() throws Exception {
+        SessionStartedOnChainPublisherService service = buildService(jdbcTemplate);
+        mockSubmittedQuery(List.of());
+        mockPendingQuery("QUEUED", 0, null, null, null, null);
+        when(jdbcTemplate.update(anyString(), any(Object[].class))).thenReturn(1);
+        when(onChainClient.hasSessionStarted("0xabc")).thenReturn(false);
+        when(onChainClient.signerAddress()).thenReturn("0xwallet");
+        org.mockito.Mockito.doThrow(new InstitutionalWalletDispatchException(
+            "nonce allocation blocked",
+            InstitutionalWalletDispatchException.Outcome.PRE_BROADCAST_RETRYABLE,
+            new IllegalStateException("wallet busy")
+        )).when(transactionDispatcher).dispatchPrepared(
+            anyString(), isNull(), isNull(), any(), any(), any(), any()
+        );
+
+        assertThat(service.publishPending(10)).isZero();
+
+        verify(jdbcTemplate).update(
+            contains("onchain_status = CASE"),
+            eq(1), eq(1), eq("nonce allocation blocked"), eq(7L)
+        );
+        verify(jdbcTemplate, never()).update(contains("onchain_status = 'STUCK_UNKNOWN'"), any(Object[].class));
+    }
+
+    @Test
     void reconcilesUnknownSessionFromAuthoritativeContractState() throws Exception {
         SessionStartedOnChainPublisherService service = buildService(jdbcTemplate);
         SessionStartedTransactionRecord unknown = mappedRecord(

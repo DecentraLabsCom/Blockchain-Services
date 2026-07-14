@@ -182,6 +182,7 @@ public class ContractEventListenerConfig {
     private volatile Diamond cachedDiamond;
     private volatile Diamond writableDiamond;
     private volatile BigInteger writableDiamondGasPriceWei;
+    private volatile String writableDiamondOperationKey;
 
     private final Map<BigInteger, String> labMetadataUriCache = new ConcurrentHashMap<>();
 
@@ -939,6 +940,7 @@ public class ContractEventListenerConfig {
         byte[] keyBytes = reservationKeyToBytes(reservationKey);
         TransactionReceipt receipt = executeWithGasRetry(
             "confirmReservationRequest",
+            "event:confirm-reservation:" + reservationKey,
             contract -> contract.confirmReservationRequest(keyBytes).send()
         );
         log.info("Reservation {} confirmed on-chain (tx={})", reservationKey, receipt.getTransactionHash());
@@ -954,6 +956,7 @@ public class ContractEventListenerConfig {
         byte[] keyBytes = reservationKeyToBytes(reservationKey);
         TransactionReceipt receipt = executeWithGasRetry(
             "confirmInstitutionalReservationRequestWithPucHash",
+            "event:confirm-institutional-reservation:" + reservationKey,
             contract -> contract.confirmInstitutionalReservationRequestWithPucHash(payerInstitution, keyBytes, onchainHash).send()
         );
         log.info("Institutional reservation {} confirmed on-chain (tx={})", reservationKey, receipt.getTransactionHash());
@@ -964,6 +967,7 @@ public class ContractEventListenerConfig {
             byte[] keyBytes = reservationKeyToBytes(reservationKey);
             TransactionReceipt receipt = executeWithGasRetry(
                 "denyReservationRequest",
+                "event:deny-reservation:" + reservationKey,
                 contract -> contract.denyReservationRequest(keyBytes).send()
             );
             log.info(
@@ -984,16 +988,16 @@ public class ContractEventListenerConfig {
         TransactionReceipt call(Diamond contract) throws Exception;
     }
 
-    private TransactionReceipt executeWithGasRetry(String label, DiamondCall call) throws Exception {
+    private TransactionReceipt executeWithGasRetry(String label, String operationKey, DiamondCall call) throws Exception {
         Web3j web3j = walletService.getWeb3jInstance();
         BigInteger gasPriceWei = resolveGasPriceWei(web3j);
         try {
-            return call.call(getWritableDiamondContractWithGasPrice(web3j, gasPriceWei));
+            return call.call(getWritableDiamondContractWithGasPrice(web3j, gasPriceWei, operationKey));
         } catch (Exception ex) {
             if (shouldRetryWithHigherGas(ex)) {
                 BigInteger bumpedGasPrice = bumpGasPrice(gasPriceWei);
                 log.warn("{} retry with higher gas price: {}", label, bumpedGasPrice);
-                return call.call(getWritableDiamondContractWithGasPrice(web3j, bumpedGasPrice));
+                return call.call(getWritableDiamondContractWithGasPrice(web3j, bumpedGasPrice, operationKey));
             }
             throw ex;
         }
@@ -1103,12 +1107,19 @@ public class ContractEventListenerConfig {
     }
 
 
-    private Diamond getWritableDiamondContractWithGasPrice(Web3j web3j, BigInteger gasPriceWei) {
+    private Diamond getWritableDiamondContractWithGasPrice(
+        Web3j web3j,
+        BigInteger gasPriceWei,
+        String operationKey
+    ) {
         Diamond local = writableDiamond;
-        if (local != null && (writableDiamondGasPriceWei == null || writableDiamondGasPriceWei.equals(gasPriceWei))) {
+        if (local != null
+            && (writableDiamondGasPriceWei == null || writableDiamondGasPriceWei.equals(gasPriceWei))
+            && (java.util.Objects.equals(writableDiamondOperationKey, operationKey)
+                || (writableDiamondOperationKey == null && writableDiamondGasPriceWei == null))) {
             return local;
         }
-        TransactionManager txManager = txManagerProvider.get(web3j);
+        TransactionManager txManager = txManagerProvider.get(web3j, operationKey);
         Diamond loaded = Diamond.load(
             diamondContractAddress,
             web3j,
@@ -1117,6 +1128,7 @@ public class ContractEventListenerConfig {
         );
         writableDiamond = loaded;
         writableDiamondGasPriceWei = gasPriceWei;
+        writableDiamondOperationKey = operationKey;
         return loaded;
     }
 

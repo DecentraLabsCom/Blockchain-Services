@@ -162,7 +162,7 @@ public class IntentOnChainExecutor {
         
         Function function = functionOpt.get();
         Web3j web3j = resolveWeb3j();
-        TransactionManager txManager = txManagerProvider.get(web3j);
+        TransactionManager txManager = txManagerProvider.get(web3j, "intent:" + record.getRequestId());
         String encoded = FunctionEncoder.encode(function);
 
         Optional<String> preflightFailure = simulateAndDecodeFailure(web3j, credentials.getAddress(), encoded);
@@ -785,7 +785,7 @@ public class IntentOnChainExecutor {
                     List.of()
                 );
 
-                sendPreflight(function, "releaseInstitutionalExpiredReservations");
+                sendPreflight(function, "releaseInstitutionalExpiredReservations", "intent-postflight:" + record.getRequestId());
             } catch (Exception ex) {
                 log.warn("Postflight release failed for provider {} labId {}: {}", payload.getExecutor(), payload.getLabId(), ex.getMessage());
             }
@@ -828,9 +828,9 @@ public class IntentOnChainExecutor {
         }
     }
 
-    private void sendPreflight(Function function, String label) throws Exception {
+    private void sendPreflight(Function function, String label, String operationKey) throws Exception {
         Web3j web3j = resolveWeb3j();
-        TransactionManager txManager = txManagerProvider.get(web3j);
+        TransactionManager txManager = txManagerProvider.get(web3j, operationKey);
         String encoded = FunctionEncoder.encode(function);
         BigInteger gasPriceWei = resolveGasPriceWei(web3j);
 

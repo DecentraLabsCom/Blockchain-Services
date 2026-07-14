@@ -89,10 +89,12 @@ public class HealthController {
             HealthCount nonceBacklog = databaseUp ? countNonceBacklog() : unavailable;
             HealthCount accessDeliveriesStuck = databaseUp ? countStuckAccessDeliveries() : unavailable;
             HealthCount sessionStartedUnknown = databaseUp ? countUnknownSessionStartedTransactions() : unavailable;
+            HealthCount institutionalTransactionsStuck = databaseUp ? countInstitutionalTransactionBlockers() : unavailable;
             Map<String, String> queueHealthErrors = new LinkedHashMap<>();
             putHealthCount(healthStatus, queueHealthErrors, "nonce_backlog", nonceBacklog);
             putHealthCount(healthStatus, queueHealthErrors, "access_deliveries_stuck", accessDeliveriesStuck);
             putHealthCount(healthStatus, queueHealthErrors, "session_started_unknown", sessionStartedUnknown);
+            putHealthCount(healthStatus, queueHealthErrors, "institutional_transactions_stuck", institutionalTransactionsStuck);
             healthStatus.put("queue_health_errors", queueHealthErrors);
             healthStatus.put("wallet_configured", institutionalWalletService.isConfigured());
             healthStatus.put("treasury_configured", isTreasuryConfigured());
@@ -134,7 +136,8 @@ public class HealthController {
         boolean authSigningReady = !providersEnabled || keyPresent;
         boolean durableQueuesReady = zeroCount(status.get("nonce_backlog"))
             && zeroCount(status.get("access_deliveries_stuck"))
-            && zeroCount(status.get("session_started_unknown"));
+            && zeroCount(status.get("session_started_unknown"))
+            && zeroCount(status.get("institutional_transactions_stuck"));
 
         if (!rpcUp || !authSigningReady || !marketplaceReady || !dbUp || !walletConfigured
                 || !treasuryConfigured || !providerReady || !durableQueuesReady) {
@@ -253,6 +256,17 @@ public class HealthController {
         return countHealthRows(
             "SELECT COUNT(*) FROM session_started_attestations WHERE onchain_status = 'STUCK_UNKNOWN'",
             "21"
+        );
+    }
+
+    private HealthCount countInstitutionalTransactionBlockers() {
+        int threshold = boundedQueueThreshold();
+        return countHealthRows(
+            "SELECT COUNT(*) FROM institutional_transaction_outbox WHERE "
+                + "status = 'STUCK_UNKNOWN' OR (status IN ('RESERVED', 'PREPARED', 'RETRYABLE', 'SUBMITTED') "
+                + "AND updated_at < DATE_SUB(CURRENT_TIMESTAMP, INTERVAL "
+                + threshold + " SECOND))",
+            "28"
         );
     }
 

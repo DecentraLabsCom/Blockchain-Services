@@ -58,6 +58,10 @@ public class InstitutionalCheckInOutboxProcessor {
 
             nonceDispatcher.dispatch(record);
         } catch (InstitutionalWalletDispatchException ex) {
+            if (ex.outcome() == InstitutionalWalletDispatchException.Outcome.PRE_BROADCAST_RETRYABLE) {
+                handleFailure(record, ex);
+                return;
+            }
             int attempts = record.attempts() + 1;
             String message = LogSanitizer.sanitize(ex.getMessage());
             log.warn(

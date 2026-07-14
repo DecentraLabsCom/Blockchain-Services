@@ -5,9 +5,6 @@ import java.math.BigInteger;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
-import java.util.HashMap;
-import java.util.Map;
-import java.util.UUID;
 
 import org.web3j.crypto.Credentials;
 import org.web3j.crypto.Hash;
@@ -34,7 +31,7 @@ public class PendingNonceFastRawTransactionManager extends FastRawTransactionMan
     private final BigInteger chainId;
     private final InstitutionalWalletNonceReservationService nonceReservationService;
     private final InstitutionalTransactionOutboxService transactionOutboxService;
-    private final Map<String, String> replacementOperationKeys = new HashMap<>();
+    private final String configuredOperationKey;
 
     public PendingNonceFastRawTransactionManager(Web3j web3j, Credentials credentials, long chainId) {
         super(web3j, credentials, chainId);
@@ -44,6 +41,7 @@ public class PendingNonceFastRawTransactionManager extends FastRawTransactionMan
         this.chainId = BigInteger.valueOf(chainId);
         this.nonceReservationService = null;
         this.transactionOutboxService = null;
+        this.configuredOperationKey = null;
     }
 
     public PendingNonceFastRawTransactionManager(
@@ -59,6 +57,7 @@ public class PendingNonceFastRawTransactionManager extends FastRawTransactionMan
         this.chainId = BigInteger.valueOf(chainId);
         this.nonceReservationService = null;
         this.transactionOutboxService = null;
+        this.configuredOperationKey = null;
     }
 
     public PendingNonceFastRawTransactionManager(
@@ -74,6 +73,7 @@ public class PendingNonceFastRawTransactionManager extends FastRawTransactionMan
         this.chainId = BigInteger.valueOf(chainId);
         this.nonceReservationService = null;
         this.transactionOutboxService = null;
+        this.configuredOperationKey = null;
     }
 
     public PendingNonceFastRawTransactionManager(
@@ -90,6 +90,7 @@ public class PendingNonceFastRawTransactionManager extends FastRawTransactionMan
         this.chainId = BigInteger.valueOf(chainId);
         this.nonceReservationService = nonceReservationService;
         this.transactionOutboxService = null;
+        this.configuredOperationKey = null;
     }
 
     public PendingNonceFastRawTransactionManager(
@@ -105,6 +106,7 @@ public class PendingNonceFastRawTransactionManager extends FastRawTransactionMan
         this.chainId = BigInteger.valueOf(chainId);
         this.nonceReservationService = null;
         this.transactionOutboxService = transactionOutboxService;
+        this.configuredOperationKey = null;
     }
 
     public PendingNonceFastRawTransactionManager(
@@ -114,6 +116,17 @@ public class PendingNonceFastRawTransactionManager extends FastRawTransactionMan
         TransactionReceiptProcessor receiptProcessor,
         InstitutionalTransactionOutboxService transactionOutboxService
     ) {
+        this(web3j, credentials, chainId, receiptProcessor, transactionOutboxService, null);
+    }
+
+    public PendingNonceFastRawTransactionManager(
+        Web3j web3j,
+        Credentials credentials,
+        long chainId,
+        TransactionReceiptProcessor receiptProcessor,
+        InstitutionalTransactionOutboxService transactionOutboxService,
+        String operationKey
+    ) {
         super(web3j, credentials, chainId, receiptProcessor);
         this.web3j = web3j;
         this.credentials = credentials;
@@ -121,6 +134,7 @@ public class PendingNonceFastRawTransactionManager extends FastRawTransactionMan
         this.chainId = BigInteger.valueOf(chainId);
         this.nonceReservationService = null;
         this.transactionOutboxService = transactionOutboxService;
+        this.configuredOperationKey = normalizeOperationKey(operationKey);
     }
 
     @Override
@@ -137,11 +151,9 @@ public class PendingNonceFastRawTransactionManager extends FastRawTransactionMan
         }
 
         BigInteger pendingNonce = readPendingNonce();
-        String operationFingerprint = operationFingerprint(gasLimit, to, data, value);
-        String operationKey = replacementOperationKeys.computeIfAbsent(
-            operationFingerprint,
-            ignored -> newOperationKey(operationFingerprint)
-        );
+        String operationKey = configuredOperationKey != null
+            ? configuredOperationKey
+            : operationFingerprint(gasLimit, to, data, value);
         reconcileBlockingAttempt();
         InstitutionalTransactionOutboxService.Attempt attempt;
         try {
@@ -151,6 +163,17 @@ public class PendingNonceFastRawTransactionManager extends FastRawTransactionMan
             );
         } catch (InstitutionalTransactionOutboxService.TransactionBlockedException ex) {
             throw new IOException(ex.getMessage(), ex);
+        }
+
+        if (attempt == null) {
+            throw new IOException("Outbox returned no durable transaction attempt");
+        }
+
+        if (attempt.txHash() != null && !attempt.txHash().isBlank()
+            && ("SUBMITTED".equals(attempt.status()) || "MINED_SUCCESS".equals(attempt.status()))) {
+            EthSendTransaction existing = new EthSendTransaction();
+            existing.setResult(attempt.txHash());
+            return existing;
         }
 
         RawTransaction rawTransaction = RawTransaction.createTransaction(
@@ -189,7 +212,6 @@ public class PendingNonceFastRawTransactionManager extends FastRawTransactionMan
             return response;
         }
         transactionOutboxService.markSubmitted(attempt, txHash);
-        replacementOperationKeys.remove(operationFingerprint, operationKey);
         return response;
     }
 
@@ -227,7 +249,45 @@ public class PendingNonceFastRawTransactionManager extends FastRawTransactionMan
         InstitutionalTransactionOutboxService.Attempt blocker = transactionOutboxService.findBlocking(
             credentials.getAddress(), chainId
         );
-        if (blocker == null || blocker.txHash() == null || blocker.txHash().isBlank()) {
+        if (blocker == null) {
+            return;
+        }
+        if ((blocker.txHash() == null || blocker.txHash().isBlank())
+            && (blocker.signedRawTransaction() == null || blocker.signedRawTransaction().isBlank())) {
+            if (blocker.gasPrice() == null || blocker.gasLimit() == null || blocker.toAddress() == null
+                || blocker.value() == null || blocker.data() == null) {
+                return;
+            }
+            RawTransaction rawTransaction = RawTransaction.createTransaction(
+                blocker.nonce(), blocker.gasPrice(), blocker.gasLimit(), blocker.toAddress(),
+                blocker.value(), blocker.data()
+            );
+            String signedHex = Numeric.toHexString(
+                TransactionEncoder.signMessage(rawTransaction, chainId.longValueExact(), credentials)
+            );
+            String expectedHash = Hash.sha3(signedHex);
+            transactionOutboxService.markSigned(blocker, signedHex, expectedHash);
+            blocker = new InstitutionalTransactionOutboxService.Attempt(
+                blocker.id(), blocker.chainId(), blocker.walletAddress(), blocker.operationKey(), blocker.nonce(),
+                blocker.gasPrice(), blocker.gasLimit(), blocker.toAddress(), blocker.value(), blocker.data(),
+                "PREPARED", signedHex, expectedHash
+            );
+        }
+        if (blocker.txHash() == null || blocker.txHash().isBlank()) {
+            try {
+                EthSendTransaction response = web3j.ethSendRawTransaction(blocker.signedRawTransaction()).send();
+                if (response != null && !response.hasError()
+                    && response.getTransactionHash() != null && !response.getTransactionHash().isBlank()) {
+                    transactionOutboxService.markSubmitted(blocker, response.getTransactionHash());
+                } else if (response != null && response.hasError()
+                    && response.getError() != null
+                    && response.getError().getMessage() != null
+                    && response.getError().getMessage().toLowerCase().contains("already known")) {
+                    transactionOutboxService.markSubmitted(blocker, blocker.txHash());
+                }
+            } catch (Exception ignored) {
+                // Keep the wallet barrier in place when RPC reconciliation is unavailable.
+            }
             return;
         }
         try {
@@ -283,13 +343,19 @@ public class PendingNonceFastRawTransactionManager extends FastRawTransactionMan
         }
     }
 
-    private String newOperationKey(String operationFingerprint) {
-        try {
-            byte[] digest = MessageDigest.getInstance("SHA-256")
-                .digest((operationFingerprint + "|" + UUID.randomUUID()).getBytes(StandardCharsets.UTF_8));
-            return Numeric.toHexStringNoPrefix(digest);
-        } catch (NoSuchAlgorithmException ex) {
-            throw new IllegalStateException("SHA-256 is not available", ex);
+    private String normalizeOperationKey(String operationKey) {
+        if (operationKey == null || operationKey.isBlank()) {
+            return null;
         }
+        String normalized = operationKey.trim().toLowerCase(java.util.Locale.ROOT);
+        if (!normalized.matches("[0-9a-f]{64}")) {
+            try {
+                return Numeric.toHexStringNoPrefix(MessageDigest.getInstance("SHA-256")
+                    .digest(normalized.getBytes(StandardCharsets.UTF_8)));
+            } catch (NoSuchAlgorithmException ex) {
+                throw new IllegalStateException("SHA-256 is not available", ex);
+            }
+        }
+        return normalized;
     }
 }

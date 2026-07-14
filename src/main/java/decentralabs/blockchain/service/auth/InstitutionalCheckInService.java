@@ -140,9 +140,16 @@ public class InstitutionalCheckInService {
                     record.id(),
                     record.attempts() + 1,
                     Instant.now(),
-                    "Initial institutional check-in broadcast outcome is uncertain"
+                    ex.outcome() == InstitutionalWalletDispatchException.Outcome.PRE_BROADCAST_RETRYABLE
+                        ? "Initial institutional check-in transaction was not broadcast; retrying"
+                        : "Initial institutional check-in broadcast outcome is uncertain"
                 );
-                throw new IllegalStateException("Institutional check-in submission could not be confirmed", ex);
+                throw new IllegalStateException(
+                    ex.outcome() == InstitutionalWalletDispatchException.Outcome.PRE_BROADCAST_RETRYABLE
+                        ? "Institutional check-in submission could not be prepared"
+                        : "Institutional check-in submission could not be confirmed",
+                    ex
+                );
             }
         }
 

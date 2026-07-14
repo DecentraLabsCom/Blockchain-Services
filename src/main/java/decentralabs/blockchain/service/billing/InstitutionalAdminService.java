@@ -847,7 +847,7 @@ public class InstitutionalAdminService {
             }
             BigInteger gasPrice = resolveGasPriceWei();
             BigInteger gasLimit = resolveContractGasLimit(credentials.getAddress(), pendingNonce, encodedFunction);
-            EthSendTransaction managed = txManagerProvider.get(web3j).sendTransaction(
+            EthSendTransaction managed = txManagerProvider.get(web3j, "billing:" + encodedFunction).sendTransaction(
                 gasPrice,
                 gasLimit,
                 contractAddress,

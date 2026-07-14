@@ -1,13 +1,16 @@
 package decentralabs.blockchain.service.wallet;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 
@@ -48,6 +51,27 @@ class PendingNonceFastRawTransactionManagerTest {
     @BeforeEach
     void setUp() {
         manager = new TestPendingNonceFastRawTransactionManager(web3j, CREDENTIALS, 11155111L);
+    }
+
+    @Test
+    void rejectsMissingOutboxAttemptBeforeSigning() throws Exception {
+        PendingNonceFastRawTransactionManager durableManager =
+            new PendingNonceFastRawTransactionManager(
+                web3j, CREDENTIALS, 11155111L, transactionOutboxService
+            );
+        stubPendingCount(BigInteger.valueOf(14));
+        when(transactionOutboxService.reserveOrLoad(
+            anyString(), any(), any(), anyString(), any(), any(), anyString(), any(), anyString()
+        )).thenReturn(null);
+
+        assertThatThrownBy(() -> durableManager.sendTransaction(
+            BigInteger.valueOf(2_000_000_000L), BigInteger.valueOf(300_000),
+            "0x0000000000000000000000000000000000000001", "0x1234", BigInteger.ZERO
+        )).isInstanceOf(java.io.IOException.class)
+            .hasMessageContaining("no durable transaction attempt");
+
+        verify(transactionOutboxService, never()).markSigned(any(), anyString(), anyString());
+        verify(web3j, never()).ethSendRawTransaction(anyString());
     }
 
     @Test
@@ -149,11 +173,77 @@ class PendingNonceFastRawTransactionManagerTest {
             operationKeys.capture(), any(), any(), anyString(), any(), anyString()
         );
         assertThat(operationKeys.getAllValues().get(0)).isEqualTo(operationKeys.getAllValues().get(1));
-        assertThat(operationKeys.getAllValues().get(2)).isNotEqualTo(operationKeys.getAllValues().get(0));
+        assertThat(operationKeys.getAllValues().get(2)).isEqualTo(operationKeys.getAllValues().get(0));
 
         verify(transactionOutboxService, times(3)).markSigned(any(), anyString(), anyString());
         verify(transactionOutboxService).markRetryable(any(), anyString());
         verify(transactionOutboxService, times(2)).markSubmitted(any(), anyString());
+    }
+
+    @Test
+    void reconstructsReservedBlockerFromDurableTransactionParametersAfterRestart() throws Exception {
+        PendingNonceFastRawTransactionManager durableManager =
+            new PendingNonceFastRawTransactionManager(
+                web3j, CREDENTIALS, 11155111L, transactionOutboxService
+            );
+        InstitutionalTransactionOutboxService.Attempt blocker = new InstitutionalTransactionOutboxService.Attempt(
+            8L, BigInteger.valueOf(11155111L), CREDENTIALS.getAddress(), "blocked-operation",
+            BigInteger.valueOf(14), BigInteger.valueOf(2_000_000_000L), BigInteger.valueOf(300_000),
+            "0x0000000000000000000000000000000000000001", BigInteger.ZERO, "0x1234",
+            "RESERVED", null, null
+        );
+        InstitutionalTransactionOutboxService.Attempt current = new InstitutionalTransactionOutboxService.Attempt(
+            9L, BigInteger.valueOf(11155111L), CREDENTIALS.getAddress(), "current-operation",
+            BigInteger.valueOf(15), "RESERVED", null, null
+        );
+        when(transactionOutboxService.findBlocking(CREDENTIALS.getAddress(), BigInteger.valueOf(11155111L)))
+            .thenReturn(blocker);
+        when(transactionOutboxService.reserveOrLoad(
+            anyString(), any(), any(), anyString(), any(), any(), anyString(), any(), anyString()
+        )).thenReturn(current);
+        stubPendingCount(BigInteger.valueOf(14));
+        EthSendTransaction first = new EthSendTransaction();
+        first.setResult("0x" + "b".repeat(64));
+        EthSendTransaction second = new EthSendTransaction();
+        second.setResult("0x" + "c".repeat(64));
+        doReturn(requestReturning(first), requestReturning(second))
+            .when(web3j).ethSendRawTransaction(anyString());
+
+        EthSendTransaction response = durableManager.sendTransaction(
+            BigInteger.valueOf(2_100_000_000L), BigInteger.valueOf(300_000),
+            "0x0000000000000000000000000000000000000001", "0x1234", BigInteger.ZERO
+        );
+
+        assertThat(response.getTransactionHash()).isEqualTo("0x" + "c".repeat(64));
+        verify(transactionOutboxService).markSigned(eq(blocker), anyString(), anyString());
+        verify(transactionOutboxService).markSubmitted(
+            argThat(attempt -> attempt != null && attempt.id() == blocker.id()),
+            eq("0x" + "b".repeat(64))
+        );
+    }
+
+    @Test
+    void returnsPreviouslySubmittedOperationWithoutBroadcastingItAgain() throws Exception {
+        PendingNonceFastRawTransactionManager durableManager =
+            new PendingNonceFastRawTransactionManager(
+                web3j, CREDENTIALS, 11155111L, transactionOutboxService
+            );
+        InstitutionalTransactionOutboxService.Attempt submitted = new InstitutionalTransactionOutboxService.Attempt(
+            10L, BigInteger.valueOf(11155111L), CREDENTIALS.getAddress(), "operation-key",
+            BigInteger.valueOf(14), "SUBMITTED", "0x01", "0x" + "e".repeat(64)
+        );
+        when(transactionOutboxService.reserveOrLoad(
+            anyString(), any(), any(), anyString(), any(), any(), anyString(), any(), anyString()
+        )).thenReturn(submitted);
+        stubPendingCount(BigInteger.valueOf(14));
+
+        EthSendTransaction response = durableManager.sendTransaction(
+            BigInteger.valueOf(2_000_000_000L), BigInteger.valueOf(300_000),
+            "0x0000000000000000000000000000000000000001", "0x1234", BigInteger.ZERO
+        );
+
+        assertThat(response.getTransactionHash()).isEqualTo(submitted.txHash());
+        verify(web3j, never()).ethSendRawTransaction(anyString());
     }
 
     private void stubPendingCount(BigInteger transactionCount) throws Exception {

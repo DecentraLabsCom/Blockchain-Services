@@ -146,6 +146,42 @@
     "defaultValue": 15
   },
   {
+    "name": "auth.fmu.session-ticket.require-persistence",
+    "type": "java.lang.Boolean",
+    "description": "Require persistence for FMU session tickets.",
+    "defaultValue": true
+  },
+  {
+    "name": "rate.limit.fmu.session-ticket.requests.per.minute",
+    "type": "java.lang.Integer",
+    "description": "Per-gateway rate limit for observer-authenticated FMU session-ticket redemption requests.",
+    "defaultValue": 120
+  },
+  {
+    "name": "rate.limit.fmu.session-ticket.requests.burst",
+    "type": "java.lang.Integer",
+    "description": "Burst capacity per gateway for observer-authenticated FMU session-ticket redemption requests.",
+    "defaultValue": 30
+  },
+  {
+    "name": "institutional.transaction-outbox.monitor.enabled",
+    "type": "java.lang.Boolean",
+    "description": "Enable monitoring and same-nonce recovery for generic institutional transactions.",
+    "defaultValue": true
+  },
+  {
+    "name": "institutional.transaction-outbox.monitor.interval-ms",
+    "type": "java.lang.Long",
+    "description": "Interval for the generic institutional transaction outbox monitor.",
+    "defaultValue": 5000
+  },
+  {
+    "name": "institutional.transaction-outbox.monitor.batch-size",
+    "type": "java.lang.Integer",
+    "description": "Maximum generic institutional transaction outbox rows inspected per monitor run.",
+    "defaultValue": 20
+  },
+  {
     "name": "checkin.receipt.max-attempts",
     "type": "java.lang.Integer",
     "description": "Maximum number of eth_getTransactionReceipt polling attempts before institutional check-in is treated as unconfirmed.",

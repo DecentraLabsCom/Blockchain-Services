@@ -51,16 +51,36 @@ public class InstitutionalWalletTransactionDispatcher {
         Consumer<PreparedTransaction> persistPrepared,
         Consumer<String> persistTransactionHash
     ) throws InstitutionalWalletDispatchException {
-        BigInteger[] allocation = resolveNonce(walletAddress, existingChainId, existingNonce, persistNonce);
+        BigInteger[] allocation;
+        try {
+            allocation = resolveNonce(walletAddress, existingChainId, existingNonce, persistNonce);
+        } catch (InstitutionalWalletDispatchException ex) {
+            throw ex;
+        } catch (RuntimeException ex) {
+            throw new InstitutionalWalletDispatchException(
+                "Institutional transaction could not be prepared before broadcast",
+                InstitutionalWalletDispatchException.Outcome.PRE_BROADCAST_RETRYABLE,
+                ex
+            );
+        }
         BigInteger nonce = allocation[1];
 
         // Preparation and its durable write happen before any network side
         // effect. Preparation errors are ordinary retryable failures.
-        PreparedTransaction prepared = prepare.apply(nonce);
-        if (prepared == null) {
-            throw new IllegalStateException("Transaction preparation returned no transaction");
+        PreparedTransaction prepared;
+        try {
+            prepared = prepare.apply(nonce);
+            if (prepared == null) {
+                throw new IllegalStateException("Transaction preparation returned no transaction");
+            }
+            persistPrepared.accept(prepared);
+        } catch (RuntimeException ex) {
+            throw new InstitutionalWalletDispatchException(
+                "Institutional transaction could not be prepared before broadcast",
+                InstitutionalWalletDispatchException.Outcome.PRE_BROADCAST_RETRYABLE,
+                ex
+            );
         }
-        persistPrepared.accept(prepared);
 
         try {
             EthSendTransaction response = web3j().ethSendRawTransaction(prepared.rawTransaction()).send();
@@ -84,7 +104,76 @@ public class InstitutionalWalletTransactionDispatcher {
             return prepared.transactionHash();
         } catch (Exception ex) {
             throw new InstitutionalWalletDispatchException(
-                "Institutional transaction broadcast outcome is uncertain", ex
+                "Institutional transaction broadcast outcome is uncertain",
+                InstitutionalWalletDispatchException.Outcome.BROADCAST_OUTCOME_UNKNOWN,
+                ex
+            );
+        }
+    }
+
+    /**
+     * Resumes a transaction whose signed material was already persisted before
+     * a process crash. The previous hash is checked first; a new raw
+     * transaction must never replace that material before the node has
+     * classified the old attempt.
+     */
+    public String rebroadcastPrepared(PreparedTransaction prepared)
+        throws InstitutionalWalletDispatchException {
+        if (prepared == null) {
+            throw new InstitutionalWalletDispatchException(
+                "Persisted institutional transaction is missing",
+                InstitutionalWalletDispatchException.Outcome.PRE_BROADCAST_RETRYABLE,
+                new IllegalArgumentException("Prepared transaction is required")
+            );
+        }
+
+        Web3j node = web3j();
+        try {
+            var receiptResponse = node.ethGetTransactionReceipt(prepared.transactionHash()).send();
+            if (receiptResponse == null) {
+                throw new IOException("RPC returned no transaction receipt response");
+            }
+            if (receiptResponse.getTransactionReceipt().isPresent()) {
+                return prepared.transactionHash();
+            }
+
+            var transactionResponse = node.ethGetTransactionByHash(prepared.transactionHash()).send();
+            if (transactionResponse == null) {
+                throw new IOException("RPC returned no transaction lookup response");
+            }
+            if (transactionResponse.getTransaction().isPresent()) {
+                return prepared.transactionHash();
+            }
+        } catch (Exception ex) {
+            throw new InstitutionalWalletDispatchException(
+                "Persisted institutional transaction outcome is uncertain",
+                InstitutionalWalletDispatchException.Outcome.BROADCAST_OUTCOME_UNKNOWN,
+                ex
+            );
+        }
+
+        try {
+            EthSendTransaction response = node.ethSendRawTransaction(prepared.rawTransaction()).send();
+            if (response == null) {
+                throw new IOException("RPC returned no transaction response");
+            }
+            if (response.hasError()) {
+                String error = response.getError() != null ? response.getError().getMessage() : "broadcast_failed";
+                if (!isAlreadyKnown(error)) {
+                    throw new IllegalStateException("Transaction rebroadcast failed: " + error);
+                }
+            }
+            String returnedHash = response.getTransactionHash();
+            if (returnedHash != null && !returnedHash.isBlank()
+                && !returnedHash.equalsIgnoreCase(prepared.transactionHash())) {
+                throw new IllegalStateException("Node returned a hash different from the persisted transaction");
+            }
+            return prepared.transactionHash();
+        } catch (Exception ex) {
+            throw new InstitutionalWalletDispatchException(
+                "Persisted institutional transaction rebroadcast outcome is uncertain",
+                InstitutionalWalletDispatchException.Outcome.BROADCAST_OUTCOME_UNKNOWN,
+                ex
             );
         }
     }
@@ -121,7 +210,9 @@ public class InstitutionalWalletTransactionDispatcher {
                 );
             } catch (RuntimeException ex) {
                 throw new InstitutionalWalletDispatchException(
-                    "Institutional nonce allocation is currently blocked", ex
+                    "Institutional nonce allocation is currently blocked",
+                    InstitutionalWalletDispatchException.Outcome.PRE_BROADCAST_RETRYABLE,
+                    ex
                 );
             }
         }

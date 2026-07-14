@@ -12,9 +12,9 @@ import org.springframework.transaction.annotation.Transactional;
 
 /**
  * Durable ownership record for institutional transactions that are not tied to
- * the check-in or SessionStarted outboxes.  A RESERVED/RETRYABLE row is a
- * deliberate wallet barrier: another operation cannot skip over it and create
- * a permanent nonce hole.
+ * the check-in or SessionStarted outboxes.  A RESERVED/PREPARED/RETRYABLE or
+ * STUCK_UNKNOWN row is a deliberate wallet barrier: another operation cannot
+ * skip over it and create a permanent nonce hole.
  */
 @Service
 public class InstitutionalTransactionOutboxService {
@@ -35,10 +35,29 @@ public class InstitutionalTransactionOutboxService {
         String walletAddress,
         String operationKey,
         BigInteger nonce,
+        BigInteger gasPrice,
+        BigInteger gasLimit,
+        String toAddress,
+        BigInteger value,
+        String data,
         String status,
         String signedRawTransaction,
         String txHash
-    ) { }
+    ) {
+        public Attempt(
+            long id,
+            BigInteger chainId,
+            String walletAddress,
+            String operationKey,
+            BigInteger nonce,
+            String status,
+            String signedRawTransaction,
+            String txHash
+        ) {
+            this(id, chainId, walletAddress, operationKey, nonce, null, null, null, null, null,
+                status, signedRawTransaction, txHash);
+        }
+    }
 
     @Transactional
     public Attempt reserveOrLoad(
@@ -98,8 +117,8 @@ public class InstitutionalTransactionOutboxService {
         int updated = jdbcTemplate.update(
             """
             UPDATE institutional_transaction_outbox
-            SET signed_raw_transaction = ?, tx_hash = ?, updated_at = CURRENT_TIMESTAMP
-            WHERE id = ? AND status IN ('RESERVED', 'RETRYABLE')
+            SET signed_raw_transaction = ?, tx_hash = ?, status = 'PREPARED', updated_at = CURRENT_TIMESTAMP
+            WHERE id = ? AND status IN ('RESERVED', 'PREPARED', 'RETRYABLE', 'STUCK_UNKNOWN')
             """,
             signedRawTransaction, expectedTxHash, attempt.id()
         );
@@ -117,7 +136,7 @@ public class InstitutionalTransactionOutboxService {
             UPDATE institutional_transaction_outbox
             SET status = 'SUBMITTED', tx_hash = ?, last_error = NULL,
                 updated_at = CURRENT_TIMESTAMP
-            WHERE id = ? AND status IN ('RESERVED', 'RETRYABLE')
+            WHERE id = ? AND status IN ('RESERVED', 'PREPARED', 'RETRYABLE', 'STUCK_UNKNOWN')
             """,
             txHash, attempt.id()
         );
@@ -132,9 +151,79 @@ public class InstitutionalTransactionOutboxService {
             UPDATE institutional_transaction_outbox
             SET status = 'RETRYABLE', attempts = attempts + 1, last_error = ?,
                 updated_at = CURRENT_TIMESTAMP
-            WHERE id = ? AND status IN ('RESERVED', 'RETRYABLE')
+            WHERE id = ? AND status IN ('RESERVED', 'PREPARED', 'RETRYABLE', 'STUCK_UNKNOWN')
             """,
             truncate(error), attempt.id()
+        );
+    }
+
+    public void markMinedSuccess(Attempt attempt) {
+        updateTerminal(attempt, "MINED_SUCCESS", null);
+    }
+
+    public void markMinedFailed(Attempt attempt, String error) {
+        updateTerminal(attempt, "MINED_FAILED", truncate(error));
+    }
+
+    public void markStuckUnknown(Attempt attempt, String error) {
+        updateTerminal(attempt, "STUCK_UNKNOWN", truncate(error));
+    }
+
+    public java.util.List<Attempt> findSubmitted(int limit) {
+        return findByStatus("SUBMITTED", limit);
+    }
+
+    public java.util.List<Attempt> findStuckUnknown(int limit) {
+        return findByStatus("STUCK_UNKNOWN", limit);
+    }
+
+    public java.util.List<Attempt> findRecoveryCandidates(int limit) {
+        if (jdbcTemplate == null) {
+            return java.util.List.of();
+        }
+        return jdbcTemplate.query(
+            """
+            SELECT id, chain_id, wallet_address, operation_key, nonce, gas_price, gas_limit,
+                   to_address, value_wei, data, status, signed_raw_transaction, tx_hash
+            FROM institutional_transaction_outbox
+            WHERE status IN ('RESERVED', 'PREPARED', 'RETRYABLE')
+            ORDER BY nonce ASC, id ASC
+            LIMIT ?
+            """,
+            (rs, rowNum) -> mapRow(rs),
+            Math.max(1, limit)
+        );
+    }
+
+    private java.util.List<Attempt> findByStatus(String status, int limit) {
+        if (jdbcTemplate == null) {
+            return java.util.List.of();
+        }
+        return jdbcTemplate.query(
+            """
+            SELECT id, chain_id, wallet_address, operation_key, nonce, gas_price, gas_limit,
+                   to_address, value_wei, data, status, signed_raw_transaction, tx_hash
+            FROM institutional_transaction_outbox
+            WHERE status = ? AND tx_hash IS NOT NULL
+            ORDER BY updated_at ASC, id ASC
+            LIMIT ?
+            """,
+            (rs, rowNum) -> mapRow(rs),
+            status, Math.max(1, limit)
+        );
+    }
+
+    private void updateTerminal(Attempt attempt, String status, String error) {
+        if (jdbcTemplate == null || attempt == null) {
+            return;
+        }
+        jdbcTemplate.update(
+            """
+            UPDATE institutional_transaction_outbox
+            SET status = ?, last_error = ?, updated_at = CURRENT_TIMESTAMP
+            WHERE id = ? AND status IN ('RESERVED', 'PREPARED', 'RETRYABLE', 'SUBMITTED', 'STUCK_UNKNOWN')
+            """,
+            status, error, attempt.id()
         );
     }
 
@@ -142,8 +231,8 @@ public class InstitutionalTransactionOutboxService {
         String lock = forUpdate ? " FOR UPDATE" : "";
         var rows = jdbcTemplate.query(
             """
-            SELECT id, chain_id, wallet_address, operation_key, nonce, status,
-                   signed_raw_transaction, tx_hash
+            SELECT id, chain_id, wallet_address, operation_key, nonce, gas_price, gas_limit,
+                   to_address, value_wei, data, status, signed_raw_transaction, tx_hash
             FROM institutional_transaction_outbox
             WHERE wallet_address = ? AND chain_id = ? AND operation_key = ?
             """ + lock,
@@ -156,11 +245,11 @@ public class InstitutionalTransactionOutboxService {
     private Attempt findBlockingInternal(String walletAddress, BigInteger chainId) {
         var rows = jdbcTemplate.query(
             """
-            SELECT id, chain_id, wallet_address, operation_key, nonce, status,
-                   signed_raw_transaction, tx_hash
+            SELECT id, chain_id, wallet_address, operation_key, nonce, gas_price, gas_limit,
+                   to_address, value_wei, data, status, signed_raw_transaction, tx_hash
             FROM institutional_transaction_outbox
             WHERE wallet_address = ? AND chain_id = ?
-              AND status IN ('RESERVED', 'RETRYABLE')
+              AND status IN ('RESERVED', 'PREPARED', 'RETRYABLE', 'STUCK_UNKNOWN')
             ORDER BY nonce ASC
             LIMIT 1
             FOR UPDATE
@@ -178,6 +267,11 @@ public class InstitutionalTransactionOutboxService {
             rs.getString("wallet_address"),
             rs.getString("operation_key"),
             decimalAsBigInteger(rs.getBigDecimal("nonce")),
+            decimalAsBigInteger(rs.getBigDecimal("gas_price")),
+            decimalAsBigInteger(rs.getBigDecimal("gas_limit")),
+            rs.getString("to_address"),
+            decimalAsBigInteger(rs.getBigDecimal("value_wei")),
+            rs.getString("data"),
             rs.getString("status"),
             rs.getString("signed_raw_transaction"),
             rs.getString("tx_hash")

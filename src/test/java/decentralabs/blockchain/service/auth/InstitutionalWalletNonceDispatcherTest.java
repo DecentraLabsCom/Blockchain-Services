@@ -4,7 +4,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.when;
 
 import decentralabs.blockchain.dto.auth.CheckInResponse;
@@ -20,6 +22,20 @@ class InstitutionalWalletNonceDispatcherTest {
     @Mock private InstitutionalCheckInOutboxService outboxService;
     @Mock private InstitutionalCheckInSubmissionService submissionService;
     @Mock private InstitutionalWalletTransactionDispatcher transactionDispatcher;
+
+    @Test
+    void rejectsMissingOutboxRecordAsPreBroadcastRetryable() {
+        InstitutionalWalletNonceDispatcher dispatcher = new InstitutionalWalletNonceDispatcher(
+            outboxService, submissionService, transactionDispatcher
+        );
+
+        assertThatThrownBy(() -> dispatcher.dispatch(null))
+            .isInstanceOf(InstitutionalWalletDispatchException.class)
+            .extracting("outcome")
+            .isEqualTo(InstitutionalWalletDispatchException.Outcome.PRE_BROADCAST_RETRYABLE);
+
+        verify(submissionService, never()).signerAddress();
+    }
 
     @Test
     void persistsReservedNonceAndTransactionHashBeforeReleasingWalletDispatch() throws Exception {
@@ -91,5 +107,50 @@ class InstitutionalWalletNonceDispatcherTest {
         verify(transactionDispatcher).dispatchPrepared(
             eq("0xsigner"), eq(BigInteger.ONE), eq(BigInteger.valueOf(48)), any(), any(), any(), any()
         );
+    }
+
+    @Test
+    void staleSubmittingRowRebroadcastsPersistedTransactionBeforePreparingReplacement() throws Exception {
+        String previousHash = "0x" + "c".repeat(64);
+        InstitutionalCheckInOutboxRecord record = new InstitutionalCheckInOutboxRecord(
+            9L, "0xghi", "42", "0xpayer", "0xpuchash", "session-9", "SUBMITTING", 1,
+            Instant.now(), previousHash, "0xsigner", BigInteger.ONE, BigInteger.valueOf(49), Instant.now(), 2L,
+            "0xold-raw"
+        );
+        when(submissionService.signerAddress()).thenReturn("0xsigner");
+        when(transactionDispatcher.rebroadcastPrepared(any()))
+            .thenReturn(previousHash);
+
+        InstitutionalWalletNonceDispatcher dispatcher = new InstitutionalWalletNonceDispatcher(
+            outboxService, submissionService, transactionDispatcher
+        );
+
+        CheckInResponse result = dispatcher.dispatch(record);
+
+        assertThat(result.getTxHash()).isEqualTo(previousHash);
+        verify(transactionDispatcher).rebroadcastPrepared(any());
+        verify(outboxService).markSubmitted(record.id(), previousHash);
+        verify(submissionService, never()).prepare(any(), any(), any(), anyInt());
+        verify(transactionDispatcher, never()).dispatchPrepared(any(), any(), any(), any(), any(), any(), any());
+    }
+
+    @Test
+    void staleSubmittingRowWithPartialMaterialDoesNotOverwriteExistingEvidence() throws Exception {
+        InstitutionalCheckInOutboxRecord record = new InstitutionalCheckInOutboxRecord(
+            10L, "0xjkl", "42", "0xpayer", "0xpuchash", "session-10", "SUBMITTING", 1,
+            Instant.now(), "0x" + "f".repeat(64), "0xsigner", BigInteger.ONE, BigInteger.valueOf(50),
+            Instant.now(), 3L, null
+        );
+        when(submissionService.signerAddress()).thenReturn("0xsigner");
+
+        assertThatThrownBy(() -> new InstitutionalWalletNonceDispatcher(
+            outboxService, submissionService, transactionDispatcher
+        ).dispatch(record))
+            .isInstanceOf(InstitutionalWalletDispatchException.class)
+            .extracting("outcome")
+            .isEqualTo(InstitutionalWalletDispatchException.Outcome.PRE_BROADCAST_RETRYABLE);
+
+        verify(submissionService, never()).prepare(any(), any(), any(), anyInt());
+        verify(transactionDispatcher, never()).dispatchPrepared(any(), any(), any(), any(), any(), any(), any());
     }
 }

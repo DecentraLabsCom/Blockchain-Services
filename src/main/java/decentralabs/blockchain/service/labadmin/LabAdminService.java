@@ -201,7 +201,7 @@ public class LabAdminService {
         }
 
         try {
-            Diamond diamond = loadWritableDiamond();
+            Diamond diamond = loadWritableDiamond("lab-admin:publish:" + pendingKey);
             TransactionReceipt receipt = listImmediately
                 ? diamond.addAndListLab(uri, price, accessURI, accessKey, resourceType).send()
                 : diamond.addLab(uri, price, accessURI, accessKey, resourceType).send();
@@ -245,7 +245,7 @@ public class LabAdminService {
             log.debug("Unable to compare current on-chain lab state for lab {}; proceeding with updateLab", labId, ex);
         }
 
-        TransactionReceipt receipt = loadWritableDiamond()
+        TransactionReceipt receipt = loadWritableDiamond("lab-admin:update:" + labId)
             .updateLab(labId, uri, price, accessURI, accessKey, resourceType)
             .send();
         return new LabAdminTransactionResponse(
@@ -261,7 +261,7 @@ public class LabAdminService {
     public LabAdminTransactionResponse deleteLab(BigInteger labId) throws Exception {
         requireOwnedLab(labId);
         String uri = walletService.getLabTokenUri(labId).orElse(null);
-        TransactionReceipt receipt = loadWritableDiamond().deleteLab(labId).send();
+        TransactionReceipt receipt = loadWritableDiamond("lab-admin:delete:" + labId).deleteLab(labId).send();
         return new LabAdminTransactionResponse(
             true,
             "deleteLab",
@@ -275,8 +275,8 @@ public class LabAdminService {
     public LabAdminTransactionResponse listLab(BigInteger labId, boolean listed) throws Exception {
         requireOwnedLab(labId);
         TransactionReceipt receipt = listed
-            ? loadWritableDiamond().listLab(labId).send()
-            : loadWritableDiamond().unlistLab(labId).send();
+            ? loadWritableDiamond("lab-admin:list:" + labId).listLab(labId).send()
+            : loadWritableDiamond("lab-admin:unlist:" + labId).unlistLab(labId).send();
         return new LabAdminTransactionResponse(
             true,
             listed ? "listLab" : "unlistLab",
@@ -447,9 +447,9 @@ public class LabAdminService {
         );
     }
 
-    private Diamond loadWritableDiamond() {
+    private Diamond loadWritableDiamond(String operationKey) {
         Web3j currentWeb3j = walletService.getWeb3jInstance();
-        TransactionManager txManager = txManagerProvider.get(currentWeb3j);
+        TransactionManager txManager = txManagerProvider.get(currentWeb3j, operationKey);
         return Diamond.load(
             contractAddress,
             currentWeb3j,

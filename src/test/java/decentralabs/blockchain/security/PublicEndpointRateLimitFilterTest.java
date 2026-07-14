@@ -11,6 +11,8 @@ import org.junit.jupiter.api.Test;
 import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
+import org.springframework.security.authentication.TestingAuthenticationToken;
+import org.springframework.security.core.context.SecurityContextHolder;
 
 class PublicEndpointRateLimitFilterTest {
 
@@ -30,12 +32,15 @@ class PublicEndpointRateLimitFilterTest {
         filter = new PublicEndpointRateLimitFilter(policy);
         ReflectionTestUtils.setField(filter, "authRequestsPerMinute", 5);
         ReflectionTestUtils.setField(filter, "authRequestsBurst", 3);
+        ReflectionTestUtils.setField(filter, "fmuSessionTicketRequestsPerMinute", 5);
+        ReflectionTestUtils.setField(filter, "fmuSessionTicketRequestsBurst", 3);
         ReflectionTestUtils.setField(filter, "jwksRequestsPerMinute", 10);
         ReflectionTestUtils.setField(filter, "rateLimitEnabled", true);
 
         mockMvc = MockMvcBuilders.standaloneSetup(new RateLimitTestController())
             .addFilters(filter)
             .build();
+        SecurityContextHolder.clearContext();
     }
 
     @Test
@@ -131,6 +136,38 @@ class PublicEndpointRateLimitFilterTest {
         mockMvc.perform(post("/auth/fmu/session-ticket/redeem")
                 .with(req -> { req.setRemoteAddr(clientIp); return req; }))
             .andExpect(status().isTooManyRequests());
+    }
+
+    @Test
+    void fmuSessionTicketRedemption_usesAnIndependentBucketPerObserverGateway() throws Exception {
+        String clientIp = "10.10.10.12";
+        SecurityContextHolder.getContext().setAuthentication(
+            new TestingAuthenticationToken(
+                "gateway-a",
+                null,
+                "ROLE_SESSION_OBSERVER"
+            )
+        );
+
+        for (int i = 0; i < 3; i++) {
+            mockMvc.perform(post("/auth/fmu/session-ticket/redeem")
+                    .with(req -> { req.setRemoteAddr(clientIp); return req; }))
+                .andExpect(status().isOk());
+        }
+        mockMvc.perform(post("/auth/fmu/session-ticket/redeem")
+                .with(req -> { req.setRemoteAddr(clientIp); return req; }))
+            .andExpect(status().isTooManyRequests());
+
+        SecurityContextHolder.getContext().setAuthentication(
+            new TestingAuthenticationToken(
+                "gateway-b",
+                null,
+                "ROLE_SESSION_OBSERVER"
+            )
+        );
+        mockMvc.perform(post("/auth/fmu/session-ticket/redeem")
+                .with(req -> { req.setRemoteAddr(clientIp); return req; }))
+            .andExpect(status().isOk());
     }
 
     @Test

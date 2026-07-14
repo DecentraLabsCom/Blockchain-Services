@@ -2,6 +2,7 @@ package decentralabs.blockchain.service.auth;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
@@ -125,6 +126,24 @@ class InstitutionalCheckInOutboxProcessorTest {
 
         verify(outboxService).markBroadcastUncertain(1L, 3, "broadcast outcome uncertain");
         verify(outboxService, never()).markFailed(eq(1L), anyInt(), anyString());
+    }
+
+    @Test
+    void retriesWhenNonceAllocationFailsBeforeBroadcast() throws Exception {
+        var record = record(1);
+        when(outboxService.claim(1L)).thenReturn(true);
+        when(bookingService.getCheckInBookingInfo(any(), any(), any(), eq(null)))
+            .thenReturn(Map.of("reservationStatus", BigInteger.ONE));
+        org.mockito.Mockito.doThrow(new InstitutionalWalletDispatchException(
+            "nonce allocation blocked",
+            InstitutionalWalletDispatchException.Outcome.PRE_BROADCAST_RETRYABLE,
+            new IllegalStateException("wallet busy")
+        )).when(nonceDispatcher).dispatch(record);
+
+        processor.process(record);
+
+        verify(outboxService).markRetry(eq(1L), eq(2), any(Instant.class), eq("nonce allocation blocked"));
+        verify(outboxService, never()).markBroadcastUncertain(anyLong(), anyInt(), anyString());
     }
 
     private InstitutionalCheckInOutboxRecord record(int attempts) {
