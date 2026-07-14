@@ -223,7 +223,8 @@ public class InstitutionalTransactionOutboxMonitor {
             }
         } catch (Exception ex) {
             outboxService.markRetryable(attempt, ex.getMessage());
-            log.warn("Unable to recover reserved institutional transaction {}: {}", attempt.id(), ex.getMessage());
+            long attemptId = attempt == null ? -1L : attempt.id();
+            log.warn("Unable to recover reserved institutional transaction {}: {}", attemptId, ex.getMessage());
         }
         return false;
     }
