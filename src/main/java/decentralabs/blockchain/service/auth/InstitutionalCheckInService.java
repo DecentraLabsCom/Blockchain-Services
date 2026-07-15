@@ -316,6 +316,11 @@ public class InstitutionalCheckInService {
         return response;
     }
 
+    private String reservationKeyFromBooking(Map<String, Object> bookingInfo, String fallback) {
+        Object value = bookingInfo == null ? null : bookingInfo.get("reservationKey");
+        return value == null || value.toString().isBlank() ? fallback : value.toString();
+    }
+
     private InstitutionalCheckInOutboxRecord reloadRecord(InstitutionalCheckInOutboxRecord record) {
         try {
             return outboxService.findById(record.id());

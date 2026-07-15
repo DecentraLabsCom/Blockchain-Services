@@ -14,6 +14,7 @@ import static org.mockito.Mockito.when;
 import decentralabs.blockchain.dto.auth.CheckInRequest;
 import decentralabs.blockchain.dto.auth.CheckInResponse;
 import decentralabs.blockchain.dto.auth.InstitutionalCheckInRequest;
+import decentralabs.blockchain.dto.auth.InstitutionalCheckInStatusRequest;
 import decentralabs.blockchain.service.wallet.BlockchainBookingService;
 import decentralabs.blockchain.service.wallet.InstitutionalWalletService;
 import decentralabs.blockchain.service.wallet.WalletService;
@@ -641,6 +642,29 @@ class InstitutionalCheckInServiceTest {
         assertThatThrownBy(() -> service.checkIn(request))
             .isInstanceOf(IllegalStateException.class)
             .hasMessageContaining("Reservation key could not be resolved");
+    }
+
+    @Test
+    void checkInStatusUsesCanonicalReservationKeyFromBooking() {
+        InstitutionalCheckInStatusRequest request = new InstitutionalCheckInStatusRequest();
+        request.setMarketplaceToken("market-token");
+        request.setReservationKey("0xalias");
+        request.setLabId("42");
+        when(marketplaceEndpointAuthService.enforceToken("market-token", null))
+            .thenReturn(marketplaceClaims(Map.of("reservationKey", "0xalias")));
+        when(bookingService.getCheckInBookingInfo(
+            "0x1111111111111111111111111111111111111111", "0xalias", "42", "puc-123"
+        )).thenReturn(Map.of("reservationKey", "0xcanonical"));
+        when(outboxService.findStateByReservationKeyIfConfigured("0xcanonical"))
+            .thenReturn(new InstitutionalCheckInOutboxService.CheckInOutboxState(
+                "MINED_SUCCESS", null, "0xhash"
+            ));
+
+        CheckInResponse response = service.checkInStatus(request);
+
+        assertThat(response.getReservationKey()).isEqualTo("0xcanonical");
+        assertThat(response.getReason()).isEqualTo("Access already authorized");
+        verify(outboxService).findStateByReservationKeyIfConfigured("0xcanonical");
     }
 
     private InstitutionalCheckInRequest validRequest() {
