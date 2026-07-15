@@ -5,6 +5,8 @@ import decentralabs.blockchain.dto.auth.ProviderAccessCredentialRequest;
 import decentralabs.blockchain.dto.auth.SamlAuthRequest;
 import decentralabs.blockchain.exception.AccessAuthorizationPendingException;
 import decentralabs.blockchain.exception.AccessAuthorizationRejectedException;
+import decentralabs.blockchain.exception.AccessAuthorizationContextMismatchException;
+import decentralabs.blockchain.exception.AccessAuthorizationManualInterventionException;
 import decentralabs.blockchain.exception.SamlAuthenticationException;
 import decentralabs.blockchain.exception.SamlExpiredAssertionException;
 import decentralabs.blockchain.exception.SamlInvalidIssuerException;
@@ -205,7 +207,27 @@ public class SamlAuthService {
             // Persist and immediately broadcast the payer-side authorization before the
             // remote Guacamole provisioning work. The access gate remains
             // ACCESS_AUTHORIZED; this only removes avoidable broadcast delay.
-            accessCheckInCoordinator.recordAccessGranted(request, marketplaceJWTClaims, bookingInfo);
+            InstitutionalAccessCheckInCoordinator.AccessGrantedResult checkInResult =
+                accessCheckInCoordinator.recordAccessGranted(request, marketplaceJWTClaims, bookingInfo);
+            if (checkInResult == InstitutionalAccessCheckInCoordinator.AccessGrantedResult.CONTEXT_MISMATCH) {
+                throw new AccessAuthorizationContextMismatchException(
+                    "Check-in transaction belongs to a different chain or signer",
+                    canonicalReservationKey,
+                    null
+                );
+            }
+            if (checkInResult == InstitutionalAccessCheckInCoordinator.AccessGrantedResult.MANUAL_INTERVENTION) {
+                throw new AccessAuthorizationManualInterventionException(
+                    "Institutional check-in requires manual intervention",
+                    canonicalReservationKey,
+                    null
+                );
+            }
+            if (checkInResult == InstitutionalAccessCheckInCoordinator.AccessGrantedResult.FAILED) {
+                throw new AccessAuthorizationRejectedException(
+                    "Institutional check-in publication failed permanently"
+                );
+            }
             if (isAccessAuthorized(bookingInfo)) {
                 provisionalLease = provisionAuthorizedGuacamoleAccess(
                     bookingInfo, canonicalReservationKey, wallet, request.getLabId(), jwtPuc, null

@@ -28,6 +28,8 @@ import decentralabs.blockchain.dto.auth.ProviderAccessCredentialRequest;
 import decentralabs.blockchain.dto.auth.SamlAuthRequest;
 import decentralabs.blockchain.exception.AccessAuthorizationPendingException;
 import decentralabs.blockchain.exception.AccessAuthorizationRejectedException;
+import decentralabs.blockchain.exception.AccessAuthorizationContextMismatchException;
+import decentralabs.blockchain.exception.AccessAuthorizationManualInterventionException;
 import decentralabs.blockchain.exception.SamlAuthControllerAdvice;
 import decentralabs.blockchain.service.auth.InstitutionalCheckInService;
 import decentralabs.blockchain.service.auth.SamlAuthService;
@@ -182,6 +184,50 @@ class SamlAuthControllerTest {
                 .andExpect(jsonPath("$.error").value("ACCESS_AUTHORIZATION_REJECTED"))
                 .andExpect(jsonPath("$.retryable").value(false));
         }
+
+        @Test
+        @DisplayName("Should return a non-retryable conflict for a quarantined check-in context")
+        void shouldReturnContextMismatchResponse() throws Exception {
+            SamlAuthRequest request = createValidSamlRequest();
+            request.setReservationKey("0x" + "a".repeat(64));
+            when(samlAuthService.authorizeAndIssue(any(SamlAuthRequest.class)))
+                .thenThrow(new AccessAuthorizationContextMismatchException(
+                    "Check-in transaction belongs to a different chain or signer",
+                    request.getReservationKey(),
+                    "0x" + "b".repeat(64)
+                ));
+
+            mockMvc.perform(post("/auth/authorize-and-issue")
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.error").value("CHECKIN_CONTEXT_MISMATCH"))
+                .andExpect(jsonPath("$.retryable").value(false))
+                .andExpect(jsonPath("$.reservationKey").value(request.getReservationKey()))
+                .andExpect(jsonPath("$.txHash").value("0x" + "b".repeat(64)));
+        }
+
+        @Test
+        @DisplayName("Should return a non-retryable conflict for manual check-in intervention")
+        void shouldReturnManualInterventionResponse() throws Exception {
+            SamlAuthRequest request = createValidSamlRequest();
+            request.setReservationKey("0x" + "a".repeat(64));
+            when(samlAuthService.authorizeAndIssue(any(SamlAuthRequest.class)))
+                .thenThrow(new AccessAuthorizationManualInterventionException(
+                    "Institutional check-in requires manual intervention",
+                    request.getReservationKey(),
+                    "0x" + "b".repeat(64)
+                ));
+
+            mockMvc.perform(post("/auth/authorize-and-issue")
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.error").value("CHECKIN_MANUAL_INTERVENTION"))
+                .andExpect(jsonPath("$.retryable").value(false))
+                .andExpect(jsonPath("$.reservationKey").value(request.getReservationKey()))
+                .andExpect(jsonPath("$.txHash").value("0x" + "b".repeat(64)));
+        }
     }
 
     @Nested
@@ -256,6 +302,32 @@ class SamlAuthControllerTest {
                 .andExpect(jsonPath("$.queued").value(false))
                 .andExpect(jsonPath("$.retryable").value(false))
                 .andExpect(jsonPath("$.reason").value("CHECKIN_CONTEXT_MISMATCH"));
+        }
+
+        @Test
+        @DisplayName("Should reject a check-in already requiring manual intervention")
+        void shouldRejectManualInstitutionalCheckIn() throws Exception {
+            InstitutionalCheckInRequest request = new InstitutionalCheckInRequest();
+            request.setReservationKey("0x" + "a".repeat(64));
+            request.setSamlAssertion("assertion");
+
+            CheckInResponse response = new CheckInResponse();
+            response.setValid(false);
+            response.setQueued(false);
+            response.setRetryable(false);
+            response.setReason("CHECKIN_MANUAL_INTERVENTION");
+
+            when(institutionalCheckInService.checkIn(any(InstitutionalCheckInRequest.class)))
+                .thenReturn(response);
+
+            mockMvc.perform(post("/auth/checkin-institutional")
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.valid").value(false))
+                .andExpect(jsonPath("$.queued").value(false))
+                .andExpect(jsonPath("$.retryable").value(false))
+                .andExpect(jsonPath("$.reason").value("CHECKIN_MANUAL_INTERVENTION"));
         }
 
         @Test

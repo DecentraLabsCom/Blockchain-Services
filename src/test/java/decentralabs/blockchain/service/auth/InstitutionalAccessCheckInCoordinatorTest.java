@@ -1,5 +1,6 @@
 package decentralabs.blockchain.service.auth;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
@@ -173,12 +174,13 @@ class InstitutionalAccessCheckInCoordinatorTest {
             "0x9999999999999999999999999999999999999999"
         )).thenReturn(false);
 
-        coordinator.recordAccessGranted(
+        InstitutionalAccessCheckInCoordinator.AccessGrantedResult result = coordinator.recordAccessGranted(
             request(),
             claims(),
             Map.of("reservationKey", "0xabc", "lab", BigInteger.valueOf(42), "reservationStatus", BigInteger.ONE)
         );
 
+        assertThat(result).isEqualTo(InstitutionalAccessCheckInCoordinator.AccessGrantedResult.CONTEXT_MISMATCH);
         verify(outboxService).quarantineContextMismatch(
             replacement,
             BigInteger.valueOf(11155111),
@@ -186,6 +188,82 @@ class InstitutionalAccessCheckInCoordinatorTest {
         );
         verify(outboxService, never()).claim(replacement.id());
         verify(nonceDispatcher, never()).dispatch(any());
+    }
+
+    @Test
+    void returnsManualInterventionWhenCombinedFlowReadsAnExistingManualRow() throws Exception {
+        when(institutionalWalletService.getInstitutionalWalletAddress())
+            .thenReturn("0x9999999999999999999999999999999999999999");
+        when(directoryService.isAuthorizedCheckInSigner(any(), any())).thenReturn(true);
+        InstitutionalCheckInOutboxRecord manual = record("MANUAL_INTERVENTION");
+        when(outboxService.enqueueAccessGranted(any(), any(), any(), any(), any(), any())).thenReturn(manual);
+
+        InstitutionalAccessCheckInCoordinator.AccessGrantedResult result = coordinator.recordAccessGranted(
+            request(),
+            claims(),
+            Map.of("reservationKey", "0xabc", "lab", BigInteger.valueOf(42), "reservationStatus", BigInteger.ONE)
+        );
+
+        assertThat(result).isEqualTo(InstitutionalAccessCheckInCoordinator.AccessGrantedResult.MANUAL_INTERVENTION);
+        verify(outboxService, never()).claim(manual.id());
+        verify(nonceDispatcher, never()).dispatch(any());
+    }
+
+    @Test
+    void resolvesQuarantineRaceWhenAnotherWorkerAlreadyMinedTheCheckIn() throws Exception {
+        when(institutionalWalletService.getInstitutionalWalletAddress())
+            .thenReturn("0x9999999999999999999999999999999999999999");
+        when(directoryService.isAuthorizedCheckInSigner(any(), any())).thenReturn(true);
+        InstitutionalCheckInOutboxRecord replacement = record("REPLACEMENT_PENDING");
+        InstitutionalCheckInOutboxRecord mined = record("MINED_SUCCESS");
+        when(outboxService.enqueueAccessGranted(any(), any(), any(), any(), any(), any())).thenReturn(replacement);
+        when(outboxService.hasPersistedOnchainContext(replacement)).thenReturn(true);
+        when(checkInOnChainService.connectedChainId()).thenReturn(BigInteger.valueOf(11155111));
+        when(outboxService.matchesActiveContext(
+            replacement,
+            BigInteger.valueOf(11155111),
+            "0x9999999999999999999999999999999999999999"
+        )).thenReturn(false);
+        when(outboxService.quarantineContextMismatch(
+            replacement,
+            BigInteger.valueOf(11155111),
+            "0x9999999999999999999999999999999999999999"
+        )).thenReturn(false);
+        when(outboxService.findById(replacement.id())).thenReturn(mined);
+
+        InstitutionalAccessCheckInCoordinator.AccessGrantedResult result = coordinator.recordAccessGranted(
+            request(),
+            claims(),
+            Map.of("reservationKey", "0xabc", "lab", BigInteger.valueOf(42), "reservationStatus", BigInteger.ONE)
+        );
+
+        assertThat(result).isEqualTo(InstitutionalAccessCheckInCoordinator.AccessGrantedResult.ALREADY_AUTHORIZED);
+        verify(outboxService).findById(replacement.id());
+        verify(nonceDispatcher, never()).dispatch(any());
+    }
+
+    @Test
+    void allowsNewGenerationForMinedFailedRowAfterContextRotation() throws Exception {
+        when(institutionalWalletService.getInstitutionalWalletAddress())
+            .thenReturn("0x9999999999999999999999999999999999999999");
+        when(directoryService.isAuthorizedCheckInSigner(any(), any())).thenReturn(true);
+        InstitutionalCheckInOutboxRecord failed = record("MINED_FAILED");
+        InstitutionalCheckInOutboxRecord restarted = record("PENDING");
+        InstitutionalCheckInOutboxClaim claim = claim(restarted);
+        when(outboxService.enqueueAccessGranted(any(), any(), any(), any(), any(), any())).thenReturn(failed);
+        when(outboxService.restartTerminalFailure(failed.id())).thenReturn(restarted);
+        when(outboxService.claim(restarted.id())).thenReturn(claim);
+
+        InstitutionalAccessCheckInCoordinator.AccessGrantedResult result = coordinator.recordAccessGranted(
+            request(),
+            claims(),
+            Map.of("reservationKey", "0xabc", "lab", BigInteger.valueOf(42), "reservationStatus", BigInteger.ONE)
+        );
+
+        assertThat(result).isEqualTo(InstitutionalAccessCheckInCoordinator.AccessGrantedResult.DISPATCHED);
+        verify(outboxService).restartTerminalFailure(failed.id());
+        verify(checkInOnChainService, never()).connectedChainId();
+        verify(nonceDispatcher).dispatch(claim, false);
     }
 
     @Test

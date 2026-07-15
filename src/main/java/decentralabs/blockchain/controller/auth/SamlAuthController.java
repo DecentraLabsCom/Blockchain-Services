@@ -8,6 +8,8 @@ import decentralabs.blockchain.dto.auth.ProviderAccessCredentialRequest;
 import decentralabs.blockchain.dto.auth.SamlAuthRequest;
 import decentralabs.blockchain.exception.AccessAuthorizationPendingException;
 import decentralabs.blockchain.exception.AccessAuthorizationRejectedException;
+import decentralabs.blockchain.exception.AccessAuthorizationContextMismatchException;
+import decentralabs.blockchain.exception.AccessAuthorizationManualInterventionException;
 import decentralabs.blockchain.exception.SamlAuthenticationException;
 import decentralabs.blockchain.service.auth.InstitutionalCheckInService;
 import decentralabs.blockchain.service.auth.SamlAuthService;
@@ -85,6 +87,10 @@ public class SamlAuthController {
             throws SamlAuthenticationException {
         try {
             return ResponseEntity.ok(samlAuthService.authorizeAndIssue(request));
+        } catch (AccessAuthorizationContextMismatchException ex) {
+            return contextMismatchResponse(ex);
+        } catch (AccessAuthorizationManualInterventionException ex) {
+            return manualInterventionResponse(ex);
         } catch (AccessAuthorizationPendingException ex) {
             return pendingResponse(ex);
         } catch (AccessAuthorizationRejectedException ex) {
@@ -122,11 +128,46 @@ public class SamlAuthController {
             .body(Map.of("error", "ACCESS_AUTHORIZATION_REJECTED", "details", ex.getMessage(), "retryable", false));
     }
 
+    private ResponseEntity<Map<String, Object>> contextMismatchResponse(
+        AccessAuthorizationContextMismatchException ex
+    ) {
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("error", "CHECKIN_CONTEXT_MISMATCH");
+        body.put("details", ex.getMessage());
+        body.put("retryable", false);
+        if (ex.getReservationKey() != null) {
+            body.put("reservationKey", ex.getReservationKey());
+        }
+        if (ex.getTransactionHash() != null) {
+            body.put("txHash", ex.getTransactionHash());
+        }
+        return ResponseEntity.status(409).body(body);
+    }
+
+    private ResponseEntity<Map<String, Object>> manualInterventionResponse(
+        AccessAuthorizationManualInterventionException ex
+    ) {
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("error", "CHECKIN_MANUAL_INTERVENTION");
+        body.put("details", ex.getMessage());
+        body.put("retryable", false);
+        if (ex.getReservationKey() != null) {
+            body.put("reservationKey", ex.getReservationKey());
+        }
+        if (ex.getTransactionHash() != null) {
+            body.put("txHash", ex.getTransactionHash());
+        }
+        return ResponseEntity.status(409).body(body);
+    }
+
     @PostMapping("/checkin-institutional")
     public ResponseEntity<CheckInResponse> institutionalCheckIn(@RequestBody InstitutionalCheckInRequest request) {
         try {
             CheckInResponse response = institutionalCheckInService.checkIn(request);
-            if (response != null && "CHECKIN_CONTEXT_MISMATCH".equals(response.getReason())) {
+            if (response != null && (
+                "CHECKIN_CONTEXT_MISMATCH".equals(response.getReason())
+                    || "CHECKIN_MANUAL_INTERVENTION".equals(response.getReason())
+            )) {
                 return ResponseEntity.status(409).body(response);
             }
             if (response != null && Boolean.TRUE.equals(response.getQueued())) {

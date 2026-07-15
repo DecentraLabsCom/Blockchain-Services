@@ -19,6 +19,15 @@ import org.springframework.stereotype.Service;
 public class InstitutionalAccessCheckInCoordinator {
     private static final BigInteger STATUS_ACCESS_AUTHORIZED = BigInteger.valueOf(2);
 
+    public enum AccessGrantedResult {
+        DISPATCHED,
+        QUEUED,
+        ALREADY_AUTHORIZED,
+        CONTEXT_MISMATCH,
+        MANUAL_INTERVENTION,
+        FAILED
+    }
+
     private final InstitutionalCheckInOutboxService outboxService;
     private final InstitutionalWalletService institutionalWalletService;
     private final InstitutionalCheckInDirectoryService directoryService;
@@ -29,7 +38,7 @@ public class InstitutionalAccessCheckInCoordinator {
     @Value("${institutional.checkin.delegation.enabled:true}")
     private boolean delegationEnabled;
 
-    public void recordAccessGranted(
+    public AccessGrantedResult recordAccessGranted(
         SamlAuthRequest request,
         Map<String, Object> marketplaceClaims,
         Map<String, Object> bookingInfo
@@ -37,7 +46,7 @@ public class InstitutionalAccessCheckInCoordinator {
         // AccessGranted/ACCESS_AUTHORIZED is a payer-side on-chain authorization. It is
         // distinct from the provider-issued JWT/ticket returned by /auth/authorize-and-issue.
         if (isAccessAuthorizedStatus(bookingInfo.get("reservationStatus"))) {
-            return;
+            return AccessGrantedResult.ALREADY_AUTHORIZED;
         }
 
         String reservationKey = stringValue(bookingInfo.get("reservationKey"));
@@ -66,16 +75,43 @@ public class InstitutionalAccessCheckInCoordinator {
                 PucHashUtil.hashPuc(puc),
                 accessSessionId
             );
+            if ("MANUAL_INTERVENTION".equals(record.status())) {
+                return AccessGrantedResult.MANUAL_INTERVENTION;
+            }
+            if ("MINED_FAILED".equals(record.status())) {
+                // MINED_FAILED is terminal evidence that the previous nonce was
+                // consumed by a reverted transaction. A new generation is safe
+                // even when the active signer or chain has since rotated.
+                record = outboxService.restartTerminalFailure(record.id());
+            }
             if (outboxService.hasPersistedOnchainContext(record)) {
                 BigInteger activeChainId;
                 try {
                     activeChainId = checkInOnChainService.connectedChainId();
                 } catch (RuntimeException ex) {
-                    return;
+                    return AccessGrantedResult.QUEUED;
                 }
                 if (!outboxService.matchesActiveContext(record, activeChainId, configuredSigner)) {
-                    outboxService.quarantineContextMismatch(record, activeChainId, configuredSigner);
-                    return;
+                    boolean quarantined = outboxService.quarantineContextMismatch(
+                        record, activeChainId, configuredSigner
+                    );
+                    if (quarantined) {
+                        return AccessGrantedResult.CONTEXT_MISMATCH;
+                    }
+                    record = reloadRecord(record);
+                    if (record == null) {
+                        return AccessGrantedResult.CONTEXT_MISMATCH;
+                    }
+                    if ("MANUAL_INTERVENTION".equals(record.status())) {
+                        return AccessGrantedResult.MANUAL_INTERVENTION;
+                    }
+                    if ("MINED_SUCCESS".equals(record.status())) {
+                        return AccessGrantedResult.ALREADY_AUTHORIZED;
+                    }
+                    if (!"MINED_FAILED".equals(record.status())
+                        && !outboxService.matchesActiveContext(record, activeChainId, configuredSigner)) {
+                        return AccessGrantedResult.CONTEXT_MISMATCH;
+                    }
                 }
             }
             if ("MINED_FAILED".equals(record.status()) || "FAILED".equals(record.status())) {
@@ -83,25 +119,33 @@ public class InstitutionalAccessCheckInCoordinator {
                 // the full CONFIRMED/window validation for the new request.
                 record = outboxService.restartTerminalFailure(record.id());
             }
-            dispatchImmediately(record);
-            return;
+            return dispatchImmediately(record);
         }
 
-        delegateSynchronously(request, marketplaceClaims, reservationKey, institutionalWallet, puc, labId);
+        return delegateSynchronously(request, marketplaceClaims, reservationKey, institutionalWallet, puc, labId);
     }
 
-    private void dispatchImmediately(InstitutionalCheckInOutboxRecord record) {
+    private InstitutionalCheckInOutboxRecord reloadRecord(InstitutionalCheckInOutboxRecord record) {
+        try {
+            return outboxService.findById(record.id());
+        } catch (RuntimeException ex) {
+            return null;
+        }
+    }
+
+    private AccessGrantedResult dispatchImmediately(InstitutionalCheckInOutboxRecord record) {
         if (record == null) {
-            return;
+            return AccessGrantedResult.QUEUED;
         }
         boolean replacementRequested = replacementRequested(record);
         InstitutionalCheckInOutboxClaim claim = outboxService.claim(record.id());
         if (claim == null) {
-            return;
+            return AccessGrantedResult.QUEUED;
         }
         InstitutionalCheckInOutboxRecord claimed = claim.record();
         try {
             nonceDispatcher.dispatch(claim, replacementRequested);
+            return AccessGrantedResult.DISPATCHED;
         } catch (InstitutionalWalletDispatchException ex) {
             boolean blocked = ex.outcome() == InstitutionalWalletDispatchException.Outcome.PRE_BROADCAST_BLOCKED;
             int attempts = blocked ? claimed.attempts() : claimed.attempts() + 1;
@@ -114,15 +158,18 @@ public class InstitutionalAccessCheckInCoordinator {
                 if (!retryPersisted) {
                     throw new IllegalStateException("Institutional check-in retry could not be persisted", ex);
                 }
+                return AccessGrantedResult.QUEUED;
             } else if (ex.outcome() == InstitutionalWalletDispatchException.Outcome.PRE_BROADCAST_PERMANENT) {
                 outboxService.markFailed(
                     claim, attempts, "Initial institutional check-in preparation failed permanently"
                 );
+                return AccessGrantedResult.FAILED;
             } else {
                 outboxService.markBroadcastUncertain(
                     claim, attempts,
                     "Initial institutional check-in broadcast outcome is uncertain"
                 );
+                return AccessGrantedResult.QUEUED;
             }
         } catch (RuntimeException ex) {
             // Non-classified failures happen before the dispatcher can establish
@@ -134,10 +181,11 @@ public class InstitutionalAccessCheckInCoordinator {
             if (!retryPersisted) {
                 throw new IllegalStateException("Institutional check-in retry could not be persisted", ex);
             }
+            return AccessGrantedResult.QUEUED;
         }
     }
 
-    private void delegateSynchronously(
+    private AccessGrantedResult delegateSynchronously(
         SamlAuthRequest request,
         Map<String, Object> marketplaceClaims,
         String reservationKey,
@@ -167,6 +215,9 @@ public class InstitutionalAccessCheckInCoordinator {
             String reason = response != null ? response.getReason() : "no response";
             throw new IllegalStateException("Delegated institutional check-in failed: " + reason);
         }
+        return response.getQueued() != null && response.getQueued()
+            ? AccessGrantedResult.QUEUED
+            : AccessGrantedResult.DISPATCHED;
     }
 
     private boolean replacementRequested(InstitutionalCheckInOutboxRecord record) {

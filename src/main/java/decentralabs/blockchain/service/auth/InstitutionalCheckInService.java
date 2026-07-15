@@ -130,6 +130,14 @@ public class InstitutionalCheckInService {
             computePucHash(puc),
             reservationKey
         );
+        if ("MANUAL_INTERVENTION".equals(record.status())) {
+            return manualInterventionResponse(reservationKey, configuredSigner, record.txHash());
+        }
+        if ("MINED_FAILED".equals(record.status())) {
+            // The failed receipt already consumed the old nonce. Restarting a
+            // new generation is safe even if the active chain or signer rotated.
+            record = outboxService.restartTerminalFailure(record.id());
+        }
         if (outboxService.hasPersistedOnchainContext(record)) {
             BigInteger activeChainId;
             try {
@@ -141,8 +149,26 @@ public class InstitutionalCheckInService {
                 );
             }
             if (!outboxService.matchesActiveContext(record, activeChainId, configuredSigner)) {
-                outboxService.quarantineContextMismatch(record, activeChainId, configuredSigner);
-                return contextMismatchResponse(reservationKey, configuredSigner, record.txHash());
+                boolean quarantined = outboxService.quarantineContextMismatch(
+                    record, activeChainId, configuredSigner
+                );
+                if (quarantined) {
+                    return contextMismatchResponse(reservationKey, configuredSigner, record.txHash());
+                }
+                record = reloadRecord(record);
+                if (record == null) {
+                    return contextMismatchResponse(reservationKey, configuredSigner, null);
+                }
+                if ("MANUAL_INTERVENTION".equals(record.status())) {
+                    return manualInterventionResponse(reservationKey, configuredSigner, record.txHash());
+                }
+                if ("MINED_SUCCESS".equals(record.status())) {
+                    return minedSuccessResponse(reservationKey, configuredSigner, record.txHash());
+                }
+                if (!"MINED_FAILED".equals(record.status())
+                    && !outboxService.matchesActiveContext(record, activeChainId, configuredSigner)) {
+                    return contextMismatchResponse(reservationKey, configuredSigner, record.txHash());
+                }
             }
         }
         if ("MINED_FAILED".equals(record.status()) || "FAILED".equals(record.status())) {
@@ -196,6 +222,14 @@ public class InstitutionalCheckInService {
         return response;
     }
 
+    private InstitutionalCheckInOutboxRecord reloadRecord(InstitutionalCheckInOutboxRecord record) {
+        try {
+            return outboxService.findById(record.id());
+        } catch (RuntimeException ex) {
+            return null;
+        }
+    }
+
     private CheckInResponse queuedResponse(String reservationKey, String signer, String txHash) {
         return queuedResponse(reservationKey, signer, txHash, "CHECKIN_QUEUED");
     }
@@ -227,6 +261,36 @@ public class InstitutionalCheckInService {
         response.setTxHash(txHash);
         response.setTimestamp(System.currentTimeMillis() / 1000);
         response.setReason("CHECKIN_CONTEXT_MISMATCH");
+        return response;
+    }
+
+    private CheckInResponse manualInterventionResponse(
+        String reservationKey, String signer, String txHash
+    ) {
+        CheckInResponse response = new CheckInResponse();
+        response.setValid(false);
+        response.setQueued(false);
+        response.setRetryable(false);
+        response.setReservationKey(reservationKey);
+        response.setSigner(signer);
+        response.setTxHash(txHash);
+        response.setTimestamp(System.currentTimeMillis() / 1000);
+        response.setReason("CHECKIN_MANUAL_INTERVENTION");
+        return response;
+    }
+
+    private CheckInResponse minedSuccessResponse(
+        String reservationKey, String signer, String txHash
+    ) {
+        CheckInResponse response = new CheckInResponse();
+        response.setValid(true);
+        response.setQueued(false);
+        response.setRetryable(false);
+        response.setReservationKey(reservationKey);
+        response.setSigner(signer);
+        response.setTxHash(txHash);
+        response.setTimestamp(System.currentTimeMillis() / 1000);
+        response.setReason("Access already authorized");
         return response;
     }
 
@@ -427,10 +491,6 @@ public class InstitutionalCheckInService {
         }
         String trimmed = value.trim();
         return trimmed.isEmpty() ? null : trimmed;
-    }
-
-    private boolean hasText(String value) {
-        return value != null && !value.isBlank();
     }
 
     private boolean isAccessAuthorizedStatus(Object value) {

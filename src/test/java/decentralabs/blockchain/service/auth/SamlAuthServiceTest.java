@@ -3,6 +3,7 @@ package decentralabs.blockchain.service.auth;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.lenient;
@@ -396,5 +397,85 @@ class SamlAuthServiceTest {
         var order = org.mockito.Mockito.inOrder(accessCheckInCoordinator, blockchainService);
         order.verify(accessCheckInCoordinator).recordAccessGranted(request, claims, bookingInfo);
         order.verify(blockchainService).provisionGuacamoleAccess(bookingInfo, false, "fence-token");
+    }
+
+    @Test
+    void combinedFlowStopsBeforeProvisioningWhenCheckInContextIsQuarantined() throws Exception {
+        SamlAuthRequest request = new SamlAuthRequest();
+        request.setMarketplaceToken("combined-quarantined-token");
+        request.setSamlAssertion("signed-saml");
+        request.setReservationKey("0xreservation");
+        request.setLabId("42");
+        Map<String, Object> claims = Map.of(
+            "puc", TEST_PUC,
+            "affiliation", TEST_AFFILIATION,
+            "bookingInfoAllowed", true,
+            "purpose", "lab_access",
+            "reservationKey", "0xreservation",
+            "labId", "42",
+            "payerInstitutionWallet", "0xwallet"
+        );
+        Map<String, Object> bookingInfo = new HashMap<>(Map.of(
+            "labURL", "https://lab.example.com/guacamole/",
+            "reservationKey", "0xreservation",
+            "reservationStatus", java.math.BigInteger.ONE,
+            "resourceType", "lab"
+        ));
+        when(marketplaceEndpointAuthService.enforceToken("combined-quarantined-token", null)).thenReturn(claims);
+        when(samlValidationService.validateSamlAssertionWithSignature("signed-saml"))
+            .thenReturn(Map.of("puc", TEST_PUC, "affiliation", TEST_AFFILIATION));
+        when(blockchainService.getBookingInfoForCredentialPreparation(
+            "0xwallet", "0xreservation", "42", TEST_PUC
+        )).thenReturn(bookingInfo);
+        when(accessCheckInCoordinator.recordAccessGranted(request, claims, bookingInfo))
+            .thenReturn(InstitutionalAccessCheckInCoordinator.AccessGrantedResult.CONTEXT_MISMATCH);
+
+        assertThatThrownBy(() -> samlAuthService.authorizeAndIssue(request))
+            .isInstanceOf(decentralabs.blockchain.exception.AccessAuthorizationContextMismatchException.class)
+            .hasMessageContaining("different chain or signer");
+
+        verify(accessAuthorizationProvisioningService, never()).tryStart(any());
+        verify(blockchainService, never()).provisionGuacamoleAccess(any(), anyBoolean(), anyString());
+        verify(accessCredentialDeliveryService, never()).deliver(any(), any(), any(), any(), any());
+    }
+
+    @Test
+    void combinedFlowStopsBeforeProvisioningForManualIntervention() throws Exception {
+        SamlAuthRequest request = new SamlAuthRequest();
+        request.setMarketplaceToken("combined-manual-token");
+        request.setSamlAssertion("signed-saml");
+        request.setReservationKey("0xreservation");
+        request.setLabId("42");
+        Map<String, Object> claims = Map.of(
+            "puc", TEST_PUC,
+            "affiliation", TEST_AFFILIATION,
+            "bookingInfoAllowed", true,
+            "purpose", "lab_access",
+            "reservationKey", "0xreservation",
+            "labId", "42",
+            "payerInstitutionWallet", "0xwallet"
+        );
+        Map<String, Object> bookingInfo = new HashMap<>(Map.of(
+            "labURL", "https://lab.example.com/guacamole/",
+            "reservationKey", "0xreservation",
+            "reservationStatus", java.math.BigInteger.ONE,
+            "resourceType", "lab"
+        ));
+        when(marketplaceEndpointAuthService.enforceToken("combined-manual-token", null)).thenReturn(claims);
+        when(samlValidationService.validateSamlAssertionWithSignature("signed-saml"))
+            .thenReturn(Map.of("puc", TEST_PUC, "affiliation", TEST_AFFILIATION));
+        when(blockchainService.getBookingInfoForCredentialPreparation(
+            "0xwallet", "0xreservation", "42", TEST_PUC
+        )).thenReturn(bookingInfo);
+        when(accessCheckInCoordinator.recordAccessGranted(request, claims, bookingInfo))
+            .thenReturn(InstitutionalAccessCheckInCoordinator.AccessGrantedResult.MANUAL_INTERVENTION);
+
+        assertThatThrownBy(() -> samlAuthService.authorizeAndIssue(request))
+            .isInstanceOf(decentralabs.blockchain.exception.AccessAuthorizationManualInterventionException.class)
+            .hasMessageContaining("manual intervention");
+
+        verify(accessAuthorizationProvisioningService, never()).tryStart(any());
+        verify(blockchainService, never()).provisionGuacamoleAccess(any(), anyBoolean(), anyString());
+        verify(accessCredentialDeliveryService, never()).deliver(any(), any(), any(), any(), any());
     }
 }

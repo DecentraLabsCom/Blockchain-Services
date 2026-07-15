@@ -210,6 +210,103 @@ class InstitutionalCheckInServiceTest {
     }
 
     @Test
+    void returnsManualInterventionWhenAnExistingManualRowIsReadAgain() throws Exception {
+        InstitutionalCheckInRequest request = validRequest();
+        SamlAssertionAttributes saml = samlAttributes();
+
+        when(samlValidationService.validateSamlAssertionDetailed("valid-saml")).thenReturn(saml);
+        when(marketplaceEndpointAuthService.enforceToken("market-token", null)).thenReturn(marketplaceClaims());
+        when(bookingService.getCheckInBookingInfo(any(), eq("0xabc"), eq("42"), eq("puc-123")))
+            .thenReturn(Map.of("reservationKey", "0xabc"));
+        when(institutionalWalletService.getInstitutionalWalletAddress()).thenReturn(credentials.getAddress());
+        when(directoryService.isAuthorizedCheckInSigner(any(), any())).thenReturn(true);
+
+        InstitutionalCheckInOutboxRecord record = manualInterventionRecord(
+            credentials.getAddress(), CHAIN_ID
+        );
+        when(outboxService.enqueueAccessGranted(any(), any(), any(), any(), any(), any())).thenReturn(record);
+
+        CheckInResponse response = service.checkIn(request);
+
+        assertThat(response.isValid()).isFalse();
+        assertThat(response.getQueued()).isFalse();
+        assertThat(response.getRetryable()).isFalse();
+        assertThat(response.getReason()).isEqualTo("CHECKIN_MANUAL_INTERVENTION");
+        verify(outboxService, never()).claim(record.id());
+        verifyNoInteractions(nonceDispatcher);
+    }
+
+    @Test
+    void resolvesAQuarantineRaceWhenTheRowAlreadyMinedSuccessfully() throws Exception {
+        InstitutionalCheckInRequest request = validRequest();
+        SamlAssertionAttributes saml = samlAttributes();
+
+        when(samlValidationService.validateSamlAssertionDetailed("valid-saml")).thenReturn(saml);
+        when(marketplaceEndpointAuthService.enforceToken("market-token", null)).thenReturn(marketplaceClaims());
+        when(bookingService.getCheckInBookingInfo(any(), eq("0xabc"), eq("42"), eq("puc-123")))
+            .thenReturn(Map.of("reservationKey", "0xabc"));
+        when(institutionalWalletService.getInstitutionalWalletAddress()).thenReturn(credentials.getAddress());
+        when(directoryService.isAuthorizedCheckInSigner(any(), any())).thenReturn(true);
+
+        InstitutionalCheckInOutboxRecord record = replacementRecord(
+            "0x9999999999999999999999999999999999999999", BigInteger.ONE
+        );
+        InstitutionalCheckInOutboxRecord mined = minedSuccessRecord();
+        when(outboxService.enqueueAccessGranted(any(), any(), any(), any(), any(), any())).thenReturn(record);
+        when(outboxService.hasPersistedOnchainContext(record)).thenReturn(true);
+        when(outboxService.matchesActiveContext(record, CHAIN_ID, credentials.getAddress())).thenReturn(false);
+        when(outboxService.quarantineContextMismatch(record, CHAIN_ID, credentials.getAddress())).thenReturn(false);
+        when(outboxService.findById(record.id())).thenReturn(mined);
+
+        CheckInResponse response = service.checkIn(request);
+
+        assertThat(response.isValid()).isTrue();
+        assertThat(response.getReason()).isEqualTo("Access already authorized");
+        verify(outboxService).findById(record.id());
+        verify(outboxService, never()).claim(anyLong());
+        verifyNoInteractions(nonceDispatcher);
+    }
+
+    @Test
+    void restartsMinedFailedGenerationBeforeApplyingRotatedContextQuarantine() throws Exception {
+        InstitutionalCheckInRequest request = validRequest();
+        SamlAssertionAttributes saml = samlAttributes();
+        CheckInResponse onChainResponse = new CheckInResponse();
+        onChainResponse.setValid(true);
+
+        when(samlValidationService.validateSamlAssertionDetailed("valid-saml")).thenReturn(saml);
+        when(marketplaceEndpointAuthService.enforceToken("market-token", null)).thenReturn(marketplaceClaims());
+        when(bookingService.getCheckInBookingInfo(any(), eq("0xabc"), eq("42"), eq("puc-123")))
+            .thenReturn(Map.of("reservationKey", "0xabc"));
+        when(institutionalWalletService.getInstitutionalWalletAddress()).thenReturn(credentials.getAddress());
+        when(directoryService.isAuthorizedCheckInSigner(any(), any())).thenReturn(true);
+
+        InstitutionalCheckInOutboxRecord failed = manualInterventionRecord(
+            "0x9999999999999999999999999999999999999999", BigInteger.ONE
+        );
+        failed = new InstitutionalCheckInOutboxRecord(
+            failed.id(), failed.reservationKey(), failed.labId(), failed.institutionalWallet(),
+            failed.pucHash(), failed.accessSessionId(), "MINED_FAILED", failed.attempts(),
+            failed.nextAttemptAt(), failed.txHash(), failed.walletAddress(), failed.chainId(),
+            failed.nonce(), failed.submittedAt(), failed.version(), failed.signedRawTransaction(),
+            failed.originalGasPrice(), failed.currentGasPrice(), failed.generation()
+        );
+        InstitutionalCheckInOutboxRecord restarted = queuedRecord();
+        InstitutionalCheckInOutboxClaim claim = claim(restarted);
+        when(outboxService.enqueueAccessGranted(any(), any(), any(), any(), any(), any())).thenReturn(failed);
+        when(outboxService.restartTerminalFailure(failed.id())).thenReturn(restarted);
+        when(outboxService.claim(restarted.id())).thenReturn(claim);
+        when(nonceDispatcher.dispatch(claim, false)).thenReturn(onChainResponse);
+
+        CheckInResponse response = service.checkIn(request);
+
+        assertThat(response).isSameAs(onChainResponse);
+        verify(outboxService).restartTerminalFailure(failed.id());
+        verify(checkInOnChainService, never()).connectedChainId();
+        verify(nonceDispatcher).dispatch(claim, false);
+    }
+
+    @Test
     void alreadyQueuedResponseSetsQueuedFlagWhenAnotherWorkerOwnsTheClaim() throws Exception {
         InstitutionalCheckInRequest request = validRequest();
         when(samlValidationService.validateSamlAssertionDetailed("valid-saml")).thenReturn(samlAttributes());
@@ -602,6 +699,25 @@ class InstitutionalCheckInServiceTest {
             computePucHash("puc-123"), "0xabc", "REPLACEMENT_PENDING", 1, java.time.Instant.now(),
             "0xold", wallet, chainId, BigInteger.valueOf(7),
             java.time.Instant.now(), 2L, "0xold-raw", BigInteger.valueOf(100), BigInteger.valueOf(100), 1L
+        );
+    }
+
+    private InstitutionalCheckInOutboxRecord manualInterventionRecord(String wallet, BigInteger chainId) {
+        return new InstitutionalCheckInOutboxRecord(
+            1L, "0xabc", "42", "0x1111111111111111111111111111111111111111",
+            computePucHash("puc-123"), "0xabc", "MANUAL_INTERVENTION", 1, java.time.Instant.now(),
+            "0xold", wallet, chainId, BigInteger.valueOf(7), java.time.Instant.now(), 2L,
+            "0xold-raw", BigInteger.valueOf(100), BigInteger.valueOf(100), 1L
+        );
+    }
+
+    private InstitutionalCheckInOutboxRecord minedSuccessRecord() {
+        return new InstitutionalCheckInOutboxRecord(
+            1L, "0xabc", "42", "0x1111111111111111111111111111111111111111",
+            computePucHash("puc-123"), "0xabc", "MINED_SUCCESS", 1, java.time.Instant.now(),
+            "0xmined", "0x9999999999999999999999999999999999999999", BigInteger.ONE,
+            BigInteger.valueOf(7), java.time.Instant.now(), 3L, "0xold-raw",
+            BigInteger.valueOf(100), BigInteger.valueOf(100), 1L
         );
     }
 
