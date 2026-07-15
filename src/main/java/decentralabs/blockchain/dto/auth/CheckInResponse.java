@@ -12,6 +12,7 @@ public class CheckInResponse {
     private String reason;
     private String txHash;
     private Boolean queued;
+    private Boolean retryable;
 
     public boolean isValid() {
         return valid;
@@ -75,5 +76,13 @@ public class CheckInResponse {
 
     public void setQueued(boolean queued) {
         this.queued = queued;
+    }
+
+    public Boolean getRetryable() {
+        return retryable;
+    }
+
+    public void setRetryable(boolean retryable) {
+        this.retryable = retryable;
     }
 }

@@ -126,6 +126,9 @@ public class SamlAuthController {
     public ResponseEntity<CheckInResponse> institutionalCheckIn(@RequestBody InstitutionalCheckInRequest request) {
         try {
             CheckInResponse response = institutionalCheckInService.checkIn(request);
+            if (response != null && "CHECKIN_CONTEXT_MISMATCH".equals(response.getReason())) {
+                return ResponseEntity.status(409).body(response);
+            }
             if (response != null && Boolean.TRUE.equals(response.getQueued())) {
                 return ResponseEntity.status(202)
                     .header("Retry-After", "2")

@@ -40,6 +40,9 @@ class InstitutionalAccessCheckInCoordinatorTest {
     @Mock
     private InstitutionalWalletNonceDispatcher nonceDispatcher;
 
+    @Mock
+    private CheckInOnChainService checkInOnChainService;
+
     private InstitutionalAccessCheckInCoordinator coordinator;
 
     @BeforeEach
@@ -49,7 +52,8 @@ class InstitutionalAccessCheckInCoordinatorTest {
             institutionalWalletService,
             directoryService,
             remoteCheckInClient,
-            nonceDispatcher
+            nonceDispatcher,
+            checkInOnChainService
         );
         ReflectionTestUtils.setField(coordinator, "delegationEnabled", true);
     }
@@ -152,6 +156,36 @@ class InstitutionalAccessCheckInCoordinatorTest {
 
         verify(nonceDispatcher).dispatch(claim, true);
         verify(nonceDispatcher, never()).dispatch(claim);
+    }
+
+    @Test
+    void quarantinesCombinedFlowWhenPersistedContextDiffersBeforeClaiming() throws Exception {
+        when(institutionalWalletService.getInstitutionalWalletAddress())
+            .thenReturn("0x9999999999999999999999999999999999999999");
+        when(directoryService.isAuthorizedCheckInSigner(any(), any())).thenReturn(true);
+        InstitutionalCheckInOutboxRecord replacement = record("REPLACEMENT_PENDING");
+        when(outboxService.enqueueAccessGranted(any(), any(), any(), any(), any(), any())).thenReturn(replacement);
+        when(outboxService.hasPersistedOnchainContext(replacement)).thenReturn(true);
+        when(checkInOnChainService.connectedChainId()).thenReturn(BigInteger.valueOf(11155111));
+        when(outboxService.matchesActiveContext(
+            replacement,
+            BigInteger.valueOf(11155111),
+            "0x9999999999999999999999999999999999999999"
+        )).thenReturn(false);
+
+        coordinator.recordAccessGranted(
+            request(),
+            claims(),
+            Map.of("reservationKey", "0xabc", "lab", BigInteger.valueOf(42), "reservationStatus", BigInteger.ONE)
+        );
+
+        verify(outboxService).quarantineContextMismatch(
+            replacement,
+            BigInteger.valueOf(11155111),
+            "0x9999999999999999999999999999999999999999"
+        );
+        verify(outboxService, never()).claim(replacement.id());
+        verify(nonceDispatcher, never()).dispatch(any());
     }
 
     @Test

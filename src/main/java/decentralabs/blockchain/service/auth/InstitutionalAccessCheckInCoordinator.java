@@ -24,6 +24,7 @@ public class InstitutionalAccessCheckInCoordinator {
     private final InstitutionalCheckInDirectoryService directoryService;
     private final RemoteInstitutionalCheckInClient remoteCheckInClient;
     private final InstitutionalWalletNonceDispatcher nonceDispatcher;
+    private final CheckInOnChainService checkInOnChainService;
 
     @Value("${institutional.checkin.delegation.enabled:true}")
     private boolean delegationEnabled;
@@ -65,6 +66,18 @@ public class InstitutionalAccessCheckInCoordinator {
                 PucHashUtil.hashPuc(puc),
                 accessSessionId
             );
+            if (outboxService.hasPersistedOnchainContext(record)) {
+                BigInteger activeChainId;
+                try {
+                    activeChainId = checkInOnChainService.connectedChainId();
+                } catch (RuntimeException ex) {
+                    return;
+                }
+                if (!outboxService.matchesActiveContext(record, activeChainId, configuredSigner)) {
+                    outboxService.quarantineContextMismatch(record, activeChainId, configuredSigner);
+                    return;
+                }
+            }
             if ("MINED_FAILED".equals(record.status()) || "FAILED".equals(record.status())) {
                 // This point is reached only after the provider has performed
                 // the full CONFIRMED/window validation for the new request.

@@ -198,6 +198,35 @@ public class InstitutionalCheckInOutboxService {
         ) == 1;
     }
 
+    /** Returns whether the row contains transaction material that belongs to a concrete EVM context. */
+    public boolean hasPersistedOnchainContext(InstitutionalCheckInOutboxRecord record) {
+        return record != null && (
+            record.nonce() != null
+                || hasText(record.txHash())
+                || hasText(record.signedRawTransaction())
+        );
+    }
+
+    /**
+     * Checks the persisted EVM context without treating an unallocated row as
+     * mismatched. The caller must quarantine a true result before claiming.
+     */
+    public boolean matchesActiveContext(
+        InstitutionalCheckInOutboxRecord record,
+        BigInteger activeChainId,
+        String activeWalletAddress
+    ) {
+        if (!hasPersistedOnchainContext(record)) {
+            return true;
+        }
+        return record.chainId() != null
+            && record.walletAddress() != null
+            && activeChainId != null
+            && hasText(activeWalletAddress)
+            && activeChainId.equals(record.chainId())
+            && activeWalletAddress.equalsIgnoreCase(record.walletAddress());
+    }
+
     public List<InstitutionalCheckInOutboxRecord> findDue(
         BigInteger chainId, String walletAddress, Instant now, int limit
     ) {

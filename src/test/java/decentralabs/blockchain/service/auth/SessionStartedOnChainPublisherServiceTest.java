@@ -259,7 +259,36 @@ class SessionStartedOnChainPublisherServiceTest {
                 && sql.contains("onchain_publish_attempts >= ?")),
             any(Object[].class)
         );
-        verify(onChainClient, never()).hasSessionStarted(anyString());
+        verify(onChainClient).hasSessionStarted("0xabc");
+    }
+
+    @Test
+    void reconcilesExhaustedStaleSubmittingMaterialBeforeManualIntervention() throws Exception {
+        SessionStartedOnChainPublisherService service = buildService(jdbcTemplate);
+        ReflectionTestUtils.setField(service, "maxAttempts", 3);
+        String hash = "0x" + "c".repeat(64);
+        SessionStartedTransactionRecord stale = mappedRecord(
+            "SUBMITTING", 3, "0xwallet", BigInteger.valueOf(45), hash,
+            Instant.now().minusSeconds(600), "0xf861-persisted"
+        );
+        mockSubmittedQuery(List.of());
+        mockPendingQuery(stale);
+        when(onChainClient.hasSessionStarted("0xabc")).thenReturn(false);
+        when(onChainClient.transactionStateStrict(hash))
+            .thenReturn(SessionStartedOnChainClient.TransactionState.PENDING);
+        when(onChainClient.transactionVisible(hash)).thenReturn(true);
+        when(jdbcTemplate.update(anyString(), any(Object[].class))).thenReturn(1);
+
+        assertThat(service.publishPending(10)).isEqualTo(1);
+
+        verify(jdbcTemplate).update(
+            argThat(sql -> sql.contains("onchain_status = 'SUBMITTED'")
+                && sql.contains("onchain_tx_hash <=> ?")),
+            any(Object[].class)
+        );
+        verify(jdbcTemplate, never()).update(
+            contains("onchain_status = 'MANUAL_INTERVENTION'"), any(Object[].class)
+        );
     }
 
     @Test

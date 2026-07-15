@@ -141,7 +141,7 @@ public class SessionStartedOnChainPublisherService {
                 continue;
             }
             if (isExhaustedStaleSubmitting(record)) {
-                if (markExhaustedStale(record)) {
+                if (reconcileExhaustedStaleSubmitting(record)) {
                     terminalized++;
                 }
                 continue;
@@ -997,6 +997,157 @@ public class SessionStartedOnChainPublisherService {
     private boolean isExhaustedStaleSubmitting(SessionStartedTransactionRecord record) {
         return "SUBMITTING".equals(record.status())
             && record.attempts() >= maxPublishAttempts();
+    }
+
+    /**
+     * Exhausted claims can still contain a broadcast that succeeded before the
+     * worker crashed. Reconcile all durable evidence before requiring manual
+     * intervention. RPC failures deliberately leave the stale row untouched
+     * so a later cycle can retry the inspection.
+     */
+    private boolean reconcileExhaustedStaleSubmitting(SessionStartedTransactionRecord record) {
+        try {
+            if (onChainClient.hasSessionStarted(record.submission().reservationKey())) {
+                return markStaleSubmittingMinedSuccess(record, null);
+            }
+
+            for (String candidateHash : monitoredHashes(record)) {
+                SessionStartedOnChainClient.TransactionState state =
+                    onChainClient.transactionStateStrict(candidateHash);
+                if (state == SessionStartedOnChainClient.TransactionState.SUCCEEDED) {
+                    return markStaleSubmittingMinedSuccess(record, candidateHash);
+                }
+                if (state == SessionStartedOnChainClient.TransactionState.FAILED) {
+                    return markStaleSubmittingMinedFailed(
+                        record, candidateHash, "SessionStarted transaction reverted on-chain"
+                    );
+                }
+            }
+
+            for (String candidateHash : monitoredHashes(record)) {
+                if (onChainClient.transactionVisible(candidateHash)) {
+                    return markStaleSubmittingSubmitted(record, record.transactionHash());
+                }
+            }
+
+            if (record.signedRawTransaction() != null && !record.signedRawTransaction().isBlank()
+                && record.walletAddress() != null && record.transactionNonce() != null
+                && onChainClient.pendingNonce(record.walletAddress()).compareTo(record.transactionNonce()) <= 0) {
+                String rebroadcastHash = onChainClient.broadcastSignedRawTransaction(
+                    record.signedRawTransaction()
+                );
+                return markStaleSubmittingSubmitted(record, rebroadcastHash);
+            }
+            return markExhaustedStale(record);
+        } catch (RuntimeException ex) {
+            log.warn(
+                "Unable to reconcile exhausted SessionStarted attestation {} before manual intervention: {}",
+                record.submission().id(), LogSanitizer.sanitize(ex.getMessage())
+            );
+            return false;
+        }
+    }
+
+    private boolean markStaleSubmittingMinedSuccess(
+        SessionStartedTransactionRecord record,
+        String minedTxHash
+    ) {
+        return jdbcTemplate.update(
+            """
+            UPDATE session_started_attestations
+            SET onchain_tx_hash = COALESCE(?, onchain_tx_hash),
+                onchain_status = 'MINED_SUCCESS',
+                onchain_published_at = CURRENT_TIMESTAMP,
+                onchain_mined_at = CURRENT_TIMESTAMP,
+                onchain_publish_locked_at = NULL,
+                onchain_claim_id = NULL, onchain_claimed_by = NULL,
+                onchain_claim_version = NULL, onchain_claim_expires_at = NULL,
+                onchain_publish_last_error = NULL,
+                onchain_version = onchain_version + 1,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE id = ? AND onchain_published_at IS NULL
+              AND onchain_status = 'SUBMITTING'
+              AND onchain_version = ?
+              AND onchain_tx_hash <=> ?
+              AND (
+                onchain_claim_expires_at <= CURRENT_TIMESTAMP
+                OR (onchain_claim_expires_at IS NULL AND (
+                    onchain_publish_locked_at IS NULL
+                    OR onchain_publish_locked_at < TIMESTAMPADD(SECOND, -?, CURRENT_TIMESTAMP)
+                ))
+              )
+            """,
+            minedTxHash, record.submission().id(), record.version(), record.transactionHash(),
+            lockTimeoutSecondsValue()
+        ) == 1;
+    }
+
+    private boolean markStaleSubmittingMinedFailed(
+        SessionStartedTransactionRecord record,
+        String minedTxHash,
+        String error
+    ) {
+        return jdbcTemplate.update(
+            """
+            UPDATE session_started_attestations
+            SET onchain_tx_hash = COALESCE(?, onchain_tx_hash),
+                onchain_status = 'MINED_FAILED',
+                onchain_mined_at = CURRENT_TIMESTAMP,
+                onchain_reservation_guard = NULL,
+                onchain_publish_locked_at = NULL,
+                onchain_claim_id = NULL, onchain_claimed_by = NULL,
+                onchain_claim_version = NULL, onchain_claim_expires_at = NULL,
+                onchain_publish_last_error = ?,
+                onchain_version = onchain_version + 1,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE id = ? AND onchain_published_at IS NULL
+              AND onchain_status = 'SUBMITTING'
+              AND onchain_version = ?
+              AND onchain_tx_hash <=> ?
+              AND (
+                onchain_claim_expires_at <= CURRENT_TIMESTAMP
+                OR (onchain_claim_expires_at IS NULL AND (
+                    onchain_publish_locked_at IS NULL
+                    OR onchain_publish_locked_at < TIMESTAMPADD(SECOND, -?, CURRENT_TIMESTAMP)
+                ))
+              )
+            """,
+            minedTxHash, error, record.submission().id(), record.version(), record.transactionHash(),
+            lockTimeoutSecondsValue()
+        ) == 1;
+    }
+
+    private boolean markStaleSubmittingSubmitted(
+        SessionStartedTransactionRecord record,
+        String submittedTxHash
+    ) {
+        return jdbcTemplate.update(
+            """
+            UPDATE session_started_attestations
+            SET onchain_tx_hash = COALESCE(?, onchain_tx_hash),
+                onchain_status = 'SUBMITTED',
+                onchain_submitted_at = CURRENT_TIMESTAMP,
+                onchain_publish_locked_at = NULL,
+                onchain_claim_id = NULL, onchain_claimed_by = NULL,
+                onchain_claim_version = NULL, onchain_claim_expires_at = NULL,
+                onchain_publish_last_error = NULL,
+                onchain_version = onchain_version + 1,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE id = ? AND onchain_published_at IS NULL
+              AND onchain_status = 'SUBMITTING'
+              AND onchain_version = ?
+              AND onchain_tx_hash <=> ?
+              AND (
+                onchain_claim_expires_at <= CURRENT_TIMESTAMP
+                OR (onchain_claim_expires_at IS NULL AND (
+                    onchain_publish_locked_at IS NULL
+                    OR onchain_publish_locked_at < TIMESTAMPADD(SECOND, -?, CURRENT_TIMESTAMP)
+                ))
+              )
+            """,
+            submittedTxHash, record.submission().id(), record.version(), record.transactionHash(),
+            lockTimeoutSecondsValue()
+        ) == 1;
     }
 
     private boolean markExhaustedStale(SessionStartedTransactionRecord record) {

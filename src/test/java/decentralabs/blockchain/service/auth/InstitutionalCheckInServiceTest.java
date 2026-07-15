@@ -193,13 +193,15 @@ class InstitutionalCheckInServiceTest {
             "0x9999999999999999999999999999999999999999", BigInteger.ONE
         );
         when(outboxService.enqueueAccessGranted(any(), any(), any(), any(), any(), any())).thenReturn(record);
+        when(outboxService.hasPersistedOnchainContext(record)).thenReturn(true);
         when(outboxService.quarantineContextMismatch(record, CHAIN_ID, credentials.getAddress())).thenReturn(true);
 
         CheckInResponse response = service.checkIn(request);
 
-        assertThat(response.isValid()).isTrue();
-        assertThat(response.getQueued()).isTrue();
-        assertThat(response.getReason()).isEqualTo("CHECKIN_CONTEXT_QUARANTINED");
+        assertThat(response.isValid()).isFalse();
+        assertThat(response.getQueued()).isFalse();
+        assertThat(response.getRetryable()).isFalse();
+        assertThat(response.getReason()).isEqualTo("CHECKIN_CONTEXT_MISMATCH");
         assertThat(response.getTxHash()).isEqualTo(record.txHash());
         verify(outboxService).quarantineContextMismatch(record, CHAIN_ID, credentials.getAddress());
         verify(outboxService, never()).restartTerminalFailure(anyLong());

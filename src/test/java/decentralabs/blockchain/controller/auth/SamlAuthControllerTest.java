@@ -233,6 +233,32 @@ class SamlAuthControllerTest {
         }
 
         @Test
+        @DisplayName("Should reject a check-in whose durable wallet context is quarantined")
+        void shouldRejectQuarantinedInstitutionalCheckIn() throws Exception {
+            InstitutionalCheckInRequest request = new InstitutionalCheckInRequest();
+            request.setReservationKey("0x" + "a".repeat(64));
+            request.setSamlAssertion("assertion");
+
+            CheckInResponse response = new CheckInResponse();
+            response.setValid(false);
+            response.setQueued(false);
+            response.setRetryable(false);
+            response.setReason("CHECKIN_CONTEXT_MISMATCH");
+
+            when(institutionalCheckInService.checkIn(any(InstitutionalCheckInRequest.class)))
+                .thenReturn(response);
+
+            mockMvc.perform(post("/auth/checkin-institutional")
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.valid").value(false))
+                .andExpect(jsonPath("$.queued").value(false))
+                .andExpect(jsonPath("$.retryable").value(false))
+                .andExpect(jsonPath("$.reason").value("CHECKIN_CONTEXT_MISMATCH"));
+        }
+
+        @Test
         @DisplayName("Should return 400 for invalid institutional check-in")
         void shouldReturn400ForInvalidInstitutionalCheckIn() throws Exception {
             InstitutionalCheckInRequest request = new InstitutionalCheckInRequest();

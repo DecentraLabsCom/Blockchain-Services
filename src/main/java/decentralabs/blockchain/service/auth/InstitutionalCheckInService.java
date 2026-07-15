@@ -130,7 +130,7 @@ public class InstitutionalCheckInService {
             computePucHash(puc),
             reservationKey
         );
-        if (hasPersistedOnchainContext(record)) {
+        if (outboxService.hasPersistedOnchainContext(record)) {
             BigInteger activeChainId;
             try {
                 activeChainId = checkInOnChainService.connectedChainId();
@@ -140,11 +140,9 @@ public class InstitutionalCheckInService {
                     reservationKey, configuredSigner, record.txHash(), "CHECKIN_CONTEXT_PENDING"
                 );
             }
-            if (!matchesActiveContext(record, activeChainId, configuredSigner)) {
+            if (!outboxService.matchesActiveContext(record, activeChainId, configuredSigner)) {
                 outboxService.quarantineContextMismatch(record, activeChainId, configuredSigner);
-                return queuedResponse(
-                    reservationKey, configuredSigner, record.txHash(), "CHECKIN_CONTEXT_QUARANTINED"
-                );
+                return contextMismatchResponse(reservationKey, configuredSigner, record.txHash());
             }
         }
         if ("MINED_FAILED".equals(record.status()) || "FAILED".equals(record.status())) {
@@ -213,26 +211,23 @@ public class InstitutionalCheckInService {
         response.setTxHash(txHash);
         response.setTimestamp(System.currentTimeMillis() / 1000);
         response.setReason(reason);
+        response.setRetryable(true);
         return response;
     }
 
-    private boolean hasPersistedOnchainContext(InstitutionalCheckInOutboxRecord record) {
-        return record != null && (
-            record.nonce() != null
-                || hasText(record.txHash())
-                || hasText(record.signedRawTransaction())
-        );
-    }
-
-    private boolean matchesActiveContext(
-        InstitutionalCheckInOutboxRecord record,
-        BigInteger activeChainId,
-        String activeWalletAddress
+    private CheckInResponse contextMismatchResponse(
+        String reservationKey, String signer, String txHash
     ) {
-        return record.chainId() != null
-            && record.walletAddress() != null
-            && activeChainId.equals(record.chainId())
-            && activeWalletAddress.equalsIgnoreCase(record.walletAddress());
+        CheckInResponse response = new CheckInResponse();
+        response.setValid(false);
+        response.setQueued(false);
+        response.setRetryable(false);
+        response.setReservationKey(reservationKey);
+        response.setSigner(signer);
+        response.setTxHash(txHash);
+        response.setTimestamp(System.currentTimeMillis() / 1000);
+        response.setReason("CHECKIN_CONTEXT_MISMATCH");
+        return response;
     }
 
     private void validateRequest(InstitutionalCheckInRequest request) {
