@@ -24,6 +24,13 @@ public class InstitutionalCheckInOutboxService {
     private final JdbcTemplate jdbcTemplate;
     private final String workerId = UUID.randomUUID().toString();
 
+    public record CheckInOutboxState(String status, String lastError, String txHash) {
+        public boolean isContextMismatch() {
+            return lastError != null
+                && lastError.toLowerCase().contains("context");
+        }
+    }
+
     @Value("${institutional.checkin.outbox.claim-lease-ms:900000}")
     private long claimLeaseMillis;
 
@@ -205,6 +212,27 @@ public class InstitutionalCheckInOutboxService {
                 || hasText(record.txHash())
                 || hasText(record.signedRawTransaction())
         );
+    }
+
+    /**
+     * Reads the local consumer outbox without making provider-only deployments
+     * fail when no check-in has been queued for the reservation.
+     */
+    public CheckInOutboxState findStateByReservationKeyIfConfigured(String reservationKey) {
+        if (jdbcTemplate == null || !hasText(reservationKey)) {
+            return null;
+        }
+        List<CheckInOutboxState> states = jdbcTemplate.query(
+            """
+            SELECT status, last_error, tx_hash
+            FROM institutional_checkin_outbox WHERE reservation_key = ?
+            """,
+            (rs, rowNum) -> new CheckInOutboxState(
+                rs.getString("status"), rs.getString("last_error"), rs.getString("tx_hash")
+            ),
+            reservationKey
+        );
+        return states.isEmpty() ? null : states.get(0);
     }
 
     /**

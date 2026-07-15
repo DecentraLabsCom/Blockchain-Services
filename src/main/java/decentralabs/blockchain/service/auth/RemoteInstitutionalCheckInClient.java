@@ -3,6 +3,7 @@ package decentralabs.blockchain.service.auth;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import decentralabs.blockchain.dto.auth.CheckInResponse;
 import decentralabs.blockchain.dto.auth.InstitutionalCheckInRequest;
+import decentralabs.blockchain.service.BackendUrlResolver;
 import java.net.InetAddress;
 import java.net.URI;
 import java.net.UnknownHostException;
@@ -16,6 +17,7 @@ import okhttp3.Request;
 import okhttp3.RequestBody;
 import okhttp3.Response;
 import okhttp3.ResponseBody;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.web.util.UriComponentsBuilder;
@@ -31,6 +33,7 @@ public class RemoteInstitutionalCheckInClient {
     private final HostResolver hostResolver;
     private final PinnedTransport transport;
     private final OkHttpClient baseHttpClient;
+    private final BackendUrlResolver backendUrlResolver;
 
     @Value("${institutional.checkin.delegation.endpoint-path:${endpoint.checkin-institutional:/auth/checkin-institutional}}")
     private String endpointPath;
@@ -41,8 +44,13 @@ public class RemoteInstitutionalCheckInClient {
     @Value("${institutional.checkin.delegation.allow-private-networks:false}")
     private boolean allowPrivateNetworks;
 
-    public RemoteInstitutionalCheckInClient(ObjectMapper objectMapper) {
+    @Value("${public.base-url:}")
+    private String configuredPublicBaseUrl;
+
+    @Autowired
+    public RemoteInstitutionalCheckInClient(ObjectMapper objectMapper, BackendUrlResolver backendUrlResolver) {
         this.objectMapper = objectMapper;
+        this.backendUrlResolver = backendUrlResolver;
         this.hostResolver = hostname -> List.of(InetAddress.getAllByName(hostname));
         this.baseHttpClient = new OkHttpClient.Builder()
             .connectTimeout(Duration.ofSeconds(5))
@@ -53,23 +61,54 @@ public class RemoteInstitutionalCheckInClient {
         this.transport = this::postPinned;
     }
 
+    public RemoteInstitutionalCheckInClient(ObjectMapper objectMapper) {
+        this(objectMapper, null);
+    }
+
     RemoteInstitutionalCheckInClient(
         ObjectMapper objectMapper,
         HostResolver hostResolver,
         PinnedTransport transport
     ) {
+        this(objectMapper, null, hostResolver, transport);
+    }
+
+    RemoteInstitutionalCheckInClient(
+        ObjectMapper objectMapper,
+        BackendUrlResolver backendUrlResolver,
+        HostResolver hostResolver,
+        PinnedTransport transport
+    ) {
         this.objectMapper = objectMapper;
+        this.backendUrlResolver = backendUrlResolver;
         this.hostResolver = hostResolver;
         this.transport = transport;
         this.baseHttpClient = null;
     }
 
     public CheckInResponse submit(String backendBaseUrl, InstitutionalCheckInRequest request) {
+        RemoteCheckInResult result = submitDetailed(backendBaseUrl, request);
+        if (!result.isHttpSuccessful()) {
+            throw new RemoteInstitutionalCheckInException(result);
+        }
+        if (result.body() == null) {
+            throw new IllegalStateException("Remote institutional check-in returned an empty response");
+        }
+        return result.body();
+    }
+
+    public RemoteCheckInResult submitDetailed(
+        String backendBaseUrl,
+        InstitutionalCheckInRequest request
+    ) {
         URI endpoint = buildEndpoint(backendBaseUrl);
+        if (isSelfDelegation(backendBaseUrl)) {
+            return selfDelegationResult();
+        }
         try {
             List<InetAddress> addresses = hostResolver.resolve(endpoint.getHost());
             assertAddressesAllowed(endpoint.getHost(), addresses);
-            CheckInResponse response = transport.post(endpoint, request, List.copyOf(addresses));
+            RemoteCheckInResult response = transport.post(endpoint, request, List.copyOf(addresses));
             if (response == null) {
                 throw new IllegalStateException("Remote institutional check-in returned an empty response");
             }
@@ -82,7 +121,7 @@ public class RemoteInstitutionalCheckInClient {
         }
     }
 
-    private CheckInResponse postPinned(
+    private RemoteCheckInResult postPinned(
         URI endpoint,
         InstitutionalCheckInRequest requestPayload,
         List<InetAddress> addresses
@@ -103,21 +142,68 @@ public class RemoteInstitutionalCheckInClient {
             .build();
 
         try (Response response = client.newCall(request).execute()) {
-            if (!response.isSuccessful()) {
-                throw new IllegalStateException("Remote institutional check-in failed with status " + response.code());
-            }
             ResponseBody body = response.body();
-            if (body == null) {
-                throw new IllegalStateException("Remote institutional check-in returned no body");
-            }
-            if (body.contentLength() > MAX_RESPONSE_BYTES) {
+            if (body != null && body.contentLength() > MAX_RESPONSE_BYTES) {
                 throw new IllegalStateException("Remote institutional check-in response is too large");
             }
-            byte[] bytes = body.source().readByteArray(MAX_RESPONSE_BYTES + 1);
+            byte[] bytes = body == null ? new byte[0] : body.source().readByteArray(MAX_RESPONSE_BYTES + 1);
             if (bytes.length > MAX_RESPONSE_BYTES) {
                 throw new IllegalStateException("Remote institutional check-in response is too large");
             }
-            return objectMapper.readValue(bytes, CheckInResponse.class);
+            CheckInResponse parsed = bytes.length == 0 ? null : objectMapper.readValue(bytes, CheckInResponse.class);
+            return new RemoteCheckInResult(response.code(), parsed, response.header("Retry-After"));
+        }
+    }
+
+    private RemoteCheckInResult selfDelegationResult() {
+        CheckInResponse response = new CheckInResponse();
+        response.setValid(false);
+        response.setReason("CHECKIN_SIGNER_NOT_AUTHORIZED");
+        response.setRetryable(false);
+        return new RemoteCheckInResult(409, response, null);
+    }
+
+    private boolean isSelfDelegation(String backendBaseUrl) {
+        String target = normalizeBaseUrl(backendBaseUrl);
+        if (target == null) {
+            return false;
+        }
+        if (normalizeBaseUrl(configuredPublicBaseUrl) != null
+            && target.equals(normalizeBaseUrl(configuredPublicBaseUrl))) {
+            return true;
+        }
+        return backendUrlResolver != null
+            && target.equals(normalizeBaseUrl(backendUrlResolver.resolveBaseDomain()));
+    }
+
+    private String normalizeBaseUrl(String value) {
+        if (value == null || value.isBlank()) {
+            return null;
+        }
+        try {
+            URI uri = URI.create(value.trim());
+            if (uri.getScheme() == null || uri.getHost() == null
+                || uri.getRawUserInfo() != null || uri.getRawQuery() != null
+                || uri.getRawFragment() != null) {
+                return null;
+            }
+            String scheme = uri.getScheme().toLowerCase();
+            String host = uri.getHost().toLowerCase();
+            int port = uri.getPort();
+            boolean defaultPort = port < 0
+                || ("https".equals(scheme) && port == 443)
+                || ("http".equals(scheme) && port == 80);
+            String path = uri.getPath() == null ? "" : uri.getPath();
+            while (path.endsWith("/") && !path.isEmpty()) {
+                path = path.substring(0, path.length() - 1);
+            }
+            if ("/api".equals(path) || "/auth".equals(path)) {
+                path = "";
+            }
+            String authority = scheme + "://" + host + (defaultPort ? "" : ":" + port);
+            return authority + path;
+        } catch (IllegalArgumentException ex) {
+            return null;
         }
     }
 
@@ -254,7 +340,25 @@ public class RemoteInstitutionalCheckInClient {
 
     @FunctionalInterface
     interface PinnedTransport {
-        CheckInResponse post(URI endpoint, InstitutionalCheckInRequest request, List<InetAddress> addresses)
+        RemoteCheckInResult post(URI endpoint, InstitutionalCheckInRequest request, List<InetAddress> addresses)
             throws Exception;
+    }
+
+    public record RemoteCheckInResult(int status, CheckInResponse body, String retryAfter) {
+        public static RemoteCheckInResult success(CheckInResponse body) {
+            return new RemoteCheckInResult(200, body, null);
+        }
+
+        public boolean isSuccessful() {
+            return isHttpSuccessful() && body != null && body.isValid();
+        }
+
+        public boolean isHttpSuccessful() {
+            return status >= 200 && status < 300;
+        }
+
+        public boolean isRetryable() {
+            return body != null && Boolean.TRUE.equals(body.getRetryable());
+        }
     }
 }

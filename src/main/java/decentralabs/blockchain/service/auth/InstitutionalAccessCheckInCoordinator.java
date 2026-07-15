@@ -3,6 +3,7 @@ package decentralabs.blockchain.service.auth;
 import decentralabs.blockchain.dto.auth.CheckInResponse;
 import decentralabs.blockchain.dto.auth.InstitutionalCheckInRequest;
 import decentralabs.blockchain.dto.auth.SamlAuthRequest;
+import decentralabs.blockchain.exception.AccessAuthorizationDelegationException;
 import decentralabs.blockchain.service.wallet.InstitutionalWalletService;
 import decentralabs.blockchain.util.PucHashUtil;
 import decentralabs.blockchain.util.PucNormalizer;
@@ -25,6 +26,7 @@ public class InstitutionalAccessCheckInCoordinator {
         ALREADY_AUTHORIZED,
         CONTEXT_MISMATCH,
         MANUAL_INTERVENTION,
+        SIGNER_NOT_AUTHORIZED,
         FAILED
     }
 
@@ -210,10 +212,24 @@ public class InstitutionalAccessCheckInCoordinator {
         checkInRequest.setPayerInstitutionWallet(institutionalWallet);
         checkInRequest.setPuc(puc);
 
-        CheckInResponse response = remoteCheckInClient.submit(backendUrl, checkInRequest);
-        if (response == null || !response.isValid()) {
-            String reason = response != null ? response.getReason() : "no response";
-            throw new IllegalStateException("Delegated institutional check-in failed: " + reason);
+        RemoteInstitutionalCheckInClient.RemoteCheckInResult result =
+            remoteCheckInClient.submitDetailed(backendUrl, checkInRequest);
+        CheckInResponse response = result == null ? null : result.body();
+        String reason = response == null ? null : response.getReason();
+        if ("CHECKIN_SIGNER_NOT_AUTHORIZED".equals(reason)) {
+            return AccessGrantedResult.SIGNER_NOT_AUTHORIZED;
+        }
+        if ("CHECKIN_CONTEXT_MISMATCH".equals(reason)) {
+            return AccessGrantedResult.CONTEXT_MISMATCH;
+        }
+        if ("CHECKIN_MANUAL_INTERVENTION".equals(reason)) {
+            return AccessGrantedResult.MANUAL_INTERVENTION;
+        }
+        if (result == null || !result.isHttpSuccessful() || response == null || !response.isValid()) {
+            if (result != null && (result.isRetryable() || result.status() == 503)) {
+                return AccessGrantedResult.QUEUED;
+            }
+            throw new AccessAuthorizationDelegationException(result);
         }
         return response.getQueued() != null && response.getQueued()
             ? AccessGrantedResult.QUEUED

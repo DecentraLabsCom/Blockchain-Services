@@ -27,6 +27,7 @@ import org.springframework.test.util.ReflectionTestUtils;
 import decentralabs.blockchain.dto.auth.AuthResponse;
 import decentralabs.blockchain.dto.auth.ProviderAccessCredentialRequest;
 import decentralabs.blockchain.dto.auth.SamlAuthRequest;
+import decentralabs.blockchain.exception.AccessAuthorizationManualInterventionException;
 import decentralabs.blockchain.service.wallet.BlockchainBookingService;
 
 @ExtendWith(MockitoExtension.class)
@@ -46,6 +47,9 @@ class SamlAuthServiceTest {
 
     @Mock
     private InstitutionalAccessCheckInCoordinator accessCheckInCoordinator;
+
+    @Mock
+    private InstitutionalCheckInOutboxService institutionalCheckInOutboxService;
 
     @Mock
     private AccessCredentialDeliveryService accessCredentialDeliveryService;
@@ -77,6 +81,38 @@ class SamlAuthServiceTest {
     @Nested
     @DisplayName("Provider Access Credential Tests")
     class ProviderAccessCredentialTests {
+
+        @Test
+        @DisplayName("Should stop provider-only retries when consumer check-in requires manual intervention")
+        void shouldRejectProviderOnlyRetryForManualIntervention() {
+            ProviderAccessCredentialRequest request = new ProviderAccessCredentialRequest();
+            request.setMarketplaceToken("provider-token");
+            request.setReservationKey("0xreservation");
+            request.setLabId("42");
+
+            when(marketplaceEndpointAuthService.enforceToken(eq("provider-token"), eq(null)))
+                .thenReturn(Map.of(
+                    "puc", TEST_PUC, "affiliation", TEST_AFFILIATION,
+                    "bookingInfoAllowed", true, "purpose", "lab_access",
+                    "reservationKey", "0xreservation", "labId", "42",
+                    "payerInstitutionWallet", "0xwallet"
+                ));
+            Map<String, Object> bookingInfo = new HashMap<>(Map.of(
+                "reservationKey", "0xreservation",
+                "reservationStatus", java.math.BigInteger.ONE,
+                "resourceType", "lab"
+            ));
+            when(blockchainService.getBookingInfoForCredentialPreparation("0xwallet", "0xreservation", "42", TEST_PUC))
+                .thenReturn(bookingInfo);
+            when(institutionalCheckInOutboxService.findStateByReservationKeyIfConfigured("0xreservation"))
+                .thenReturn(new InstitutionalCheckInOutboxService.CheckInOutboxState(
+                    "MANUAL_INTERVENTION", "operator intervention required", "0xhash"
+                ));
+
+            assertThatThrownBy(() -> samlAuthService.issueAccessCredential(request))
+                .isInstanceOf(AccessAuthorizationManualInterventionException.class);
+            verify(accessAuthorizationProvisioningService, never()).tryStart(anyString());
+        }
 
         @Test
         @DisplayName("Should issue provider credential only after access is authorized")

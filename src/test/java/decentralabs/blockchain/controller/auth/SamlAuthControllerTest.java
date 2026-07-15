@@ -30,9 +30,12 @@ import decentralabs.blockchain.exception.AccessAuthorizationPendingException;
 import decentralabs.blockchain.exception.AccessAuthorizationRejectedException;
 import decentralabs.blockchain.exception.AccessAuthorizationContextMismatchException;
 import decentralabs.blockchain.exception.AccessAuthorizationManualInterventionException;
+import decentralabs.blockchain.exception.AccessAuthorizationSignerNotAuthorizedException;
+import decentralabs.blockchain.exception.AccessAuthorizationDelegationException;
 import decentralabs.blockchain.exception.SamlAuthControllerAdvice;
 import decentralabs.blockchain.service.auth.InstitutionalCheckInService;
 import decentralabs.blockchain.service.auth.SamlAuthService;
+import decentralabs.blockchain.service.auth.RemoteInstitutionalCheckInClient;
 
 /**
  * Unit tests for SamlAuthController.
@@ -227,6 +230,50 @@ class SamlAuthControllerTest {
                 .andExpect(jsonPath("$.retryable").value(false))
                 .andExpect(jsonPath("$.reservationKey").value(request.getReservationKey()))
                 .andExpect(jsonPath("$.txHash").value("0x" + "b".repeat(64)));
+        }
+
+        @Test
+        @DisplayName("Should reject recursive institutional delegation as non-retryable")
+        void shouldReturnSignerNotAuthorizedResponse() throws Exception {
+            SamlAuthRequest request = createValidSamlRequest();
+            request.setReservationKey("0x" + "a".repeat(64));
+            when(samlAuthService.authorizeAndIssue(any(SamlAuthRequest.class)))
+                .thenThrow(new AccessAuthorizationSignerNotAuthorizedException(
+                    "Institutional check-in signer is not authorized for the payer institution",
+                    request.getReservationKey(), null
+                ));
+
+            mockMvc.perform(post("/auth/authorize-and-issue")
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.error").value("CHECKIN_SIGNER_NOT_AUTHORIZED"))
+                .andExpect(jsonPath("$.retryable").value(false))
+                .andExpect(jsonPath("$.reservationKey").value(request.getReservationKey()));
+        }
+
+        @Test
+        @DisplayName("Should preserve terminal remote delegation errors")
+        void shouldPreserveRemoteDelegationError() throws Exception {
+            SamlAuthRequest request = createValidSamlRequest();
+            CheckInResponse remoteBody = new CheckInResponse();
+            remoteBody.setReason("CHECKIN_CONTEXT_MISMATCH");
+            remoteBody.setReservationKey("0xreservation");
+            remoteBody.setTxHash("0xhash");
+            remoteBody.setRetryable(false);
+            when(samlAuthService.authorizeAndIssue(any(SamlAuthRequest.class)))
+                .thenThrow(new AccessAuthorizationDelegationException(
+                    new RemoteInstitutionalCheckInClient.RemoteCheckInResult(409, remoteBody, null)
+                ));
+
+            mockMvc.perform(post("/auth/authorize-and-issue")
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.error").value("CHECKIN_CONTEXT_MISMATCH"))
+                .andExpect(jsonPath("$.retryable").value(false))
+                .andExpect(jsonPath("$.reservationKey").value("0xreservation"))
+                .andExpect(jsonPath("$.txHash").value("0xhash"));
         }
     }
 

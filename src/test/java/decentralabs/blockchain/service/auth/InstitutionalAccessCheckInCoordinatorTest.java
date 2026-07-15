@@ -347,8 +347,8 @@ class InstitutionalAccessCheckInCoordinatorTest {
             .thenReturn("https://consumer.example");
         CheckInResponse response = new CheckInResponse();
         response.setValid(true);
-        when(remoteCheckInClient.submit(eq("https://consumer.example"), any(InstitutionalCheckInRequest.class)))
-            .thenReturn(response);
+        when(remoteCheckInClient.submitDetailed(eq("https://consumer.example"), any(InstitutionalCheckInRequest.class)))
+            .thenReturn(RemoteInstitutionalCheckInClient.RemoteCheckInResult.success(response));
 
         coordinator.recordAccessGranted(
             request(),
@@ -361,7 +361,7 @@ class InstitutionalAccessCheckInCoordinatorTest {
         );
 
         ArgumentCaptor<InstitutionalCheckInRequest> captor = ArgumentCaptor.forClass(InstitutionalCheckInRequest.class);
-        verify(remoteCheckInClient).submit(eq("https://consumer.example"), captor.capture());
+        verify(remoteCheckInClient).submitDetailed(eq("https://consumer.example"), captor.capture());
         verify(outboxService, never()).enqueueAccessGranted(any(), any(), any(), any(), any(), any());
         InstitutionalCheckInRequest delegated = captor.getValue();
         org.assertj.core.api.Assertions.assertThat(delegated.getReservationKey()).isEqualTo("0xabc");

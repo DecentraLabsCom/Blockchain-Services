@@ -323,6 +323,7 @@ class InstitutionalCheckInServiceTest {
 
         assertThat(response.isValid()).isTrue();
         assertThat(response.getQueued()).isTrue();
+        assertThat(response.getRetryable()).isTrue();
         assertThat(response.getReason()).isEqualTo("Institutional check-in is already queued");
     }
 

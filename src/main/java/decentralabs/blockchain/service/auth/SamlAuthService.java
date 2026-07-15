@@ -7,6 +7,7 @@ import decentralabs.blockchain.exception.AccessAuthorizationPendingException;
 import decentralabs.blockchain.exception.AccessAuthorizationRejectedException;
 import decentralabs.blockchain.exception.AccessAuthorizationContextMismatchException;
 import decentralabs.blockchain.exception.AccessAuthorizationManualInterventionException;
+import decentralabs.blockchain.exception.AccessAuthorizationSignerNotAuthorizedException;
 import decentralabs.blockchain.exception.SamlAuthenticationException;
 import decentralabs.blockchain.exception.SamlExpiredAssertionException;
 import decentralabs.blockchain.exception.SamlInvalidIssuerException;
@@ -42,6 +43,7 @@ public class SamlAuthService {
     private final AccessAuthorizationProvisioningService accessAuthorizationProvisioningService;
     private final CheckInOnChainService checkInOnChainService;
     private final AccessCodeService accessCodeService;
+    private final InstitutionalCheckInOutboxService institutionalCheckInOutboxService;
 
     @Value("${auth.saml.require-booking-scope:true}")
     private boolean requireBookingScope;
@@ -92,6 +94,9 @@ public class SamlAuthService {
             }
             String puc = stringClaim(marketplaceJWTClaims, "puc");
             String txHash = request.getAccessAuthorizationTxHash();
+            if (!isAccessAuthorized(bookingInfo)) {
+                enforceConsumerCheckInState(canonicalReservationKey);
+            }
             if (isAccessAuthorized(bookingInfo)) {
                 provisionalLease = provisionAuthorizedGuacamoleAccess(
                     bookingInfo, canonicalReservationKey, payerInstitutionWallet, request.getLabId(), puc, txHash
@@ -223,6 +228,13 @@ public class SamlAuthService {
                     null
                 );
             }
+            if (checkInResult == InstitutionalAccessCheckInCoordinator.AccessGrantedResult.SIGNER_NOT_AUTHORIZED) {
+                throw new AccessAuthorizationSignerNotAuthorizedException(
+                    "Institutional check-in signer is not authorized for the payer institution",
+                    canonicalReservationKey,
+                    null
+                );
+            }
             if (checkInResult == InstitutionalAccessCheckInCoordinator.AccessGrantedResult.FAILED) {
                 throw new AccessAuthorizationRejectedException(
                     "Institutional check-in publication failed permanently"
@@ -340,6 +352,33 @@ public class SamlAuthService {
     private String reservationKeyFromBooking(Map<String, Object> bookingInfo, String fallback) {
         Object value = bookingInfo == null ? null : bookingInfo.get("reservationKey");
         return value == null || value.toString().isBlank() ? fallback : value.toString();
+    }
+
+    private void enforceConsumerCheckInState(String reservationKey) {
+        InstitutionalCheckInOutboxService.CheckInOutboxState state =
+            institutionalCheckInOutboxService.findStateByReservationKeyIfConfigured(reservationKey);
+        if (state == null || state.status() == null) {
+            return;
+        }
+        if ("MANUAL_INTERVENTION".equalsIgnoreCase(state.status())) {
+            if (state.isContextMismatch()) {
+                throw new AccessAuthorizationContextMismatchException(
+                    "Consumer institutional check-in belongs to a different chain or signer",
+                    reservationKey,
+                    state.txHash()
+                );
+            }
+            throw new AccessAuthorizationManualInterventionException(
+                "Consumer institutional check-in requires manual intervention",
+                reservationKey,
+                state.txHash()
+            );
+        }
+        if ("FAILED".equalsIgnoreCase(state.status()) || "MINED_FAILED".equalsIgnoreCase(state.status())) {
+            throw new AccessAuthorizationRejectedException(
+                "Consumer institutional check-in publication failed permanently"
+            );
+        }
     }
 
     private AccessAuthorizationProvisioningService.ProvisioningLease acquireProvisioningLease(String reservationKey, String txHash) {

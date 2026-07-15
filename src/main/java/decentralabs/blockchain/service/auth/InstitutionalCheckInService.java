@@ -215,6 +215,7 @@ public class InstitutionalCheckInService {
         CheckInResponse response = new CheckInResponse();
         response.setValid(true);
         response.setQueued(true);
+        response.setRetryable(true);
         response.setReservationKey(reservationKey);
         response.setTxHash(record.txHash());
         response.setTimestamp(System.currentTimeMillis() / 1000);

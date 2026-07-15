@@ -9,6 +9,7 @@ import static org.mockito.Mockito.when;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import decentralabs.blockchain.dto.auth.CheckInResponse;
 import decentralabs.blockchain.dto.auth.InstitutionalCheckInRequest;
+import decentralabs.blockchain.service.BackendUrlResolver;
 import java.net.InetAddress;
 import java.net.URI;
 import java.util.List;
@@ -23,6 +24,7 @@ import org.springframework.test.util.ReflectionTestUtils;
 class RemoteInstitutionalCheckInClientTest {
     @Mock private RemoteInstitutionalCheckInClient.HostResolver hostResolver;
     @Mock private RemoteInstitutionalCheckInClient.PinnedTransport transport;
+    @Mock private BackendUrlResolver backendUrlResolver;
 
     private RemoteInstitutionalCheckInClient client;
     private InetAddress publicAddress;
@@ -41,7 +43,8 @@ class RemoteInstitutionalCheckInClientTest {
         CheckInResponse expected = new CheckInResponse();
         expected.setValid(true);
         URI endpoint = URI.create("https://institution.example/auth/checkin-institutional");
-        when(transport.post(endpoint, request, List.of(publicAddress))).thenReturn(expected);
+        when(transport.post(endpoint, request, List.of(publicAddress)))
+            .thenReturn(RemoteInstitutionalCheckInClient.RemoteCheckInResult.success(expected));
 
         CheckInResponse response = client.submit("https://institution.example/api", request);
 
@@ -54,7 +57,8 @@ class RemoteInstitutionalCheckInClientTest {
         InstitutionalCheckInRequest request = new InstitutionalCheckInRequest();
         CheckInResponse expected = new CheckInResponse();
         URI endpoint = URI.create("https://institution.example/gateway/auth/checkin-institutional");
-        when(transport.post(endpoint, request, List.of(publicAddress))).thenReturn(expected);
+        when(transport.post(endpoint, request, List.of(publicAddress)))
+            .thenReturn(RemoteInstitutionalCheckInClient.RemoteCheckInResult.success(expected));
 
         assertThat(client.submit("https://institution.example/gateway", request)).isSameAs(expected);
     }
@@ -100,8 +104,47 @@ class RemoteInstitutionalCheckInClientTest {
         InstitutionalCheckInRequest request = new InstitutionalCheckInRequest();
         CheckInResponse expected = new CheckInResponse();
         URI endpoint = URI.create("https://institution.example/auth/checkin-institutional");
-        when(transport.post(endpoint, request, List.of(publicIpv6))).thenReturn(expected);
+        when(transport.post(endpoint, request, List.of(publicIpv6)))
+            .thenReturn(RemoteInstitutionalCheckInClient.RemoteCheckInResult.success(expected));
 
         assertThat(client.submit("https://institution.example", request)).isSameAs(expected);
+    }
+
+    @Test
+    void submitDetailedPreservesNon2xxBodyAndRetryAfter() throws Exception {
+        InstitutionalCheckInRequest request = new InstitutionalCheckInRequest();
+        CheckInResponse body = new CheckInResponse();
+        body.setReason("CHECKIN_MANUAL_INTERVENTION");
+        body.setRetryable(false);
+        URI endpoint = URI.create("https://institution.example/auth/checkin-institutional");
+        when(transport.post(endpoint, request, List.of(publicAddress)))
+            .thenReturn(new RemoteInstitutionalCheckInClient.RemoteCheckInResult(409, body, "7"));
+
+        RemoteInstitutionalCheckInClient.RemoteCheckInResult result =
+            client.submitDetailed("https://institution.example", request);
+
+        assertThat(result.status()).isEqualTo(409);
+        assertThat(result.body()).isSameAs(body);
+        assertThat(result.retryAfter()).isEqualTo("7");
+    }
+
+    @Test
+    void rejectsDelegationToThisBackendBeforeDnsResolution() throws Exception {
+        when(backendUrlResolver.resolveBaseDomain()).thenReturn("https://institution.example/");
+        RemoteInstitutionalCheckInClient selfAwareClient = new RemoteInstitutionalCheckInClient(
+            new ObjectMapper(), backendUrlResolver, hostResolver, transport
+        );
+        ReflectionTestUtils.setField(selfAwareClient, "endpointPath", "/auth/checkin-institutional");
+
+        RemoteInstitutionalCheckInClient.RemoteCheckInResult result = selfAwareClient.submitDetailed(
+            "https://institution.example/api", new InstitutionalCheckInRequest()
+        );
+
+        assertThat(result.status()).isEqualTo(409);
+        assertThat(result.body().getReason()).isEqualTo("CHECKIN_SIGNER_NOT_AUTHORIZED");
+        assertThat(result.body().getRetryable()).isFalse();
+        verify(hostResolver, org.mockito.Mockito.never()).resolve("institution.example");
+        verify(transport, org.mockito.Mockito.never()).post(org.mockito.ArgumentMatchers.any(),
+            org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any());
     }
 }
