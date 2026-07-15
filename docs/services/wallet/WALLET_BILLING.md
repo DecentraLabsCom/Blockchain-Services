@@ -60,10 +60,8 @@ Funding-order and credit-account routes are available under `/billing`:
 - `GET /billing/credit-accounts/{address}/lots`
 - `GET /billing/credit-accounts/{address}/movements`
 
-The current billing model is based on non-refundable service credits. Funding,
-credit lots, expiry and movements are represented in the backend and reconciled
-with the Smart-Contracts state; do not document this as a transferable token
-balance.
+The current billing model is based on internal service credits. They are not redeemable for cash or transferable as money. Eligible reservation
+cancellations and service non-delivery may return the applicable credits to the institutional account according to the reservation lifecycle; funding, credit lots, expiry and movements are represented in the backend and reconciled with Smart-Contracts state.
 
 ## Administrative transaction API
 
