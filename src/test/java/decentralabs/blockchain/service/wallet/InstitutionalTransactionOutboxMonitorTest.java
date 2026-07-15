@@ -206,6 +206,40 @@ class InstitutionalTransactionOutboxMonitorTest {
     }
 
     @Test
+    void doesNotConsumeRetryBudgetWhenRecoveryRpcInspectionIsUnavailable() throws Exception {
+        var attempt = new InstitutionalTransactionOutboxService.Attempt(
+            1L, BigInteger.valueOf(11155111L), CREDENTIALS.getAddress(), "operation-key", BigInteger.valueOf(14),
+            BigInteger.ONE, BigInteger.ONE, BigInteger.valueOf(21_000), "0xto", BigInteger.ZERO, "0x",
+            "RETRYABLE", "0xf861", "0x" + "a".repeat(64),
+            Instant.now().minusSeconds(600), 1, Instant.now().minusSeconds(600)
+        );
+        when(outboxService.findRecoveryCandidates(any(), any(), org.mockito.ArgumentMatchers.eq(10)))
+            .thenReturn(List.of(attempt));
+        when(outboxService.findSubmitted(any(), any(), org.mockito.ArgumentMatchers.eq(10))).thenReturn(List.of());
+        when(outboxService.findStuckUnknown(any(), any(), org.mockito.ArgumentMatchers.eq(10))).thenReturn(List.of());
+        when(institutionalWalletService.getInstitutionalCredentials()).thenReturn(CREDENTIALS);
+
+        EthGetTransactionReceipt receiptResponse = mock(EthGetTransactionReceipt.class);
+        when(receiptResponse.hasError()).thenReturn(true);
+        when(receiptResponse.getError()).thenReturn(
+            new org.web3j.protocol.core.Response.Error(1, "temporary RPC outage")
+        );
+        doReturn(requestReturning(receiptResponse)).when(web3j)
+            .ethGetTransactionReceipt(attempt.txHash());
+
+        InstitutionalTransactionOutboxMonitor monitor = new InstitutionalTransactionOutboxMonitor(
+            outboxService, walletService, institutionalWalletService
+        );
+
+        assertThat(monitor.monitor(web3j, 10)).isZero();
+
+        verify(outboxService, org.mockito.Mockito.never()).markRetryable(any(), any());
+        verify(outboxService, org.mockito.Mockito.never())
+            .markReplacementPrepared(any(), any(), any(), any(), any());
+        verify(web3j, org.mockito.Mockito.never()).ethSendRawTransaction(any());
+    }
+
+    @Test
     void doesNotCompensateWhenAnotherWorkerWinsReplacementFencing() throws Exception {
         var base = attempt("RETRYABLE", "0x" + "a".repeat(64), "0xf861");
         var attempt = new InstitutionalTransactionOutboxService.Attempt(

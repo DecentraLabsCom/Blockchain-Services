@@ -2,7 +2,6 @@ package decentralabs.blockchain.service.auth;
 
 import decentralabs.blockchain.util.LogSanitizer;
 import java.math.BigInteger;
-import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicLong;
@@ -767,7 +766,7 @@ public class SessionStartedOnChainPublisherService {
                         break;
                     }
                 }
-                if (!resolved && isStuck(record)) {
+                if (!resolved) {
                     markPendingReplacement(record);
                 }
             } catch (RuntimeException ex) {
@@ -1045,6 +1044,7 @@ public class SessionStartedOnChainPublisherService {
                 updated_at = CURRENT_TIMESTAMP
             WHERE id = ? AND onchain_status = 'SUBMITTED' AND onchain_tx_hash = ?
               AND onchain_version = ?
+              AND onchain_submitted_at <= TIMESTAMPADD(MICROSECOND, -?, CURRENT_TIMESTAMP)
             """,
             exhausted ? "STUCK_UNKNOWN" : "REPLACEMENT_PENDING",
             exhausted
@@ -1052,7 +1052,8 @@ public class SessionStartedOnChainPublisherService {
             : "SessionStarted transaction remained visible without a receipt; replacement required",
             record.submission().id(),
             record.transactionHash(),
-            record.version()
+            record.version(),
+            stuckTransactionMicros()
         );
     }
 
@@ -1111,9 +1112,11 @@ public class SessionStartedOnChainPublisherService {
         );
     }
 
-    private boolean isStuck(SessionStartedTransactionRecord record) {
-        return record.submittedAt() != null
-            && record.submittedAt().plusMillis(Math.max(1L, stuckTransactionMs)).isBefore(Instant.now());
+    private long stuckTransactionMicros() {
+        long milliseconds = Math.max(1L, stuckTransactionMs);
+        return milliseconds > Long.MAX_VALUE / 1_000L
+            ? Long.MAX_VALUE
+            : milliseconds * 1_000L;
     }
 
     private RowMapper<SessionStartedTransactionRecord> transactionRowMapper() {

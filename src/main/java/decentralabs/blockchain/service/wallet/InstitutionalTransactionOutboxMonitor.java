@@ -5,6 +5,7 @@ import java.math.BigInteger;
 import java.math.RoundingMode;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.concurrent.Callable;
 import org.web3j.crypto.Credentials;
 import org.web3j.crypto.Hash;
 import org.web3j.crypto.RawTransaction;
@@ -27,6 +28,12 @@ import org.web3j.protocol.core.methods.response.EthChainId;
 @Service
 @Slf4j
 public class InstitutionalTransactionOutboxMonitor {
+    private static final class RpcInspectionUnavailableException extends RuntimeException {
+        private RpcInspectionUnavailableException(String message, Throwable cause) {
+            super(message, cause);
+        }
+    }
+
     private final InstitutionalTransactionOutboxService outboxService;
     private final WalletService walletService;
     private final InstitutionalWalletService institutionalWalletService;
@@ -132,7 +139,7 @@ public class InstitutionalTransactionOutboxMonitor {
     }
 
     private MonitoringContext resolveContext(Web3j web3j) throws Exception {
-        EthChainId response = requireSuccessfulResponse(web3j.ethChainId().send(), "reading chain ID");
+        EthChainId response = inspectRpc(web3j.ethChainId()::send, "reading chain ID");
         BigInteger chainId = response.getChainId();
         String walletAddress = institutionalWalletService.getInstitutionalWalletAddress();
         if (chainId == null || chainId.signum() <= 0) {
@@ -225,8 +232,8 @@ public class InstitutionalTransactionOutboxMonitor {
                 }
             }
             if (hash != null && !hash.isBlank()) {
-                var receipt = requireSuccessfulResponse(
-                    web3j.ethGetTransactionReceipt(hash).send(), "reading transaction receipt"
+                var receipt = inspectRpc(
+                    web3j.ethGetTransactionReceipt(hash)::send, "reading transaction receipt"
                 );
                 if (receipt.getTransactionReceipt().isPresent()) {
                     if (receipt.getTransactionReceipt().orElseThrow().isStatusOK()) {
@@ -257,6 +264,13 @@ public class InstitutionalTransactionOutboxMonitor {
                     response.getError() != null ? response.getError().getMessage() : "Institutional transaction broadcast failed"
                 );
             }
+        } catch (RpcInspectionUnavailableException ex) {
+            log.warn(
+                "Institutional transaction {} could not be inspected through RPC; "
+                    + "leaving its retry budget unchanged: {}",
+                attempt == null ? -1L : attempt.id(), ex.getMessage()
+            );
+            return false;
         } catch (InstitutionalTransactionOutboxService.FencingClaimLostException ex) {
             log.debug(
                 "Institutional transaction {} was updated by another monitor worker; skipping compensation",
@@ -291,8 +305,8 @@ public class InstitutionalTransactionOutboxMonitor {
             return receiptState;
         }
         for (String candidateHash : monitoredHashes(attempt)) {
-            var transaction = requireSuccessfulResponse(
-                web3j.ethGetTransactionByHash(candidateHash).send(), "reading transaction visibility"
+            var transaction = inspectRpc(
+                web3j.ethGetTransactionByHash(candidateHash)::send, "reading transaction visibility"
             );
             if (transaction.getTransaction().isPresent()) {
                 if (hash != null && !hash.isBlank()
@@ -310,8 +324,8 @@ public class InstitutionalTransactionOutboxMonitor {
         InstitutionalTransactionOutboxService.Attempt attempt
     ) throws Exception {
         for (String candidateHash : monitoredHashes(attempt)) {
-            var receipt = requireSuccessfulResponse(
-                web3j.ethGetTransactionReceipt(candidateHash).send(), "reading transaction receipt"
+            var receipt = inspectRpc(
+                web3j.ethGetTransactionReceipt(candidateHash)::send, "reading transaction receipt"
             );
             if (receipt.getTransactionReceipt().isPresent()) {
                 if (receipt.getTransactionReceipt().orElseThrow().isStatusOK()) {
@@ -458,8 +472,8 @@ public class InstitutionalTransactionOutboxMonitor {
 
             boolean visible = false;
             for (String hash : monitoredHashes(attempt)) {
-                var transactionResponse = requireSuccessfulResponse(
-                    web3j.ethGetTransactionByHash(hash).send(), "reading transaction visibility"
+                var transactionResponse = inspectRpc(
+                    web3j.ethGetTransactionByHash(hash)::send, "reading transaction visibility"
                 );
                 if (transactionResponse.getTransaction().isPresent()) {
                     visible = true;
@@ -484,8 +498,10 @@ public class InstitutionalTransactionOutboxMonitor {
                 return false;
             }
 
-            BigInteger pendingNonce = requireSuccessfulResponse(
-                web3j.ethGetTransactionCount(attempt.walletAddress(), DefaultBlockParameterName.PENDING).send(),
+            BigInteger pendingNonce = inspectRpc(
+                () -> web3j.ethGetTransactionCount(
+                    attempt.walletAddress(), DefaultBlockParameterName.PENDING
+                ).send(),
                 "reading pending nonce"
             ).getTransactionCount();
             if (pendingNonce != null && attempt.nonce() != null && pendingNonce.compareTo(attempt.nonce()) > 0) {
@@ -531,6 +547,18 @@ public class InstitutionalTransactionOutboxMonitor {
         return response;
     }
 
+    private <T extends Response<?>> T inspectRpc(Callable<T> request, String operation) {
+        try {
+            return requireSuccessfulResponse(request.call(), operation);
+        } catch (RpcInspectionUnavailableException ex) {
+            throw ex;
+        } catch (Exception ex) {
+            throw new RpcInspectionUnavailableException(
+                "RPC inspection unavailable while " + operation + ": " + ex.getMessage(), ex
+            );
+        }
+    }
+
     private boolean retryUnknown(
         Web3j web3j,
         InstitutionalTransactionOutboxService.Attempt attempt
@@ -546,8 +574,8 @@ public class InstitutionalTransactionOutboxMonitor {
                 }
                 boolean visible = false;
                 for (String hash : monitoredHashes(attempt)) {
-                    var transactionResponse = requireSuccessfulResponse(
-                        web3j.ethGetTransactionByHash(hash).send(), "reading transaction visibility"
+                    var transactionResponse = inspectRpc(
+                        web3j.ethGetTransactionByHash(hash)::send, "reading transaction visibility"
                     );
                     if (transactionResponse.getTransaction().isPresent()) {
                         visible = true;
@@ -562,8 +590,10 @@ public class InstitutionalTransactionOutboxMonitor {
             if (attempt.signedRawTransaction() == null || attempt.signedRawTransaction().isBlank()) {
                 return false;
             }
-            BigInteger pendingNonce = requireSuccessfulResponse(
-                web3j.ethGetTransactionCount(attempt.walletAddress(), DefaultBlockParameterName.PENDING).send(),
+            BigInteger pendingNonce = inspectRpc(
+                () -> web3j.ethGetTransactionCount(
+                    attempt.walletAddress(), DefaultBlockParameterName.PENDING
+                ).send(),
                 "reading pending nonce"
             ).getTransactionCount();
             if (pendingNonce == null || pendingNonce.compareTo(attempt.nonce()) > 0) {

@@ -278,6 +278,26 @@ class SessionStartedOnChainPublisherServiceTest {
     }
 
     @Test
+    void submittedStaleThresholdUsesTheDatabaseClock() throws Exception {
+        SessionStartedOnChainPublisherService service = buildService(jdbcTemplate);
+        String hash = "0x" + "c".repeat(64);
+        mockSubmittedQuery(List.of(mappedRecord(
+            "SUBMITTED", 1, "0xwallet", BigInteger.valueOf(45), hash,
+            Instant.now().minusSeconds(600)
+        )));
+        mockPendingEmpty();
+        when(onChainClient.transactionStateStrict(hash))
+            .thenReturn(SessionStartedOnChainClient.TransactionState.PENDING);
+
+        assertThat(service.publishPending(10)).isZero();
+
+        verify(jdbcTemplate).update(
+            argThat(sql -> sql.contains("TIMESTAMPADD(MICROSECOND, -?, CURRENT_TIMESTAMP)")),
+            any(Object[].class)
+        );
+    }
+
+    @Test
     void skipsWhenDatasourceIsUnavailable() {
         SessionStartedOnChainPublisherService service = buildService(null);
         assertThat(service.publishPending()).isZero();
