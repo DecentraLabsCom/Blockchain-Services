@@ -1,11 +1,16 @@
 package decentralabs.blockchain.service.auth;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.when;
 
 import decentralabs.blockchain.dto.auth.AuthResponse;
 import java.math.BigInteger;
+import java.sql.Timestamp;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
@@ -17,6 +22,9 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Supplier;
+import java.util.function.BiConsumer;
+import java.util.function.Consumer;
+import java.util.function.Function;
 import org.flywaydb.core.Flyway;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
@@ -26,6 +34,7 @@ import org.springframework.beans.factory.support.StaticListableBeanFactory;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.DataSourceTransactionManager;
 import org.springframework.jdbc.datasource.DriverManagerDataSource;
+import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.web.server.ResponseStatusException;
@@ -154,6 +163,30 @@ class InstitutionalConcurrencyMySqlIntegrationTest {
     }
 
     @Test
+    void legacyPayerSignerContextIsRepairedOnlyBeforeOnchainMaterialExists() {
+        InstitutionalCheckInOutboxService service = outboxService();
+        InstitutionalCheckInOutboxRecord legacy = service.enqueueAccessGranted(
+            "0xlegacy-signer", "42", "0xpayer", "0xpayer", "0xpuc", "session"
+        );
+
+        InstitutionalCheckInOutboxRecord repaired = service.enqueueAccessGranted(
+            "0xlegacy-signer", "42", "0xpayer", "0xbackend-signer", "0xpuc", "session"
+        );
+        assertThat(repaired.walletAddress()).isEqualTo("0xbackend-signer");
+
+        jdbcTemplate.update(
+            "UPDATE institutional_checkin_outbox SET chain_id = ?, nonce = ?, tx_hash = ?, "
+                + "signed_raw_transaction = ? WHERE id = ?",
+            CHAIN_ID, BigInteger.valueOf(45), "0x" + "a".repeat(64), "0xraw", legacy.id()
+        );
+        InstitutionalCheckInOutboxRecord preserved = service.enqueueAccessGranted(
+            "0xlegacy-signer", "42", "0xpayer", "0xother-signer", "0xpuc", "session"
+        );
+
+        assertThat(preserved.walletAddress()).isEqualTo("0xbackend-signer");
+    }
+
+    @Test
     void onlyOneReplicaOwnsAReservationLeaseAndAStaleOwnerCannotRollbackTheReplacement() throws Exception {
         AccessAuthorizationProvisioningService replicaA = provisioningService();
         AccessAuthorizationProvisioningService replicaB = provisioningService();
@@ -229,7 +262,123 @@ class InstitutionalConcurrencyMySqlIntegrationTest {
         )).isEqualTo(1);
     }
 
+    @Test
+    void sessionStartedPublisherFencesDurableWritesWithDatabaseOwnedClaim() throws Exception {
+        String signer = "0x1111111111111111111111111111111111111111";
+        long attestationId = insertAttestation(
+            "session-publisher", "0x" + "1".repeat(64), signer
+        );
+        SessionStartedOnChainClient client = mock(SessionStartedOnChainClient.class);
+        InstitutionalWalletTransactionDispatcher dispatcher = mock(
+            InstitutionalWalletTransactionDispatcher.class
+        );
+        InstitutionalWalletTransactionDispatcher.PreparedTransaction prepared =
+            new InstitutionalWalletTransactionDispatcher.PreparedTransaction(
+                "0x01", "0x" + "a".repeat(64), BigInteger.ONE
+            );
+
+        when(client.connectedChainId()).thenReturn(CHAIN_ID);
+        when(client.signerAddress()).thenReturn(signer);
+        when(client.hasSessionStarted("0xreservation")).thenReturn(false);
+        when(client.prepareSessionStarted(any(), eq(BigInteger.valueOf(45)), eq(0)))
+            .thenReturn(prepared);
+        doAnswer(invocation -> {
+            BiConsumer<BigInteger, BigInteger> persistNonce = invocation.getArgument(3);
+            persistNonce.accept(CHAIN_ID, BigInteger.valueOf(45));
+
+            Timestamp databaseNow = jdbcTemplate.queryForObject(
+                "SELECT CURRENT_TIMESTAMP(6)", Timestamp.class
+            );
+            Timestamp claimExpiresAt = jdbcTemplate.queryForObject(
+                "SELECT onchain_claim_expires_at FROM session_started_attestations WHERE id = ?",
+                Timestamp.class,
+                attestationId
+            );
+            assertThat(Duration.between(databaseNow.toInstant(), claimExpiresAt.toInstant()).toMillis())
+                .isBetween(299_000L, 301_000L);
+            assertThat(jdbcTemplate.queryForObject(
+                "SELECT onchain_claim_id FROM session_started_attestations WHERE id = ?",
+                String.class,
+                attestationId
+            )).isNotBlank();
+
+            Function<BigInteger, InstitutionalWalletTransactionDispatcher.PreparedTransaction> prepare =
+                invocation.getArgument(4);
+            Consumer<InstitutionalWalletTransactionDispatcher.PreparedTransaction> persistPrepared =
+                invocation.getArgument(5);
+            Consumer<String> persistHash = invocation.getArgument(6);
+            InstitutionalWalletTransactionDispatcher.PreparedTransaction transaction =
+                prepare.apply(BigInteger.valueOf(45));
+            persistPrepared.accept(transaction);
+            persistHash.accept(transaction.transactionHash());
+            return transaction.transactionHash();
+        }).when(dispatcher).dispatchPrepared(
+            eq(signer), any(), any(), any(), any(), any(), any()
+        );
+
+        SessionStartedOnChainPublisherService publisher = new SessionStartedOnChainPublisherService(
+            provider(new JdbcTemplate(dataSource)), client, dispatcher
+        );
+        ReflectionTestUtils.setField(publisher, "claimLeaseMillis", 300_000L);
+
+        assertThat(publisher.publishPending(10)).isEqualTo(1);
+        Map<String, Object> row = jdbcTemplate.queryForMap(
+            "SELECT onchain_status, onchain_wallet_address, onchain_chain_id, onchain_nonce, "
+                + "onchain_tx_hash, onchain_claim_id FROM session_started_attestations WHERE id = ?",
+            attestationId
+        );
+        assertThat(row.get("onchain_status")).isEqualTo("SUBMITTED");
+        assertThat(row.get("onchain_wallet_address")).isEqualTo(signer);
+        assertThat(((Number) row.get("onchain_chain_id")).longValue()).isEqualTo(CHAIN_ID.longValue());
+        assertThat(((Number) row.get("onchain_nonce")).longValue()).isEqualTo(45L);
+        assertThat(row.get("onchain_tx_hash")).isEqualTo(prepared.transactionHash());
+        assertThat(row.get("onchain_claim_id")).isNull();
+    }
+
+    @Test
+    void exhaustedStaleSessionStartedClaimBecomesManualInterventionWithoutReleasingGuard() {
+        String signer = "0x1111111111111111111111111111111111111111";
+        long attestationId = insertAttestation(
+            "session-exhausted", "0x" + "3".repeat(64), signer
+        );
+        jdbcTemplate.update(
+            "UPDATE session_started_attestations SET onchain_status = 'SUBMITTING', "
+                + "onchain_publish_attempts = ?, onchain_reservation_guard = reservation_key, "
+                + "onchain_publish_locked_at = DATE_SUB(CURRENT_TIMESTAMP, INTERVAL 10 MINUTE), "
+                + "onchain_claim_id = ?, onchain_claimed_by = ?, onchain_claim_version = ?, "
+                + "onchain_claim_expires_at = DATE_SUB(CURRENT_TIMESTAMP, INTERVAL 1 MINUTE) "
+                + "WHERE id = ?",
+            3, "expired-claim", "worker-a", 1L, attestationId
+        );
+        SessionStartedOnChainClient client = mock(SessionStartedOnChainClient.class);
+        InstitutionalWalletTransactionDispatcher dispatcher = mock(
+            InstitutionalWalletTransactionDispatcher.class
+        );
+        when(client.connectedChainId()).thenReturn(CHAIN_ID);
+        when(client.signerAddress()).thenReturn(signer);
+        SessionStartedOnChainPublisherService publisher = new SessionStartedOnChainPublisherService(
+            provider(new JdbcTemplate(dataSource)), client, dispatcher
+        );
+        ReflectionTestUtils.setField(publisher, "maxAttempts", 3);
+
+        assertThat(publisher.publishPending(10)).isEqualTo(1);
+        Map<String, Object> row = jdbcTemplate.queryForMap(
+            "SELECT onchain_status, onchain_reservation_guard, onchain_claim_id "
+                + "FROM session_started_attestations WHERE id = ?",
+            attestationId
+        );
+        assertThat(row.get("onchain_status")).isEqualTo("MANUAL_INTERVENTION");
+        assertThat(row.get("onchain_reservation_guard")).isEqualTo("0xreservation");
+        assertThat(row.get("onchain_claim_id")).isNull();
+    }
+
     private long insertAttestation(String sessionId, String nonce) {
+        return insertAttestation(
+            sessionId, nonce, "0x1111111111111111111111111111111111111111"
+        );
+    }
+
+    private long insertAttestation(String sessionId, String nonce, String signer) {
         jdbcTemplate.update(
             """
             INSERT INTO session_started_attestations (
@@ -237,7 +386,7 @@ class InstitutionalConcurrencyMySqlIntegrationTest {
                 nonce, digest, signature, credential_reference_type, credential_reference_id
             ) VALUES (?, ?, ?, 'fmu', CURRENT_TIMESTAMP, ?, ?, ?, 'jwt_jti', ?)
             """,
-            "0xreservation", "0x1111111111111111111111111111111111111111", sessionId,
+            "0xreservation", signer, sessionId,
             nonce, nonce, "0x" + "a".repeat(130), sessionId
         );
         return jdbcTemplate.queryForObject(

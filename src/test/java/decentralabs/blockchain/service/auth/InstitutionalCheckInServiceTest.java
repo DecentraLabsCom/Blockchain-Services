@@ -3,9 +3,12 @@ package decentralabs.blockchain.service.auth;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import decentralabs.blockchain.dto.auth.CheckInRequest;
@@ -32,6 +35,7 @@ import org.web3j.utils.Numeric;
 
 @ExtendWith(MockitoExtension.class)
 class InstitutionalCheckInServiceTest {
+    private static final BigInteger CHAIN_ID = BigInteger.valueOf(11155111);
 
     @Mock
     private SamlValidationService samlValidationService;
@@ -75,6 +79,7 @@ class InstitutionalCheckInServiceTest {
     void setUp() {
         ReflectionTestUtils.setField(service, "contractAddress", "0x2222222222222222222222222222222222222222");
         ReflectionTestUtils.setField(service, "delegationEnabled", true);
+        lenient().when(checkInOnChainService.connectedChainId()).thenReturn(CHAIN_ID);
         credentials = Credentials.create("4f3edf983ac636a65a842ce7c78d9aa706d3b113bce036f7f8f2f0d9f7d4c001");
     }
 
@@ -170,6 +175,36 @@ class InstitutionalCheckInServiceTest {
         assertThat(response).isSameAs(onChainResponse);
         verify(nonceDispatcher).dispatch(claim, true);
         verify(nonceDispatcher, never()).dispatch(claim);
+    }
+
+    @Test
+    void quarantinesInteractiveClaimWhenPersistedWalletOrChainDiffers() throws Exception {
+        InstitutionalCheckInRequest request = validRequest();
+        SamlAssertionAttributes saml = samlAttributes();
+
+        when(samlValidationService.validateSamlAssertionDetailed("valid-saml")).thenReturn(saml);
+        when(marketplaceEndpointAuthService.enforceToken("market-token", null)).thenReturn(marketplaceClaims());
+        when(bookingService.getCheckInBookingInfo(any(), eq("0xabc"), eq("42"), eq("puc-123")))
+            .thenReturn(Map.of("reservationKey", "0xabc"));
+        when(institutionalWalletService.getInstitutionalWalletAddress()).thenReturn(credentials.getAddress());
+        when(directoryService.isAuthorizedCheckInSigner(any(), any())).thenReturn(true);
+
+        InstitutionalCheckInOutboxRecord record = replacementRecord(
+            "0x9999999999999999999999999999999999999999", BigInteger.ONE
+        );
+        when(outboxService.enqueueAccessGranted(any(), any(), any(), any(), any(), any())).thenReturn(record);
+        when(outboxService.quarantineContextMismatch(record, CHAIN_ID, credentials.getAddress())).thenReturn(true);
+
+        CheckInResponse response = service.checkIn(request);
+
+        assertThat(response.isValid()).isTrue();
+        assertThat(response.getQueued()).isTrue();
+        assertThat(response.getReason()).isEqualTo("CHECKIN_CONTEXT_QUARANTINED");
+        assertThat(response.getTxHash()).isEqualTo(record.txHash());
+        verify(outboxService).quarantineContextMismatch(record, CHAIN_ID, credentials.getAddress());
+        verify(outboxService, never()).restartTerminalFailure(anyLong());
+        verify(outboxService, never()).claim(record.id());
+        verifyNoInteractions(nonceDispatcher);
     }
 
     @Test
@@ -556,10 +591,14 @@ class InstitutionalCheckInServiceTest {
     }
 
     private InstitutionalCheckInOutboxRecord replacementRecord() {
+        return replacementRecord(credentials.getAddress(), BigInteger.valueOf(11155111));
+    }
+
+    private InstitutionalCheckInOutboxRecord replacementRecord(String wallet, BigInteger chainId) {
         return new InstitutionalCheckInOutboxRecord(
             1L, "0xabc", "42", "0x1111111111111111111111111111111111111111",
             computePucHash("puc-123"), "0xabc", "REPLACEMENT_PENDING", 1, java.time.Instant.now(),
-            "0xold", credentials.getAddress(), BigInteger.valueOf(11155111), BigInteger.valueOf(7),
+            "0xold", wallet, chainId, BigInteger.valueOf(7),
             java.time.Instant.now(), 2L, "0xold-raw", BigInteger.valueOf(100), BigInteger.valueOf(100), 1L
         );
     }

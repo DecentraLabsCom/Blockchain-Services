@@ -51,7 +51,15 @@ public class InstitutionalCheckInOutboxService {
                 status, attempts, next_attempt_at, created_at, updated_at
             ) VALUES (?, ?, ?, ?, ?, ?, 'PENDING', 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
             ON DUPLICATE KEY UPDATE
-                reservation_key = VALUES(reservation_key)
+                reservation_key = VALUES(reservation_key),
+                wallet_address = CASE
+                    WHEN chain_id IS NULL AND nonce IS NULL
+                      AND tx_hash IS NULL AND signed_raw_transaction IS NULL
+                      AND (status <> 'SUBMITTING' OR claim_expires_at IS NULL
+                           OR claim_expires_at <= CURRENT_TIMESTAMP)
+                    THEN VALUES(wallet_address)
+                    ELSE wallet_address
+                END
             """,
             reservationKey,
             labId,
@@ -151,6 +159,43 @@ public class InstitutionalCheckInOutboxService {
             id
         );
         return findById(id);
+    }
+
+    /**
+     * Quarantines durable transaction material that belongs to a different
+     * active chain or signer. The old context is intentionally preserved so
+     * it can be reconciled against the network that created it.
+     */
+    public boolean quarantineContextMismatch(
+        InstitutionalCheckInOutboxRecord record,
+        BigInteger activeChainId,
+        String activeWalletAddress
+    ) {
+        if (jdbcTemplate == null || record == null || activeChainId == null
+                || activeWalletAddress == null || activeWalletAddress.isBlank()) {
+            return false;
+        }
+        String error = "Check-in transaction quarantined: persisted chain/wallet context does not match "
+            + "the active chain/wallet";
+        return jdbcTemplate.update(
+            """
+            UPDATE institutional_checkin_outbox
+            SET status = 'MANUAL_INTERVENTION', last_error = ?,
+                version = version + 1, updated_at = CURRENT_TIMESTAMP
+            WHERE id = ? AND version = ? AND (
+                status = 'PENDING'
+                OR status = 'RETRY'
+                OR status = 'REPLACEMENT_PENDING'
+                OR status = 'SUBMITTED'
+                OR status = 'STUCK_UNKNOWN'
+                OR status = 'FAILED'
+                OR (status = 'SUBMITTING' AND (
+                    claim_expires_at IS NULL OR claim_expires_at <= CURRENT_TIMESTAMP
+                ))
+            )
+            """,
+            error, record.id(), record.version()
+        ) == 1;
     }
 
     public List<InstitutionalCheckInOutboxRecord> findDue(

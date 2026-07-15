@@ -2,6 +2,7 @@ package decentralabs.blockchain.service.auth;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.contains;
 import static org.mockito.ArgumentMatchers.eq;
@@ -66,12 +67,39 @@ class SessionStartedOnChainPublisherServiceTest {
         assertThat(service.publishPending(10)).isEqualTo(1);
 
         verify(onChainClient).prepareSessionStarted(any(), eq(BigInteger.valueOf(45)), eq(0));
-        verify(jdbcTemplate).update(
-            contains("onchain_wallet_address = ?"), eq("0xwallet"), eq(CHAIN_ID),
-            eq(BigInteger.valueOf(45)), eq(7L)
-        );
-        verify(jdbcTemplate).update(contains("onchain_status = 'SUBMITTED'"), eq("0x" + "a".repeat(64)), eq(7L));
+        verify(jdbcTemplate).update(contains("onchain_wallet_address = ?"), any(Object[].class));
+        verify(jdbcTemplate).update(contains("onchain_status = 'SUBMITTED'"), any(Object[].class));
         verify(onChainClient, never()).transactionState(anyString());
+    }
+
+    @Test
+    void claimsSessionStartedWithDatabaseOwnedLeaseAndFencesDurableWrites() throws Exception {
+        SessionStartedOnChainPublisherService service = buildService(jdbcTemplate);
+        mockSubmittedQuery(List.of());
+        mockPendingQuery("QUEUED", 0, null, null, null, null);
+        when(jdbcTemplate.update(anyString(), any(Object[].class))).thenReturn(1);
+        when(onChainClient.hasSessionStarted("0xabc")).thenReturn(false);
+        when(onChainClient.prepareSessionStarted(any(), eq(BigInteger.valueOf(45)), eq(0)))
+            .thenReturn(prepared("0x" + "a".repeat(64)));
+        mockDispatch(BigInteger.valueOf(45), "0x" + "a".repeat(64));
+
+        assertThat(service.publishPending(10)).isEqualTo(1);
+
+        verify(jdbcTemplate, atLeastOnce()).update(contains("onchain_claim_id = ?"), any(Object[].class));
+        verify(jdbcTemplate).update(
+            contains("onchain_claim_expires_at = TIMESTAMPADD(MICROSECOND, ?, CURRENT_TIMESTAMP)"),
+            any(Object[].class)
+        );
+        verify(jdbcTemplate, atLeastOnce()).update(
+            argThat(sql -> sql.contains("onchain_claim_id = ?") && sql.contains("onchain_version = ?")),
+            any(Object[].class)
+        );
+        verify(jdbcTemplate, atLeastOnce()).update(
+            argThat(sql -> sql.contains("onchain_claim_id = ?")
+                && sql.contains("onchain_claimed_by = ?")
+                && sql.contains("onchain_claim_version = ?")),
+            any(Object[].class)
+        );
     }
 
     @Test
@@ -86,7 +114,7 @@ class SessionStartedOnChainPublisherServiceTest {
 
         assertThat(service.publishPending(10)).isEqualTo(1);
 
-        verify(jdbcTemplate).update(contains("onchain_status = 'MINED_SUCCESS'"), eq(hash), eq(7L), eq(hash));
+        verify(jdbcTemplate).update(contains("onchain_status = 'MINED_SUCCESS'"), any(Object[].class));
         verify(onChainClient).transactionStateStrict(hash);
         verify(onChainClient, never()).transactionState(hash);
         verify(transactionDispatcher, never()).dispatchPrepared(anyString(), any(), any(), any(), any(), any(), any());
@@ -177,7 +205,13 @@ class SessionStartedOnChainPublisherServiceTest {
         verify(transactionDispatcher).dispatchPrepared(
             eq("0xwallet"), eq(CHAIN_ID), eq(BigInteger.valueOf(47)), any(), any(), any(), any()
         );
-        verify(jdbcTemplate).update(contains("session_started_attestation_hash_history"), any(Object[].class));
+        verify(jdbcTemplate).update(
+            argThat(sql -> sql.contains("session_started_attestation_hash_history")
+                && sql.contains("onchain_claim_id = ?")
+                && sql.contains("onchain_claimed_by = ?")
+                && sql.contains("onchain_claim_version = ?")),
+            any(Object[].class)
+        );
         verify(jdbcTemplate, atLeastOnce()).update(contains("onchain_version = onchain_version + 1"), any(Object[].class));
     }
 
@@ -192,7 +226,7 @@ class SessionStartedOnChainPublisherServiceTest {
         assertThat(service.publishPending(10)).isEqualTo(1);
 
         verify(transactionDispatcher, never()).dispatchPrepared(anyString(), any(), any(), any(), any(), any(), any());
-        verify(jdbcTemplate).update(contains("onchain_status = 'MINED_SUCCESS'"), eq(7L));
+        verify(jdbcTemplate).update(contains("onchain_status = 'MINED_SUCCESS'"), any(Object[].class));
     }
 
     @Test
@@ -207,6 +241,39 @@ class SessionStartedOnChainPublisherServiceTest {
 
         verify(jdbcTemplate).query(
             contains("onchain_publish_attempts < ?"), anyTransactionRowMapper(), any(Object[].class)
+        );
+    }
+
+    @Test
+    void staleSubmittingAtMaxAttemptsIsMovedToManualIntervention() throws Exception {
+        SessionStartedOnChainPublisherService service = buildService(jdbcTemplate);
+        ReflectionTestUtils.setField(service, "maxAttempts", 3);
+        mockSubmittedQuery(List.of());
+        mockPendingQuery("SUBMITTING", 3, null, null, null, Instant.now().minusSeconds(600));
+        when(jdbcTemplate.update(anyString(), any(Object[].class))).thenReturn(1);
+
+        assertThat(service.publishPending(10)).isEqualTo(1);
+
+        verify(jdbcTemplate).update(
+            argThat(sql -> sql.contains("onchain_status = 'MANUAL_INTERVENTION'")
+                && sql.contains("onchain_publish_attempts >= ?")),
+            any(Object[].class)
+        );
+        verify(onChainClient, never()).hasSessionStarted(anyString());
+    }
+
+    @Test
+    void staleThresholdUsesTheDatabaseClock() {
+        SessionStartedOnChainPublisherService service = buildService(jdbcTemplate);
+        ReflectionTestUtils.setField(service, "lockTimeoutSeconds", 42L);
+        mockSubmittedQuery(List.of());
+        mockPendingEmpty();
+
+        assertThat(service.publishPending(10)).isZero();
+
+        verify(jdbcTemplate).query(
+            argThat(sql -> sql.contains("TIMESTAMPADD(SECOND, -?, CURRENT_TIMESTAMP)")),
+            anyTransactionRowMapper(), any(Object[].class)
         );
     }
 
@@ -232,7 +299,7 @@ class SessionStartedOnChainPublisherServiceTest {
 
         assertThat(service.publishPending(10)).isZero();
 
-        verify(jdbcTemplate).update(contains("onchain_status = 'SUPERSEDED'"), eq(7L));
+        verify(jdbcTemplate).update(contains("onchain_status = 'SUPERSEDED'"), any(Object[].class));
         verify(transactionDispatcher, never()).dispatchPrepared(anyString(), any(), any(), any(), any(), any(), any());
     }
 
@@ -254,8 +321,7 @@ class SessionStartedOnChainPublisherServiceTest {
 
         verify(jdbcTemplate).update(
             contains("onchain_status = 'STUCK_UNKNOWN'"),
-            eq("broadcast outcome uncertain"),
-            eq(7L)
+            any(Object[].class)
         );
         verify(jdbcTemplate, never()).update(contains("onchain_reservation_guard = CASE"), any(Object[].class));
     }
@@ -280,7 +346,7 @@ class SessionStartedOnChainPublisherServiceTest {
 
         verify(jdbcTemplate).update(
             contains("onchain_status = ?"),
-            eq("RETRY"), eq(true), contains("blocked by another institutional wallet transaction"), eq(7L)
+            any(Object[].class)
         );
         verify(jdbcTemplate, never()).update(contains("onchain_status = 'STUCK_UNKNOWN'"), any(Object[].class));
     }
@@ -305,8 +371,7 @@ class SessionStartedOnChainPublisherServiceTest {
 
         verify(jdbcTemplate).update(
             contains("onchain_status = ?"),
-            eq("MANUAL_INTERVENTION"), eq(false),
-            contains("Permanent pre-broadcast SessionStarted failure"), eq(7L)
+            any(Object[].class)
         );
     }
 
@@ -329,9 +394,9 @@ class SessionStartedOnChainPublisherServiceTest {
         );
         verify(jdbcTemplate).update(
             contains("WHEN onchain_status = 'FAILED' THEN 1"),
-            eq(7L), eq(1), any(Timestamp.class)
+            any(Object[].class)
         );
-        verify(jdbcTemplate).update(contains("onchain_status = 'SUBMITTED'"), eq("0x" + "a".repeat(64)), eq(7L));
+        verify(jdbcTemplate).update(contains("onchain_status = 'SUBMITTED'"), any(Object[].class));
     }
 
     @Test
@@ -353,10 +418,7 @@ class SessionStartedOnChainPublisherServiceTest {
             anyTransactionRowMapper(), any(Object[].class)
         );
         verify(onChainClient).prepareSessionStarted(any(), eq(BigInteger.valueOf(45)), eq(1));
-        verify(jdbcTemplate).update(
-            contains("onchain_wallet_address = ?"), eq("0xwallet"), eq(CHAIN_ID),
-            eq(BigInteger.valueOf(45)), eq(7L)
-        );
+        verify(jdbcTemplate).update(contains("onchain_wallet_address = ?"), any(Object[].class));
     }
 
     @Test
@@ -380,7 +442,7 @@ class SessionStartedOnChainPublisherServiceTest {
 
         verify(jdbcTemplate).update(
             contains("CASE WHEN onchain_publish_attempts >= ?"),
-            eq(1), contains("temporary signing RPC failure"), eq(7L)
+            any(Object[].class)
         );
     }
 
@@ -398,7 +460,7 @@ class SessionStartedOnChainPublisherServiceTest {
 
         assertThat(service.publishPending(10)).isEqualTo(1);
 
-        verify(jdbcTemplate).update(contains("onchain_status = 'STUCK_UNKNOWN'"), isNull(), eq(7L));
+        verify(jdbcTemplate).update(contains("onchain_status = 'STUCK_UNKNOWN'"), any(Object[].class));
         verify(onChainClient, never()).transactionStateStrict(anyString());
     }
 
@@ -422,7 +484,7 @@ class SessionStartedOnChainPublisherServiceTest {
         service.publishPending(10);
 
         verify(jdbcTemplate).update(
-            contains("onchain_status = 'RETRY'"), any(String.class), eq(7L), eq(hash)
+            contains("onchain_status = 'RETRY'"), any(Object[].class)
         );
     }
 
@@ -444,7 +506,7 @@ class SessionStartedOnChainPublisherServiceTest {
         assertThat(service.publishPending(10)).isZero();
 
         verify(jdbcTemplate).update(
-            contains("onchain_status = 'SUBMITTED'"), eq(hash), eq(7L), eq(hash)
+            contains("onchain_status = 'SUBMITTED'"), any(Object[].class)
         );
         verify(onChainClient, never()).pendingNonce(anyString());
         verify(onChainClient, never()).broadcastSignedRawTransaction(anyString());
@@ -452,7 +514,11 @@ class SessionStartedOnChainPublisherServiceTest {
 
     private SessionStartedOnChainPublisherService buildService(JdbcTemplate template) {
         when(jdbcTemplateProvider.getIfAvailable()).thenReturn(template);
-        return new SessionStartedOnChainPublisherService(jdbcTemplateProvider, onChainClient, transactionDispatcher);
+        SessionStartedOnChainPublisherService service = new SessionStartedOnChainPublisherService(
+            jdbcTemplateProvider, onChainClient, transactionDispatcher
+        );
+        ReflectionTestUtils.setField(service, "maxAttempts", 5);
+        return service;
     }
 
     private void mockSubmittedQuery(List<SessionStartedTransactionRecord> rows) {

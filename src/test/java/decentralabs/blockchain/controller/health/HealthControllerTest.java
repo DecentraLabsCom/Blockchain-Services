@@ -272,7 +272,7 @@ class HealthControllerTest {
         void shouldCountFailedCheckInNonceAsBacklog() throws Exception {
             setupHealthyEnvironment();
             when(jdbcTemplate.queryForObject(
-                org.mockito.ArgumentMatchers.contains("status IN ('STUCK_UNKNOWN', 'FAILED') AND nonce IS NOT NULL"),
+                org.mockito.ArgumentMatchers.contains("status IN ('STUCK_UNKNOWN', 'FAILED', 'MANUAL_INTERVENTION') AND nonce IS NOT NULL"),
                 eq(Integer.class)
             )).thenReturn(1);
 

@@ -1078,6 +1078,12 @@
     "defaultValue": 30000
   },
   {
+    "name": "session.attestation.publisher.claim-lease-ms",
+    "type": "java.lang.Long",
+    "description": "Database-owned SessionStarted publisher lease used to fence concurrent replicas.",
+    "defaultValue": 300000
+  },
+  {
     "name": "session.attestation.publisher.nonce-replacement-gas-bump-percent",
     "type": "java.lang.Integer",
     "description": "Gas-price increase per SessionStarted replacement broadcast.",

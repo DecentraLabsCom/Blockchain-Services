@@ -41,6 +41,11 @@ class InstitutionalCheckInOutboxServiceTest {
             values.capture(), values.capture(), values.capture()
         );
         assertThat(sql.getValue()).contains("reservation_key = VALUES(reservation_key)");
+        assertThat(sql.getValue())
+            .contains("WHEN chain_id IS NULL AND nonce IS NULL")
+            .contains("AND tx_hash IS NULL AND signed_raw_transaction IS NULL")
+            .contains("THEN VALUES(wallet_address)")
+            .contains("ELSE wallet_address");
         assertThat(sql.getValue()).contains("institutional_wallet, wallet_address");
         assertThat(sql.getValue()).doesNotContain("status =").doesNotContain("attempts =").doesNotContain("nonce =");
         assertThat(values.getAllValues()).containsExactly(
@@ -143,6 +148,34 @@ class InstitutionalCheckInOutboxServiceTest {
         ArgumentCaptor<String> sql = ArgumentCaptor.forClass(String.class);
         verify(jdbcTemplate).update(sql.capture(), any(Object[].class));
         assertThat(sql.getValue()).contains("mined_at = CURRENT_TIMESTAMP");
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void quarantinesARecordWithoutChangingItsPreviousTransactionContext() {
+        ObjectProvider<JdbcTemplate> provider = mock(ObjectProvider.class);
+        JdbcTemplate jdbcTemplate = mock(JdbcTemplate.class);
+        when(provider.getIfAvailable()).thenReturn(jdbcTemplate);
+        when(jdbcTemplate.update(any(String.class), any(Object[].class))).thenReturn(1);
+        InstitutionalCheckInOutboxService service = new InstitutionalCheckInOutboxService(provider);
+
+        boolean quarantined = service.quarantineContextMismatch(
+            record(), BigInteger.valueOf(11155111), "0xactive-wallet"
+        );
+
+        assertThat(quarantined).isTrue();
+        ArgumentCaptor<String> sql = ArgumentCaptor.forClass(String.class);
+        verify(jdbcTemplate).update(sql.capture(), any(Object[].class));
+        assertThat(sql.getValue())
+            .contains("status = 'MANUAL_INTERVENTION'")
+            .contains("version = version + 1")
+            .contains("status = 'SUBMITTED'")
+            .contains("claim_expires_at IS NULL OR claim_expires_at <= CURRENT_TIMESTAMP")
+            .doesNotContain("wallet_address = NULL")
+            .doesNotContain("chain_id = NULL")
+            .doesNotContain("nonce = NULL")
+            .doesNotContain("tx_hash = NULL")
+            .doesNotContain("signed_raw_transaction = NULL");
     }
 
     private InstitutionalCheckInOutboxRecord record() {

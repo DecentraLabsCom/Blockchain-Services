@@ -83,7 +83,7 @@ public class InstitutionalWalletNonceReservationService {
             SELECT COUNT(*)
             FROM institutional_checkin_outbox
             WHERE wallet_address = ? AND chain_id = ? AND nonce IS NOT NULL
-              AND status IN ('SUBMITTING', 'RETRY', 'FAILED', 'STUCK_UNKNOWN')
+              AND status IN ('SUBMITTING', 'RETRY', 'FAILED', 'STUCK_UNKNOWN', 'MANUAL_INTERVENTION')
             """,
             Long.class,
             walletAddress,

@@ -52,6 +52,7 @@ public class InstitutionalCheckInService {
     private final SamlValidationService samlValidationService;
     private final MarketplaceEndpointAuthService marketplaceEndpointAuthService;
     private final BlockchainBookingService bookingService;
+    private final CheckInOnChainService checkInOnChainService;
     private final InstitutionalWalletService institutionalWalletService;
     private final WalletService walletService;
     private final InstitutionalCheckInDirectoryService directoryService;
@@ -129,6 +130,23 @@ public class InstitutionalCheckInService {
             computePucHash(puc),
             reservationKey
         );
+        if (hasPersistedOnchainContext(record)) {
+            BigInteger activeChainId;
+            try {
+                activeChainId = checkInOnChainService.connectedChainId();
+            } catch (RuntimeException ex) {
+                log.warn("Interactive check-in deferred because active chain context is unavailable: {}", ex.getMessage());
+                return queuedResponse(
+                    reservationKey, configuredSigner, record.txHash(), "CHECKIN_CONTEXT_PENDING"
+                );
+            }
+            if (!matchesActiveContext(record, activeChainId, configuredSigner)) {
+                outboxService.quarantineContextMismatch(record, activeChainId, configuredSigner);
+                return queuedResponse(
+                    reservationKey, configuredSigner, record.txHash(), "CHECKIN_CONTEXT_QUARANTINED"
+                );
+            }
+        }
         if ("MINED_FAILED".equals(record.status()) || "FAILED".equals(record.status())) {
             // The booking, payer and institutional identity were fully revalidated above.
             record = outboxService.restartTerminalFailure(record.id());
@@ -181,6 +199,12 @@ public class InstitutionalCheckInService {
     }
 
     private CheckInResponse queuedResponse(String reservationKey, String signer, String txHash) {
+        return queuedResponse(reservationKey, signer, txHash, "CHECKIN_QUEUED");
+    }
+
+    private CheckInResponse queuedResponse(
+        String reservationKey, String signer, String txHash, String reason
+    ) {
         CheckInResponse response = new CheckInResponse();
         response.setValid(true);
         response.setQueued(true);
@@ -188,8 +212,27 @@ public class InstitutionalCheckInService {
         response.setSigner(signer);
         response.setTxHash(txHash);
         response.setTimestamp(System.currentTimeMillis() / 1000);
-        response.setReason("CHECKIN_QUEUED");
+        response.setReason(reason);
         return response;
+    }
+
+    private boolean hasPersistedOnchainContext(InstitutionalCheckInOutboxRecord record) {
+        return record != null && (
+            record.nonce() != null
+                || hasText(record.txHash())
+                || hasText(record.signedRawTransaction())
+        );
+    }
+
+    private boolean matchesActiveContext(
+        InstitutionalCheckInOutboxRecord record,
+        BigInteger activeChainId,
+        String activeWalletAddress
+    ) {
+        return record.chainId() != null
+            && record.walletAddress() != null
+            && activeChainId.equals(record.chainId())
+            && activeWalletAddress.equalsIgnoreCase(record.walletAddress());
     }
 
     private void validateRequest(InstitutionalCheckInRequest request) {
@@ -389,6 +432,10 @@ public class InstitutionalCheckInService {
         }
         String trimmed = value.trim();
         return trimmed.isEmpty() ? null : trimmed;
+    }
+
+    private boolean hasText(String value) {
+        return value != null && !value.isBlank();
     }
 
     private boolean isAccessAuthorizedStatus(Object value) {

@@ -1,10 +1,11 @@
 package decentralabs.blockchain.service.auth;
 
 import decentralabs.blockchain.util.LogSanitizer;
-import java.sql.Timestamp;
 import java.math.BigInteger;
 import java.time.Instant;
 import java.util.List;
+import java.util.UUID;
+import java.util.concurrent.atomic.AtomicLong;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Value;
@@ -20,10 +21,12 @@ import org.springframework.stereotype.Service;
 public class SessionStartedOnChainPublisherService {
 
     private record ActiveWalletContext(BigInteger chainId, String walletAddress) { }
+    private record PublishClaim(long id, String claimId, String claimedBy, long version) { }
 
     private final JdbcTemplate jdbcTemplate;
     private final SessionStartedOnChainClient onChainClient;
     private final InstitutionalWalletTransactionDispatcher transactionDispatcher;
+    private final String workerId = UUID.randomUUID().toString();
 
     @Value("${session.attestation.publisher.enabled:true}")
     private boolean enabled;
@@ -39,6 +42,9 @@ public class SessionStartedOnChainPublisherService {
 
     @Value("${session.attestation.publisher.stuck-transaction-ms:30000}")
     private long stuckTransactionMs;
+
+    @Value("${session.attestation.publisher.claim-lease-ms:300000}")
+    private long claimLeaseMillis;
 
     public SessionStartedOnChainPublisherService(
         ObjectProvider<JdbcTemplate> jdbcTemplateProvider,
@@ -92,14 +98,19 @@ public class SessionStartedOnChainPublisherService {
                   AND (
                     (onchain_status IN ('QUEUED', 'RETRY', 'SUBMITTING', 'REPLACEMENT_PENDING')
                      AND onchain_publish_attempts < ?)
+                    OR (onchain_status = 'SUBMITTING'
+                        AND onchain_publish_attempts >= ?)
                     OR (onchain_status = 'FAILED'
                         AND onchain_tx_hash IS NULL
                         AND onchain_signed_raw_transaction IS NULL)
                   )
                   AND (
                     onchain_status = 'FAILED'
-                    OR onchain_publish_locked_at IS NULL
-                    OR onchain_publish_locked_at < ?
+                    OR onchain_claim_expires_at <= CURRENT_TIMESTAMP
+                    OR (onchain_claim_expires_at IS NULL AND (
+                        onchain_publish_locked_at IS NULL
+                        OR onchain_publish_locked_at < TIMESTAMPADD(SECOND, -?, CURRENT_TIMESTAMP)
+                    ))
                   )
                   AND (
                     (onchain_chain_id = ? AND LOWER(onchain_wallet_address) = LOWER(?))
@@ -112,7 +123,8 @@ public class SessionStartedOnChainPublisherService {
                 """,
                 transactionRowMapper(),
                 maxPublishAttempts(),
-                lockThreshold(),
+                maxPublishAttempts(),
+                lockTimeoutSecondsValue(),
                 context.chainId(),
                 context.walletAddress(),
                 context.walletAddress(),
@@ -124,32 +136,44 @@ public class SessionStartedOnChainPublisherService {
         }
 
         int submitted = 0;
+        int terminalized = 0;
         for (SessionStartedTransactionRecord record : pending) {
-            if (matchesContext(record, context) && publish(record, context)) {
+            if (!matchesContext(record, context)) {
+                continue;
+            }
+            if (isExhaustedStaleSubmitting(record)) {
+                if (markExhaustedStale(record)) {
+                    terminalized++;
+                }
+                continue;
+            }
+            if (publish(record, context)) {
                 submitted++;
             }
         }
-        return reconciled + mined + submitted;
+        return reconciled + mined + terminalized + submitted;
     }
 
     private boolean publish(SessionStartedTransactionRecord record, ActiveWalletContext context) {
         SessionStartedOnChainSubmission submission = record.submission();
-        if (!claim(submission.id())) {
+        PublishClaim claim = claim(record);
+        if (claim == null) {
             return false;
         }
+        AtomicLong durableVersion = new AtomicLong(claim.version());
 
         try {
             if (onChainClient.hasSessionStarted(submission.reservationKey())) {
-                markAlreadyRecorded(submission.id());
+                markAlreadyRecorded(claim, durableVersion.get());
                 return true;
             }
 
             if ("REPLACEMENT_PENDING".equals(record.status())) {
-                return publishReplacement(record);
+                return publishReplacement(record, claim, durableVersion);
             }
 
             if (hasPersistedMaterial(record)) {
-                return resumePersistedSubmission(record);
+                return resumePersistedSubmission(record, claim, durableVersion.get());
             }
 
             String walletAddress = context.walletAddress();
@@ -159,10 +183,24 @@ public class SessionStartedOnChainPublisherService {
                 walletAddress,
                 record.chainId(),
                 existingNonce,
-                (chainId, nonce) -> markNonceReserved(submission.id(), walletAddress, chainId, nonce),
+                (chainId, nonce) -> {
+                    if (!markNonceReserved(claim, durableVersion.get(), walletAddress, chainId, nonce)) {
+                        throw new IllegalStateException("SessionStarted nonce reservation lost its fencing claim");
+                    }
+                    durableVersion.incrementAndGet();
+                },
                 nonce -> onChainClient.prepareSessionStarted(submission, nonce, preparationAttempts(record)),
-                prepared -> markPrepared(submission.id(), prepared),
-                hash -> markSubmitted(submission.id(), hash)
+                prepared -> {
+                    if (!markPrepared(claim, durableVersion.get(), prepared)) {
+                        throw new IllegalStateException("SessionStarted signed transaction lost its fencing claim");
+                    }
+                    durableVersion.incrementAndGet();
+                },
+                hash -> {
+                    if (!markSubmitted(claim, durableVersion.get(), hash)) {
+                        throw new IllegalStateException("SessionStarted transaction submission lost its fencing claim");
+                    }
+                }
             );
             log.info(
                 "Submitted SessionStarted on-chain for reservation {} tx={}",
@@ -172,14 +210,14 @@ public class SessionStartedOnChainPublisherService {
             return true;
         } catch (InstitutionalWalletDispatchException ex) {
             switch (ex.outcome()) {
-                case PRE_BROADCAST_BLOCKED -> markPreBroadcastBlocked(submission.id());
-                case PRE_BROADCAST_TRANSIENT -> markPreBroadcastTransient(submission.id(), ex);
-                case PRE_BROADCAST_PERMANENT -> markPreBroadcastPermanent(submission.id(), ex);
-                case BROADCAST_OUTCOME_UNKNOWN -> markBroadcastUncertain(submission.id(), ex);
+                case PRE_BROADCAST_BLOCKED -> markPreBroadcastBlocked(claim, durableVersion.get());
+                case PRE_BROADCAST_TRANSIENT -> markPreBroadcastTransient(claim, durableVersion.get(), ex);
+                case PRE_BROADCAST_PERMANENT -> markPreBroadcastPermanent(claim, durableVersion.get(), ex);
+                case BROADCAST_OUTCOME_UNKNOWN -> markBroadcastUncertain(claim, durableVersion.get(), ex);
             }
             return false;
         } catch (Exception ex) {
-            markPreBroadcastTransient(submission.id(), ex);
+            markPreBroadcastTransient(claim, durableVersion.get(), ex);
             return false;
         }
     }
@@ -201,7 +239,11 @@ public class SessionStartedOnChainPublisherService {
             && context.walletAddress().equalsIgnoreCase(record.submission().signerAddress());
     }
 
-    private boolean claim(long id) {
+    private PublishClaim claim(SessionStartedTransactionRecord record) {
+        long id = record.submission().id();
+        String claimId = UUID.randomUUID().toString();
+        long leaseMillis = claimLeaseMillis > 0 ? claimLeaseMillis : 300_000L;
+        long leaseMicros = Math.multiplyExact(leaseMillis, 1_000L);
         try {
             int updated = jdbcTemplate.update(
                 """
@@ -213,6 +255,9 @@ public class SessionStartedOnChainPublisherService {
                     END,
                     onchain_status = 'SUBMITTING',
                     onchain_reservation_guard = reservation_key,
+                    onchain_claim_id = ?, onchain_claimed_by = ?,
+                    onchain_claim_version = onchain_version + 1,
+                    onchain_claim_expires_at = TIMESTAMPADD(MICROSECOND, ?, CURRENT_TIMESTAMP),
                     onchain_version = onchain_version + 1,
                     onchain_publish_last_error = NULL,
                     updated_at = CURRENT_TIMESTAMP
@@ -227,103 +272,143 @@ public class SessionStartedOnChainPublisherService {
                   )
                   AND (
                     onchain_status = 'FAILED'
-                    OR onchain_publish_locked_at IS NULL
-                    OR onchain_publish_locked_at < ?
+                    OR onchain_claim_expires_at <= CURRENT_TIMESTAMP
+                    OR (onchain_claim_expires_at IS NULL AND (
+                        onchain_publish_locked_at IS NULL
+                        OR onchain_publish_locked_at < TIMESTAMPADD(SECOND, -?, CURRENT_TIMESTAMP)
+                    ))
                   )
+                  AND onchain_version = ?
                 """,
+                claimId,
+                workerId,
+                leaseMicros,
                 id,
                 maxPublishAttempts(),
-                lockThreshold()
+                lockTimeoutSecondsValue(),
+                record.version()
             );
-            return updated == 1;
+            return updated == 1 ? new PublishClaim(id, claimId, workerId, record.version() + 1L) : null;
         } catch (DataIntegrityViolationException ex) {
-            markSuperseded(id);
-            return false;
+            markSuperseded(record);
+            return null;
         }
     }
 
-    private void markSuperseded(long id) {
+    private void markSuperseded(SessionStartedTransactionRecord record) {
         jdbcTemplate.update(
             """
             UPDATE session_started_attestations
             SET onchain_status = 'SUPERSEDED', onchain_publish_locked_at = NULL,
+                onchain_claim_id = NULL, onchain_claimed_by = NULL,
+                onchain_claim_version = NULL, onchain_claim_expires_at = NULL,
                 onchain_publish_last_error = 'Another attestation owns the reservation on-chain publication',
                 updated_at = CURRENT_TIMESTAMP
-            WHERE id = ? AND onchain_status IN ('QUEUED', 'RETRY', 'SUBMITTING', 'FAILED')
+            WHERE id = ? AND onchain_version = ?
+              AND onchain_status IN ('QUEUED', 'RETRY', 'FAILED')
             """,
-            id
+            record.submission().id(), record.version()
         );
     }
 
-    private void markNonceReserved(long id, String walletAddress, BigInteger chainId, BigInteger nonce) {
-        jdbcTemplate.update(
+    private boolean markNonceReserved(
+        PublishClaim claim,
+        long expectedVersion,
+        String walletAddress,
+        BigInteger chainId,
+        BigInteger nonce
+    ) {
+        return jdbcTemplate.update(
             """
             UPDATE session_started_attestations
             SET onchain_wallet_address = ?,
                 onchain_chain_id = ?,
                 onchain_nonce = ?,
+                onchain_version = onchain_version + 1,
                 updated_at = CURRENT_TIMESTAMP
             WHERE id = ? AND onchain_status = 'SUBMITTING'
+              AND onchain_version = ?
+              AND onchain_claim_id = ? AND onchain_claimed_by = ?
+              AND onchain_claim_version = ?
+              AND onchain_claim_expires_at > CURRENT_TIMESTAMP
             """,
             walletAddress,
             chainId,
             nonce,
-            id
-        );
+            claim.id(),
+            expectedVersion,
+            claim.claimId(),
+            claim.claimedBy(),
+            claim.version()
+        ) == 1;
     }
 
-    private void markSubmitted(long id, String txHash) {
-        jdbcTemplate.update(
+    private boolean markSubmitted(PublishClaim claim, long expectedVersion, String txHash) {
+        return jdbcTemplate.update(
             """
             UPDATE session_started_attestations
             SET onchain_tx_hash = ?,
                 onchain_status = 'SUBMITTED',
                 onchain_submitted_at = CURRENT_TIMESTAMP,
                 onchain_publish_locked_at = NULL,
+                onchain_claim_id = NULL, onchain_claimed_by = NULL,
+                onchain_claim_version = NULL, onchain_claim_expires_at = NULL,
                 onchain_publish_last_error = NULL,
+                onchain_version = onchain_version + 1,
                 updated_at = CURRENT_TIMESTAMP
             WHERE id = ? AND onchain_status = 'SUBMITTING'
+              AND onchain_version = ?
+              AND onchain_claim_id = ? AND onchain_claimed_by = ?
+              AND onchain_claim_version = ?
+              AND onchain_claim_expires_at > CURRENT_TIMESTAMP
             """,
             txHash,
-            id
-        );
+            claim.id(),
+            expectedVersion,
+            claim.claimId(),
+            claim.claimedBy(),
+            claim.version()
+        ) == 1;
     }
 
-    private void markPrepared(long id, String rawTransaction, String txHash) {
+    private boolean markPrepared(
+        PublishClaim claim,
+        long expectedVersion,
+        InstitutionalWalletTransactionDispatcher.PreparedTransaction prepared
+    ) {
+        BigInteger gasPrice = prepared.gasPrice();
         int updated = jdbcTemplate.update(
             """
             UPDATE session_started_attestations
-            SET onchain_signed_raw_transaction = ?, onchain_tx_hash = ?, updated_at = CURRENT_TIMESTAMP
+            SET onchain_signed_raw_transaction = ?, onchain_tx_hash = ?,
+                onchain_original_gas_price = COALESCE(onchain_original_gas_price, ?),
+                onchain_current_gas_price = COALESCE(?, onchain_current_gas_price),
+                onchain_version = onchain_version + 1, updated_at = CURRENT_TIMESTAMP
             WHERE id = ? AND onchain_status = 'SUBMITTING'
+              AND onchain_version = ?
+              AND onchain_claim_id = ? AND onchain_claimed_by = ?
+              AND onchain_claim_version = ?
+              AND onchain_claim_expires_at > CURRENT_TIMESTAMP
             """,
-            rawTransaction,
-            txHash,
-            id
+            prepared.rawTransaction(),
+            prepared.transactionHash(),
+            gasPrice,
+            gasPrice,
+            claim.id(),
+            expectedVersion,
+            claim.claimId(),
+            claim.claimedBy(),
+            claim.version()
         );
-        if (updated != 1) {
-            throw new IllegalStateException("SessionStarted signed transaction could not be persisted before broadcast");
-        }
+        return updated == 1;
     }
 
-    private void markPrepared(
-        long id,
-        InstitutionalWalletTransactionDispatcher.PreparedTransaction prepared
-    ) {
-        markPrepared(id, prepared.rawTransaction(), prepared.transactionHash());
-        if (prepared.gasPrice() != null) {
-            jdbcTemplate.update(
-                """
-                UPDATE session_started_attestations
-                SET onchain_original_gas_price = COALESCE(onchain_original_gas_price, ?),
-                    onchain_current_gas_price = ?, updated_at = CURRENT_TIMESTAMP
-                WHERE id = ? AND onchain_status = 'SUBMITTING' AND onchain_tx_hash = ?
-                """,
-                prepared.gasPrice(), prepared.gasPrice(), id, prepared.transactionHash()
-            );
-        }
-    }
 
-    private boolean publishReplacement(SessionStartedTransactionRecord record)
+    private boolean publishReplacement(
+        SessionStartedTransactionRecord record,
+        PublishClaim claim,
+        AtomicLong durableVersion
+    )
         throws InstitutionalWalletDispatchException {
         if (record.transactionHash() == null || record.transactionNonce() == null
             || record.walletAddress() == null || record.chainId() == null) {
@@ -341,8 +426,17 @@ public class SessionStartedOnChainPublisherService {
             nonce -> onChainClient.prepareSessionStarted(
                 record.submission(), nonce, Math.max(1, record.attempts()), record.originalGasPrice()
             ),
-            prepared -> markReplacementPrepared(record, prepared),
-            hash -> markReplacementSubmitted(record, hash)
+            prepared -> {
+                if (!markReplacementPrepared(record, claim, durableVersion.get(), prepared)) {
+                    throw new IllegalStateException("SessionStarted replacement lost its fencing claim");
+                }
+                durableVersion.incrementAndGet();
+            },
+            hash -> {
+                if (!markReplacementSubmitted(record, claim, durableVersion.get(), hash)) {
+                    throw new IllegalStateException("SessionStarted replacement submission lost its fencing claim");
+                }
+            }
         );
         log.info(
             "Submitted SessionStarted replacement for reservation {} tx={}",
@@ -352,8 +446,10 @@ public class SessionStartedOnChainPublisherService {
         return true;
     }
 
-    private void markReplacementPrepared(
+    private boolean markReplacementPrepared(
         SessionStartedTransactionRecord record,
+        PublishClaim claim,
+        long expectedVersion,
         InstitutionalWalletTransactionDispatcher.PreparedTransaction prepared
     ) {
         BigInteger gasPrice = prepared.gasPrice() != null ? prepared.gasPrice() : record.currentGasPrice();
@@ -364,11 +460,18 @@ public class SessionStartedOnChainPublisherService {
             """
             INSERT INTO session_started_attestation_hash_history
                 (attestation_id, tx_hash, gas_price, replaced_at)
-            VALUES (?, ?, ?, CURRENT_TIMESTAMP)
+            SELECT ?, ?, COALESCE(onchain_current_gas_price, ?), CURRENT_TIMESTAMP
+            FROM session_started_attestations
+            WHERE id = ? AND onchain_status = 'SUBMITTING'
+              AND onchain_tx_hash = ? AND onchain_version = ?
+              AND onchain_claim_id = ? AND onchain_claimed_by = ?
+              AND onchain_claim_version = ?
+              AND onchain_claim_expires_at > CURRENT_TIMESTAMP
             ON DUPLICATE KEY UPDATE gas_price = VALUES(gas_price)
             """,
-            record.submission().id(), record.transactionHash(),
-            record.currentGasPrice() != null ? record.currentGasPrice() : gasPrice
+            record.submission().id(), record.transactionHash(), gasPrice,
+            record.submission().id(), record.transactionHash(), expectedVersion,
+            claim.claimId(), claim.claimedBy(), claim.version()
         );
         int updated = jdbcTemplate.update(
             """
@@ -380,32 +483,44 @@ public class SessionStartedOnChainPublisherService {
                 onchain_version = onchain_version + 1, updated_at = CURRENT_TIMESTAMP
             WHERE id = ? AND onchain_status = 'SUBMITTING'
               AND onchain_tx_hash = ? AND onchain_version = ?
+              AND onchain_claim_id = ? AND onchain_claimed_by = ?
+              AND onchain_claim_version = ?
+              AND onchain_claim_expires_at > CURRENT_TIMESTAMP
             """,
             prepared.rawTransaction(), prepared.transactionHash(), gasPrice,
             record.originalGasPrice() != null ? record.originalGasPrice() : gasPrice,
-            record.submission().id(), record.transactionHash(), record.version() + 1
+            record.submission().id(), record.transactionHash(), expectedVersion,
+            claim.claimId(), claim.claimedBy(), claim.version()
         );
-        if (updated != 1) {
-            throw new IllegalStateException("SessionStarted replacement lost its fencing claim");
-        }
+        return updated == 1;
     }
 
-    private void markReplacementSubmitted(SessionStartedTransactionRecord record, String txHash) {
+    private boolean markReplacementSubmitted(
+        SessionStartedTransactionRecord record,
+        PublishClaim claim,
+        long expectedVersion,
+        String txHash
+    ) {
         int updated = jdbcTemplate.update(
             """
             UPDATE session_started_attestations
             SET onchain_tx_hash = ?, onchain_status = 'SUBMITTED',
                 onchain_submitted_at = CURRENT_TIMESTAMP,
-                onchain_publish_locked_at = NULL, onchain_publish_last_error = NULL,
+                onchain_publish_locked_at = NULL,
+                onchain_claim_id = NULL, onchain_claimed_by = NULL,
+                onchain_claim_version = NULL, onchain_claim_expires_at = NULL,
+                onchain_publish_last_error = NULL,
                 onchain_version = onchain_version + 1, updated_at = CURRENT_TIMESTAMP
             WHERE id = ? AND onchain_status = 'SUBMITTING'
               AND onchain_tx_hash = ? AND onchain_version = ?
+              AND onchain_claim_id = ? AND onchain_claimed_by = ?
+              AND onchain_claim_version = ?
+              AND onchain_claim_expires_at > CURRENT_TIMESTAMP
             """,
-            txHash, record.submission().id(), txHash, record.version() + 2
+            txHash, record.submission().id(), txHash, expectedVersion,
+            claim.claimId(), claim.claimedBy(), claim.version()
         );
-        if (updated != 1) {
-            throw new IllegalStateException("SessionStarted replacement submission lost its fencing claim");
-        }
+        return updated == 1;
     }
 
     private boolean hasPersistedMaterial(SessionStartedTransactionRecord record) {
@@ -417,21 +532,29 @@ public class SessionStartedOnChainPublisherService {
         return "FAILED".equals(record.status()) ? 0 : record.attempts();
     }
 
-    private boolean resumePersistedSubmission(SessionStartedTransactionRecord record)
+    private boolean resumePersistedSubmission(
+        SessionStartedTransactionRecord record,
+        PublishClaim claim,
+        long expectedVersion
+    )
         throws InstitutionalWalletDispatchException {
         String txHash = record.transactionHash();
         try {
             SessionStartedOnChainClient.TransactionState state = onChainClient.transactionStateStrict(txHash);
             if (state == SessionStartedOnChainClient.TransactionState.SUCCEEDED) {
-                markMinedSuccess(record.submission().id(), txHash);
+                markMinedSuccess(claim, expectedVersion, txHash);
                 return true;
             }
             if (state == SessionStartedOnChainClient.TransactionState.FAILED) {
-                markMinedFailed(record.submission().id(), txHash, "SessionStarted transaction reverted on-chain");
+                markMinedFailed(
+                    claim, expectedVersion, txHash, "SessionStarted transaction reverted on-chain"
+                );
                 return false;
             }
             if (onChainClient.transactionVisible(txHash)) {
-                markSubmitted(record.submission().id(), txHash);
+                if (!markSubmitted(claim, expectedVersion, txHash)) {
+                    throw new IllegalStateException("SessionStarted visible transaction lost its fencing claim");
+                }
                 return true;
             }
         } catch (RuntimeException ex) {
@@ -447,7 +570,9 @@ public class SessionStartedOnChainPublisherService {
                 record.signedRawTransaction(), txHash
             )
         );
-        markSubmitted(record.submission().id(), rebroadcastHash);
+        if (!markSubmitted(claim, expectedVersion, rebroadcastHash)) {
+            throw new IllegalStateException("SessionStarted rebroadcast lost its fencing claim");
+        }
         log.info(
             "Rebroadcast persisted SessionStarted transaction for reservation {} tx={}",
             LogSanitizer.sanitize(record.submission().reservationKey()),
@@ -456,7 +581,7 @@ public class SessionStartedOnChainPublisherService {
         return true;
     }
 
-    private void markAlreadyRecorded(long id) {
+    private void markAlreadyRecorded(PublishClaim claim, long expectedVersion) {
         jdbcTemplate.update(
             """
             UPDATE session_started_attestations
@@ -464,43 +589,52 @@ public class SessionStartedOnChainPublisherService {
                 onchain_status = 'MINED_SUCCESS',
                 onchain_mined_at = CURRENT_TIMESTAMP,
                 onchain_publish_locked_at = NULL,
+                onchain_claim_id = NULL, onchain_claimed_by = NULL,
+                onchain_claim_version = NULL, onchain_claim_expires_at = NULL,
                 onchain_publish_last_error = NULL,
+                onchain_version = onchain_version + 1,
                 updated_at = CURRENT_TIMESTAMP
             WHERE id = ? AND onchain_status = 'SUBMITTING'
+              AND onchain_version = ?
+              AND onchain_claim_id = ? AND onchain_claimed_by = ?
+              AND onchain_claim_version = ?
+              AND onchain_claim_expires_at > CURRENT_TIMESTAMP
             """,
-            id
+            claim.id(), expectedVersion, claim.claimId(), claim.claimedBy(), claim.version()
         );
     }
 
-    private void markPreBroadcastBlocked(long id) {
+    private void markPreBroadcastBlocked(PublishClaim claim, long expectedVersion) {
         updatePreBroadcastStatus(
-            id,
+            claim, expectedVersion,
             "RETRY",
             "SessionStarted publication is blocked by another institutional wallet transaction; retrying",
             true
         );
-        log.info("SessionStarted publication remains queued behind a wallet blocker for attestation {}", id);
+        log.info("SessionStarted publication remains queued behind a wallet blocker for attestation {}", claim.id());
     }
 
-    private void markPreBroadcastTransient(long id, Exception ex) {
-        updateExhaustiblePreBroadcastRetry(id, LogSanitizer.sanitize(ex.getMessage()));
+    private void markPreBroadcastTransient(PublishClaim claim, long expectedVersion, Exception ex) {
+        updateExhaustiblePreBroadcastRetry(claim, expectedVersion, LogSanitizer.sanitize(ex.getMessage()));
         log.warn(
             "SessionStarted pre-broadcast publication will be retried or require manual intervention for attestation {}: {}",
-            id, ex.getMessage()
+            claim.id(), ex.getMessage()
         );
     }
 
-    private void markPreBroadcastPermanent(long id, Exception ex) {
+    private void markPreBroadcastPermanent(PublishClaim claim, long expectedVersion, Exception ex) {
         updatePreBroadcastStatus(
-            id,
+            claim, expectedVersion,
             "MANUAL_INTERVENTION",
             "Permanent pre-broadcast SessionStarted failure: " + LogSanitizer.sanitize(ex.getMessage()),
             false
         );
-        log.error("SessionStarted publication requires manual intervention for attestation {}: {}", id, ex.getMessage());
+        log.error("SessionStarted publication requires manual intervention for attestation {}: {}", claim.id(), ex.getMessage());
     }
 
-    private void updatePreBroadcastStatus(long id, String status, String error, boolean refundAttempt) {
+    private void updatePreBroadcastStatus(
+        PublishClaim claim, long expectedVersion, String status, String error, boolean refundAttempt
+    ) {
         jdbcTemplate.update(
             """
             UPDATE session_started_attestations
@@ -508,33 +642,52 @@ public class SessionStartedOnChainPublisherService {
                 onchain_status = ?,
                 onchain_publish_attempts = CASE WHEN ? THEN GREATEST(onchain_publish_attempts - 1, 0)
                     ELSE onchain_publish_attempts END,
+                onchain_claim_id = NULL, onchain_claimed_by = NULL,
+                onchain_claim_version = NULL, onchain_claim_expires_at = NULL,
                 onchain_publish_last_error = ?,
+                onchain_version = onchain_version + 1,
                 updated_at = CURRENT_TIMESTAMP
             WHERE id = ? AND onchain_status = 'SUBMITTING'
+              AND onchain_version = ?
+              AND onchain_claim_id = ? AND onchain_claimed_by = ?
+              AND onchain_claim_version = ?
+              AND onchain_claim_expires_at > CURRENT_TIMESTAMP
             """,
             status,
             refundAttempt,
             error,
-            id
+            claim.id(), expectedVersion, claim.claimId(), claim.claimedBy(), claim.version()
         );
     }
 
-    private void updateExhaustiblePreBroadcastRetry(long id, String error) {
+    private void updateExhaustiblePreBroadcastRetry(
+        PublishClaim claim, long expectedVersion, String error
+    ) {
         jdbcTemplate.update(
             """
             UPDATE session_started_attestations
             SET onchain_publish_locked_at = NULL,
                 onchain_status = CASE WHEN onchain_publish_attempts >= ?
                     THEN 'MANUAL_INTERVENTION' ELSE 'RETRY' END,
+                onchain_claim_id = NULL, onchain_claimed_by = NULL,
+                onchain_claim_version = NULL, onchain_claim_expires_at = NULL,
                 onchain_publish_last_error = ?,
+                onchain_version = onchain_version + 1,
                 updated_at = CURRENT_TIMESTAMP
             WHERE id = ? AND onchain_status = 'SUBMITTING'
+              AND onchain_version = ?
+              AND onchain_claim_id = ? AND onchain_claimed_by = ?
+              AND onchain_claim_version = ?
+              AND onchain_claim_expires_at > CURRENT_TIMESTAMP
             """,
-            maxPublishAttempts(), error, id
+            maxPublishAttempts(), error, claim.id(), expectedVersion,
+            claim.claimId(), claim.claimedBy(), claim.version()
         );
     }
 
-    private void markBroadcastUncertain(long id, InstitutionalWalletDispatchException ex) {
+    private void markBroadcastUncertain(
+        PublishClaim claim, long expectedVersion, InstitutionalWalletDispatchException ex
+    ) {
         String error = LogSanitizer.sanitize(ex.getMessage());
         jdbcTemplate.update(
             """
@@ -542,19 +695,25 @@ public class SessionStartedOnChainPublisherService {
             SET onchain_publish_locked_at = NULL,
                 onchain_status = 'STUCK_UNKNOWN',
                 onchain_submitted_at = COALESCE(onchain_submitted_at, CURRENT_TIMESTAMP),
+                onchain_claim_id = NULL, onchain_claimed_by = NULL,
+                onchain_claim_version = NULL, onchain_claim_expires_at = NULL,
                 onchain_publish_last_error = ?,
+                onchain_version = onchain_version + 1,
                 updated_at = CURRENT_TIMESTAMP
             WHERE id = ? AND onchain_status = 'SUBMITTING'
+              AND onchain_version = ?
+              AND onchain_claim_id = ? AND onchain_claimed_by = ?
+              AND onchain_claim_version = ?
+              AND onchain_claim_expires_at > CURRENT_TIMESTAMP
             """,
             error,
-            id
+            claim.id(), expectedVersion, claim.claimId(), claim.claimedBy(), claim.version()
         );
-        log.warn("SessionStarted broadcast outcome is uncertain for attestation {}: {}", id, error);
+        log.warn("SessionStarted broadcast outcome is uncertain for attestation {}: {}", claim.id(), error);
     }
 
-    private Timestamp lockThreshold() {
-        long seconds = Math.max(1L, lockTimeoutSeconds);
-        return Timestamp.from(Instant.now().minusSeconds(seconds));
+    private long lockTimeoutSecondsValue() {
+        return lockTimeoutSeconds > 0 ? lockTimeoutSeconds : 300L;
     }
 
     private int maxPublishAttempts() {
@@ -788,36 +947,92 @@ public class SessionStartedOnChainPublisherService {
         );
     }
 
-    private void markMinedSuccess(long id, String txHash) {
-        jdbcTemplate.update(
+    private boolean markMinedSuccess(PublishClaim claim, long expectedVersion, String txHash) {
+        return jdbcTemplate.update(
             """
             UPDATE session_started_attestations
             SET onchain_tx_hash = ?, onchain_status = 'MINED_SUCCESS',
                 onchain_published_at = CURRENT_TIMESTAMP, onchain_mined_at = CURRENT_TIMESTAMP,
-                onchain_publish_locked_at = NULL, onchain_publish_last_error = NULL,
+                onchain_publish_locked_at = NULL,
+                onchain_claim_id = NULL, onchain_claimed_by = NULL,
+                onchain_claim_version = NULL, onchain_claim_expires_at = NULL,
+                onchain_publish_last_error = NULL,
+                onchain_version = onchain_version + 1,
                 updated_at = CURRENT_TIMESTAMP
-            WHERE id = ? AND onchain_status = 'SUBMITTED' AND onchain_tx_hash = ?
+            WHERE id = ? AND onchain_status = 'SUBMITTING'
+              AND onchain_version = ?
+              AND onchain_claim_id = ? AND onchain_claimed_by = ?
+              AND onchain_claim_version = ?
+              AND onchain_claim_expires_at > CURRENT_TIMESTAMP
             """,
-            txHash,
-            id,
-            txHash
-        );
+            txHash, claim.id(), expectedVersion,
+            claim.claimId(), claim.claimedBy(), claim.version()
+        ) == 1;
     }
 
-    private void markMinedFailed(long id, String txHash, String error) {
-        jdbcTemplate.update(
+    private boolean markMinedFailed(
+        PublishClaim claim, long expectedVersion, String txHash, String error
+    ) {
+        return jdbcTemplate.update(
             """
             UPDATE session_started_attestations
             SET onchain_status = 'MINED_FAILED', onchain_mined_at = CURRENT_TIMESTAMP,
                 onchain_reservation_guard = NULL,
-                onchain_publish_locked_at = NULL, onchain_publish_last_error = ?,
+                onchain_publish_locked_at = NULL,
+                onchain_claim_id = NULL, onchain_claimed_by = NULL,
+                onchain_claim_version = NULL, onchain_claim_expires_at = NULL,
+                onchain_publish_last_error = ?,
+                onchain_version = onchain_version + 1,
                 updated_at = CURRENT_TIMESTAMP
-            WHERE id = ? AND onchain_status = 'SUBMITTED' AND onchain_tx_hash = ?
+            WHERE id = ? AND onchain_status = 'SUBMITTING'
+              AND onchain_version = ?
+              AND onchain_claim_id = ? AND onchain_claimed_by = ?
+              AND onchain_claim_version = ?
+              AND onchain_claim_expires_at > CURRENT_TIMESTAMP
             """,
-            error,
-            id,
-            txHash
+            error, claim.id(), expectedVersion,
+            claim.claimId(), claim.claimedBy(), claim.version()
+        ) == 1;
+    }
+
+    private boolean isExhaustedStaleSubmitting(SessionStartedTransactionRecord record) {
+        return "SUBMITTING".equals(record.status())
+            && record.attempts() >= maxPublishAttempts();
+    }
+
+    private boolean markExhaustedStale(SessionStartedTransactionRecord record) {
+        int updated = jdbcTemplate.update(
+            """
+            UPDATE session_started_attestations
+            SET onchain_status = 'MANUAL_INTERVENTION',
+                onchain_publish_locked_at = NULL,
+                onchain_claim_id = NULL, onchain_claimed_by = NULL,
+                onchain_claim_version = NULL, onchain_claim_expires_at = NULL,
+                onchain_publish_last_error = ?,
+                onchain_version = onchain_version + 1,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE id = ? AND onchain_published_at IS NULL
+              AND onchain_status = 'SUBMITTING'
+              AND onchain_publish_attempts >= ?
+              AND onchain_version = ?
+              AND (
+                onchain_claim_expires_at <= CURRENT_TIMESTAMP
+                OR (onchain_claim_expires_at IS NULL AND (
+                    onchain_publish_locked_at IS NULL
+                    OR onchain_publish_locked_at < TIMESTAMPADD(SECOND, -?, CURRENT_TIMESTAMP)
+                ))
+              )
+            """,
+            "SessionStarted publication exhausted stale recovery attempts; manual reconciliation is required",
+            record.submission().id(), maxPublishAttempts(), record.version(), lockTimeoutSecondsValue()
         );
+        if (updated == 1) {
+            log.error(
+                "SessionStarted publication requires manual intervention after stale recovery exhaustion for attestation {}",
+                record.submission().id()
+            );
+        }
+        return updated == 1;
     }
 
     private void markPendingReplacement(SessionStartedTransactionRecord record) {
@@ -846,7 +1061,7 @@ public class SessionStartedOnChainPublisherService {
         String observedHash
     ) {
         if (observedHash.equalsIgnoreCase(record.transactionHash())) {
-            markMinedSuccess(record.submission().id(), observedHash);
+            markSubmittedMinedSuccess(record, observedHash);
             return;
         }
         jdbcTemplate.update(
@@ -858,6 +1073,24 @@ public class SessionStartedOnChainPublisherService {
             WHERE id = ? AND onchain_status = 'SUBMITTED' AND onchain_version = ?
             """,
             observedHash, record.submission().id(), record.version()
+        );
+    }
+
+    private void markSubmittedMinedSuccess(
+        SessionStartedTransactionRecord record,
+        String observedHash
+    ) {
+        jdbcTemplate.update(
+            """
+            UPDATE session_started_attestations
+            SET onchain_tx_hash = ?, onchain_status = 'MINED_SUCCESS',
+                onchain_published_at = CURRENT_TIMESTAMP, onchain_mined_at = CURRENT_TIMESTAMP,
+                onchain_publish_locked_at = NULL, onchain_publish_last_error = NULL,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE id = ? AND onchain_status = 'SUBMITTED'
+              AND onchain_tx_hash = ? AND onchain_version = ?
+            """,
+            observedHash, record.submission().id(), record.transactionHash(), record.version()
         );
     }
 

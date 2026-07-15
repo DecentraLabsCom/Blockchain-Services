@@ -237,7 +237,7 @@ public class HealthController {
         int threshold = boundedQueueThreshold();
         return countHealthRows(
             "SELECT COUNT(*) FROM institutional_checkin_outbox "
-                + "WHERE (status IN ('STUCK_UNKNOWN', 'FAILED') AND nonce IS NOT NULL) OR (nonce IS NOT NULL "
+                + "WHERE (status IN ('STUCK_UNKNOWN', 'FAILED', 'MANUAL_INTERVENTION') AND nonce IS NOT NULL) OR (nonce IS NOT NULL "
                 + "AND status IN ('PENDING', 'RETRY', 'SUBMITTING', 'SUBMITTED', 'REPLACEMENT_PENDING') "
                 + "AND updated_at < DATE_SUB(CURRENT_TIMESTAMP, INTERVAL " + threshold + " SECOND))",
             "11"
