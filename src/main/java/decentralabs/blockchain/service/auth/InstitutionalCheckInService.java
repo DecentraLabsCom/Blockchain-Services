@@ -125,6 +125,7 @@ public class InstitutionalCheckInService {
             reservationKey,
             request.getLabId(),
             institutionWallet,
+            configuredSigner,
             computePucHash(puc),
             reservationKey
         );
@@ -132,11 +133,12 @@ public class InstitutionalCheckInService {
             // The booking, payer and institutional identity were fully revalidated above.
             record = outboxService.restartTerminalFailure(record.id());
         }
+        boolean replacementRequested = replacementRequested(record);
         InstitutionalCheckInOutboxClaim claim = outboxService.claim(record.id());
         if (claim != null) {
             InstitutionalCheckInOutboxRecord claimed = claim.record();
             try {
-                return nonceDispatcher.dispatch(claim);
+                return nonceDispatcher.dispatch(claim, replacementRequested);
             } catch (InstitutionalWalletDispatchException ex) {
                 boolean blocked = ex.outcome() == InstitutionalWalletDispatchException.Outcome.PRE_BROADCAST_BLOCKED;
                 int attempts = blocked ? claimed.attempts() : claimed.attempts() + 1;
@@ -308,6 +310,18 @@ public class InstitutionalCheckInService {
         request.setPayerInstitutionWallet(institutionWallet);
         log.info("Delegating institutional check-in for organization {} to registered backend", organization);
         return remoteCheckInClient.submit(backendUrl, request);
+    }
+
+    private boolean replacementRequested(InstitutionalCheckInOutboxRecord record) {
+        return record != null
+            && ("REPLACEMENT_PENDING".equalsIgnoreCase(record.status())
+                || ("PENDING".equalsIgnoreCase(record.status()) && hasPersistedMaterial(record)));
+    }
+
+    private boolean hasPersistedMaterial(InstitutionalCheckInOutboxRecord record) {
+        return record != null
+            && ((record.signedRawTransaction() != null && !record.signedRawTransaction().isBlank())
+                || (record.txHash() != null && !record.txHash().isBlank()));
     }
 
     private String resolveInstitutionAddress(String organization) {

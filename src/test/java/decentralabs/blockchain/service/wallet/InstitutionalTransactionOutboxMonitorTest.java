@@ -69,6 +69,52 @@ class InstitutionalTransactionOutboxMonitorTest {
     }
 
     @Test
+    void doesNotTreatReceiptRpcErrorAsMissingSubmittedTransaction() throws Exception {
+        var attempt = attempt("SUBMITTED", "0x" + "a".repeat(64), "0xf861", Instant.now().minusSeconds(600));
+        when(outboxService.findSubmitted(any(), any(), org.mockito.ArgumentMatchers.eq(10))).thenReturn(List.of(attempt));
+        when(outboxService.findStuckUnknown(any(), any(), org.mockito.ArgumentMatchers.eq(10))).thenReturn(List.of());
+        EthGetTransactionReceipt receiptResponse = mock(EthGetTransactionReceipt.class);
+        when(receiptResponse.hasError()).thenReturn(true);
+        when(receiptResponse.getError()).thenReturn(new org.web3j.protocol.core.Response.Error(1, "rpc down"));
+        doReturn(requestReturning(receiptResponse)).when(web3j).ethGetTransactionReceipt(attempt.txHash());
+
+        InstitutionalTransactionOutboxMonitor monitor = new InstitutionalTransactionOutboxMonitor(
+            outboxService, walletService, institutionalWalletService
+        );
+
+        assertThat(monitor.monitor(web3j, 10)).isZero();
+
+        verify(outboxService, org.mockito.Mockito.never()).markReplacementPending(any(), any());
+        verify(outboxService, org.mockito.Mockito.never()).markStuckUnknown(any(), any());
+        verify(web3j, org.mockito.Mockito.never()).ethGetTransactionByHash(any());
+        verify(web3j, org.mockito.Mockito.never()).ethGetTransactionCount(any(), any());
+    }
+
+    @Test
+    void doesNotTreatTransactionLookupRpcErrorAsMissingSubmittedTransaction() throws Exception {
+        var attempt = attempt("SUBMITTED", "0x" + "b".repeat(64), "0xf861", Instant.now().minusSeconds(600));
+        when(outboxService.findSubmitted(any(), any(), org.mockito.ArgumentMatchers.eq(10))).thenReturn(List.of(attempt));
+        when(outboxService.findStuckUnknown(any(), any(), org.mockito.ArgumentMatchers.eq(10))).thenReturn(List.of());
+        EthGetTransactionReceipt receiptResponse = mock(EthGetTransactionReceipt.class);
+        when(receiptResponse.getTransactionReceipt()).thenReturn(Optional.empty());
+        doReturn(requestReturning(receiptResponse)).when(web3j).ethGetTransactionReceipt(attempt.txHash());
+        EthTransaction transactionResponse = mock(EthTransaction.class);
+        when(transactionResponse.hasError()).thenReturn(true);
+        when(transactionResponse.getError()).thenReturn(new org.web3j.protocol.core.Response.Error(1, "rpc down"));
+        doReturn(requestReturning(transactionResponse)).when(web3j).ethGetTransactionByHash(attempt.txHash());
+
+        InstitutionalTransactionOutboxMonitor monitor = new InstitutionalTransactionOutboxMonitor(
+            outboxService, walletService, institutionalWalletService
+        );
+
+        assertThat(monitor.monitor(web3j, 10)).isZero();
+
+        verify(outboxService, org.mockito.Mockito.never()).markReplacementPending(any(), any());
+        verify(outboxService, org.mockito.Mockito.never()).markStuckUnknown(any(), any());
+        verify(web3j, org.mockito.Mockito.never()).ethGetTransactionCount(any(), any());
+    }
+
+    @Test
     void rebroadcastsUnknownTransactionUsingItsPersistedRawTransactionAndNonce() throws Exception {
         var attempt = attempt("STUCK_UNKNOWN", "0x" + "b".repeat(64), "0xf861");
         when(outboxService.findSubmitted(any(), any(), org.mockito.ArgumentMatchers.eq(10))).thenReturn(List.of());

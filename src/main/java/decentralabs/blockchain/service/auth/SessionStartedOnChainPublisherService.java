@@ -104,7 +104,7 @@ public class SessionStartedOnChainPublisherService {
                   AND (
                     (onchain_chain_id = ? AND LOWER(onchain_wallet_address) = LOWER(?))
                     OR (onchain_chain_id IS NULL
-                        AND onchain_status IN ('QUEUED', 'RETRY', 'FAILED')
+                        AND onchain_status IN ('QUEUED', 'RETRY', 'SUBMITTING', 'FAILED')
                         AND LOWER(signer_address) = LOWER(?))
                   )
                 ORDER BY created_at ASC, id ASC
@@ -196,7 +196,8 @@ public class SessionStartedOnChainPublisherService {
                 && context.walletAddress().equalsIgnoreCase(record.walletAddress());
         }
         String status = record.status();
-        return ("QUEUED".equals(status) || "RETRY".equals(status) || "FAILED".equals(status))
+        return ("QUEUED".equals(status) || "RETRY".equals(status)
+                || "SUBMITTING".equals(status) || "FAILED".equals(status))
             && context.walletAddress().equalsIgnoreCase(record.submission().signerAddress());
     }
 
@@ -592,7 +593,7 @@ public class SessionStartedOnChainPublisherService {
                 boolean resolved = false;
                 for (String candidateHash : monitoredHashes(record)) {
                     SessionStartedOnChainClient.TransactionState state =
-                        onChainClient.transactionState(candidateHash);
+                        onChainClient.transactionStateStrict(candidateHash);
                     if (state == SessionStartedOnChainClient.TransactionState.SUCCEEDED) {
                         markMinedSuccessFromAnyHash(record, candidateHash);
                         mined++;

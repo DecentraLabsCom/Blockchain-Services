@@ -30,12 +30,22 @@ class InstitutionalCheckInOutboxServiceTest {
             .thenReturn(record());
         InstitutionalCheckInOutboxService service = new InstitutionalCheckInOutboxService(provider);
 
-        service.enqueueAccessGranted("0xreservation", "42", "0xwallet", "0xpuc", "session");
+        service.enqueueAccessGranted(
+            "0xreservation", "42", "0xpayer", "0xsigner", "0xpuc", "session"
+        );
 
         ArgumentCaptor<String> sql = ArgumentCaptor.forClass(String.class);
-        verify(jdbcTemplate).update(sql.capture(), any(), any(), any(), any(), any(), any());
+        ArgumentCaptor<Object> values = ArgumentCaptor.forClass(Object.class);
+        verify(jdbcTemplate).update(
+            sql.capture(), values.capture(), values.capture(), values.capture(),
+            values.capture(), values.capture(), values.capture()
+        );
         assertThat(sql.getValue()).contains("reservation_key = VALUES(reservation_key)");
+        assertThat(sql.getValue()).contains("institutional_wallet, wallet_address");
         assertThat(sql.getValue()).doesNotContain("status =").doesNotContain("attempts =").doesNotContain("nonce =");
+        assertThat(values.getAllValues()).containsExactly(
+            "0xreservation", "42", "0xpayer", "0xsigner", "0xpuc", "session"
+        );
     }
 
     @Test
@@ -85,7 +95,9 @@ class InstitutionalCheckInOutboxServiceTest {
         );
         assertThat(sql.getValue())
             .contains("(chain_id = ? AND LOWER(wallet_address) = LOWER(?))")
-            .contains("LOWER(institutional_wallet) = LOWER(?)");
+            .contains("LOWER(wallet_address) = LOWER(?)")
+            .contains("claim_expires_at <= CURRENT_TIMESTAMP")
+            .contains("claim_expires_at IS NULL AND updated_at <= ?");
         assertThat(parameters.getValue()[2]).isEqualTo(chainId);
         assertThat(parameters.getValue()[3]).isEqualTo("0xwallet");
         assertThat(parameters.getValue()[4]).isEqualTo("0xwallet");
@@ -107,13 +119,15 @@ class InstitutionalCheckInOutboxServiceTest {
 
         assertThat(claim).isNotNull();
         ArgumentCaptor<String> sql = ArgumentCaptor.forClass(String.class);
-        verify(jdbcTemplate).update(sql.capture(), any(Object[].class));
+        ArgumentCaptor<Object[]> parameters = ArgumentCaptor.forClass(Object[].class);
+        verify(jdbcTemplate).update(sql.capture(), parameters.capture());
         assertThat(sql.getValue())
             .contains("claim_id = ?")
             .contains("claimed_by = ?")
             .contains("claim_version = version + 1")
-            .contains("claim_expires_at = ?")
+            .contains("claim_expires_at = TIMESTAMPADD(MICROSECOND, ?, CURRENT_TIMESTAMP)")
             .contains("claim_expires_at <= CURRENT_TIMESTAMP");
+        assertThat(parameters.getValue()[2]).isEqualTo(900_000_000L);
     }
 
     @Test

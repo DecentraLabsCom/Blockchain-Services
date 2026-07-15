@@ -94,11 +94,14 @@ class InstitutionalCheckInServiceTest {
         when(directoryService.isAuthorizedCheckInSigner("0x1111111111111111111111111111111111111111", credentials.getAddress()))
             .thenReturn(true);
         InstitutionalCheckInOutboxRecord record = queuedRecord();
-        when(outboxService.enqueueAccessGranted(eq("0xabc"), eq("42"), eq("0x1111111111111111111111111111111111111111"), any(), eq("0xabc")))
+        when(outboxService.enqueueAccessGranted(
+            eq("0xabc"), eq("42"), eq("0x1111111111111111111111111111111111111111"),
+            eq(credentials.getAddress()), any(), eq("0xabc")
+        ))
             .thenReturn(record);
         InstitutionalCheckInOutboxClaim claim = claim(record);
         when(outboxService.claim(record.id())).thenReturn(claim);
-        when(nonceDispatcher.dispatch(claim)).thenReturn(onChainResponse);
+        when(nonceDispatcher.dispatch(claim, false)).thenReturn(onChainResponse);
 
         CheckInResponse response = service.checkIn(request);
 
@@ -106,7 +109,7 @@ class InstitutionalCheckInServiceTest {
         verify(bookingService).getCheckInBookingInfo("0x1111111111111111111111111111111111111111", "0xabc", "42", "puc-123");
 
         verify(outboxService).claim(record.id());
-        verify(nonceDispatcher).dispatch(claim);
+        verify(nonceDispatcher).dispatch(claim, false);
     }
 
     @Test
@@ -127,17 +130,46 @@ class InstitutionalCheckInServiceTest {
         when(directoryService.isAuthorizedCheckInSigner(credentials.getAddress(), credentials.getAddress()))
             .thenReturn(true);
         InstitutionalCheckInOutboxRecord record = queuedRecord();
-        when(outboxService.enqueueAccessGranted(eq("0xabc"), eq("42"), eq(credentials.getAddress()), any(), eq("0xabc")))
+        when(outboxService.enqueueAccessGranted(
+            eq("0xabc"), eq("42"), eq(credentials.getAddress()), eq(credentials.getAddress()),
+            any(), eq("0xabc")
+        ))
             .thenReturn(record);
         InstitutionalCheckInOutboxClaim claim = claim(record);
         when(outboxService.claim(record.id())).thenReturn(claim);
-        when(nonceDispatcher.dispatch(claim)).thenReturn(onChainResponse);
+        when(nonceDispatcher.dispatch(claim, false)).thenReturn(onChainResponse);
 
         CheckInResponse response = service.checkIn(request);
 
         assertThat(response).isSameAs(onChainResponse);
         verify(remoteCheckInClient, never()).submit(any(), any());
-        verify(nonceDispatcher).dispatch(claim);
+        verify(nonceDispatcher).dispatch(claim, false);
+    }
+
+    @Test
+    void checkInPreservesReplacementIntentWhenClaimingImmediately() throws Exception {
+        InstitutionalCheckInRequest request = validRequest();
+        SamlAssertionAttributes saml = samlAttributes();
+        CheckInResponse onChainResponse = new CheckInResponse();
+        onChainResponse.setValid(true);
+
+        when(samlValidationService.validateSamlAssertionDetailed("valid-saml")).thenReturn(saml);
+        when(marketplaceEndpointAuthService.enforceToken("market-token", null)).thenReturn(marketplaceClaims());
+        when(bookingService.getCheckInBookingInfo(any(), eq("0xabc"), eq("42"), eq("puc-123")))
+            .thenReturn(Map.of("reservationKey", "0xabc"));
+        when(institutionalWalletService.getInstitutionalWalletAddress()).thenReturn(credentials.getAddress());
+        when(directoryService.isAuthorizedCheckInSigner(any(), any())).thenReturn(true);
+        InstitutionalCheckInOutboxRecord record = replacementRecord();
+        when(outboxService.enqueueAccessGranted(any(), any(), any(), any(), any(), any())).thenReturn(record);
+        InstitutionalCheckInOutboxClaim claim = claim(record);
+        when(outboxService.claim(record.id())).thenReturn(claim);
+        when(nonceDispatcher.dispatch(claim, true)).thenReturn(onChainResponse);
+
+        CheckInResponse response = service.checkIn(request);
+
+        assertThat(response).isSameAs(onChainResponse);
+        verify(nonceDispatcher).dispatch(claim, true);
+        verify(nonceDispatcher, never()).dispatch(claim);
     }
 
     @Test
@@ -150,7 +182,7 @@ class InstitutionalCheckInServiceTest {
         when(institutionalWalletService.getInstitutionalWalletAddress()).thenReturn(credentials.getAddress());
         when(directoryService.isAuthorizedCheckInSigner(any(), any())).thenReturn(true);
         InstitutionalCheckInOutboxRecord record = queuedRecord();
-        when(outboxService.enqueueAccessGranted(any(), any(), any(), any(), any())).thenReturn(record);
+        when(outboxService.enqueueAccessGranted(any(), any(), any(), any(), any(), any())).thenReturn(record);
         when(outboxService.claim(record.id())).thenReturn(null);
 
         CheckInResponse response = service.checkIn(request);
@@ -170,10 +202,10 @@ class InstitutionalCheckInServiceTest {
         when(institutionalWalletService.getInstitutionalWalletAddress()).thenReturn(credentials.getAddress());
         when(directoryService.isAuthorizedCheckInSigner(any(), any())).thenReturn(true);
         InstitutionalCheckInOutboxRecord record = queuedRecord();
-        when(outboxService.enqueueAccessGranted(any(), any(), any(), any(), any())).thenReturn(record);
+        when(outboxService.enqueueAccessGranted(any(), any(), any(), any(), any(), any())).thenReturn(record);
         InstitutionalCheckInOutboxClaim claim = claim(record);
         when(outboxService.claim(record.id())).thenReturn(claim);
-        when(nonceDispatcher.dispatch(claim)).thenThrow(new InstitutionalWalletDispatchException(
+        when(nonceDispatcher.dispatch(claim, false)).thenThrow(new InstitutionalWalletDispatchException(
             "uncertain", new IllegalStateException("response lost after broadcast")
         ));
 
@@ -196,10 +228,10 @@ class InstitutionalCheckInServiceTest {
         when(institutionalWalletService.getInstitutionalWalletAddress()).thenReturn(credentials.getAddress());
         when(directoryService.isAuthorizedCheckInSigner(any(), any())).thenReturn(true);
         InstitutionalCheckInOutboxRecord record = queuedRecord();
-        when(outboxService.enqueueAccessGranted(any(), any(), any(), any(), any())).thenReturn(record);
+        when(outboxService.enqueueAccessGranted(any(), any(), any(), any(), any(), any())).thenReturn(record);
         InstitutionalCheckInOutboxClaim claim = claim(record);
         when(outboxService.claim(record.id())).thenReturn(claim);
-        when(nonceDispatcher.dispatch(claim)).thenThrow(new InstitutionalWalletDispatchException(
+        when(nonceDispatcher.dispatch(claim, false)).thenThrow(new InstitutionalWalletDispatchException(
             "blocked", InstitutionalWalletDispatchException.Outcome.PRE_BROADCAST_BLOCKED,
             new IllegalStateException("allocator blocked")
         ));
@@ -228,10 +260,10 @@ class InstitutionalCheckInServiceTest {
         when(institutionalWalletService.getInstitutionalWalletAddress()).thenReturn(credentials.getAddress());
         when(directoryService.isAuthorizedCheckInSigner(any(), any())).thenReturn(true);
         InstitutionalCheckInOutboxRecord record = queuedRecord();
-        when(outboxService.enqueueAccessGranted(any(), any(), any(), any(), any())).thenReturn(record);
+        when(outboxService.enqueueAccessGranted(any(), any(), any(), any(), any(), any())).thenReturn(record);
         InstitutionalCheckInOutboxClaim claim = claim(record);
         when(outboxService.claim(record.id())).thenReturn(claim);
-        when(nonceDispatcher.dispatch(claim)).thenThrow(new InstitutionalWalletDispatchException(
+        when(nonceDispatcher.dispatch(claim, false)).thenThrow(new InstitutionalWalletDispatchException(
             "temporary", InstitutionalWalletDispatchException.Outcome.PRE_BROADCAST_TRANSIENT,
             new IllegalStateException("rpc timeout")
         ));
@@ -258,10 +290,10 @@ class InstitutionalCheckInServiceTest {
         when(institutionalWalletService.getInstitutionalWalletAddress()).thenReturn(credentials.getAddress());
         when(directoryService.isAuthorizedCheckInSigner(any(), any())).thenReturn(true);
         InstitutionalCheckInOutboxRecord record = queuedRecord();
-        when(outboxService.enqueueAccessGranted(any(), any(), any(), any(), any())).thenReturn(record);
+        when(outboxService.enqueueAccessGranted(any(), any(), any(), any(), any(), any())).thenReturn(record);
         InstitutionalCheckInOutboxClaim claim = claim(record);
         when(outboxService.claim(record.id())).thenReturn(claim);
-        when(nonceDispatcher.dispatch(claim)).thenThrow(new InstitutionalWalletDispatchException(
+        when(nonceDispatcher.dispatch(claim, false)).thenThrow(new InstitutionalWalletDispatchException(
             "temporary", InstitutionalWalletDispatchException.Outcome.PRE_BROADCAST_TRANSIENT,
             new IllegalStateException("rpc timeout")
         ));
@@ -520,6 +552,15 @@ class InstitutionalCheckInServiceTest {
             1L, "0xabc", "42", "0x1111111111111111111111111111111111111111",
             computePucHash("puc-123"), "0xabc", "PENDING", 0, java.time.Instant.now(), null,
             "0x1111111111111111111111111111111111111111", null, null
+        );
+    }
+
+    private InstitutionalCheckInOutboxRecord replacementRecord() {
+        return new InstitutionalCheckInOutboxRecord(
+            1L, "0xabc", "42", "0x1111111111111111111111111111111111111111",
+            computePucHash("puc-123"), "0xabc", "REPLACEMENT_PENDING", 1, java.time.Instant.now(),
+            "0xold", credentials.getAddress(), BigInteger.valueOf(11155111), BigInteger.valueOf(7),
+            java.time.Instant.now(), 2L, "0xold-raw", BigInteger.valueOf(100), BigInteger.valueOf(100), 1L
         );
     }
 

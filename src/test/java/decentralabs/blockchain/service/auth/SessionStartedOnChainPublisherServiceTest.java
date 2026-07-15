@@ -82,11 +82,13 @@ class SessionStartedOnChainPublisherServiceTest {
             mappedRecord("SUBMITTED", 1, "0xwallet", BigInteger.valueOf(45), hash, Instant.now())
         ));
         mockPendingEmpty();
-        when(onChainClient.transactionState(hash)).thenReturn(SessionStartedOnChainClient.TransactionState.SUCCEEDED);
+        when(onChainClient.transactionStateStrict(hash)).thenReturn(SessionStartedOnChainClient.TransactionState.SUCCEEDED);
 
         assertThat(service.publishPending(10)).isEqualTo(1);
 
         verify(jdbcTemplate).update(contains("onchain_status = 'MINED_SUCCESS'"), eq(hash), eq(7L), eq(hash));
+        verify(onChainClient).transactionStateStrict(hash);
+        verify(onChainClient, never()).transactionState(hash);
         verify(transactionDispatcher, never()).dispatchPrepared(anyString(), any(), any(), any(), any(), any(), any());
     }
 
@@ -330,6 +332,31 @@ class SessionStartedOnChainPublisherServiceTest {
             eq(7L), eq(1), any(Timestamp.class)
         );
         verify(jdbcTemplate).update(contains("onchain_status = 'SUBMITTED'"), eq("0x" + "a".repeat(64)), eq(7L));
+    }
+
+    @Test
+    void recoversExpiredSubmittingAttestationThatLostBeforeNonceReservation() throws Exception {
+        SessionStartedOnChainPublisherService service = buildService(jdbcTemplate);
+        mockSubmittedQuery(List.of());
+        mockPendingQuery("SUBMITTING", 1, null, null, null, null);
+        when(jdbcTemplate.update(anyString(), any(Object[].class))).thenReturn(1);
+        when(onChainClient.hasSessionStarted("0xabc")).thenReturn(false);
+        when(onChainClient.signerAddress()).thenReturn("0xwallet");
+        when(onChainClient.prepareSessionStarted(any(), eq(BigInteger.valueOf(45)), eq(1)))
+            .thenReturn(prepared("0x" + "a".repeat(64)));
+        mockDispatch(BigInteger.valueOf(45), "0x" + "a".repeat(64));
+
+        assertThat(service.publishPending(10)).isEqualTo(1);
+
+        verify(jdbcTemplate).query(
+            contains("onchain_status IN ('QUEUED', 'RETRY', 'SUBMITTING', 'FAILED')"),
+            anyTransactionRowMapper(), any(Object[].class)
+        );
+        verify(onChainClient).prepareSessionStarted(any(), eq(BigInteger.valueOf(45)), eq(1));
+        verify(jdbcTemplate).update(
+            contains("onchain_wallet_address = ?"), eq("0xwallet"), eq(CHAIN_ID),
+            eq(BigInteger.valueOf(45)), eq(7L)
+        );
     }
 
     @Test

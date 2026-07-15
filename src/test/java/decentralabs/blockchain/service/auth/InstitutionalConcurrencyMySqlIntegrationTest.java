@@ -101,8 +101,12 @@ class InstitutionalConcurrencyMySqlIntegrationTest {
         InstitutionalCheckInOutboxService replicaB = outboxService();
 
         List<InstitutionalCheckInOutboxRecord> records = runConcurrently(
-            () -> replicaA.enqueueAccessGranted("0xreservation", "42", "0xwallet", "0xpuc", "session-a"),
-            () -> replicaB.enqueueAccessGranted("0xreservation", "42", "0xwallet", "0xpuc", "session-b")
+            () -> replicaA.enqueueAccessGranted(
+                "0xreservation", "42", "0xwallet", "0xwallet", "0xpuc", "session-a"
+            ),
+            () -> replicaB.enqueueAccessGranted(
+                "0xreservation", "42", "0xwallet", "0xwallet", "0xpuc", "session-b"
+            )
         );
 
         assertThat(records.get(0).id()).isEqualTo(records.get(1).id());
@@ -117,12 +121,36 @@ class InstitutionalConcurrencyMySqlIntegrationTest {
             "0xwallet", BigInteger.valueOf(45), "0xtx", "0xreservation"
         );
         InstitutionalCheckInOutboxRecord existing = replicaB.enqueueAccessGranted(
-            "0xreservation", "42", "0xwallet", "0xpuc", "session-c"
+            "0xreservation", "42", "0xwallet", "0xwallet", "0xpuc", "session-c"
         );
 
         assertThat(existing.status()).isEqualTo("SUBMITTED");
         assertThat(existing.nonce()).isEqualTo(BigInteger.valueOf(45));
         assertThat(existing.txHash()).isEqualTo("0xtx");
+    }
+
+    @Test
+    void claimLeaseUsesTheDatabaseClock() {
+        InstitutionalCheckInOutboxService service = outboxService();
+        InstitutionalCheckInOutboxRecord record = service.enqueueAccessGranted(
+            "0xlease-reservation", "42", "0xwallet", "0xwallet", "0xpuc", "session"
+        );
+
+        assertThat(service.claim(record.id())).isNotNull();
+
+        java.sql.Timestamp databaseNow = jdbcTemplate.queryForObject(
+            "SELECT CURRENT_TIMESTAMP(6)", java.sql.Timestamp.class
+        );
+        java.sql.Timestamp expiresAt = jdbcTemplate.queryForObject(
+            "SELECT claim_expires_at FROM institutional_checkin_outbox WHERE id = ?",
+            java.sql.Timestamp.class,
+            record.id()
+        );
+        long leaseMillis = java.time.Duration.between(
+            databaseNow.toInstant(), expiresAt.toInstant()
+        ).toMillis();
+
+        assertThat(leaseMillis).isBetween(899_000L, 901_000L);
     }
 
     @Test

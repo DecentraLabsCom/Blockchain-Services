@@ -61,6 +61,7 @@ public class InstitutionalAccessCheckInCoordinator {
                 reservationKey,
                 labId,
                 institutionalWallet,
+                configuredSigner,
                 PucHashUtil.hashPuc(puc),
                 accessSessionId
             );
@@ -80,13 +81,14 @@ public class InstitutionalAccessCheckInCoordinator {
         if (record == null) {
             return;
         }
+        boolean replacementRequested = replacementRequested(record);
         InstitutionalCheckInOutboxClaim claim = outboxService.claim(record.id());
         if (claim == null) {
             return;
         }
         InstitutionalCheckInOutboxRecord claimed = claim.record();
         try {
-            nonceDispatcher.dispatch(claim);
+            nonceDispatcher.dispatch(claim, replacementRequested);
         } catch (InstitutionalWalletDispatchException ex) {
             boolean blocked = ex.outcome() == InstitutionalWalletDispatchException.Outcome.PRE_BROADCAST_BLOCKED;
             int attempts = blocked ? claimed.attempts() : claimed.attempts() + 1;
@@ -152,6 +154,18 @@ public class InstitutionalAccessCheckInCoordinator {
             String reason = response != null ? response.getReason() : "no response";
             throw new IllegalStateException("Delegated institutional check-in failed: " + reason);
         }
+    }
+
+    private boolean replacementRequested(InstitutionalCheckInOutboxRecord record) {
+        return record != null
+            && ("REPLACEMENT_PENDING".equalsIgnoreCase(record.status())
+                || ("PENDING".equalsIgnoreCase(record.status()) && hasPersistedMaterial(record)));
+    }
+
+    private boolean hasPersistedMaterial(InstitutionalCheckInOutboxRecord record) {
+        return record != null
+            && ((record.signedRawTransaction() != null && !record.signedRawTransaction().isBlank())
+                || (record.txHash() != null && !record.txHash().isBlank()));
     }
 
     private boolean isAccessAuthorizedStatus(Object value) {

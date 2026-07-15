@@ -63,7 +63,7 @@ class InstitutionalAccessCheckInCoordinatorTest {
             "0x9999999999999999999999999999999999999999"
         )).thenReturn(true);
         InstitutionalCheckInOutboxRecord pending = record("PENDING");
-        when(outboxService.enqueueAccessGranted(any(), any(), any(), any(), any())).thenReturn(pending);
+        when(outboxService.enqueueAccessGranted(any(), any(), any(), any(), any(), any())).thenReturn(pending);
         InstitutionalCheckInOutboxClaim claim = claim(pending);
         when(outboxService.claim(pending.id())).thenReturn(claim);
 
@@ -82,11 +82,12 @@ class InstitutionalAccessCheckInCoordinatorTest {
             "0xabc",
             "42",
             "0x1111111111111111111111111111111111111111",
+            "0x9999999999999999999999999999999999999999",
             PucHashUtil.hashPuc("puc-123"),
             "session-1"
         );
         verify(outboxService).claim(pending.id());
-        verify(nonceDispatcher).dispatch(claim);
+        verify(nonceDispatcher).dispatch(claim, false);
         verify(remoteCheckInClient, never()).submit(any(), any());
     }
 
@@ -96,7 +97,7 @@ class InstitutionalAccessCheckInCoordinatorTest {
             .thenReturn("0x9999999999999999999999999999999999999999");
         when(directoryService.isAuthorizedCheckInSigner(any(), any())).thenReturn(true);
         InstitutionalCheckInOutboxRecord submitted = record("SUBMITTED");
-        when(outboxService.enqueueAccessGranted(any(), any(), any(), any(), any())).thenReturn(submitted);
+        when(outboxService.enqueueAccessGranted(any(), any(), any(), any(), any(), any())).thenReturn(submitted);
         when(outboxService.claim(submitted.id())).thenReturn(null);
 
         coordinator.recordAccessGranted(
@@ -118,7 +119,7 @@ class InstitutionalAccessCheckInCoordinatorTest {
         )).thenReturn(true);
         InstitutionalCheckInOutboxRecord failed = record("MINED_FAILED");
         InstitutionalCheckInOutboxRecord restarted = record("PENDING");
-        when(outboxService.enqueueAccessGranted(any(), any(), any(), any(), any())).thenReturn(failed);
+        when(outboxService.enqueueAccessGranted(any(), any(), any(), any(), any(), any())).thenReturn(failed);
         when(outboxService.restartTerminalFailure(failed.id())).thenReturn(restarted);
         InstitutionalCheckInOutboxClaim claim = claim(restarted);
         when(outboxService.claim(restarted.id())).thenReturn(claim);
@@ -130,7 +131,27 @@ class InstitutionalAccessCheckInCoordinatorTest {
         );
 
         verify(outboxService).restartTerminalFailure(7L);
-        verify(nonceDispatcher).dispatch(claim);
+        verify(nonceDispatcher).dispatch(claim, false);
+    }
+
+    @Test
+    void preservesReplacementIntentWhenTheCombinedFlowClaimsImmediately() throws Exception {
+        when(institutionalWalletService.getInstitutionalWalletAddress())
+            .thenReturn("0x9999999999999999999999999999999999999999");
+        when(directoryService.isAuthorizedCheckInSigner(any(), any())).thenReturn(true);
+        InstitutionalCheckInOutboxRecord replacement = record("REPLACEMENT_PENDING");
+        when(outboxService.enqueueAccessGranted(any(), any(), any(), any(), any(), any())).thenReturn(replacement);
+        InstitutionalCheckInOutboxClaim claim = claim(replacement);
+        when(outboxService.claim(replacement.id())).thenReturn(claim);
+
+        coordinator.recordAccessGranted(
+            request(),
+            claims(),
+            Map.of("reservationKey", "0xabc", "lab", BigInteger.valueOf(42), "reservationStatus", BigInteger.ONE)
+        );
+
+        verify(nonceDispatcher).dispatch(claim, true);
+        verify(nonceDispatcher, never()).dispatch(claim);
     }
 
     @Test
@@ -139,10 +160,10 @@ class InstitutionalAccessCheckInCoordinatorTest {
             .thenReturn("0x9999999999999999999999999999999999999999");
         when(directoryService.isAuthorizedCheckInSigner(any(), any())).thenReturn(true);
         InstitutionalCheckInOutboxRecord pending = record("PENDING");
-        when(outboxService.enqueueAccessGranted(any(), any(), any(), any(), any())).thenReturn(pending);
+        when(outboxService.enqueueAccessGranted(any(), any(), any(), any(), any(), any())).thenReturn(pending);
         InstitutionalCheckInOutboxClaim claim = claim(pending);
         when(outboxService.claim(pending.id())).thenReturn(claim);
-        when(nonceDispatcher.dispatch(claim))
+        when(nonceDispatcher.dispatch(claim, false))
             .thenThrow(new InstitutionalWalletDispatchException("uncertain", new IllegalStateException("rpc response lost")));
 
         coordinator.recordAccessGranted(
@@ -164,10 +185,10 @@ class InstitutionalAccessCheckInCoordinatorTest {
             .thenReturn("0x9999999999999999999999999999999999999999");
         when(directoryService.isAuthorizedCheckInSigner(any(), any())).thenReturn(true);
         InstitutionalCheckInOutboxRecord pending = record("PENDING");
-        when(outboxService.enqueueAccessGranted(any(), any(), any(), any(), any())).thenReturn(pending);
+        when(outboxService.enqueueAccessGranted(any(), any(), any(), any(), any(), any())).thenReturn(pending);
         InstitutionalCheckInOutboxClaim claim = claim(pending);
         when(outboxService.claim(pending.id())).thenReturn(claim);
-        when(nonceDispatcher.dispatch(claim)).thenThrow(new InstitutionalWalletDispatchException(
+        when(nonceDispatcher.dispatch(claim, false)).thenThrow(new InstitutionalWalletDispatchException(
             "blocked", InstitutionalWalletDispatchException.Outcome.PRE_BROADCAST_BLOCKED,
             new IllegalStateException("allocator blocked")
         ));
@@ -198,7 +219,7 @@ class InstitutionalAccessCheckInCoordinatorTest {
             )
         );
 
-        verify(outboxService, never()).enqueueAccessGranted(any(), any(), any(), any(), any());
+        verify(outboxService, never()).enqueueAccessGranted(any(), any(), any(), any(), any(), any());
         verify(remoteCheckInClient, never()).submit(any(), any());
     }
 
@@ -229,7 +250,7 @@ class InstitutionalAccessCheckInCoordinatorTest {
 
         ArgumentCaptor<InstitutionalCheckInRequest> captor = ArgumentCaptor.forClass(InstitutionalCheckInRequest.class);
         verify(remoteCheckInClient).submit(eq("https://consumer.example"), captor.capture());
-        verify(outboxService, never()).enqueueAccessGranted(any(), any(), any(), any(), any());
+        verify(outboxService, never()).enqueueAccessGranted(any(), any(), any(), any(), any(), any());
         InstitutionalCheckInRequest delegated = captor.getValue();
         org.assertj.core.api.Assertions.assertThat(delegated.getReservationKey()).isEqualTo("0xabc");
         org.assertj.core.api.Assertions.assertThat(delegated.getLabId()).isEqualTo("42");
@@ -271,9 +292,10 @@ class InstitutionalAccessCheckInCoordinatorTest {
     }
 
     private InstitutionalCheckInOutboxRecord record(String status) {
+        String txHash = "PENDING".equals(status) ? null : "0xtx";
         return new InstitutionalCheckInOutboxRecord(
             7L, "0xabc", "42", "0xwallet", "0xpuc", "session", status, 1, Instant.now(),
-            "0xtx", "0xwallet", BigInteger.ONE, Instant.now()
+            txHash, "0xwallet", BigInteger.ONE, Instant.now()
         );
     }
 

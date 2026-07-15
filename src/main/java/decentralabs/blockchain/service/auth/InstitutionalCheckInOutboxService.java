@@ -35,11 +35,13 @@ public class InstitutionalCheckInOutboxService {
         String reservationKey,
         String labId,
         String institutionalWallet,
+        String walletAddress,
         String pucHash,
         String accessSessionId
     ) {
         requireConfigured();
-        if (!hasText(reservationKey) || !hasText(institutionalWallet) || !hasText(pucHash)) {
+        if (!hasText(reservationKey) || !hasText(institutionalWallet)
+                || !hasText(walletAddress) || !hasText(pucHash)) {
             throw new IllegalArgumentException("Missing required check-in outbox fields");
         }
         jdbcTemplate.update(
@@ -54,7 +56,7 @@ public class InstitutionalCheckInOutboxService {
             reservationKey,
             labId,
             institutionalWallet,
-            institutionalWallet,
+            walletAddress,
             pucHash,
             accessSessionId
         );
@@ -168,13 +170,16 @@ public class InstitutionalCheckInOutboxService {
                 FROM institutional_checkin_outbox
                 WHERE (
                     (status IN ('PENDING', 'RETRY', 'REPLACEMENT_PENDING') AND next_attempt_at <= ?)
-                    OR (status = 'SUBMITTING' AND updated_at <= ?)
+                    OR (status = 'SUBMITTING' AND (
+                        claim_expires_at <= CURRENT_TIMESTAMP
+                        OR (claim_expires_at IS NULL AND updated_at <= ?)
+                    ))
                   )
                   AND (
                     (chain_id = ? AND LOWER(wallet_address) = LOWER(?))
                     OR (chain_id IS NULL
                         AND status IN ('PENDING', 'RETRY', 'SUBMITTING')
-                        AND LOWER(institutional_wallet) = LOWER(?))
+                        AND LOWER(wallet_address) = LOWER(?))
                   )
                 ORDER BY next_attempt_at ASC, id ASC
                 LIMIT ?
@@ -199,15 +204,15 @@ public class InstitutionalCheckInOutboxService {
             return null;
         }
         String claimId = UUID.randomUUID().toString();
-        Timestamp claimExpiresAt = Timestamp.from(
-            Instant.now().plusMillis(claimLeaseMillis > 0 ? claimLeaseMillis : DEFAULT_CLAIM_LEASE_MILLIS)
-        );
+        long leaseMillis = claimLeaseMillis > 0 ? claimLeaseMillis : DEFAULT_CLAIM_LEASE_MILLIS;
+        long leaseMicros = Math.multiplyExact(leaseMillis, 1_000L);
         int updated = jdbcTemplate.update(
             """
             UPDATE institutional_checkin_outbox
             SET status = 'SUBMITTING', claim_version = version + 1,
                 version = version + 1, claim_id = ?, claimed_by = ?,
-                claim_expires_at = ?, updated_at = CURRENT_TIMESTAMP
+                claim_expires_at = TIMESTAMPADD(MICROSECOND, ?, CURRENT_TIMESTAMP),
+                updated_at = CURRENT_TIMESTAMP
             WHERE id = ?
               AND (
                 status IN ('PENDING', 'RETRY', 'REPLACEMENT_PENDING')
@@ -218,7 +223,7 @@ public class InstitutionalCheckInOutboxService {
             """,
             claimId,
             workerId,
-            claimExpiresAt,
+            leaseMicros,
             id
         );
         if (updated != 1) {
