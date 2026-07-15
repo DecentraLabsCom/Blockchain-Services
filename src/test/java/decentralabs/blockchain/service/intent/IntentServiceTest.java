@@ -443,6 +443,33 @@ class IntentServiceTest {
         }
 
         @Test
+        @DisplayName("Should accept LAB_ADD_AND_LIST during intent validation")
+        void shouldAcceptLabAddAndList() throws Exception {
+            IntentMeta meta = createValidMeta();
+            meta.setAction(IntentAction.LAB_ADD_AND_LIST.getId());
+
+            ActionIntentPayload payload = createValidActionPayload();
+            payload.setUri("ipfs://lab-metadata");
+            payload.setPrice(BigInteger.ONE);
+            payload.setAccessURI("https://gateway.example/lab");
+            payload.setAccessKey("lab-key");
+
+            var resolveAction = IntentService.class.getDeclaredMethod("resolveAction", IntentMeta.class);
+            resolveAction.setAccessible(true);
+            assertEquals(IntentAction.LAB_ADD_AND_LIST, resolveAction.invoke(service, meta));
+
+            var validatePayload = IntentService.class.getDeclaredMethod(
+                "validatePayload",
+                IntentAction.class,
+                IntentMeta.class,
+                ActionIntentPayload.class,
+                ReservationIntentPayload.class
+            );
+            validatePayload.setAccessible(true);
+            assertDoesNotThrow(() -> validatePayload.invoke(service, IntentAction.LAB_ADD_AND_LIST, meta, payload, null));
+        }
+
+        @Test
         @DisplayName("Should reject LAB_SET_URI without tokenURI")
         void shouldRejectSetUriWithoutTokenUri() {
             IntentMeta meta = createValidMeta();
