@@ -4,6 +4,7 @@ import decentralabs.blockchain.dto.auth.CheckInResponse;
 import decentralabs.blockchain.dto.auth.AccessCodeRedeemRequest;
 import decentralabs.blockchain.dto.auth.AuthResponse;
 import decentralabs.blockchain.dto.auth.InstitutionalCheckInRequest;
+import decentralabs.blockchain.dto.auth.InstitutionalCheckInStatusRequest;
 import decentralabs.blockchain.dto.auth.ProviderAccessCredentialRequest;
 import decentralabs.blockchain.dto.auth.SamlAuthRequest;
 import decentralabs.blockchain.exception.AccessAuthorizationPendingException;
@@ -189,7 +190,7 @@ public class SamlAuthController {
     ) {
         RemoteInstitutionalCheckInClient.RemoteCheckInResult result = ex.result();
         CheckInResponse remote = result == null ? null : result.body();
-        boolean retryable = result != null && (result.isRetryable() || result.status() == 503);
+        boolean retryable = result != null && result.isRetryable();
         int status = result == null ? 502 : result.status();
         if (status < 400 || status > 599) status = retryable ? 503 : 409;
         Map<String, Object> body = new LinkedHashMap<>();
@@ -252,6 +253,47 @@ public class SamlAuthController {
             response.setValid(false);
             response.setReason("Internal server error");
             return ResponseEntity.status(500).body(response);
+        }
+    }
+
+    @PostMapping("/checkin-institutional/status")
+    public ResponseEntity<CheckInResponse> institutionalCheckInStatus(
+        @RequestBody InstitutionalCheckInStatusRequest request
+    ) {
+        try {
+            CheckInResponse response = institutionalCheckInService.checkInStatus(request);
+            if (response != null && "CHECKIN_NOT_FOUND".equals(response.getReason())) {
+                return ResponseEntity.status(HttpStatus.NOT_FOUND).body(response);
+            }
+            if (response != null && (
+                "CHECKIN_CONTEXT_MISMATCH".equals(response.getReason())
+                    || "CHECKIN_MANUAL_INTERVENTION".equals(response.getReason())
+                    || "CHECKIN_FAILED".equals(response.getReason())
+            )) {
+                return ResponseEntity.status(HttpStatus.CONFLICT).body(response);
+            }
+            if (response != null && Boolean.TRUE.equals(response.getQueued())) {
+                return ResponseEntity.status(HttpStatus.ACCEPTED)
+                    .header("Retry-After", "2")
+                    .body(response);
+            }
+            return ResponseEntity.ok(response);
+        } catch (IllegalArgumentException e) {
+            CheckInResponse response = new CheckInResponse();
+            response.setValid(false);
+            response.setReason(e.getMessage());
+            return ResponseEntity.badRequest().body(response);
+        } catch (SecurityException e) {
+            CheckInResponse response = new CheckInResponse();
+            response.setValid(false);
+            response.setReason(e.getMessage());
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(response);
+        } catch (Exception e) {
+            log.error("Institutional check-in status error", e);
+            CheckInResponse response = new CheckInResponse();
+            response.setValid(false);
+            response.setReason("Internal server error");
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(response);
         }
     }
 }

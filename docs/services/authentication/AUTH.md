@@ -16,6 +16,7 @@ publish the provider authentication surface.
 | `POST /auth/authorize-and-issue` | Validate a booking and deliver access | Marketplace JWT + SAML + on-chain state |
 | `POST /auth/access-credential` | Provider-side access credential flow | Provider request + booking checks |
 | `POST /auth/checkin-institutional` | Institutional wallet check-in | Institutional request and configured delegation policy |
+| `POST /auth/checkin-institutional/status` | Query a delegated consumer check-in | Marketplace JWT + reservation binding |
 | `POST /auth/access-code/redeem` | One-time browser/gateway delivery | Gateway ID + per-gateway redeemer credential |
 | `POST /auth/fmu/session-ticket/issue` | Issue reusable FMU ticket | Booking bearer and reservation window |
 | `POST /auth/fmu/session-ticket/redeem` | Exchange FMU ticket for claims | Per-gateway session-observer JWT |

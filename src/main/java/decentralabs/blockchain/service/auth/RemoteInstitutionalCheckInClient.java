@@ -3,7 +3,11 @@ package decentralabs.blockchain.service.auth;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import decentralabs.blockchain.dto.auth.CheckInResponse;
 import decentralabs.blockchain.dto.auth.InstitutionalCheckInRequest;
+import decentralabs.blockchain.dto.auth.InstitutionalCheckInStatusRequest;
 import decentralabs.blockchain.service.BackendUrlResolver;
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
+import java.io.InputStream;
 import java.net.InetAddress;
 import java.net.URI;
 import java.net.UnknownHostException;
@@ -43,6 +47,9 @@ public class RemoteInstitutionalCheckInClient {
 
     @Value("${institutional.checkin.delegation.allow-private-networks:false}")
     private boolean allowPrivateNetworks;
+
+    @Value("${institutional.checkin.delegation.status-endpoint-path:/auth/checkin-institutional/status}")
+    private String statusEndpointPath;
 
     @Value("${public.base-url:}")
     private String configuredPublicBaseUrl;
@@ -121,9 +128,33 @@ public class RemoteInstitutionalCheckInClient {
         }
     }
 
+    public RemoteCheckInResult queryStatus(
+        String backendBaseUrl,
+        InstitutionalCheckInStatusRequest request
+    ) {
+        URI endpoint = buildEndpoint(backendBaseUrl, statusEndpointPath());
+        if (isSelfDelegation(backendBaseUrl, statusEndpointPath())) {
+            return selfDelegationResult();
+        }
+        try {
+            List<InetAddress> addresses = hostResolver.resolve(endpoint.getHost());
+            assertAddressesAllowed(endpoint.getHost(), addresses);
+            RemoteCheckInResult response = transport.post(endpoint, request, List.copyOf(addresses));
+            if (response == null) {
+                throw new IllegalStateException("Remote institutional check-in status returned an empty response");
+            }
+            return response;
+        } catch (IllegalArgumentException | SecurityException ex) {
+            throw ex;
+        } catch (Exception ex) {
+            log.warn("Remote institutional check-in status request failed for {}", endpoint.getHost());
+            throw new IllegalStateException("Remote institutional check-in status failed", ex);
+        }
+    }
+
     private RemoteCheckInResult postPinned(
         URI endpoint,
-        InstitutionalCheckInRequest requestPayload,
+        Object requestPayload,
         List<InetAddress> addresses
     ) throws Exception {
         String expectedHost = endpoint.getHost();
@@ -146,12 +177,38 @@ public class RemoteInstitutionalCheckInClient {
             if (body != null && body.contentLength() > MAX_RESPONSE_BYTES) {
                 throw new IllegalStateException("Remote institutional check-in response is too large");
             }
-            byte[] bytes = body == null ? new byte[0] : body.source().readByteArray(MAX_RESPONSE_BYTES + 1);
-            if (bytes.length > MAX_RESPONSE_BYTES) {
-                throw new IllegalStateException("Remote institutional check-in response is too large");
-            }
-            CheckInResponse parsed = bytes.length == 0 ? null : objectMapper.readValue(bytes, CheckInResponse.class);
+            byte[] bytes = readResponseBytes(body);
+            CheckInResponse parsed = parseOptionalResponse(bytes);
             return new RemoteCheckInResult(response.code(), parsed, response.header("Retry-After"));
+        }
+    }
+
+    private byte[] readResponseBytes(ResponseBody body) throws IOException {
+        if (body == null) {
+            return new byte[0];
+        }
+        try (InputStream input = body.byteStream(); ByteArrayOutputStream output = new ByteArrayOutputStream()) {
+            byte[] buffer = new byte[8192];
+            int read;
+            while ((read = input.read(buffer)) != -1) {
+                if ((long) output.size() + read > MAX_RESPONSE_BYTES) {
+                    throw new IllegalStateException("Remote institutional check-in response is too large");
+                }
+                output.write(buffer, 0, read);
+            }
+            return output.toByteArray();
+        }
+    }
+
+    private CheckInResponse parseOptionalResponse(byte[] bytes) {
+        if (bytes.length == 0) {
+            return null;
+        }
+        try {
+            return objectMapper.readValue(bytes, CheckInResponse.class);
+        } catch (IOException ex) {
+            log.debug("Remote institutional check-in returned a non-JSON response body");
+            return null;
         }
     }
 
@@ -164,19 +221,23 @@ public class RemoteInstitutionalCheckInClient {
     }
 
     private boolean isSelfDelegation(String backendBaseUrl) {
-        String target = normalizeBaseUrl(backendBaseUrl);
+        return isSelfDelegation(backendBaseUrl, delegationEndpointPath());
+    }
+
+    private boolean isSelfDelegation(String backendBaseUrl, String endpointPathForComparison) {
+        String target = normalizeBaseUrl(backendBaseUrl, endpointPathForComparison);
         if (target == null) {
             return false;
         }
-        if (normalizeBaseUrl(configuredPublicBaseUrl) != null
-            && target.equals(normalizeBaseUrl(configuredPublicBaseUrl))) {
+        if (normalizeBaseUrl(configuredPublicBaseUrl, endpointPathForComparison) != null
+            && target.equals(normalizeBaseUrl(configuredPublicBaseUrl, endpointPathForComparison))) {
             return true;
         }
         return backendUrlResolver != null
-            && target.equals(normalizeBaseUrl(backendUrlResolver.resolveBaseDomain()));
+            && target.equals(normalizeBaseUrl(backendUrlResolver.resolveBaseDomain(), endpointPathForComparison));
     }
 
-    private String normalizeBaseUrl(String value) {
+    private String normalizeBaseUrl(String value, String endpointPathForComparison) {
         if (value == null || value.isBlank()) {
             return null;
         }
@@ -197,9 +258,7 @@ public class RemoteInstitutionalCheckInClient {
             while (path.endsWith("/") && !path.isEmpty()) {
                 path = path.substring(0, path.length() - 1);
             }
-            if ("/api".equals(path) || "/auth".equals(path)) {
-                path = "";
-            }
+            path = normalizeBasePath(path, endpointPathForComparison);
             String authority = scheme + "://" + host + (defaultPort ? "" : ":" + port);
             return authority + path;
         } catch (IllegalArgumentException ex) {
@@ -208,6 +267,10 @@ public class RemoteInstitutionalCheckInClient {
     }
 
     private URI buildEndpoint(String backendBaseUrl) {
+        return buildEndpoint(backendBaseUrl, delegationEndpointPath());
+    }
+
+    private URI buildEndpoint(String backendBaseUrl, String endpointPath) {
         if (backendBaseUrl == null || backendBaseUrl.isBlank()) {
             throw new IllegalArgumentException("Missing remote institutional backend URL");
         }
@@ -226,10 +289,8 @@ public class RemoteInstitutionalCheckInClient {
             || baseUri.getRawQuery() != null || baseUri.getRawFragment() != null) {
             throw new IllegalArgumentException("Remote institutional backend URL contains forbidden components");
         }
-        String path = endpointPath == null || endpointPath.isBlank()
-            ? "/auth/checkin-institutional" : endpointPath;
         return UriComponentsBuilder.fromUri(baseUri)
-            .replacePath(joinPath(normalizeBasePath(baseUri.getPath(), path), path))
+            .replacePath(joinPath(normalizeBasePath(baseUri.getPath(), endpointPath), endpointPath))
             .replaceQuery(null)
             .fragment(null)
             .build(true)
@@ -322,7 +383,20 @@ public class RemoteInstitutionalCheckInClient {
         if (endpoint.startsWith("/auth/") && normalized.endsWith("/api")) {
             return normalized.substring(0, normalized.length() - "/api".length());
         }
+        if ("/api".equals(normalized) || "/auth".equals(normalized)) {
+            return "";
+        }
         return normalized;
+    }
+
+    private String delegationEndpointPath() {
+        return endpointPath == null || endpointPath.isBlank()
+            ? "/auth/checkin-institutional" : endpointPath;
+    }
+
+    private String statusEndpointPath() {
+        return statusEndpointPath == null || statusEndpointPath.isBlank()
+            ? "/auth/checkin-institutional/status" : statusEndpointPath;
     }
 
     private String joinPath(String basePath, String path) {
@@ -340,7 +414,7 @@ public class RemoteInstitutionalCheckInClient {
 
     @FunctionalInterface
     interface PinnedTransport {
-        RemoteCheckInResult post(URI endpoint, InstitutionalCheckInRequest request, List<InetAddress> addresses)
+        RemoteCheckInResult post(URI endpoint, Object request, List<InetAddress> addresses)
             throws Exception;
     }
 
@@ -358,7 +432,10 @@ public class RemoteInstitutionalCheckInClient {
         }
 
         public boolean isRetryable() {
-            return body != null && Boolean.TRUE.equals(body.getRetryable());
+            if (body != null && body.getRetryable() != null) {
+                return body.getRetryable();
+            }
+            return status == 429 || status == 502 || status == 503 || status == 504;
         }
     }
 }

@@ -2,6 +2,7 @@ package decentralabs.blockchain.service.auth;
 
 import decentralabs.blockchain.dto.auth.CheckInResponse;
 import decentralabs.blockchain.dto.auth.InstitutionalCheckInRequest;
+import decentralabs.blockchain.dto.auth.InstitutionalCheckInStatusRequest;
 import decentralabs.blockchain.service.wallet.BlockchainBookingService;
 import decentralabs.blockchain.service.wallet.InstitutionalWalletService;
 import decentralabs.blockchain.service.wallet.WalletService;
@@ -220,6 +221,98 @@ public class InstitutionalCheckInService {
         response.setTxHash(record.txHash());
         response.setTimestamp(System.currentTimeMillis() / 1000);
         response.setReason("Institutional check-in is already queued");
+        return response;
+    }
+
+    /**
+     * Returns the durable consumer-side check-in state for provider-only retries.
+     * The marketplace token binds the lookup to the reservation and lab; no SAML
+     * assertion is needed because this endpoint does not create or mutate state.
+     */
+    public CheckInResponse checkInStatus(InstitutionalCheckInStatusRequest request) {
+        if (request == null || request.getMarketplaceToken() == null
+            || request.getMarketplaceToken().isBlank()
+            || request.getReservationKey() == null || request.getReservationKey().isBlank()) {
+            throw new IllegalArgumentException("Missing marketplaceToken or reservationKey");
+        }
+        Map<String, Object> claims;
+        try {
+            claims = marketplaceEndpointAuthService.enforceToken(request.getMarketplaceToken(), null);
+        } catch (ResponseStatusException ex) {
+            if (ex.getStatusCode().equals(HttpStatus.UNAUTHORIZED)
+                || ex.getStatusCode().equals(HttpStatus.FORBIDDEN)) {
+                throw new SecurityException("Invalid marketplace token: " + ex.getReason(), ex);
+            }
+            throw new IllegalArgumentException("Invalid marketplace token: " + ex.getReason(), ex);
+        }
+        enforceRequiredClaim(claims, "purpose", "lab_access");
+        String effectiveLabId = request.getLabId();
+        if (effectiveLabId == null || effectiveLabId.isBlank()) {
+            effectiveLabId = firstClaim(claims, "labId");
+        }
+        enforceOptionalBoundClaim(claims, "reservationKey", request.getReservationKey());
+        enforceOptionalBoundClaim(claims, "labId", effectiveLabId);
+
+        String puc = firstClaim(claims, "puc");
+        String payerWallet = firstClaim(claims, "payerInstitutionWallet");
+        if (puc == null || puc.isBlank() || payerWallet == null || payerWallet.isBlank()) {
+            throw new SecurityException("Marketplace token missing required claims");
+        }
+        Map<String, Object> bookingInfo = bookingService.getCheckInBookingInfo(
+            payerWallet,
+            request.getReservationKey(),
+            effectiveLabId,
+            puc
+        );
+        String canonicalReservationKey = reservationKeyFromBooking(
+            bookingInfo, request.getReservationKey()
+        );
+
+        InstitutionalCheckInOutboxService.CheckInOutboxState state =
+            outboxService.findStateByReservationKeyIfConfigured(canonicalReservationKey);
+        if (state == null) {
+            CheckInResponse response = new CheckInResponse();
+            response.setValid(false);
+            response.setQueued(false);
+            response.setRetryable(false);
+            response.setReservationKey(canonicalReservationKey);
+            response.setReason("CHECKIN_NOT_FOUND");
+            return response;
+        }
+        return statusResponse(canonicalReservationKey, state);
+    }
+
+    private CheckInResponse statusResponse(
+        String reservationKey,
+        InstitutionalCheckInOutboxService.CheckInOutboxState state
+    ) {
+        CheckInResponse response = new CheckInResponse();
+        response.setReservationKey(reservationKey);
+        response.setTxHash(state.txHash());
+        response.setTimestamp(System.currentTimeMillis() / 1000);
+        if ("MINED_SUCCESS".equalsIgnoreCase(state.status())) {
+            response.setValid(true);
+            response.setQueued(false);
+            response.setRetryable(false);
+            response.setReason("Access already authorized");
+        } else if ("MANUAL_INTERVENTION".equalsIgnoreCase(state.status())) {
+            response.setValid(false);
+            response.setQueued(false);
+            response.setRetryable(false);
+            response.setReason(state.isContextMismatch()
+                ? "CHECKIN_CONTEXT_MISMATCH" : "CHECKIN_MANUAL_INTERVENTION");
+        } else if ("FAILED".equalsIgnoreCase(state.status())
+            || "MINED_FAILED".equalsIgnoreCase(state.status())) {
+            response.setValid(false);
+            response.setQueued(false);
+            response.setRetryable(false);
+            response.setReason("CHECKIN_FAILED");
+        } else {
+            response.setValid(true);
+            response.setQueued(true);
+            response.setRetryable(true);
+            response.setReason("CHECKIN_QUEUED");
+        }
         return response;
     }
 
@@ -528,6 +621,16 @@ public class InstitutionalCheckInService {
             return;
         }
         enforceRequiredClaim(claims, claim, expected);
+    }
+
+    private void enforceOptionalBoundClaim(Map<String, Object> claims, String claim, String expected) {
+        if (expected == null || expected.isBlank()) {
+            return;
+        }
+        String actual = firstClaim(claims, claim);
+        if (actual != null && !actual.isBlank() && !actual.equals(expected)) {
+            throw new SecurityException("Marketplace token " + claim + " mismatch");
+        }
     }
 
     private void enforceRequiredClaim(Map<String, Object> claims, String claim, String expected) {

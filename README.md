@@ -54,6 +54,7 @@ implemented by the controllers in `src/main/java/decentralabs/blockchain/control
 - `POST /auth/authorize-and-issue`
 - `POST /auth/access-credential`
 - `POST /auth/checkin-institutional`
+- `POST /auth/checkin-institutional/status`
 - `POST /auth/access-code/redeem`
 - `POST /auth/fmu/session-ticket/issue`
 - `POST /auth/fmu/session-ticket/redeem`

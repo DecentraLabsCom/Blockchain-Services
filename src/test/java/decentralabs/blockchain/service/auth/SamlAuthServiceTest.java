@@ -25,9 +25,11 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import decentralabs.blockchain.dto.auth.AuthResponse;
+import decentralabs.blockchain.dto.auth.CheckInResponse;
 import decentralabs.blockchain.dto.auth.ProviderAccessCredentialRequest;
 import decentralabs.blockchain.dto.auth.SamlAuthRequest;
 import decentralabs.blockchain.exception.AccessAuthorizationManualInterventionException;
+import decentralabs.blockchain.dto.auth.InstitutionalCheckInStatusRequest;
 import decentralabs.blockchain.service.wallet.BlockchainBookingService;
 
 @ExtendWith(MockitoExtension.class)
@@ -50,6 +52,12 @@ class SamlAuthServiceTest {
 
     @Mock
     private InstitutionalCheckInOutboxService institutionalCheckInOutboxService;
+
+    @Mock
+    private InstitutionalCheckInDirectoryService institutionalCheckInDirectoryService;
+
+    @Mock
+    private RemoteInstitutionalCheckInClient remoteInstitutionalCheckInClient;
 
     @Mock
     private AccessCredentialDeliveryService accessCredentialDeliveryService;
@@ -108,6 +116,42 @@ class SamlAuthServiceTest {
                 .thenReturn(new InstitutionalCheckInOutboxService.CheckInOutboxState(
                     "MANUAL_INTERVENTION", "operator intervention required", "0xhash"
                 ));
+
+            assertThatThrownBy(() -> samlAuthService.issueAccessCredential(request))
+                .isInstanceOf(AccessAuthorizationManualInterventionException.class);
+            verify(accessAuthorizationProvisioningService, never()).tryStart(anyString());
+        }
+
+        @Test
+        @DisplayName("Should reject provider-only retry when delegated consumer reports terminal intervention")
+        void shouldRejectProviderOnlyRetryForRemoteManualIntervention() {
+            ProviderAccessCredentialRequest request = new ProviderAccessCredentialRequest();
+            request.setMarketplaceToken("provider-token");
+            request.setReservationKey("0xreservation");
+            request.setLabId("42");
+
+            when(marketplaceEndpointAuthService.enforceToken(eq("provider-token"), eq(null)))
+                .thenReturn(Map.of(
+                    "puc", TEST_PUC, "affiliation", TEST_AFFILIATION,
+                    "bookingInfoAllowed", true, "purpose", "lab_access",
+                    "reservationKey", "0xreservation", "labId", "42",
+                    "payerInstitutionWallet", "0xwallet"
+                ));
+            Map<String, Object> bookingInfo = new HashMap<>(Map.of(
+                "reservationKey", "0xreservation",
+                "reservationStatus", java.math.BigInteger.ONE,
+                "resourceType", "lab"
+            ));
+            when(blockchainService.getBookingInfoForCredentialPreparation("0xwallet", "0xreservation", "42", TEST_PUC))
+                .thenReturn(bookingInfo);
+            when(institutionalCheckInDirectoryService.resolveOrganizationBackendUrl(TEST_AFFILIATION))
+                .thenReturn("https://consumer.example");
+            CheckInResponse remoteBody = new CheckInResponse();
+            remoteBody.setReason("CHECKIN_MANUAL_INTERVENTION");
+            remoteBody.setRetryable(false);
+            when(remoteInstitutionalCheckInClient.queryStatus(
+                eq("https://consumer.example"), any(InstitutionalCheckInStatusRequest.class)
+            )).thenReturn(new RemoteInstitutionalCheckInClient.RemoteCheckInResult(409, remoteBody, null));
 
             assertThatThrownBy(() -> samlAuthService.issueAccessCredential(request))
                 .isInstanceOf(AccessAuthorizationManualInterventionException.class);

@@ -1,8 +1,10 @@
 package decentralabs.blockchain.service.auth;
 
 import decentralabs.blockchain.dto.auth.AuthResponse;
+import decentralabs.blockchain.dto.auth.CheckInResponse;
 import decentralabs.blockchain.dto.auth.ProviderAccessCredentialRequest;
 import decentralabs.blockchain.dto.auth.SamlAuthRequest;
+import decentralabs.blockchain.dto.auth.InstitutionalCheckInStatusRequest;
 import decentralabs.blockchain.exception.AccessAuthorizationPendingException;
 import decentralabs.blockchain.exception.AccessAuthorizationRejectedException;
 import decentralabs.blockchain.exception.AccessAuthorizationContextMismatchException;
@@ -44,6 +46,8 @@ public class SamlAuthService {
     private final CheckInOnChainService checkInOnChainService;
     private final AccessCodeService accessCodeService;
     private final InstitutionalCheckInOutboxService institutionalCheckInOutboxService;
+    private final InstitutionalCheckInDirectoryService institutionalCheckInDirectoryService;
+    private final RemoteInstitutionalCheckInClient remoteInstitutionalCheckInClient;
 
     @Value("${auth.saml.require-booking-scope:true}")
     private boolean requireBookingScope;
@@ -95,7 +99,12 @@ public class SamlAuthService {
             String puc = stringClaim(marketplaceJWTClaims, "puc");
             String txHash = request.getAccessAuthorizationTxHash();
             if (!isAccessAuthorized(bookingInfo)) {
-                enforceConsumerCheckInState(canonicalReservationKey);
+                enforceConsumerCheckInState(
+                    canonicalReservationKey,
+                    marketplaceJWTClaims,
+                    request.getMarketplaceToken(),
+                    request.getLabId()
+                );
             }
             if (isAccessAuthorized(bookingInfo)) {
                 provisionalLease = provisionAuthorizedGuacamoleAccess(
@@ -354,12 +363,72 @@ public class SamlAuthService {
         return value == null || value.toString().isBlank() ? fallback : value.toString();
     }
 
-    private void enforceConsumerCheckInState(String reservationKey) {
+    private void enforceConsumerCheckInState(
+        String reservationKey,
+        Map<String, Object> marketplaceClaims,
+        String marketplaceToken,
+        String labId
+    ) {
         InstitutionalCheckInOutboxService.CheckInOutboxState state =
             institutionalCheckInOutboxService.findStateByReservationKeyIfConfigured(reservationKey);
-        if (state == null || state.status() == null) {
+        if (state != null && state.status() != null) {
+            enforceTerminalConsumerCheckInState(reservationKey, state);
             return;
         }
+
+        String affiliation = stringClaim(marketplaceClaims, "affiliation");
+        if (affiliation == null || affiliation.isBlank()) {
+            return;
+        }
+        String backendUrl = institutionalCheckInDirectoryService.resolveOrganizationBackendUrl(affiliation);
+        if (backendUrl == null || backendUrl.isBlank()) {
+            return;
+        }
+        InstitutionalCheckInStatusRequest statusRequest = new InstitutionalCheckInStatusRequest();
+        statusRequest.setMarketplaceToken(marketplaceToken);
+        statusRequest.setReservationKey(reservationKey);
+        statusRequest.setLabId(labId);
+        try {
+            RemoteInstitutionalCheckInClient.RemoteCheckInResult remoteState =
+                remoteInstitutionalCheckInClient.queryStatus(backendUrl, statusRequest);
+            CheckInResponse remoteBody = remoteState == null ? null : remoteState.body();
+            if (remoteBody == null || remoteBody.getReason() == null) {
+                return;
+            }
+            String reason = remoteBody.getReason();
+            if ("CHECKIN_CONTEXT_MISMATCH".equals(reason)) {
+                throw new AccessAuthorizationContextMismatchException(
+                    "Consumer institutional check-in belongs to a different chain or signer",
+                    reservationKey,
+                    remoteBody.getTxHash()
+                );
+            }
+            if ("CHECKIN_MANUAL_INTERVENTION".equals(reason)) {
+                throw new AccessAuthorizationManualInterventionException(
+                    "Consumer institutional check-in requires manual intervention",
+                    reservationKey,
+                    remoteBody.getTxHash()
+                );
+            }
+            if ("CHECKIN_FAILED".equals(reason) || "CHECKIN_SIGNER_NOT_AUTHORIZED".equals(reason)) {
+                throw new AccessAuthorizationRejectedException(
+                    "Consumer institutional check-in publication failed permanently"
+                );
+            }
+        }
+        catch (AccessAuthorizationContextMismatchException
+            | AccessAuthorizationManualInterventionException
+            | AccessAuthorizationRejectedException ex) {
+            throw ex;
+        } catch (RuntimeException ex) {
+            log.debug("Remote consumer check-in status unavailable for {}", reservationKey, ex);
+        }
+    }
+
+    private void enforceTerminalConsumerCheckInState(
+        String reservationKey,
+        InstitutionalCheckInOutboxService.CheckInOutboxState state
+    ) {
         if ("MANUAL_INTERVENTION".equalsIgnoreCase(state.status())) {
             if (state.isContextMismatch()) {
                 throw new AccessAuthorizationContextMismatchException(

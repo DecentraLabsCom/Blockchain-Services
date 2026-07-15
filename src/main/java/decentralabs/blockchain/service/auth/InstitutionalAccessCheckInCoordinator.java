@@ -196,7 +196,7 @@ public class InstitutionalAccessCheckInCoordinator {
         String resolvedLabId
     ) {
         if (!delegationEnabled) {
-            throw new IllegalStateException("Local wallet is not authorized for institution check-in");
+            return AccessGrantedResult.SIGNER_NOT_AUTHORIZED;
         }
         String organization = normalizeOrganization(stringValue(marketplaceClaims.get("affiliation")));
         String backendUrl = directoryService.resolveOrganizationBackendUrl(organization);
@@ -226,7 +226,7 @@ public class InstitutionalAccessCheckInCoordinator {
             return AccessGrantedResult.MANUAL_INTERVENTION;
         }
         if (result == null || !result.isHttpSuccessful() || response == null || !response.isValid()) {
-            if (result != null && (result.isRetryable() || result.status() == 503)) {
+            if (result != null && result.isRetryable()) {
                 return AccessGrantedResult.QUEUED;
             }
             throw new AccessAuthorizationDelegationException(result);

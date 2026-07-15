@@ -7,12 +7,17 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.sun.net.httpserver.HttpServer;
 import decentralabs.blockchain.dto.auth.CheckInResponse;
 import decentralabs.blockchain.dto.auth.InstitutionalCheckInRequest;
+import decentralabs.blockchain.dto.auth.InstitutionalCheckInStatusRequest;
 import decentralabs.blockchain.service.BackendUrlResolver;
 import java.net.InetAddress;
+import java.net.InetSocketAddress;
 import java.net.URI;
+import java.nio.charset.StandardCharsets;
 import java.util.List;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -28,6 +33,14 @@ class RemoteInstitutionalCheckInClientTest {
 
     private RemoteInstitutionalCheckInClient client;
     private InetAddress publicAddress;
+    private HttpServer httpServer;
+
+    @AfterEach
+    void tearDown() {
+        if (httpServer != null) {
+            httpServer.stop(0);
+        }
+    }
 
     @BeforeEach
     void setUp() throws Exception {
@@ -129,6 +142,69 @@ class RemoteInstitutionalCheckInClientTest {
     }
 
     @Test
+    void infersRetryabilityFromTransientStatusOnlyWhenBodyDoesNotSpecifyIt() {
+        CheckInResponse explicitFalse = new CheckInResponse();
+        explicitFalse.setRetryable(false);
+
+        assertThat(new RemoteInstitutionalCheckInClient.RemoteCheckInResult(503, explicitFalse, "9")
+            .isRetryable()).isFalse();
+        assertThat(new RemoteInstitutionalCheckInClient.RemoteCheckInResult(429, null, "9")
+            .isRetryable()).isTrue();
+        assertThat(new RemoteInstitutionalCheckInClient.RemoteCheckInResult(500, null, "9")
+            .isRetryable()).isFalse();
+    }
+
+    @Test
+    void preservesStatusAndRetryAfterWhenRemoteProxyReturnsNonJsonError() throws Exception {
+        httpServer = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        byte[] responseBody = "<html>upstream unavailable</html>".getBytes(StandardCharsets.UTF_8);
+        httpServer.createContext("/auth/checkin-institutional", exchange -> {
+            exchange.getResponseHeaders().set("Content-Type", "text/html");
+            exchange.getResponseHeaders().set("Retry-After", "17");
+            exchange.sendResponseHeaders(502, responseBody.length);
+            try (var output = exchange.getResponseBody()) {
+                output.write(responseBody);
+            }
+        });
+        httpServer.start();
+
+        RemoteInstitutionalCheckInClient realClient = new RemoteInstitutionalCheckInClient(new ObjectMapper());
+        ReflectionTestUtils.setField(realClient, "allowHttp", true);
+        ReflectionTestUtils.setField(realClient, "allowPrivateNetworks", true);
+
+        RemoteInstitutionalCheckInClient.RemoteCheckInResult result = realClient.submitDetailed(
+            "http://127.0.0.1:" + httpServer.getAddress().getPort(),
+            new InstitutionalCheckInRequest()
+        );
+
+        assertThat(result.status()).isEqualTo(502);
+        assertThat(result.body()).isNull();
+        assertThat(result.retryAfter()).isEqualTo("17");
+        assertThat(result.isRetryable()).isTrue();
+    }
+
+    @Test
+    void queriesDelegatedCheckInStatusThroughTheAuthenticatedStatusEndpoint() throws Exception {
+        InstitutionalCheckInStatusRequest request = new InstitutionalCheckInStatusRequest();
+        request.setMarketplaceToken("market-token");
+        request.setReservationKey("0xabc");
+        request.setLabId("42");
+        CheckInResponse body = new CheckInResponse();
+        body.setReason("CHECKIN_MANUAL_INTERVENTION");
+        body.setRetryable(false);
+        URI endpoint = URI.create("https://institution.example/auth/checkin-institutional/status");
+        when(transport.post(endpoint, request, List.of(publicAddress)))
+            .thenReturn(new RemoteInstitutionalCheckInClient.RemoteCheckInResult(409, body, null));
+
+        RemoteInstitutionalCheckInClient.RemoteCheckInResult result = client.queryStatus(
+            "https://institution.example", request
+        );
+
+        assertThat(result.status()).isEqualTo(409);
+        assertThat(result.body()).isSameAs(body);
+    }
+
+    @Test
     void rejectsDelegationToThisBackendBeforeDnsResolution() throws Exception {
         when(backendUrlResolver.resolveBaseDomain()).thenReturn("https://institution.example/");
         RemoteInstitutionalCheckInClient selfAwareClient = new RemoteInstitutionalCheckInClient(
@@ -138,6 +214,26 @@ class RemoteInstitutionalCheckInClientTest {
 
         RemoteInstitutionalCheckInClient.RemoteCheckInResult result = selfAwareClient.submitDetailed(
             "https://institution.example/api", new InstitutionalCheckInRequest()
+        );
+
+        assertThat(result.status()).isEqualTo(409);
+        assertThat(result.body().getReason()).isEqualTo("CHECKIN_SIGNER_NOT_AUTHORIZED");
+        assertThat(result.body().getRetryable()).isFalse();
+        verify(hostResolver, org.mockito.Mockito.never()).resolve("institution.example");
+        verify(transport, org.mockito.Mockito.never()).post(org.mockito.ArgumentMatchers.any(),
+            org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any());
+    }
+
+    @Test
+    void rejectsSelfDelegationWhenRegisteredUrlAddsApiToAPathPrefixedBase() throws Exception {
+        RemoteInstitutionalCheckInClient selfAwareClient = new RemoteInstitutionalCheckInClient(
+            new ObjectMapper(), backendUrlResolver, hostResolver, transport
+        );
+        ReflectionTestUtils.setField(selfAwareClient, "endpointPath", "/auth/checkin-institutional");
+        ReflectionTestUtils.setField(selfAwareClient, "configuredPublicBaseUrl", "https://institution.example/gateway");
+
+        RemoteInstitutionalCheckInClient.RemoteCheckInResult result = selfAwareClient.submitDetailed(
+            "https://institution.example/gateway/api", new InstitutionalCheckInRequest()
         );
 
         assertThat(result.status()).isEqualTo(409);

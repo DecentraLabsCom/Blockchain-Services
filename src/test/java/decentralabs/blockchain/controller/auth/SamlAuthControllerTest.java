@@ -275,6 +275,26 @@ class SamlAuthControllerTest {
                 .andExpect(jsonPath("$.reservationKey").value("0xreservation"))
                 .andExpect(jsonPath("$.txHash").value("0xhash"));
         }
+
+        @Test
+        @DisplayName("Should honor explicit non-retryable false on a remote 503")
+        void shouldHonorExplicitRemoteRetryability() throws Exception {
+            SamlAuthRequest request = createValidSamlRequest();
+            CheckInResponse remoteBody = new CheckInResponse();
+            remoteBody.setReason("CHECKIN_MANUAL_INTERVENTION");
+            remoteBody.setRetryable(false);
+            when(samlAuthService.authorizeAndIssue(any(SamlAuthRequest.class)))
+                .thenThrow(new AccessAuthorizationDelegationException(
+                    new RemoteInstitutionalCheckInClient.RemoteCheckInResult(503, remoteBody, "9")
+                ));
+
+            mockMvc.perform(post("/auth/authorize-and-issue")
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isServiceUnavailable())
+                .andExpect(header().string("Retry-After", "9"))
+                .andExpect(jsonPath("$.retryable").value(false));
+        }
     }
 
     @Nested
@@ -375,6 +395,26 @@ class SamlAuthControllerTest {
                 .andExpect(jsonPath("$.queued").value(false))
                 .andExpect(jsonPath("$.retryable").value(false))
                 .andExpect(jsonPath("$.reason").value("CHECKIN_MANUAL_INTERVENTION"));
+        }
+
+        @Test
+        @DisplayName("Should expose durable delegated check-in status")
+        void shouldExposeInstitutionalCheckInStatus() throws Exception {
+            CheckInResponse response = new CheckInResponse();
+            response.setValid(false);
+            response.setQueued(false);
+            response.setRetryable(false);
+            response.setReason("CHECKIN_MANUAL_INTERVENTION");
+
+            when(institutionalCheckInService.checkInStatus(any()))
+                .thenReturn(response);
+
+            mockMvc.perform(post("/auth/checkin-institutional/status")
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content("{\"marketplaceToken\":\"market-token\",\"reservationKey\":\"0xabc\"}"))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.reason").value("CHECKIN_MANUAL_INTERVENTION"))
+                .andExpect(jsonPath("$.retryable").value(false));
         }
 
         @Test

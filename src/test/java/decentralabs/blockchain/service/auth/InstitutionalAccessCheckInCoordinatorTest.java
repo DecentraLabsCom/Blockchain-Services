@@ -11,6 +11,7 @@ import static org.mockito.Mockito.when;
 import decentralabs.blockchain.dto.auth.CheckInResponse;
 import decentralabs.blockchain.dto.auth.InstitutionalCheckInRequest;
 import decentralabs.blockchain.dto.auth.SamlAuthRequest;
+import decentralabs.blockchain.exception.AccessAuthorizationDelegationException;
 import decentralabs.blockchain.service.wallet.InstitutionalWalletService;
 import decentralabs.blockchain.util.PucHashUtil;
 import java.math.BigInteger;
@@ -367,6 +368,59 @@ class InstitutionalAccessCheckInCoordinatorTest {
         org.assertj.core.api.Assertions.assertThat(delegated.getReservationKey()).isEqualTo("0xabc");
         org.assertj.core.api.Assertions.assertThat(delegated.getLabId()).isEqualTo("42");
         org.assertj.core.api.Assertions.assertThat(delegated.getPuc()).isEqualTo("puc-123");
+    }
+
+    @Test
+    void honorsExplicitNonRetryableFalseOnRemote503() {
+        when(institutionalWalletService.getInstitutionalWalletAddress())
+            .thenReturn("0x9999999999999999999999999999999999999999");
+        when(directoryService.isAuthorizedCheckInSigner(any(), any())).thenReturn(false);
+        when(directoryService.resolveOrganizationBackendUrl("org.example"))
+            .thenReturn("https://consumer.example");
+        CheckInResponse response = new CheckInResponse();
+        response.setReason("REMOTE_ERROR");
+        response.setRetryable(false);
+        when(remoteCheckInClient.submitDetailed(eq("https://consumer.example"), any(InstitutionalCheckInRequest.class)))
+            .thenReturn(new RemoteInstitutionalCheckInClient.RemoteCheckInResult(503, response, "9"));
+
+        assertThatThrownBy(() -> coordinator.recordAccessGranted(
+            request(), claims(), Map.of(
+                "reservationKey", "0xabc", "lab", BigInteger.valueOf(42), "reservationStatus", BigInteger.ONE
+            )
+        )).isInstanceOf(AccessAuthorizationDelegationException.class);
+    }
+
+    @Test
+    void infersRetryabilityForRemote429WithoutStructuredBody() {
+        when(institutionalWalletService.getInstitutionalWalletAddress())
+            .thenReturn("0x9999999999999999999999999999999999999999");
+        when(directoryService.isAuthorizedCheckInSigner(any(), any())).thenReturn(false);
+        when(directoryService.resolveOrganizationBackendUrl("org.example"))
+            .thenReturn("https://consumer.example");
+        when(remoteCheckInClient.submitDetailed(eq("https://consumer.example"), any(InstitutionalCheckInRequest.class)))
+            .thenReturn(new RemoteInstitutionalCheckInClient.RemoteCheckInResult(429, null, "4"));
+
+        assertThat(coordinator.recordAccessGranted(
+            request(), claims(), Map.of(
+                "reservationKey", "0xabc", "lab", BigInteger.valueOf(42), "reservationStatus", BigInteger.ONE
+            )
+        )).isEqualTo(InstitutionalAccessCheckInCoordinator.AccessGrantedResult.QUEUED);
+    }
+
+    @Test
+    void returnsTerminalSignerNotAuthorizedWhenDelegationIsDisabled() {
+        when(institutionalWalletService.getInstitutionalWalletAddress())
+            .thenReturn("0x9999999999999999999999999999999999999999");
+        when(directoryService.isAuthorizedCheckInSigner(any(), any())).thenReturn(false);
+        ReflectionTestUtils.setField(coordinator, "delegationEnabled", false);
+
+        assertThat(coordinator.recordAccessGranted(
+            request(), claims(), Map.of(
+                "reservationKey", "0xabc", "lab", BigInteger.valueOf(42), "reservationStatus", BigInteger.ONE
+            )
+        )).isEqualTo(InstitutionalAccessCheckInCoordinator.AccessGrantedResult.SIGNER_NOT_AUTHORIZED);
+        verify(remoteCheckInClient, never()).submitDetailed(any(), any());
+        verify(outboxService, never()).enqueueAccessGranted(any(), any(), any(), any(), any(), any());
     }
 
     @Test
