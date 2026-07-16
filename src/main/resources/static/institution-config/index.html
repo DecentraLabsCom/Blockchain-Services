@@ -486,7 +486,7 @@
                             Provider Registered
                         </div>
                     `;
-                    showInfo('Provider is already registered. A new provisioning token is required for a recovery registration.');
+                    showInfo('Provider is already registered. Reapply the still-valid provisioning token only if a provisioning saga needs to resume.');
                     document.getElementById('continueToDashboardBtn').classList.remove('is-hidden');
                 } else {
                     statusBadge.innerHTML = `
@@ -570,7 +570,7 @@
                             </div>
                         `;
                     } else {
-                        showError('Registration failed. Issue a new provisioning token for an explicit recovery attempt.');
+                        showError('Registration failed. Retry with this still-valid provisioning token to resume from the last confirmed step.');
                     }
                 } else {
                     showError(result.error || 'Failed to save configuration');
