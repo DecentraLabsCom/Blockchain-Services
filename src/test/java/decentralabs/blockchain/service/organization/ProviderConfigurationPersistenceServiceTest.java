@@ -204,8 +204,9 @@ class ProviderConfigurationPersistenceServiceTest {
             .providerName("Token University")
             .providerEmail("token@university.edu")
             .providerCountry("ES")
-            .providerOrganization("token.edu")
-            .publicBaseUrl("https://token.university.edu")
+            .institutionId("token.edu")
+            .walletAddress("0x1234567890123456789012345678901234567890")
+            .canonicalBackendOrigin("https://token.university.edu")
             .jti("test-jti-456")
             .build();
 

@@ -1,5 +1,7 @@
 package decentralabs.blockchain.dto.provider;
 
+import decentralabs.blockchain.service.organization.ProvisioningSecurityClaims;
+import java.math.BigInteger;
 import lombok.Builder;
 import lombok.Value;
 
@@ -9,9 +11,31 @@ import lombok.Value;
 @Value
 @Builder
 public class ConsumerProvisioningTokenPayload {
-    String type; // Should be "consumer"
+    String registrationType;
     String marketplaceBaseUrl;
+    String institutionId;
+    String walletAddress;
+    String canonicalBackendOrigin;
+    BigInteger chainId;
+    String registryContract;
+    String nonce;
+    long issuedAt;
+    long expiresAt;
     String consumerName;
-    String consumerOrganization;
     String jti;
+
+    public ProvisioningSecurityClaims securityClaims() {
+        return new ProvisioningSecurityClaims(
+            institutionId,
+            walletAddress,
+            canonicalBackendOrigin,
+            registrationType,
+            chainId,
+            registryContract,
+            jti,
+            nonce,
+            issuedAt,
+            expiresAt
+        );
+    }
 }

@@ -55,8 +55,8 @@ public class ProviderConfigurationPersistenceService {
             payload.getProviderName(),
             payload.getProviderEmail(),
             payload.getProviderCountry(),
-            payload.getProviderOrganization(),
-            payload.getPublicBaseUrl(),
+            payload.getInstitutionId(),
+            payload.getCanonicalBackendOrigin(),
             "token"
         );
     }
@@ -81,11 +81,12 @@ public class ProviderConfigurationPersistenceService {
             }
         }
 
-        // Consumer-only configuration (no publicBaseUrl, no provider fields)
+        // Consumer-only configuration (no provider publication fields)
         properties.setProperty("marketplace.base-url", payload.getMarketplaceBaseUrl());
         properties.setProperty("consumer.name", payload.getConsumerName());
         // Consumer-only flow reuses provider.organization to persist schacHomeOrganization used on-chain.
-        properties.setProperty("provider.organization", payload.getConsumerOrganization());
+        properties.setProperty("provider.organization", payload.getInstitutionId());
+        properties.setProperty("public.base-url", payload.getCanonicalBackendOrigin());
         properties.setProperty("provisioning.source", "consumer-token");
 
         // Save to file

@@ -32,6 +32,7 @@ public class InstitutionRegistrationService {
     private final InstitutionalWalletService institutionalWalletService;
     private final ProviderConfigurationPersistenceService configPersistenceService;
     private final RestTemplate restTemplate;
+    private final ProvisioningWalletProofService walletProofService;
 
     /**
      * Register institution with marketplace based on role
@@ -120,9 +121,11 @@ public class InstitutionRegistrationService {
             return false;
         }
 
-        String backendUrl = normalizeBackendUrl(authURI);
-
         try {
+            String walletSignature = walletProofService.sign(
+                request.getProvisioningClaims(),
+                institutionalWalletService.getInstitutionalCredentials()
+            );
             log.info("Attempting to register as provider with marketplace...");
             log.info("Provider details: name={}, wallet={}, organization={}, authURI={}", 
                 request.getName(), walletAddress, request.getOrganization(), authURI);
@@ -130,13 +133,7 @@ public class InstitutionRegistrationService {
             doRegisterProvider(
                 request.getMarketplaceUrl(),
                 request.getProvisioningToken(),
-                walletAddress,
-                request.getName(),
-                request.getEmail(),
-                request.getCountry(),
-                request.getOrganization(),
-                authURI,
-                backendUrl
+                walletSignature
             );
 
             log.info("Provider registration completed successfully");
@@ -162,16 +159,17 @@ public class InstitutionRegistrationService {
         }
 
         try {
+            String walletSignature = walletProofService.sign(
+                request.getProvisioningClaims(),
+                institutionalWalletService.getInstitutionalCredentials()
+            );
             log.info("Attempting to register as consumer-only institution...");
             log.info("Consumer details: wallet={}, organization={}", walletAddress, request.getOrganization());
 
-            String backendUrl = normalizeBackendUrl(request.getPublicBaseUrl());
             doRegisterConsumer(
                 request.getMarketplaceUrl(),
                 request.getProvisioningToken(),
-                walletAddress,
-                request.getOrganization(),
-                backendUrl
+                walletSignature
             );
 
             log.info("Consumer registration completed successfully");
@@ -199,27 +197,13 @@ public class InstitutionRegistrationService {
     private void doRegisterProvider(
         String marketplaceUrl,
         String provisioningToken,
-        String walletAddress,
-        String name,
-        String email,
-        String country,
-        String organization,
-        String authURI,
-        String backendUrl
+        String walletSignature
     ) {
         String url = buildMarketplaceUrl(marketplaceUrl, "/api/institutions/registerProvider");
 
         // Build request body
         Map<String, String> requestBody = new HashMap<>();
-        requestBody.put("name", name.trim());
-        requestBody.put("walletAddress", walletAddress);
-        requestBody.put("email", email.trim());
-        requestBody.put("country", country.trim());
-        requestBody.put("authURI", authURI);
-        requestBody.put("organization", organization.trim());
-        if (backendUrl != null && !backendUrl.isBlank()) {
-            requestBody.put("backendUrl", backendUrl);
-        }
+        requestBody.put("walletSignature", walletSignature);
 
         sendRegistrationRequest(url, provisioningToken, requestBody, "Provider");
     }
@@ -230,19 +214,13 @@ public class InstitutionRegistrationService {
     private void doRegisterConsumer(
         String marketplaceUrl,
         String provisioningToken,
-        String walletAddress,
-        String organization,
-        String backendUrl
+        String walletSignature
     ) {
         String url = buildMarketplaceUrl(marketplaceUrl, "/api/institutions/registerConsumer");
 
         // Build request body
         Map<String, String> requestBody = new HashMap<>();
-        requestBody.put("walletAddress", walletAddress);
-        requestBody.put("organization", organization.trim());
-        if (backendUrl != null && !backendUrl.isBlank()) {
-            requestBody.put("backendUrl", backendUrl);
-        }
+        requestBody.put("walletSignature", walletSignature);
 
         sendRegistrationRequest(url, provisioningToken, requestBody, "Consumer");
     }
@@ -279,9 +257,7 @@ public class InstitutionRegistrationService {
                     roleLabel, response.getStatusCode(), response.getBody());
             }
         } catch (HttpClientErrorException e) {
-            if (e.getStatusCode() == HttpStatus.CONFLICT || e.getStatusCode() == HttpStatus.OK) {
-                log.info("{} already registered (expected on subsequent startups)", roleLabel);
-            } else if (e.getStatusCode() == HttpStatus.UNAUTHORIZED) {
+            if (e.getStatusCode() == HttpStatus.UNAUTHORIZED) {
                 log.error("{} registration failed: Unauthorized (invalid provisioning token)", roleLabel);
                 throw new RuntimeException("Invalid provisioning token");
             } else {
@@ -307,26 +283,6 @@ public class InstitutionRegistrationService {
             url = url.substring(0, url.length() - 1);
         }
         return url + endpoint;
-    }
-
-    /**
-     * Normalize backend URL
-     */
-    private String normalizeBackendUrl(String baseUrl) {
-        if (baseUrl == null) {
-            return null;
-        }
-
-        String trimmed = baseUrl.trim();
-        if (trimmed.isEmpty()) {
-            return null;
-        }
-
-        if (trimmed.endsWith("/")) {
-            trimmed = trimmed.substring(0, trimmed.length() - 1);
-        }
-
-        return trimmed + "/api";
     }
 
     /**
@@ -367,6 +323,9 @@ public class InstitutionRegistrationService {
         }
         if (request.getProvisioningToken() == null || request.getProvisioningToken().isBlank()) {
             throw new IllegalArgumentException("Provisioning token is required");
+        }
+        if (request.getProvisioningClaims() == null) {
+            throw new IllegalArgumentException("Provisioning security claims are required");
         }
     }
 }

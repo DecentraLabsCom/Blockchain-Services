@@ -34,6 +34,16 @@ import java.util.Properties;
 public class ProviderConfigurationController {
 
     private static final List<String> TOKEN_LOCKED_FIELDS = List.of(
+        "institutionId",
+        "walletAddress",
+        "canonicalBackendOrigin",
+        "registrationType",
+        "chainId",
+        "registryContract",
+        "jti",
+        "nonce",
+        "issuedAt",
+        "expiresAt",
         "providerName",
         "providerEmail",
         "providerCountry",
@@ -128,21 +138,28 @@ public class ProviderConfigurationController {
             }
             String provisioningToken = request.getProvisioningToken().trim();
 
-            // Persist configuration to file
-            persistenceService.saveConfiguration(request);
+            ProvisioningTokenPayload payload = provisioningTokenService.validateAndExtract(
+                provisioningToken,
+                request.getMarketplaceBaseUrl(),
+                request.getPublicBaseUrl()
+            );
+
+            // Token claims, not editable form fields, are the source of truth.
+            persistenceService.saveConfigurationFromToken(payload);
 
             log.info("Configuration saved successfully. Attempting registration...");
 
             // Trigger registration using unified service
             InstitutionRegistrationRequest registrationRequest = InstitutionRegistrationRequest.builder()
                 .role(InstitutionRole.PROVIDER)
-                .marketplaceUrl(request.getMarketplaceBaseUrl())
+                .marketplaceUrl(payload.getMarketplaceBaseUrl())
                 .provisioningToken(provisioningToken)
-                .organization(request.getProviderOrganization())
-                .name(request.getProviderName())
-                .email(request.getProviderEmail())
-                .country(request.getProviderCountry())
-                .publicBaseUrl(request.getPublicBaseUrl())
+                .provisioningClaims(payload.securityClaims())
+                .organization(payload.getInstitutionId())
+                .name(payload.getProviderName())
+                .email(payload.getProviderEmail())
+                .country(payload.getProviderCountry())
+                .publicBaseUrl(payload.getCanonicalBackendOrigin())
                 .build();
 
             boolean registered = registrationService.register(registrationRequest);
@@ -189,58 +206,9 @@ public class ProviderConfigurationController {
         @RequestBody(required = false) Map<String, String> request
     ) {
         Map<String, Object> response = new HashMap<>();
-
-        try {
-            ensureProviderRegistrationEnabled();
-            ConfigSnapshot snapshot = loadSnapshot();
-            String provisioningToken = request == null ? "" : request.get("provisioningToken");
-            if (provisioningToken == null) {
-                provisioningToken = "";
-            }
-
-            if (!isConfigured(snapshot)) {
-                response.put("success", false);
-                response.put("error", "Provider configuration is incomplete");
-                return ResponseEntity.badRequest().body(response);
-            }
-            if (provisioningToken.isBlank()) {
-                response.put("success", false);
-                response.put("error", "Provisioning token is required to register");
-                return ResponseEntity.badRequest().body(response);
-            }
-            String trimmedToken = provisioningToken.trim();
-
-            InstitutionRegistrationRequest registrationRequest = InstitutionRegistrationRequest.builder()
-                .role(InstitutionRole.PROVIDER)
-                .marketplaceUrl(snapshot.marketplaceBaseUrl())
-                .provisioningToken(trimmedToken)
-                .organization(snapshot.providerOrganization())
-                .name(snapshot.providerName())
-                .email(snapshot.providerEmail())
-                .country(snapshot.providerCountry())
-                .publicBaseUrl(snapshot.publicBaseUrl())
-                .build();
-
-            boolean registered = registrationService.register(registrationRequest);
-
-            response.put("success", registered);
-            response.put("registered", registered);
-            response.put("message", registered 
-                ? "Provider registration completed successfully"
-                : "Registration failed. Check logs for details.");
-
-            return ResponseEntity.ok(response);
-
-        } catch (IllegalStateException e) {
-            response.put("success", false);
-            response.put("error", e.getMessage());
-            return ResponseEntity.status(HttpStatus.FORBIDDEN).body(response);
-        } catch (Exception e) {
-            log.error("Failed to retry provider registration", e);
-            response.put("success", false);
-            response.put("error", "Registration failed: " + e.getMessage());
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(response);
-        }
+        response.put("success", false);
+        response.put("error", "Provisioning tokens are single-use. Issue a new token for an explicit recovery attempt.");
+        return ResponseEntity.status(HttpStatus.CONFLICT).body(response);
     }
 
     /**
@@ -270,11 +238,12 @@ public class ProviderConfigurationController {
                 .role(InstitutionRole.PROVIDER)
                 .marketplaceUrl(payload.getMarketplaceBaseUrl())
                 .provisioningToken(provisioningToken)
-                .organization(payload.getProviderOrganization())
+                .provisioningClaims(payload.securityClaims())
+                .organization(payload.getInstitutionId())
                 .name(payload.getProviderName())
                 .email(payload.getProviderEmail())
                 .country(payload.getProviderCountry())
-                .publicBaseUrl(payload.getPublicBaseUrl())
+                .publicBaseUrl(payload.getCanonicalBackendOrigin())
                 .build();
 
             boolean registered = registrationService.register(registrationRequest);
@@ -292,8 +261,9 @@ public class ProviderConfigurationController {
                 "providerName", payload.getProviderName(),
                 "providerEmail", payload.getProviderEmail(),
                 "providerCountry", payload.getProviderCountry(),
-                "providerOrganization", payload.getProviderOrganization(),
-                "publicBaseUrl", payload.getPublicBaseUrl()
+                "providerOrganization", payload.getInstitutionId(),
+                "publicBaseUrl", payload.getCanonicalBackendOrigin(),
+                "walletAddress", payload.getWalletAddress()
             ));
 
             return registered
@@ -343,7 +313,9 @@ public class ProviderConfigurationController {
                 .role(InstitutionRole.CONSUMER)
                 .marketplaceUrl(payload.getMarketplaceBaseUrl())
                 .provisioningToken(provisioningToken)
-                .organization(payload.getConsumerOrganization())
+                .provisioningClaims(payload.securityClaims())
+                .organization(payload.getInstitutionId())
+                .publicBaseUrl(payload.getCanonicalBackendOrigin())
                 .build();
 
             boolean registered = registrationService.register(registrationRequest);
@@ -360,7 +332,8 @@ public class ProviderConfigurationController {
             response.put("config", Map.of(
                 "marketplaceBaseUrl", payload.getMarketplaceBaseUrl(),
                 "consumerName", payload.getConsumerName(),
-                "consumerOrganization", payload.getConsumerOrganization()
+                "consumerOrganization", payload.getInstitutionId(),
+                "walletAddress", payload.getWalletAddress()
             ));
 
             return registered

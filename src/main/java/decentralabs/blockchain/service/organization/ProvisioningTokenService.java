@@ -21,12 +21,8 @@ import java.net.URI;
 import java.security.KeyFactory;
 import java.security.PublicKey;
 import java.security.spec.RSAPublicKeySpec;
-import java.time.Instant;
 import java.util.Base64;
-import java.util.Map;
 import java.util.Objects;
-import java.util.Optional;
-import java.util.concurrent.ConcurrentHashMap;
 import jakarta.annotation.PostConstruct;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.client.SimpleClientHttpRequestFactory;
@@ -48,8 +44,11 @@ public class ProvisioningTokenService {
     private RestTemplate restTemplate = new RestTemplate();
     private final ObjectMapper objectMapper = new ObjectMapper();
 
-    // Simple in-memory replay guard keyed by jti with expiration time
-    private final Map<String, Instant> usedJti = new ConcurrentHashMap<>();
+    @Value("${intent.domain.chain-id:11155111}")
+    private long expectedChainId;
+
+    @Value("${contract.address:0x0000000000000000000000000000000000000000}")
+    private String expectedRegistryContract;
 
     @PostConstruct
     void configureRestTemplate() {
@@ -82,21 +81,28 @@ public class ProvisioningTokenService {
                 .verifyWith(publicKey)
                 .requireIssuer(marketplaceBaseUrl)
                 .requireAudience(expectedAudience)
-                .clockSkewSeconds(600)
+                .clockSkewSeconds(60)
                 .build();
 
             Claims claims = parser.parseSignedClaims(token).getPayload();
 
-            enforceReplayProtection(claims.getId(), claims.getExpiration().toInstant());
+            SecurityClaims security = validateSecurityClaims(claims, "provider", expectedAudience);
 
             ProvisioningTokenPayload payload = ProvisioningTokenPayload.builder()
                 .marketplaceBaseUrl(validateHttps(marketplaceBaseUrl, "marketplace base URL"))
+                .registrationType(security.registrationType())
+                .institutionId(security.institutionId())
+                .walletAddress(security.walletAddress())
+                .canonicalBackendOrigin(security.canonicalBackendOrigin())
+                .chainId(security.chainId())
+                .registryContract(security.registryContract())
+                .nonce(security.nonce())
+                .issuedAt(security.issuedAt())
+                .expiresAt(security.expiresAt())
                 .providerName(requireNonBlank(claims.get("providerName", String.class), "provider name"))
                 .providerEmail(validateEmail(claims.get("providerEmail", String.class)))
                 .providerCountry(requireNonBlank(claims.get("providerCountry", String.class), "provider country"))
-                .providerOrganization(requireNonBlank(claims.get("providerOrganization", String.class), "provider organization"))
-                .publicBaseUrl(validateHttps(claims.get("publicBaseUrl", String.class), "public base URL"))
-                .jti(claims.getId())
+                .jti(security.jti())
                 .build();
 
             // Ensure claim marketplace matches the trusted base
@@ -125,11 +131,6 @@ public class ProvisioningTokenService {
             JsonNode headerNode = decodePart(token, 0);
             JsonNode payloadNode = decodePart(token, 1);
 
-            String type = payloadNode.path("type").asText("");
-            if (!"consumer".equals(type)) {
-                throw new IllegalArgumentException("Token is not a consumer provisioning token");
-            }
-
             String tokenMarketplaceBaseUrl = payloadNode.path("marketplaceBaseUrl").asText("");
             String marketplaceBaseUrl = resolveMarketplaceBaseUrl(configuredMarketplaceBaseUrl, tokenMarketplaceBaseUrl);
             String expectedAudience = resolveExpectedAudience(configuredPublicBaseUrl, payloadNode);
@@ -144,19 +145,26 @@ public class ProvisioningTokenService {
                 .verifyWith(publicKey)
                 .requireIssuer(marketplaceBaseUrl)
                 .requireAudience(expectedAudience)
-                .clockSkewSeconds(600)
+                .clockSkewSeconds(60)
                 .build();
 
             Claims claims = parser.parseSignedClaims(token).getPayload();
 
-            enforceReplayProtection(claims.getId(), claims.getExpiration().toInstant());
+            SecurityClaims security = validateSecurityClaims(claims, "consumer", expectedAudience);
 
             ConsumerProvisioningTokenPayload payload = ConsumerProvisioningTokenPayload.builder()
-                .type("consumer")
+                .registrationType(security.registrationType())
                 .marketplaceBaseUrl(validateHttps(marketplaceBaseUrl, "marketplace base URL"))
+                .institutionId(security.institutionId())
+                .walletAddress(security.walletAddress())
+                .canonicalBackendOrigin(security.canonicalBackendOrigin())
+                .chainId(security.chainId())
+                .registryContract(security.registryContract())
+                .nonce(security.nonce())
+                .issuedAt(security.issuedAt())
+                .expiresAt(security.expiresAt())
                 .consumerName(requireNonBlank(claims.get("consumerName", String.class), "consumer name"))
-                .consumerOrganization(requireNonBlank(claims.get("consumerOrganization", String.class), "consumer organization"))
-                .jti(claims.getId())
+                .jti(security.jti())
                 .build();
 
             // Ensure claim marketplace matches the trusted base
@@ -198,6 +206,11 @@ public class ProvisioningTokenService {
     private String resolveExpectedAudience(String configuredPublicBaseUrl, JsonNode payloadNode) {
         if (configuredPublicBaseUrl != null && !configuredPublicBaseUrl.isBlank()) {
             return normalizeUrl(configuredPublicBaseUrl);
+        }
+
+        JsonNode canonicalOrigin = payloadNode.get("canonicalBackendOrigin");
+        if (canonicalOrigin != null && canonicalOrigin.isTextual() && !canonicalOrigin.asText().isBlank()) {
+            return validateOrigin(canonicalOrigin.asText(), "canonical backend origin");
         }
 
         JsonNode audNode = payloadNode.get("aud");
@@ -267,17 +280,106 @@ public class ProvisioningTokenService {
         return kf.generatePublic(keySpec);
     }
 
-    private void enforceReplayProtection(String jti, Instant expiresAt) {
-        if (jti == null || jti.isBlank()) {
-            throw new IllegalArgumentException("Token missing jti");
+    private SecurityClaims validateSecurityClaims(Claims claims, String expectedType, String expectedAudience) {
+        String registrationType = requireNonBlank(
+            claims.get("registrationType", String.class),
+            "registration type"
+        );
+        if (!expectedType.equals(registrationType)) {
+            throw new IllegalArgumentException("Token is not a " + expectedType + " provisioning token");
         }
-        Instant now = Instant.now();
-        usedJti.entrySet().removeIf(entry -> entry.getValue().isBefore(now));
-        Instant existing = usedJti.get(jti);
-        if (existing != null && existing.isAfter(now)) {
-            throw new IllegalArgumentException("Provisioning token already used");
+
+        String institutionId = requireNonBlank(claims.get("institutionId", String.class), "institutionId")
+            .toLowerCase();
+        String walletAddress = validateAddress(claims.get("walletAddress", String.class), "walletAddress");
+        String canonicalBackendOrigin = validateOrigin(
+            claims.get("canonicalBackendOrigin", String.class),
+            "canonical backend origin"
+        );
+        if (!canonicalBackendOrigin.equals(normalizeUrl(expectedAudience))) {
+            throw new IllegalArgumentException("Canonical backend origin does not match token audience");
         }
-        usedJti.put(jti, Optional.ofNullable(expiresAt).orElse(now.plusSeconds(600)));
+
+        BigInteger chainId = numberClaim(claims, "chainId");
+        if (!chainId.equals(BigInteger.valueOf(expectedChainId))) {
+            throw new IllegalArgumentException("Provisioning chainId does not match this deployment");
+        }
+        String registryContract = validateAddress(
+            claims.get("registryContract", String.class),
+            "registryContract"
+        );
+        if (!registryContract.equalsIgnoreCase(validateAddress(expectedRegistryContract, "configured registry contract"))) {
+            throw new IllegalArgumentException("Provisioning registryContract does not match this deployment");
+        }
+
+        String jti = requireNonBlank(claims.getId(), "jti");
+        String nonce = requireNonBlank(claims.get("nonce", String.class), "nonce");
+        if (!nonce.matches("^0x[0-9a-fA-F]{64}$")) {
+            throw new IllegalArgumentException("nonce must be a 32-byte hex value");
+        }
+
+        long issuedAt = numberClaim(claims, "issuedAt").longValueExact();
+        long expiresAt = numberClaim(claims, "expiresAt").longValueExact();
+        long jwtIssuedAt = claims.getIssuedAt().toInstant().getEpochSecond();
+        long jwtExpiresAt = claims.getExpiration().toInstant().getEpochSecond();
+        if (issuedAt != jwtIssuedAt) {
+            throw new IllegalArgumentException("issuedAt does not match JWT iat");
+        }
+        if (expiresAt != jwtExpiresAt) {
+            throw new IllegalArgumentException("expiresAt does not match JWT exp");
+        }
+        if (expiresAt <= issuedAt) {
+            throw new IllegalArgumentException("Invalid provisioning token timestamps");
+        }
+
+        return new SecurityClaims(
+            registrationType,
+            institutionId,
+            walletAddress,
+            canonicalBackendOrigin,
+            chainId,
+            registryContract,
+            jti,
+            nonce,
+            issuedAt,
+            expiresAt
+        );
+    }
+
+    private BigInteger numberClaim(Claims claims, String name) {
+        Object value = claims.get(name);
+        if (!(value instanceof Number number)) {
+            throw new IllegalArgumentException("Missing numeric " + name);
+        }
+        return new BigInteger(number.toString());
+    }
+
+    private String validateAddress(String address, String label) {
+        String value = requireNonBlank(address, label);
+        if (!value.matches("^0x[0-9a-fA-F]{40}$")) {
+            throw new IllegalArgumentException(label + " must be a valid Ethereum address");
+        }
+        return value;
+    }
+
+    private String validateOrigin(String url, String label) {
+        String value = requireNonBlank(url, label);
+        URI uri;
+        try {
+            uri = URI.create(value);
+        } catch (Exception error) {
+            throw new IllegalArgumentException(label + " must be a valid origin", error);
+        }
+        boolean localHttp = "http".equalsIgnoreCase(uri.getScheme())
+            && ("localhost".equalsIgnoreCase(uri.getHost()) || "127.0.0.1".equals(uri.getHost()));
+        if (!"https".equalsIgnoreCase(uri.getScheme()) && !localHttp) {
+            throw new IllegalArgumentException(label + " must use HTTPS");
+        }
+        if (uri.getRawUserInfo() != null || uri.getRawQuery() != null || uri.getRawFragment() != null
+            || (uri.getRawPath() != null && !uri.getRawPath().isBlank() && !"/".equals(uri.getRawPath()))) {
+            throw new IllegalArgumentException(label + " must not include credentials, path, query or fragment");
+        }
+        return normalizeUrl(uri.getScheme().toLowerCase() + "://" + uri.getRawAuthority().toLowerCase());
     }
 
     private String validateHttps(String url, String label) {
@@ -303,4 +405,17 @@ public class ProvisioningTokenService {
         }
         return Objects.requireNonNull(value.trim(), "trimmed value");
     }
+
+    private record SecurityClaims(
+        String registrationType,
+        String institutionId,
+        String walletAddress,
+        String canonicalBackendOrigin,
+        BigInteger chainId,
+        String registryContract,
+        String jti,
+        String nonce,
+        long issuedAt,
+        long expiresAt
+    ) { }
 }

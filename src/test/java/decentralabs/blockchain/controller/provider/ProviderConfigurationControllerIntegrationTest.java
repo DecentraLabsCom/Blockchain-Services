@@ -105,8 +105,9 @@ class ProviderConfigurationControllerIntegrationTest {
                 .providerName("Token University")
                 .providerEmail("token@university.edu")
                 .providerCountry("ES")
-                .providerOrganization("token.edu")
-                .publicBaseUrl("https://gateway.example.com")
+                .institutionId("token.edu")
+                .walletAddress("0x1234567890123456789012345678901234567890")
+                .canonicalBackendOrigin("https://gateway.example.com")
                 .jti("jti-1")
                 .build());
         when(registrationService.register(any())).thenReturn(false);
@@ -123,7 +124,7 @@ class ProviderConfigurationControllerIntegrationTest {
             .andExpect(status().isPartialContent())
             .andExpect(jsonPath("$.success").value(true))
             .andExpect(jsonPath("$.registered").value(false))
-            .andExpect(jsonPath("$.lockedFields[0]").value("providerName"))
+            .andExpect(jsonPath("$.lockedFields[0]").value("institutionId"))
             .andExpect(jsonPath("$.config.providerOrganization").value("token.edu"));
 
         verify(persistenceService).saveConfigurationFromToken(any(ProvisioningTokenPayload.class));

@@ -1087,7 +1087,7 @@ function detectTokenType(token) {
         if (parts.length !== 3) return 'provider'; // Default to provider
         
         const payload = JSON.parse(atob(parts[1]));
-        return payload.type || 'provider'; // Check 'type' claim
+        return payload.registrationType || 'provider';
     } catch (error) {
         console.warn('Failed to decode token, defaulting to provider type', error);
         return 'provider';

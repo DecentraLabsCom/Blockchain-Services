@@ -25,6 +25,11 @@ public class InstitutionRegistrationRequest {
      * Provisioning token for authentication (required for both roles)
      */
     String provisioningToken;
+
+    /**
+     * Exact token claims that the institutional wallet must sign.
+     */
+    ProvisioningSecurityClaims provisioningClaims;
     
     /**
      * schacHomeOrganization identifier (required for both roles)

@@ -209,6 +209,23 @@
             animation: spin 0.8s linear infinite;
         }
 
+        .is-hidden {
+            display: none !important;
+        }
+
+        .alert.is-visible {
+            display: block;
+        }
+
+        .form-group input.provisioning-token-applied:disabled {
+            background-color: #f0f4f8;
+            color: #718096;
+        }
+
+        .form-hint.provisioning-token-applied-hint {
+            color: #48bb78;
+        }
+
         @keyframes spin {
             to { transform: rotate(360deg); }
         }
@@ -260,7 +277,7 @@
                 <div id="successAlert" class="alert alert-success"></div>
                 <div id="errorAlert" class="alert alert-error"></div>
                 <div id="infoAlert" class="alert alert-info"></div>
-                <div id="registrationProgress" style="display: none;"></div>
+                <div id="registrationProgress" class="is-hidden"></div>
 
                 <form id="providerConfigForm"
                     <!-- Marketplace Configuration -->
@@ -368,15 +385,10 @@
                     <button type="submit" class="btn btn-primary" id="saveAndRegisterBtn">
                         <i class="fas fa-save"></i>
                         <span id="btnText">Save & Register</span>
-                        <div id="btnSpinner" class="loading-spinner" style="display: none;"></div>
+                        <div id="btnSpinner" class="loading-spinner is-hidden"></div>
                     </button>
 
-                    <button type="button" class="btn btn-secondary" id="retryRegistrationBtn" style="display: none;">
-                        <i class="fas fa-redo"></i>
-                        Retry Registration
-                    </button>
-
-                    <button type="button" class="btn btn-secondary" id="continueToDashboardBtn" style="display: none;">
+                    <button type="button" class="btn btn-secondary is-hidden" id="continueToDashboardBtn">
                         <i class="fas fa-arrow-right"></i>
                         Continue to Dashboard
                     </button>
@@ -428,7 +440,6 @@
 
                     const form = document.getElementById('providerConfigForm');
                     const submitBtn = document.getElementById('saveAndRegisterBtn');
-                    const retryBtn = document.getElementById('retryRegistrationBtn');
                     if (form) {
                         Array.from(form.querySelectorAll('input, textarea, button')).forEach((element) => {
                             if (element.id !== 'continueToDashboardBtn') {
@@ -437,12 +448,9 @@
                         });
                     }
                     if (submitBtn) {
-                        submitBtn.style.display = 'none';
+                        submitBtn.classList.add('is-hidden');
                     }
-                    if (retryBtn) {
-                        retryBtn.style.display = 'none';
-                    }
-                    document.getElementById('continueToDashboardBtn').style.display = 'block';
+                    document.getElementById('continueToDashboardBtn').classList.remove('is-hidden');
                     document.getElementById('statusBadge').innerHTML = `
                         <div class="status-badge not-registered">
                             <i class="fas fa-info-circle"></i>
@@ -460,10 +468,9 @@
                     // Token was used and registration completed
                     tokenField.disabled = true;
                     tokenField.placeholder = "Token already applied ✓";
-                    tokenField.style.backgroundColor = '#f0f4f8';
-                    tokenField.style.color = '#718096';
+                    tokenField.classList.add('provisioning-token-applied');
                     tokenHint.textContent = 'Provisioning token has been applied and registration is complete.';
-                    tokenHint.style.color = '#48bb78';
+                    tokenHint.classList.add('provisioning-token-applied-hint');
                 } else if (data.isConfigured && !data.isRegistered) {
                     // Configuration exists but not registered yet
                     tokenField.required = true;
@@ -479,9 +486,8 @@
                             Provider Registered
                         </div>
                     `;
-                    showInfo('Provider is already registered. You can update configuration and re-register if needed.');
-                    document.getElementById('retryRegistrationBtn').style.display = 'block';
-                    document.getElementById('continueToDashboardBtn').style.display = 'block';
+                    showInfo('Provider is already registered. A new provisioning token is required for a recovery registration.');
+                    document.getElementById('continueToDashboardBtn').classList.remove('is-hidden');
                 } else {
                     statusBadge.innerHTML = `
                         <div class="status-badge not-registered">
@@ -508,7 +514,7 @@
             // Show loading state
             btn.disabled = true;
             btnText.textContent = 'Registering...';
-            btnSpinner.style.display = 'inline-block';
+            btnSpinner.classList.remove('is-hidden');
             hideAlerts();
             hideRegistrationProgress();
 
@@ -553,7 +559,7 @@
                 if (result.success) {
                     if (result.registered) {
                         showSuccess('Configuration saved and provider registered successfully!');
-                        document.getElementById('continueToDashboardBtn').style.display = 'block';
+                        document.getElementById('continueToDashboardBtn').classList.remove('is-hidden');
                         
                         // Update status badge
                         const statusBadge = document.getElementById('statusBadge');
@@ -564,8 +570,7 @@
                             </div>
                         `;
                     } else {
-                        showError('Configuration saved but registration failed. Check logs for details.');
-                        document.getElementById('retryRegistrationBtn').style.display = 'block';
+                        showError('Registration failed. Issue a new provisioning token for an explicit recovery attempt.');
                     }
                 } else {
                     showError(result.error || 'Failed to save configuration');
@@ -578,67 +583,7 @@
             } finally {
                 btn.disabled = false;
                 btnText.textContent = 'Save & Register';
-                btnSpinner.style.display = 'none';
-            }
-        });
-
-        // Retry registration button
-        document.getElementById('retryRegistrationBtn').addEventListener('click', async () => {
-            const btn = document.getElementById('retryRegistrationBtn');
-            btn.disabled = true;
-            btn.innerHTML = '<i class="fas fa-redo fa-spin"></i> Retrying...';
-            hideAlerts();
-            hideRegistrationProgress();
-            
-            showRegistrationProgress('Contacting marketplace...');
-            await new Promise(resolve => setTimeout(resolve, 500));
-
-            try {
-                const provisioningToken = document.getElementById('provisioningToken').value.trim();
-                if (!provisioningToken) {
-                    hideRegistrationProgress();
-                    showError('Provisioning token is required to register.');
-                    return;
-                }
-
-                updateRegistrationProgress('Processing registration...');
-                const response = await fetch('/institution-config/retry-registration', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify({ provisioningToken })
-                });
-
-                updateRegistrationProgress('Finalizing registration...');
-                const result = await response.json();
-                await new Promise(resolve => setTimeout(resolve, 500));
-                
-                hideRegistrationProgress();
-
-                if (result.success && result.registered) {
-                    showSuccess('Provider registration completed successfully!');
-                    document.getElementById('continueToDashboardBtn').style.display = 'block';
-                    
-                    // Update status badge
-                    const statusBadge = document.getElementById('statusBadge');
-                    statusBadge.innerHTML = `
-                        <div class="status-badge registered">
-                            <i class="fas fa-check-circle"></i>
-                            Provider Registered
-                        </div>
-                    `;
-                } else {
-                    showError(result.error || 'Registration failed. Check logs for details.');
-                }
-
-            } catch (error) {
-                console.error('Error:', error);
-                hideRegistrationProgress();
-                showError('Failed to retry registration. Please try again.');
-            } finally {
-                btn.disabled = false;
-                btn.innerHTML = '<i class="fas fa-redo"></i> Retry Registration';
+                btnSpinner.classList.add('is-hidden');
             }
         });
 
@@ -650,19 +595,19 @@
         function showSuccess(message) {
             const alert = document.getElementById('successAlert');
             alert.textContent = message;
-            alert.style.display = 'block';
+            alert.classList.add('is-visible');
         }
 
         function showError(message) {
             const alert = document.getElementById('errorAlert');
             alert.textContent = message;
-            alert.style.display = 'block';
+            alert.classList.add('is-visible');
         }
 
         function showInfo(message) {
             const alert = document.getElementById('infoAlert');
             alert.textContent = message;
-            alert.style.display = 'block';
+            alert.classList.add('is-visible');
         }
 
         function showRegistrationProgress(message) {
@@ -677,7 +622,7 @@
                     <div class="progress-message">${message}</div>
                 </div>
             `;
-            progressDiv.style.display = 'block';
+            progressDiv.classList.remove('is-hidden');
         }
 
         function updateRegistrationProgress(message) {
@@ -690,15 +635,15 @@
         function hideRegistrationProgress() {
             const progressDiv = document.getElementById('registrationProgress');
             if (progressDiv) {
-                progressDiv.style.display = 'none';
+                progressDiv.classList.add('is-hidden');
                 progressDiv.innerHTML = '';
             }
         }
 
         function hideAlerts() {
-            document.getElementById('successAlert').style.display = 'none';
-            document.getElementById('errorAlert').style.display = 'none';
-            document.getElementById('infoAlert').style.display = 'none';
+            document.getElementById('successAlert').classList.remove('is-visible');
+            document.getElementById('errorAlert').classList.remove('is-visible');
+            document.getElementById('infoAlert').classList.remove('is-visible');
         }
 
         // Load configuration on page load

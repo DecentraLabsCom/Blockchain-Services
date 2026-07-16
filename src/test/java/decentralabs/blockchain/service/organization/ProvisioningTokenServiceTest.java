@@ -13,6 +13,7 @@ import java.security.KeyPairGenerator;
 import java.security.interfaces.RSAPublicKey;
 import java.util.Base64;
 import java.util.Date;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
@@ -48,6 +49,12 @@ class ProvisioningTokenServiceTest {
         ReflectionTestUtils.setField(service, "restTemplate", restTemplate);
         ReflectionTestUtils.setField(service, "connectTimeoutMs", 5_000);
         ReflectionTestUtils.setField(service, "readTimeoutMs", 10_000);
+        ReflectionTestUtils.setField(service, "expectedChainId", 11_155_111L);
+        ReflectionTestUtils.setField(
+            service,
+            "expectedRegistryContract",
+            "0xe49a2f59631717691642f929E0FeF1f705866600"
+        );
 
         KeyPairGenerator generator = KeyPairGenerator.getInstance("RSA");
         generator.initialize(2048);
@@ -96,13 +103,15 @@ class ProvisioningTokenServiceTest {
         assertThat(payload.getProviderName()).isEqualTo("Provider Name");
         assertThat(payload.getProviderEmail()).isEqualTo("ops@example.com");
         assertThat(payload.getProviderCountry()).isEqualTo("ES");
-        assertThat(payload.getProviderOrganization()).isEqualTo("Decentra Labs");
-        assertThat(payload.getPublicBaseUrl()).isEqualTo(PUBLIC_URL);
+        assertThat(payload.getInstitutionId()).isEqualTo("decentra labs");
+        assertThat(payload.getWalletAddress()).isEqualTo("0x1234567890123456789012345678901234567890");
+        assertThat(payload.getCanonicalBackendOrigin()).isEqualTo(PUBLIC_URL);
+        assertThat(payload.getRegistrationType()).isEqualTo("provider");
         assertThat(payload.getJti()).isEqualTo("provider-jti");
     }
 
     @Test
-    void validateAndExtract_rejectsReplayAttackOnSecondUse() {
+    void validateAndExtract_allowsLocalRevalidationBecauseMarketplaceConsumesTheJti() {
         String token = createToken(
             Map.of(
                 "marketplaceBaseUrl", MARKETPLACE_URL,
@@ -117,11 +126,10 @@ class ProvisioningTokenServiceTest {
             PUBLIC_URL
         );
 
-        service.validateAndExtract(token, MARKETPLACE_URL, PUBLIC_URL);
+        ProvisioningTokenPayload first = service.validateAndExtract(token, MARKETPLACE_URL, PUBLIC_URL);
+        ProvisioningTokenPayload second = service.validateAndExtract(token, MARKETPLACE_URL, PUBLIC_URL);
 
-        assertThatThrownBy(() -> service.validateAndExtract(token, MARKETPLACE_URL, PUBLIC_URL))
-            .isInstanceOf(IllegalArgumentException.class)
-            .hasMessageContaining("Provisioning token already used");
+        assertThat(second.getJti()).isEqualTo(first.getJti());
     }
 
     @Test
@@ -213,10 +221,10 @@ class ProvisioningTokenServiceTest {
 
         ConsumerProvisioningTokenPayload payload = service.validateAndExtractConsumer(token, "", "");
 
-        assertThat(payload.getType()).isEqualTo("consumer");
+        assertThat(payload.getRegistrationType()).isEqualTo("consumer");
         assertThat(payload.getMarketplaceBaseUrl()).isEqualTo(MARKETPLACE_URL);
         assertThat(payload.getConsumerName()).isEqualTo("Consumer Name");
-        assertThat(payload.getConsumerOrganization()).isEqualTo("Consumer Org");
+        assertThat(payload.getInstitutionId()).isEqualTo("consumer org");
         assertThat(payload.getJti()).isEqualTo("consumer-jti");
     }
 
@@ -243,14 +251,32 @@ class ProvisioningTokenServiceTest {
 
     private String createToken(Map<String, Object> claims, String jti, String issuer, Object audience) {
         long now = System.currentTimeMillis();
+        long nowSeconds = now / 1_000;
+        long expiresSeconds = nowSeconds + 60;
+        Map<String, Object> securedClaims = new HashMap<>(claims);
+        boolean consumer = "consumer".equals(claims.get("type")) || claims.containsKey("consumerName");
+        securedClaims.put("registrationType", consumer ? "consumer" : "provider");
+        securedClaims.put(
+            "institutionId",
+            consumer
+                ? claims.getOrDefault("consumerOrganization", "Consumer Org")
+                : claims.getOrDefault("providerOrganization", "Decentra Labs")
+        );
+        securedClaims.put("walletAddress", "0x1234567890123456789012345678901234567890");
+        securedClaims.put("canonicalBackendOrigin", PUBLIC_URL);
+        securedClaims.put("chainId", 11_155_111L);
+        securedClaims.put("registryContract", "0xe49a2f59631717691642f929E0FeF1f705866600");
+        securedClaims.put("nonce", "0x1111111111111111111111111111111111111111111111111111111111111111");
+        securedClaims.put("issuedAt", nowSeconds);
+        securedClaims.put("expiresAt", expiresSeconds);
         return Jwts.builder()
             .header().keyId(KEY_ID).and()
-            .claims(claims)
+            .claims(securedClaims)
             .issuer(issuer)
             .id(jti)
             .claim("aud", audience)
-            .issuedAt(new Date(now))
-            .expiration(new Date(now + 60_000))
+            .issuedAt(new Date(nowSeconds * 1_000))
+            .expiration(new Date(expiresSeconds * 1_000))
             .signWith(keyPair.getPrivate())
             .compact();
     }

@@ -3,6 +3,7 @@ package decentralabs.blockchain.controller.provider;
 import decentralabs.blockchain.dto.provider.ProviderConfigurationRequest;
 import decentralabs.blockchain.dto.provider.ProviderConfigurationResponse;
 import decentralabs.blockchain.dto.provider.ProvisioningTokenRequest;
+import decentralabs.blockchain.dto.provider.ProvisioningTokenPayload;
 import decentralabs.blockchain.service.organization.InstitutionRegistrationService;
 import decentralabs.blockchain.service.organization.ProviderConfigurationPersistenceService;
 import decentralabs.blockchain.service.organization.ProvisioningTokenService;
@@ -134,6 +135,8 @@ class ProviderConfigurationControllerTest {
         request.setProvisioningToken("valid-token-123");
 
         // Mock successful registration
+        when(provisioningTokenService.validateAndExtract(anyString(), anyString(), anyString()))
+            .thenReturn(providerPayload());
         when(registrationService.register(any())).thenReturn(true);
 
         // Execute
@@ -146,7 +149,7 @@ class ProviderConfigurationControllerTest {
         assertEquals(true, response.getBody().get("registered"));
 
         // Verify persistence was called
-        verify(persistenceService).saveConfiguration(request);
+        verify(persistenceService).saveConfigurationFromToken(any(ProvisioningTokenPayload.class));
         verify(registrationService).markAsRegistered(any());
         verify(registrationService).register(any());
     }
@@ -165,6 +168,8 @@ class ProviderConfigurationControllerTest {
         request.setProvisioningToken("valid-token-123");
 
         // Mock failed registration
+        when(provisioningTokenService.validateAndExtract(anyString(), anyString(), anyString()))
+            .thenReturn(providerPayload());
         when(registrationService.register(any())).thenReturn(false);
 
         // Execute
@@ -177,8 +182,27 @@ class ProviderConfigurationControllerTest {
         assertEquals(false, response.getBody().get("registered"));
 
         // Verify persistence was called but NOT marked as registered
-        verify(persistenceService).saveConfiguration(request);
+        verify(persistenceService).saveConfigurationFromToken(any(ProvisioningTokenPayload.class));
         verify(registrationService, never()).markAsRegistered(any());
+    }
+
+    private ProvisioningTokenPayload providerPayload() {
+        return ProvisioningTokenPayload.builder()
+            .marketplaceBaseUrl("https://marketplace.example.com")
+            .registrationType("provider")
+            .institutionId("university.edu")
+            .walletAddress("0x1234567890123456789012345678901234567890")
+            .canonicalBackendOrigin("https://gateway.university.edu")
+            .chainId(java.math.BigInteger.valueOf(11_155_111L))
+            .registryContract("0xe49a2f59631717691642f929E0FeF1f705866600")
+            .jti("jti-1")
+            .nonce("0x1111111111111111111111111111111111111111111111111111111111111111")
+            .issuedAt(1_700_000_000L)
+            .expiresAt(1_700_000_300L)
+            .providerName("Test University")
+            .providerEmail("test@university.edu")
+            .providerCountry("US")
+            .build();
     }
 
     @Test
@@ -222,8 +246,9 @@ class ProviderConfigurationControllerTest {
             .providerName("Token University")
             .providerEmail("token@university.edu")
             .providerCountry("ES")
-            .providerOrganization("token.edu")
-            .publicBaseUrl("https://token.university.edu")
+            .institutionId("token.edu")
+            .walletAddress("0x1234567890123456789012345678901234567890")
+            .canonicalBackendOrigin("https://token.university.edu")
             .jti("test-jti-123")
             .build();
 
@@ -258,8 +283,9 @@ class ProviderConfigurationControllerTest {
             .providerName("Token University")
             .providerEmail("token@university.edu")
             .providerCountry("ES")
-            .providerOrganization("token.edu")
-            .publicBaseUrl("https://token.university.edu")
+            .institutionId("token.edu")
+            .walletAddress("0x1234567890123456789012345678901234567890")
+            .canonicalBackendOrigin("https://token.university.edu")
             .jti("test-jti-124")
             .build();
 

@@ -42,6 +42,9 @@ class InstitutionRegistrationServiceTest {
     @Mock
     private RestTemplate restTemplate;
 
+    @Mock
+    private ProvisioningWalletProofService walletProofService;
+
     private InstitutionRegistrationService service;
 
     @BeforeEach
@@ -50,8 +53,13 @@ class InstitutionRegistrationServiceTest {
                 institutionalAdminService,
                 walletService,
                 configPersistenceService,
-                restTemplate
+                restTemplate,
+                walletProofService
         );
+        lenient().when(walletProofService.sign(
+            any(),
+            nullable(org.web3j.crypto.Credentials.class)
+        )).thenReturn("0xwallet-signature");
     }
 
     @Test
@@ -62,6 +70,7 @@ class InstitutionRegistrationServiceTest {
                 .role(InstitutionRole.PROVIDER)
                 .marketplaceUrl("https://marketplace.example.com")
                 .provisioningToken("token123")
+                .provisioningClaims(providerClaims())
                 .organization("university.edu")
                 .name("Test University")
                 .email("test@university.edu")
@@ -95,6 +104,7 @@ class InstitutionRegistrationServiceTest {
                 .role(InstitutionRole.CONSUMER)
                 .marketplaceUrl("https://marketplace.example.com")
                 .provisioningToken("token456")
+                .provisioningClaims(consumerClaims())
                 .organization("consumer.edu")
                 .build();
 
@@ -124,6 +134,7 @@ class InstitutionRegistrationServiceTest {
                 .role(InstitutionRole.PROVIDER)
                 .marketplaceUrl("https://marketplace.example.com")
                 .provisioningToken("token123")
+                .provisioningClaims(providerClaims())
                 .organization("university.edu")
                 .email("test@university.edu")
                 .country("US")
@@ -146,6 +157,7 @@ class InstitutionRegistrationServiceTest {
         InstitutionRegistrationRequest request = InstitutionRegistrationRequest.builder()
                 .role(InstitutionRole.CONSUMER)
                 .provisioningToken("token456")
+                .provisioningClaims(consumerClaims())
                 .organization("consumer.edu")
                 .build();
 
@@ -271,13 +283,14 @@ class InstitutionRegistrationServiceTest {
 
 
     @Test
-    @DisplayName("Should handle already registered provider (CONFLICT status)")
-    void shouldHandleAlreadyRegisteredProvider() throws IOException {
+    @DisplayName("Should reject provider registration when Marketplace reports a consumed token")
+    void shouldRejectConsumedProviderToken() throws IOException {
         // Arrange
         InstitutionRegistrationRequest request = InstitutionRegistrationRequest.builder()
                 .role(InstitutionRole.PROVIDER)
                 .marketplaceUrl("https://marketplace.example.com")
                 .provisioningToken("token123")
+                .provisioningClaims(providerClaims())
                 .organization("university.edu")
                 .name("Test University")
                 .email("test@university.edu")
@@ -287,14 +300,14 @@ class InstitutionRegistrationServiceTest {
 
         when(walletService.getInstitutionalWalletAddress()).thenReturn("0xABC123");
         when(restTemplate.postForEntity(anyString(), any(HttpEntity.class), eq(String.class)))
-                .thenThrow(new HttpClientErrorException(HttpStatus.CONFLICT, "Already registered"));
+                .thenThrow(new HttpClientErrorException(HttpStatus.CONFLICT, "Provisioning token consumed"));
 
         // Act
         boolean result = service.register(request);
 
         // Assert
-        assertTrue(result); // CONFLICT is treated as success (already registered)
-        verify(configPersistenceService).markAsRegistered(InstitutionRole.PROVIDER); // Marks as registered locally
+        assertFalse(result);
+        verify(configPersistenceService, never()).markAsRegistered(InstitutionRole.PROVIDER);
     }
 
     @Test
@@ -305,6 +318,7 @@ class InstitutionRegistrationServiceTest {
                 .role(InstitutionRole.CONSUMER)
                 .marketplaceUrl("https://marketplace.example.com")
                 .provisioningToken("token456")
+                .provisioningClaims(consumerClaims())
                 .organization("consumer.edu")
                 .build();
 
@@ -328,6 +342,7 @@ class InstitutionRegistrationServiceTest {
                 .role(InstitutionRole.PROVIDER)
                 .marketplaceUrl("https://marketplace.example.com")
                 .provisioningToken("token123")
+                .provisioningClaims(providerClaims())
                 .organization("university.edu")
                 .name("Test University")
                 .email("test@university.edu")
@@ -347,13 +362,14 @@ class InstitutionRegistrationServiceTest {
     }
 
     @Test
-    @DisplayName("Should normalize backend URL correctly")
-    void shouldNormalizeBackendUrlCorrectly() {
+    @DisplayName("Should send only the wallet proof to Marketplace")
+    void shouldSendOnlyWalletProof() {
         // Arrange
         InstitutionRegistrationRequest request = InstitutionRegistrationRequest.builder()
                 .role(InstitutionRole.PROVIDER)
                 .marketplaceUrl("https://marketplace.example.com")
                 .provisioningToken("token123")
+                .provisioningClaims(providerClaims())
                 .organization("university.edu")
                 .name("Test University")
                 .email("test@university.edu")
@@ -378,12 +394,30 @@ class InstitutionRegistrationServiceTest {
         Map<String, Object> body = (Map<String, Object>) entityCaptor.getValue().getBody();
         assertNotNull(body);
         
-        // Verify authURI is normalized (no trailing slash, with trimmed whitespace)
-        String authURI = (String) body.get("authURI");
-        assertEquals("https://gateway.university.edu", authURI);
-        
-        // Verify backendUrl has /api appended
-        String backendUrl = (String) body.get("backendUrl");
-        assertEquals("https://gateway.university.edu/api", backendUrl);
+        assertEquals("0xwallet-signature", body.get("walletSignature"));
+        assertFalse(body.containsKey("walletAddress"));
+    }
+
+    private ProvisioningSecurityClaims providerClaims() {
+        return claims("provider", "0xABC123");
+    }
+
+    private ProvisioningSecurityClaims consumerClaims() {
+        return claims("consumer", "0xDEF456");
+    }
+
+    private ProvisioningSecurityClaims claims(String type, String walletAddress) {
+        return new ProvisioningSecurityClaims(
+            "university.edu",
+            walletAddress,
+            "https://gateway.university.edu",
+            type,
+            java.math.BigInteger.valueOf(11_155_111L),
+            "0xe49a2f59631717691642f929E0FeF1f705866600",
+            "jti-1",
+            "0x1111111111111111111111111111111111111111111111111111111111111111",
+            1_700_000_000L,
+            1_700_000_300L
+        );
     }
 }
