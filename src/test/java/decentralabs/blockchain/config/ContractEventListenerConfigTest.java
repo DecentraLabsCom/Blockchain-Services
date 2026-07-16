@@ -275,7 +275,7 @@ class ContractEventListenerConfigTest {
     }
 
     @Test
-    void shouldAutoDenyReservationWhenMetadataMissing() throws Exception {
+    void shouldIgnoreUnsupportedNonInstitutionalReservationWhenMetadataIsUnavailable() throws Exception {
         ReflectionTestUtils.setField(config, "eventListeningEnabled", true);
 
         var diamond = mock(decentralabs.blockchain.contract.Diamond.class);
@@ -298,28 +298,10 @@ class ContractEventListenerConfigTest {
         when(reservationCall.send()).thenReturn(reservation);
         when(diamond.getReservation(any(byte[].class))).thenReturn(reservationCall);
 
-        @SuppressWarnings("unchecked")
-        var labCall = (org.web3j.protocol.core.RemoteFunctionCall<decentralabs.blockchain.contract.Diamond.Lab>) mock(org.web3j.protocol.core.RemoteFunctionCall.class);
-        decentralabs.blockchain.contract.Diamond.LabBase base =
-            new decentralabs.blockchain.contract.Diamond.LabBase(
-                "ipfs://lab-metadata", BigInteger.ZERO, "", "", BigInteger.ZERO
-            );
-        decentralabs.blockchain.contract.Diamond.Lab lab =
-            new decentralabs.blockchain.contract.Diamond.Lab(BigInteger.valueOf(5), base);
-        when(labCall.send()).thenReturn(lab);
-        when(diamond.getLab(any(BigInteger.class))).thenReturn(labCall);
-
         ReflectionTestUtils.setField(config, "cachedDiamond", diamond);
 
         var writableDiamond = mock(decentralabs.blockchain.contract.Diamond.class);
-        @SuppressWarnings("unchecked")
-        var denyCall = (org.web3j.protocol.core.RemoteFunctionCall<org.web3j.protocol.core.methods.response.TransactionReceipt>) mock(org.web3j.protocol.core.RemoteFunctionCall.class);
-        when(denyCall.send()).thenReturn(new org.web3j.protocol.core.methods.response.TransactionReceipt());
-        when(writableDiamond.denyReservationRequest(any(byte[].class))).thenReturn(denyCall);
         ReflectionTestUtils.setField(config, "writableDiamond", writableDiamond);
-
-        when(labMetadataService.getLabMetadata("ipfs://lab-metadata"))
-            .thenThrow(new IllegalStateException("metadata not found"));
 
         Map<String, Event> supported = getSupportedEvents();
         Event eventDefinition = supported.get("ReservationRequested");
@@ -341,7 +323,7 @@ class ContractEventListenerConfigTest {
 
         ReflectionTestUtils.invokeMethod(config, "handleContractEvent", "ReservationRequested", eventDefinition, eventLog);
 
-        verify(writableDiamond).denyReservationRequest(any(byte[].class));
+        verifyNoInteractions(writableDiamond);
     }
 
     private Map<String, Event> getSupportedEvents() {
@@ -460,7 +442,7 @@ class ContractEventListenerConfigTest {
     }
 
     @Test
-    void shouldAutoApproveReservationWhenValidateAvailabilityPasses() throws Exception {
+    void shouldIgnoreUnsupportedNonInstitutionalReservation() throws Exception {
         ReflectionTestUtils.setField(config, "eventListeningEnabled", true);
 
         var diamond = mock(decentralabs.blockchain.contract.Diamond.class);
@@ -483,30 +465,10 @@ class ContractEventListenerConfigTest {
         when(reservationCall.send()).thenReturn(reservation);
         when(diamond.getReservation(any(byte[].class))).thenReturn(reservationCall);
 
-        @SuppressWarnings("unchecked")
-        var labCall = (org.web3j.protocol.core.RemoteFunctionCall<decentralabs.blockchain.contract.Diamond.Lab>) mock(org.web3j.protocol.core.RemoteFunctionCall.class);
-        decentralabs.blockchain.contract.Diamond.LabBase base =
-            new decentralabs.blockchain.contract.Diamond.LabBase(
-                "ipfs://auto-lab-metadata", BigInteger.ZERO, "", "", BigInteger.ZERO
-            );
-        decentralabs.blockchain.contract.Diamond.Lab lab =
-            new decentralabs.blockchain.contract.Diamond.Lab(BigInteger.valueOf(15), base);
-        when(labCall.send()).thenReturn(lab);
-        when(diamond.getLab(any(BigInteger.class))).thenReturn(labCall);
-
         ReflectionTestUtils.setField(config, "cachedDiamond", diamond);
 
         var writableDiamond = mock(decentralabs.blockchain.contract.Diamond.class);
-        @SuppressWarnings("unchecked")
-        var confirmCall = (org.web3j.protocol.core.RemoteFunctionCall<org.web3j.protocol.core.methods.response.TransactionReceipt>) mock(org.web3j.protocol.core.RemoteFunctionCall.class);
-        when(confirmCall.send()).thenReturn(new org.web3j.protocol.core.methods.response.TransactionReceipt());
-        when(writableDiamond.confirmReservationRequest(any(byte[].class))).thenReturn(confirmCall);
         ReflectionTestUtils.setField(config, "writableDiamond", writableDiamond);
-
-        LabMetadata metadata = new LabMetadata();
-        metadata.setName("Auto Test Lab");
-        when(labMetadataService.getLabMetadata("ipfs://auto-lab-metadata")).thenReturn(metadata);
-        doNothing().when(labMetadataService).validateAvailability(any(), any(), any(), anyInt());
 
         Map<String, Event> supported = getSupportedEvents();
         Event eventDefinition = supported.get("ReservationRequested");
@@ -529,12 +491,11 @@ class ContractEventListenerConfigTest {
 
         ReflectionTestUtils.invokeMethod(config, "handleContractEvent", "ReservationRequested", eventDefinition, eventLog);
 
-        verify(writableDiamond).confirmReservationRequest(any(byte[].class));
-        verify(writableDiamond, never()).denyReservationRequest(any(byte[].class));
+        verifyNoInteractions(writableDiamond);
     }
 
     @Test
-    void shouldSkipAutoDenyWhenReservationWasConfirmedConcurrently() throws Exception {
+    void shouldIgnoreUnsupportedNonInstitutionalReservationWithoutRaceHandling() throws Exception {
         ReflectionTestUtils.setField(config, "eventListeningEnabled", true);
 
         var diamond = mock(decentralabs.blockchain.contract.Diamond.class);
@@ -572,29 +533,10 @@ class ContractEventListenerConfigTest {
         when(diamond.getReservation(any(byte[].class))).thenReturn(reservationCall);
         stubReservationPucHash(diamond, "0x" + "00".repeat(32));
 
-        @SuppressWarnings("unchecked")
-        var labCall = (org.web3j.protocol.core.RemoteFunctionCall<decentralabs.blockchain.contract.Diamond.Lab>) mock(org.web3j.protocol.core.RemoteFunctionCall.class);
-        decentralabs.blockchain.contract.Diamond.LabBase base =
-            new decentralabs.blockchain.contract.Diamond.LabBase(
-                "ipfs://race-lab-metadata", BigInteger.ZERO, "", "", BigInteger.ZERO
-            );
-        decentralabs.blockchain.contract.Diamond.Lab lab =
-            new decentralabs.blockchain.contract.Diamond.Lab(BigInteger.valueOf(17), base);
-        when(labCall.send()).thenReturn(lab);
-        when(diamond.getLab(any(BigInteger.class))).thenReturn(labCall);
         ReflectionTestUtils.setField(config, "cachedDiamond", diamond);
 
         var writableDiamond = mock(decentralabs.blockchain.contract.Diamond.class);
-        @SuppressWarnings("unchecked")
-        var confirmCall = (org.web3j.protocol.core.RemoteFunctionCall<org.web3j.protocol.core.methods.response.TransactionReceipt>) mock(org.web3j.protocol.core.RemoteFunctionCall.class);
-        when(confirmCall.send()).thenThrow(new RuntimeException("execution reverted: Not pending"));
-        when(writableDiamond.confirmReservationRequest(any(byte[].class))).thenReturn(confirmCall);
         ReflectionTestUtils.setField(config, "writableDiamond", writableDiamond);
-
-        LabMetadata metadata = new LabMetadata();
-        metadata.setName("Race Test Lab");
-        when(labMetadataService.getLabMetadata("ipfs://race-lab-metadata")).thenReturn(metadata);
-        doNothing().when(labMetadataService).validateAvailability(any(), any(), any(), anyInt());
 
         Map<String, Event> supported = getSupportedEvents();
         Event eventDefinition = supported.get("ReservationRequested");
@@ -617,8 +559,7 @@ class ContractEventListenerConfigTest {
 
         ReflectionTestUtils.invokeMethod(config, "handleContractEvent", "ReservationRequested", eventDefinition, eventLog);
 
-        verify(writableDiamond).confirmReservationRequest(any(byte[].class));
-        verify(writableDiamond, never()).denyReservationRequest(any(byte[].class));
+        verifyNoInteractions(writableDiamond);
     }
 
     @Test

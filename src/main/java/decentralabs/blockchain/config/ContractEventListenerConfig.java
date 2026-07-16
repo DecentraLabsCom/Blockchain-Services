@@ -755,6 +755,15 @@ public class ContractEventListenerConfig {
 
         boolean institutional = payload.payerInstitution().isPresent() || payload.pucHash().isPresent();
 
+        if (!institutional) {
+            log.warn(
+                "Ignoring unsupported non-institutional reservation request {} in the credit-ledger runtime.",
+                payload.reservationKey()
+            );
+            markReservationProcessed(payload.reservationKey());
+            return;
+        }
+
         if (!isPending(payload)) {
             log.info("Reservation {} already processed on-chain. Skipping.", payload.reservationKey());
             return;
@@ -774,13 +783,8 @@ public class ContractEventListenerConfig {
                 .orElseThrow(() -> new IllegalStateException("Missing reservation end time"));
 
             labMetadataService.validateAvailability(metadata, start, end, DEFAULT_RESERVATION_USER_COUNT);
-            if (institutional) {
-                confirmInstitutionalReservationOnChain(payload);
-                log.info("Institutional reservation {} auto-approved for lab {}", payload.reservationKey(), payload.labId());
-            } else {
-                confirmReservationOnChain(payload.reservationKey());
-                log.info("Reservation {} auto-approved for lab {}", payload.reservationKey(), payload.labId());
-            }
+            confirmInstitutionalReservationOnChain(payload);
+            log.info("Institutional reservation {} auto-approved for lab {}", payload.reservationKey(), payload.labId());
             markReservationProcessed(payload.reservationKey());
         } catch (Exception ex) {
             log.warn(
@@ -934,16 +938,6 @@ public class ContractEventListenerConfig {
             log.warn("Unable to fetch metadata URI for lab {}: {}", labId, ex.getMessage());
             return Optional.empty();
         }
-    }
-
-    private void confirmReservationOnChain(String reservationKey) throws Exception {
-        byte[] keyBytes = reservationKeyToBytes(reservationKey);
-        TransactionReceipt receipt = executeWithGasRetry(
-            "confirmReservationRequest",
-            "event:confirm-reservation:" + reservationKey,
-            contract -> contract.confirmReservationRequest(keyBytes).send()
-        );
-        log.info("Reservation {} confirmed on-chain (tx={})", reservationKey, receipt.getTransactionHash());
     }
 
     private void confirmInstitutionalReservationOnChain(ReservationEventPayload payload) throws Exception {

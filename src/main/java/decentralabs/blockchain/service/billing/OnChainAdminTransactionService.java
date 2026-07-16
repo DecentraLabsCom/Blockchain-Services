@@ -32,6 +32,7 @@ import org.web3j.abi.datatypes.Int;
 import org.web3j.abi.datatypes.Type;
 import org.web3j.abi.datatypes.generated.Int256;
 import org.web3j.abi.datatypes.generated.Bytes32;
+import org.web3j.abi.datatypes.generated.Uint48;
 import org.web3j.abi.datatypes.generated.Uint256;
 import org.web3j.protocol.Web3j;
 import org.web3j.protocol.core.DefaultBlockParameter;
@@ -112,18 +113,20 @@ public class OnChainAdminTransactionService {
         )
     );
 
-    private static final Event SERVICE_CREDIT_ISSUED_EVENT = new Event(
-        "ServiceCreditIssued",
+    private static final Event CREDIT_LOT_MINTED_EVENT = new Event(
+        "CreditLotMinted",
         List.of(
             new TypeReference<Address>(true) {},
+            new TypeReference<Uint256>(true) {},
             new TypeReference<Uint256>() {},
             new TypeReference<Uint256>() {},
-            new TypeReference<Bytes32>(true) {}
+            new TypeReference<Bytes32>() {},
+            new TypeReference<Uint48>() {}
         )
     );
 
-    private static final Event SERVICE_CREDIT_ADJUSTED_EVENT = new Event(
-        "ServiceCreditAdjusted",
+    private static final Event CREDIT_LOT_ADJUSTED_EVENT = new Event(
+        "CreditLotAdjusted",
         List.of(
             new TypeReference<Address>(true) {},
             new TypeReference<Int256>() {},
@@ -263,8 +266,8 @@ public class OnChainAdminTransactionService {
             providerAddress,
             fromBlock,
             currentBlock,
-            SERVICE_CREDIT_ISSUED_EVENT,
-            (logEntry, timestamps) -> mapServiceCreditIssued(logEntry, SERVICE_CREDIT_ISSUED_EVENT, timestamps),
+            CREDIT_LOT_MINTED_EVENT,
+            (logEntry, timestamps) -> mapCreditLotMinted(logEntry, CREDIT_LOT_MINTED_EVENT, timestamps),
             blockTimestampCache,
             txFromCache
         ));
@@ -272,8 +275,8 @@ public class OnChainAdminTransactionService {
             providerAddress,
             fromBlock,
             currentBlock,
-            SERVICE_CREDIT_ADJUSTED_EVENT,
-            (logEntry, timestamps) -> mapServiceCreditAdjusted(logEntry, SERVICE_CREDIT_ADJUSTED_EVENT, timestamps),
+            CREDIT_LOT_ADJUSTED_EVENT,
+            (logEntry, timestamps) -> mapCreditLotAdjusted(logEntry, CREDIT_LOT_ADJUSTED_EVENT, timestamps),
             blockTimestampCache,
             txFromCache
         ));
@@ -549,7 +552,7 @@ public class OnChainAdminTransactionService {
         ));
     }
 
-    private Optional<OnChainEventRecord> mapServiceCreditIssued(
+    private Optional<OnChainEventRecord> mapCreditLotMinted(
         Log logEntry,
         Event event,
         Map<String, Long> blockTimestampCache
@@ -571,7 +574,7 @@ public class OnChainAdminTransactionService {
         ));
     }
 
-    private Optional<OnChainEventRecord> mapServiceCreditAdjusted(
+    private Optional<OnChainEventRecord> mapCreditLotAdjusted(
         Log logEntry,
         Event event,
         Map<String, Long> blockTimestampCache

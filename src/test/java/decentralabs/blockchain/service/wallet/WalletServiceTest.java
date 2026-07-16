@@ -302,12 +302,12 @@ class WalletServiceTest {
     }
 
     @Test
-    void getServiceCreditBalance_returnsZeroWhenRpcErrors() throws Exception {
+    void getTotalServiceCreditBalance_returnsZeroWhenRpcErrors() throws Exception {
         WalletService spyService = spy(service);
         org.mockito.Mockito.doReturn(web3j).when(spyService).getWeb3jInstanceForNetwork(org.mockito.ArgumentMatchers.anyString());
         stubEthCalls(web3j, ethCallError("boom"));
 
-        assertThat(spyService.getServiceCreditBalance("0x1111111111111111111111111111111111111111"))
+        assertThat(spyService.getTotalServiceCreditBalance("0x1111111111111111111111111111111111111111"))
             .isEqualTo(BigInteger.ZERO);
     }
 

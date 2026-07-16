@@ -13,6 +13,7 @@ import org.web3j.abi.datatypes.Bool;
 import org.web3j.abi.datatypes.Utf8String;
 import org.web3j.abi.datatypes.generated.Bytes32;
 import org.web3j.abi.datatypes.generated.Uint32;
+import org.web3j.abi.datatypes.generated.Uint48;
 import org.web3j.abi.datatypes.generated.Uint64;
 import org.web3j.abi.datatypes.generated.Uint8;
 import org.web3j.abi.datatypes.generated.Uint96;
@@ -488,18 +489,6 @@ public class Diamond extends Contract {
     }
 
     /**
-     * Confirm a pending reservation request.
-     */
-    public RemoteFunctionCall<TransactionReceipt> confirmReservationRequest(byte[] reservationKey) {
-        final Function function = new Function(
-            "confirmReservationRequest",
-            Arrays.asList(new Bytes32(reservationKey)),
-            List.of()
-        );
-        return executeRemoteCallTransaction(function);
-    }
-
-    /**
      * Cancel an institutional booking with PUC hash.
      */
     public RemoteFunctionCall<TransactionReceipt> cancelInstitutionalBookingWithPucHash(
@@ -870,27 +859,43 @@ public class Diamond extends Contract {
         );
     }
 
-    public static Function issueServiceCreditsFunction(String creditAccount, BigInteger amount, byte[] reference) {
+    public static Function mintCreditsFunction(
+        String creditAccount,
+        BigInteger amount,
+        byte[] reference,
+        BigInteger eurGrossAmount,
+        BigInteger expiresAt
+    ) {
         return new Function(
-            "issueServiceCredits",
+            "mintCredits",
             Arrays.asList(
                 new Address(creditAccount),
                 new Uint256(amount),
-                new Bytes32(reference)
+                new Bytes32(reference),
+                new Uint256(eurGrossAmount),
+                new Uint48(expiresAt)
             ),
             List.of()
         );
     }
 
-    public static Function adjustServiceCreditsFunction(String creditAccount, BigInteger delta, byte[] reference) {
+    public static Function ledgerAdjustCreditsFunction(String creditAccount, BigInteger delta, byte[] reference) {
         return new Function(
-            "adjustServiceCredits",
+            "ledgerAdjustCredits",
             Arrays.asList(
                 new Address(creditAccount),
                 new org.web3j.abi.datatypes.generated.Int256(delta),
                 new Bytes32(reference)
             ),
             List.of()
+        );
+    }
+
+    public static Function totalBalanceOfFunction(String creditAccount) {
+        return new Function(
+            "totalBalanceOf",
+            List.of(new Address(creditAccount)),
+            List.of(new TypeReference<Uint256>() {})
         );
     }
 

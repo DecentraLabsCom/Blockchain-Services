@@ -500,7 +500,7 @@ class AdminDashboardControllerTest {
             when(walletService.getInstitutionalCurrentPeriodStart(VALID_ADDRESS))
                 .thenReturn(Optional.of(BigInteger.valueOf(1_700_000_000L)));
             when(walletService.getInstitutionalBillingBalance(VALID_ADDRESS)).thenReturn(BigInteger.valueOf(250_000));
-            when(walletService.getServiceCreditBalance(VALID_ADDRESS)).thenReturn(BigInteger.valueOf(750_000));
+            when(walletService.getTotalServiceCreditBalance(VALID_ADDRESS)).thenReturn(BigInteger.valueOf(750_000));
             when(walletService.isLabProvider(VALID_ADDRESS)).thenReturn(false);
 
             mockMvc.perform(get("/billing/admin/billing-info"))

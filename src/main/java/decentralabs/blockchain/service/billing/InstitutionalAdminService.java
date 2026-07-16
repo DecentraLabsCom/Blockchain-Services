@@ -631,10 +631,12 @@ public class InstitutionalAdminService {
             return InstitutionalAdminResponse.error("Amount must be greater than zero");
         }
 
-        Function function = Diamond.issueServiceCreditsFunction(
+        Function function = Diamond.mintCreditsFunction(
             creditAccount,
             amount,
-            referenceToBytes32(request.getReference())
+            referenceToBytes32(request.getReference()),
+            BigInteger.ZERO,
+            BigInteger.ZERO
         );
 
         String txHash = sendTransaction(credentials, function, operationKey(request));
@@ -666,7 +668,7 @@ public class InstitutionalAdminService {
             return InstitutionalAdminResponse.error("creditDelta must not be zero");
         }
 
-        Function function = Diamond.adjustServiceCreditsFunction(
+        Function function = Diamond.ledgerAdjustCreditsFunction(
             creditAccount,
             delta,
             referenceToBytes32(request.getReference())

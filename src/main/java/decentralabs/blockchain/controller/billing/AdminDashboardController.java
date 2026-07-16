@@ -751,7 +751,7 @@ public class AdminDashboardController {
                 info.put("billingBalanceFormatted", "0");
             }
 
-            java.math.BigInteger serviceCreditBalance = walletService.getServiceCreditBalance(institutionalAddress);
+            java.math.BigInteger serviceCreditBalance = walletService.getTotalServiceCreditBalance(institutionalAddress);
             info.put("serviceCreditBalance", serviceCreditBalance.toString());
             info.put("serviceCreditBalanceFormatted", formatLabTokens(serviceCreditBalance));
 

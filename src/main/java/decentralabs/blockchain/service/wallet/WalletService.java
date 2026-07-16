@@ -300,7 +300,7 @@ public class WalletService {
 
             BigDecimal ethBalance = Convert.fromWei(balance.getBalance().toString(), Convert.Unit.ETHER);
 
-            BigInteger serviceCreditBalance = getServiceCreditBalance(address, resolvedNetwork);
+            BigInteger serviceCreditBalance = getTotalServiceCreditBalance(address, resolvedNetwork);
             String labBalance = CreditUnitConverter.formatRawCredits(serviceCreditBalance);
             String labCreditAddress = getLabCreditAddress(resolvedNetwork);
 
@@ -1023,14 +1023,12 @@ public class WalletService {
         }
     }
 
-    /**
-     * Returns the closed service credit balance tracked by the Diamond contract.
-     */
-    public BigInteger getServiceCreditBalance(String accountAddress) {
-        return getServiceCreditBalance(accountAddress, activeNetwork);
+    /** Returns the total lot-backed service credit balance tracked by the Diamond contract. */
+    public BigInteger getTotalServiceCreditBalance(String accountAddress) {
+        return getTotalServiceCreditBalance(accountAddress, activeNetwork);
     }
 
-    public BigInteger getServiceCreditBalance(String accountAddress, String networkId) {
+    public BigInteger getTotalServiceCreditBalance(String accountAddress, String networkId) {
         if (accountAddress == null || accountAddress.isBlank()) {
             return BigInteger.ZERO;
         }
@@ -1038,11 +1036,7 @@ public class WalletService {
         try {
             String resolvedNetwork = resolveNetworkId(networkId);
             Web3j web3j = getWeb3jInstanceForNetwork(resolvedNetwork);
-            Function function = new Function(
-                "getServiceCreditBalance",
-                Collections.singletonList(new Address(accountAddress)),
-                Collections.singletonList(new TypeReference<Uint256>() {})
-            );
+            Function function = Diamond.totalBalanceOfFunction(accountAddress);
 
             String encodedFunction = FunctionEncoder.encode(function);
             EthCall response = web3j.ethCall(
@@ -1051,8 +1045,8 @@ public class WalletService {
             ).send();
 
             if (response.hasError()) {
-                log.warn("Error calling getServiceCreditBalance()");
-                log.debug("getServiceCreditBalance() RPC error (details omitted)");
+                log.warn("Error calling totalBalanceOf()");
+                log.debug("totalBalanceOf() RPC error (details omitted)");
                 return BigInteger.ZERO;
             }
 
