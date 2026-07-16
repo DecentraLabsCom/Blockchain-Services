@@ -3,6 +3,7 @@ package decentralabs.blockchain.service.organization;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import decentralabs.blockchain.dto.provider.ConsumerProvisioningTokenPayload;
@@ -49,6 +50,8 @@ class ProvisioningTokenServiceTest {
         ReflectionTestUtils.setField(service, "restTemplate", restTemplate);
         ReflectionTestUtils.setField(service, "connectTimeoutMs", 5_000);
         ReflectionTestUtils.setField(service, "readTimeoutMs", 10_000);
+        ReflectionTestUtils.setField(service, "configuredMarketplaceBaseUrl", MARKETPLACE_URL);
+        ReflectionTestUtils.setField(service, "marketplaceUrl", MARKETPLACE_URL);
         ReflectionTestUtils.setField(service, "expectedChainId", 11_155_111L);
         ReflectionTestUtils.setField(
             service,
@@ -151,6 +154,51 @@ class ProvisioningTokenServiceTest {
         assertThatThrownBy(() -> service.validateAndExtract(token, MARKETPLACE_URL, PUBLIC_URL))
             .isInstanceOf(IllegalArgumentException.class)
             .hasMessageContaining("Marketplace base URL mismatch");
+    }
+
+    @Test
+    void validateAndExtract_rejectsTokenMarketplaceUrlBeforeFetchingUntrustedJwks() {
+        String attackerUrl = "https://attacker.example.com";
+        String token = createToken(
+            Map.of(
+                "marketplaceBaseUrl", attackerUrl,
+                "providerName", "Provider Name",
+                "providerEmail", "ops@example.com",
+                "providerCountry", "ES",
+                "providerOrganization", "Decentra Labs",
+                "publicBaseUrl", PUBLIC_URL
+            ),
+            "attacker-jti",
+            attackerUrl,
+            PUBLIC_URL
+        );
+
+        assertThatThrownBy(() -> service.validateAndExtract(token, "", PUBLIC_URL))
+            .isInstanceOf(IllegalArgumentException.class)
+            .hasMessageContaining("Marketplace base URL mismatch");
+        verifyNoInteractions(restTemplate);
+    }
+
+    @Test
+    void validateAndExtract_doesNotAllowCallerToOverrideConfiguredMarketplaceUrl() {
+        String token = createToken(
+            Map.of(
+                "marketplaceBaseUrl", MARKETPLACE_URL,
+                "providerName", "Provider Name",
+                "providerEmail", "ops@example.com",
+                "providerCountry", "ES",
+                "providerOrganization", "Decentra Labs",
+                "publicBaseUrl", PUBLIC_URL
+            ),
+            "provider-jti",
+            MARKETPLACE_URL,
+            PUBLIC_URL
+        );
+
+        assertThatThrownBy(() -> service.validateAndExtract(token, "https://attacker.example.com", PUBLIC_URL))
+            .isInstanceOf(IllegalArgumentException.class)
+            .hasMessageContaining("Marketplace base URL is not trusted");
+        verifyNoInteractions(restTemplate);
     }
 
     @Test

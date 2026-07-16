@@ -41,6 +41,16 @@ public class ProvisioningTokenService {
     @Value("${provisioning.token.http.read-timeout-ms:10000}")
     private int readTimeoutMs;
 
+    /**
+     * Server-side Marketplace origin used for JWKS and registration trust.
+     * The token may identify this origin, but it must never select it.
+     */
+    @Value("${marketplace.base-url:}")
+    private String configuredMarketplaceBaseUrl;
+
+    @Value("${marketplace.url:https://marketplace-decentralabs.vercel.app}")
+    private String marketplaceUrl;
+
     private RestTemplate restTemplate = new RestTemplate();
     private final ObjectMapper objectMapper = new ObjectMapper();
 
@@ -194,13 +204,27 @@ public class ProvisioningTokenService {
     }
 
     private String resolveMarketplaceBaseUrl(String configured, String fromToken) {
-        if (configured != null && !configured.isBlank()) {
-            return normalizeUrl(configured);
+        String trustedMarketplaceBaseUrl = firstNonBlank(configuredMarketplaceBaseUrl, marketplaceUrl);
+        String trustedOrigin = validateOrigin(
+            trustedMarketplaceBaseUrl,
+            "configured marketplace base URL"
+        );
+
+        if (configured != null && !configured.isBlank()
+            && !trustedOrigin.equals(validateOrigin(configured, "marketplace base URL"))) {
+            throw new IllegalArgumentException("Marketplace base URL is not trusted");
         }
-        if (fromToken == null || fromToken.isBlank()) {
-            throw new IllegalArgumentException("Marketplace base URL is required (configure marketplace.base-url or include it in token)");
+
+        if (fromToken == null || fromToken.isBlank()
+            || !trustedOrigin.equals(validateOrigin(fromToken, "token marketplace base URL"))) {
+            throw new IllegalArgumentException("Marketplace base URL mismatch");
         }
-        return normalizeUrl(fromToken);
+
+        return trustedOrigin;
+    }
+
+    private String firstNonBlank(String value, String fallback) {
+        return value != null && !value.isBlank() ? value : fallback;
     }
 
     private String resolveExpectedAudience(String configuredPublicBaseUrl, JsonNode payloadNode) {

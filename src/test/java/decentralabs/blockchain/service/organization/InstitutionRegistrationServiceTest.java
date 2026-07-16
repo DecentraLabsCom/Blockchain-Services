@@ -12,6 +12,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.RestTemplate;
 
@@ -56,6 +57,8 @@ class InstitutionRegistrationServiceTest {
                 restTemplate,
                 walletProofService
         );
+        ReflectionTestUtils.setField(service, "configuredMarketplaceBaseUrl", "https://marketplace.example.com");
+        ReflectionTestUtils.setField(service, "marketplaceUrl", "https://marketplace.example.com");
         lenient().when(walletProofService.sign(
             any(),
             nullable(org.web3j.crypto.Credentials.class)
@@ -359,6 +362,25 @@ class InstitutionRegistrationServiceTest {
 
         // Assert
         assertFalse(result);
+    }
+
+    @Test
+    @DisplayName("Should reject registration to an untrusted Marketplace URL")
+    void shouldRejectUntrustedMarketplaceUrlBeforeSendingRequest() {
+        InstitutionRegistrationRequest request = InstitutionRegistrationRequest.builder()
+                .role(InstitutionRole.CONSUMER)
+                .marketplaceUrl("https://attacker.example.com")
+                .provisioningToken("token456")
+                .provisioningClaims(consumerClaims())
+                .organization("consumer.edu")
+                .build();
+
+        when(walletService.getInstitutionalWalletAddress()).thenReturn("0xDEF456");
+
+        boolean result = service.register(request);
+
+        assertFalse(result);
+        verify(restTemplate, never()).postForEntity(anyString(), any(HttpEntity.class), eq(String.class));
     }
 
     @Test

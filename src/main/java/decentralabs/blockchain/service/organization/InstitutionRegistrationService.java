@@ -4,6 +4,7 @@ import decentralabs.blockchain.service.billing.InstitutionalAdminService;
 import decentralabs.blockchain.service.wallet.InstitutionalWalletService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
@@ -14,6 +15,7 @@ import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.RestTemplate;
 
 import java.io.IOException;
+import java.net.URI;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Objects;
@@ -33,6 +35,16 @@ public class InstitutionRegistrationService {
     private final ProviderConfigurationPersistenceService configPersistenceService;
     private final RestTemplate restTemplate;
     private final ProvisioningWalletProofService walletProofService;
+
+    /**
+     * Server-side Marketplace origin used for registration trust.
+     * Request and token values may identify this origin, but must never select it.
+     */
+    @Value("${marketplace.base-url:}")
+    private String configuredMarketplaceBaseUrl = "";
+
+    @Value("${marketplace.url:https://marketplace-decentralabs.vercel.app}")
+    private String marketplaceUrl = "https://marketplace-decentralabs.vercel.app";
 
     /**
      * Register institution with marketplace based on role
@@ -275,14 +287,46 @@ public class InstitutionRegistrationService {
      * Build marketplace URL with endpoint
      */
     private String buildMarketplaceUrl(String marketplaceUrl, String endpoint) {
-        if (marketplaceUrl == null || marketplaceUrl.isBlank()) {
-            throw new IllegalArgumentException("Marketplace URL is required");
+        String trustedMarketplaceBaseUrl = firstNonBlank(configuredMarketplaceBaseUrl, this.marketplaceUrl);
+        String trustedOrigin = validateOrigin(
+            trustedMarketplaceBaseUrl,
+            "configured marketplace URL"
+        );
+        String requestedOrigin = validateOrigin(marketplaceUrl, "marketplace URL");
+        if (!trustedOrigin.equals(requestedOrigin)) {
+            throw new IllegalArgumentException("Marketplace URL is not trusted");
         }
-        String url = marketplaceUrl.trim();
-        if (url.endsWith("/")) {
-            url = url.substring(0, url.length() - 1);
+        return trustedOrigin + endpoint;
+    }
+
+    private String firstNonBlank(String value, String fallback) {
+        return value != null && !value.isBlank() ? value : fallback;
+    }
+
+    private String validateOrigin(String url, String label) {
+        if (url == null || url.isBlank()) {
+            throw new IllegalArgumentException(label + " is required");
         }
-        return url + endpoint;
+
+        URI uri;
+        try {
+            uri = URI.create(url.trim());
+        } catch (IllegalArgumentException error) {
+            throw new IllegalArgumentException(label + " must be a valid origin", error);
+        }
+
+        boolean localHttp = "http".equalsIgnoreCase(uri.getScheme())
+            && ("localhost".equalsIgnoreCase(uri.getHost()) || "127.0.0.1".equals(uri.getHost()));
+        if (!"https".equalsIgnoreCase(uri.getScheme()) && !localHttp) {
+            throw new IllegalArgumentException(label + " must use HTTPS");
+        }
+        if (uri.getRawAuthority() == null || uri.getHost() == null
+            || uri.getRawUserInfo() != null || uri.getRawQuery() != null || uri.getRawFragment() != null
+            || (uri.getRawPath() != null && !uri.getRawPath().isBlank() && !"/".equals(uri.getRawPath()))) {
+            throw new IllegalArgumentException(label + " must be a host origin without credentials, path, query or fragment");
+        }
+
+        return uri.getScheme().toLowerCase() + "://" + uri.getRawAuthority().toLowerCase();
     }
 
     /**
