@@ -217,7 +217,7 @@ public class InstitutionRegistrationService {
         Map<String, String> requestBody = new HashMap<>();
         requestBody.put("walletSignature", walletSignature);
 
-        sendRegistrationRequest(url, provisioningToken, requestBody, "Provider");
+        sendRegistrationRequest(url, provisioningToken, requestBody);
     }
 
     /**
@@ -234,13 +234,13 @@ public class InstitutionRegistrationService {
         Map<String, String> requestBody = new HashMap<>();
         requestBody.put("walletSignature", walletSignature);
 
-        sendRegistrationRequest(url, provisioningToken, requestBody, "Consumer");
+        sendRegistrationRequest(url, provisioningToken, requestBody);
     }
 
     /**
      * Send registration request to marketplace
      */
-    private void sendRegistrationRequest(String url, String provisioningToken, Map<String, String> requestBody, String roleLabel) {
+    private void sendRegistrationRequest(String url, String provisioningToken, Map<String, String> requestBody) {
         if (provisioningToken == null || provisioningToken.isBlank()) {
             throw new IllegalArgumentException("Provisioning token is required");
         }

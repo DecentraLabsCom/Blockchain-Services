@@ -116,7 +116,7 @@ public class IntentAuthorizationService {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "missing_puc_for_webauthn");
         }
 
-        List<WebauthnCredential> activeCredentials = selectCredentials(puc, meta);
+        List<WebauthnCredential> activeCredentials = selectCredentials(puc);
         List<String> credentialIds = activeCredentials.stream()
             .map(credential -> credential.getCredentialId())
             .filter(id -> id != null && !id.isBlank())
@@ -279,7 +279,7 @@ public class IntentAuthorizationService {
         return submission;
     }
 
-    private List<WebauthnCredential> selectCredentials(String puc, IntentMeta meta) {
+    private List<WebauthnCredential> selectCredentials(String puc) {
         List<WebauthnCredential> credentials = webauthnCredentialService.getCredentials(puc);
         List<WebauthnCredential> activeCredentials = credentials.stream()
             .filter(credential -> credential.isActive())
