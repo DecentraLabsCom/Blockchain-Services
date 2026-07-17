@@ -18,7 +18,6 @@ import decentralabs.blockchain.dto.auth.WebauthnOnboardingOptionsResponse.Relyin
 import decentralabs.blockchain.dto.auth.WebauthnOnboardingOptionsResponse.User;
 import decentralabs.blockchain.dto.auth.WebauthnOnboardingStatusResponse;
 import decentralabs.blockchain.service.BackendUrlResolver;
-import decentralabs.blockchain.util.LogSanitizer;
 import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
 import java.io.ByteArrayInputStream;
