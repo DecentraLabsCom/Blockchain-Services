@@ -1,5 +1,6 @@
 package decentralabs.blockchain.dto.wallet;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -13,6 +14,7 @@ public class WalletResponse {
     private boolean success;
     private String address;
     private String encryptedPrivateKey;
+    @JsonInclude(JsonInclude.Include.NON_NULL)
     private String privateKey;
     private String message;
     private String error;

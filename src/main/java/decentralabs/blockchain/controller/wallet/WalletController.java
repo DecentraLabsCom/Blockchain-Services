@@ -16,6 +16,7 @@ import decentralabs.blockchain.util.EthereumAddressValidator;
 import jakarta.validation.Valid;
 import java.util.Map;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.CacheControl;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -48,9 +49,12 @@ public class WalletController {
         try {
             WalletResponse response =
                 walletAdministrationService.createAndConfigureInstitutionalWallet(request.getPassword());
-            return ResponseEntity.ok(response);
+            return ResponseEntity.ok()
+                .cacheControl(CacheControl.noStore())
+                .body(response);
         } catch (Exception e) {
             return ResponseEntity.badRequest()
+                .cacheControl(CacheControl.noStore())
                 .body(WalletResponse.error("Error creating wallet: " + e.getMessage()));
         }
     }
@@ -59,9 +63,12 @@ public class WalletController {
     public ResponseEntity<WalletResponse> importWallet(@Valid @RequestBody WalletImportRequest request) {
         try {
             WalletResponse response = walletAdministrationService.importAndConfigureInstitutionalWallet(request);
-            return ResponseEntity.ok(response);
+            return ResponseEntity.ok()
+                .cacheControl(CacheControl.noStore())
+                .body(response);
         } catch (Exception e) {
             return ResponseEntity.badRequest()
+                .cacheControl(CacheControl.noStore())
                 .body(WalletResponse.error("Error importing wallet: " + e.getMessage()));
         }
     }
@@ -70,7 +77,9 @@ public class WalletController {
     public ResponseEntity<WalletResponse> revealPrivateKey(@Valid @RequestBody WalletRevealRequest request) {
         WalletResponse response = walletService.revealInstitutionalPrivateKey(request.getPassword());
         HttpStatus status = response.isSuccess() ? HttpStatus.OK : HttpStatus.BAD_REQUEST;
-        return ResponseEntity.status(status).body(response);
+        return ResponseEntity.status(status)
+            .cacheControl(CacheControl.noStore())
+            .body(response);
     }
 
     @GetMapping("/{address}/balance")

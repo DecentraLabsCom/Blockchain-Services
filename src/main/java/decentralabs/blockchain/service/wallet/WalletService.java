@@ -132,8 +132,8 @@ public class WalletService {
         // Use configured default network
         this.activeNetwork = resolveNetworkId(defaultNetwork);
         List<String> activeUrls = networkRpcUrls.getOrDefault(activeNetwork, List.of());
-        log.info("WalletService initialized with active network: {} using RPC endpoints: {}", 
-                 activeNetwork, String.join(", ", activeUrls));
+        log.info("WalletService initialized with active network: {} using {} RPC endpoint(s)",
+                 activeNetwork, activeUrls.size());
     }
     
     /**
@@ -185,7 +185,6 @@ public class WalletService {
             return WalletResponse.builder()
                 .success(true)
                 .address(address)
-                .privateKey(privateKey)
                 .encryptedPrivateKey(encryptedPrivateKey)
                 .message(message)
                 .build();
@@ -302,7 +301,7 @@ public class WalletService {
 
             BigInteger serviceCreditBalance = getTotalServiceCreditBalance(address, resolvedNetwork);
             String labBalance = CreditUnitConverter.formatRawCredits(serviceCreditBalance);
-            String labCreditAddress = getLabCreditAddress(resolvedNetwork);
+            String labCreditAddress = getLabCreditAddress();
 
             return BalanceResponse.builder()
                 .success(true)
@@ -328,8 +327,7 @@ public class WalletService {
      * The current architecture exposes service-credit functions directly in the Diamond,
      * so this resolves to the configured Diamond address.
      */
-    private String getLabCreditAddress(String networkId) {
-        resolveNetworkId(networkId);
+    private String getLabCreditAddress() {
         return contractAddress;
     }
     
@@ -1367,8 +1365,8 @@ public class WalletService {
                 String cacheKey = network + ":" + index;
                 Web3j web3j = web3jInstances.computeIfAbsent(cacheKey, k -> {
                     // codeql[java/log-injection]
-                    log.info("Creating Web3j instance for {} using RPC endpoint [{}]: {}",
-                             LogSanitizer.sanitize(network), index, LogSanitizer.sanitize(rpcUrl));
+                    log.info("Creating Web3j instance for {} using RPC endpoint index {}",
+                             LogSanitizer.sanitize(network), index);
                     HttpService httpService = new HttpService(rpcUrl, httpClient);
                     return Web3j.build(httpService);
                 });
@@ -1380,15 +1378,14 @@ public class WalletService {
                     // Success! Update current index for this network
                     if (index != startIndex) {
                         // codeql[java/log-injection]
-                        log.info("Successfully switched to fallback RPC endpoint [{}]: {}", index,
-                            LogSanitizer.sanitize(rpcUrl));
+                        log.info("Successfully switched to fallback RPC endpoint index {}", index);
                         currentRpcIndex.put(network, index);
                     }
                     
                     return web3j;
                 } catch (Exception e) {
-                    log.warn("RPC endpoint [{}] failed ({}): {} - trying next...",
-                             index, LogSanitizer.sanitize(rpcUrl), LogSanitizer.sanitize(e.getMessage()));
+                    log.warn("RPC endpoint index {} failed: {} - trying next...",
+                             index, LogSanitizer.sanitize(e.getMessage()));
                     
                     // Remove failed instance from cache
                     web3jInstances.remove(cacheKey);
@@ -1402,8 +1399,8 @@ public class WalletService {
         }
         
         // All RPC endpoints failed, throw exception
-        throw new RuntimeException("All RPC endpoints failed for network: " + network + 
-                                   ". Tried: " + String.join(", ", rpcUrls));
+        throw new RuntimeException("All RPC endpoints failed for network: " + network +
+                                   ". Tried " + rpcUrls.size() + " endpoint(s).");
     }
 
     /**

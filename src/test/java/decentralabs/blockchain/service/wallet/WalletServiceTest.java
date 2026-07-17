@@ -1,7 +1,7 @@
 package decentralabs.blockchain.service.wallet;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.Assertions.catchThrowable;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
@@ -107,7 +107,7 @@ class WalletServiceTest {
 
         assertThat(response.isSuccess()).isTrue();
         assertThat(response.getAddress()).startsWith("0x");
-        assertThat(response.getPrivateKey()).startsWith("0x");
+        assertThat(response.getPrivateKey()).isNull();
         assertThat(response.getEncryptedPrivateKey()).isNotBlank();
         assertThat(response.getMessage()).contains("created successfully");
         verify(walletPersistenceService).saveWallet(response.getAddress(), response.getEncryptedPrivateKey());
@@ -540,9 +540,17 @@ class WalletServiceTest {
         stubBlockNumber(first, new RuntimeException("rpc-0 down"));
         stubBlockNumber(second, new RuntimeException("rpc-1 down"));
 
-        assertThatThrownBy(() -> ReflectionTestUtils.invokeMethod(service, "getWeb3jInstanceWithFallback", "sepolia"))
+        Throwable failure = catchThrowable(
+            () -> ReflectionTestUtils.invokeMethod(service, "getWeb3jInstanceWithFallback", "sepolia")
+        );
+
+        assertThat(failure)
             .isInstanceOf(RuntimeException.class)
-            .hasMessageContaining("All RPC endpoints failed for network: sepolia");
+            .hasMessageContaining("All RPC endpoints failed for network: sepolia")
+            .hasMessageContaining("Tried 2 endpoint(s)");
+        assertThat(failure.getMessage())
+            .doesNotContain("https://sep-a.example")
+            .doesNotContain("https://sep-b.example");
     }
 
     @SuppressWarnings("rawtypes")

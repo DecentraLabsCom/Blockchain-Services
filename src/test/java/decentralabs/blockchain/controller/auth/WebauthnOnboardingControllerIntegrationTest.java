@@ -24,11 +24,12 @@ import decentralabs.blockchain.dto.auth.WebauthnOnboardingCompleteRequest;
 import decentralabs.blockchain.dto.auth.WebauthnOnboardingCompleteResponse;
 import decentralabs.blockchain.dto.auth.WebauthnOnboardingOptionsRequest;
 import decentralabs.blockchain.dto.auth.WebauthnOnboardingOptionsResponse;
+import decentralabs.blockchain.config.WebConfig;
 import decentralabs.blockchain.service.auth.MarketplaceEndpointAuthService;
 import decentralabs.blockchain.service.auth.WebauthnCredentialService;
 import decentralabs.blockchain.service.auth.WebauthnOnboardingService;
 
-@SpringBootTest(classes = WebauthnOnboardingController.class)
+@SpringBootTest(classes = {WebauthnOnboardingController.class, WebConfig.class})
 class WebauthnOnboardingControllerIntegrationTest {
 
     private final WebApplicationContext wac;
