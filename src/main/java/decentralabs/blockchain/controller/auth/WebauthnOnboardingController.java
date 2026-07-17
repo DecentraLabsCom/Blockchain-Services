@@ -26,6 +26,7 @@ import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.server.ResponseStatusException;
 import org.springframework.http.HttpStatus;
+import org.springframework.web.util.HtmlUtils;
 
 /**
  * Controller for WebAuthn credential registration during user onboarding.
@@ -276,7 +277,7 @@ public class WebauthnOnboardingController {
         
         <div class="user-info">
             <div class="label">Account</div>
-            <div class="value" id="userName">%s</div>
+            <div class="value" id="userName"></div>
         </div>
         
         <div id="statusPending" class="status pending">
@@ -300,9 +301,13 @@ public class WebauthnOnboardingController {
         <button id="retryBtn" class="hidden" onclick="startCeremony()">Try Again</button>
     </div>
 
+    <div id="webauthnData" data-options="%s" data-parent-origin="%s"></div>
+
     <script>
-        const options = %s;
-        const parentOrigin = %s;
+        const ceremonyData = document.getElementById('webauthnData');
+        const options = JSON.parse(ceremonyData.dataset.options);
+        const parentOrigin = ceremonyData.dataset.parentOrigin || null;
+        document.getElementById('userName').textContent = options.user?.displayName || '';
         
         function base64UrlToArrayBuffer(base64url) {
             const base64 = base64url.replace(/-/g, '+').replace(/_/g, '/');
@@ -354,7 +359,10 @@ public class WebauthnOnboardingController {
                     sessionId: options.sessionId || null,
                     error: message || null,
                 };
-                window.opener.postMessage(payload, parentOrigin || '*');
+                if (!parentOrigin) {
+                    return;
+                }
+                window.opener.postMessage(payload, parentOrigin);
                 if (status === 'SUCCESS' || status === 'FAILED' || status === 'CANCELLED') {
                     onboardingResolved = true;
                 }
@@ -448,10 +456,9 @@ public class WebauthnOnboardingController {
     </script>
 </body>
 </html>
-""".formatted(
-            escapeHtml(options.getUser().getDisplayName()),
-            serializeOptionsToJson(options),
-            serializeStringLiteral(parentOrigin)
+        """.formatted(
+            HtmlUtils.htmlEscape(serializeOptionsToJson(options)),
+            HtmlUtils.htmlEscape(parentOrigin == null ? "" : parentOrigin)
         );
     }
 
@@ -480,16 +487,6 @@ public class WebauthnOnboardingController {
         }
     }
 
-    private String escapeHtml(String input) {
-        if (input == null) return "";
-        return input
-            .replace("&", "&amp;")
-            .replace("<", "&lt;")
-            .replace(">", "&gt;")
-            .replace("\"", "&quot;")
-            .replace("'", "&#39;");
-    }
-
     private String serializeOptionsToJson(WebauthnOnboardingOptionsResponse options) {
         try {
             com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
@@ -497,19 +494,6 @@ public class WebauthnOnboardingController {
         } catch (Exception e) {
             log.error("Failed to serialize options to JSON", e);
             throw new RuntimeException("Failed to serialize options", e);
-        }
-    }
-
-    private String serializeStringLiteral(String value) {
-        if (value == null) {
-            return "null";
-        }
-        try {
-            com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
-            return mapper.writeValueAsString(value);
-        } catch (Exception e) {
-            log.warn("Failed to serialize string literal; using null fallback", e);
-            return "null";
         }
     }
 

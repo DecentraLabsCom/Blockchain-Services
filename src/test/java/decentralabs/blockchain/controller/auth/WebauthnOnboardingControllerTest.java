@@ -29,6 +29,7 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.annotation.Import;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.http.MediaType;
+import org.springframework.http.converter.StringHttpMessageConverter;
 import org.springframework.security.test.context.support.WithMockUser;
 import org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors;
 import org.springframework.test.context.TestPropertySource;
@@ -57,7 +58,10 @@ class WebauthnOnboardingControllerTest {
     public void setup() {
         WebauthnOnboardingController controller = this.wac.getBean(WebauthnOnboardingController.class);
         this.mockMvc = MockMvcBuilders.standaloneSetup(controller)
-            .setMessageConverters(new decentralabs.blockchain.config.JacksonHttpMessageConverter(objectMapper))
+            .setMessageConverters(
+                new StringHttpMessageConverter(),
+                new decentralabs.blockchain.config.JacksonHttpMessageConverter(objectMapper)
+            )
             .setControllerAdvice(new decentralabs.blockchain.exception.GlobalExceptionHandler())
             .defaultRequest(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get("/").accept(org.springframework.http.MediaType.APPLICATION_JSON))
             .build();
@@ -105,6 +109,35 @@ class WebauthnOnboardingControllerTest {
             .andExpect(jsonPath("$.rp.id").value("localhost"))
             .andExpect(jsonPath("$.user.name").value("user@institution.edu"))
             .andExpect(jsonPath("$.pubKeyCredParams[0].alg").value(-7));
+    }
+
+    @Test
+    @WithMockUser
+    void ceremony_escapesDynamicValuesBeforeEmbeddingHtml() throws Exception {
+        WebauthnOnboardingOptionsResponse response = WebauthnOnboardingOptionsResponse.builder()
+            .sessionId("session123")
+            .challenge("base64url-challenge")
+            .rp(RelyingParty.builder().id("localhost").name("Test").build())
+            .user(User.builder()
+                .id("userHandle")
+                .name("user@institution.edu")
+                .displayName("<script>alert('xss')</script>")
+                .build())
+            .pubKeyCredParams(List.of(PubKeyCredParam.builder().type("public-key").alg(-7).build()))
+            .timeout(120000L)
+            .attestation("none")
+            .build();
+        when(onboardingService.getSessionOptions("session123")).thenReturn(response);
+
+        mockMvc.perform(get("/onboarding/webauthn/ceremony/session123")
+                .param("parentOrigin", "https://marketplace.example.com")
+                .accept(MediaType.TEXT_HTML)
+                .with(SecurityMockMvcRequestPostProcessors.csrf()))
+            .andExpect(status().isOk())
+            .andExpect(content().string(org.hamcrest.Matchers.containsString("&lt;script&gt;")))
+            .andExpect(content().string(org.hamcrest.Matchers.not(org.hamcrest.Matchers.containsString(
+                "displayName\":\"<script>"
+            ))));
     }
 
     @Test

@@ -31,4 +31,14 @@ class AccessCodeTokenCipherTest {
             .isInstanceOf(IllegalStateException.class)
             .hasMessageContaining("ACCESS_CODE_ENCRYPTION_KEY");
     }
+
+    @Test
+    void rejectsOversizedBearerMaterialBeforeEncryption() {
+        String key = Base64.getUrlEncoder().withoutPadding().encodeToString(new byte[32]);
+        AccessCodeTokenCipher cipher = new AccessCodeTokenCipher(key);
+
+        assertThatThrownBy(() -> cipher.encrypt("x".repeat(64 * 1024 + 1)))
+            .isInstanceOf(IllegalArgumentException.class)
+            .hasMessageContaining("too large");
+    }
 }

@@ -186,7 +186,7 @@ public class AdminNetworkAccessPolicy {
         try {
             return InetAddress.getByName(address).isLoopbackAddress();
         } catch (Exception ex) {
-            log.debug("Unable to parse loopback address {}", address, ex);
+            log.debug("Unable to parse loopback address", ex);
             return false;
         }
     }
@@ -198,7 +198,7 @@ public class AdminNetworkAccessPolicy {
                 || inetAddress.isLinkLocalAddress()
                 || isUniqueLocalIpv6(address);
         } catch (Exception ex) {
-            log.debug("Unable to classify private address {}", address, ex);
+            log.debug("Unable to classify private address", ex);
             return false;
         }
     }
@@ -231,7 +231,7 @@ public class AdminNetworkAccessPolicy {
             if (range != null) {
                 ranges.add(range);
             } else {
-                log.warn("Ignoring invalid {} entry: {}", label, token);
+                log.warn("Ignoring invalid network allow-list entry");
             }
         }
         return ranges;
@@ -266,7 +266,7 @@ public class AdminNetworkAccessPolicy {
                 }
                 return new CidrRange(network.getAddress(), prefixLength);
             } catch (Exception ex) {
-                log.debug("Invalid CIDR entry {}", raw, ex);
+                log.debug("Invalid CIDR entry", ex);
                 return null;
             }
         }
@@ -287,7 +287,7 @@ public class AdminNetworkAccessPolicy {
                 }
                 return true;
             } catch (Exception ex) {
-                log.debug("Unable to match candidate address {}", candidate, ex);
+                log.debug("Unable to match candidate address", ex);
                 return false;
             }
         }

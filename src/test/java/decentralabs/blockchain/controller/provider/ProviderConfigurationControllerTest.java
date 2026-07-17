@@ -186,6 +186,24 @@ class ProviderConfigurationControllerTest {
         verify(registrationService, never()).markAsRegistered(any());
     }
 
+    @Test
+    @DisplayName("Should reject pathological email input without a backtracking regex")
+    void shouldRejectPathologicalEmailInput() {
+        ProviderConfigurationRequest request = new ProviderConfigurationRequest();
+        request.setMarketplaceBaseUrl("https://marketplace.example.com");
+        request.setProviderName("Test University");
+        request.setProviderEmail("!@!." + "!.".repeat(10_000));
+        request.setProviderCountry("US");
+        request.setProviderOrganization("university.edu");
+        request.setPublicBaseUrl("https://gateway.university.edu");
+
+        ResponseEntity<Map<String, Object>> response = controller.saveAndRegister(request);
+
+        assertEquals(HttpStatus.BAD_REQUEST, response.getStatusCode());
+        assertEquals("Invalid email format", response.getBody().get("error"));
+        verifyNoInteractions(provisioningTokenService, registrationService, persistenceService);
+    }
+
     private ProvisioningTokenPayload providerPayload() {
         return ProvisioningTokenPayload.builder()
             .marketplaceBaseUrl("https://marketplace.example.com")

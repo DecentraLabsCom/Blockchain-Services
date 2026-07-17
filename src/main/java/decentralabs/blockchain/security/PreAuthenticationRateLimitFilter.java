@@ -1,6 +1,5 @@
 package decentralabs.blockchain.security;
 
-import decentralabs.blockchain.util.LogSanitizer;
 import io.github.bucket4j.Bandwidth;
 import io.github.bucket4j.Bucket;
 import jakarta.annotation.Nonnull;
@@ -59,8 +58,7 @@ public class PreAuthenticationRateLimitFilter extends OncePerRequestFilter {
 
         String clientIp = getClientIp(request);
         if (!checkRateLimit(clientIp)) {
-            log.warn("Pre-auth rate limit exceeded for FMU session-ticket endpoint: path={}, ip={}",
-                LogSanitizer.sanitize(request.getRequestURI()), maskIp(clientIp));
+            log.warn("Pre-auth rate limit exceeded for FMU session-ticket endpoint");
             sendRateLimitResponse(response);
             return;
         }
@@ -97,17 +95,6 @@ public class PreAuthenticationRateLimitFilter extends OncePerRequestFilter {
         response.setContentType("application/json");
         response.setHeader("Retry-After", "60");
         response.getWriter().write("{\"error\":\"Too many requests. Please try again later.\"}");
-    }
-
-    private String maskIp(String ip) {
-        if (ip == null) {
-            return "unknown";
-        }
-        int lastDot = ip.lastIndexOf('.');
-        if (lastDot > 0) {
-            return ip.substring(0, lastDot) + ".***";
-        }
-        return ip.length() > 8 ? ip.substring(0, ip.length() - 4) + "****" : ip;
     }
 
     private void cleanupBucketsIfNeeded() {

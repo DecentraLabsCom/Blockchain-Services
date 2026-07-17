@@ -436,7 +436,7 @@ public class ProviderConfigurationController {
         if (request.getProviderEmail() == null || request.getProviderEmail().isBlank()) {
             throw new IllegalArgumentException("Provider email is required");
         }
-        if (!request.getProviderEmail().matches("^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$")) {
+        if (!isValidEmail(request.getProviderEmail())) {
             throw new IllegalArgumentException("Invalid email format");
         }
 
@@ -457,6 +457,45 @@ public class ProviderConfigurationController {
         if (request.getPublicBaseUrl().endsWith("/")) {
             throw new IllegalArgumentException("Public base URL must not end with trailing slash");
         }
+    }
+
+    private boolean isValidEmail(String value) {
+        if (value.length() > 254) {
+            return false;
+        }
+        int atIndex = value.indexOf('@');
+        if (atIndex <= 0 || atIndex != value.lastIndexOf('@') || atIndex == value.length() - 1) {
+            return false;
+        }
+
+        String localPart = value.substring(0, atIndex);
+        String domain = value.substring(atIndex + 1);
+        if (localPart.length() > 64 || domain.length() > 253
+                || localPart.startsWith(".") || localPart.endsWith(".") || localPart.contains("..")) {
+            return false;
+        }
+        for (int i = 0; i < localPart.length(); i++) {
+            char character = localPart.charAt(i);
+            if (!(Character.isLetterOrDigit(character) || ".!#$%&'*+-/=?^_`{|}~".indexOf(character) >= 0)) {
+                return false;
+            }
+        }
+
+        String[] labels = domain.split("\\.", -1);
+        for (String label : labels) {
+            if (label.isEmpty() || label.length() > 63
+                    || !Character.isLetterOrDigit(label.charAt(0))
+                    || !Character.isLetterOrDigit(label.charAt(label.length() - 1))) {
+                return false;
+            }
+            for (int i = 1; i < label.length() - 1; i++) {
+                char character = label.charAt(i);
+                if (!(Character.isLetterOrDigit(character) || character == '-')) {
+                    return false;
+                }
+            }
+        }
+        return labels.length >= 2;
     }
 
     private boolean isBlank(String value) {
