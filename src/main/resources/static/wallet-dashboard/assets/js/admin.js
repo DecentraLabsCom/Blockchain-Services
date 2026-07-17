@@ -390,6 +390,60 @@ function escapeHtml(value) {
         .replace(/'/g, '&#39;');
 }
 
+function setModalTitle(element, icon, title) {
+    element.replaceChildren();
+    const iconElement = document.createElement('i');
+    iconElement.className = `fas fa-${icon}`;
+    element.append(iconElement, document.createTextNode(` ${String(title ?? '')}`));
+}
+
+function renderSafeModalContent(contentElement, content) {
+    if (content instanceof Node) {
+        contentElement.replaceChildren(content);
+        return;
+    }
+
+    const allowedTags = new Set(['BR', 'BUTTON', 'CODE', 'DIV', 'I', 'P', 'SPAN', 'STRONG']);
+    const parsed = new DOMParser().parseFromString(String(content ?? ''), 'text/html');
+
+    const copyNode = (node) => {
+        if (node.nodeType === Node.TEXT_NODE) {
+            return document.createTextNode(node.nodeValue || '');
+        }
+        if (node.nodeType !== Node.ELEMENT_NODE) {
+            return null;
+        }
+
+        const tagName = node.tagName.toUpperCase();
+        if (!allowedTags.has(tagName)) {
+            return document.createTextNode(node.textContent || '');
+        }
+
+        const element = document.createElement(tagName.toLowerCase());
+        if (node.hasAttribute('class')) {
+            element.className = node.getAttribute('class');
+        }
+        if (node.hasAttribute('style')) {
+            element.style.cssText = node.getAttribute('style');
+        }
+        if (tagName === 'BUTTON' && node.hasAttribute('data-copy-value')) {
+            element.dataset.copyValue = node.getAttribute('data-copy-value');
+            element.addEventListener('click', () => copyToClipboard(element.dataset.copyValue));
+        }
+        node.childNodes.forEach((child) => {
+            const safeChild = copyNode(child);
+            if (safeChild) element.appendChild(safeChild);
+        });
+        return element;
+    };
+
+    contentElement.replaceChildren();
+    parsed.body.childNodes.forEach((child) => {
+        const safeChild = copyNode(child);
+        if (safeChild) contentElement.appendChild(safeChild);
+    });
+}
+
 function getCollectLabNameCacheKey() {
     const contractAddress = (DashboardState.contractAddress || 'unknown').trim().toLowerCase();
     const walletAddress = (DashboardState.walletAddress || 'unknown').trim().toLowerCase();
@@ -509,7 +563,7 @@ function showInputModal(title, message, type = 'password') {
         const closeBtn = document.getElementById('closeInputModal');
         
         // Set modal content
-        titleEl.innerHTML = `<i class="fas fa-keyboard"></i> ${title}`;
+        setModalTitle(titleEl, 'keyboard', title);
         messageEl.textContent = message;
         inputField.type = type;
         inputField.value = '';
@@ -569,15 +623,9 @@ function showInfoModal(title, content, isSuccess = true) {
         
         // Set modal content
         const icon = isSuccess ? 'check-circle' : 'info-circle';
-        titleEl.innerHTML = `<i class="fas fa-${icon}"></i> ${title}`;
+        setModalTitle(titleEl, icon, title);
         
-        // Format content (can be HTML)
-        if (typeof content === 'string') {
-            contentEl.innerHTML = content;
-        } else {
-            contentEl.innerHTML = '';
-            contentEl.appendChild(content);
-        }
+        renderSafeModalContent(contentEl, content);
         
         // Show modal
         modal.classList.add('show');
@@ -617,7 +665,7 @@ function showConfirmModal(title, message, options = {}) {
             return;
         }
 
-        titleEl.innerHTML = `<i class="fas fa-${icon}"></i> ${title}`;
+        setModalTitle(titleEl, icon, title);
         messageEl.textContent = message;
         confirmBtn.className = `btn ${confirmButtonClass}`;
         confirmBtn.innerHTML = `<i class="fas fa-check"></i> ${confirmText}`;
@@ -674,24 +722,24 @@ function buildPrivateKeyContent(privateKey, address = null, note = 'Keep this pr
         ${address ? `
             <div class="secret-header">
                 <span class="info-label">Wallet Address</span>
-                <button class="btn btn-secondary btn-small" onclick="copyToClipboard('${address}')">
+                <button class="btn btn-secondary btn-small" data-copy-value="${escapeHtml(address)}">
                     <i class="fas fa-copy"></i>
                     Copy
                 </button>
             </div>
-            <code class="secret-value">${address}</code>
+            <code class="secret-value">${escapeHtml(address)}</code>
         ` : ''}
         <div class="secret-header" style="margin-top: ${address ? 'var(--spacing-md)' : '0'}">
             <span class="info-label">Private Key</span>
-            <button class="btn btn-secondary btn-small" onclick="copyToClipboard('${privateKey}')">
+            <button class="btn btn-secondary btn-small" data-copy-value="${escapeHtml(privateKey)}">
                 <i class="fas fa-copy"></i>
                 Copy
             </button>
         </div>
-        <code class="secret-value">${privateKey}</code>
+        <code class="secret-value">${escapeHtml(privateKey)}</code>
         <div class="warning-text" style="margin-top: var(--spacing-md)">
             <i class="fas fa-lock"></i>
-            ${note}
+            ${escapeHtml(note)}
         </div>
     `;
 }
@@ -867,15 +915,15 @@ function renderProvisioningResult(result) {
         if (entry.transactionHash) {
             return `
                 <div class="info-line">
-                    <span class="info-label">${entry.organization}</span>
-                    <span class="info-value"><code>${entry.transactionHash}</code></span>
+                    <span class="info-label">${escapeHtml(entry.organization)}</span>
+                    <span class="info-value"><code>${escapeHtml(entry.transactionHash)}</code></span>
                 </div>
             `;
         }
         return `
             <div class="info-line">
-                <span class="info-label">${entry.organization}</span>
-                <span class="info-value warning-text">${entry.error || 'Failed'}</span>
+                <span class="info-label">${escapeHtml(entry.organization)}</span>
+                <span class="info-value warning-text">${escapeHtml(entry.error || 'Failed')}</span>
             </div>
         `;
     }).join('');
@@ -1067,7 +1115,7 @@ function showProvisioningProgress(message) {
             <div class="spinner-container">
                 <div class="spinner"></div>
             </div>
-            <div class="progress-message">${message}</div>
+            <div class="progress-message">${escapeHtml(message)}</div>
         </div>
     `;
 }
@@ -1100,7 +1148,7 @@ function renderProvisioningResult(data, tokenType) {
     if (!resultDiv) return;
     
     if (data.error) {
-        resultDiv.innerHTML = `<div class="error-message"><i class="fas fa-exclamation-triangle"></i> ${data.error}</div>`;
+        resultDiv.innerHTML = `<div class="error-message"><i class="fas fa-exclamation-triangle"></i> ${escapeHtml(data.error)}</div>`;
         return;
     }
     
@@ -1114,12 +1162,12 @@ function renderProvisioningResult(data, tokenType) {
         html += `<p><strong>Type:</strong> ${tokenType === 'consumer' ? 'Consumer (reserves only)' : 'Provider (publishes labs)'}</p>`;
         
         if (tokenType === 'consumer') {
-            if (config.consumerName) html += `<p><strong>Name:</strong> ${config.consumerName}</p>`;
-            if (config.consumerOrganization) html += `<p><strong>Organization:</strong> ${config.consumerOrganization}</p>`;
+            if (config.consumerName) html += `<p><strong>Name:</strong> ${escapeHtml(config.consumerName)}</p>`;
+            if (config.consumerOrganization) html += `<p><strong>Organization:</strong> ${escapeHtml(config.consumerOrganization)}</p>`;
         } else {
-            if (config.providerName) html += `<p><strong>Provider:</strong> ${config.providerName}</p>`;
-            if (config.providerOrganization) html += `<p><strong>Organization:</strong> ${config.providerOrganization}</p>`;
-            if (config.publicBaseUrl) html += `<p><strong>Auth URI:</strong> ${config.publicBaseUrl}</p>`;
+            if (config.providerName) html += `<p><strong>Provider:</strong> ${escapeHtml(config.providerName)}</p>`;
+            if (config.providerOrganization) html += `<p><strong>Organization:</strong> ${escapeHtml(config.providerOrganization)}</p>`;
+            if (config.publicBaseUrl) html += `<p><strong>Auth URI:</strong> ${escapeHtml(config.publicBaseUrl)}</p>`;
         }
         
         html += `<p><strong>Registered:</strong> ${data.registered ? 'Yes ✓' : 'Pending'}</p>`;
@@ -2950,12 +2998,12 @@ function setupButtonHandlers() {
                         </div>
                         <div class="secret-header">
                             <span class="info-label">Wallet Address</span>
-                            <button class="btn btn-secondary btn-small" onclick="copyToClipboard('${data.address}')">
+                            <button class="btn btn-secondary btn-small" data-copy-value="${escapeHtml(data.address)}">
                                 <i class="fas fa-copy"></i>
                                 Copy
                             </button>
                         </div>
-                        <code class="secret-value">${data.address}</code>
+                        <code class="secret-value">${escapeHtml(data.address)}</code>
                         <div class="warning-text" style="margin-top: var(--spacing-md)">
                             <i class="fas fa-exclamation-triangle"></i>
                             <strong>Important:</strong> Make sure to backup your wallet securely. 
