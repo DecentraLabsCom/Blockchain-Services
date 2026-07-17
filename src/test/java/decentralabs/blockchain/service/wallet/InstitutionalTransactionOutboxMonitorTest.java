@@ -124,7 +124,7 @@ class InstitutionalTransactionOutboxMonitorTest {
         when(nonceResponse.getTransactionCount()).thenReturn(BigInteger.valueOf(14));
         doReturn(requestReturning(nonceResponse)).when(web3j)
             .ethGetTransactionCount(attempt.walletAddress(), org.web3j.protocol.core.DefaultBlockParameterName.PENDING);
-        mockMissingTransaction(attempt);
+        mockMissingTransaction();
         EthSendTransaction sendResponse = new EthSendTransaction();
         sendResponse.setResult("0x" + "c".repeat(64));
         doReturn(requestReturning(sendResponse)).when(web3j).ethSendRawTransaction(attempt.signedRawTransaction());
@@ -168,7 +168,7 @@ class InstitutionalTransactionOutboxMonitorTest {
         var attempt = attempt("STUCK_UNKNOWN", "0x" + "2".repeat(64), "0xf861");
         when(outboxService.findSubmitted(any(), any(), org.mockito.ArgumentMatchers.eq(10))).thenReturn(List.of());
         when(outboxService.findStuckUnknown(any(), any(), org.mockito.ArgumentMatchers.eq(10))).thenReturn(List.of(attempt));
-        mockMissingReceipt(attempt);
+        mockMissingReceipt();
         EthTransaction transactionResponse = mock(EthTransaction.class);
         when(transactionResponse.getTransaction()).thenReturn(Optional.of(mock(org.web3j.protocol.core.methods.response.Transaction.class)));
         doReturn(requestReturning(transactionResponse)).when(web3j).ethGetTransactionByHash(attempt.txHash());
@@ -192,8 +192,8 @@ class InstitutionalTransactionOutboxMonitorTest {
         when(outboxService.findSubmitted(any(), any(), org.mockito.ArgumentMatchers.eq(10))).thenReturn(List.of());
         when(outboxService.findStuckUnknown(any(), any(), org.mockito.ArgumentMatchers.eq(10))).thenReturn(List.of());
         when(institutionalWalletService.getInstitutionalCredentials()).thenReturn(CREDENTIALS);
-        mockMissingReceipt(attempt);
-        mockVisibleTransaction(attempt);
+        mockMissingReceipt();
+        mockVisibleTransaction();
 
         InstitutionalTransactionOutboxMonitor monitor = new InstitutionalTransactionOutboxMonitor(
             outboxService, walletService, institutionalWalletService
@@ -253,7 +253,7 @@ class InstitutionalTransactionOutboxMonitorTest {
         when(outboxService.findSubmitted(any(), any(), org.mockito.ArgumentMatchers.eq(10))).thenReturn(List.of());
         when(outboxService.findStuckUnknown(any(), any(), org.mockito.ArgumentMatchers.eq(10))).thenReturn(List.of());
         when(institutionalWalletService.getInstitutionalCredentials()).thenReturn(CREDENTIALS);
-        mockMissingTransaction(attempt);
+        mockMissingTransaction();
         doThrow(new InstitutionalTransactionOutboxService.FencingClaimLostException("winner updated the row"))
             .when(outboxService).markReplacementPrepared(any(), any(), any(), any(), any());
 
@@ -345,7 +345,7 @@ class InstitutionalTransactionOutboxMonitorTest {
         when(outboxService.findSubmitted(any(), any(), org.mockito.ArgumentMatchers.eq(10))).thenReturn(List.of());
         when(outboxService.findStuckUnknown(any(), any(), org.mockito.ArgumentMatchers.eq(10))).thenReturn(List.of());
         when(institutionalWalletService.getInstitutionalCredentials()).thenReturn(CREDENTIALS);
-        mockMissingTransaction(attempt);
+        mockMissingTransaction();
         EthSendTransaction sendResponse = new EthSendTransaction();
         sendResponse.setResult("0x" + "7".repeat(64));
         doReturn(requestReturning(sendResponse)).when(web3j).ethSendRawTransaction(any());
@@ -378,7 +378,7 @@ class InstitutionalTransactionOutboxMonitorTest {
         when(outboxService.findSubmitted(any(), any(), org.mockito.ArgumentMatchers.eq(10))).thenReturn(List.of());
         when(outboxService.findStuckUnknown(any(), any(), org.mockito.ArgumentMatchers.eq(10))).thenReturn(List.of());
         when(institutionalWalletService.getInstitutionalCredentials()).thenReturn(CREDENTIALS);
-        mockMissingTransaction(attempt);
+        mockMissingTransaction();
         EthSendTransaction sendResponse = new EthSendTransaction();
         sendResponse.setResult("0x" + "9".repeat(64));
         doReturn(requestReturning(sendResponse)).when(web3j).ethSendRawTransaction(any());
@@ -431,7 +431,7 @@ class InstitutionalTransactionOutboxMonitorTest {
         var attempt = attempt("SUBMITTED", "0x" + "1".repeat(64), "0xf861", Instant.now().minusSeconds(600));
         when(outboxService.findSubmitted(any(), any(), org.mockito.ArgumentMatchers.eq(10))).thenReturn(List.of(attempt));
         when(outboxService.findStuckUnknown(any(), any(), org.mockito.ArgumentMatchers.eq(10))).thenReturn(List.of());
-        mockMissingReceipt(attempt);
+        mockMissingReceipt();
         EthTransaction transactionResponse = mock(EthTransaction.class);
         when(transactionResponse.getTransaction()).thenReturn(Optional.of(
             mock(org.web3j.protocol.core.methods.response.Transaction.class)
@@ -463,8 +463,8 @@ class InstitutionalTransactionOutboxMonitorTest {
         when(outboxService.findSubmitted(any(), any(), org.mockito.ArgumentMatchers.eq(10))).thenReturn(List.of());
         when(outboxService.findStuckUnknown(any(), any(), org.mockito.ArgumentMatchers.eq(10))).thenReturn(List.of());
         when(institutionalWalletService.getInstitutionalCredentials()).thenReturn(CREDENTIALS);
-        mockMissingReceipt(attempt);
-        mockVisibleTransaction(attempt);
+        mockMissingReceipt();
+        mockVisibleTransaction();
         EthSendTransaction sendResponse = new EthSendTransaction();
         sendResponse.setResult("0x" + "3".repeat(64));
         doReturn(requestReturning(sendResponse)).when(web3j).ethSendRawTransaction(any());
@@ -661,22 +661,22 @@ class InstitutionalTransactionOutboxMonitorTest {
         );
     }
 
-    private void mockMissingReceipt(InstitutionalTransactionOutboxService.Attempt attempt) throws Exception {
+    private void mockMissingReceipt() throws Exception {
         EthGetTransactionReceipt receiptResponse = mock(EthGetTransactionReceipt.class);
         when(receiptResponse.getTransactionReceipt()).thenReturn(Optional.empty());
         doReturn(requestReturning(receiptResponse)).when(web3j)
             .ethGetTransactionReceipt(any());
     }
 
-    private void mockMissingTransaction(InstitutionalTransactionOutboxService.Attempt attempt) throws Exception {
-        mockMissingReceipt(attempt);
+    private void mockMissingTransaction() throws Exception {
+        mockMissingReceipt();
         EthTransaction transactionResponse = mock(EthTransaction.class);
         when(transactionResponse.getTransaction()).thenReturn(Optional.empty());
         doReturn(requestReturning(transactionResponse)).when(web3j)
             .ethGetTransactionByHash(any());
     }
 
-    private void mockVisibleTransaction(InstitutionalTransactionOutboxService.Attempt attempt) throws Exception {
+    private void mockVisibleTransaction() throws Exception {
         EthTransaction transactionResponse = mock(EthTransaction.class);
         when(transactionResponse.getTransaction()).thenReturn(Optional.of(
             mock(org.web3j.protocol.core.methods.response.Transaction.class)

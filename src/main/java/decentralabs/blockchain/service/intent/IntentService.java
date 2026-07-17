@@ -154,7 +154,7 @@ public class IntentService {
         );
         log.info(
             "Intent SAML identity resolved. requestId={} stableUserIdMode={} resolvedPucHash={} payloadPucHash={} action={}",
-            meta.getRequestId(),
+            String.valueOf(meta.getRequestId()).replaceAll("[\\r\\n\\t]+", "_"),
             submission.getStableUserIdMode(),
             PucHashUtil.hashPuc(validatedSamlUser),
             expectedPucHash(actionPayload, reservationPayload),
@@ -162,7 +162,7 @@ public class IntentService {
         );
         checkAssertionReplay(expectedAssertionHash);
 
-        String puc = resolvePuc(reservationPayload, validatedSamlUser);
+        String puc = resolvePuc(validatedSamlUser);
         enforceLabCreatorOwnershipPrecheck(action, actionPayload);
         validateWebauthnAssertion(puc, credentialId, meta, submission);
 
@@ -227,7 +227,7 @@ public class IntentService {
         persistenceService.upsert(record);
 
         log.info("Intent {} accepted (status={}, action={}, provider={}, labId={}, reservationKey={})",
-            LogSanitizer.sanitize(meta.getRequestId()),
+            LogSanitizer.sanitize(meta.getRequestId()).replaceAll("[\\r\\n\\t]+", "_"),
             record.getStatus().getWireValue(),
             action.getWireValue(),
             LogSanitizer.maskIdentifier(meta.getExecutor()), 
@@ -275,7 +275,8 @@ public class IntentService {
                     record.setReason("expired");
                     persistenceService.upsert(record);
                     webhookService.notify(record);
-                    log.info("Intent {} expired during reconciliation", record.getRequestId());
+                    log.info("Intent {} expired during reconciliation",
+                        String.valueOf(record.getRequestId()).replaceAll("[\\r\\n\\t]+", "_"));
                 }
             });
 
@@ -619,7 +620,8 @@ public class IntentService {
         } catch (ResponseStatusException ex) {
             throw ex;
         } catch (Exception ex) {
-            log.warn("Invalid SAML assertion for intent: {}", ex.getMessage());
+            log.warn("Invalid SAML assertion for intent: {}",
+                String.valueOf(ex.getMessage()).replaceAll("[\\r\\n\\t]+", "_"));
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "invalid_saml");
         }
     }
@@ -691,25 +693,28 @@ public class IntentService {
 
     private void validateWebauthnAssertion(String puc, String credentialId, IntentMeta meta, IntentSubmission submission) {
         if (isBlank(puc)) {
-            log.warn("WebAuthn validation failed. requestId={} reason=missing_puc_for_webauthn", meta.getRequestId());
+            log.warn("WebAuthn validation failed. requestId={} reason=missing_puc_for_webauthn",
+                String.valueOf(meta.getRequestId()).replaceAll("[\\r\\n\\t]+", "_"));
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "missing_puc_for_webauthn");
         }
         if (isBlank(submission.getWebauthnClientDataJSON()) || isBlank(submission.getWebauthnAuthenticatorData()) || isBlank(submission.getWebauthnSignature())) {
-            log.warn("WebAuthn validation failed. requestId={} resolvedPucHash={} reason=missing_webauthn_assertion", meta.getRequestId(), PucHashUtil.hashPuc(puc));
+            log.warn("WebAuthn validation failed. requestId={} resolvedPucHash={} reason=missing_webauthn_assertion",
+                String.valueOf(meta.getRequestId()).replaceAll("[\\r\\n\\t]+", "_"), PucHashUtil.hashPuc(puc));
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "missing_webauthn_assertion");
         }
         WebauthnCredential cred = webauthnCredentialService.findCredential(puc, credentialId)
             .orElseThrow(() -> {
                 log.warn(
                     "WebAuthn validation failed. requestId={} resolvedPucHash={} reason=webauthn_credential_not_registered credentialIdPresent={}",
-                    meta.getRequestId(),
+                    String.valueOf(meta.getRequestId()).replaceAll("[\\r\\n\\t]+", "_"),
                     PucHashUtil.hashPuc(puc),
                     !isBlank(credentialId)
                 );
                 return new ResponseStatusException(HttpStatus.BAD_REQUEST, "webauthn_credential_not_registered");
             });
         if (!cred.isActive()) {
-            log.warn("WebAuthn validation failed. requestId={} resolvedPucHash={} reason=webauthn_credential_revoked", meta.getRequestId(), PucHashUtil.hashPuc(puc));
+            log.warn("WebAuthn validation failed. requestId={} resolvedPucHash={} reason=webauthn_credential_revoked",
+                String.valueOf(meta.getRequestId()).replaceAll("[\\r\\n\\t]+", "_"), PucHashUtil.hashPuc(puc));
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "webauthn_credential_revoked");
         }
 
@@ -719,7 +724,7 @@ public class IntentService {
         String legacyExpectedChallenge = buildLegacyWebauthnChallenge(puc, credentialId, meta);
         log.info(
             "WebAuthn validation started. requestId={} resolvedPucHash={} credentialIdPresent={} expectedChallengeHash={}",
-            meta.getRequestId(),
+            String.valueOf(meta.getRequestId()).replaceAll("[\\r\\n\\t]+", "_"),
             PucHashUtil.hashPuc(puc),
             !isBlank(credentialId),
             PucHashUtil.hashPuc(expectedChallenge)
@@ -845,7 +850,8 @@ public class IntentService {
         } catch (ResponseStatusException ex) {
             throw ex;
         } catch (Exception ex) {
-            log.warn("WebAuthn assertion validation failed: {}", ex.getMessage());
+            log.warn("WebAuthn assertion validation failed: {}",
+                String.valueOf(ex.getMessage()).replaceAll("[\\r\\n\\t]+", "_"));
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "webauthn_validation_error");
         }
     }
@@ -1036,7 +1042,7 @@ public class IntentService {
         throw new IllegalArgumentException("Unsupported WebAuthn public key algorithm: " + algorithm);
     }
 
-    private String resolvePuc(ReservationIntentPayload reservationPayload, String validatedSamlUser) {
+    private String resolvePuc(String validatedSamlUser) {
         return validatedSamlUser;
     }
 

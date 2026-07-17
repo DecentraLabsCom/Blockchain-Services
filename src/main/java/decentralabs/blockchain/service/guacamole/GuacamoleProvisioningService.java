@@ -74,7 +74,6 @@ public class GuacamoleProvisioningService {
             objectMapper,
             buildDefaultRoute(environment),
             buildRoutesByKey(environment, objectMapper),
-            null,
             buildLocalAccessOrigin(environment)
         );
     }
@@ -92,7 +91,6 @@ public class GuacamoleProvisioningService {
             objectMapper,
             routeFromUris(provisionUri, connectionsUri, tokenHeader, token),
             Map.of(),
-            null,
             null
         );
     }
@@ -102,7 +100,6 @@ public class GuacamoleProvisioningService {
         ObjectMapper objectMapper,
         ProvisionerRoute defaultRoute,
         Map<String, ProvisionerRoute> routesByKey,
-        ProvisionerRoute derivedRouteTemplate,
         String localAccessOrigin
     ) {
         this.httpClient = httpClient;
@@ -429,6 +426,10 @@ public class GuacamoleProvisioningService {
         if (value instanceof Number number) {
             return number.longValue();
         }
-        return Long.parseLong(String.valueOf(value));
+        try {
+            return Long.parseLong(String.valueOf(value));
+        } catch (NumberFormatException ex) {
+            throw new IllegalArgumentException("Guacamole connection id must be numeric", ex);
+        }
     }
 }

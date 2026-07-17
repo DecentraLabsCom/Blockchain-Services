@@ -63,7 +63,8 @@ public class FundingOrderService {
 
         order = persistence.createFundingOrder(order);
         log.info("Created funding order {} for {} (EUR {} → {} credits)",
-                order.getId(), institutionAddress, normalizedEurAmount, derivedCreditAmount);
+                order.getId(), String.valueOf(institutionAddress).replaceAll("[\\r\\n\\t]+", "_"),
+                normalizedEurAmount, derivedCreditAmount);
         return order;
     }
 
@@ -94,7 +95,8 @@ public class FundingOrderService {
         invoice = persistence.createFundingInvoice(invoice);
         persistence.updateFundingOrderStatus(orderId, FundingOrder.Status.INVOICED);
 
-        log.info("Issued invoice {} for funding order {}", invoiceNumber, orderId);
+        log.info("Issued invoice {} for funding order {}",
+            String.valueOf(invoiceNumber).replaceAll("[\\r\\n\\t]+", "_"), orderId);
         return invoice;
     }
 
@@ -138,7 +140,8 @@ public class FundingOrderService {
                 .reference("funding-order:" + orderId)
                 .build());
 
-        log.info("Confirmed payment {} for funding order {} (EUR {})", paymentRef, orderId, eurAmount);
+        log.info("Confirmed payment {} for funding order {} (EUR {})",
+            String.valueOf(paymentRef).replaceAll("[\\r\\n\\t]+", "_"), orderId, eurAmount);
         return recon;
     }
 

@@ -78,7 +78,7 @@ public class AdminNetworkAccessPolicy {
         if (splitCidrs(labManagerAllowedCidrs).isEmpty()) {
             return true;
         }
-        List<CidrRange> cidrs = parseCidrs(labManagerAllowedCidrs, "LAB_MANAGER_ALLOWED_CIDRS");
+        List<CidrRange> cidrs = parseCidrs(labManagerAllowedCidrs);
         if (cidrs.isEmpty()) {
             return false;
         }
@@ -215,16 +215,16 @@ public class AdminNetworkAccessPolicy {
         if (isLoopback(address)) {
             return true;
         }
-        return parseCidrs(trustedProxyCidrs, "SECURITY_TRUSTED_PROXY_CIDRS")
+        return parseCidrs(trustedProxyCidrs)
             .stream()
             .anyMatch(cidr -> cidr.matches(address));
     }
 
     private List<CidrRange> parseCidrs() {
-        return parseCidrs(configuredCidrs, "ADMIN_ALLOWED_CIDRS");
+        return parseCidrs(configuredCidrs);
     }
 
-    private List<CidrRange> parseCidrs(String rawCidrs, String label) {
+    private List<CidrRange> parseCidrs(String rawCidrs) {
         List<CidrRange> ranges = new ArrayList<>();
         for (String token : splitCidrs(rawCidrs)) {
             CidrRange range = CidrRange.tryParse(token);

@@ -156,15 +156,15 @@ public class SamlAuthService {
             return response;
         } catch (AccessAuthorizationPendingException ex) {
             accessCodeService.revoke(issuedAccessCode);
-            rollbackPreparedGuacamoleAccess(bookingInfo, canonicalReservationKey, provisionalLease);
+            rollbackPreparedGuacamoleAccess(bookingInfo, provisionalLease);
             throw ex;
         } catch (RuntimeException ex) {
             accessCodeService.revoke(issuedAccessCode);
-            rollbackPreparedGuacamoleAccess(bookingInfo, canonicalReservationKey, provisionalLease);
+            rollbackPreparedGuacamoleAccess(bookingInfo, provisionalLease);
             throw ex;
         } catch (Exception ex) {
             accessCodeService.revoke(issuedAccessCode);
-            rollbackPreparedGuacamoleAccess(bookingInfo, canonicalReservationKey, provisionalLease);
+            rollbackPreparedGuacamoleAccess(bookingInfo, provisionalLease);
             throw new IllegalStateException("Failed to issue access credential", ex);
         }
     }
@@ -298,11 +298,11 @@ public class SamlAuthService {
             return response;
         } catch (RuntimeException ex) {
             accessCodeService.revoke(issuedAccessCode);
-            rollbackPreparedGuacamoleAccess(bookingInfo, canonicalReservationKey, provisionalLease);
+            rollbackPreparedGuacamoleAccess(bookingInfo, provisionalLease);
             throw ex;
         } catch (Exception ex) {
             accessCodeService.revoke(issuedAccessCode);
-            rollbackPreparedGuacamoleAccess(bookingInfo, canonicalReservationKey, provisionalLease);
+            rollbackPreparedGuacamoleAccess(bookingInfo, provisionalLease);
             throw new IllegalStateException("Failed to authorize and issue access credential", ex);
         }
     }
@@ -432,7 +432,8 @@ public class SamlAuthService {
             | AccessAuthorizationRejectedException ex) {
             throw ex;
         } catch (RuntimeException ex) {
-            log.debug("Remote consumer check-in status unavailable for {}", reservationKey, ex);
+            log.debug("Remote consumer check-in status unavailable for {}",
+                String.valueOf(reservationKey).replaceAll("[\\r\\n\\t]+", "_"), ex);
         }
     }
 
@@ -560,7 +561,6 @@ public class SamlAuthService {
 
     private void rollbackPreparedGuacamoleAccess(
         Map<String, Object> bookingInfo,
-        String reservationKey,
         AccessAuthorizationProvisioningService.ProvisioningLease provisionalLease
     ) {
         if (bookingInfo == null || !"lab".equals(bookingInfo.get("resourceType"))) {

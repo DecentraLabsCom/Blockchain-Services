@@ -231,7 +231,8 @@ public class WebauthnOnboardingService {
                 request.getStableUserIdMode(),
                 institutionId
             );
-            log.debug("SAML assertion validated for user: {}", stableUserId);
+            log.debug("SAML assertion validated for user: {}",
+                String.valueOf(stableUserId).replaceAll("[\\r\\n\\t]+", "_"));
         }
 
         // Generate cryptographically secure challenge
@@ -267,8 +268,9 @@ public class WebauthnOnboardingService {
         );
         pendingSessions.put(sessionId, session);
 
-        log.info("WebAuthn onboarding session created. SessionId: {}, Institution: {}", 
-            sessionId, institutionId);
+        log.info("WebAuthn onboarding session created. SessionId: {}, Institution: {}",
+            String.valueOf(sessionId).replaceAll("[\\r\\n\\t]+", "_"),
+            String.valueOf(institutionId).replaceAll("[\\r\\n\\t]+", "_"));
 
         // Build the onboarding URL where the SP should redirect the browser
         String onboardingUrl = buildOnboardingUrl(sessionId);
@@ -349,8 +351,10 @@ public class WebauthnOnboardingService {
                 transports
             );
 
-            log.info("WebAuthn credential registered. StableUserId: {}, CredentialId: {}", 
-                session.getStableUserId(), credentialId.substring(0, Math.min(20, credentialId.length())) + "...");
+            log.info("WebAuthn credential registered. StableUserId: {}, CredentialId: {}",
+                String.valueOf(session.getStableUserId()).replaceAll("[\\r\\n\\t]+", "_"),
+                credentialId.substring(0, Math.min(20, credentialId.length()))
+                    .replaceAll("[\\r\\n\\t]+", "_") + "...");
 
             WebauthnOnboardingCompleteResponse response = WebauthnOnboardingCompleteResponse.builder()
                 .success(true)
@@ -892,7 +896,9 @@ public class WebauthnOnboardingService {
             
             String assertionPuc = samlValidationService.resolveStableUserId(attributes, stableUserIdMode, null);
             if (assertionPuc != null && !assertionPuc.isBlank() && !assertionPuc.equals(expectedPuc)) {
-                log.warn("SAML assertion PUC '{}' does not match expected PUC '{}'", assertionPuc, expectedPuc);
+                log.warn("SAML assertion PUC '{}' does not match expected PUC '{}'",
+                    String.valueOf(assertionPuc).replaceAll("[\\r\\n\\t]+", "_"),
+                    String.valueOf(expectedPuc).replaceAll("[\\r\\n\\t]+", "_"));
                 throw new ResponseStatusException(HttpStatus.FORBIDDEN, "saml_puc_mismatch");
             }
             String assertionInstitutionId = attributes.get("institutionId");
@@ -903,12 +909,13 @@ public class WebauthnOnboardingService {
                 && !assertionInstitutionId.equals(expectedInstitutionId)) {
                 log.warn(
                     "SAML assertion institutionId '{}' does not match expected institutionId '{}'",
-                    assertionInstitutionId,
-                    expectedInstitutionId
+                    String.valueOf(assertionInstitutionId).replaceAll("[\\r\\n\\t]+", "_"),
+                    String.valueOf(expectedInstitutionId).replaceAll("[\\r\\n\\t]+", "_")
                 );
             }
 
-            log.debug("SAML assertion validated successfully for PUC: {}", expectedPuc);
+            log.debug("SAML assertion validated successfully for PUC: {}",
+                String.valueOf(expectedPuc).replaceAll("[\\r\\n\\t]+", "_"));
             return attributes;
 
         } catch (IllegalArgumentException e) {

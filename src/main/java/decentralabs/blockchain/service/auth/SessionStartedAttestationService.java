@@ -104,7 +104,7 @@ public class SessionStartedAttestationService {
                 request.getClientProofHash()
             );
             SignedSessionStartedAttestation signed = signer.sign(payload, credentials);
-            return persist(payload, signed, credential, request);
+            return persist(payload, signed, request);
         } catch (BadSqlGrammarException ex) {
             log.warn("SessionStarted attestation table unavailable: {}", LogSanitizer.sanitize(ex.getMessage()));
         } catch (DataAccessException ex) {
@@ -171,7 +171,6 @@ public class SessionStartedAttestationService {
     private boolean persist(
         SessionStartedAttestationPayload payload,
         SignedSessionStartedAttestation signed,
-        AuditCredential credential,
         AccessCredentialSessionObservedRequest request
     ) {
         int updated = jdbcTemplate.update(

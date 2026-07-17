@@ -685,7 +685,6 @@ public class Diamond extends Contract {
                     try {
                         candidateTupleOffset = parseOffsetWordChars(hex, 0, "tuple offset");
                     } catch (IllegalArgumentException ex) {
-                        assert ex != null;
                         candidateTupleOffset = 0;
                     }
 
