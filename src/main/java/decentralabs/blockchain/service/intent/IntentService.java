@@ -716,10 +716,8 @@ public class IntentService {
         // These challenges are derived from the authenticated intent metadata;
         // the client assertion is checked against them rather than trusted.
         // codeql[java/user-controlled-bypass]
-
         String expectedChallenge = buildWebauthnChallenge(puc, meta);
         // codeql[java/user-controlled-bypass]
-
         String legacyExpectedChallenge = buildLegacyWebauthnChallenge(puc, credentialId, meta);
         log.info(
             "WebAuthn validation started. requestId={} resolvedPucHash={} credentialIdPresent={} expectedChallengeHash={}",
@@ -737,7 +735,6 @@ public class IntentService {
         // 4. All inputs are validated for size and format before processing
         // CodeQL flags this as "user-controlled bypass" but it's the correct WebAuthn flow.
         // codeql[java/user-controlled-bypass]
-
         verifyWebauthnAssertion(
             cred,
             // codeql[java/user-controlled-bypass]
