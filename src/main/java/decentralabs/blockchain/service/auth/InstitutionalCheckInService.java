@@ -111,7 +111,6 @@ public class InstitutionalCheckInService {
 
         // The reservation status is read from the validated on-chain booking.
         // codeql[java/user-controlled-bypass]
-
         if (isAccessAuthorizedStatus(bookingInfo.get("reservationStatus"))) {
             CheckInResponse response = new CheckInResponse();
             response.setValid(true);
@@ -125,7 +124,6 @@ public class InstitutionalCheckInService {
         // configuredSigner is loaded from the institution wallet configuration and
         // the institution wallet was bound to the validated marketplace identity.
         // codeql[java/user-controlled-bypass]
-
         if (!directoryService.isAuthorizedCheckInSigner(institutionWallet, configuredSigner)) {
             return delegateToInstitutionBackend(request, institutionOrganization, institutionWallet);
         }

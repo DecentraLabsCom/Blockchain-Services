@@ -94,7 +94,6 @@ public class ProviderConfigurationPersistenceService {
             // This file contains deployment metadata (not credentials or tokens)
             // and is the persisted format consumed by the configuration UI.
             // codeql[java/cleartext-storage-in-properties]
-
             properties.store(fos, "Consumer Configuration - Auto-saved by DecentraLabs Blockchain Services");
         }
 
@@ -140,7 +139,6 @@ public class ProviderConfigurationPersistenceService {
             // This file contains deployment metadata (not credentials or tokens)
             // and is the persisted format consumed by the configuration UI.
             // codeql[java/cleartext-storage-in-properties]
-
             properties.store(fos, "Provider Configuration - Auto-saved by DecentraLabs Blockchain Services");
         }
 
