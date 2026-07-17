@@ -625,7 +625,14 @@ class WalletServiceTest {
         }
         AtomicInteger index = new AtomicInteger();
         when(target.ethCall(any(org.web3j.protocol.core.methods.request.Transaction.class), eq(DefaultBlockParameterName.LATEST)))
-            .thenAnswer(invocation -> requests[Math.min(index.getAndIncrement(), requests.length - 1)]);
+            .thenAnswer(invocation -> {
+                int currentIndex = index.getAndIncrement();
+                if (currentIndex >= requests.length) {
+                    throw new AssertionError("Unexpected extra ethCall invocation at index " + currentIndex
+                        + " (stubbed responses: " + requests.length + ")");
+                }
+                return requests[currentIndex];
+            });
     }
 
     private EthCall ethCallResponse(String value) {
