@@ -107,8 +107,6 @@ public class IntentAuthorizationService {
         IntentMeta meta = submission.getMeta();
         String puc = resolvePuc(submission);
         if (puc == null || puc.isBlank()) {
-            // Request-derived values are control-character sanitized or hashed before logging.
-            // codeql[java/log-injection]
             log.warn("Intent authorization PUC resolution failed. requestId={} stableUserIdMode={} payloadPucHash={}",
                 LogSanitizer.sanitize(meta.getRequestId()),
                 LogSanitizer.sanitize(request.getStableUserIdMode()),
@@ -344,12 +342,11 @@ public class IntentAuthorizationService {
             String normalized = PucNormalizer.normalize(samlUser);
             if (normalized != null && !normalized.isBlank()) {
                 log.info(
-                    "Resolved intent authorization PUC. requestId={} stableUserIdMode={} samlUserHash={} resolvedPucHash={} payloadPucHash={}",
+                    "Resolved intent authorization PUC. requestId={} stableUserIdMode={} samlUserHash={} resolvedPucHash={}",
                     String.valueOf(submission.getMeta().getRequestId()).replaceAll("[\\r\\n\\t]+", "_"),
                     String.valueOf(submission.getStableUserIdMode()).replaceAll("[\\r\\n\\t]+", "_"),
                     PucHashUtil.hashPuc(samlAttributes.get("puc")),
-                    PucHashUtil.hashPuc(normalized),
-                    expectedPucHash
+                    PucHashUtil.hashPuc(normalized)
                 );
                 return normalized;
             }

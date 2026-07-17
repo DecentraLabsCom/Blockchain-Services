@@ -21,7 +21,6 @@ import decentralabs.blockchain.dto.intent.ActionIntentPayload;
 import decentralabs.blockchain.dto.intent.IntentAction;
 import decentralabs.blockchain.dto.intent.IntentMeta;
 import decentralabs.blockchain.dto.intent.ReservationIntentPayload;
-import decentralabs.blockchain.util.LogSanitizer;
 import lombok.extern.slf4j.Slf4j;
 
 @Component
@@ -104,11 +103,7 @@ public class Eip712IntentVerifier {
             }
             return new VerificationResult(true, checksum, computedPayloadHash, null);
         } catch (Exception ex) {
-            // The request identifier and exception message are control-character sanitized.
-            // codeql[java/log-injection]
-            log.warn("Failed to verify EIP-712 intent {}: {}",
-                LogSanitizer.sanitize(meta.getRequestId()).replaceAll("[\\r\\n\\t]+", "_"),
-                LogSanitizer.sanitize(ex.getMessage()).replaceAll("[\\r\\n\\t]+", "_"));
+            log.warn("Failed to verify EIP-712 intent");
             return new VerificationResult(false, null, null, ex.getMessage());
         }
     }

@@ -47,8 +47,8 @@ public class ProviderSettlementService {
                 .build();
 
         record = persistence.createInvoiceRecord(record);
-        log.info("Submitted provider invoice {} for lab {} (EUR {})",
-            LogSanitizer.sanitize(invoiceRef), labId, eurAmount);
+        log.info("Submitted provider invoice (labIdPresent={}, invoiceRefPresent={}, EUR {})",
+            labId != null && !labId.isBlank(), invoiceRef != null && !invoiceRef.isBlank(), eurAmount);
         return record;
     }
 
@@ -75,8 +75,8 @@ public class ProviderSettlementService {
         approval = persistence.createApproval(approval);
         persistence.updateInvoiceStatus(invoiceId, ProviderInvoiceRecord.Status.APPROVED);
 
-        log.info("Approved provider invoice {} by {} ref={} (EUR {})", invoiceId,
-            LogSanitizer.sanitize(approvedBy), LogSanitizer.sanitize(approvalRef), eurAmount);
+        log.info("Approved provider invoice {} (approvedByPresent={}, approvalRefPresent={}, EUR {})", invoiceId,
+            approvedBy != null && !approvedBy.isBlank(), approvalRef != null && !approvalRef.isBlank(), eurAmount);
         return approval;
     }
 
@@ -98,8 +98,6 @@ public class ProviderSettlementService {
                 .build();
 
         payout = persistence.createPayout(payout);
-        // The provider address is control-character sanitized before logging.
-        // codeql[java/log-injection]
         log.info("Recorded payout for lab {} provider {} (EUR {})", labId,
             LogSanitizer.sanitize(providerAddress), eurAmount);
         return payout;

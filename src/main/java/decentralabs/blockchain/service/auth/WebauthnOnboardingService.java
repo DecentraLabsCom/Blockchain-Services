@@ -352,11 +352,9 @@ public class WebauthnOnboardingService {
                 transports
             );
 
-            // Both identifiers are control-character sanitized before logging.
-            // codeql[java/log-injection]
-            log.info("WebAuthn credential registered. StableUserId: {}, CredentialId: {}",
-                LogSanitizer.sanitize(session.getStableUserId()),
-                LogSanitizer.sanitize(credentialId.substring(0, Math.min(20, credentialId.length()))) + "...");
+            log.info("WebAuthn credential registered. stableUserIdPresent={} credentialIdLength={}",
+                session.getStableUserId() != null && !session.getStableUserId().isBlank(),
+                credentialId.length());
 
             WebauthnOnboardingCompleteResponse response = WebauthnOnboardingCompleteResponse.builder()
                 .success(true)
