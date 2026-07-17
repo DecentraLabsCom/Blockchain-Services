@@ -78,7 +78,6 @@ class InstitutionalCheckInServiceTest {
 
     @BeforeEach
     void setUp() {
-        ReflectionTestUtils.setField(service, "contractAddress", "0x2222222222222222222222222222222222222222");
         ReflectionTestUtils.setField(service, "delegationEnabled", true);
         lenient().when(checkInOnChainService.connectedChainId()).thenReturn(CHAIN_ID);
         credentials = Credentials.create("4f3edf983ac636a65a842ce7c78d9aa706d3b113bce036f7f8f2f0d9f7d4c001");
@@ -465,6 +464,28 @@ class InstitutionalCheckInServiceTest {
         verify(checkInOnChainService, never()).verifyAndSubmit(any(CheckInRequest.class));
         verify(institutionalWalletService, never()).getInstitutionalCredentials();
         verify(remoteCheckInClient, never()).submit(any(), any());
+    }
+
+    @Test
+    void checkInUsesMarketplaceWalletBindingInsteadOfRequestWallet() throws Exception {
+        InstitutionalCheckInRequest request = validRequest();
+        request.setPayerInstitutionWallet(null);
+
+        when(samlValidationService.validateSamlAssertionDetailed("valid-saml")).thenReturn(samlAttributes());
+        when(marketplaceEndpointAuthService.enforceToken("market-token", null)).thenReturn(marketplaceClaims());
+        when(bookingService.getCheckInBookingInfo(
+            "0x1111111111111111111111111111111111111111", "0xabc", "42", "puc-123"
+        )).thenReturn(Map.of(
+            "reservationKey", "0xabc",
+            "reservationStatus", BigInteger.valueOf(2)
+        ));
+
+        CheckInResponse response = service.checkIn(request);
+
+        assertThat(response.isValid()).isTrue();
+        verify(bookingService).getCheckInBookingInfo(
+            "0x1111111111111111111111111111111111111111", "0xabc", "42", "puc-123"
+        );
     }
 
     @Test

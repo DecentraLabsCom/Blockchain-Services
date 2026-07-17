@@ -5,12 +5,10 @@ import decentralabs.blockchain.dto.auth.InstitutionalCheckInRequest;
 import decentralabs.blockchain.dto.auth.InstitutionalCheckInStatusRequest;
 import decentralabs.blockchain.service.wallet.BlockchainBookingService;
 import decentralabs.blockchain.service.wallet.InstitutionalWalletService;
-import decentralabs.blockchain.service.wallet.WalletService;
 import java.nio.charset.StandardCharsets;
 import java.math.BigInteger;
 import java.time.Instant;
 import java.util.LinkedHashMap;
-import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import lombok.RequiredArgsConstructor;
@@ -19,17 +17,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;
-import org.web3j.abi.FunctionEncoder;
-import org.web3j.abi.FunctionReturnDecoder;
-import org.web3j.abi.TypeReference;
-import org.web3j.abi.datatypes.Address;
-import org.web3j.abi.datatypes.Function;
-import org.web3j.abi.datatypes.Type;
-import org.web3j.abi.datatypes.Utf8String;
 import org.web3j.crypto.Hash;
-import org.web3j.protocol.Web3j;
-import org.web3j.protocol.core.DefaultBlockParameterName;
-import org.web3j.protocol.core.methods.request.Transaction;
 import org.web3j.utils.Numeric;
 import decentralabs.blockchain.util.PucNormalizer;
 
@@ -55,14 +43,10 @@ public class InstitutionalCheckInService {
     private final BlockchainBookingService bookingService;
     private final CheckInOnChainService checkInOnChainService;
     private final InstitutionalWalletService institutionalWalletService;
-    private final WalletService walletService;
     private final InstitutionalCheckInDirectoryService directoryService;
     private final RemoteInstitutionalCheckInClient remoteCheckInClient;
     private final InstitutionalCheckInOutboxService outboxService;
     private final InstitutionalWalletNonceDispatcher nonceDispatcher;
-
-    @Value("${contract.address}")
-    private String contractAddress;
 
     @Value("${institutional.checkin.delegation.enabled:true}")
     private boolean delegationEnabled;
@@ -85,14 +69,9 @@ public class InstitutionalCheckInService {
         }
 
         String institutionOrganization = resolveInstitutionOrganization(saml);
-        String institutionWallet = resolveInstitutionWallet(request, institutionOrganization);
+        String institutionWallet = resolveInstitutionWallet(request, marketplaceIdentity.payerInstitutionWallet);
         if (institutionWallet == null || institutionWallet.isBlank() || ZERO_ADDRESS.equalsIgnoreCase(institutionWallet)) {
             throw new IllegalArgumentException("Institution wallet could not be resolved");
-        }
-
-        String claimedInstitutionWallet = normalizeAddress(marketplaceIdentity.payerInstitutionWallet);
-        if (claimedInstitutionWallet != null && !claimedInstitutionWallet.equalsIgnoreCase(institutionWallet)) {
-            throw new SecurityException("Marketplace token payerInstitutionWallet mismatch");
         }
 
         Map<String, Object> bookingInfo = bookingService.getCheckInBookingInfo(
@@ -110,7 +89,6 @@ public class InstitutionalCheckInService {
         }
 
         // The reservation status is read from the validated on-chain booking.
-        // codeql[java/user-controlled-bypass]
         if (isAccessAuthorizedStatus(bookingInfo.get("reservationStatus"))) {
             CheckInResponse response = new CheckInResponse();
             response.setValid(true);
@@ -123,7 +101,6 @@ public class InstitutionalCheckInService {
         String configuredSigner = normalizeAddress(institutionalWalletService.getInstitutionalWalletAddress());
         // configuredSigner is loaded from the institution wallet configuration and
         // the institution wallet was bound to the validated marketplace identity.
-        // codeql[java/user-controlled-bypass]
         if (!directoryService.isAuthorizedCheckInSigner(institutionWallet, configuredSigner)) {
             return delegateToInstitutionBackend(request, institutionOrganization, institutionWallet);
         }
@@ -476,13 +453,21 @@ public class InstitutionalCheckInService {
         }
     }
 
-    private String resolveInstitutionWallet(InstitutionalCheckInRequest request, String organization) {
-        String explicit = normalizeAddress(request.getPayerInstitutionWallet());
-        if (explicit != null && !explicit.isBlank()) {
-            return explicit;
+    private String resolveInstitutionWallet(InstitutionalCheckInRequest request, String marketplaceWallet) {
+        String boundWallet = normalizeAddress(marketplaceWallet);
+        if (boundWallet == null || boundWallet.isBlank()) {
+            throw new SecurityException("Marketplace token missing payerInstitutionWallet");
         }
 
-        return resolveInstitutionAddress(organization);
+        String requestedWallet = normalizeAddress(request.getPayerInstitutionWallet());
+        if (requestedWallet != null && !requestedWallet.equalsIgnoreCase(boundWallet)) {
+            throw new SecurityException("Marketplace token payerInstitutionWallet mismatch");
+        }
+
+        // The signed marketplace token is the authority for the payer wallet.
+        // The request field is only an optional consistency check and never selects
+        // which institution is queried on-chain.
+        return boundWallet;
     }
 
     private String resolveInstitutionOrganization(SamlAssertionAttributes saml) {
@@ -528,39 +513,6 @@ public class InstitutionalCheckInService {
         return record != null
             && ((record.signedRawTransaction() != null && !record.signedRawTransaction().isBlank())
                 || (record.txHash() != null && !record.txHash().isBlank()));
-    }
-
-    private String resolveInstitutionAddress(String organization) {
-        String normalized = normalizeOrganization(organization);
-        if (normalized.isBlank()) {
-            return null;
-        }
-        try {
-            Web3j web3j = walletService.getWeb3jInstance();
-            Function function = new Function(
-                "resolveSchacHomeOrganization",
-                List.of(new Utf8String(normalized)),
-                List.of(new TypeReference<Address>() { })
-            );
-            String encoded = FunctionEncoder.encode(function);
-            var response = web3j.ethCall(
-                Transaction.createEthCallTransaction(null, contractAddress, encoded),
-                DefaultBlockParameterName.LATEST
-            ).send();
-            if (response == null || response.hasError()) {
-                return null;
-            }
-            @SuppressWarnings("rawtypes")
-            List<Type> decoded = FunctionReturnDecoder.decode(response.getValue(), function.getOutputParameters());
-            if (decoded.isEmpty()) {
-                return null;
-            }
-            Object value = decoded.get(0).getValue();
-            return value != null ? value.toString() : null;
-        } catch (Exception ex) {
-            log.warn("Unable to resolve institution wallet: {}", ex.getMessage());
-            return null;
-        }
     }
 
     private String computePucHash(String puc) {
