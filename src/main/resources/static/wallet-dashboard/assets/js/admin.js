@@ -901,36 +901,6 @@ function updateOperatingModeNotices(providerConfig) {
     }
 }
 
-function renderProvisioningResult(result) {
-    const container = document.getElementById('provisioningResult');
-    if (!container) {
-        return;
-    }
-    if (!result) {
-        container.innerHTML = '';
-        return;
-    }
-
-    const entries = (result.domains || []).map(entry => {
-        if (entry.transactionHash) {
-            return `
-                <div class="info-line">
-                    <span class="info-label">${escapeHtml(entry.organization)}</span>
-                    <span class="info-value"><code>${escapeHtml(entry.transactionHash)}</code></span>
-                </div>
-            `;
-        }
-        return `
-            <div class="info-line">
-                <span class="info-label">${escapeHtml(entry.organization)}</span>
-                <span class="info-value warning-text">${escapeHtml(entry.error || 'Failed')}</span>
-            </div>
-        `;
-    }).join('');
-
-    container.innerHTML = entries || '<span class="muted">No organizations returned.</span>';
-}
-
 // Update header button visibility based on wallet and token status
 function updateApplyInviteButtonVisibility() {
     const headerBtn = document.getElementById('applyProvisioningTokenHeaderBtn');
@@ -1501,6 +1471,7 @@ async function loadBalances() {
         // Get system status to know the active network
         const statusData = await API.getSystemStatus();
         const activeNetwork = statusData.activeNetwork || 'sepolia';
+        const safeActiveNetwork = escapeHtml(activeNetwork);
         
         // Get all balances and billing info in parallel
         const [data, billingData] = await Promise.all([
@@ -1518,7 +1489,7 @@ async function loadBalances() {
             if (!balanceData) {
                 balanceGrid.innerHTML = `
                     <div class="balance-item">
-                        <div class="balance-network">${activeNetwork}</div>
+                        <div class="balance-network">${safeActiveNetwork}</div>
                         <div class="balance-amount" style="color: var(--text-muted); font-size: 1rem;">
                             No data available
                         </div>
@@ -1530,9 +1501,9 @@ async function loadBalances() {
             if (balanceData.error) {
                 balanceGrid.innerHTML = `
                     <div class="balance-item">
-                        <div class="balance-network">${activeNetwork}</div>
+                        <div class="balance-network">${safeActiveNetwork}</div>
                         <div class="balance-amount" style="color: var(--neon-red); font-size: 1rem;">
-                            Error: ${balanceData.error}
+                            Error: ${escapeHtml(balanceData.error)}
                         </div>
                     </div>
                 `;
@@ -2265,7 +2236,7 @@ async function loadCollectStatusForSelectedLab() {
 
         if (DashboardState.collectCanExecute) {
             if (hasPendingClosures && hasPendingPayout) {
-                setCollectStatusText('Ready for clouse & payout', 'success');
+                setCollectStatusText('Ready for closure & payout', 'success');
             } else if (hasPendingClosures) {
                 setCollectStatusText('Ready for closure', 'success');
             } else {
@@ -2494,17 +2465,25 @@ async function loadRecentTransactions(limit = DashboardState.transactionsLimit) 
         const loadMoreBtn = document.getElementById('transactionsLoadMoreBtn');
         
         if (data.success && data.transactions && data.transactions.length > 0) {
-            container.innerHTML = data.transactions.map(tx => `
+            const transactions = data.transactions.map(tx => ({
+                type: escapeHtml(tx.type || 'Tx'),
+                hash: escapeHtml(formatAddress(tx.hash)),
+                description: escapeHtml(tx.description || ''),
+                amountTokens: escapeHtml(tx.amountTokens || '--'),
+                timestamp: escapeHtml(formatTimestamp(tx.timestamp)),
+                status: escapeHtml(tx.status || 'submitted')
+            }));
+            container.innerHTML = transactions.map(tx => `
                 <div class="transaction-item">
                     <div class="tx-row">
-                        <div class="tx-type">${tx.type || 'Tx'}</div>
-                        <div class="tx-hash">${formatAddress(tx.hash)}</div>
+                        <div class="tx-type">${tx.type}</div>
+                        <div class="tx-hash">${tx.hash}</div>
                     </div>
-                    <div class="tx-description">${tx.description || ''}</div>
+                    <div class="tx-description">${tx.description}</div>
                     <div class="tx-meta">
-                        <span>${tx.amountTokens || '--'}</span>
-                        <span>${formatTimestamp(tx.timestamp)}</span>
-                        <span class="tx-status">${tx.status || 'submitted'}</span>
+                        <span>${tx.amountTokens}</span>
+                        <span>${tx.timestamp}</span>
+                        <span class="tx-status">${tx.status}</span>
                     </div>
                 </div>
             `).join('');
@@ -2897,22 +2876,25 @@ function setupButtonHandlers() {
     const resetPeriodBtn = document.getElementById('resetPeriodBtn');
     if (resetPeriodBtn) {
         resetPeriodBtn.addEventListener('click', async () => {
-        if (!confirm('⚠️ Reset spending period? All users\' spending will be reset to zero and a new period will begin immediately.')) {
-            return;
-        }
-        
-        try {
-            showToast('Resetting spending period...', 'info');
-            const result = await API.resetSpendingPeriod();
-            if (result.success) {
-                showToast(`Period reset successful. Tx: ${formatAddress(result.transactionHash)}`, 'success');
-                setTimeout(() => loadBillingAdminData(), 5000);
-            } else {
-                showToast('Failed to reset period: ' + result.message, 'error');
+            if (!await showConfirmModal(
+                'Reset spending period',
+                'All users\' spending will be reset to zero and a new period will begin immediately.'
+            )) {
+                return;
             }
-        } catch (error) {
-            showToast('Error resetting period: ' + error.message, 'error');
-        }
+
+            try {
+                showToast('Resetting spending period...', 'info');
+                const result = await API.resetSpendingPeriod();
+                if (result.success) {
+                    showToast(`Period reset successful. Tx: ${formatAddress(result.transactionHash)}`, 'success');
+                    setTimeout(() => loadBillingAdminData(), 5000);
+                } else {
+                    showToast('Failed to reset period: ' + result.message, 'error');
+                }
+            } catch (error) {
+                showToast('Error resetting period: ' + error.message, 'error');
+            }
         });
     }
     
@@ -3010,15 +2992,7 @@ function setupButtonHandlers() {
                         </div>
                     `;
 
-                    const secretSection = data.privateKey
-                        ? buildPrivateKeyContent(
-                            data.privateKey,
-                            null, // Don't show address again, already shown above
-                            'Copy and store this private key in a secure manager. You will not be able to view it again unless you reveal it with the password.'
-                          )
-                        : '';
-                    
-                    await showInfoModal('Institutional Wallet Created', content + secretSection, true);
+                    await showInfoModal('Institutional Wallet Created', content, true);
                     
                     DashboardState.walletAddress = data.address;
                     DashboardState.inviteTokenApplied = false;

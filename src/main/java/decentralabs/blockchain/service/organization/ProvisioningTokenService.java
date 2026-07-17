@@ -115,12 +115,6 @@ public class ProvisioningTokenService {
                 .jti(security.jti())
                 .build();
 
-            // Ensure claim marketplace matches the trusted base
-            String claimBase = claims.get("marketplaceBaseUrl", String.class);
-            if (claimBase != null && !normalizeUrl(claimBase).equals(normalizeUrl(marketplaceBaseUrl))) {
-                throw new IllegalArgumentException("Marketplace base URL mismatch");
-            }
-
             return payload;
         } catch (ExpiredJwtException ex) {
             throw new IllegalArgumentException("Provisioning token expired", ex);
@@ -176,12 +170,6 @@ public class ProvisioningTokenService {
                 .consumerName(requireNonBlank(claims.get("consumerName", String.class), "consumer name"))
                 .jti(security.jti())
                 .build();
-
-            // Ensure claim marketplace matches the trusted base
-            String claimBase = claims.get("marketplaceBaseUrl", String.class);
-            if (claimBase != null && !normalizeUrl(claimBase).equals(normalizeUrl(marketplaceBaseUrl))) {
-                throw new IllegalArgumentException("Marketplace base URL mismatch");
-            }
 
             return payload;
         } catch (ExpiredJwtException ex) {
@@ -407,12 +395,7 @@ public class ProvisioningTokenService {
     }
 
     private String validateHttps(String url, String label) {
-        String value = requireNonBlank(url, label);
-        String normalized = normalizeUrl(value);
-        if (!normalized.startsWith("https://") && !normalized.startsWith("http://")) {
-            throw new IllegalArgumentException(label + " must start with http:// or https://");
-        }
-        return normalized;
+        return validateOrigin(url, label);
     }
 
     private String validateEmail(String email) {

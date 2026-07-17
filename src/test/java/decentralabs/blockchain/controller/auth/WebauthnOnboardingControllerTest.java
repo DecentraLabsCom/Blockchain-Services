@@ -9,6 +9,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 
 import decentralabs.blockchain.controller.TestSecurityConfig;
+import decentralabs.blockchain.config.WebConfig;
 import decentralabs.blockchain.dto.auth.WebauthnOnboardingCompleteRequest;
 import decentralabs.blockchain.dto.auth.WebauthnOnboardingCompleteResponse;
 import decentralabs.blockchain.dto.auth.WebauthnOnboardingOptionsRequest;
@@ -41,7 +42,7 @@ import org.springframework.web.server.ResponseStatusException;
 import org.springframework.http.HttpStatus;
 
 @SpringBootTest(classes = WebauthnOnboardingController.class)
-@Import(TestSecurityConfig.class)
+@Import({TestSecurityConfig.class, WebConfig.class})
 @TestPropertySource(properties = "webauthn.rp.id=localhost")
 class WebauthnOnboardingControllerTest {
 

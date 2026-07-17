@@ -1,5 +1,6 @@
 package decentralabs.blockchain.controller.auth;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import decentralabs.blockchain.dto.auth.UserKeyStatusResponse;
 import decentralabs.blockchain.dto.auth.WebauthnOnboardingCompleteRequest;
 import decentralabs.blockchain.dto.auth.WebauthnOnboardingCompleteResponse;
@@ -59,6 +60,7 @@ public class WebauthnOnboardingController {
     private final WebauthnOnboardingService onboardingService;
     private final WebauthnCredentialService credentialService;
     private final MarketplaceEndpointAuthService marketplaceEndpointAuthService;
+    private final ObjectMapper objectMapper;
 
     /**
      * Check if a user has registered WebAuthn credentials.
@@ -494,8 +496,7 @@ public class WebauthnOnboardingController {
 
     private String serializeOptionsToJson(WebauthnOnboardingOptionsResponse options) {
         try {
-            com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
-            return mapper.writeValueAsString(options);
+            return objectMapper.writeValueAsString(options);
         } catch (Exception e) {
             log.error("Failed to serialize options to JSON", e);
             throw new RuntimeException("Failed to serialize options", e);

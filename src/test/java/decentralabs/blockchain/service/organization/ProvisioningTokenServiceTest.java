@@ -202,6 +202,27 @@ class ProvisioningTokenServiceTest {
     }
 
     @Test
+    void validateHttps_rejectsRemoteHttpButAllowsLocalDevelopmentOrigin() {
+        assertThatThrownBy(() -> ReflectionTestUtils.invokeMethod(
+            service,
+            "validateHttps",
+            "http://marketplace.example.com",
+            "marketplace base URL"
+        ))
+            .isInstanceOf(IllegalArgumentException.class)
+            .hasMessageContaining("must use HTTPS");
+
+        String localOrigin = ReflectionTestUtils.invokeMethod(
+            service,
+            "validateHttps",
+            "http://localhost:8080/",
+            "marketplace base URL"
+        );
+
+        assertThat(localOrigin).isEqualTo("http://localhost:8080");
+    }
+
+    @Test
     void validateAndExtract_rejectsMalformedJwt() {
         assertThatThrownBy(() -> service.validateAndExtract("not-a-jwt", MARKETPLACE_URL, PUBLIC_URL))
             .isInstanceOf(IllegalArgumentException.class)
