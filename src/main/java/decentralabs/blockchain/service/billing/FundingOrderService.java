@@ -97,9 +97,8 @@ public class FundingOrderService {
         invoice = persistence.createFundingInvoice(invoice);
         persistence.updateFundingOrderStatus(orderId, FundingOrder.Status.INVOICED);
 
-        // codeql[java/log-injection]
-        log.info("Issued invoice {} for funding order {}",
-            LogSanitizer.sanitize(invoiceNumber), orderId);
+        log.info("Issued invoice for funding order (invoiceNumberPresent={})",
+            invoiceNumber != null && !invoiceNumber.isBlank());
         return invoice;
     }
 

@@ -38,22 +38,23 @@ public class BillingAdminController {
     public ResponseEntity<?> executeAdminOperation(
         @RequestBody InstitutionalAdminRequest request
     ) {
-        log.info("Received institutional admin request: {}", LogSanitizer.sanitize(request.getOperation()));
+        String operation = request.getOperation() == null ? "unknown" : request.getOperation().name();
+        log.info("Received institutional admin request: {}", operation);
         try {
             InstitutionalAdminResponse response = adminService.executeAdminOperation(request);
             if (response == null) {
                 log.error("Admin service returned null response for operation {}",
-                    LogSanitizer.sanitize(request.getOperation()));
+                    operation);
                 return ResponseEntity.internalServerError()
                     .body(InstitutionalAdminResponse.error("Internal server error: empty service response"));
             }
             if (response.isSuccess()) {
                 log.info("Admin operation {} completed successfully. Tx: {}",
-                    LogSanitizer.sanitize(request.getOperation()),
+                    operation,
                     LogSanitizer.maskIdentifier(response.getTransactionHash()));
                 return ResponseEntity.ok(response);
             }
-            log.warn("Admin operation {} failed: {}", LogSanitizer.sanitize(request.getOperation()),
+            log.warn("Admin operation {} failed: {}", operation,
                 LogSanitizer.sanitize(response.getMessage()));
             return ResponseEntity.badRequest().body(response);
         } catch (IdempotencyKeyPayloadMismatchException e) {

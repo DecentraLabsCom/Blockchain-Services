@@ -61,9 +61,7 @@ public class IntentController {
         if (intentService.findByRequestId(requestId).isPresent()) {
             intentExecutionService.processQueuedIntent(requestId);
         } else {
-            // codeql[java/log-injection]
-            log.info("Registration mined signal accepted before WebAuthn completion. requestId={}",
-                LogSanitizer.maskIdentifier(requestId));
+            log.info("Registration mined signal accepted before WebAuthn completion");
         }
         IntentAckResponse ack = new IntentAckResponse();
         ack.setRequestId(requestId);

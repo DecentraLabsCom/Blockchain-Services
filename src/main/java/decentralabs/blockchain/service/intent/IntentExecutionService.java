@@ -16,7 +16,6 @@ import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
 import decentralabs.blockchain.dto.intent.IntentStatus;
-import decentralabs.blockchain.util.LogSanitizer;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
@@ -41,9 +40,7 @@ public class IntentExecutionService {
         }
         Optional<IntentRecord> record = intentService.findByRequestId(requestId);
         if (record.isEmpty()) {
-            // codeql[java/log-injection]
-            log.warn("Intent {} not found for immediate execution",
-                LogSanitizer.maskIdentifier(requestId));
+            log.warn("Intent not found for immediate execution");
             return;
         }
         processRecord(record.get());

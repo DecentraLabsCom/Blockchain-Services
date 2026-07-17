@@ -112,7 +112,8 @@ public class ProviderSettlementService {
     @Transactional
     public void transitionInvoiceStatus(long invoiceId, ProviderInvoiceRecord.Status newStatus) {
         persistence.updateInvoiceStatus(invoiceId, newStatus);
-        log.info("Transitioned provider invoice {} to {}", invoiceId, LogSanitizer.sanitize(newStatus));
+        log.info("Transitioned provider invoice {} to {}", invoiceId,
+            newStatus == null ? "unknown" : newStatus.name());
     }
 
     public List<ProviderInvoiceRecord> findInvoicesByProvider(String providerAddress) {

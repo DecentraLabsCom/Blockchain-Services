@@ -6,7 +6,6 @@ import decentralabs.blockchain.service.wallet.InstitutionalWalletService;
 import decentralabs.blockchain.service.wallet.PendingNonceFastRawTransactionManager;
 import decentralabs.blockchain.service.wallet.WalletService;
 import decentralabs.blockchain.util.PucHashUtil;
-import decentralabs.blockchain.util.LogSanitizer;
 import java.io.IOException;
 import java.math.BigInteger;
 import java.util.List;
@@ -236,9 +235,7 @@ public class CheckInOnChainService {
         try {
             return transactionStateStrict(txHash);
         } catch (RuntimeException ex) {
-            // codeql[java/log-injection]
-            log.warn("Unable to inspect access authorization transaction {}: {}",
-                LogSanitizer.maskIdentifier(txHash), LogSanitizer.sanitize(ex.getMessage()));
+            log.warn("Unable to inspect access authorization transaction");
             return TransactionState.PENDING;
         }
     }

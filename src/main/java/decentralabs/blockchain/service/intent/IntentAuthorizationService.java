@@ -197,48 +197,29 @@ public class IntentAuthorizationService {
     public IntentAckResponse completeAuthorization(IntentAuthorizationCompleteRequest request) {
         AuthorizationSession session = pendingSessions.remove(request.getSessionId());
         if (session == null) {
-            // codeql[java/log-injection]
-            log.warn("Intent authorization completion rejected. sessionId={} reason=invalid_or_expired_session",
-                LogSanitizer.maskIdentifier(request.getSessionId()));
+            log.warn("Intent authorization completion rejected: invalid or expired session");
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Invalid or expired session");
         }
-        String requestId = session.getSubmission().getMeta().getRequestId();
-        // codeql[java/log-injection]
         log.info(
-            "Intent authorization completion received. sessionId={} requestId={} credentialAllowed={} credentialIdPresent={}",
-            LogSanitizer.maskIdentifier(request.getSessionId()),
-            LogSanitizer.maskIdentifier(requestId),
+            "Intent authorization completion received. credentialAllowed={} credentialIdPresent={}",
             session.getCredentialIds() != null && session.getCredentialIds().contains(request.getCredentialId()),
             request.getCredentialId() != null && !request.getCredentialId().isBlank()
         );
         if (session.isExpired()) {
-            // codeql[java/log-injection]
-            log.warn("Intent authorization completion rejected. sessionId={} requestId={} reason=session_expired",
-                LogSanitizer.maskIdentifier(request.getSessionId()),
-                LogSanitizer.maskIdentifier(requestId));
+            log.warn("Intent authorization completion rejected: session expired");
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Session expired");
         }
         if (request.getCredentialId() == null || request.getCredentialId().isBlank()) {
-            // codeql[java/log-injection]
-            log.warn("Intent authorization completion rejected. sessionId={} requestId={} reason=missing_webauthn_credential",
-                LogSanitizer.maskIdentifier(request.getSessionId()),
-                LogSanitizer.maskIdentifier(requestId));
+            log.warn("Intent authorization completion rejected: missing WebAuthn credential");
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "missing_webauthn_credential");
         }
         if (session.getCredentialIds() == null || session.getCredentialIds().isEmpty()) {
-            // codeql[java/log-injection]
-            log.warn("Intent authorization completion rejected. sessionId={} requestId={} reason=webauthn_credential_not_registered",
-                LogSanitizer.maskIdentifier(request.getSessionId()),
-                LogSanitizer.maskIdentifier(requestId));
+            log.warn("Intent authorization completion rejected: WebAuthn credential not registered");
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "webauthn_credential_not_registered");
         }
         if (!session.getCredentialIds().contains(request.getCredentialId())) {
-            // codeql[java/log-injection]
-            log.warn("Intent authorization completion rejected. sessionId={} requestId={} reason=webauthn_credential_not_allowed allowedCredentials={}",
-                LogSanitizer.maskIdentifier(request.getSessionId()),
-                LogSanitizer.maskIdentifier(requestId),
-                session.getCredentialIds().size()
-            );
+            log.warn("Intent authorization completion rejected: WebAuthn credential not allowed (allowedCredentials={})",
+                session.getCredentialIds().size());
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "webauthn_credential_not_allowed");
         }
 
@@ -253,35 +234,21 @@ public class IntentAuthorizationService {
             ack = intentService.processIntent(submission);
         } catch (ResponseStatusException ex) {
             storeResult(session, "FAILED", ex.getReason());
-            // codeql[java/log-injection]
-            log.warn("Intent authorization completion failed. sessionId={} requestId={} reason={}",
-                LogSanitizer.maskIdentifier(request.getSessionId()),
-                LogSanitizer.maskIdentifier(requestId),
-                LogSanitizer.sanitize(ex.getReason()));
+            log.warn("Intent authorization completion failed");
             throw ex;
         }
 
         if ("accepted".equalsIgnoreCase(ack.getStatus())) {
             storeResult(session, "SUCCESS", null);
-            // codeql[java/log-injection]
-            log.info("Intent authorization completion accepted. sessionId={} requestId={}",
-                LogSanitizer.maskIdentifier(request.getSessionId()),
-                LogSanitizer.maskIdentifier(requestId));
+            log.info("Intent authorization completion accepted");
             try {
                 intentExecutionService.processQueuedIntent(ack.getRequestId());
             } catch (Exception ex) {
-                // codeql[java/log-injection]
-                log.warn("Immediate intent execution failed for {}: {}",
-                    LogSanitizer.maskIdentifier(ack.getRequestId()),
-                    LogSanitizer.sanitize(ex.getMessage()), ex);
+                log.warn("Immediate intent execution failed");
             }
         } else {
             storeResult(session, "FAILED", ack.getReason());
-            // codeql[java/log-injection]
-            log.warn("Intent authorization completion rejected by intent service. sessionId={} requestId={} reason={}",
-                LogSanitizer.maskIdentifier(request.getSessionId()),
-                LogSanitizer.maskIdentifier(requestId),
-                LogSanitizer.sanitize(ack.getReason()));
+            log.warn("Intent authorization completion rejected by intent service");
         }
         return ack;
     }
@@ -322,20 +289,12 @@ public class IntentAuthorizationService {
             ).reversed())
             .toList();
         if (activeCredentials.isEmpty()) {
-            // codeql[java/log-injection]
-            log.warn(
-                "No active WebAuthn credentials for intent authorization. requestId={} resolvedPucHash={} totalCredentials={}",
-                LogSanitizer.maskIdentifier(meta.getRequestId()),
-                PucHashUtil.hashPuc(puc),
-                credentials.size()
-            );
+            log.warn("No active WebAuthn credentials for intent authorization. totalCredentials={}",
+                credentials.size());
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "webauthn_credential_not_registered");
         }
-        // codeql[java/log-injection]
         log.info(
-            "WebAuthn credentials selected for intent authorization. requestId={} resolvedPucHash={} activeCredentials={} totalCredentials={}",
-            LogSanitizer.maskIdentifier(meta.getRequestId()),
-            PucHashUtil.hashPuc(puc),
+            "WebAuthn credentials selected for intent authorization. activeCredentials={} totalCredentials={}",
             activeCredentials.size(),
             credentials.size()
         );
@@ -354,22 +313,11 @@ public class IntentAuthorizationService {
             );
             String normalized = PucNormalizer.normalize(samlUser);
             if (normalized != null && !normalized.isBlank()) {
-                // codeql[java/log-injection]
-                log.info(
-                    "Resolved intent authorization PUC. requestId={} stableUserIdMode={} samlUserHash={} resolvedPucHash={}",
-                    LogSanitizer.maskIdentifier(submission.getMeta().getRequestId()),
-                    LogSanitizer.sanitize(submission.getStableUserIdMode()),
-                    PucHashUtil.hashPuc(samlAttributes.get("puc")),
-                    PucHashUtil.hashPuc(normalized)
-                );
+                log.info("Resolved intent authorization PUC");
                 return normalized;
             }
         } catch (Exception ex) {
-            // codeql[java/log-injection]
-            log.warn("Invalid SAML while resolving intent authorization PUC. requestId={} reason={}",
-                submission.getMeta() == null ? "" : LogSanitizer.maskIdentifier(submission.getMeta().getRequestId()),
-                LogSanitizer.sanitize(ex.getMessage())
-            );
+            log.warn("Invalid SAML while resolving intent authorization PUC");
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "invalid_saml", ex);
         }
         return null;

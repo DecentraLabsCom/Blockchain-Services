@@ -2,7 +2,6 @@ package decentralabs.blockchain.service.organization;
 
 import decentralabs.blockchain.service.billing.InstitutionalAdminService;
 import decentralabs.blockchain.service.wallet.InstitutionalWalletService;
-import decentralabs.blockchain.util.LogSanitizer;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -264,26 +263,20 @@ public class InstitutionRegistrationService {
             );
 
             if (response.getStatusCode() == HttpStatus.CREATED || response.getStatusCode() == HttpStatus.OK) {
-                // codeql[java/log-injection]
-                log.info("{} registration successful: {}",
-                    LogSanitizer.sanitize(roleLabel), LogSanitizer.sanitize(response.getBody()));
+                log.info("Institution registration successful");
             } else {
-                // codeql[java/log-injection]
-                log.warn("{} registration returned unexpected status: {} - {}", 
-                    LogSanitizer.sanitize(roleLabel), response.getStatusCode(),
-                    LogSanitizer.sanitize(response.getBody()));
+                log.warn("Institution registration returned unexpected status");
             }
         } catch (HttpClientErrorException e) {
             if (e.getStatusCode() == HttpStatus.UNAUTHORIZED) {
-                log.error("{} registration failed: Unauthorized (invalid provisioning token)", roleLabel);
+                log.error("Institution registration failed: unauthorized provisioning token");
                 throw new RuntimeException("Invalid provisioning token");
             } else {
-                log.error("{} registration failed with status {}: {}", 
-                    roleLabel, e.getStatusCode(), e.getResponseBodyAsString());
+                log.error("Institution registration failed with client error status");
                 throw e;
             }
         } catch (Exception e) {
-            log.error("{} registration request failed: {}", roleLabel, e.getMessage());
+            log.error("Institution registration request failed");
             throw new RuntimeException("Failed to communicate with marketplace", e);
         }
     }

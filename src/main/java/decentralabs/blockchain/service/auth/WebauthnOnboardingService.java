@@ -270,9 +270,7 @@ public class WebauthnOnboardingService {
         );
         pendingSessions.put(sessionId, session);
 
-        // codeql[java/log-injection]
-        log.info("WebAuthn onboarding session created. SessionId: {}, Institution: {}",
-            LogSanitizer.maskIdentifier(sessionId), LogSanitizer.sanitize(institutionId));
+        log.info("WebAuthn onboarding session created");
 
         // Build the onboarding URL where the SP should redirect the browser
         String onboardingUrl = buildOnboardingUrl(sessionId);
@@ -750,8 +748,7 @@ public class WebauthnOnboardingService {
             .anyMatch(candidate -> candidate.equalsIgnoreCase(origin));
 
         if (!allowed) {
-            log.warn("Origin {} not in allowed list: {}", LogSanitizer.sanitize(origin),
-                LogSanitizer.sanitize(allowedOrigins));
+            log.warn("WebAuthn origin is not in the allowed list");
         }
 
         return allowed;
@@ -806,7 +803,7 @@ public class WebauthnOnboardingService {
         }
 
         List<String> result = new ArrayList<>(origins);
-        log.info("WebAuthn allowed origins (auto+merged): {}", LogSanitizer.sanitize(result));
+        log.info("WebAuthn allowed origins configured. count={}", result.size());
         return result;
     }
 
@@ -902,9 +899,7 @@ public class WebauthnOnboardingService {
             
             String assertionPuc = samlValidationService.resolveStableUserId(attributes, stableUserIdMode, null);
             if (assertionPuc != null && !assertionPuc.isBlank() && !assertionPuc.equals(expectedPuc)) {
-                // codeql[java/log-injection]
-                log.warn("SAML assertion PUC '{}' does not match expected PUC '{}'",
-                    LogSanitizer.maskIdentifier(assertionPuc), LogSanitizer.maskIdentifier(expectedPuc));
+                log.warn("SAML assertion PUC does not match expected PUC");
                 throw new ResponseStatusException(HttpStatus.FORBIDDEN, "saml_puc_mismatch");
             }
             String assertionInstitutionId = attributes.get("institutionId");
@@ -913,29 +908,22 @@ public class WebauthnOnboardingService {
                 && expectedInstitutionId != null
                 && !expectedInstitutionId.isBlank()
                 && !assertionInstitutionId.equals(expectedInstitutionId)) {
-                // codeql[java/log-injection]
-                log.warn(
-                    "SAML assertion institutionId '{}' does not match expected institutionId '{}'",
-                    LogSanitizer.sanitize(assertionInstitutionId),
-                    LogSanitizer.sanitize(expectedInstitutionId)
-                );
+                log.warn("SAML assertion institutionId does not match expected institutionId");
             }
 
-            // codeql[java/log-injection]
-            log.debug("SAML assertion validated successfully for PUC: {}",
-                LogSanitizer.maskIdentifier(expectedPuc));
+            log.debug("SAML assertion validated successfully");
             return attributes;
 
         } catch (IllegalArgumentException e) {
-            log.error("Failed to decode SAML assertion: {}", LogSanitizer.sanitize(e.getMessage()));
+            log.error("Failed to decode SAML assertion");
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Invalid SAML assertion encoding");
         } catch (SecurityException e) {
-            log.error("SAML assertion validation failed: {}", LogSanitizer.sanitize(e.getMessage()));
+            log.error("SAML assertion validation failed");
             throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Invalid SAML assertion: " + e.getMessage());
         } catch (ResponseStatusException e) {
             throw e;
         } catch (Exception e) {
-            log.error("SAML assertion validation failed", e);
+            log.error("SAML assertion validation failed");
             throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Failed to validate SAML assertion: " + e.getMessage());
         }
     }

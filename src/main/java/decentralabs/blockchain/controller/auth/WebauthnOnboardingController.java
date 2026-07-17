@@ -9,7 +9,6 @@ import decentralabs.blockchain.dto.auth.WebauthnOnboardingStatusResponse;
 import decentralabs.blockchain.service.auth.MarketplaceEndpointAuthService;
 import decentralabs.blockchain.service.auth.WebauthnCredentialService;
 import decentralabs.blockchain.service.auth.WebauthnOnboardingService;
-import decentralabs.blockchain.util.LogSanitizer;
 import jakarta.validation.Valid;
 import java.net.URI;
 import java.time.Instant;
@@ -81,9 +80,9 @@ public class WebauthnOnboardingController {
             "onboarding:webauthn"
         );
         enforceUserScope(claims, stableUserId);
-        // codeql[java/log-injection]
-        log.debug("Key status check for user: {}, institution: {}",
-            LogSanitizer.maskIdentifier(stableUserId), LogSanitizer.sanitize(institutionId));
+        log.debug("Key status check. stableUserIdPresent={} institutionIdPresent={}",
+            stableUserId != null && !stableUserId.isBlank(),
+            institutionId != null && !institutionId.isBlank());
         
         WebauthnCredentialService.KeyStatus keyStatus = credentialService.getKeyStatus(stableUserId);
         
@@ -122,9 +121,8 @@ public class WebauthnOnboardingController {
             "onboarding:webauthn"
         );
         enforceUserScope(claims, request.getStableUserId());
-        // codeql[java/log-injection]
-        log.debug("WebAuthn options requested for institution: {}",
-            LogSanitizer.sanitize(request.getInstitutionId()));
+        log.debug("WebAuthn options requested. institutionIdPresent={}",
+            request.getInstitutionId() != null && !request.getInstitutionId().isBlank());
         WebauthnOnboardingOptionsResponse response = onboardingService.generateOptions(request);
         return ResponseEntity.ok(response);
     }
@@ -141,9 +139,8 @@ public class WebauthnOnboardingController {
     @PostMapping("/complete")
     public ResponseEntity<WebauthnOnboardingCompleteResponse> complete(
             @Valid @RequestBody WebauthnOnboardingCompleteRequest request) {
-        // codeql[java/log-injection]
-        log.debug("WebAuthn attestation received for session: {}",
-            LogSanitizer.maskIdentifier(request.getSessionId()));
+        log.debug("WebAuthn attestation received. sessionIdPresent={}",
+            request.getSessionId() != null && !request.getSessionId().isBlank());
         WebauthnOnboardingCompleteResponse response = onboardingService.completeOnboarding(request);
         return ResponseEntity.ok(response);
     }
@@ -168,8 +165,7 @@ public class WebauthnOnboardingController {
             authorizationHeader,
             "onboarding:webauthn"
         );
-        // codeql[java/log-injection]
-        log.debug("WebAuthn status check for session: {}", LogSanitizer.maskIdentifier(sessionId));
+        log.debug("WebAuthn status check");
         WebauthnOnboardingStatusResponse response = onboardingService.getStatus(sessionId);
         enforceUserScope(claims, response.getStableUserId());
         return ResponseEntity.ok(response);
@@ -191,9 +187,8 @@ public class WebauthnOnboardingController {
     public ResponseEntity<String> getCeremonyPage(
             @PathVariable String sessionId,
             @RequestParam(value = "parentOrigin", required = false) String parentOrigin) {
-        // codeql[java/log-injection]
-        log.debug("WebAuthn ceremony page requested for session: {}",
-            LogSanitizer.maskIdentifier(sessionId));
+        log.debug("WebAuthn ceremony page requested. sessionIdPresent={}",
+            sessionId != null && !sessionId.isBlank());
         
         // Validate session exists and is not expired
         WebauthnOnboardingOptionsResponse options = onboardingService.getSessionOptions(sessionId);
@@ -492,8 +487,7 @@ public class WebauthnOnboardingController {
             }
             return scheme + "://" + host;
         } catch (Exception ex) {
-            // codeql[java/log-injection]
-            log.debug("Invalid parent origin '{}'", LogSanitizer.sanitize(candidate), ex);
+            log.debug("Invalid parent origin");
             return null;
         }
     }

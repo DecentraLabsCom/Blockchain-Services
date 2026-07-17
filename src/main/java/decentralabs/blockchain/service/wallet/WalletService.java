@@ -1331,9 +1331,7 @@ public class WalletService {
 
         String oldNetwork = activeNetwork;
         activeNetwork = networkId;
-        // codeql[java/log-injection]
-        log.info("Switched network from {} to {}",
-            LogSanitizer.sanitize(oldNetwork), LogSanitizer.sanitize(networkId));
+        log.info("Switched network");
         
         // Publish event to notify other components
         eventPublisher.publishEvent(new NetworkSwitchEvent(this, oldNetwork, networkId));

@@ -332,9 +332,7 @@ public class LabAdminService {
             String detected = Files.probeContentType(target);
             return detected != null ? detected : MediaType.APPLICATION_OCTET_STREAM_VALUE;
         } catch (Exception ignored) {
-            // codeql[java/log-injection]
-            log.debug("Unable to detect content type for {}",
-                LogSanitizer.sanitize(relativePath), ignored);
+            log.debug("Unable to detect content type for requested lab content");
             return MediaType.APPLICATION_OCTET_STREAM_VALUE;
         }
     }

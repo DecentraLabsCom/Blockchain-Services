@@ -30,10 +30,10 @@ public final class LogSanitizer {
     }
 
     /**
-     * Sanitizes enum and other value-object fields without requiring callers to
-     * interpolate them before the control-character check.
+     * Sanitizes enum and other value-object fields without overloading the
+     * string-specific sanitizer.
      */
-    public static String sanitize(Object value) {
+    public static String sanitizeValue(Object value) {
         return sanitize(value == null ? null : String.valueOf(value));
     }
 
@@ -61,7 +61,7 @@ public final class LogSanitizer {
     }
 
     /** Masks an identifier represented by a value object. */
-    public static String maskIdentifier(Object identifier) {
+    public static String maskIdentifierValue(Object identifier) {
         return maskIdentifier(identifier == null ? null : String.valueOf(identifier));
     }
 
