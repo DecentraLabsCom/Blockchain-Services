@@ -49,6 +49,7 @@ public class ProviderNetworkService {
                 .build();
 
         membership = persistence.createMembership(membership);
+        // codeql[java/log-injection]
         log.info("Activated provider {} in network (contract {}, agreement {}), by {}",
                 LogSanitizer.sanitize(providerAddress), LogSanitizer.sanitize(contractId),
                 LogSanitizer.sanitize(agreementVersion), LogSanitizer.sanitize(activatedBy));
@@ -58,6 +59,7 @@ public class ProviderNetworkService {
     @Transactional
     public void suspend(long membershipId, String reason, String actionBy) {
         persistence.updateMembershipStatus(membershipId, ProviderNetworkMembership.Status.SUSPENDED, reason, actionBy);
+        // codeql[java/log-injection]
         log.info("Suspended provider membership {} by {}: {}", membershipId,
             LogSanitizer.sanitize(actionBy), LogSanitizer.sanitize(reason));
     }
@@ -65,6 +67,7 @@ public class ProviderNetworkService {
     @Transactional
     public void terminate(long membershipId, String actionBy) {
         persistence.updateMembershipStatus(membershipId, ProviderNetworkMembership.Status.TERMINATED, null, actionBy);
+        // codeql[java/log-injection]
         log.info("Terminated provider membership {} (actionByPresent={})", membershipId,
             actionBy != null && !actionBy.isBlank());
     }

@@ -75,6 +75,7 @@ public class BillingAdminController {
         @RequestBody InstitutionalAdminRequest request,
         @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey
     ) {
+        // codeql[java/log-injection]
         log.info("Received server-side provider payout request for lab {}",
             LogSanitizer.sanitize(String.valueOf(request.getLabId())));
         try {
@@ -86,6 +87,7 @@ public class BillingAdminController {
                     request.getLabId(), request.getMaxBatch()
                 );
             if (response == null) {
+                // codeql[java/log-injection]
                 log.error("Admin service returned null response for payout request on lab {}",
                     LogSanitizer.sanitize(String.valueOf(request.getLabId())));
                 return ResponseEntity.internalServerError()

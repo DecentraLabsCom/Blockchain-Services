@@ -5,6 +5,7 @@ import decentralabs.blockchain.dto.auth.InstitutionalCheckInRequest;
 import decentralabs.blockchain.dto.auth.InstitutionalCheckInStatusRequest;
 import decentralabs.blockchain.service.wallet.BlockchainBookingService;
 import decentralabs.blockchain.service.wallet.InstitutionalWalletService;
+import decentralabs.blockchain.util.LogSanitizer;
 import java.nio.charset.StandardCharsets;
 import java.math.BigInteger;
 import java.time.Instant;
@@ -126,7 +127,8 @@ public class InstitutionalCheckInService {
             try {
                 activeChainId = checkInOnChainService.connectedChainId();
             } catch (RuntimeException ex) {
-                log.warn("Interactive check-in deferred because active chain context is unavailable: {}", ex.getMessage());
+                log.warn("Interactive check-in deferred because active chain context is unavailable: {}",
+                    LogSanitizer.sanitize(ex.getMessage()));
                 return queuedResponse(
                     reservationKey, configuredSigner, record.txHash(), "CHECKIN_CONTEXT_PENDING"
                 );
@@ -496,10 +498,12 @@ public class InstitutionalCheckInService {
         }
         String backendUrl = directoryService.resolveOrganizationBackendUrl(organization);
         if (backendUrl == null || backendUrl.isBlank()) {
-            throw new IllegalStateException("No institutional backend registered for organization " + organization);
+            throw new IllegalStateException("No institutional backend registered for organization "
+                + LogSanitizer.sanitize(organization));
         }
         request.setPayerInstitutionWallet(institutionWallet);
-        log.info("Delegating institutional check-in for organization {} to registered backend", organization);
+        log.info("Delegating institutional check-in for organization {} to registered backend",
+            LogSanitizer.sanitize(organization));
         return remoteCheckInClient.submit(backendUrl, request);
     }
 

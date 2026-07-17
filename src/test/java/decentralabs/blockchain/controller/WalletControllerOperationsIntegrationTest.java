@@ -58,7 +58,7 @@ class WalletControllerOperationsIntegrationTest {
     public void setup() {
         this.objectMapper = new ObjectMapper();
         this.mockMvc = MockMvcBuilders.standaloneSetup(this.wac.getBean(WalletController.class))
-            // register the security filter from the test context so CSRF and security work
+            // register the security filter from the test context so security works
             .addFilters(this.wac.getBean("springSecurityFilterChain", jakarta.servlet.Filter.class))
             .setMessageConverters(new decentralabs.blockchain.config.JacksonHttpMessageConverter(this.objectMapper))
             .setControllerAdvice(new decentralabs.blockchain.exception.GlobalExceptionHandler())
@@ -133,7 +133,7 @@ class WalletControllerOperationsIntegrationTest {
             .thenReturn(response);
 
         mockMvc.perform(post("/wallet/import")
-                .with(csrf())
+                .with(csrf().asHeader())
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(objectMapper.writeValueAsString(request)))
             .andExpect(status().isOk())
@@ -203,7 +203,7 @@ class WalletControllerOperationsIntegrationTest {
         when(walletService.switchNetwork(eq("mainnet"))).thenReturn(response);
 
         mockMvc.perform(post("/wallet/switch-network")
-                .with(csrf())
+                .with(csrf().asHeader())
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(objectMapper.writeValueAsString(request)))
             .andExpect(status().isOk())

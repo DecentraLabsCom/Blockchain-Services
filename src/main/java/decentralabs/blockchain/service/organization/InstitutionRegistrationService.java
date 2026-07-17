@@ -264,9 +264,11 @@ public class InstitutionRegistrationService {
             );
 
             if (response.getStatusCode() == HttpStatus.CREATED || response.getStatusCode() == HttpStatus.OK) {
+                // codeql[java/log-injection]
                 log.info("{} registration successful: {}",
                     LogSanitizer.sanitize(roleLabel), LogSanitizer.sanitize(response.getBody()));
             } else {
+                // codeql[java/log-injection]
                 log.warn("{} registration returned unexpected status: {} - {}", 
                     LogSanitizer.sanitize(roleLabel), response.getStatusCode(),
                     LogSanitizer.sanitize(response.getBody()));

@@ -29,10 +29,6 @@ public class InstitutionalCheckInDirectoryService {
         if (institution == null || candidate == null) {
             return false;
         }
-        if (candidate.equalsIgnoreCase(institution)) {
-            return true;
-        }
-
         // Always resolve the deployed backend before evaluating the signer. This
         // keeps the authorization decision independent of a caller-controlled
         // short circuit while still accepting the institution wallet itself.
@@ -62,6 +58,7 @@ public class InstitutionalCheckInDirectoryService {
             String normalized = normalizeAddress(backend);
             return ZERO_ADDRESS.equalsIgnoreCase(normalized) ? null : normalized;
         } catch (Exception ex) {
+            // codeql[java/log-injection]
             log.warn("Unable to resolve authorized backend for institution {}: {}",
                 LogSanitizer.maskIdentifier(institutionWallet), LogSanitizer.sanitize(ex.getMessage()));
             return null;

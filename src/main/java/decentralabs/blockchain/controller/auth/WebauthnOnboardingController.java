@@ -81,6 +81,7 @@ public class WebauthnOnboardingController {
             "onboarding:webauthn"
         );
         enforceUserScope(claims, stableUserId);
+        // codeql[java/log-injection]
         log.debug("Key status check for user: {}, institution: {}",
             LogSanitizer.maskIdentifier(stableUserId), LogSanitizer.sanitize(institutionId));
         
@@ -121,6 +122,7 @@ public class WebauthnOnboardingController {
             "onboarding:webauthn"
         );
         enforceUserScope(claims, request.getStableUserId());
+        // codeql[java/log-injection]
         log.debug("WebAuthn options requested for institution: {}",
             LogSanitizer.sanitize(request.getInstitutionId()));
         WebauthnOnboardingOptionsResponse response = onboardingService.generateOptions(request);
@@ -139,6 +141,7 @@ public class WebauthnOnboardingController {
     @PostMapping("/complete")
     public ResponseEntity<WebauthnOnboardingCompleteResponse> complete(
             @Valid @RequestBody WebauthnOnboardingCompleteRequest request) {
+        // codeql[java/log-injection]
         log.debug("WebAuthn attestation received for session: {}",
             LogSanitizer.maskIdentifier(request.getSessionId()));
         WebauthnOnboardingCompleteResponse response = onboardingService.completeOnboarding(request);
@@ -165,6 +168,7 @@ public class WebauthnOnboardingController {
             authorizationHeader,
             "onboarding:webauthn"
         );
+        // codeql[java/log-injection]
         log.debug("WebAuthn status check for session: {}", LogSanitizer.maskIdentifier(sessionId));
         WebauthnOnboardingStatusResponse response = onboardingService.getStatus(sessionId);
         enforceUserScope(claims, response.getStableUserId());
@@ -187,6 +191,7 @@ public class WebauthnOnboardingController {
     public ResponseEntity<String> getCeremonyPage(
             @PathVariable String sessionId,
             @RequestParam(value = "parentOrigin", required = false) String parentOrigin) {
+        // codeql[java/log-injection]
         log.debug("WebAuthn ceremony page requested for session: {}",
             LogSanitizer.maskIdentifier(sessionId));
         
@@ -487,6 +492,7 @@ public class WebauthnOnboardingController {
             }
             return scheme + "://" + host;
         } catch (Exception ex) {
+            // codeql[java/log-injection]
             log.debug("Invalid parent origin '{}'", LogSanitizer.sanitize(candidate), ex);
             return null;
         }

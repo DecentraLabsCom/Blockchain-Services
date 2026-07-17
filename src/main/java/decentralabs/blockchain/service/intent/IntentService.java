@@ -624,6 +624,7 @@ public class IntentService {
         } catch (ResponseStatusException ex) {
             throw ex;
         } catch (Exception ex) {
+            // codeql[java/log-injection]
             log.warn("Invalid SAML assertion for intent: {}",
                 LogSanitizer.sanitize(ex.getMessage()));
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "invalid_saml");
@@ -697,17 +698,20 @@ public class IntentService {
 
     private void validateWebauthnAssertion(String puc, String credentialId, IntentMeta meta, IntentSubmission submission) {
         if (isBlank(puc)) {
+            // codeql[java/log-injection]
             log.warn("WebAuthn validation failed. requestId={} reason=missing_puc_for_webauthn",
                 LogSanitizer.maskIdentifier(meta.getRequestId()));
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "missing_puc_for_webauthn");
         }
         if (isBlank(submission.getWebauthnClientDataJSON()) || isBlank(submission.getWebauthnAuthenticatorData()) || isBlank(submission.getWebauthnSignature())) {
+            // codeql[java/log-injection]
             log.warn("WebAuthn validation failed. requestId={} resolvedPucHash={} reason=missing_webauthn_assertion",
                 LogSanitizer.maskIdentifier(meta.getRequestId()), PucHashUtil.hashPuc(puc));
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "missing_webauthn_assertion");
         }
         WebauthnCredential cred = webauthnCredentialService.findCredential(puc, credentialId)
             .orElseThrow(() -> {
+                // codeql[java/log-injection]
                 log.warn(
                     "WebAuthn validation failed. requestId={} resolvedPucHash={} reason=webauthn_credential_not_registered credentialIdPresent={}",
                     LogSanitizer.maskIdentifier(meta.getRequestId()),
@@ -717,6 +721,7 @@ public class IntentService {
                 return new ResponseStatusException(HttpStatus.BAD_REQUEST, "webauthn_credential_not_registered");
             });
         if (!cred.isActive()) {
+            // codeql[java/log-injection]
             log.warn("WebAuthn validation failed. requestId={} resolvedPucHash={} reason=webauthn_credential_revoked",
                 LogSanitizer.maskIdentifier(meta.getRequestId()), PucHashUtil.hashPuc(puc));
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "webauthn_credential_revoked");

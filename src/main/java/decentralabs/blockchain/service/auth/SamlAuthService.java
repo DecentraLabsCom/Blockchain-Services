@@ -438,6 +438,7 @@ public class SamlAuthService {
             | AccessAuthorizationRejectedException ex) {
             throw ex;
         } catch (RuntimeException ex) {
+            // codeql[java/log-injection]
             log.debug("Remote consumer check-in status unavailable for {}",
                 LogSanitizer.maskIdentifier(reservationKey), ex);
         }

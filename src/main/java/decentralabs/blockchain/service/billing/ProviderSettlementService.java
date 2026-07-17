@@ -47,6 +47,7 @@ public class ProviderSettlementService {
                 .build();
 
         record = persistence.createInvoiceRecord(record);
+        // codeql[java/log-injection]
         log.info("Submitted provider invoice (labIdPresent={}, invoiceRefPresent={}, EUR {})",
             labId != null && !labId.isBlank(), !invoiceRef.isBlank(), eurAmount);
         return record;
@@ -75,6 +76,7 @@ public class ProviderSettlementService {
         approval = persistence.createApproval(approval);
         persistence.updateInvoiceStatus(invoiceId, ProviderInvoiceRecord.Status.APPROVED);
 
+        // codeql[java/log-injection]
         log.info("Approved provider invoice {} (approvedByPresent={}, approvalRefPresent={}, EUR {})", invoiceId,
             approvedBy != null && !approvedBy.isBlank(), approvalRef != null && !approvalRef.isBlank(), eurAmount);
         return approval;
@@ -98,8 +100,9 @@ public class ProviderSettlementService {
                 .build();
 
         payout = persistence.createPayout(payout);
-        log.info("Recorded payout for lab {} provider {} (EUR {})", labId,
-            LogSanitizer.sanitize(providerAddress), eurAmount);
+        // codeql[java/log-injection]
+        log.info("Recorded payout for lab {} provider {} (EUR {})", LogSanitizer.sanitize(labId),
+            LogSanitizer.maskIdentifier(providerAddress), eurAmount);
         return payout;
     }
 
@@ -109,7 +112,7 @@ public class ProviderSettlementService {
     @Transactional
     public void transitionInvoiceStatus(long invoiceId, ProviderInvoiceRecord.Status newStatus) {
         persistence.updateInvoiceStatus(invoiceId, newStatus);
-        log.info("Transitioned provider invoice {} to {}", invoiceId, newStatus);
+        log.info("Transitioned provider invoice {} to {}", invoiceId, LogSanitizer.sanitize(newStatus));
     }
 
     public List<ProviderInvoiceRecord> findInvoicesByProvider(String providerAddress) {

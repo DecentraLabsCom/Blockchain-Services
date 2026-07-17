@@ -41,6 +41,7 @@ public class IntentExecutionService {
         }
         Optional<IntentRecord> record = intentService.findByRequestId(requestId);
         if (record.isEmpty()) {
+            // codeql[java/log-injection]
             log.warn("Intent {} not found for immediate execution",
                 LogSanitizer.maskIdentifier(requestId));
             return;

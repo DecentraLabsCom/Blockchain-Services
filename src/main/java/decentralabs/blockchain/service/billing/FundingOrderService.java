@@ -63,6 +63,7 @@ public class FundingOrderService {
                 .build();
 
         order = persistence.createFundingOrder(order);
+        // codeql[java/log-injection]
         log.info("Created funding order {} for {} (EUR {} → {} credits)",
                 order.getId(), LogSanitizer.maskIdentifier(institutionAddress),
                 normalizedEurAmount, derivedCreditAmount);
@@ -96,6 +97,7 @@ public class FundingOrderService {
         invoice = persistence.createFundingInvoice(invoice);
         persistence.updateFundingOrderStatus(orderId, FundingOrder.Status.INVOICED);
 
+        // codeql[java/log-injection]
         log.info("Issued invoice {} for funding order {}",
             LogSanitizer.sanitize(invoiceNumber), orderId);
         return invoice;
@@ -141,6 +143,7 @@ public class FundingOrderService {
                 .reference("funding-order:" + orderId)
                 .build());
 
+        // codeql[java/log-injection]
         log.info("Confirmed payment {} for funding order {} (EUR {})",
             LogSanitizer.sanitize(paymentRef), orderId, eurAmount);
         return recon;

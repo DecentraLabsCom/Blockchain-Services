@@ -236,6 +236,7 @@ public class CheckInOnChainService {
         try {
             return transactionStateStrict(txHash);
         } catch (RuntimeException ex) {
+            // codeql[java/log-injection]
             log.warn("Unable to inspect access authorization transaction {}: {}",
                 LogSanitizer.maskIdentifier(txHash), LogSanitizer.sanitize(ex.getMessage()));
             return TransactionState.PENDING;

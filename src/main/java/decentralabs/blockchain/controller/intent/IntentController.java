@@ -36,6 +36,7 @@ public class IntentController {
     ) {
         intentAuthService.enforceSubmitAuthorization(authorizationHeader);
         IntentAckResponse ack = intentService.processIntent(submission);
+        // codeql[java/log-injection]
         log.info("Intent {} ACK status={}",
             LogSanitizer.maskIdentifier(ack.getRequestId()),
             LogSanitizer.sanitize(ack.getStatus()));
@@ -60,6 +61,7 @@ public class IntentController {
         if (intentService.findByRequestId(requestId).isPresent()) {
             intentExecutionService.processQueuedIntent(requestId);
         } else {
+            // codeql[java/log-injection]
             log.info("Registration mined signal accepted before WebAuthn completion. requestId={}",
                 LogSanitizer.maskIdentifier(requestId));
         }

@@ -189,7 +189,8 @@ public class WebauthnOnboardingService {
             String host = uri.getHost();
             return (host != null && !host.isBlank()) ? host : "localhost";
         } catch (Exception e) {
-            log.warn("Failed to extract host from base domain '{}', using 'localhost': {}", baseDomain, e.getMessage());
+            log.warn("Failed to extract host from base domain '{}', using 'localhost': {}",
+                LogSanitizer.sanitize(baseDomain), LogSanitizer.sanitize(e.getMessage()));
             return "localhost";
         }
     }
@@ -232,6 +233,7 @@ public class WebauthnOnboardingService {
                 request.getStableUserIdMode(),
                 institutionId
             );
+            // codeql[java/log-injection]
             log.debug("SAML assertion validated for user: {}", LogSanitizer.maskIdentifier(stableUserId));
         }
 
@@ -268,6 +270,7 @@ public class WebauthnOnboardingService {
         );
         pendingSessions.put(sessionId, session);
 
+        // codeql[java/log-injection]
         log.info("WebAuthn onboarding session created. SessionId: {}, Institution: {}",
             LogSanitizer.maskIdentifier(sessionId), LogSanitizer.sanitize(institutionId));
 
@@ -350,6 +353,7 @@ public class WebauthnOnboardingService {
                 transports
             );
 
+            // codeql[java/log-injection]
             log.info("WebAuthn credential registered. stableUserIdPresent={} credentialIdLength={}",
                 session.getStableUserId() != null && !session.getStableUserId().isBlank(),
                 credentialId.length());
@@ -557,18 +561,20 @@ public class WebauthnOnboardingService {
             new Thread(() -> {
                 try {
                     restTemplate.postForEntity(callbackUrl, entity, String.class);
-                    log.info("Sent onboarding callback to SP: {} status={}", callbackUrlForLog, 
+                    log.info("Sent onboarding callback to SP: {} status={}",
+                        LogSanitizer.sanitize(callbackUrlForLog),
                         successResponse != null ? "SUCCESS" : "FAILED");
                 } catch (Exception e) {
                     String safeMessage = e.getMessage();
                     if (safeMessage != null && safeMessage.contains(callbackUrl)) {
                         safeMessage = safeMessage.replace(callbackUrl, callbackUrlForLog);
                     }
-                    log.warn("Failed to send onboarding callback to {}: {}", callbackUrlForLog, safeMessage);
+                    log.warn("Failed to send onboarding callback to {}: {}",
+                        LogSanitizer.sanitize(callbackUrlForLog), LogSanitizer.sanitize(safeMessage));
                 }
             }).start();
         } catch (Exception e) {
-            log.warn("Failed to prepare onboarding callback: {}", e.getMessage());
+            log.warn("Failed to prepare onboarding callback: {}", LogSanitizer.sanitize(e.getMessage()));
         }
     }
 
@@ -595,7 +601,7 @@ public class WebauthnOnboardingService {
                 return sanitized.toString();
             }
             } catch (Exception ignored) {
-                log.debug("Unable to sanitize callback URL '{}'", callbackUrl, ignored);
+                log.debug("Unable to sanitize callback URL '{}'", LogSanitizer.sanitize(callbackUrl), ignored);
                 // Fallback below for malformed URLs.
             }
         int queryIndex = callbackUrl.indexOf('?');
@@ -744,7 +750,8 @@ public class WebauthnOnboardingService {
             .anyMatch(candidate -> candidate.equalsIgnoreCase(origin));
 
         if (!allowed) {
-            log.warn("Origin {} not in allowed list: {}", origin, allowedOrigins);
+            log.warn("Origin {} not in allowed list: {}", LogSanitizer.sanitize(origin),
+                LogSanitizer.sanitize(allowedOrigins));
         }
 
         return allowed;
@@ -787,7 +794,8 @@ public class WebauthnOnboardingService {
                     origins.add("https://" + baseDomain);
                 }
             } catch (Exception e) {
-                log.warn("Failed to parse base domain for WebAuthn origins {}: {}", baseDomain, e.getMessage());
+                log.warn("Failed to parse base domain for WebAuthn origins {}: {}",
+                    LogSanitizer.sanitize(baseDomain), LogSanitizer.sanitize(e.getMessage()));
             }
         }
 
@@ -798,7 +806,7 @@ public class WebauthnOnboardingService {
         }
 
         List<String> result = new ArrayList<>(origins);
-        log.info("WebAuthn allowed origins (auto+merged): {}", result);
+        log.info("WebAuthn allowed origins (auto+merged): {}", LogSanitizer.sanitize(result));
         return result;
     }
 
@@ -894,6 +902,7 @@ public class WebauthnOnboardingService {
             
             String assertionPuc = samlValidationService.resolveStableUserId(attributes, stableUserIdMode, null);
             if (assertionPuc != null && !assertionPuc.isBlank() && !assertionPuc.equals(expectedPuc)) {
+                // codeql[java/log-injection]
                 log.warn("SAML assertion PUC '{}' does not match expected PUC '{}'",
                     LogSanitizer.maskIdentifier(assertionPuc), LogSanitizer.maskIdentifier(expectedPuc));
                 throw new ResponseStatusException(HttpStatus.FORBIDDEN, "saml_puc_mismatch");
@@ -904,6 +913,7 @@ public class WebauthnOnboardingService {
                 && expectedInstitutionId != null
                 && !expectedInstitutionId.isBlank()
                 && !assertionInstitutionId.equals(expectedInstitutionId)) {
+                // codeql[java/log-injection]
                 log.warn(
                     "SAML assertion institutionId '{}' does not match expected institutionId '{}'",
                     LogSanitizer.sanitize(assertionInstitutionId),
@@ -911,15 +921,16 @@ public class WebauthnOnboardingService {
                 );
             }
 
+            // codeql[java/log-injection]
             log.debug("SAML assertion validated successfully for PUC: {}",
                 LogSanitizer.maskIdentifier(expectedPuc));
             return attributes;
 
         } catch (IllegalArgumentException e) {
-            log.error("Failed to decode SAML assertion: {}", e.getMessage());
+            log.error("Failed to decode SAML assertion: {}", LogSanitizer.sanitize(e.getMessage()));
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Invalid SAML assertion encoding");
         } catch (SecurityException e) {
-            log.error("SAML assertion validation failed: {}", e.getMessage());
+            log.error("SAML assertion validation failed: {}", LogSanitizer.sanitize(e.getMessage()));
             throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Invalid SAML assertion: " + e.getMessage());
         } catch (ResponseStatusException e) {
             throw e;

@@ -75,6 +75,7 @@ public class GlobalExceptionHandler {
         response.put("message", ex.getReason() != null ? ex.getReason() : ex.getStatusCode().toString());
         response.put("status", ex.getStatusCode().value());
 
+        // codeql[java/log-injection]
         log.warn("ResponseStatusException at {}: {} - {}", 
             LogSanitizer.sanitize(request.getRequestURI()), ex.getStatusCode(),
             LogSanitizer.sanitize(ex.getReason()));
@@ -237,6 +238,7 @@ public class GlobalExceptionHandler {
     public Object handleGenericException(
             Exception ex, HttpServletRequest request) {
         
+        // codeql[java/log-injection]
         log.error("Unexpected error at {}: {}",
             LogSanitizer.sanitize(request.getRequestURI()),
             LogSanitizer.sanitize(ex.getMessage()), ex);

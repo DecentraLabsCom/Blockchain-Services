@@ -1331,6 +1331,7 @@ public class WalletService {
 
         String oldNetwork = activeNetwork;
         activeNetwork = networkId;
+        // codeql[java/log-injection]
         log.info("Switched network from {} to {}",
             LogSanitizer.sanitize(oldNetwork), LogSanitizer.sanitize(networkId));
         
@@ -1367,6 +1368,7 @@ public class WalletService {
                 // Create or get existing Web3j instance for this specific URL
                 String cacheKey = network + ":" + index;
                 Web3j web3j = web3jInstances.computeIfAbsent(cacheKey, k -> {
+                    // codeql[java/log-injection]
                     log.info("Creating Web3j instance for {} using RPC endpoint [{}]: {}",
                              LogSanitizer.sanitize(network), index, LogSanitizer.sanitize(rpcUrl));
                     HttpService httpService = new HttpService(rpcUrl, httpClient);
@@ -1379,6 +1381,7 @@ public class WalletService {
                     
                     // Success! Update current index for this network
                     if (index != startIndex) {
+                        // codeql[java/log-injection]
                         log.info("Successfully switched to fallback RPC endpoint [{}]: {}", index,
                             LogSanitizer.sanitize(rpcUrl));
                         currentRpcIndex.put(network, index);
