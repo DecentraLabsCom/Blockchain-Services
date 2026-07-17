@@ -333,7 +333,7 @@ public class LabAdminService {
             return detected != null ? detected : MediaType.APPLICATION_OCTET_STREAM_VALUE;
         } catch (Exception ignored) {
             log.debug("Unable to detect content type for {}",
-                String.valueOf(relativePath).replaceAll("[\\r\\n\\t]+", "_"), ignored);
+                LogSanitizer.sanitize(relativePath), ignored);
             return MediaType.APPLICATION_OCTET_STREAM_VALUE;
         }
     }

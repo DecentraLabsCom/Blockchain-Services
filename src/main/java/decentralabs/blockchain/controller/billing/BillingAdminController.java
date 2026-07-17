@@ -3,6 +3,7 @@ package decentralabs.blockchain.controller.billing;
 import decentralabs.blockchain.dto.billing.InstitutionalAdminRequest;
 import decentralabs.blockchain.dto.billing.InstitutionalAdminResponse;
 import decentralabs.blockchain.exception.IdempotencyKeyPayloadMismatchException;
+import decentralabs.blockchain.util.LogSanitizer;
 import java.util.Map;
 import decentralabs.blockchain.service.billing.InstitutionalAdminService;
 import lombok.RequiredArgsConstructor;
@@ -37,25 +38,28 @@ public class BillingAdminController {
     public ResponseEntity<?> executeAdminOperation(
         @RequestBody InstitutionalAdminRequest request
     ) {
-        log.info("Received institutional admin request: {}", request.getOperation());
+        log.info("Received institutional admin request: {}", LogSanitizer.sanitize(request.getOperation()));
         try {
             InstitutionalAdminResponse response = adminService.executeAdminOperation(request);
             if (response == null) {
-                log.error("Admin service returned null response for operation {}", request.getOperation());
+                log.error("Admin service returned null response for operation {}",
+                    LogSanitizer.sanitize(request.getOperation()));
                 return ResponseEntity.internalServerError()
                     .body(InstitutionalAdminResponse.error("Internal server error: empty service response"));
             }
             if (response.isSuccess()) {
                 log.info("Admin operation {} completed successfully. Tx: {}",
-                    request.getOperation(), response.getTransactionHash());
+                    LogSanitizer.sanitize(request.getOperation()),
+                    LogSanitizer.maskIdentifier(response.getTransactionHash()));
                 return ResponseEntity.ok(response);
             }
-            log.warn("Admin operation {} failed: {}", request.getOperation(), response.getMessage());
+            log.warn("Admin operation {} failed: {}", LogSanitizer.sanitize(request.getOperation()),
+                LogSanitizer.sanitize(response.getMessage()));
             return ResponseEntity.badRequest().body(response);
         } catch (IdempotencyKeyPayloadMismatchException e) {
             return idempotencyConflict(e);
         } catch (Exception e) {
-            log.error("Error processing admin request: {}", e.getMessage(), e);
+            log.error("Error processing admin request: {}", LogSanitizer.sanitize(e.getMessage()), e);
             InstitutionalAdminResponse errorResponse =
                 InstitutionalAdminResponse.error("Internal server error: " + e.getMessage());
             return ResponseEntity.internalServerError().body(errorResponse);
@@ -72,7 +76,7 @@ public class BillingAdminController {
         @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey
     ) {
         log.info("Received server-side provider payout request for lab {}",
-            String.valueOf(request.getLabId()).replaceAll("[\\r\\n\\t]+", "_"));
+            LogSanitizer.sanitize(String.valueOf(request.getLabId())));
         try {
             InstitutionalAdminResponse response = idempotencyKey != null && !idempotencyKey.isBlank()
                 ? adminService.requestProviderPayoutWithConfiguredWallet(
@@ -83,20 +87,22 @@ public class BillingAdminController {
                 );
             if (response == null) {
                 log.error("Admin service returned null response for payout request on lab {}",
-                    String.valueOf(request.getLabId()).replaceAll("[\\r\\n\\t]+", "_"));
+                    LogSanitizer.sanitize(String.valueOf(request.getLabId())));
                 return ResponseEntity.internalServerError()
                     .body(InstitutionalAdminResponse.error("Internal server error: empty service response"));
             }
             if (response.isSuccess()) {
-                log.info("Server-side provider payout request completed. Tx: {}", response.getTransactionHash());
+                log.info("Server-side provider payout request completed. Tx: {}",
+                    LogSanitizer.maskIdentifier(response.getTransactionHash()));
                 return ResponseEntity.ok(response);
             }
-            log.warn("Server-side provider payout request failed: {}", response.getMessage());
+            log.warn("Server-side provider payout request failed: {}",
+                LogSanitizer.sanitize(response.getMessage()));
             return ResponseEntity.badRequest().body(response);
         } catch (IdempotencyKeyPayloadMismatchException e) {
             return idempotencyConflict(e);
         } catch (Exception e) {
-            log.error("Error processing provider payout request: {}", e.getMessage(), e);
+            log.error("Error processing provider payout request: {}", LogSanitizer.sanitize(e.getMessage()), e);
             InstitutionalAdminResponse errorResponse =
                 InstitutionalAdminResponse.error("Internal server error: " + e.getMessage());
             return ResponseEntity.internalServerError().body(errorResponse);

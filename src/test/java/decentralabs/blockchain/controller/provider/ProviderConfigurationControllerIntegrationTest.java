@@ -9,6 +9,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
 
 import decentralabs.blockchain.controller.TestSecurityConfig;
 import decentralabs.blockchain.dto.provider.ConsumerProvisioningTokenPayload;
@@ -113,6 +114,7 @@ class ProviderConfigurationControllerIntegrationTest {
         when(registrationService.register(any())).thenReturn(false);
 
         mockMvc.perform(post("/institution-config/apply-provider-token")
+                .with(csrf())
                 .with(req -> {
                     req.setRemoteAddr("127.0.0.1");
                     return req;
@@ -141,6 +143,7 @@ class ProviderConfigurationControllerIntegrationTest {
             .thenThrow(new IllegalArgumentException("Invalid consumer provisioning token"));
 
         mockMvc.perform(post("/institution-config/apply-consumer-token")
+                .with(csrf())
                 .with(req -> {
                     req.setRemoteAddr("127.0.0.1");
                     return req;
@@ -160,6 +163,7 @@ class ProviderConfigurationControllerIntegrationTest {
     @Test
     void saveAndRegister_returnsBadRequestForInvalidPublicBaseUrl() throws Exception {
         mockMvc.perform(post("/institution-config/save-and-register")
+                .with(csrf())
                 .with(req -> {
                     req.setRemoteAddr("127.0.0.1");
                     return req;
@@ -193,6 +197,7 @@ class ProviderConfigurationControllerIntegrationTest {
         );
 
         mockMvc.perform(post("/institution-config/apply-provider-token")
+                .with(csrf())
                 .with(req -> {
                     req.setRemoteAddr("127.0.0.1");
                     return req;

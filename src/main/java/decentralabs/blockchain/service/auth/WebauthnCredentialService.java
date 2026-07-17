@@ -8,6 +8,7 @@ import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.regex.Pattern;
+import decentralabs.blockchain.util.LogSanitizer;
 import io.micrometer.observation.annotation.Observed;
 import lombok.AllArgsConstructor;
 import lombok.Data;
@@ -93,7 +94,7 @@ public class WebauthnCredentialService {
         // Also persist to database if available
         if (jdbcTemplate == null) {
             log.debug("WebAuthn credential stored in memory only (no database): puc={}",
-                String.valueOf(normalizedPuc).replaceAll("[\\r\\n\\t]+", "_"));
+                LogSanitizer.maskIdentifier(normalizedPuc));
             return;
         }
 
@@ -146,7 +147,7 @@ public class WebauthnCredentialService {
         // Also update database if available
         if (jdbcTemplate == null) {
             log.debug("WebAuthn credential revoked in memory only (no database): puc={}",
-                String.valueOf(normalizedPuc).replaceAll("[\\r\\n\\t]+", "_"));
+                LogSanitizer.maskIdentifier(normalizedPuc));
             return;
         }
 

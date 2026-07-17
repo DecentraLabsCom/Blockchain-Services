@@ -30,6 +30,14 @@ public final class LogSanitizer {
     }
 
     /**
+     * Sanitizes enum and other value-object fields without requiring callers to
+     * interpolate them before the control-character check.
+     */
+    public static String sanitize(Object value) {
+        return sanitize(value == null ? null : String.valueOf(value));
+    }
+
+    /**
      * Masks identifiers (wallets, reservation keys, etc.) while keeping
      * enough context for debugging.
      *
@@ -50,6 +58,11 @@ public final class LogSanitizer {
         int prefixLength = Math.min(6, sanitized.length() / 2);
         int suffixLength = Math.min(4, Math.max(1, sanitized.length() - prefixLength));
         return sanitized.substring(0, prefixLength) + "..." + sanitized.substring(sanitized.length() - suffixLength);
+    }
+
+    /** Masks an identifier represented by a value object. */
+    public static String maskIdentifier(Object identifier) {
+        return maskIdentifier(identifier == null ? null : String.valueOf(identifier));
     }
 
     /**

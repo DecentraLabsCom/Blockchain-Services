@@ -228,8 +228,8 @@ public class IntentAuthorizationService {
         }
         if (!session.getCredentialIds().contains(request.getCredentialId())) {
             log.warn("Intent authorization completion rejected. sessionId={} requestId={} reason=webauthn_credential_not_allowed allowedCredentials={}",
-                String.valueOf(request.getSessionId()).replaceAll("[\\r\\n\\t]+", "_"),
-                String.valueOf(requestId).replaceAll("[\\r\\n\\t]+", "_"),
+                LogSanitizer.maskIdentifier(request.getSessionId()),
+                LogSanitizer.maskIdentifier(requestId),
                 session.getCredentialIds().size()
             );
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "webauthn_credential_not_allowed");

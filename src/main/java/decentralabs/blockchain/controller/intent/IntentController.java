@@ -6,6 +6,7 @@ import decentralabs.blockchain.dto.intent.IntentSubmission;
 import decentralabs.blockchain.service.intent.IntentAuthService;
 import decentralabs.blockchain.service.intent.IntentExecutionService;
 import decentralabs.blockchain.service.intent.IntentService;
+import decentralabs.blockchain.util.LogSanitizer;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -36,8 +37,8 @@ public class IntentController {
         intentAuthService.enforceSubmitAuthorization(authorizationHeader);
         IntentAckResponse ack = intentService.processIntent(submission);
         log.info("Intent {} ACK status={}",
-            String.valueOf(ack.getRequestId()).replaceAll("[\\r\\n\\t]+", "_"),
-            String.valueOf(ack.getStatus()).replaceAll("[\\r\\n\\t]+", "_"));
+            LogSanitizer.maskIdentifier(ack.getRequestId()),
+            LogSanitizer.sanitize(ack.getStatus()));
         return ResponseEntity.ok(ack);
     }
 
@@ -60,7 +61,7 @@ public class IntentController {
             intentExecutionService.processQueuedIntent(requestId);
         } else {
             log.info("Registration mined signal accepted before WebAuthn completion. requestId={}",
-                String.valueOf(requestId).replaceAll("[\\r\\n\\t]+", "_"));
+                LogSanitizer.maskIdentifier(requestId));
         }
         IntentAckResponse ack = new IntentAckResponse();
         ack.setRequestId(requestId);

@@ -439,7 +439,7 @@ public class SamlAuthService {
             throw ex;
         } catch (RuntimeException ex) {
             log.debug("Remote consumer check-in status unavailable for {}",
-                String.valueOf(reservationKey).replaceAll("[\\r\\n\\t]+", "_"), ex);
+                LogSanitizer.maskIdentifier(reservationKey), ex);
         }
     }
 

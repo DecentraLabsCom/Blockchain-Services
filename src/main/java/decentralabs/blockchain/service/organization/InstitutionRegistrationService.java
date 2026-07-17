@@ -2,6 +2,7 @@ package decentralabs.blockchain.service.organization;
 
 import decentralabs.blockchain.service.billing.InstitutionalAdminService;
 import decentralabs.blockchain.service.wallet.InstitutionalWalletService;
+import decentralabs.blockchain.util.LogSanitizer;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -264,12 +265,11 @@ public class InstitutionRegistrationService {
 
             if (response.getStatusCode() == HttpStatus.CREATED || response.getStatusCode() == HttpStatus.OK) {
                 log.info("{} registration successful: {}",
-                    String.valueOf(roleLabel).replaceAll("[\\r\\n\\t]+", "_"),
-                    String.valueOf(response.getBody()).replaceAll("[\\r\\n\\t]+", "_"));
+                    LogSanitizer.sanitize(roleLabel), LogSanitizer.sanitize(response.getBody()));
             } else {
                 log.warn("{} registration returned unexpected status: {} - {}", 
-                    String.valueOf(roleLabel).replaceAll("[\\r\\n\\t]+", "_"), response.getStatusCode(),
-                    String.valueOf(response.getBody()).replaceAll("[\\r\\n\\t]+", "_"));
+                    LogSanitizer.sanitize(roleLabel), response.getStatusCode(),
+                    LogSanitizer.sanitize(response.getBody()));
             }
         } catch (HttpClientErrorException e) {
             if (e.getStatusCode() == HttpStatus.UNAUTHORIZED) {

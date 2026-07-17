@@ -5,6 +5,7 @@ import decentralabs.blockchain.service.persistence.CreditAccountPersistenceServi
 import decentralabs.blockchain.service.persistence.FundingOrderPersistenceService;
 import decentralabs.blockchain.util.CreditUnitConverter;
 import decentralabs.blockchain.util.EthereumAddressValidator;
+import decentralabs.blockchain.util.LogSanitizer;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -63,7 +64,7 @@ public class FundingOrderService {
 
         order = persistence.createFundingOrder(order);
         log.info("Created funding order {} for {} (EUR {} → {} credits)",
-                order.getId(), String.valueOf(institutionAddress).replaceAll("[\\r\\n\\t]+", "_"),
+                order.getId(), LogSanitizer.maskIdentifier(institutionAddress),
                 normalizedEurAmount, derivedCreditAmount);
         return order;
     }
@@ -96,7 +97,7 @@ public class FundingOrderService {
         persistence.updateFundingOrderStatus(orderId, FundingOrder.Status.INVOICED);
 
         log.info("Issued invoice {} for funding order {}",
-            String.valueOf(invoiceNumber).replaceAll("[\\r\\n\\t]+", "_"), orderId);
+            LogSanitizer.sanitize(invoiceNumber), orderId);
         return invoice;
     }
 
@@ -141,7 +142,7 @@ public class FundingOrderService {
                 .build());
 
         log.info("Confirmed payment {} for funding order {} (EUR {})",
-            String.valueOf(paymentRef).replaceAll("[\\r\\n\\t]+", "_"), orderId, eurAmount);
+            LogSanitizer.sanitize(paymentRef), orderId, eurAmount);
         return recon;
     }
 

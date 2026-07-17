@@ -2,6 +2,7 @@ package decentralabs.blockchain.service.auth;
 
 import decentralabs.blockchain.contract.Diamond;
 import decentralabs.blockchain.service.wallet.WalletService;
+import decentralabs.blockchain.util.LogSanitizer;
 import java.math.BigInteger;
 import java.util.Locale;
 import lombok.RequiredArgsConstructor;
@@ -49,7 +50,8 @@ public class InstitutionalCheckInDirectoryService {
             String backendUrl = loadReadonlyDiamond().getSchacHomeOrganizationBackend(normalized).send();
             return backendUrl == null || backendUrl.isBlank() ? null : backendUrl.trim();
         } catch (Exception ex) {
-            log.warn("Unable to resolve check-in backend for organization {}: {}", normalized, ex.getMessage());
+            log.warn("Unable to resolve check-in backend for organization {}: {}",
+                LogSanitizer.sanitize(normalized), LogSanitizer.sanitize(ex.getMessage()));
             return null;
         }
     }
@@ -60,7 +62,8 @@ public class InstitutionalCheckInDirectoryService {
             String normalized = normalizeAddress(backend);
             return ZERO_ADDRESS.equalsIgnoreCase(normalized) ? null : normalized;
         } catch (Exception ex) {
-            log.warn("Unable to resolve authorized backend for institution {}: {}", institutionWallet, ex.getMessage());
+            log.warn("Unable to resolve authorized backend for institution {}: {}",
+                LogSanitizer.maskIdentifier(institutionWallet), LogSanitizer.sanitize(ex.getMessage()));
             return null;
         }
     }

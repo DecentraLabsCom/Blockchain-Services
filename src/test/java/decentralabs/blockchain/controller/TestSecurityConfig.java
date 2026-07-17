@@ -17,9 +17,7 @@ public class TestSecurityConfig {
 
     @Bean
     public SecurityFilterChain testSecurityFilterChain(HttpSecurity http) throws Exception {
-        // Disable CSRF for tests to avoid cookie-based token setup in MockMvc
         http
-            .csrf(csrf -> csrf.disable())
             .authorizeHttpRequests(auth -> auth.anyRequest().permitAll());
         return http.build();
     }

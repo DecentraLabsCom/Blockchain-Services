@@ -1012,7 +1012,6 @@ async function applyProvisioningToken() {
         return;
     }
 
-    const resultDiv = document.getElementById('provisioningResult');
     const applyBtn = document.getElementById('applyProvisioningBtn');
     
     // Disable button during processing
