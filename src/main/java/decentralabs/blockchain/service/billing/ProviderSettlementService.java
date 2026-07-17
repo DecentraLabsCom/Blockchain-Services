@@ -48,7 +48,7 @@ public class ProviderSettlementService {
 
         record = persistence.createInvoiceRecord(record);
         log.info("Submitted provider invoice (labIdPresent={}, invoiceRefPresent={}, EUR {})",
-            labId != null && !labId.isBlank(), invoiceRef != null && !invoiceRef.isBlank(), eurAmount);
+            labId != null && !labId.isBlank(), !invoiceRef.isBlank(), eurAmount);
         return record;
     }
 
