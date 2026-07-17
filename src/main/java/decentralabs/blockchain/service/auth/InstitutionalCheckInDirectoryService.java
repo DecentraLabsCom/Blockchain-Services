@@ -32,11 +32,12 @@ public class InstitutionalCheckInDirectoryService {
             return true;
         }
 
-        // The backend address is read from the deployed contract before it is
-        // compared with the configured institutional signer.
-        // codeql[java/user-controlled-bypass]
+        // Always resolve the deployed backend before evaluating the signer. This
+        // keeps the authorization decision independent of a caller-controlled
+        // short circuit while still accepting the institution wallet itself.
         String backend = resolveAuthorizedBackend(institution);
-        return backend != null && candidate.equalsIgnoreCase(backend);
+        return candidate.equalsIgnoreCase(institution)
+            || (backend != null && candidate.equalsIgnoreCase(backend));
     }
 
     public String resolveOrganizationBackendUrl(String organization) {
