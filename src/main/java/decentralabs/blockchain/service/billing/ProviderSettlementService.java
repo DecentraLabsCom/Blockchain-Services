@@ -46,7 +46,8 @@ public class ProviderSettlementService {
                 .build();
 
         record = persistence.createInvoiceRecord(record);
-        log.info("Submitted provider invoice {} for lab {} (EUR {})", invoiceRef, labId, eurAmount);
+        log.info("Submitted provider invoice {} for lab {} (EUR {})",
+            String.valueOf(invoiceRef).replaceAll("[\\r\\n\\t]+", "_"), labId, eurAmount);
         return record;
     }
 
@@ -73,7 +74,9 @@ public class ProviderSettlementService {
         approval = persistence.createApproval(approval);
         persistence.updateInvoiceStatus(invoiceId, ProviderInvoiceRecord.Status.APPROVED);
 
-        log.info("Approved provider invoice {} by {} ref={} (EUR {})", invoiceId, approvedBy, approvalRef, eurAmount);
+        log.info("Approved provider invoice {} by {} ref={} (EUR {})", invoiceId,
+            String.valueOf(approvedBy).replaceAll("[\\r\\n\\t]+", "_"),
+            String.valueOf(approvalRef).replaceAll("[\\r\\n\\t]+", "_"), eurAmount);
         return approval;
     }
 
@@ -95,7 +98,8 @@ public class ProviderSettlementService {
                 .build();
 
         payout = persistence.createPayout(payout);
-        log.info("Recorded payout for lab {} provider {} (EUR {})", labId, providerAddress, eurAmount);
+        log.info("Recorded payout for lab {} provider {} (EUR {})", labId,
+            String.valueOf(providerAddress).replaceAll("[\\r\\n\\t]+", "_"), eurAmount);
         return payout;
     }
 

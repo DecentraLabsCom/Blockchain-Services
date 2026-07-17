@@ -92,7 +92,8 @@ public class WebauthnCredentialService {
 
         // Also persist to database if available
         if (jdbcTemplate == null) {
-            log.debug("WebAuthn credential stored in memory only (no database): puc={}", normalizedPuc);
+            log.debug("WebAuthn credential stored in memory only (no database): puc={}",
+                String.valueOf(normalizedPuc).replaceAll("[\\r\\n\\t]+", "_"));
             return;
         }
 
@@ -144,7 +145,8 @@ public class WebauthnCredentialService {
 
         // Also update database if available
         if (jdbcTemplate == null) {
-            log.debug("WebAuthn credential revoked in memory only (no database): puc={}", normalizedPuc);
+            log.debug("WebAuthn credential revoked in memory only (no database): puc={}",
+                String.valueOf(normalizedPuc).replaceAll("[\\r\\n\\t]+", "_"));
             return;
         }
 

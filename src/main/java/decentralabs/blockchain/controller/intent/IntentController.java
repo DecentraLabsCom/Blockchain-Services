@@ -35,7 +35,9 @@ public class IntentController {
     ) {
         intentAuthService.enforceSubmitAuthorization(authorizationHeader);
         IntentAckResponse ack = intentService.processIntent(submission);
-        log.info("Intent {} ACK status={}", ack.getRequestId(), ack.getStatus());
+        log.info("Intent {} ACK status={}",
+            String.valueOf(ack.getRequestId()).replaceAll("[\\r\\n\\t]+", "_"),
+            String.valueOf(ack.getStatus()).replaceAll("[\\r\\n\\t]+", "_"));
         return ResponseEntity.ok(ack);
     }
 
@@ -57,7 +59,8 @@ public class IntentController {
         if (intentService.findByRequestId(requestId).isPresent()) {
             intentExecutionService.processQueuedIntent(requestId);
         } else {
-            log.info("Registration mined signal accepted before WebAuthn completion. requestId={}", requestId);
+            log.info("Registration mined signal accepted before WebAuthn completion. requestId={}",
+                String.valueOf(requestId).replaceAll("[\\r\\n\\t]+", "_"));
         }
         IntentAckResponse ack = new IntentAckResponse();
         ack.setRequestId(requestId);

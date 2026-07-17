@@ -40,7 +40,8 @@ public class IntentExecutionService {
         }
         Optional<IntentRecord> record = intentService.findByRequestId(requestId);
         if (record.isEmpty()) {
-            log.warn("Intent {} not found for immediate execution", requestId);
+            log.warn("Intent {} not found for immediate execution",
+                String.valueOf(requestId).replaceAll("[\\r\\n\\t]+", "_"));
             return;
         }
         processRecord(record.get());
@@ -124,7 +125,9 @@ public class IntentExecutionService {
                 }
             }
         } catch (Exception ex) {
-            log.warn("Intent {} failed during execution: {}", record.getRequestId(), ex.getMessage(), ex);
+            log.warn("Intent {} failed during execution: {}",
+                String.valueOf(record.getRequestId()).replaceAll("[\\r\\n\\t]+", "_"),
+                String.valueOf(ex.getMessage()).replaceAll("[\\r\\n\\t]+", "_"), ex);
             intentService.markFailed(record, "execution_error: " + ex.getMessage());
         } finally {
             executionGuards.remove(record.getRequestId(), guard);

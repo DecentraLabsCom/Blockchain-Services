@@ -202,9 +202,7 @@ public class ProviderConfigurationController {
      */
     @PostMapping("/retry-registration")
     @ResponseBody
-    public ResponseEntity<Map<String, Object>> retryRegistration(
-        @RequestBody(required = false) Map<String, String> request
-    ) {
+    public ResponseEntity<Map<String, Object>> retryRegistration() {
         Map<String, Object> response = new HashMap<>();
         response.put("success", false);
         response.put("error", "Provisioning tokens are single-use. Issue a new token for an explicit recovery attempt.");

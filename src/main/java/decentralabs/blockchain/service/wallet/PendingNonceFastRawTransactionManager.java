@@ -227,7 +227,7 @@ public class PendingNonceFastRawTransactionManager extends FastRawTransactionMan
     }
 
     @Override
-    protected BigInteger getNonce() throws IOException {
+    protected synchronized BigInteger getNonce() throws IOException {
         if (explicitNonce != null) {
             return explicitNonce;
         }

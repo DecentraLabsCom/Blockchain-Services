@@ -235,7 +235,9 @@ public class CheckInOnChainService {
         try {
             return transactionStateStrict(txHash);
         } catch (RuntimeException ex) {
-            log.warn("Unable to inspect access authorization transaction {}: {}", txHash, ex.getMessage());
+            log.warn("Unable to inspect access authorization transaction {}: {}",
+                String.valueOf(txHash).replaceAll("[\\r\\n\\t]+", "_"),
+                String.valueOf(ex.getMessage()).replaceAll("[\\r\\n\\t]+", "_"));
             return TransactionState.PENDING;
         }
     }
@@ -430,7 +432,7 @@ public class CheckInOnChainService {
             }
             return id.getChainId().longValue();
         } catch (Exception e) {
-            log.warn("Unable to resolve chainId: {}", e.getMessage());
+            log.warn("Unable to resolve chainId: {}", String.valueOf(e.getMessage()).replaceAll("[\\r\\n\\t]+", "_"));
             return 0L;
         }
     }

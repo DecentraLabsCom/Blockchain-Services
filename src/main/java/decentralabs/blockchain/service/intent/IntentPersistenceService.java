@@ -72,7 +72,9 @@ public class IntentPersistenceService {
                 record.getPayloadJson()
             );
         } catch (Exception e) {
-            log.warn("Intent persistence skipped for {}: {}", LogSanitizer.sanitize(record.getRequestId()), LogSanitizer.sanitize(e.getMessage()));
+            log.warn("Intent persistence skipped for {}: {}",
+                LogSanitizer.sanitize(record.getRequestId()).replaceAll("[\\r\\n\\t]+", "_"),
+                LogSanitizer.sanitize(e.getMessage()).replaceAll("[\\r\\n\\t]+", "_"));
         }
     }
 
@@ -87,7 +89,9 @@ public class IntentPersistenceService {
                 requestId
             ).stream().findFirst();
         } catch (Exception e) {
-            log.warn("Intent lookup skipped for {}: {}", LogSanitizer.sanitize(requestId), LogSanitizer.sanitize(e.getMessage()));
+            log.warn("Intent lookup skipped for {}: {}",
+                LogSanitizer.sanitize(requestId).replaceAll("[\\r\\n\\t]+", "_"),
+                LogSanitizer.sanitize(e.getMessage()).replaceAll("[\\r\\n\\t]+", "_"));
             return Optional.empty();
         }
     }

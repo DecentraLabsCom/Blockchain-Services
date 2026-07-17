@@ -142,7 +142,6 @@ class GuacamoleProvisioningServiceTest {
                 "https://lite-b.example.edu",
                 new GuacamoleProvisioningService.ProvisionerRoute(secondBase, "/internal/guacamole", "X-Guacamole-Provisioner-Token", "secret")
             ),
-            null,
             "https://lite-a.example.edu"
         );
 
@@ -166,7 +165,6 @@ class GuacamoleProvisioningServiceTest {
                 localBase, "/internal/guacamole", "X-Guacamole-Provisioner-Token", "secret"
             ),
             Map.of(),
-            null,
             "https://full.example.edu"
         );
 

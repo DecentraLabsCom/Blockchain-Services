@@ -268,13 +268,13 @@ public class InstitutionalTransactionOutboxMonitor {
             log.warn(
                 "Institutional transaction {} could not be inspected through RPC; "
                     + "leaving its retry budget unchanged: {}",
-                attempt == null ? -1L : attempt.id(), ex.getMessage()
+                attemptIdOrUnknown(attempt), ex.getMessage()
             );
             return false;
         } catch (InstitutionalTransactionOutboxService.FencingClaimLostException ex) {
             log.debug(
                 "Institutional transaction {} was updated by another monitor worker; skipping compensation",
-                attempt == null ? -1L : attempt.id()
+                attemptIdOrUnknown(attempt)
             );
             return false;
         } catch (Exception ex) {
@@ -283,14 +283,20 @@ public class InstitutionalTransactionOutboxMonitor {
             } catch (InstitutionalTransactionOutboxService.FencingClaimLostException fencingLost) {
                 log.debug(
                     "Institutional transaction {} lost its fencing claim while compensating; leaving winner state intact",
-                    attempt == null ? -1L : attempt.id()
+                    attemptIdOrUnknown(attempt)
                 );
                 return false;
             }
-            long attemptId = attempt == null ? -1L : attempt.id();
-            log.warn("Unable to recover reserved institutional transaction {}: {}", attemptId, ex.getMessage());
+            log.warn(
+                "Unable to recover reserved institutional transaction {}: {}",
+                attemptIdOrUnknown(attempt), ex.getMessage()
+            );
         }
         return false;
+    }
+
+    private long attemptIdOrUnknown(InstitutionalTransactionOutboxService.Attempt attempt) {
+        return attempt == null ? -1L : attempt.id();
     }
 
     private enum MaterialState { ABSENT, VISIBLE, MINED_SUCCESS, MINED_FAILED }

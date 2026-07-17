@@ -263,10 +263,13 @@ public class InstitutionRegistrationService {
             );
 
             if (response.getStatusCode() == HttpStatus.CREATED || response.getStatusCode() == HttpStatus.OK) {
-                log.info("{} registration successful: {}", roleLabel, response.getBody());
+                log.info("{} registration successful: {}",
+                    String.valueOf(roleLabel).replaceAll("[\\r\\n\\t]+", "_"),
+                    String.valueOf(response.getBody()).replaceAll("[\\r\\n\\t]+", "_"));
             } else {
                 log.warn("{} registration returned unexpected status: {} - {}", 
-                    roleLabel, response.getStatusCode(), response.getBody());
+                    String.valueOf(roleLabel).replaceAll("[\\r\\n\\t]+", "_"), response.getStatusCode(),
+                    String.valueOf(response.getBody()).replaceAll("[\\r\\n\\t]+", "_"));
             }
         } catch (HttpClientErrorException e) {
             if (e.getStatusCode() == HttpStatus.UNAUTHORIZED) {

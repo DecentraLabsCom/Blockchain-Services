@@ -49,20 +49,25 @@ public class ProviderNetworkService {
 
         membership = persistence.createMembership(membership);
         log.info("Activated provider {} in network (contract {}, agreement {}), by {}",
-                providerAddress, contractId, agreementVersion, activatedBy);
+                String.valueOf(providerAddress).replaceAll("[\\r\\n\\t]+", "_"), contractId,
+                String.valueOf(agreementVersion).replaceAll("[\\r\\n\\t]+", "_"),
+                String.valueOf(activatedBy).replaceAll("[\\r\\n\\t]+", "_"));
         return membership;
     }
 
     @Transactional
     public void suspend(long membershipId, String reason, String actionBy) {
         persistence.updateMembershipStatus(membershipId, ProviderNetworkMembership.Status.SUSPENDED, reason, actionBy);
-        log.info("Suspended provider membership {} by {}: {}", membershipId, actionBy, reason);
+        log.info("Suspended provider membership {} by {}: {}", membershipId,
+            String.valueOf(actionBy).replaceAll("[\\r\\n\\t]+", "_"),
+            String.valueOf(reason).replaceAll("[\\r\\n\\t]+", "_"));
     }
 
     @Transactional
     public void terminate(long membershipId, String actionBy) {
         persistence.updateMembershipStatus(membershipId, ProviderNetworkMembership.Status.TERMINATED, null, actionBy);
-        log.info("Terminated provider membership {} by {}", membershipId, actionBy);
+        log.info("Terminated provider membership {} by {}", membershipId,
+            String.valueOf(actionBy).replaceAll("[\\r\\n\\t]+", "_"));
     }
 
     public Optional<ProviderNetworkMembership> findByProvider(String providerAddress) {

@@ -75,7 +75,8 @@ public class GlobalExceptionHandler {
         response.put("status", ex.getStatusCode().value());
 
         log.warn("ResponseStatusException at {}: {} - {}", 
-            request.getRequestURI(), ex.getStatusCode(), ex.getReason());
+            String.valueOf(request.getRequestURI()).replaceAll("[\\r\\n\\t]+", "_"), ex.getStatusCode(),
+            String.valueOf(ex.getReason()).replaceAll("[\\r\\n\\t]+", "_"));
         return ResponseEntity.status(ex.getStatusCode()).body(response);
     }
 
@@ -235,7 +236,9 @@ public class GlobalExceptionHandler {
     public Object handleGenericException(
             Exception ex, HttpServletRequest request) {
         
-        log.error("Unexpected error at {}: {}", request.getRequestURI(), ex.getMessage(), ex);
+        log.error("Unexpected error at {}: {}",
+            String.valueOf(request.getRequestURI()).replaceAll("[\\r\\n\\t]+", "_"),
+            String.valueOf(ex.getMessage()).replaceAll("[\\r\\n\\t]+", "_"), ex);
 
         // For non-API requests (HTML pages), rethrow to let Spring handle error page
         if (!isApiRequest(request)) {
