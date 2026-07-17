@@ -579,7 +579,7 @@ class WalletServiceTest {
         }
 
         assertThat(appender.list)
-            .extracting(ILoggingEvent::getFormattedMessage)
+            .extracting((ILoggingEvent event) -> event.getFormattedMessage())
             .noneMatch(message -> message.contains("forged-entry"));
     }
 
