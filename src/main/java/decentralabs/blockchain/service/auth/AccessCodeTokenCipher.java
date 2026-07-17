@@ -1,9 +1,10 @@
 package decentralabs.blockchain.service.auth;
 
-import java.nio.ByteBuffer;
+import java.io.ByteArrayOutputStream;
 import java.nio.charset.StandardCharsets;
 import java.security.GeneralSecurityException;
 import java.security.SecureRandom;
+import java.util.Arrays;
 import java.util.Base64;
 import javax.crypto.Cipher;
 import javax.crypto.spec.GCMParameterSpec;
@@ -17,6 +18,8 @@ public class AccessCodeTokenCipher {
     private static final String PREFIX = "v1.";
     private static final int IV_LENGTH = 12;
     private static final int GCM_TAG_BITS = 128;
+    private static final int MAX_PLAINTEXT_BYTES = 64 * 1024;
+    private static final int MAX_ENCRYPTED_VALUE_BYTES = IV_LENGTH + MAX_PLAINTEXT_BYTES + (GCM_TAG_BITS / 8);
 
     private final SecretKeySpec key;
     private final SecureRandom random = new SecureRandom();
@@ -27,14 +30,24 @@ public class AccessCodeTokenCipher {
 
     public String encrypt(String plaintext) {
         requireConfigured();
+        if (plaintext == null) {
+            throw new IllegalArgumentException("Access credential must not be null");
+        }
         try {
+            byte[] plaintextBytes = plaintext.getBytes(StandardCharsets.UTF_8);
+            if (plaintextBytes.length > MAX_PLAINTEXT_BYTES) {
+                throw new IllegalArgumentException("Access credential is too large");
+            }
             byte[] iv = new byte[IV_LENGTH];
             random.nextBytes(iv);
             Cipher cipher = Cipher.getInstance("AES/GCM/NoPadding");
             cipher.init(Cipher.ENCRYPT_MODE, key, new GCMParameterSpec(GCM_TAG_BITS, iv));
-            byte[] encrypted = cipher.doFinal(plaintext.getBytes(StandardCharsets.UTF_8));
+            byte[] encrypted = cipher.doFinal(plaintextBytes);
+            ByteArrayOutputStream combined = new ByteArrayOutputStream();
+            combined.writeBytes(iv);
+            combined.writeBytes(encrypted);
             return PREFIX + Base64.getUrlEncoder().withoutPadding().encodeToString(
-                ByteBuffer.allocate(iv.length + encrypted.length).put(iv).put(encrypted).array()
+                combined.toByteArray()
             );
         } catch (GeneralSecurityException ex) {
             throw new IllegalStateException("Unable to encrypt access credential", ex);
@@ -48,13 +61,11 @@ public class AccessCodeTokenCipher {
         }
         try {
             byte[] value = Base64.getUrlDecoder().decode(ciphertext.substring(PREFIX.length()));
-            if (value.length <= IV_LENGTH) {
+            if (value.length <= IV_LENGTH || value.length > MAX_ENCRYPTED_VALUE_BYTES) {
                 throw new IllegalStateException("Invalid encrypted access credential");
             }
-            byte[] iv = new byte[IV_LENGTH];
-            byte[] encrypted = new byte[value.length - IV_LENGTH];
-            System.arraycopy(value, 0, iv, 0, IV_LENGTH);
-            System.arraycopy(value, IV_LENGTH, encrypted, 0, encrypted.length);
+            byte[] iv = Arrays.copyOf(value, IV_LENGTH);
+            byte[] encrypted = Arrays.copyOfRange(value, IV_LENGTH, value.length);
             Cipher cipher = Cipher.getInstance("AES/GCM/NoPadding");
             cipher.init(Cipher.DECRYPT_MODE, key, new GCMParameterSpec(GCM_TAG_BITS, iv));
             return new String(cipher.doFinal(encrypted), StandardCharsets.UTF_8);

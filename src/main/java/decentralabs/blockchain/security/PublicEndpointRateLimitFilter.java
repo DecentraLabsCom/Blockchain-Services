@@ -1,7 +1,6 @@
 package decentralabs.blockchain.security;
 
 import decentralabs.blockchain.service.auth.JwtService;
-import decentralabs.blockchain.util.LogSanitizer;
 import io.github.bucket4j.Bandwidth;
 import io.github.bucket4j.Bucket;
 import jakarta.servlet.FilterChain;
@@ -118,20 +117,19 @@ public class PublicEndpointRateLimitFilter extends OncePerRequestFilter {
                 ? observerBucketKey(clientIp)
                 : fmuIssueBucketKey(request, clientIp);
             if (!checkFmuSessionTicketRateLimit(bucketKey)) {
-                log.warn("Rate limit exceeded for FMU session-ticket endpoint: path={}, bucket={}",
-                    LogSanitizer.sanitize(path), LogSanitizer.sanitize(bucketKey));
+                log.warn("Rate limit exceeded for FMU session-ticket endpoint");
                 sendRateLimitResponse(response);
                 return;
             }
         } else if (isAuthEndpoint(path)) {
             if (!checkAuthRateLimit(clientIp)) {
-                log.warn("Rate limit exceeded for auth endpoint: path={}, ip={}", LogSanitizer.sanitize(path), maskIp(clientIp));
+                log.warn("Rate limit exceeded for auth endpoint");
                 sendRateLimitResponse(response);
                 return;
             }
         } else if (isJwksEndpoint(path)) {
             if (!checkJwksRateLimit(clientIp)) {
-                log.warn("Rate limit exceeded for JWKS endpoint: ip={}", maskIp(clientIp));
+                log.warn("Rate limit exceeded for JWKS endpoint");
                 sendRateLimitResponse(response);
                 return;
             }
@@ -273,20 +271,6 @@ public class PublicEndpointRateLimitFilter extends OncePerRequestFilter {
             log.debug("Unable to extract target gateway from FMU booking JWT for rate limiting", ex);
             return null;
         }
-    }
-
-    private String maskIp(String ip) {
-        if (ip == null) return "unknown";
-        // Mask last octet for privacy in logs
-        int lastDot = ip.lastIndexOf('.');
-        if (lastDot > 0) {
-            return ip.substring(0, lastDot) + ".***";
-        }
-        // IPv6 or other format - just mask end
-        if (ip.length() > 8) {
-            return ip.substring(0, ip.length() - 4) + "****";
-        }
-        return ip;
     }
 
     private void cleanupBucketsIfNeeded(Map<String, Bucket> buckets) {
