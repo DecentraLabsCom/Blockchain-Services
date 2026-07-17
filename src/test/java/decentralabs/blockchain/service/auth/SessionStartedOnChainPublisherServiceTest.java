@@ -509,7 +509,7 @@ class SessionStartedOnChainPublisherServiceTest {
 
         assertThat(service.publishPending(10)).isEqualTo(1);
 
-        verify(jdbcTemplate).update(contains("onchain_status = 'STUCK_UNKNOWN'"), any(Object[].class));
+        verify(jdbcTemplate).update(contains("onchain_status = 'MINED_SUCCESS'"), any(Object[].class));
         verify(onChainClient, never()).transactionStateStrict(anyString());
     }
 
@@ -530,7 +530,7 @@ class SessionStartedOnChainPublisherServiceTest {
         when(onChainClient.transactionVisible(hash)).thenReturn(false);
         when(onChainClient.pendingNonce("0xwallet")).thenReturn(BigInteger.valueOf(45));
 
-        service.publishPending(10);
+        assertThat(service.publishPending(10)).isZero();
 
         verify(jdbcTemplate).update(
             contains("onchain_status = 'RETRY'"), any(Object[].class)

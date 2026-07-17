@@ -1103,7 +1103,10 @@ function detectTokenType(token) {
         const parts = token.split('.');
         if (parts.length !== 3) return 'provider'; // Default to provider
         
-        const payload = JSON.parse(atob(parts[1]));
+        const base64UrlPayload = parts[1];
+        const base64Payload = base64UrlPayload.replace(/-/g, '+').replace(/_/g, '/');
+        const paddedBase64Payload = base64Payload + '='.repeat((4 - (base64Payload.length % 4)) % 4);
+        const payload = JSON.parse(atob(paddedBase64Payload));
         return payload.registrationType || 'provider';
     } catch (error) {
         console.warn('Failed to decode token, defaulting to provider type', error);
