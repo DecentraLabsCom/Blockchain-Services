@@ -9,6 +9,7 @@ import decentralabs.blockchain.dto.auth.WebauthnOnboardingStatusResponse;
 import decentralabs.blockchain.service.auth.MarketplaceEndpointAuthService;
 import decentralabs.blockchain.service.auth.WebauthnCredentialService;
 import decentralabs.blockchain.service.auth.WebauthnOnboardingService;
+import decentralabs.blockchain.util.LogSanitizer;
 import jakarta.validation.Valid;
 import java.net.URI;
 import java.time.Instant;
@@ -81,8 +82,7 @@ public class WebauthnOnboardingController {
         );
         enforceUserScope(claims, stableUserId);
         log.debug("Key status check for user: {}, institution: {}",
-            String.valueOf(stableUserId).replaceAll("[\\r\\n\\t]+", "_"),
-            String.valueOf(institutionId).replaceAll("[\\r\\n\\t]+", "_"));
+            LogSanitizer.maskIdentifier(stableUserId), LogSanitizer.sanitize(institutionId));
         
         WebauthnCredentialService.KeyStatus keyStatus = credentialService.getKeyStatus(stableUserId);
         
@@ -122,7 +122,7 @@ public class WebauthnOnboardingController {
         );
         enforceUserScope(claims, request.getStableUserId());
         log.debug("WebAuthn options requested for institution: {}",
-            String.valueOf(request.getInstitutionId()).replaceAll("[\\r\\n\\t]+", "_"));
+            LogSanitizer.sanitize(request.getInstitutionId()));
         WebauthnOnboardingOptionsResponse response = onboardingService.generateOptions(request);
         return ResponseEntity.ok(response);
     }
@@ -140,7 +140,7 @@ public class WebauthnOnboardingController {
     public ResponseEntity<WebauthnOnboardingCompleteResponse> complete(
             @Valid @RequestBody WebauthnOnboardingCompleteRequest request) {
         log.debug("WebAuthn attestation received for session: {}",
-            String.valueOf(request.getSessionId()).replaceAll("[\\r\\n\\t]+", "_"));
+            LogSanitizer.maskIdentifier(request.getSessionId()));
         WebauthnOnboardingCompleteResponse response = onboardingService.completeOnboarding(request);
         return ResponseEntity.ok(response);
     }
@@ -165,8 +165,7 @@ public class WebauthnOnboardingController {
             authorizationHeader,
             "onboarding:webauthn"
         );
-        log.debug("WebAuthn status check for session: {}",
-            String.valueOf(sessionId).replaceAll("[\\r\\n\\t]+", "_"));
+        log.debug("WebAuthn status check for session: {}", LogSanitizer.maskIdentifier(sessionId));
         WebauthnOnboardingStatusResponse response = onboardingService.getStatus(sessionId);
         enforceUserScope(claims, response.getStableUserId());
         return ResponseEntity.ok(response);
@@ -189,7 +188,7 @@ public class WebauthnOnboardingController {
             @PathVariable String sessionId,
             @RequestParam(value = "parentOrigin", required = false) String parentOrigin) {
         log.debug("WebAuthn ceremony page requested for session: {}",
-            String.valueOf(sessionId).replaceAll("[\\r\\n\\t]+", "_"));
+            LogSanitizer.maskIdentifier(sessionId));
         
         // Validate session exists and is not expired
         WebauthnOnboardingOptionsResponse options = onboardingService.getSessionOptions(sessionId);
@@ -488,7 +487,7 @@ public class WebauthnOnboardingController {
             }
             return scheme + "://" + host;
         } catch (Exception ex) {
-            log.debug("Invalid parent origin '{}'", String.valueOf(candidate).replaceAll("[\\r\\n\\t]+", "_"), ex);
+            log.debug("Invalid parent origin '{}'", LogSanitizer.sanitize(candidate), ex);
             return null;
         }
     }

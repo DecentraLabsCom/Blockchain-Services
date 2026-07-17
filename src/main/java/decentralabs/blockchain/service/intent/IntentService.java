@@ -156,7 +156,7 @@ public class IntentService {
         // codeql[java/log-injection]
         log.info(
             "Intent SAML identity resolved. requestId={} stableUserIdMode={} resolvedPucHash={} payloadPucHash={} action={}",
-            String.valueOf(meta.getRequestId()).replaceAll("[\\r\\n\\t]+", "_"),
+            LogSanitizer.maskIdentifier(meta.getRequestId()),
             LogSanitizer.sanitize(submission.getStableUserIdMode()),
             PucHashUtil.hashPuc(validatedSamlUser),
             LogSanitizer.sanitize(expectedPucHash(actionPayload, reservationPayload)),
@@ -280,7 +280,7 @@ public class IntentService {
                     persistenceService.upsert(record);
                     webhookService.notify(record);
                     log.info("Intent {} expired during reconciliation",
-                        String.valueOf(record.getRequestId()).replaceAll("[\\r\\n\\t]+", "_"));
+                        LogSanitizer.maskIdentifier(record.getRequestId()));
                 }
             });
 
@@ -625,7 +625,7 @@ public class IntentService {
             throw ex;
         } catch (Exception ex) {
             log.warn("Invalid SAML assertion for intent: {}",
-                String.valueOf(ex.getMessage()).replaceAll("[\\r\\n\\t]+", "_"));
+                LogSanitizer.sanitize(ex.getMessage()));
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "invalid_saml");
         }
     }
@@ -698,19 +698,19 @@ public class IntentService {
     private void validateWebauthnAssertion(String puc, String credentialId, IntentMeta meta, IntentSubmission submission) {
         if (isBlank(puc)) {
             log.warn("WebAuthn validation failed. requestId={} reason=missing_puc_for_webauthn",
-                String.valueOf(meta.getRequestId()).replaceAll("[\\r\\n\\t]+", "_"));
+                LogSanitizer.maskIdentifier(meta.getRequestId()));
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "missing_puc_for_webauthn");
         }
         if (isBlank(submission.getWebauthnClientDataJSON()) || isBlank(submission.getWebauthnAuthenticatorData()) || isBlank(submission.getWebauthnSignature())) {
             log.warn("WebAuthn validation failed. requestId={} resolvedPucHash={} reason=missing_webauthn_assertion",
-                String.valueOf(meta.getRequestId()).replaceAll("[\\r\\n\\t]+", "_"), PucHashUtil.hashPuc(puc));
+                LogSanitizer.maskIdentifier(meta.getRequestId()), PucHashUtil.hashPuc(puc));
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "missing_webauthn_assertion");
         }
         WebauthnCredential cred = webauthnCredentialService.findCredential(puc, credentialId)
             .orElseThrow(() -> {
                 log.warn(
                     "WebAuthn validation failed. requestId={} resolvedPucHash={} reason=webauthn_credential_not_registered credentialIdPresent={}",
-                    String.valueOf(meta.getRequestId()).replaceAll("[\\r\\n\\t]+", "_"),
+                    LogSanitizer.maskIdentifier(meta.getRequestId()),
                     PucHashUtil.hashPuc(puc),
                     !isBlank(credentialId)
                 );
@@ -718,7 +718,7 @@ public class IntentService {
             });
         if (!cred.isActive()) {
             log.warn("WebAuthn validation failed. requestId={} resolvedPucHash={} reason=webauthn_credential_revoked",
-                String.valueOf(meta.getRequestId()).replaceAll("[\\r\\n\\t]+", "_"), PucHashUtil.hashPuc(puc));
+                LogSanitizer.maskIdentifier(meta.getRequestId()), PucHashUtil.hashPuc(puc));
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "webauthn_credential_revoked");
         }
 
@@ -730,7 +730,7 @@ public class IntentService {
         String legacyExpectedChallenge = buildLegacyWebauthnChallenge(puc, credentialId, meta);
         log.info(
             "WebAuthn validation started. requestId={} resolvedPucHash={} credentialIdPresent={} expectedChallengeHash={}",
-            String.valueOf(meta.getRequestId()).replaceAll("[\\r\\n\\t]+", "_"),
+            LogSanitizer.maskIdentifier(meta.getRequestId()),
             PucHashUtil.hashPuc(puc),
             !isBlank(credentialId),
             PucHashUtil.hashPuc(expectedChallenge)
@@ -861,7 +861,7 @@ public class IntentService {
             throw ex;
         } catch (Exception ex) {
             log.warn("WebAuthn assertion validation failed: {}",
-                String.valueOf(ex.getMessage()).replaceAll("[\\r\\n\\t]+", "_"));
+                LogSanitizer.sanitize(ex.getMessage()));
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "webauthn_validation_error");
         }
     }

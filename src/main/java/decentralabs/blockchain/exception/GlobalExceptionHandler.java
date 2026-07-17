@@ -15,6 +15,7 @@ import org.springframework.web.servlet.ModelAndView;
 
 import java.util.HashMap;
 import java.util.Map;
+import decentralabs.blockchain.util.LogSanitizer;
 
 /**
  * Global exception handler for all controllers
@@ -75,8 +76,8 @@ public class GlobalExceptionHandler {
         response.put("status", ex.getStatusCode().value());
 
         log.warn("ResponseStatusException at {}: {} - {}", 
-            String.valueOf(request.getRequestURI()).replaceAll("[\\r\\n\\t]+", "_"), ex.getStatusCode(),
-            String.valueOf(ex.getReason()).replaceAll("[\\r\\n\\t]+", "_"));
+            LogSanitizer.sanitize(request.getRequestURI()), ex.getStatusCode(),
+            LogSanitizer.sanitize(ex.getReason()));
         return ResponseEntity.status(ex.getStatusCode()).body(response);
     }
 
@@ -237,8 +238,8 @@ public class GlobalExceptionHandler {
             Exception ex, HttpServletRequest request) {
         
         log.error("Unexpected error at {}: {}",
-            String.valueOf(request.getRequestURI()).replaceAll("[\\r\\n\\t]+", "_"),
-            String.valueOf(ex.getMessage()).replaceAll("[\\r\\n\\t]+", "_"), ex);
+            LogSanitizer.sanitize(request.getRequestURI()),
+            LogSanitizer.sanitize(ex.getMessage()), ex);
 
         // For non-API requests (HTML pages), rethrow to let Spring handle error page
         if (!isApiRequest(request)) {
