@@ -104,7 +104,9 @@ public class Eip712IntentVerifier {
             }
             return new VerificationResult(true, checksum, computedPayloadHash, null);
         } catch (Exception ex) {
-            log.warn("Failed to verify EIP-712 intent {}: {}", LogSanitizer.sanitize(meta.getRequestId()), LogSanitizer.sanitize(ex.getMessage()));
+            log.warn("Failed to verify EIP-712 intent {}: {}",
+                LogSanitizer.sanitize(meta.getRequestId()).replaceAll("[\\r\\n\\t]+", "_"),
+                LogSanitizer.sanitize(ex.getMessage()).replaceAll("[\\r\\n\\t]+", "_"));
             return new VerificationResult(false, null, null, ex.getMessage());
         }
     }

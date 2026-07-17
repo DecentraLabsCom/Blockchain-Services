@@ -546,7 +546,7 @@ public class SessionStartedOnChainPublisherService {
             }
             if (state == SessionStartedOnChainClient.TransactionState.FAILED) {
                 markMinedFailed(
-                    claim, expectedVersion, txHash, "SessionStarted transaction reverted on-chain"
+                    claim, expectedVersion, "SessionStarted transaction reverted on-chain"
                 );
                 return false;
             }
@@ -970,7 +970,7 @@ public class SessionStartedOnChainPublisherService {
     }
 
     private boolean markMinedFailed(
-        PublishClaim claim, long expectedVersion, String txHash, String error
+        PublishClaim claim, long expectedVersion, String error
     ) {
         return jdbcTemplate.update(
             """

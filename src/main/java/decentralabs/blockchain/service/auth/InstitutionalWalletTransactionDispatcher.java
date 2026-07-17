@@ -281,8 +281,7 @@ public class InstitutionalWalletTransactionDispatcher {
     private boolean isTransientFailure(Throwable error) {
         Throwable current = error;
         while (current != null) {
-            if (current instanceof IOException || current instanceof java.net.ConnectException
-                || current instanceof java.net.SocketTimeoutException
+            if (current instanceof IOException
                 || current instanceof org.springframework.dao.DataAccessException) {
                 return true;
             }

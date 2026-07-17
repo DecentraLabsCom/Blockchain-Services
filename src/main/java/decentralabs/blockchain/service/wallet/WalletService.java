@@ -1331,7 +1331,9 @@ public class WalletService {
 
         String oldNetwork = activeNetwork;
         activeNetwork = networkId;
-        log.info("Switched network from {} to {}", oldNetwork, networkId);
+        log.info("Switched network from {} to {}",
+            String.valueOf(oldNetwork).replaceAll("[\\r\\n\\t]+", "_"),
+            String.valueOf(networkId).replaceAll("[\\r\\n\\t]+", "_"));
         
         // Publish event to notify other components
         eventPublisher.publishEvent(new NetworkSwitchEvent(this, oldNetwork, networkId));
@@ -1366,8 +1368,9 @@ public class WalletService {
                 // Create or get existing Web3j instance for this specific URL
                 String cacheKey = network + ":" + index;
                 Web3j web3j = web3jInstances.computeIfAbsent(cacheKey, k -> {
-                    log.info("Creating Web3j instance for {} using RPC endpoint [{}]: {}", 
-                             network, index, rpcUrl);
+                    log.info("Creating Web3j instance for {} using RPC endpoint [{}]: {}",
+                             String.valueOf(network).replaceAll("[\\r\\n\\t]+", "_"), index,
+                             String.valueOf(rpcUrl).replaceAll("[\\r\\n\\t]+", "_"));
                     HttpService httpService = new HttpService(rpcUrl, httpClient);
                     return Web3j.build(httpService);
                 });
@@ -1378,14 +1381,16 @@ public class WalletService {
                     
                     // Success! Update current index for this network
                     if (index != startIndex) {
-                        log.info("Successfully switched to fallback RPC endpoint [{}]: {}", index, rpcUrl);
+                        log.info("Successfully switched to fallback RPC endpoint [{}]: {}", index,
+                            String.valueOf(rpcUrl).replaceAll("[\\r\\n\\t]+", "_"));
                         currentRpcIndex.put(network, index);
                     }
                     
                     return web3j;
                 } catch (Exception e) {
-                    log.warn("RPC endpoint [{}] failed ({}): {} - trying next...", 
-                             index, rpcUrl, e.getMessage());
+                    log.warn("RPC endpoint [{}] failed ({}): {} - trying next...",
+                             index, String.valueOf(rpcUrl).replaceAll("[\\r\\n\\t]+", "_"),
+                             String.valueOf(e.getMessage()).replaceAll("[\\r\\n\\t]+", "_"));
                     
                     // Remove failed instance from cache
                     web3jInstances.remove(cacheKey);
@@ -1393,8 +1398,8 @@ public class WalletService {
                     // Continue to next RPC endpoint
                 }
             } catch (Exception e) {
-                log.warn("Error creating Web3j instance for endpoint [{}]: {} - trying next...", 
-                         index, e.getMessage());
+                log.warn("Error creating Web3j instance for endpoint [{}]: {} - trying next...",
+                         index, String.valueOf(e.getMessage()).replaceAll("[\\r\\n\\t]+", "_"));
             }
         }
         

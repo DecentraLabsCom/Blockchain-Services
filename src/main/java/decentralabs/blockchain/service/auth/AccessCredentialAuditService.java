@@ -59,7 +59,7 @@ public class AccessCredentialAuditService {
             return;
         }
 
-        persist(jwtAuditRecord(request, marketplaceClaims, bookingInfo, issuedToken));
+        persist(jwtAuditRecord(marketplaceClaims, bookingInfo, issuedToken));
     }
 
     /** Fails closed so the caller's delivery transaction rolls back with the access code. */
@@ -76,11 +76,10 @@ public class AccessCredentialAuditService {
         if (!hasText(reservationKey)) {
             throw new IllegalArgumentException("reservationKey is required for durable access audit");
         }
-        persistRequired(jwtAuditRecord(request, marketplaceClaims, bookingInfo, issuedToken));
+        persistRequired(jwtAuditRecord(marketplaceClaims, bookingInfo, issuedToken));
     }
 
     private AuditRecord jwtAuditRecord(
-        SamlAuthRequest request,
         Map<String, Object> marketplaceClaims,
         Map<String, Object> bookingInfo,
         JwtService.IssuedToken issuedToken

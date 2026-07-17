@@ -106,8 +106,8 @@ public class IntentAuthorizationService {
         String puc = resolvePuc(submission);
         if (puc == null || puc.isBlank()) {
             log.warn("Intent authorization PUC resolution failed. requestId={} stableUserIdMode={} payloadPucHash={}",
-                meta.getRequestId(),
-                request.getStableUserIdMode(),
+                String.valueOf(meta.getRequestId()).replaceAll("[\\r\\n\\t]+", "_"),
+                String.valueOf(request.getStableUserIdMode()).replaceAll("[\\r\\n\\t]+", "_"),
                 expectedPucHash(submission.getActionPayload(), submission.getReservationPayload())
             );
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "missing_puc_for_webauthn");
@@ -142,9 +142,9 @@ public class IntentAuthorizationService {
 
         log.info(
             "Intent authorization session created. sessionId={} requestId={} stableUserIdMode={} resolvedPucHash={} payloadPucHash={} activeCredentials={} rpId={}",
-            sessionId,
-            meta.getRequestId(),
-            request.getStableUserIdMode(),
+            String.valueOf(sessionId).replaceAll("[\\r\\n\\t]+", "_"),
+            String.valueOf(meta.getRequestId()).replaceAll("[\\r\\n\\t]+", "_"),
+            String.valueOf(request.getStableUserIdMode()).replaceAll("[\\r\\n\\t]+", "_"),
             PucHashUtil.hashPuc(puc),
             expectedPucHash(submission.getActionPayload(), submission.getReservationPayload()),
             credentialIds.size(),
@@ -192,33 +192,40 @@ public class IntentAuthorizationService {
     public IntentAckResponse completeAuthorization(IntentAuthorizationCompleteRequest request) {
         AuthorizationSession session = pendingSessions.remove(request.getSessionId());
         if (session == null) {
-            log.warn("Intent authorization completion rejected. sessionId={} reason=invalid_or_expired_session", request.getSessionId());
+            log.warn("Intent authorization completion rejected. sessionId={} reason=invalid_or_expired_session",
+                String.valueOf(request.getSessionId()).replaceAll("[\\r\\n\\t]+", "_"));
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Invalid or expired session");
         }
         String requestId = session.getSubmission().getMeta().getRequestId();
         log.info(
             "Intent authorization completion received. sessionId={} requestId={} credentialAllowed={} credentialIdPresent={}",
-            request.getSessionId(),
-            requestId,
+            String.valueOf(request.getSessionId()).replaceAll("[\\r\\n\\t]+", "_"),
+            String.valueOf(requestId).replaceAll("[\\r\\n\\t]+", "_"),
             session.getCredentialIds() != null && session.getCredentialIds().contains(request.getCredentialId()),
             request.getCredentialId() != null && !request.getCredentialId().isBlank()
         );
         if (session.isExpired()) {
-            log.warn("Intent authorization completion rejected. sessionId={} requestId={} reason=session_expired", request.getSessionId(), requestId);
+            log.warn("Intent authorization completion rejected. sessionId={} requestId={} reason=session_expired",
+                String.valueOf(request.getSessionId()).replaceAll("[\\r\\n\\t]+", "_"),
+                String.valueOf(requestId).replaceAll("[\\r\\n\\t]+", "_"));
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Session expired");
         }
         if (request.getCredentialId() == null || request.getCredentialId().isBlank()) {
-            log.warn("Intent authorization completion rejected. sessionId={} requestId={} reason=missing_webauthn_credential", request.getSessionId(), requestId);
+            log.warn("Intent authorization completion rejected. sessionId={} requestId={} reason=missing_webauthn_credential",
+                String.valueOf(request.getSessionId()).replaceAll("[\\r\\n\\t]+", "_"),
+                String.valueOf(requestId).replaceAll("[\\r\\n\\t]+", "_"));
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "missing_webauthn_credential");
         }
         if (session.getCredentialIds() == null || session.getCredentialIds().isEmpty()) {
-            log.warn("Intent authorization completion rejected. sessionId={} requestId={} reason=webauthn_credential_not_registered", request.getSessionId(), requestId);
+            log.warn("Intent authorization completion rejected. sessionId={} requestId={} reason=webauthn_credential_not_registered",
+                String.valueOf(request.getSessionId()).replaceAll("[\\r\\n\\t]+", "_"),
+                String.valueOf(requestId).replaceAll("[\\r\\n\\t]+", "_"));
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "webauthn_credential_not_registered");
         }
         if (!session.getCredentialIds().contains(request.getCredentialId())) {
             log.warn("Intent authorization completion rejected. sessionId={} requestId={} reason=webauthn_credential_not_allowed allowedCredentials={}",
-                request.getSessionId(),
-                requestId,
+                String.valueOf(request.getSessionId()).replaceAll("[\\r\\n\\t]+", "_"),
+                String.valueOf(requestId).replaceAll("[\\r\\n\\t]+", "_"),
                 session.getCredentialIds().size()
             );
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "webauthn_credential_not_allowed");
@@ -235,21 +242,31 @@ public class IntentAuthorizationService {
             ack = intentService.processIntent(submission);
         } catch (ResponseStatusException ex) {
             storeResult(session, "FAILED", ex.getReason());
-            log.warn("Intent authorization completion failed. sessionId={} requestId={} reason={}", request.getSessionId(), requestId, ex.getReason());
+            log.warn("Intent authorization completion failed. sessionId={} requestId={} reason={}",
+                String.valueOf(request.getSessionId()).replaceAll("[\\r\\n\\t]+", "_"),
+                String.valueOf(requestId).replaceAll("[\\r\\n\\t]+", "_"),
+                String.valueOf(ex.getReason()).replaceAll("[\\r\\n\\t]+", "_"));
             throw ex;
         }
 
         if ("accepted".equalsIgnoreCase(ack.getStatus())) {
             storeResult(session, "SUCCESS", null);
-            log.info("Intent authorization completion accepted. sessionId={} requestId={}", request.getSessionId(), requestId);
+            log.info("Intent authorization completion accepted. sessionId={} requestId={}",
+                String.valueOf(request.getSessionId()).replaceAll("[\\r\\n\\t]+", "_"),
+                String.valueOf(requestId).replaceAll("[\\r\\n\\t]+", "_"));
             try {
                 intentExecutionService.processQueuedIntent(ack.getRequestId());
             } catch (Exception ex) {
-                log.warn("Immediate intent execution failed for {}: {}", ack.getRequestId(), ex.getMessage(), ex);
+                log.warn("Immediate intent execution failed for {}: {}",
+                    String.valueOf(ack.getRequestId()).replaceAll("[\\r\\n\\t]+", "_"),
+                    String.valueOf(ex.getMessage()).replaceAll("[\\r\\n\\t]+", "_"), ex);
             }
         } else {
             storeResult(session, "FAILED", ack.getReason());
-            log.warn("Intent authorization completion rejected by intent service. sessionId={} requestId={} reason={}", request.getSessionId(), requestId, ack.getReason());
+            log.warn("Intent authorization completion rejected by intent service. sessionId={} requestId={} reason={}",
+                String.valueOf(request.getSessionId()).replaceAll("[\\r\\n\\t]+", "_"),
+                String.valueOf(requestId).replaceAll("[\\r\\n\\t]+", "_"),
+                String.valueOf(ack.getReason()).replaceAll("[\\r\\n\\t]+", "_"));
         }
         return ack;
     }
@@ -292,7 +309,7 @@ public class IntentAuthorizationService {
         if (activeCredentials.isEmpty()) {
             log.warn(
                 "No active WebAuthn credentials for intent authorization. requestId={} resolvedPucHash={} totalCredentials={}",
-                meta.getRequestId(),
+                String.valueOf(meta.getRequestId()).replaceAll("[\\r\\n\\t]+", "_"),
                 PucHashUtil.hashPuc(puc),
                 credentials.size()
             );
@@ -300,7 +317,7 @@ public class IntentAuthorizationService {
         }
         log.info(
             "WebAuthn credentials selected for intent authorization. requestId={} resolvedPucHash={} activeCredentials={} totalCredentials={}",
-            meta.getRequestId(),
+            String.valueOf(meta.getRequestId()).replaceAll("[\\r\\n\\t]+", "_"),
             PucHashUtil.hashPuc(puc),
             activeCredentials.size(),
             credentials.size()
@@ -322,8 +339,8 @@ public class IntentAuthorizationService {
             if (normalized != null && !normalized.isBlank()) {
                 log.info(
                     "Resolved intent authorization PUC. requestId={} stableUserIdMode={} samlUserHash={} resolvedPucHash={} payloadPucHash={}",
-                    submission.getMeta().getRequestId(),
-                    submission.getStableUserIdMode(),
+                    String.valueOf(submission.getMeta().getRequestId()).replaceAll("[\\r\\n\\t]+", "_"),
+                    String.valueOf(submission.getStableUserIdMode()).replaceAll("[\\r\\n\\t]+", "_"),
                     PucHashUtil.hashPuc(samlAttributes.get("puc")),
                     PucHashUtil.hashPuc(normalized),
                     expectedPucHash
@@ -332,8 +349,8 @@ public class IntentAuthorizationService {
             }
         } catch (Exception ex) {
             log.warn("Invalid SAML while resolving intent authorization PUC. requestId={} reason={}",
-                submission.getMeta() != null ? submission.getMeta().getRequestId() : null,
-                ex.getMessage()
+                submission.getMeta() == null ? "" : String.valueOf(submission.getMeta().getRequestId()).replaceAll("[\\r\\n\\t]+", "_"),
+                String.valueOf(ex.getMessage()).replaceAll("[\\r\\n\\t]+", "_")
             );
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "invalid_saml", ex);
         }
