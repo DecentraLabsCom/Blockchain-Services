@@ -256,7 +256,7 @@ public class SessionStartedOnChainPublisherService {
                     onchain_reservation_guard = reservation_key,
                     onchain_claim_id = ?, onchain_claimed_by = ?,
                     onchain_claim_version = onchain_version + 1,
-                    onchain_claim_expires_at = TIMESTAMPADD(MICROSECOND, ?, CURRENT_TIMESTAMP),
+                    onchain_claim_expires_at = TIMESTAMPADD(MICROSECOND, ?, CURRENT_TIMESTAMP(6)),
                     onchain_version = onchain_version + 1,
                     onchain_publish_last_error = NULL,
                     updated_at = CURRENT_TIMESTAMP

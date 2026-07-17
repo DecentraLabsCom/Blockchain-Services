@@ -313,7 +313,7 @@ public class InstitutionalCheckInOutboxService {
             UPDATE institutional_checkin_outbox
             SET status = 'SUBMITTING', claim_version = version + 1,
                 version = version + 1, claim_id = ?, claimed_by = ?,
-                claim_expires_at = TIMESTAMPADD(MICROSECOND, ?, CURRENT_TIMESTAMP),
+                claim_expires_at = TIMESTAMPADD(MICROSECOND, ?, CURRENT_TIMESTAMP(6)),
                 updated_at = CURRENT_TIMESTAMP
             WHERE id = ?
               AND (

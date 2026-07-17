@@ -130,7 +130,7 @@ class InstitutionalCheckInOutboxServiceTest {
             .contains("claim_id = ?")
             .contains("claimed_by = ?")
             .contains("claim_version = version + 1")
-            .contains("claim_expires_at = TIMESTAMPADD(MICROSECOND, ?, CURRENT_TIMESTAMP)")
+            .contains("claim_expires_at = TIMESTAMPADD(MICROSECOND, ?, CURRENT_TIMESTAMP(6))")
             .contains("claim_expires_at <= CURRENT_TIMESTAMP");
         assertThat(parameters.getValue()[2]).isEqualTo(900_000_000L);
     }

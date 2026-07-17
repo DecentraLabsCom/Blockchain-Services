@@ -87,7 +87,7 @@ class SessionStartedOnChainPublisherServiceTest {
 
         verify(jdbcTemplate, atLeastOnce()).update(contains("onchain_claim_id = ?"), any(Object[].class));
         verify(jdbcTemplate).update(
-            contains("onchain_claim_expires_at = TIMESTAMPADD(MICROSECOND, ?, CURRENT_TIMESTAMP)"),
+            contains("onchain_claim_expires_at = TIMESTAMPADD(MICROSECOND, ?, CURRENT_TIMESTAMP(6))"),
             any(Object[].class)
         );
         verify(jdbcTemplate, atLeastOnce()).update(
