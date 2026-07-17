@@ -10,7 +10,6 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import decentralabs.blockchain.dto.auth.AccessCredentialSessionObservedRequest;
-import decentralabs.blockchain.dto.auth.SamlAuthRequest;
 import java.math.BigInteger;
 import java.sql.Timestamp;
 import java.time.Instant;
@@ -63,7 +62,7 @@ class AccessCredentialAuditServiceTest {
         JwtService.IssuedToken issuedToken =
             new JwtService.IssuedToken("secret.jwt.value", "session-abc", 1_700_000_000L, 1_700_003_600L);
 
-        service.recordJwtIssued(new SamlAuthRequest(), marketplaceClaims, bookingInfo, issuedToken);
+        service.recordJwtIssued(marketplaceClaims, bookingInfo, issuedToken);
 
         ArgumentCaptor<Object[]> args = ArgumentCaptor.forClass(Object[].class);
         verify(jdbcTemplate).update(contains("INSERT INTO access_credential_audit"), args.capture());
@@ -116,7 +115,6 @@ class AccessCredentialAuditServiceTest {
         AccessCredentialAuditService service = buildService(null);
 
         service.recordJwtIssued(
-            new SamlAuthRequest(),
             Map.of("puc", "user"),
             Map.of("reservationKey", "0xabc"),
             new JwtService.IssuedToken("token", "jti", 1L, 2L)

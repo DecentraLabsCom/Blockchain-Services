@@ -18,6 +18,7 @@ import decentralabs.blockchain.dto.auth.WebauthnOnboardingOptionsResponse.Relyin
 import decentralabs.blockchain.dto.auth.WebauthnOnboardingOptionsResponse.User;
 import decentralabs.blockchain.dto.auth.WebauthnOnboardingStatusResponse;
 import decentralabs.blockchain.service.BackendUrlResolver;
+import decentralabs.blockchain.util.LogSanitizer;
 import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
 import java.io.ByteArrayInputStream;
@@ -351,10 +352,11 @@ public class WebauthnOnboardingService {
                 transports
             );
 
+            // Both identifiers are control-character sanitized before logging.
+            // codeql[java/log-injection]
             log.info("WebAuthn credential registered. StableUserId: {}, CredentialId: {}",
-                String.valueOf(session.getStableUserId()).replaceAll("[\\r\\n\\t]+", "_"),
-                credentialId.substring(0, Math.min(20, credentialId.length()))
-                    .replaceAll("[\\r\\n\\t]+", "_") + "...");
+                LogSanitizer.sanitize(session.getStableUserId()),
+                LogSanitizer.sanitize(credentialId.substring(0, Math.min(20, credentialId.length()))) + "...");
 
             WebauthnOnboardingCompleteResponse response = WebauthnOnboardingCompleteResponse.builder()
                 .success(true)

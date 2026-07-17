@@ -1,7 +1,6 @@
 package decentralabs.blockchain.service.auth;
 
 import decentralabs.blockchain.dto.auth.AccessCredentialSessionObservedRequest;
-import decentralabs.blockchain.dto.auth.SamlAuthRequest;
 import decentralabs.blockchain.util.LogSanitizer;
 import decentralabs.blockchain.util.PucHashUtil;
 import decentralabs.blockchain.util.PucNormalizer;
@@ -45,7 +44,6 @@ public class AccessCredentialAuditService {
     }
 
     public void recordJwtIssued(
-        SamlAuthRequest request,
         Map<String, Object> marketplaceClaims,
         Map<String, Object> bookingInfo,
         JwtService.IssuedToken issuedToken
@@ -64,7 +62,6 @@ public class AccessCredentialAuditService {
 
     /** Fails closed so the caller's delivery transaction rolls back with the access code. */
     public void recordJwtIssuedRequired(
-        SamlAuthRequest request,
         Map<String, Object> marketplaceClaims,
         Map<String, Object> bookingInfo,
         JwtService.IssuedToken issuedToken

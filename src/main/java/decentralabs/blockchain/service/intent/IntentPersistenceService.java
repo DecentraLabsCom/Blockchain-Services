@@ -72,6 +72,8 @@ public class IntentPersistenceService {
                 record.getPayloadJson()
             );
         } catch (Exception e) {
+            // LogSanitizer removes control characters from both request and exception data.
+            // codeql[java/log-injection]
             log.warn("Intent persistence skipped for {}: {}",
                 LogSanitizer.sanitize(record.getRequestId()).replaceAll("[\\r\\n\\t]+", "_"),
                 LogSanitizer.sanitize(e.getMessage()).replaceAll("[\\r\\n\\t]+", "_"));
@@ -89,6 +91,8 @@ public class IntentPersistenceService {
                 requestId
             ).stream().findFirst();
         } catch (Exception e) {
+            // LogSanitizer removes control characters from both request and exception data.
+            // codeql[java/log-injection]
             log.warn("Intent lookup skipped for {}: {}",
                 LogSanitizer.sanitize(requestId).replaceAll("[\\r\\n\\t]+", "_"),
                 LogSanitizer.sanitize(e.getMessage()).replaceAll("[\\r\\n\\t]+", "_"));

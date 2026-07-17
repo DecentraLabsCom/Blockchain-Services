@@ -30,6 +30,7 @@ jobs:
         with:
           languages: java
           queries: security-extended,security-and-quality
+          packs: codeql/java-queries:AlertSuppression.ql,codeql/java-queries:AlertSuppressionAnnotations.ql
           
       - name: Set up Temurin JDK 21
         uses: actions/setup-java@v5
@@ -42,9 +43,20 @@ jobs:
         run: mvn -B -ntp package -DskipTests
       
       - name: Perform CodeQL Analysis
+        id: analyze
         uses: github/codeql-action/analyze@v4
         with:
           category: "/language:java"
+          output: sarif-results
+
+      - name: Dismiss suppressed CodeQL alerts
+        if: github.ref == 'refs/heads/main'
+        uses: advanced-security/dismiss-alerts@v2
+        with:
+          sarif-id: ${{ steps.analyze.outputs.sarif-id }}
+          sarif-file: sarif-results/java.sarif
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
 
   dependency-review:
     name: Dependency Review

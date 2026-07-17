@@ -2,6 +2,7 @@ package decentralabs.blockchain.service.billing;
 
 import decentralabs.blockchain.domain.*;
 import decentralabs.blockchain.service.persistence.ProviderSettlementPersistenceService;
+import decentralabs.blockchain.util.LogSanitizer;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -47,7 +48,7 @@ public class ProviderSettlementService {
 
         record = persistence.createInvoiceRecord(record);
         log.info("Submitted provider invoice {} for lab {} (EUR {})",
-            String.valueOf(invoiceRef).replaceAll("[\\r\\n\\t]+", "_"), labId, eurAmount);
+            LogSanitizer.sanitize(invoiceRef), labId, eurAmount);
         return record;
     }
 
@@ -75,8 +76,7 @@ public class ProviderSettlementService {
         persistence.updateInvoiceStatus(invoiceId, ProviderInvoiceRecord.Status.APPROVED);
 
         log.info("Approved provider invoice {} by {} ref={} (EUR {})", invoiceId,
-            String.valueOf(approvedBy).replaceAll("[\\r\\n\\t]+", "_"),
-            String.valueOf(approvalRef).replaceAll("[\\r\\n\\t]+", "_"), eurAmount);
+            LogSanitizer.sanitize(approvedBy), LogSanitizer.sanitize(approvalRef), eurAmount);
         return approval;
     }
 
@@ -98,8 +98,10 @@ public class ProviderSettlementService {
                 .build();
 
         payout = persistence.createPayout(payout);
+        // The provider address is control-character sanitized before logging.
+        // codeql[java/log-injection]
         log.info("Recorded payout for lab {} provider {} (EUR {})", labId,
-            String.valueOf(providerAddress).replaceAll("[\\r\\n\\t]+", "_"), eurAmount);
+            LogSanitizer.sanitize(providerAddress), eurAmount);
         return payout;
     }
 

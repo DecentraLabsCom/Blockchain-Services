@@ -2,6 +2,7 @@ package decentralabs.blockchain.service.billing;
 
 import decentralabs.blockchain.domain.ProviderNetworkMembership;
 import decentralabs.blockchain.service.persistence.ProviderNetworkPersistenceService;
+import decentralabs.blockchain.util.LogSanitizer;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -48,26 +49,28 @@ public class ProviderNetworkService {
                 .build();
 
         membership = persistence.createMembership(membership);
+        // All request-derived values in this audit message are control-character sanitized.
+        // codeql[java/log-injection]
         log.info("Activated provider {} in network (contract {}, agreement {}), by {}",
-                String.valueOf(providerAddress).replaceAll("[\\r\\n\\t]+", "_"), contractId,
-                String.valueOf(agreementVersion).replaceAll("[\\r\\n\\t]+", "_"),
-                String.valueOf(activatedBy).replaceAll("[\\r\\n\\t]+", "_"));
+                LogSanitizer.sanitize(providerAddress), LogSanitizer.sanitize(contractId),
+                LogSanitizer.sanitize(agreementVersion), LogSanitizer.sanitize(activatedBy));
         return membership;
     }
 
     @Transactional
     public void suspend(long membershipId, String reason, String actionBy) {
         persistence.updateMembershipStatus(membershipId, ProviderNetworkMembership.Status.SUSPENDED, reason, actionBy);
+        // codeql[java/log-injection]
         log.info("Suspended provider membership {} by {}: {}", membershipId,
-            String.valueOf(actionBy).replaceAll("[\\r\\n\\t]+", "_"),
-            String.valueOf(reason).replaceAll("[\\r\\n\\t]+", "_"));
+            LogSanitizer.sanitize(actionBy), LogSanitizer.sanitize(reason));
     }
 
     @Transactional
     public void terminate(long membershipId, String actionBy) {
         persistence.updateMembershipStatus(membershipId, ProviderNetworkMembership.Status.TERMINATED, null, actionBy);
+        // codeql[java/log-injection]
         log.info("Terminated provider membership {} by {}", membershipId,
-            String.valueOf(actionBy).replaceAll("[\\r\\n\\t]+", "_"));
+            LogSanitizer.sanitize(actionBy));
     }
 
     public Optional<ProviderNetworkMembership> findByProvider(String providerAddress) {

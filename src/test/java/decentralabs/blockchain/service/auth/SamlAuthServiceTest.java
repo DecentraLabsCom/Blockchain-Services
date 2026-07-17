@@ -184,7 +184,7 @@ class SamlAuthServiceTest {
             when(jwtService.generateIssuedToken(eq(null), any())).thenReturn(
                 new JwtService.IssuedToken("booking-token", "jwt-jti-provider", 1_700_000_000L, null)
             );
-            when(accessCredentialDeliveryService.deliver(any(), any(), any(), eq(bookingInfo), any())).thenReturn(
+            when(accessCredentialDeliveryService.deliver(any(), any(), eq(bookingInfo), any())).thenReturn(
                 AuthResponse.opaqueAccess("opaque-code", "https://lab.example.com/guacamole/", "lab", "0xreservation")
             );
             var lease = new AccessAuthorizationProvisioningService.ProvisioningLease(
@@ -202,7 +202,7 @@ class SamlAuthServiceTest {
             assertThat(response.getLabURL()).isEqualTo("https://lab.example.com/guacamole/");
             assertThat(response.getReservationKey()).isEqualTo("0xreservation");
             verify(accessCheckInCoordinator, never()).recordAccessGranted(any(), any(), any());
-            verify(accessCredentialDeliveryService).deliver(any(), any(), any(), eq(bookingInfo), eq(lease));
+            verify(accessCredentialDeliveryService).deliver(any(), any(), eq(bookingInfo), eq(lease));
         }
 
         @Test
@@ -234,7 +234,7 @@ class SamlAuthServiceTest {
             );
             when(accessAuthorizationProvisioningService.tryStart("0xcanonical")).thenReturn(lease);
             when(accessAuthorizationProvisioningService.markDelivered(lease)).thenReturn(true);
-            when(accessCredentialDeliveryService.deliver(any(), any(), any(), eq(bookingInfo), eq(lease))).thenReturn(
+            when(accessCredentialDeliveryService.deliver(any(), any(), eq(bookingInfo), eq(lease))).thenReturn(
                 AuthResponse.opaqueAccess("opaque-code", "https://lab.example.com/fmu/", "fmu", "0xcanonical")
             );
 
@@ -245,7 +245,7 @@ class SamlAuthServiceTest {
             assertThat(response.getResourceType()).isEqualTo("fmu");
             verify(accessAuthorizationProvisioningService).recoverableProvisioning("0xcanonical");
             verify(accessAuthorizationProvisioningService).tryStart("0xcanonical");
-            verify(accessCredentialDeliveryService).deliver(any(), any(), any(), eq(bookingInfo), eq(lease));
+            verify(accessCredentialDeliveryService).deliver(any(), any(), eq(bookingInfo), eq(lease));
         }
 
         @Test
@@ -352,7 +352,7 @@ class SamlAuthServiceTest {
             verify(blockchainService).deletePreparedGuacamoleAccess(bookingInfo);
             verify(accessAuthorizationProvisioningService).markRolledBack(lease);
             verify(jwtService, never()).generateIssuedToken(eq(null), any());
-            verify(accessCredentialDeliveryService, never()).deliver(any(), any(), any(), any(), any());
+            verify(accessCredentialDeliveryService, never()).deliver(any(), any(), any(), any());
         }
 
         @Test
@@ -421,7 +421,7 @@ class SamlAuthServiceTest {
             when(accessAuthorizationProvisioningService.isCurrent(lease)).thenReturn(true);
             when(accessAuthorizationProvisioningService.heartbeat(lease)).thenReturn(true);
             when(accessAuthorizationProvisioningService.markDelivered(lease)).thenReturn(true);
-            when(accessCredentialDeliveryService.deliver(any(), any(), any(), eq(bookingInfo), eq(lease))).thenReturn(
+            when(accessCredentialDeliveryService.deliver(any(), any(), eq(bookingInfo), eq(lease))).thenReturn(
                 AuthResponse.opaqueAccess("opaque-code", "https://lab.example.com/guacamole/", "lab", "0xreservation")
             );
 
@@ -468,7 +468,7 @@ class SamlAuthServiceTest {
         when(accessAuthorizationProvisioningService.isCurrent(lease)).thenReturn(true);
         when(accessAuthorizationProvisioningService.heartbeat(lease)).thenReturn(true);
         when(accessAuthorizationProvisioningService.markDelivered(lease)).thenReturn(true);
-        when(accessCredentialDeliveryService.deliver(any(), any(), any(), eq(bookingInfo), eq(lease))).thenReturn(
+        when(accessCredentialDeliveryService.deliver(any(), any(), eq(bookingInfo), eq(lease))).thenReturn(
             AuthResponse.opaqueAccess("opaque-code", "https://lab.example.com/guacamole/", "lab", "0xreservation")
         );
 
@@ -516,7 +516,7 @@ class SamlAuthServiceTest {
 
         verify(accessAuthorizationProvisioningService, never()).tryStart(any());
         verify(blockchainService, never()).provisionGuacamoleAccess(any(), anyBoolean(), anyString());
-        verify(accessCredentialDeliveryService, never()).deliver(any(), any(), any(), any(), any());
+        verify(accessCredentialDeliveryService, never()).deliver(any(), any(), any(), any());
     }
 
     @Test
@@ -556,6 +556,6 @@ class SamlAuthServiceTest {
 
         verify(accessAuthorizationProvisioningService, never()).tryStart(any());
         verify(blockchainService, never()).provisionGuacamoleAccess(any(), anyBoolean(), anyString());
-        verify(accessCredentialDeliveryService, never()).deliver(any(), any(), any(), any(), any());
+        verify(accessCredentialDeliveryService, never()).deliver(any(), any(), any(), any());
     }
 }

@@ -15,6 +15,7 @@ import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
 import lombok.AllArgsConstructor;
 import lombok.Data;
+import lombok.ToString;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
@@ -34,6 +35,7 @@ import decentralabs.blockchain.service.auth.SamlValidationService;
 import decentralabs.blockchain.service.auth.WebauthnCredentialService;
 import decentralabs.blockchain.service.auth.WebauthnCredentialService.WebauthnCredential;
 import decentralabs.blockchain.util.PucHashUtil;
+import decentralabs.blockchain.util.LogSanitizer;
 import decentralabs.blockchain.util.PucNormalizer;
 
 @Service
@@ -105,10 +107,12 @@ public class IntentAuthorizationService {
         IntentMeta meta = submission.getMeta();
         String puc = resolvePuc(submission);
         if (puc == null || puc.isBlank()) {
+            // Request-derived values are control-character sanitized or hashed before logging.
+            // codeql[java/log-injection]
             log.warn("Intent authorization PUC resolution failed. requestId={} stableUserIdMode={} payloadPucHash={}",
-                String.valueOf(meta.getRequestId()).replaceAll("[\\r\\n\\t]+", "_"),
-                String.valueOf(request.getStableUserIdMode()).replaceAll("[\\r\\n\\t]+", "_"),
-                expectedPucHash(submission.getActionPayload(), submission.getReservationPayload())
+                LogSanitizer.sanitize(meta.getRequestId()),
+                LogSanitizer.sanitize(request.getStableUserIdMode()),
+                LogSanitizer.sanitize(expectedPucHash(submission.getActionPayload(), submission.getReservationPayload()))
             );
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "missing_puc_for_webauthn");
         }
@@ -140,15 +144,17 @@ public class IntentAuthorizationService {
         );
         pendingSessions.put(sessionId, session);
 
+        // Session metadata is control-character sanitized or hashed before logging.
+        // codeql[java/log-injection]
         log.info(
             "Intent authorization session created. sessionId={} requestId={} stableUserIdMode={} resolvedPucHash={} payloadPucHash={} activeCredentials={} rpId={}",
-            String.valueOf(sessionId).replaceAll("[\\r\\n\\t]+", "_"),
-            String.valueOf(meta.getRequestId()).replaceAll("[\\r\\n\\t]+", "_"),
-            String.valueOf(request.getStableUserIdMode()).replaceAll("[\\r\\n\\t]+", "_"),
+            LogSanitizer.sanitize(sessionId),
+            LogSanitizer.sanitize(meta.getRequestId()),
+            LogSanitizer.sanitize(request.getStableUserIdMode()),
             PucHashUtil.hashPuc(puc),
-            expectedPucHash(submission.getActionPayload(), submission.getReservationPayload()),
+            LogSanitizer.sanitize(expectedPucHash(submission.getActionPayload(), submission.getReservationPayload())),
             credentialIds.size(),
-            getRelyingPartyId()
+            LogSanitizer.sanitize(getRelyingPartyId())
         );
         return session;
     }
@@ -485,6 +491,7 @@ public class IntentAuthorizationService {
     @AllArgsConstructor
     public static class AuthorizationSession {
         private String sessionId;
+        @ToString.Exclude
         private IntentSubmission submission;
         private List<String> credentialIds;
         private String challenge;
