@@ -1364,9 +1364,7 @@ public class WalletService {
                 // Create or get existing Web3j instance for this specific URL
                 String cacheKey = network + ":" + index;
                 Web3j web3j = web3jInstances.computeIfAbsent(cacheKey, k -> {
-                    // codeql[java/log-injection]
-                    log.info("Creating Web3j instance for {} using RPC endpoint index {}",
-                             LogSanitizer.sanitize(network), index);
+                    log.info("Creating Web3j instance using RPC endpoint index {}", index);
                     HttpService httpService = new HttpService(rpcUrl, httpClient);
                     return Web3j.build(httpService);
                 });

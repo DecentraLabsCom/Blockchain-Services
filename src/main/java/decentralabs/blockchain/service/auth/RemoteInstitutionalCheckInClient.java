@@ -275,7 +275,10 @@ public class RemoteInstitutionalCheckInClient {
                 trace.size() - MAX_DELEGATION_TRACE_ENTRIES, trace.size()
             ));
         }
-        request.setDelegationHop(hop + 1);
+        if (hop < 0 || hop >= MAX_DELEGATION_HOPS) {
+            return;
+        }
+        request.setDelegationHop(Math.incrementExact(hop));
         request.setDelegationTrace(List.copyOf(trace));
     }
 

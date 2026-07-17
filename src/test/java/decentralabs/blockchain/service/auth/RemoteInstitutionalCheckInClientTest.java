@@ -262,6 +262,16 @@ class RemoteInstitutionalCheckInClientTest {
     }
 
     @Test
+    void doesNotWrapAnInvalidMaximumDelegationHopWhenPreparingMetadata() {
+        InstitutionalCheckInRequest request = new InstitutionalCheckInRequest();
+        request.setDelegationHop(Integer.MAX_VALUE);
+
+        ReflectionTestUtils.invokeMethod(client, "prepareDelegationMetadata", request);
+
+        assertThat(request.getDelegationHop()).isEqualTo(Integer.MAX_VALUE);
+    }
+
+    @Test
     void rejectsADelegationTraceContainingTheTargetBaseBeforeResolvingDns() throws Exception {
         InstitutionalCheckInRequest request = new InstitutionalCheckInRequest();
         request.setDelegationTrace(List.of("https://backend-b.example"));

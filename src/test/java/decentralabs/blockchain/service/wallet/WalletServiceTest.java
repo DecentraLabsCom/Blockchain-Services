@@ -19,6 +19,9 @@ import decentralabs.blockchain.dto.wallet.WalletImportRequest;
 import decentralabs.blockchain.event.NetworkSwitchEvent;
 import decentralabs.blockchain.contract.Diamond;
 import decentralabs.blockchain.service.persistence.WalletPersistenceService;
+import ch.qos.logback.classic.Logger;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.read.ListAppender;
 import java.math.BigInteger;
 import java.util.Arrays;
 import java.util.List;
@@ -33,6 +36,7 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.MockedStatic;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.slf4j.LoggerFactory;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.test.util.ReflectionTestUtils;
 import org.web3j.abi.FunctionReturnDecoder;
@@ -51,6 +55,7 @@ import org.web3j.protocol.core.methods.response.EthCall;
 import org.web3j.protocol.core.methods.response.EthBlockNumber;
 import org.web3j.protocol.core.methods.response.EthGetBalance;
 import org.web3j.protocol.core.methods.response.EthGetTransactionCount;
+import org.web3j.protocol.http.HttpService;
 import org.web3j.tx.TransactionManager;
 import org.web3j.tx.gas.ContractGasProvider;
 
@@ -551,6 +556,31 @@ class WalletServiceTest {
         assertThat(failure.getMessage())
             .doesNotContain("https://sep-a.example")
             .doesNotContain("https://sep-b.example");
+    }
+
+    @Test
+    void getWeb3jInstanceWithFallback_doesNotLogTheRequestedNetworkValue() throws Exception {
+        service.init();
+        String maliciousNetwork = "sepolia\nforged-entry";
+        Web3j healthy = mock(Web3j.class);
+        stubBlockNumber(healthy, 123L);
+
+        Logger logger = (Logger) LoggerFactory.getLogger(WalletService.class);
+        ListAppender<ILoggingEvent> appender = new ListAppender<>();
+        appender.start();
+        logger.addAppender(appender);
+        try {
+            try (MockedStatic<Web3j> web3jStatic = org.mockito.Mockito.mockStatic(Web3j.class)) {
+                web3jStatic.when(() -> Web3j.build(any(HttpService.class))).thenReturn(healthy);
+                ReflectionTestUtils.invokeMethod(service, "getWeb3jInstanceWithFallback", maliciousNetwork);
+            }
+        } finally {
+            logger.detachAppender(appender);
+        }
+
+        assertThat(appender.list)
+            .extracting(ILoggingEvent::getFormattedMessage)
+            .noneMatch(message -> message.contains("forged-entry"));
     }
 
     @SuppressWarnings("rawtypes")
