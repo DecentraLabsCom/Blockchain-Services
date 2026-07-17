@@ -12,6 +12,7 @@ import java.net.InetAddress;
 import java.net.URI;
 import java.net.UnknownHostException;
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.List;
 import lombok.extern.slf4j.Slf4j;
 import okhttp3.Dns;
@@ -32,6 +33,8 @@ import org.springframework.web.util.UriComponentsBuilder;
 public class RemoteInstitutionalCheckInClient {
     private static final MediaType JSON = MediaType.get("application/json; charset=utf-8");
     private static final long MAX_RESPONSE_BYTES = 1024 * 1024;
+    private static final int MAX_DELEGATION_HOPS = 1;
+    private static final int MAX_DELEGATION_TRACE_ENTRIES = 8;
 
     private final ObjectMapper objectMapper;
     private final HostResolver hostResolver;
@@ -109,12 +112,16 @@ public class RemoteInstitutionalCheckInClient {
         InstitutionalCheckInRequest request
     ) {
         URI endpoint = buildEndpoint(backendBaseUrl);
+        if (isDelegationLoop(backendBaseUrl, request)) {
+            return delegationLoopResult();
+        }
         if (isSelfDelegation(backendBaseUrl)) {
             return selfDelegationResult();
         }
         try {
             List<InetAddress> addresses = hostResolver.resolve(endpoint.getHost());
             assertAddressesAllowed(endpoint.getHost(), addresses);
+            prepareDelegationMetadata(request);
             RemoteCheckInResult response = transport.post(endpoint, request, List.copyOf(addresses));
             if (response == null) {
                 throw new IllegalStateException("Remote institutional check-in returned an empty response");
@@ -218,6 +225,58 @@ public class RemoteInstitutionalCheckInClient {
         response.setReason("CHECKIN_SIGNER_NOT_AUTHORIZED");
         response.setRetryable(false);
         return new RemoteCheckInResult(409, response, null);
+    }
+
+    private RemoteCheckInResult delegationLoopResult() {
+        CheckInResponse response = new CheckInResponse();
+        response.setValid(false);
+        response.setReason("CHECKIN_DELEGATION_LOOP");
+        response.setRetryable(false);
+        return new RemoteCheckInResult(409, response, null);
+    }
+
+    private boolean isDelegationLoop(String backendBaseUrl, InstitutionalCheckInRequest request) {
+        if (request == null) {
+            return false;
+        }
+        int hop = request.getDelegationHop() == null ? 0 : request.getDelegationHop();
+        if (hop < 0 || hop >= MAX_DELEGATION_HOPS
+            || (request.getDelegationTrace() != null
+                && request.getDelegationTrace().size() > MAX_DELEGATION_TRACE_ENTRIES)) {
+            return true;
+        }
+        String target = normalizeBaseUrl(backendBaseUrl, "");
+        return target != null
+            && request.getDelegationTrace() != null
+            && request.getDelegationTrace().stream()
+                .map(value -> normalizeBaseUrl(value, ""))
+                .anyMatch(target::equals);
+    }
+
+    private void prepareDelegationMetadata(InstitutionalCheckInRequest request) {
+        if (request == null) {
+            return;
+        }
+        int hop = request.getDelegationHop() == null ? 0 : request.getDelegationHop();
+        List<String> trace = new ArrayList<>(request.getDelegationTrace() == null
+            ? List.of() : request.getDelegationTrace().stream()
+                .filter(value -> value != null && !value.isBlank())
+                .limit(MAX_DELEGATION_TRACE_ENTRIES)
+                .toList());
+        String current = normalizeBaseUrl(configuredPublicBaseUrl, "");
+        if (current == null && backendUrlResolver != null) {
+            current = normalizeBaseUrl(backendUrlResolver.resolveBaseDomain(), "");
+        }
+        if (current != null && !trace.contains(current)) {
+            trace.add(current);
+        }
+        if (trace.size() > MAX_DELEGATION_TRACE_ENTRIES) {
+            trace = new ArrayList<>(trace.subList(
+                trace.size() - MAX_DELEGATION_TRACE_ENTRIES, trace.size()
+            ));
+        }
+        request.setDelegationHop(hop + 1);
+        request.setDelegationTrace(List.copyOf(trace));
     }
 
     private boolean isSelfDelegation(String backendBaseUrl) {

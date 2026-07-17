@@ -243,4 +243,37 @@ class RemoteInstitutionalCheckInClientTest {
         verify(transport, org.mockito.Mockito.never()).post(org.mockito.ArgumentMatchers.any(),
             org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any());
     }
+
+    @Test
+    void rejectsASecondDelegationHopBeforeResolvingTheRemoteBackend() throws Exception {
+        InstitutionalCheckInRequest request = new InstitutionalCheckInRequest();
+        request.setDelegationHop(1);
+        request.setDelegationTrace(List.of("https://backend-a.example/auth/checkin-institutional"));
+
+        RemoteInstitutionalCheckInClient.RemoteCheckInResult result = client.submitDetailed(
+            "https://backend-b.example", request
+        );
+
+        assertThat(result.status()).isEqualTo(409);
+        assertThat(result.body().getReason()).isEqualTo("CHECKIN_DELEGATION_LOOP");
+        verify(hostResolver, org.mockito.Mockito.never()).resolve("backend-b.example");
+        verify(transport, org.mockito.Mockito.never()).post(org.mockito.ArgumentMatchers.any(),
+            org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any());
+    }
+
+    @Test
+    void rejectsADelegationTraceContainingTheTargetBaseBeforeResolvingDns() throws Exception {
+        InstitutionalCheckInRequest request = new InstitutionalCheckInRequest();
+        request.setDelegationTrace(List.of("https://backend-b.example"));
+
+        RemoteInstitutionalCheckInClient.RemoteCheckInResult result = client.submitDetailed(
+            "https://backend-b.example", request
+        );
+
+        assertThat(result.status()).isEqualTo(409);
+        assertThat(result.body().getReason()).isEqualTo("CHECKIN_DELEGATION_LOOP");
+        verify(hostResolver, org.mockito.Mockito.never()).resolve("backend-b.example");
+        verify(transport, org.mockito.Mockito.never()).post(org.mockito.ArgumentMatchers.any(),
+            org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any());
+    }
 }

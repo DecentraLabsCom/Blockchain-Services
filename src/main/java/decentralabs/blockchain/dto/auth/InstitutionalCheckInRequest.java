@@ -1,5 +1,6 @@
 package decentralabs.blockchain.dto.auth;
 
+import java.util.List;
 import lombok.Getter;
 import lombok.Setter;
 
@@ -12,4 +13,6 @@ public class InstitutionalCheckInRequest {
     private String labId;
     private String payerInstitutionWallet;
     private String puc;
+    private Integer delegationHop;
+    private List<String> delegationTrace;
 }
