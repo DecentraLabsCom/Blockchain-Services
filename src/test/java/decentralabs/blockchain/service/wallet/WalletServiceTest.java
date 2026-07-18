@@ -398,7 +398,7 @@ class WalletServiceTest {
             when(remoteCall.send()).thenReturn(
                 new Diamond.Lab(
                     BigInteger.valueOf(2),
-                    new Diamond.LabBase("  ipfs://fallback-uri  ", BigInteger.ZERO, "", "", BigInteger.ZERO)
+                    new Diamond.LabBase("  ipfs://fallback-uri  ", BigInteger.ZERO, "", "", BigInteger.ZERO, BigInteger.ZERO)
                 )
             );
             decoder.when(() -> FunctionReturnDecoder.decode(any(String.class), any(List.class))).thenReturn(
@@ -420,8 +420,7 @@ class WalletServiceTest {
                 encodeValues(
                     new org.web3j.abi.datatypes.generated.Uint256(BigInteger.ONE),
                     new org.web3j.abi.datatypes.generated.Uint256(BigInteger.TWO),
-                    new org.web3j.abi.datatypes.generated.Uint256(BigInteger.valueOf(3)),
-                    new org.web3j.abi.datatypes.generated.Uint256(BigInteger.valueOf(4))
+                    new org.web3j.abi.datatypes.generated.Uint256(BigInteger.valueOf(3))
                 )
             ),
             ethCallResponse(

@@ -61,7 +61,6 @@ import java.util.concurrent.TimeUnit;
  * - Wallets are encrypted using AES-256-GCM (military-grade encryption)
  * - Key derivation via PBKDF2-HMAC-SHA256 with 65,536 iterations
  * - Random salt (16 bytes) and IV (12 bytes) per encryption
- * - NOT the legacy Base64(password:privateKey) format
  * - Encrypted format: Base64(salt + iv + ciphertext + auth_tag)
  * 
  * WARNING:
@@ -753,7 +752,6 @@ public class WalletService {
                 Arrays.asList(
                     new TypeReference<Uint256>() {},
                     new TypeReference<Uint256>() {},
-                    new TypeReference<Uint256>() {},
                     new TypeReference<Uint256>() {}
                 )
             );
@@ -771,7 +769,7 @@ public class WalletService {
 
             @SuppressWarnings("rawtypes")
             List<Type> decoded = FunctionReturnDecoder.decode(response.getValue(), summaryFunction.getOutputParameters());
-            if (decoded.size() < 4) {
+            if (decoded.size() < 3) {
                 return Optional.empty();
             }
 
@@ -829,7 +827,6 @@ public class WalletService {
                 (BigInteger) decoded.get(0).getValue(),
                 (BigInteger) decoded.get(1).getValue(),
                 (BigInteger) decoded.get(2).getValue(),
-                (BigInteger) decoded.get(3).getValue(),
                 accruedReceivable,
                 settlementQueued,
                 invoicedReceivable,

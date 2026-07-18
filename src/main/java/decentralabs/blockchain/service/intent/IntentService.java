@@ -416,17 +416,8 @@ public class IntentService {
 
         String storedHash = fetchCreatorPucHash(actionPayload.getLabId());
 
-        if (storedHash == null || Numeric.toBigInt(storedHash).equals(BigInteger.ZERO)) {
-            recordCreatorOwnershipMetric("authorization.lab_legacy_blocked.count", action, actionPayload);
-            log.warn(
-                "Intent rejected: legacy lab blocked (action={}, labId={})",
-                action.getWireValue(),
-                LogSanitizer.sanitize(actionPayload.getLabId().toString())
-            );
-            throw new ResponseStatusException(HttpStatus.CONFLICT, "LAB_LEGACY_BLOCKED");
-        }
-
-        if (!storedHash.equalsIgnoreCase(expectedHash)) {
+        if (storedHash == null || Numeric.toBigInt(storedHash).equals(BigInteger.ZERO)
+            || !storedHash.equalsIgnoreCase(expectedHash)) {
             recordCreatorOwnershipMetric("authorization.lab_creator_mismatch.count", action, actionPayload);
             log.warn(
                 "Intent rejected: creator mismatch (action={}, labId={})",
@@ -719,8 +710,6 @@ public class IntentService {
         // the client assertion is checked against them rather than trusted.
         // codeql[java/user-controlled-bypass]
         String expectedChallenge = buildWebauthnChallenge(puc, meta);
-        // codeql[java/user-controlled-bypass]
-        String legacyExpectedChallenge = buildLegacyWebauthnChallenge(puc, credentialId, meta);
         log.info("WebAuthn validation started. credentialIdPresent={}", !isBlank(credentialId));
         
         // WebAuthn assertion verification requires user-provided data by design.
@@ -739,8 +728,7 @@ public class IntentService {
             validateWebauthnField(submission.getWebauthnAuthenticatorData(), "authenticatorData"),
             // codeql[java/user-controlled-bypass]
             validateWebauthnField(submission.getWebauthnSignature(), "signature"),
-            expectedChallenge,
-            legacyExpectedChallenge
+            expectedChallenge
         );
     }
     
@@ -777,19 +765,6 @@ public class IntentService {
         );
     }
 
-    private String buildLegacyWebauthnChallenge(String puc, String credentialId, IntentMeta meta) {
-        return String.join("|",
-            puc.toLowerCase(Locale.ROOT),
-            credentialId,
-            meta.getRequestId(),
-            meta.getPayloadHash(),
-            String.valueOf(meta.getNonce()),
-            String.valueOf(meta.getRequestedAt()),
-            String.valueOf(meta.getExpiresAt()),
-            String.valueOf(meta.getAction())
-        );
-    }
-
     /**
      * Verifies a WebAuthn assertion against the stored credential.
      * This method intentionally receives user-provided data because WebAuthn
@@ -801,8 +776,7 @@ public class IntentService {
         String clientDataJSONb64,
         String authenticatorDatab64,
         String signatureB64,
-        String expectedChallenge,
-        String legacyExpectedChallenge
+        String expectedChallenge
     ) {
         try {
             byte[] clientData = Base64.getUrlDecoder().decode(clientDataJSONb64);
@@ -811,15 +785,10 @@ public class IntentService {
 
             String challengeFromClient = extractChallengeFromClientData(clientData);
             String expectedChallengeB64 = Base64.getUrlEncoder().withoutPadding().encodeToString(expectedChallenge.getBytes(StandardCharsets.UTF_8));
-            String legacyExpectedChallengeB64 = legacyExpectedChallenge == null ? null
-                : Base64.getUrlEncoder().withoutPadding().encodeToString(legacyExpectedChallenge.getBytes(StandardCharsets.UTF_8));
-            boolean matchesCurrent = expectedChallengeB64.equals(challengeFromClient);
-            boolean matchesLegacy = legacyExpectedChallengeB64 != null && legacyExpectedChallengeB64.equals(challengeFromClient);
-            if (!matchesCurrent && !matchesLegacy) {
+            if (!expectedChallengeB64.equals(challengeFromClient)) {
                 log.warn(
-                    "WebAuthn challenge mismatch. expectedChallengeHash={} legacyExpectedChallengeHash={} clientChallengeHash={}",
+                    "WebAuthn challenge mismatch. expectedChallengeHash={} clientChallengeHash={}",
                     PucHashUtil.hashPuc(expectedChallengeB64),
-                    legacyExpectedChallengeB64 == null ? null : PucHashUtil.hashPuc(legacyExpectedChallengeB64),
                     PucHashUtil.hashPuc(challengeFromClient)
                 );
                 throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "webauthn_challenge_mismatch");

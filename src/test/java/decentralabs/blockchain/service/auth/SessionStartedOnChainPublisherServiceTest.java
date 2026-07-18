@@ -425,7 +425,7 @@ class SessionStartedOnChainPublisherServiceTest {
     }
 
     @Test
-    void automaticallyReopensLegacyFailedPreBroadcastAttestation() throws Exception {
+    void automaticallyReopensFailedPreBroadcastAttestation() throws Exception {
         SessionStartedOnChainPublisherService service = buildService(jdbcTemplate);
         mockSubmittedQuery(List.of());
         mockPendingQuery("FAILED", 5, null, null, null, null);

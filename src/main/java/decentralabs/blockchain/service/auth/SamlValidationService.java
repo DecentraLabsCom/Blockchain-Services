@@ -1,14 +1,10 @@
 package decentralabs.blockchain.service.auth;
 
 import okhttp3.ConnectionSpec;
-import okhttp3.Dns;
-import okhttp3.CipherSuite;
 import okhttp3.OkHttpClient;
-import okhttp3.Protocol;
 import okhttp3.Request;
 import okhttp3.Response;
 import okhttp3.ResponseBody;
-import okhttp3.TlsVersion;
 import okhttp3.logging.HttpLoggingInterceptor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -31,12 +27,10 @@ import java.io.InputStream;
 import java.net.InetAddress;
 import java.net.Inet6Address;
 import java.net.URI;
-import java.nio.charset.StandardCharsets;
 import java.security.cert.CertificateFactory;
 import java.security.cert.X509Certificate;
 import java.util.ArrayList;
 import java.util.Base64;
-import java.util.Comparator;
 import java.util.Collections;
 import java.util.LinkedHashSet;
 import java.util.LinkedHashMap;
@@ -140,15 +134,6 @@ public class SamlValidationService {
 
     @Value("${saml.metadata.http.call-timeout-ms:15000}")
     private int metadataHttpCallTimeoutMs;
-
-    @Value("${saml.metadata.http.prefer-ipv4:true}")
-    private boolean metadataHttpPreferIpv4;
-
-    @Value("${saml.metadata.http.curl-fallback.enabled:true}")
-    private boolean metadataHttpCurlFallbackEnabled;
-
-    @Value("${saml.metadata.http.curl-path:curl}")
-    private String metadataHttpCurlPath;
 
     @Value("${saml.metadata.http.logging.enabled:false}")
     private boolean metadataHttpLoggingEnabled;
@@ -255,35 +240,11 @@ public class SamlValidationService {
         }
         
         String metadataUrl = resolveMetadataUrl(doc, issuer);
-        if (metadataUrl == null) {
-            // Fallback: construct standard metadata URL from issuer
-            metadataUrl = issuer + (issuer.endsWith("/") ? "" : "/") + "metadata";
-            logger.debug("No metadata URL in assertion, using constructed URL: {}", metadataUrl);
-        }
-        
-        // Get or retrieve certificate
         List<X509Certificate> certs = getIdpCertificates(issuer, metadataUrl);
-
-        // If primary metadata URL failed, try common IdP metadata URL patterns
         if (certs.isEmpty()) {
-            certs = tryAlternativeMetadataUrls(issuer);
-        }
-
-        // Last resort: extract the signing cert embedded inline in the assertion's ds:Signature.
-        // Only safe in 'any' trust mode where the issuer URL is already the trust anchor.
-        if (certs.isEmpty()) {
-            List<X509Certificate> inlineCerts = extractInlineSigningCerts(doc);
-            if (!inlineCerts.isEmpty()) {
-                if ("any".equalsIgnoreCase(trustMode)) {
-                    logger.warn("Could not fetch metadata for IdP '{}'; using inline signing cert from assertion (trust-mode=any)", issuer);
-                    certs = inlineCerts;
-                } else {
-                    logger.warn("Could not fetch metadata for IdP '{}' and trust-mode is '{}'; inline cert fallback disabled", issuer, trustMode);
-                }
+            if (metadataUrl == null) {
+                throw new SecurityException("No metadata URL found for IdP: " + issuer);
             }
-        }
-
-        if (certs.isEmpty()) {
             throw new SecurityException("Could not retrieve certificate for IdP: " + issuer);
         }
         
@@ -356,10 +317,6 @@ public class SamlValidationService {
         NodeList nameIds = doc.getElementsByTagNameNS("*", "NameID");
         if (nameIds.getLength() > 0) {
             return nameIds.item(0).getTextContent().trim();
-        }
-        NodeList legacyNameIds = doc.getElementsByTagNameNS("*", "NameIdentifier");
-        if (legacyNameIds.getLength() > 0) {
-            return legacyNameIds.item(0).getTextContent().trim();
         }
         return null;
     }
@@ -578,66 +535,6 @@ public class SamlValidationService {
     }
     
     /**
-     * Tries common metadata URL patterns for well-known IdP types
-     * (Shibboleth IdPv3+, SimpleSAMLphp, ADFS) when the primary URL fails.
-     */
-    private List<X509Certificate> tryAlternativeMetadataUrls(String issuer) {
-        // Strip trailing slash from issuer for consistent construction
-        String base = issuer.endsWith("/") ? issuer.substring(0, issuer.length() - 1) : issuer;
-        // Derive parent path: for SimpleSAMLphp the entityID ends in "/idp" but
-        // the metadata lives at ../saml2/idp/metadata.php (one level up).
-        // e.g. "https://fpp.example.org/tenant/idp" → parent = "https://fpp.example.org/tenant"
-        int lastSlash = base.lastIndexOf('/');
-        String parent = (lastSlash > base.indexOf("://") + 3) ? base.substring(0, lastSlash) : base;
-        List<String> candidates = List.of(
-            base + "/metadata",                                          // direct /metadata suffix
-            base + "/idp/metadata",                                      // Shibboleth IdP short form
-            base + "/idp/profile/Metadata/SAML",                        // Shibboleth IdP v3+
-            parent + "/saml2/idp/metadata.php",                         // SimpleSAMLphp (issuer ends in /idp)
-            parent + "/module.php/saml/idp/metadata",                   // SimpleSAMLphp v2 module endpoint
-            base + "/FederationMetadata/2007-06/FederationMetadata.xml" // ADFS / Azure AD
-        );
-        for (String url : candidates) {
-            try {
-                List<X509Certificate> certs = retrieveCertificatesFromMetadata(url);
-                if (!certs.isEmpty()) {
-                    logger.info("Found metadata at alternative URL {} for IdP: {}", url, issuer);
-                    // Cache under the issuer key for future requests
-                    certificateCache.put(issuer, certs);
-                    return certs;
-                }
-            } catch (Exception e) {
-                logger.debug("Alternative metadata URL {} failed for IdP {}: {}", url, issuer, e.getMessage());
-            }
-        }
-        return Collections.emptyList();
-    }
-
-    /**
-     * Extracts X.509 signing certificates embedded inline inside the
-     * ds:Signature/ds:KeyInfo/ds:X509Data/ds:X509Certificate element(s) of the
-     * SAML document.  Used only as a last-resort fallback when the IdP's
-     * metadata endpoint cannot be reached.
-     */
-    private List<X509Certificate> extractInlineSigningCerts(Document doc) {
-        List<X509Certificate> result = new ArrayList<>();
-        NodeList sigNodes = doc.getElementsByTagNameNS(XMLSignature.XMLNS, "Signature");
-        for (int s = 0; s < sigNodes.getLength(); s++) {
-            Element sigEl = (Element) sigNodes.item(s);
-            NodeList certNodes = sigEl.getElementsByTagNameNS("*", "X509Certificate");
-            for (int c = 0; c < certNodes.getLength(); c++) {
-                String certData = certNodes.item(c).getTextContent().trim().replaceAll("\\s+", "");
-                try {
-                    result.add(parseCertificate(certData));
-                } catch (Exception e) {
-                    logger.debug("Could not parse inline X509Certificate: {}", e.getMessage());
-                }
-            }
-        }
-        return result;
-    }
-
-    /**
      * Checks if IdP issuer is in trusted list
      */
     private boolean isTrustedIdP(String issuer) {
@@ -656,6 +553,10 @@ public class SamlValidationService {
         if (certificateCache.containsKey(issuer)) {
             logger.debug("Using cached certificate for IdP: {}", issuer);
             return certificateCache.get(issuer);
+        }
+
+        if (metadataUrl == null || metadataUrl.isBlank()) {
+            return Collections.emptyList();
         }
         
         // Try to retrieve from metadata URL
@@ -740,35 +641,8 @@ public class SamlValidationService {
             .header("User-Agent", "DecentraLabs-Blockchain-Services/1.0")
             .build();
 
-        try {
-            return executeMetadataRequest(buildMetadataHttpClient(MetadataTlsMode.MODERN), request);
-        } catch (IOException firstAttemptError) {
-            if (!isTlsHandshakeFailure(firstAttemptError)) {
-                logger.warn("Primary metadata fetch failed for URL {}. Retrying with compatibility TLS profile.", metadataUrl);
-            } else {
-                logger.warn("Primary TLS handshake failed for metadata URL {}. Retrying with compatibility TLS profile.", metadataUrl);
-            }
-        }
+        return executeMetadataRequest(buildMetadataHttpClient(), request);
 
-        try {
-            return executeMetadataRequest(buildMetadataHttpClient(MetadataTlsMode.COMPAT), request);
-        } catch (IOException compatibilityError) {
-            if (!isTlsHandshakeFailure(compatibilityError)) {
-                logger.warn("Compatibility metadata fetch failed for URL {}. Retrying with legacy RSA TLS profile.", metadataUrl);
-            } else {
-                logger.warn("Compatibility TLS handshake failed for metadata URL {}. Retrying with legacy RSA TLS profile.", metadataUrl);
-            }
-        }
-
-        try {
-            return executeMetadataRequest(buildMetadataHttpClient(MetadataTlsMode.LEGACY_RSA), request);
-        } catch (IOException legacyError) {
-            if (!metadataHttpCurlFallbackEnabled) {
-                throw legacyError;
-            }
-            logger.warn("Legacy RSA metadata fetch failed for URL {}. Retrying via curl fallback.", metadataUrl);
-            return executeMetadataWithCurl(metadataUrl);
-        }
     }
 
     private String executeMetadataRequest(OkHttpClient client, Request request) throws IOException {
@@ -788,28 +662,14 @@ public class SamlValidationService {
         }
     }
 
-    private OkHttpClient buildMetadataHttpClient(MetadataTlsMode mode) {
-        List<ConnectionSpec> specs = switch (mode) {
-            case MODERN -> List.of(ConnectionSpec.MODERN_TLS, ConnectionSpec.COMPATIBLE_TLS);
-            case COMPAT -> List.of(ConnectionSpec.COMPATIBLE_TLS);
-            case LEGACY_RSA -> List.of(buildLegacyRsaSpec());
-        };
-
+    private OkHttpClient buildMetadataHttpClient() {
         OkHttpClient.Builder builder = new OkHttpClient.Builder()
             .connectTimeout(metadataHttpConnectTimeoutMs, TimeUnit.MILLISECONDS)
             .readTimeout(metadataHttpReadTimeoutMs, TimeUnit.MILLISECONDS)
             .callTimeout(metadataHttpCallTimeoutMs, TimeUnit.MILLISECONDS)
             .followRedirects(true)
             .followSslRedirects(true)
-            .connectionSpecs(specs);
-
-        if (mode == MetadataTlsMode.LEGACY_RSA) {
-            builder.protocols(List.of(Protocol.HTTP_1_1));
-        }
-
-        if (metadataHttpPreferIpv4) {
-            builder.dns(hostname -> resolveDnsWithIpv4Preference(hostname));
-        }
+            .connectionSpecs(List.of(ConnectionSpec.MODERN_TLS));
 
         if (metadataHttpLoggingEnabled) {
             // Add basic HTTP logging for metadata requests when enabled (useful for debugging)
@@ -819,77 +679,6 @@ public class SamlValidationService {
         return builder.build();
     }
 
-    @SuppressWarnings("deprecation")
-    private ConnectionSpec buildLegacyRsaSpec() {
-        return new ConnectionSpec.Builder(true)
-            .tlsVersions(TlsVersion.TLS_1_2)
-            .cipherSuites(
-                CipherSuite.TLS_RSA_WITH_AES_256_CBC_SHA256,
-                CipherSuite.TLS_RSA_WITH_AES_128_CBC_SHA256,
-                CipherSuite.TLS_RSA_WITH_AES_256_CBC_SHA,
-                CipherSuite.TLS_RSA_WITH_AES_128_CBC_SHA
-            )
-            .supportsTlsExtensions(true)
-            .build();
-    }
-
-    private String executeMetadataWithCurl(String metadataUrl) throws IOException {
-        int connectTimeoutSeconds = Math.max(1, (metadataHttpConnectTimeoutMs + 999) / 1000);
-        int callTimeoutSeconds = Math.max(connectTimeoutSeconds, (metadataHttpCallTimeoutMs + 999) / 1000);
-        ProcessBuilder processBuilder = new ProcessBuilder(
-            metadataHttpCurlPath,
-            "--fail",
-            "--silent",
-            "--show-error",
-            "--location",
-            "--connect-timeout", String.valueOf(connectTimeoutSeconds),
-            "--max-time", String.valueOf(callTimeoutSeconds),
-            metadataUrl
-        );
-        try {
-            Process process = processBuilder.start();
-            byte[] stdout = process.getInputStream().readAllBytes();
-            byte[] stderr = process.getErrorStream().readAllBytes();
-            int exitCode = process.waitFor();
-            if (exitCode != 0) {
-                String errorText = new String(stderr, StandardCharsets.UTF_8).trim();
-                throw new IOException("curl metadata fetch failed (exit " + exitCode + "): " + errorText);
-            }
-            String xml = new String(stdout, StandardCharsets.UTF_8);
-            if (xml.isBlank()) {
-                throw new IOException("curl metadata fetch returned blank body");
-            }
-            return xml;
-        } catch (InterruptedException ex) {
-            Thread.currentThread().interrupt();
-            throw new IOException("curl metadata fetch interrupted", ex);
-        }
-    }
-
-    private List<InetAddress> resolveDnsWithIpv4Preference(String hostname) throws java.net.UnknownHostException {
-        List<InetAddress> addresses = new ArrayList<>(Dns.SYSTEM.lookup(hostname));
-        addresses.sort(Comparator.comparing(address -> address instanceof Inet6Address));
-        return addresses;
-    }
-
-    private boolean isTlsHandshakeFailure(Throwable error) {
-        Throwable current = error;
-        while (current != null) {
-            if (current instanceof javax.net.ssl.SSLHandshakeException
-                || current instanceof javax.net.ssl.SSLProtocolException) {
-                return true;
-            }
-            current = current.getCause();
-        }
-        return false;
-    }
-
-    private enum MetadataTlsMode {
-        MODERN,
-        COMPAT,
-        LEGACY_RSA
-    }
-    
     /**
      * Parses Base64-encoded certificate
      */

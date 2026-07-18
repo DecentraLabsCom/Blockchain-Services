@@ -442,8 +442,6 @@ public class AdminDashboardController {
             result.put("maxBatch", effectiveBatch);
             result.put("providerReceivableRaw", receivable.providerReceivable().toString());
             result.put("providerReceivableLab", formatLabTokens(receivable.providerReceivable()));
-            result.put("deferredInstitutionalReceivableRaw", receivable.deferredInstitutionalReceivable().toString());
-            result.put("deferredInstitutionalReceivableLab", formatLabTokens(receivable.deferredInstitutionalReceivable()));
             result.put("totalReceivableRaw", receivable.totalReceivable().toString());
             result.put("totalReceivableLab", formatLabTokens(receivable.totalReceivable()));
             result.put("accruedReceivableRaw", receivable.accruedReceivable().toString());
@@ -914,8 +912,6 @@ public class AdminDashboardController {
         walletService.getProviderReceivableStatus(labId).ifPresent(status -> {
             lab.put("providerReceivableRaw", status.providerReceivable().toString());
             lab.put("providerReceivableLab", formatLabTokens(status.providerReceivable()));
-            lab.put("deferredInstitutionalReceivableRaw", status.deferredInstitutionalReceivable().toString());
-            lab.put("deferredInstitutionalReceivableLab", formatLabTokens(status.deferredInstitutionalReceivable()));
             lab.put("totalReceivableRaw", status.totalReceivable().toString());
             lab.put("totalReceivableLab", formatLabTokens(status.totalReceivable()));
             lab.put("accruedReceivableRaw", status.accruedReceivable().toString());

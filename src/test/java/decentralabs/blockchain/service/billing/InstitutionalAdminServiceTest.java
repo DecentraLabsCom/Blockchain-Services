@@ -7,6 +7,7 @@ import decentralabs.blockchain.service.RateLimitService;
 import decentralabs.blockchain.service.health.LabMetadataService;
 import decentralabs.blockchain.service.persistence.AntiReplayService;
 import decentralabs.blockchain.service.wallet.InstitutionalWalletService;
+import decentralabs.blockchain.service.wallet.InstitutionalTxManagerProvider;
 import decentralabs.blockchain.service.wallet.WalletService;
 import decentralabs.blockchain.security.AdminNetworkAccessPolicy;
 import jakarta.servlet.http.HttpServletRequest;
@@ -26,6 +27,7 @@ import org.web3j.protocol.core.methods.response.EthChainId;
 import org.web3j.protocol.core.methods.response.EthEstimateGas;
 import org.web3j.protocol.core.methods.response.EthGetTransactionCount;
 import org.web3j.protocol.core.methods.response.EthSendTransaction;
+import org.web3j.tx.TransactionManager;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
@@ -59,6 +61,8 @@ class InstitutionalAdminServiceTest {
     private AntiReplayService antiReplayService;
     @Mock
     private AdminNetworkAccessPolicy adminNetworkAccessPolicy;
+    @Mock
+    private InstitutionalTxManagerProvider txManagerProvider;
 
     private InstitutionalAdminService adminService;
 
@@ -74,7 +78,8 @@ class InstitutionalAdminServiceTest {
             analyticsService,
             adminVerifier,
             antiReplayService,
-            adminNetworkAccessPolicy
+            adminNetworkAccessPolicy,
+            txManagerProvider
         );
         ReflectionTestUtils.setField(adminService, "contractAddress", "0xABC");
         ReflectionTestUtils.setField(adminService, "defaultCollectMaxBatch", 50);
@@ -304,30 +309,7 @@ class InstitutionalAdminServiceTest {
             when(institutionalWalletService.getInstitutionalCredentials()).thenReturn(credentials);
             when(rateLimitService.allowTransaction(credentials.getAddress())).thenReturn(true);
 
-            Request<?, EthGetTransactionCount> txCountRequest = (Request<?, EthGetTransactionCount>) mock(Request.class);
-            EthGetTransactionCount txCountResponse = new EthGetTransactionCount();
-            txCountResponse.setResult("0x1");
-            when(txCountRequest.send()).thenReturn(txCountResponse);
-            when(web3j.ethGetTransactionCount(eq(credentials.getAddress()), eq(DefaultBlockParameterName.LATEST))).thenReturn((Request) txCountRequest);
-
-            Request<?, EthChainId> chainIdRequest = (Request<?, EthChainId>) mock(Request.class);
-            EthChainId chainIdResponse = new EthChainId();
-            chainIdResponse.setResult("0xaa36a7"); // Sepolia
-            when(chainIdRequest.send()).thenReturn(chainIdResponse);
-            when(web3j.ethChainId()).thenReturn((Request) chainIdRequest);
-
-            Request<?, EthEstimateGas> estimateRequest = (Request<?, EthEstimateGas>) mock(Request.class);
-            EthEstimateGas estimateResponse = new EthEstimateGas();
-            estimateResponse.setResult("0x5208");
-            when(estimateRequest.send()).thenReturn(estimateResponse);
-            when(web3j.ethEstimateGas(any(org.web3j.protocol.core.methods.request.Transaction.class)))
-                .thenReturn((Request) estimateRequest);
-
-            Request<?, EthSendTransaction> sendRequest = (Request<?, EthSendTransaction>) mock(Request.class);
-            EthSendTransaction sendResponse = new EthSendTransaction();
-            sendResponse.setResult("0xabc");
-            when(sendRequest.send()).thenReturn(sendResponse);
-            when(web3j.ethSendRawTransaction(any())).thenReturn((Request) sendRequest);
+            mockSuccessfulTransaction(credentials, "0xabc");
 
             InstitutionalAdminRequest request = buildRequest(
                 credentials.getAddress(),
@@ -398,6 +380,63 @@ class InstitutionalAdminServiceTest {
             assertThat(response.isSuccess()).isTrue();
             assertThat(response.getTransactionHash()).isEqualTo("0xcollect");
             assertThat(response.getOperationType()).isEqualTo("COLLECT_LAB_PAYOUT");
+        }
+
+        @Test
+        @DisplayName("Should execute provider booking cancellation with a full-refund reason code")
+        void providerBookingCancellationExecutesTransactionWhenValid() throws Exception {
+            Credentials credentials = Credentials.create("0x1");
+            when(httpServletRequest.getRemoteAddr()).thenReturn("127.0.0.1");
+            when(institutionalWalletService.getInstitutionalWalletAddress()).thenReturn(credentials.getAddress());
+            when(institutionalWalletService.getInstitutionalCredentials()).thenReturn(credentials);
+            when(rateLimitService.allowTransaction(credentials.getAddress())).thenReturn(true);
+            mockSuccessfulTransaction(credentials, "0xprovider-cancel");
+
+            InstitutionalAdminRequest request = buildRequest(
+                credentials.getAddress(),
+                AdminOperation.CANCEL_CONFIRMED_BOOKING_BY_PROVIDER,
+                null,
+                null,
+                null,
+                null,
+                null
+            );
+            request.setLabId("3");
+            request.setReservationKey("0x" + "11".repeat(32));
+            request.setReasonCode("7");
+
+            InstitutionalAdminResponse response = adminService.executeAdminOperation(request);
+
+            assertThat(response.isSuccess()).isTrue();
+            assertThat(response.getTransactionHash()).isEqualTo("0xprovider-cancel");
+            assertThat(response.getOperationType()).isEqualTo("CANCEL_CONFIRMED_BOOKING_BY_PROVIDER");
+        }
+
+        @Test
+        @DisplayName("Should reject provider booking cancellation without a reason code")
+        void providerBookingCancellationRejectsMissingReasonCode() {
+            Credentials credentials = Credentials.create("0x1");
+            when(httpServletRequest.getRemoteAddr()).thenReturn("127.0.0.1");
+            when(institutionalWalletService.getInstitutionalWalletAddress()).thenReturn(credentials.getAddress());
+            when(institutionalWalletService.getInstitutionalCredentials()).thenReturn(credentials);
+
+            InstitutionalAdminRequest request = buildRequest(
+                credentials.getAddress(),
+                AdminOperation.CANCEL_CONFIRMED_BOOKING_BY_PROVIDER,
+                null,
+                null,
+                null,
+                null,
+                null
+            );
+            request.setLabId("3");
+            request.setReservationKey("0x" + "11".repeat(32));
+            request.setReasonCode(null);
+
+            InstitutionalAdminResponse response = adminService.executeAdminOperation(request);
+
+            assertThat(response.isSuccess()).isFalse();
+            assertThat(response.getMessage()).contains("reasonCode");
         }
 
         @Test
@@ -1295,6 +1334,8 @@ class InstitutionalAdminServiceTest {
         request.setAmount(amount);
         request.setLabId(null);
         request.setMaxBatch(null);
+        request.setReservationKey(null);
+        request.setReasonCode(null);
         request.setTimestamp(System.currentTimeMillis());
         request.setSignature("0x" + "11".repeat(65));
         return request;
@@ -1306,14 +1347,8 @@ class InstitutionalAdminServiceTest {
         EthGetTransactionCount txCountResponse = new EthGetTransactionCount();
         txCountResponse.setResult("0x1");
         when(txCountRequest.send()).thenReturn(txCountResponse);
-        when(web3j.ethGetTransactionCount(eq(credentials.getAddress()), eq(DefaultBlockParameterName.LATEST)))
+        when(web3j.ethGetTransactionCount(eq(credentials.getAddress()), eq(DefaultBlockParameterName.PENDING)))
             .thenReturn((Request) txCountRequest);
-
-        Request<?, EthChainId> chainIdRequest = (Request<?, EthChainId>) mock(Request.class);
-        EthChainId chainIdResponse = new EthChainId();
-        chainIdResponse.setResult("0xaa36a7");
-        when(chainIdRequest.send()).thenReturn(chainIdResponse);
-        when(web3j.ethChainId()).thenReturn((Request) chainIdRequest);
 
         Request<?, EthEstimateGas> estimateRequest = (Request<?, EthEstimateGas>) mock(Request.class);
         EthEstimateGas estimateResponse = new EthEstimateGas();
@@ -1322,10 +1357,10 @@ class InstitutionalAdminServiceTest {
         when(web3j.ethEstimateGas(any(org.web3j.protocol.core.methods.request.Transaction.class)))
             .thenReturn((Request) estimateRequest);
 
-        Request<?, EthSendTransaction> sendRequest = (Request<?, EthSendTransaction>) mock(Request.class);
         EthSendTransaction sendResponse = new EthSendTransaction();
         sendResponse.setResult(txHash);
-        when(sendRequest.send()).thenReturn(sendResponse);
-        when(web3j.ethSendRawTransaction(any())).thenReturn((Request) sendRequest);
+        TransactionManager txManager = mock(TransactionManager.class);
+        when(txManager.sendTransaction(any(), any(), any(), any(), any())).thenReturn(sendResponse);
+        when(txManagerProvider.get(eq(web3j), any())).thenReturn(txManager);
     }
 }

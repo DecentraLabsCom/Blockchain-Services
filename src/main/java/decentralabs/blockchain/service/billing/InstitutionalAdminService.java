@@ -15,7 +15,6 @@ import decentralabs.blockchain.util.CreditUnitConverter;
 import decentralabs.blockchain.util.EthereumAddressValidator;
 import decentralabs.blockchain.util.LogSanitizer;
 import jakarta.servlet.http.HttpServletRequest;
-import java.io.IOException;
 import java.math.BigDecimal;
 import java.math.BigInteger;
 import java.math.RoundingMode;
@@ -32,11 +31,8 @@ import org.springframework.stereotype.Service;
 import org.web3j.abi.FunctionEncoder;
 import org.web3j.abi.datatypes.Function;
 import org.web3j.crypto.Credentials;
-import org.web3j.crypto.RawTransaction;
-import org.web3j.crypto.TransactionEncoder;
 import org.web3j.protocol.Web3j;
 import org.web3j.protocol.core.DefaultBlockParameterName;
-import org.web3j.protocol.core.methods.response.EthChainId;
 import org.web3j.protocol.core.methods.response.EthEstimateGas;
 import org.web3j.protocol.core.methods.response.EthGetTransactionCount;
 import org.web3j.protocol.core.methods.response.EthGetTransactionReceipt;
@@ -116,34 +112,6 @@ public class InstitutionalAdminService {
         this.antiReplayService = antiReplayService;
         this.adminNetworkAccessPolicy = adminNetworkAccessPolicy;
         this.txManagerProvider = txManagerProvider;
-    }
-
-    /** Constructor retained for focused tests that instantiate the service without Spring. */
-    InstitutionalAdminService(
-        Web3j web3j,
-        HttpServletRequest request,
-        RateLimitService rateLimitService,
-        LabMetadataService labMetadataService,
-        InstitutionalWalletService institutionalWalletService,
-        WalletService walletService,
-        InstitutionalAnalyticsService analyticsService,
-        Eip712BillingAdminVerifier adminVerifier,
-        AntiReplayService antiReplayService,
-        AdminNetworkAccessPolicy adminNetworkAccessPolicy
-    ) {
-        this(
-            web3j,
-            request,
-            rateLimitService,
-            labMetadataService,
-            institutionalWalletService,
-            walletService,
-            analyticsService,
-            adminVerifier,
-            antiReplayService,
-            adminNetworkAccessPolicy,
-            null
-        );
     }
 
     @Value("${billing.collect.max-batch:50}")
@@ -395,6 +363,8 @@ public class InstitutionalAdminService {
 
         return switch (request.getOperation()) {
             case COLLECT_LAB_PAYOUT -> validateProviderPayoutRole(request, institutionalAddress, isProvider);
+            case CANCEL_CONFIRMED_BOOKING_BY_PROVIDER ->
+                validateProviderBookingCancellationRole(request, institutionalAddress, isProvider);
             case AUTHORIZE_BACKEND,
                  REVOKE_BACKEND,
                  SET_USER_LIMIT,
@@ -470,6 +440,9 @@ public class InstitutionalAdminService {
 
             case COLLECT_LAB_PAYOUT:
                 return requestProviderPayout(credentials, request);
+
+            case CANCEL_CONFIRMED_BOOKING_BY_PROVIDER:
+                return cancelConfirmedBookingByProvider(credentials, request);
 
             default:
                 return InstitutionalAdminResponse.error("Unknown administrative operation");
@@ -736,6 +709,43 @@ public class InstitutionalAdminService {
         );
     }
 
+    private InstitutionalAdminResponse cancelConfirmedBookingByProvider(
+        Credentials credentials,
+        InstitutionalAdminRequest request
+    ) throws Exception {
+        if (request.getReservationKey() == null || request.getReservationKey().isBlank()) {
+            return InstitutionalAdminResponse.error("reservationKey required for provider booking cancellation");
+        }
+        if (!request.getReservationKey().matches("^0x[a-fA-F0-9]{64}$")) {
+            return InstitutionalAdminResponse.error("Invalid reservationKey");
+        }
+        if (request.getReasonCode() == null || request.getReasonCode().isBlank()) {
+            return InstitutionalAdminResponse.error("reasonCode required for provider booking cancellation");
+        }
+
+        BigInteger reasonCode = EthereumAddressValidator.parseBigInteger(request.getReasonCode(), "reasonCode");
+        if (reasonCode.compareTo(BigInteger.ONE) < 0 || reasonCode.compareTo(BigInteger.valueOf(255)) > 0) {
+            return InstitutionalAdminResponse.error("reasonCode must be between 1 and 255");
+        }
+
+        Function function = Diamond.cancelConfirmedBookingByProviderFunction(
+            Numeric.hexStringToByteArray(request.getReservationKey()), reasonCode
+        );
+        String txHash = sendTransaction(credentials, function, operationKey(request));
+        recordAdminTransaction(
+            credentials.getAddress(),
+            txHash,
+            "CANCEL_CONFIRMED_BOOKING_BY_PROVIDER",
+            "Cancelled confirmed booking for lab #" + request.getLabId() + " with reason code " + reasonCode,
+            null
+        );
+        return InstitutionalAdminResponse.success(
+            "Provider booking cancellation submitted; the full reservation price is refunded as service credits",
+            txHash,
+            "CANCEL_CONFIRMED_BOOKING_BY_PROVIDER"
+        );
+    }
+
     private InstitutionalAdminResponse transitionProviderReceivableState(
         Credentials credentials,
         InstitutionalAdminRequest request
@@ -865,66 +875,29 @@ public class InstitutionalAdminService {
         // Encode function call
         String encodedFunction = FunctionEncoder.encode(function);
 
-        if (txManagerProvider != null) {
-            EthGetTransactionCount pendingResponse = web3j.ethGetTransactionCount(
-                credentials.getAddress(), DefaultBlockParameterName.PENDING
-            ).send();
-            BigInteger pendingNonce = pendingResponse != null ? pendingResponse.getTransactionCount() : null;
-            if (pendingNonce == null) {
-                throw new IOException("Node returned no pending nonce for institutional admin transaction");
-            }
-            BigInteger gasPrice = resolveGasPriceWei();
-            BigInteger gasLimit = resolveContractGasLimit(credentials.getAddress(), pendingNonce, encodedFunction);
-            EthSendTransaction managed = txManagerProvider.get(web3j, operationKey).sendTransaction(
-                gasPrice,
-                gasLimit,
-                contractAddress,
-                encodedFunction,
-                BigInteger.ZERO
-            );
-            if (managed == null || managed.hasError()) {
-                String error = managed != null && managed.getError() != null
-                    ? managed.getError().getMessage()
-                    : "Transaction broadcast returned no response";
-                throw new RuntimeException("Transaction failed: " + error);
-            }
-            return managed.getTransactionHash();
-        }
-
-        // Legacy constructor path is used only by focused unit tests; runtime
-        // wiring always supplies the durable institutional transaction manager.
-        EthGetTransactionCount ethGetTransactionCount = web3j.ethGetTransactionCount(
-            credentials.getAddress(), DefaultBlockParameterName.LATEST).send();
-        BigInteger nonce = ethGetTransactionCount.getTransactionCount();
         BigInteger gasPrice = resolveGasPriceWei();
-        BigInteger gasLimit = resolveContractGasLimit(credentials.getAddress(), nonce, encodedFunction);
-
-        RawTransaction rawTransaction = RawTransaction.createTransaction(
-            nonce,
+        EthGetTransactionCount pendingResponse = web3j.ethGetTransactionCount(
+            credentials.getAddress(), DefaultBlockParameterName.PENDING
+        ).send();
+        BigInteger pendingNonce = pendingResponse != null ? pendingResponse.getTransactionCount() : null;
+        if (pendingNonce == null) {
+            throw new IllegalStateException("Node returned no pending nonce for institutional admin transaction");
+        }
+        BigInteger gasLimit = resolveContractGasLimit(credentials.getAddress(), pendingNonce, encodedFunction);
+        EthSendTransaction managed = txManagerProvider.get(web3j, operationKey).sendTransaction(
             gasPrice,
             gasLimit,
             contractAddress,
-            encodedFunction
+            encodedFunction,
+            BigInteger.ZERO
         );
-
-        EthChainId ethChainId = web3j.ethChainId().send();
-        BigInteger chainId = ethChainId != null ? ethChainId.getChainId() : null;
-        if (chainId == null || chainId.compareTo(BigInteger.ZERO) <= 0) {
-            throw new RuntimeException("Unable to resolve blockchain chainId for EIP-155 signing.");
+        if (managed == null || managed.hasError()) {
+            String error = managed != null && managed.getError() != null
+                ? managed.getError().getMessage()
+                : "Transaction broadcast returned no response";
+            throw new RuntimeException("Transaction failed: " + error);
         }
-
-        // Sign EIP-155 transaction with chainId (required by many RPC providers)
-        byte[] signedMessage = TransactionEncoder.signMessage(rawTransaction, chainId.longValueExact(), credentials);
-        String hexValue = Numeric.toHexString(signedMessage);
-
-        // Send transaction
-        EthSendTransaction ethSendTransaction = web3j.ethSendRawTransaction(hexValue).send();
-
-        if (ethSendTransaction.hasError()) {
-            throw new RuntimeException("Transaction failed: " + ethSendTransaction.getError().getMessage());
-        }
-
-        return ethSendTransaction.getTransactionHash();
+        return managed.getTransactionHash();
     }
 
     /**
@@ -957,6 +930,31 @@ public class InstitutionalAdminService {
                 .digest(value.getBytes(StandardCharsets.UTF_8)));
         } catch (Exception ex) {
             throw new IllegalStateException("SHA-256 is not available", ex);
+        }
+    }
+
+    private String validateProviderBookingCancellationRole(
+        InstitutionalAdminRequest request,
+        String institutionalAddress,
+        boolean isProvider
+    ) {
+        if (!isProvider) {
+            return "Provider privileges required: booking cancellations are only available to provider wallets";
+        }
+        if (request == null || request.getLabId() == null || request.getLabId().isBlank()) {
+            return "Lab ID required for provider booking cancellation";
+        }
+        try {
+            BigInteger labId = EthereumAddressValidator.parseBigInteger(request.getLabId(), "labId");
+            if (labId.compareTo(BigInteger.ZERO) <= 0) {
+                return "Lab ID must be greater than zero";
+            }
+            if (!walletService.isLabOwnedByProvider(institutionalAddress, labId)) {
+                return "Provider booking cancellations are limited to labs owned by this provider wallet";
+            }
+            return null;
+        } catch (IllegalArgumentException ex) {
+            return ex.getMessage();
         }
     }
 

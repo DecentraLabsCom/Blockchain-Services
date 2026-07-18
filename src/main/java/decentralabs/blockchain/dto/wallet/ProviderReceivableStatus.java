@@ -5,7 +5,6 @@ import java.math.BigInteger;
 public final class ProviderReceivableStatus {
 
     private final BigInteger providerReceivable;
-    private final BigInteger deferredInstitutionalReceivable;
     private final BigInteger totalReceivable;
     private final BigInteger eligibleReservationCount;
     private final BigInteger accruedReceivable;
@@ -19,13 +18,11 @@ public final class ProviderReceivableStatus {
 
     public ProviderReceivableStatus(
         BigInteger providerReceivable,
-        BigInteger deferredInstitutionalReceivable,
         BigInteger totalReceivable,
         BigInteger eligibleReservationCount
     ) {
         this(
             providerReceivable,
-            deferredInstitutionalReceivable,
             totalReceivable,
             eligibleReservationCount,
             BigInteger.ZERO,
@@ -41,7 +38,6 @@ public final class ProviderReceivableStatus {
 
     public ProviderReceivableStatus(
         BigInteger providerReceivable,
-        BigInteger deferredInstitutionalReceivable,
         BigInteger totalReceivable,
         BigInteger eligibleReservationCount,
         BigInteger accruedReceivable,
@@ -54,7 +50,6 @@ public final class ProviderReceivableStatus {
         BigInteger lastAccruedAt
     ) {
         this.providerReceivable = providerReceivable;
-        this.deferredInstitutionalReceivable = deferredInstitutionalReceivable;
         this.totalReceivable = totalReceivable;
         this.eligibleReservationCount = eligibleReservationCount;
         this.accruedReceivable = accruedReceivable;
@@ -69,10 +64,6 @@ public final class ProviderReceivableStatus {
 
     public BigInteger providerReceivable() {
         return providerReceivable;
-    }
-
-    public BigInteger deferredInstitutionalReceivable() {
-        return deferredInstitutionalReceivable;
     }
 
     public BigInteger totalReceivable() {

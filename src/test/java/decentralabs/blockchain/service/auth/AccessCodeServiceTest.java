@@ -23,7 +23,7 @@ class AccessCodeServiceTest {
         when(provider.getIfAvailable()).thenReturn(null);
         JwtService jwtService = mock(JwtService.class);
         when(jwtService.extractAllClaims("signed-jwt")).thenReturn(labClaims());
-        AccessCodeService service = new AccessCodeService(provider, jwtService);
+        AccessCodeService service = new AccessCodeService(provider, jwtService, new AccessCodeTokenCipher(""));
 
         AccessCodeResponse issued = service.issue("signed-jwt");
         assertThat(issued.getAccessCode()).isNotBlank().doesNotContain("signed-jwt");
@@ -73,7 +73,7 @@ class AccessCodeServiceTest {
             "aud", "https://lab.example/fmu/model",
             "targetGatewayId", "lab.example"
         ));
-        AccessCodeService service = new AccessCodeService(provider, jwtService);
+        AccessCodeService service = new AccessCodeService(provider, jwtService, new AccessCodeTokenCipher(""));
 
         AccessCodeResponse issued = service.issue("fmu-jwt");
 
@@ -88,7 +88,7 @@ class AccessCodeServiceTest {
     void accessCodeExpiryNeverExceedsCredentialExpiry() {
         ObjectProvider<JdbcTemplate> provider = mock(ObjectProvider.class);
         when(provider.getIfAvailable()).thenReturn(null);
-        AccessCodeService service = new AccessCodeService(provider, mock(JwtService.class));
+        AccessCodeService service = new AccessCodeService(provider, mock(JwtService.class), new AccessCodeTokenCipher(""));
         ReflectionTestUtils.setField(service, "ttlSeconds", 300L);
 
         assertThat(service.boundedCodeExpiry(1_000L, 1_030L)).isEqualTo(1_030L);
@@ -102,7 +102,7 @@ class AccessCodeServiceTest {
         when(provider.getIfAvailable()).thenReturn(null);
         JwtService jwtService = mock(JwtService.class);
         when(jwtService.extractAllClaims("signed-jwt")).thenReturn(labClaims());
-        AccessCodeService service = new AccessCodeService(provider, jwtService);
+        AccessCodeService service = new AccessCodeService(provider, jwtService, new AccessCodeTokenCipher(""));
 
         AccessCodeResponse issued = service.issue("signed-jwt", "0xreservation", 3L);
         AccessCodeResponse recovered = service.recoverDelivery("0xreservation", 3L);

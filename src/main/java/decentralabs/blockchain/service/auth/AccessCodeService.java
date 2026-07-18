@@ -50,11 +50,6 @@ public class AccessCodeService {
         this.tokenCipher = tokenCipher;
     }
 
-    /** Backward-compatible constructor for in-memory unit tests. */
-    AccessCodeService(ObjectProvider<JdbcTemplate> jdbcTemplateProvider, JwtService jwtService) {
-        this(jdbcTemplateProvider, jwtService, new AccessCodeTokenCipher(""));
-    }
-
     @Transactional
     public AccessCodeResponse issue(String token) {
         return issueInternal(token, null, null);

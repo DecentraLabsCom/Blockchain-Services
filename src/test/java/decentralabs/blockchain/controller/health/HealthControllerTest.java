@@ -453,7 +453,6 @@ class HealthControllerTest {
                 .andExpect(jsonPath("$.endpoints.jwks").value("available"))
                 .andExpect(jsonPath("$.endpoints.billing").value("available (localhost)"))
                 .andExpect(jsonPath("$.endpoints.['billing-admin']").value("available (localhost)"))
-                .andExpect(jsonPath("$.endpoints.['treasury-admin']").value("deprecated alias; use billing-admin"))
                 .andExpect(jsonPath("$.endpoints.health").value("available"));
         }
 

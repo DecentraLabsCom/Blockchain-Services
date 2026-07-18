@@ -131,11 +131,6 @@ public class LabMetadataService {
                     case "periodrules" -> builder.periodRules(parseObject(valueNode, PeriodRules.class));
                     case "docs" -> builder.documentation(parseStringList(valueNode));
                     case "additionalimages" -> builder.additionalImages(parseStringList(valueNode));
-                    // Backwards compatibility with older casing
-                    case "available days" -> builder.availableDays(parseDaysOfWeek(valueNode));
-                    case "available hours" -> builder.availableHours(parseTimeRange(valueNode));
-                    case "max concurrent users" -> builder.maxConcurrentUsers(valueNode.asInt());
-                    case "unavailable windows" -> builder.unavailableWindows(parseUnavailableWindows(valueNode));
                 }
             }
         }

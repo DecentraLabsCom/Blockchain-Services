@@ -594,7 +594,7 @@ class InstitutionalTransactionOutboxMonitorTest {
     }
 
     @Test
-    void recoversLegacyUnknownRowWithoutHashByReconstructingItsMaterial() throws Exception {
+    void recoversUnknownRowWithoutHashByReconstructingItsMaterial() throws Exception {
         var attempt = attempt("STUCK_UNKNOWN", null, null, Instant.now().minusSeconds(1800));
         when(outboxService.findRecoveryCandidates(any(), any(), org.mockito.ArgumentMatchers.eq(10)))
             .thenReturn(List.of(attempt));

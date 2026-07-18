@@ -12,7 +12,7 @@ import org.springframework.http.converter.HttpMessageConverter;
 
 /**
  * Lightweight JSON HttpMessageConverter using Jackson ObjectMapper.
- * This avoids relying on deprecated Spring-provided implementation.
+ * This keeps JSON serialization explicit at the HTTP boundary.
  */
 public class JacksonHttpMessageConverter implements HttpMessageConverter<Object> {
 

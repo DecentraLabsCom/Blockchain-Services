@@ -134,7 +134,7 @@ class ProviderNetworkServiceTest {
         }
 
         @Test
-        @DisplayName("Suspends with null actionBy (legacy path)")
+        @DisplayName("Suspends with null actionBy")
         void suspendsWithNullActionBy() {
             service.suspend(5L, "Investigation", null);
 

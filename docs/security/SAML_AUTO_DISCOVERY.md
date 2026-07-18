@@ -18,7 +18,7 @@ flowchart TD
     F --> G[Resolve metadata URL]
     G --> H[Validate URL and network target]
     H -->|blocked| R
-    H --> I[Fetch metadata or approved alternatives]
+    H --> I[Fetch metadata]
     I --> J[Extract X.509 signing certificates]
     J --> K{Certificate cache hit?}
     K -->|no| L[Cache by issuer, max 500 entries]
@@ -38,16 +38,12 @@ For an assertion with issuer `I`, the service resolves the metadata URL in this 
 2. The optional global `saml.idp.metadata.url` property.
 3. `AuthnContext/AuthenticatingAuthority` when it looks like a metadata endpoint.
 4. An `Extensions/MetadataURL` element.
-5. `I/metadata`.
-6. Common provider-specific alternatives (Shibboleth, SimpleSAMLphp and ADFS/Azure AD) if the primary endpoint returns no certificate.
 
-Metadata transport rejects non-HTTPS URLs unless `saml.metadata.allow-http=true`, and blocks loopback, private, link-local and cloud-metadata targets. HTTP timeouts, IPv4 preference and the optional `curl` fallback are configured under `saml.metadata.http.*`.
+Metadata transport rejects non-HTTPS URLs unless `saml.metadata.allow-http=true`, and blocks loopback, private, link-local and cloud-metadata targets. HTTP timeouts are configured under `saml.metadata.http.*`.
 
 ## Certificate cache and rotation
 
 Certificates are cached in memory by issuer in a bounded `ConcurrentHashMap` (maximum 500 issuers). There is no time-based expiry or cross-instance sharing. A process restart or `clearCertificateCache()` refreshes keys; planned key rotation therefore requires an operational cache clear/restart or a deployment that does not rely on stale certificates.
-
-The inline `ds:X509Certificate` fallback is used only when metadata retrieval fails and `trust-mode=any`. It must not be treated as a substitute for an allow-list in production.
 
 ## Configuration
 
@@ -65,7 +61,6 @@ saml.metadata.allow-http=false
 saml.metadata.http.connect-timeout-ms=5000
 saml.metadata.http.read-timeout-ms=10000
 saml.metadata.http.call-timeout-ms=15000
-saml.metadata.http.curl-fallback.enabled=true
 ```
 
 ## Required identity data and failure modes

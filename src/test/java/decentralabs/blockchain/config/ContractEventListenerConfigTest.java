@@ -20,7 +20,12 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.test.util.ReflectionTestUtils;
 import org.web3j.abi.EventEncoder;
+import org.web3j.abi.FunctionEncoder;
+import org.web3j.abi.datatypes.Address;
+import org.web3j.abi.datatypes.generated.Bytes32;
 import org.web3j.abi.datatypes.Event;
+import org.web3j.abi.datatypes.generated.Uint8;
+import org.web3j.abi.datatypes.generated.Uint96;
 import org.web3j.protocol.Web3j;
 import org.web3j.protocol.core.methods.response.Log;
 import org.web3j.utils.Numeric;
@@ -268,6 +273,45 @@ class ContractEventListenerConfigTest {
             eq("0x" + reservationKeyTopic),
             any(),
             eq("9"),
+            any(),
+            any(),
+            eq("CANCELLED")
+        );
+    }
+
+    @Test
+    void shouldPersistProviderCanceledBookingWithFullRefundAuditEvent() {
+        Map<String, Event> supported = getSupportedEvents();
+        Event eventDefinition = supported.get("BookingCanceledByProvider");
+        String signature = EventEncoder.encode(eventDefinition);
+
+        String reservationKey = "0x" + "44".repeat(32);
+        String reservationKeyTopic = Numeric.toHexStringNoPrefixZeroPadded(
+            Numeric.toBigInt(reservationKey), 64
+        );
+        String labIdTopic = encodeUintTopic(BigInteger.valueOf(12));
+        String payer = "0x00000000000000000000000000000000000000ab";
+        String payerTopic = Numeric.toHexStringNoPrefixZeroPadded(Numeric.toBigInt(payer), 64);
+        String data = FunctionEncoder.encodeConstructor(List.of(
+            new Address("0x00000000000000000000000000000000000000cd"),
+            new Bytes32(new byte[32]),
+            new Uint96(BigInteger.valueOf(1234)),
+            new Uint8(7)
+        ));
+
+        Log eventLog = new Log();
+        eventLog.setTopics(List.of(signature, "0x" + reservationKeyTopic, labIdTopic, "0x" + payerTopic));
+        eventLog.setData(data);
+        eventLog.setTransactionHash("0xprovider-cancel");
+
+        ReflectionTestUtils.invokeMethod(
+            config, "handleContractEvent", "BookingCanceledByProvider", eventDefinition, eventLog
+        );
+
+        verify(reservationPersistenceService).upsertReservation(
+            eq("0x" + reservationKeyTopic),
+            eq(payer),
+            eq("12"),
             any(),
             any(),
             eq("CANCELLED")
@@ -592,7 +636,7 @@ class ContractEventListenerConfigTest {
         var labCall = (org.web3j.protocol.core.RemoteFunctionCall<decentralabs.blockchain.contract.Diamond.Lab>) mock(org.web3j.protocol.core.RemoteFunctionCall.class);
         decentralabs.blockchain.contract.Diamond.LabBase base =
             new decentralabs.blockchain.contract.Diamond.LabBase(
-                "ipfs://institutional-lab-metadata", BigInteger.ZERO, "", "", BigInteger.ZERO
+                "ipfs://institutional-lab-metadata", BigInteger.ZERO, "", "", BigInteger.ZERO, BigInteger.ZERO
             );
         decentralabs.blockchain.contract.Diamond.Lab lab =
             new decentralabs.blockchain.contract.Diamond.Lab(BigInteger.valueOf(16), base);
@@ -675,7 +719,7 @@ class ContractEventListenerConfigTest {
         var labCall = (org.web3j.protocol.core.RemoteFunctionCall<decentralabs.blockchain.contract.Diamond.Lab>) mock(org.web3j.protocol.core.RemoteFunctionCall.class);
         decentralabs.blockchain.contract.Diamond.LabBase base =
             new decentralabs.blockchain.contract.Diamond.LabBase(
-                "ipfs://cross-institutional-lab", BigInteger.ONE, "", "", BigInteger.ZERO
+                "ipfs://cross-institutional-lab", BigInteger.ONE, "", "", BigInteger.ZERO, BigInteger.ZERO
             );
         decentralabs.blockchain.contract.Diamond.Lab lab =
             new decentralabs.blockchain.contract.Diamond.Lab(BigInteger.valueOf(18), base);

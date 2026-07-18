@@ -166,7 +166,7 @@ public class JwtService {
     public static String base64UrlEncode(BigInteger value) {
         byte[] bytes = value.toByteArray();
 
-        // If the first byte is 0x00, delete it (to make it compatible with OpenSSL)
+        // If the first byte is 0x00, remove it before exporting the OpenSSL key bytes.
         if (bytes.length > 1 && bytes[0] == 0x00) {
             bytes = java.util.Arrays.copyOfRange(bytes, 1, bytes.length);
         }

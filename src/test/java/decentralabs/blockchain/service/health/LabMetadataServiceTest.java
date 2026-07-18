@@ -209,18 +209,6 @@ class LabMetadataServiceTest {
         }
 
         @Test
-        @DisplayName("Should handle backwards compatible attribute names")
-        void shouldHandleBackwardsCompatibleAttributeNames() {
-            String json = createMetadataJsonWithSpacedAttributeNames();
-            when(restTemplate.getForObject(anyString(), eq(String.class))).thenReturn(json);
-
-            LabMetadata metadata = metadataService.getLabMetadata("https://example.com/metadata.json");
-
-            assertThat(metadata.getAvailableDays()).contains(DayOfWeek.TUESDAY);
-            assertThat(metadata.getMaxConcurrentUsers()).isEqualTo(3);
-        }
-
-        @Test
         @DisplayName("Should parse long-duration pricing and booking metadata")
         void shouldParseLongDurationPricingAndBookingMetadata() {
             String json = """
@@ -513,17 +501,4 @@ class LabMetadataServiceTest {
             """;
     }
 
-    private String createMetadataJsonWithSpacedAttributeNames() {
-        return """
-            {
-                "name": "Legacy Lab",
-                "description": "Lab with spaced attribute names",
-                "image": "https://image.url",
-                "attributes": [
-                    { "trait_type": "available days", "value": ["TUESDAY", "THURSDAY"] },
-                    { "trait_type": "max concurrent users", "value": 3 }
-                ]
-            }
-            """;
-    }
 }

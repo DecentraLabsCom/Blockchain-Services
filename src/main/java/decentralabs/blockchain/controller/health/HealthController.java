@@ -207,8 +207,6 @@ public class HealthController {
 
         endpoints.put("billing", "available (localhost)");
         endpoints.put("billing-admin", "available (localhost)");
-        endpoints.put("treasury-reservations", "deprecated alias; use billing");
-        endpoints.put("treasury-admin", "deprecated alias; use billing-admin");
 
         endpoints.put("health", "available");
         return endpoints;

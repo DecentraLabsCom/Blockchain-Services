@@ -1,5 +1,5 @@
--- FMU tickets are short-lived/reusable capabilities. Invalidate outstanding legacy
--- rows on upgrade so neither the bearer ticket nor its claims remain in plaintext.
+-- FMU tickets are short-lived/reusable capabilities. Reset outstanding rows so
+-- neither the bearer ticket nor its claims remain in plaintext.
 DROP TABLE IF EXISTS fmu_session_tickets;
 
 CREATE TABLE fmu_session_tickets (

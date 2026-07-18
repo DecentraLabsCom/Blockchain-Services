@@ -111,11 +111,6 @@ public class Diamond extends Contract {
             this.resourceType = resourceType;
         }
 
-        /** Backward-compatible constructor (defaults resourceType to 0) */
-        public LabBase(String uri, BigInteger price, String accessURI,
-                      String accessKey, BigInteger createdAt) {
-            this(uri, price, accessURI, accessKey, createdAt, BigInteger.ZERO);
-        }
     }
     
     // Lab struct - Simple POJO
@@ -679,30 +674,8 @@ public class Diamond extends Contract {
                         hex = hex.substring(2);
                     }
 
-                    // Some providers encode single tuple returns with an initial offset, others return tuple head directly.
-                    // Try the offset form first, then fallback to direct tuple decoding.
-                    int candidateTupleOffset = 0;
-                    try {
-                        candidateTupleOffset = parseOffsetWordChars(hex, 0, "tuple offset");
-                    } catch (IllegalArgumentException ex) {
-                        candidateTupleOffset = 0;
-                    }
-
-                    IllegalArgumentException firstFailure = null;
-                    int[] attempts = candidateTupleOffset == 0 ? new int[] {0} : new int[] {candidateTupleOffset, 0};
-                    for (int tupleOffset : attempts) {
-                        try {
-                            return decodeLabAtOffset(hex, tupleOffset, tokenId);
-                        } catch (IllegalArgumentException ex) {
-                            if (firstFailure == null) {
-                                firstFailure = ex;
-                            } else {
-                                firstFailure.addSuppressed(ex);
-                            }
-                        }
-                    }
-
-                    throw new IllegalStateException("Unable to decode getLab(" + tokenId + ") response", firstFailure);
+                    int tupleOffset = parseOffsetWordChars(hex, 0, "tuple offset");
+                    return decodeLabAtOffset(hex, tupleOffset, tokenId);
                 });
     }
     
@@ -902,6 +875,14 @@ public class Diamond extends Contract {
         return new Function(
             "requestProviderPayout",
             Arrays.asList(new Uint256(labId), new Uint256(maxBatch)),
+            List.of()
+        );
+    }
+
+    public static Function cancelConfirmedBookingByProviderFunction(byte[] reservationKey, BigInteger reasonCode) {
+        return new Function(
+            "cancelConfirmedBookingByProvider",
+            Arrays.asList(new Bytes32(reservationKey), new Uint8(reasonCode.longValueExact())),
             List.of()
         );
     }

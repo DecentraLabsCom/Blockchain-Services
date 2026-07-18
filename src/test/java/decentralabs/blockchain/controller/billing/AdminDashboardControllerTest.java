@@ -330,7 +330,6 @@ class AdminDashboardControllerTest {
             when(walletService.getProviderReceivableStatus(BigInteger.valueOf(3))).thenReturn(
                 Optional.of(new ProviderReceivableStatus(
                     BigInteger.valueOf(1_000_000),
-                    BigInteger.ZERO,
                     BigInteger.valueOf(1_000_000),
                     BigInteger.valueOf(2),
                     BigInteger.valueOf(250_000),
@@ -391,7 +390,6 @@ class AdminDashboardControllerTest {
             when(walletService.getProviderReceivableStatus(BigInteger.valueOf(3))).thenReturn(
                 Optional.of(new ProviderReceivableStatus(
                     BigInteger.valueOf(2_000_000),
-                    BigInteger.ZERO,
                     BigInteger.valueOf(2_000_000),
                     BigInteger.ZERO,
                     BigInteger.valueOf(500_000),
@@ -440,7 +438,6 @@ class AdminDashboardControllerTest {
             when(walletService.getProviderReceivableStatus(BigInteger.ONE)).thenReturn(
                 Optional.of(new ProviderReceivableStatus(
                     BigInteger.valueOf(100_000),
-                    BigInteger.ZERO,
                     BigInteger.valueOf(100_000),
                     BigInteger.ONE,
                     BigInteger.valueOf(100_000),
@@ -456,7 +453,6 @@ class AdminDashboardControllerTest {
             when(walletService.getProviderReceivableStatus(BigInteger.TWO)).thenReturn(
                 Optional.of(new ProviderReceivableStatus(
                     BigInteger.valueOf(200_000),
-                    BigInteger.ZERO,
                     BigInteger.valueOf(200_000),
                     BigInteger.ZERO,
                     BigInteger.ZERO,

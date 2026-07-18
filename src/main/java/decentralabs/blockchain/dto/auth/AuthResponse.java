@@ -48,17 +48,6 @@ public class AuthResponse {
     }
     
     /**
-     * Converts to JSON string format (maintaining backward compatibility)
-     */
-    public String toJson() {
-        try {
-            return OBJECT_MAPPER.writeValueAsString(this);
-        } catch (JsonProcessingException e) {
-            throw new IllegalStateException("Unable to serialize authentication response", e);
-        }
-    }
-    
-    /**
      * Creates error response in JSON format
      */
     public static String errorJson(String message) {

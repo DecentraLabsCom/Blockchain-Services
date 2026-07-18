@@ -169,14 +169,14 @@ class ProviderConfigurationPersistenceServiceTest {
     }
 
     @Test
-    @DisplayName("Should invalidate legacy provider registration missing stored contract address")
-    void shouldInvalidateLegacyProviderRegistrationWithoutStoredContractAddress() throws IOException {
+    @DisplayName("Should invalidate incomplete provider registration missing stored contract address")
+    void shouldInvalidateIncompleteProviderRegistrationWithoutStoredContractAddress() throws IOException {
         Path configPath = tempDir.resolve("provider.properties");
-        Properties legacyProps = new Properties();
-        legacyProps.setProperty("provider.registered", "true");
-        legacyProps.setProperty("provider.name", "Legacy University");
+        Properties incompleteProps = new Properties();
+        incompleteProps.setProperty("provider.registered", "true");
+        incompleteProps.setProperty("provider.name", "Example University");
         try (FileOutputStream fos = new FileOutputStream(configPath.toFile())) {
-            legacyProps.store(fos, "Legacy config");
+            incompleteProps.store(fos, "Incomplete provider config");
         }
 
         Properties props = service.loadConfigurationSafe();
@@ -185,7 +185,7 @@ class ProviderConfigurationPersistenceServiceTest {
             "0x1111111111111111111111111111111111111111",
             props.getProperty("provider.registered.contract.address")
         );
-        assertEquals("Legacy University", props.getProperty("provider.name"));
+        assertEquals("Example University", props.getProperty("provider.name"));
     }
 
     @Test

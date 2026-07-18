@@ -218,9 +218,9 @@ public class InstitutionalTransactionOutboxMonitor {
                     outboxService.markReplacementPrepared(attempt, attempt.txHash(), raw, hash, gasPrice);
                     replacementPrepared = true;
                 } else {
-                    // There is no prior hash to reconcile when a legacy row has
-                    // only partial signed material; persist the bounded material
-                    // without inventing history for an unknown hash.
+                    // There is no prior hash to reconcile when only partial signed
+                    // material is persisted; persist the bounded material without
+                    // inventing history for an unknown hash.
                     outboxService.markSigned(attempt, raw, hash, gasPrice);
                     materialPrepared = true;
                 }
