@@ -25,7 +25,6 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.UUID;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.web3j.abi.FunctionEncoder;
@@ -87,7 +86,6 @@ public class InstitutionalAdminService {
     @Value("${security.access-token.required:true}")
     private boolean accessTokenRequired;
 
-    @Autowired
     public InstitutionalAdminService(
         Web3j web3j,
         HttpServletRequest request,

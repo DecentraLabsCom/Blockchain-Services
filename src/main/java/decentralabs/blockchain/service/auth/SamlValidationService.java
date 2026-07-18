@@ -25,7 +25,6 @@ import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.net.InetAddress;
-import java.net.Inet6Address;
 import java.net.URI;
 import java.security.cert.CertificateFactory;
 import java.security.cert.X509Certificate;

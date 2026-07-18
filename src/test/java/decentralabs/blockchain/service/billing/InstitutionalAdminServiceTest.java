@@ -23,7 +23,6 @@ import org.web3j.crypto.Credentials;
 import org.web3j.protocol.Web3j;
 import org.web3j.protocol.core.DefaultBlockParameterName;
 import org.web3j.protocol.core.Request;
-import org.web3j.protocol.core.methods.response.EthChainId;
 import org.web3j.protocol.core.methods.response.EthEstimateGas;
 import org.web3j.protocol.core.methods.response.EthGetTransactionCount;
 import org.web3j.protocol.core.methods.response.EthSendTransaction;
@@ -300,7 +299,6 @@ class InstitutionalAdminServiceTest {
     class OperationExecutionTests {
 
         @Test
-        @SuppressWarnings({"unchecked", "rawtypes"})
         @DisplayName("Should execute AUTHORIZE_BACKEND operation successfully")
         void authorizeBackendExecutesTransactionWhenValid() throws Exception {
             Credentials credentials = Credentials.create("0x1");
