@@ -12,12 +12,21 @@ const API = {
      */
     async request(endpoint, options = {}) {
         const url = `${this.BASE_URL}${endpoint}`;
+        const method = String(options.method || 'GET').toUpperCase();
+        const headers = new Headers(options.headers || {});
+        if (method === 'POST' || method === 'PUT' || method === 'PATCH' || method === 'DELETE') {
+            const csrf = document.cookie.split('; ').find((entry) => entry.startsWith('dlabs_csrf='));
+            if (csrf) {
+                headers.set('X-CSRF-Token', decodeURIComponent(csrf.slice('dlabs_csrf='.length)));
+            }
+        }
         const config = {
+            ...options,
             headers: {
                 'Content-Type': 'application/json',
-                ...options.headers
+                ...Object.fromEntries(headers.entries())
             },
-            ...options
+            credentials: 'same-origin'
         };
 
         try {
@@ -294,19 +303,10 @@ const API = {
             maxBatch: String(maxBatch)
         };
 
-        try {
-            return await this.request('/billing/admin/request-provider-payout', {
-                method: 'POST',
-                body: JSON.stringify(payload)
-            });
-        } catch (error) {
-            const message = (error && error.message ? error.message : '').toLowerCase();
-            // Compatibility path for environments still exposing legacy payout flow.
-            if (message.includes('404')) {
-                return await this.executeAdminOperation('COLLECT_LAB_PAYOUT', payload);
-            }
-            throw error;
-        }
+        return await this.request('/billing/admin/request-provider-payout', {
+            method: 'POST',
+            body: JSON.stringify(payload)
+        });
     },
 
     /**

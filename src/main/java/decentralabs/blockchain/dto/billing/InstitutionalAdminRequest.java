@@ -35,6 +35,8 @@ public class InstitutionalAdminRequest {
     private String reference;       // External reference for funding/adjustment traceability
     private String fromReceivableState; // Provider receivable lifecycle source state
     private String toReceivableState;   // Provider receivable lifecycle target state
+    private String reservationKey;      // Reservation key for provider-side cancellation
+    private String reasonCode;          // Non-zero on-chain provider cancellation reason code
 
     public enum AdminOperation {
         AUTHORIZE_BACKEND,
@@ -46,6 +48,7 @@ public class InstitutionalAdminRequest {
         ISSUE_SERVICE_CREDITS,
         ADJUST_SERVICE_CREDITS,
         TRANSITION_PROVIDER_RECEIVABLE_STATE,
-        COLLECT_LAB_PAYOUT
+        COLLECT_LAB_PAYOUT,
+        CANCEL_CONFIRMED_BOOKING_BY_PROVIDER
     }
 }

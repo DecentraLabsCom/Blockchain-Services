@@ -746,7 +746,7 @@ body {
     width: 100%;
 }
 
-/* Wallet setup actions (legacy - can be removed if not used) */
+/* Wallet setup actions */
 .wallet-setup-actions {
     display: flex;
     gap: var(--spacing-sm);
@@ -881,6 +881,73 @@ body {
 
 .operation-form.hidden {
     display: none;
+}
+
+.secret-header-spaced,
+.warning-text-spaced {
+    margin-top: var(--spacing-md);
+}
+
+.balance-amount-status {
+    font-size: 1rem;
+}
+
+.balance-amount-muted {
+    color: var(--text-muted);
+}
+
+.balance-amount-error {
+    color: var(--neon-red);
+}
+
+.balance-amount-cyan,
+.balance-icon-provider {
+    color: var(--neon-cyan);
+}
+
+.balance-amount-purple,
+.balance-icon-bonded {
+    color: var(--neon-purple);
+}
+
+.balance-icon-provider,
+.balance-icon-bonded {
+    margin-right: 0.3rem;
+}
+
+.provider-promo-card {
+    text-align: center;
+    padding: 1.5rem;
+    background: linear-gradient(135deg, rgba(0, 255, 157, 0.1), rgba(0, 229, 255, 0.1));
+    border-radius: 0.5rem;
+    margin-top: 1rem;
+    border: 1px solid rgba(0, 255, 157, 0.2);
+}
+
+.provider-promo-title {
+    font-size: 1.1rem;
+    color: var(--neon-cyan);
+    margin-bottom: 0.5rem;
+}
+
+.provider-promo-icon {
+    margin-right: 0.5rem;
+    color: var(--neon-green);
+}
+
+.provider-promo-emphasis,
+.provider-promo-link {
+    color: var(--neon-green);
+}
+
+.provider-promo-link {
+    text-decoration: none;
+    font-weight: bold;
+    font-size: 1rem;
+    transition: all 0.3s ease;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
 }
 
 .form-group {
@@ -1556,6 +1623,10 @@ body {
     gap: var(--spacing-sm);
     align-items: flex-start;
     width: 100%;
+}
+
+.operation-form-spaced {
+    margin-top: var(--spacing-lg);
 }
 
 .collect-select-group {

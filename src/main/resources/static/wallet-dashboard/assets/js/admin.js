@@ -37,8 +37,6 @@ const DashboardState = {
     registrationRole: null
 };
 
-const INVITE_TOKEN_STORAGE_PREFIX = 'dlabs_invite_token_applied:';
-const COLLECT_LAB_NAME_CACHE_PREFIX = 'dlabs_collect_lab_names:';
 const COLLECT_LABS_RETRY_DELAYS_MS = [1500, 3500, 7000];
 const RECEIVABLE_TRANSITION_PRESETS = {
     '2:3': { from: 2, to: 3, label: 'Queue to invoiced' },
@@ -175,76 +173,15 @@ function updateCollectDetailVisibility() {
     }
 }
 
-function getInviteTokenStorageKey(address) {
-    return `${INVITE_TOKEN_STORAGE_PREFIX}${(address || '').toLowerCase()}`;
-}
-
-function normalizeStoredContractAddress(contractAddress) {
-    return (contractAddress || '').trim().toLowerCase();
-}
-
 function loadInviteTokenState(address, contractAddress = null) {
-    if (!address) {
-        return false;
-    }
-    try {
-        const storageKey = getInviteTokenStorageKey(address);
-        const raw = localStorage.getItem(storageKey);
-        if (!raw) {
-            return false;
-        }
-
-        const expectedContract = normalizeStoredContractAddress(contractAddress);
-        if (raw === 'true') {
-            if (!expectedContract) {
-                return true;
-            }
-            localStorage.removeItem(storageKey);
-            return false;
-        }
-
-        let parsed;
-        try {
-            parsed = JSON.parse(raw);
-        } catch (parseError) {
-            localStorage.removeItem(storageKey);
-            return false;
-        }
-
-        if (!parsed || parsed.applied !== true) {
-            return false;
-        }
-
-        const storedContract = normalizeStoredContractAddress(parsed.contractAddress);
-        if (expectedContract && storedContract !== expectedContract) {
-            localStorage.removeItem(storageKey);
-            return false;
-        }
-
-        return true;
-    } catch (error) {
-        console.warn('Unable to read invite token state from storage', error);
-        return false;
-    }
+    // Registration state is authoritative in blockchain-services. Do not
+    // persist token-adjacent state in browser storage, where XSS would make
+    // administrative state durable outside the server-side session.
+    return false;
 }
 
 function persistInviteTokenState(address, applied, contractAddress = null) {
-    if (!address) {
-        return;
-    }
-    try {
-        const storageKey = getInviteTokenStorageKey(address);
-        if (applied) {
-            localStorage.setItem(storageKey, JSON.stringify({
-                applied: true,
-                contractAddress: normalizeStoredContractAddress(contractAddress)
-            }));
-        } else {
-            localStorage.removeItem(storageKey);
-        }
-    } catch (error) {
-        console.warn('Unable to persist invite token state', error);
-    }
+    // Deliberately kept as a no-op for callers that update the in-memory UI.
 }
 
 function maybePromptInviteToken(force = false) {
@@ -423,9 +360,6 @@ function renderSafeModalContent(contentElement, content) {
         if (node.hasAttribute('class')) {
             element.className = node.getAttribute('class');
         }
-        if (node.hasAttribute('style')) {
-            element.style.cssText = node.getAttribute('style');
-        }
         if (tagName === 'BUTTON' && node.hasAttribute('data-copy-value')) {
             element.dataset.copyValue = node.getAttribute('data-copy-value');
             element.addEventListener('click', () => copyToClipboard(element.dataset.copyValue));
@@ -445,27 +379,15 @@ function renderSafeModalContent(contentElement, content) {
 }
 
 function getCollectLabNameCacheKey() {
-    const contractAddress = (DashboardState.contractAddress || 'unknown').trim().toLowerCase();
-    const walletAddress = (DashboardState.walletAddress || 'unknown').trim().toLowerCase();
-    return `${COLLECT_LAB_NAME_CACHE_PREFIX}${contractAddress}:${walletAddress}`;
+    return '';
 }
 
 function loadCollectLabNameCache() {
-    try {
-        const raw = localStorage.getItem(getCollectLabNameCacheKey());
-        const parsed = raw ? JSON.parse(raw) : {};
-        DashboardState.collectLabNames = parsed && typeof parsed === 'object' ? parsed : {};
-    } catch (error) {
-        DashboardState.collectLabNames = {};
-    }
+    DashboardState.collectLabNames = {};
 }
 
 function persistCollectLabNameCache() {
-    try {
-        localStorage.setItem(getCollectLabNameCacheKey(), JSON.stringify(DashboardState.collectLabNames || {}));
-    } catch (error) {
-        // Ignore storage failures; UI can still operate with in-memory state.
-    }
+    // Lab labels are a presentation cache and remain in memory only.
 }
 
 function isFallbackLabLabel(value, labId) {
@@ -729,7 +651,7 @@ function buildPrivateKeyContent(privateKey, address = null, note = 'Keep this pr
             </div>
             <code class="secret-value">${escapeHtml(address)}</code>
         ` : ''}
-        <div class="secret-header" style="margin-top: ${address ? 'var(--spacing-md)' : '0'}">
+        <div class="secret-header${address ? ' secret-header-spaced' : ''}">
             <span class="info-label">Private Key</span>
             <button class="btn btn-secondary btn-small" data-copy-value="${escapeHtml(privateKey)}">
                 <i class="fas fa-copy"></i>
@@ -737,7 +659,7 @@ function buildPrivateKeyContent(privateKey, address = null, note = 'Keep this pr
             </button>
         </div>
         <code class="secret-value">${escapeHtml(privateKey)}</code>
-        <div class="warning-text" style="margin-top: var(--spacing-md)">
+        <div class="warning-text warning-text-spaced">
             <i class="fas fa-lock"></i>
             ${escapeHtml(note)}
         </div>
@@ -1493,7 +1415,7 @@ async function loadBalances() {
                 balanceGrid.innerHTML = `
                     <div class="balance-item">
                         <div class="balance-network">${safeActiveNetwork}</div>
-                        <div class="balance-amount" style="color: var(--text-muted); font-size: 1rem;">
+                        <div class="balance-amount balance-amount-status balance-amount-muted">
                             No data available
                         </div>
                     </div>
@@ -1505,7 +1427,7 @@ async function loadBalances() {
                 balanceGrid.innerHTML = `
                     <div class="balance-item">
                         <div class="balance-network">${safeActiveNetwork}</div>
-                        <div class="balance-amount" style="color: var(--neon-red); font-size: 1rem;">
+                        <div class="balance-amount balance-amount-status balance-amount-error">
                             Error: ${escapeHtml(balanceData.error)}
                         </div>
                     </div>
@@ -1543,10 +1465,10 @@ async function loadBalances() {
                         balanceGrid.innerHTML += `
                             <div class="balance-item">
                                 <div class="balance-label">
-                                    <i class="fas fa-university" style="margin-right: 0.3rem; color: var(--neon-cyan);"></i>
+                                    <i class="fas fa-university balance-icon-provider"></i>
                                     Provider billing balance
                                 </div>
-                                <div class="balance-amount" style="color: var(--neon-cyan);">${billingBalance} credits</div>
+                                <div class="balance-amount balance-amount-cyan">${billingBalance} credits</div>
                             </div>
                         `;
                     }
@@ -1558,10 +1480,10 @@ async function loadBalances() {
                             balanceGrid.innerHTML += `
                                 <div class="balance-item">
                                     <div class="balance-label">
-                                        <i class="fas fa-lock" style="margin-right: 0.3rem; color: var(--neon-purple);"></i>
+                                        <i class="fas fa-lock balance-icon-bonded"></i>
                                         Bonded
                                     </div>
-                                    <div class="balance-amount" style="color: var(--neon-purple);">${bondedAmount} credits</div>
+                                    <div class="balance-amount balance-amount-purple">${bondedAmount} credits</div>
                                 </div>
                             `;
                         }
@@ -1573,14 +1495,14 @@ async function loadBalances() {
                         if (!isProvider && parseFloat(labBalance) === 0) {
                             promoContainer.style.display = 'block';
                             promoContainer.innerHTML = `
-                                <div style="text-align: center; padding: 1.5rem; background: linear-gradient(135deg, rgba(0, 255, 157, 0.1), rgba(0, 229, 255, 0.1)); border-radius: 0.5rem; margin-top: 1rem; border: 1px solid rgba(0, 255, 157, 0.2);">
-                                    <div style="font-size: 1.1rem; color: var(--neon-cyan); margin-bottom: 0.5rem;">
-                                        <i class="fas fa-rocket" style="margin-right: 0.5rem; color: var(--neon-green);"></i>
-                                        Register as a provider now to get <strong style="color: var(--neon-green);">1000 onboarding credits</strong>!
+                                <div class="provider-promo-card">
+                                    <div class="provider-promo-title">
+                                        <i class="fas fa-rocket provider-promo-icon"></i>
+                                        Register as a provider now to get <strong class="provider-promo-emphasis">1000 onboarding credits</strong>!
                                     </div>
                                     <a href="https://marketplace-decentralabs.vercel.app" 
                                        target="_blank" 
-                                       style="color: var(--neon-green); text-decoration: none; font-weight: bold; font-size: 1rem; transition: all 0.3s ease; display: inline-flex; align-items: center; gap: 0.5rem;">
+                                       class="provider-promo-link">
                                         <i class="fas fa-external-link-alt"></i>
                                         Visit Marketplace
                                     </a>
@@ -2988,7 +2910,7 @@ function setupButtonHandlers() {
                             </button>
                         </div>
                         <code class="secret-value">${escapeHtml(data.address)}</code>
-                        <div class="warning-text" style="margin-top: var(--spacing-md)">
+                        <div class="warning-text warning-text-spaced">
                             <i class="fas fa-exclamation-triangle"></i>
                             <strong>Important:</strong> Make sure to backup your wallet securely. 
                             The dashboard will now refresh to show your new wallet.
@@ -3152,18 +3074,6 @@ async function initDashboard() {
     console.log('Dashboard initialized successfully');
 }
 
-function cleanTokenQueryFromUrl() {
-    try {
-        const url = new URL(window.location.href);
-        if (url.searchParams.has('token')) {
-            url.searchParams.delete('token');
-            window.history.replaceState({}, '', url.toString());
-        }
-    } catch (error) {
-        console.warn('Unable to clean token query from URL', error);
-    }
-}
-
 // Cleanup on page unload
 window.addEventListener('beforeunload', () => {
     stopAutoRefresh();
@@ -3172,11 +3082,9 @@ window.addEventListener('beforeunload', () => {
 // Start the dashboard when DOM is ready
 if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', () => {
-        cleanTokenQueryFromUrl();
         initDashboard();
     });
 } else {
-    cleanTokenQueryFromUrl();
     initDashboard();
 }
 

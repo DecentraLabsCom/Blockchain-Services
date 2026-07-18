@@ -163,24 +163,24 @@ class InstitutionalConcurrencyMySqlIntegrationTest {
     }
 
     @Test
-    void legacyPayerSignerContextIsRepairedOnlyBeforeOnchainMaterialExists() {
+    void payerSignerContextIsRepairedOnlyBeforeOnchainMaterialExists() {
         InstitutionalCheckInOutboxService service = outboxService();
-        InstitutionalCheckInOutboxRecord legacy = service.enqueueAccessGranted(
-            "0xlegacy-signer", "42", "0xpayer", "0xpayer", "0xpuc", "session"
+        InstitutionalCheckInOutboxRecord initial = service.enqueueAccessGranted(
+            "0xinitial-signer", "42", "0xpayer", "0xpayer", "0xpuc", "session"
         );
 
         InstitutionalCheckInOutboxRecord repaired = service.enqueueAccessGranted(
-            "0xlegacy-signer", "42", "0xpayer", "0xbackend-signer", "0xpuc", "session"
+            "0xinitial-signer", "42", "0xpayer", "0xbackend-signer", "0xpuc", "session"
         );
         assertThat(repaired.walletAddress()).isEqualTo("0xbackend-signer");
 
         jdbcTemplate.update(
             "UPDATE institutional_checkin_outbox SET chain_id = ?, nonce = ?, tx_hash = ?, "
                 + "signed_raw_transaction = ? WHERE id = ?",
-            CHAIN_ID, BigInteger.valueOf(45), "0x" + "a".repeat(64), "0xraw", legacy.id()
+            CHAIN_ID, BigInteger.valueOf(45), "0x" + "a".repeat(64), "0xraw", initial.id()
         );
         InstitutionalCheckInOutboxRecord preserved = service.enqueueAccessGranted(
-            "0xlegacy-signer", "42", "0xpayer", "0xother-signer", "0xpuc", "session"
+            "0xinitial-signer", "42", "0xpayer", "0xother-signer", "0xpuc", "session"
         );
 
         assertThat(preserved.walletAddress()).isEqualTo("0xbackend-signer");

@@ -64,6 +64,7 @@ public class ContractEventListenerConfig {
     private static final String RESERVATION_DENIED = "ReservationRequestDenied";
     private static final String RESERVATION_CANCELED = "ReservationRequestCanceled";
     private static final String BOOKING_CANCELED = "BookingCanceled";
+    private static final String PROVIDER_BOOKING_CANCELED = "BookingCanceledByProvider";
     private static final String PROVIDER_ADDED = "ProviderAdded";
     private static final String LAB_INTENT_PROCESSED = "LabIntentProcessed";
     private static final String RESERVATION_INTENT_PROCESSED = "ReservationIntentProcessed";
@@ -120,6 +121,19 @@ public class ContractEventListenerConfig {
         )
     );
 
+    private static final Event PROVIDER_BOOKING_CANCELED_EVENT = new Event(
+        PROVIDER_BOOKING_CANCELED,
+        Arrays.<TypeReference<?>>asList(
+            new TypeReference<Bytes32>(true) {},
+            new TypeReference<Uint256>(true) {},
+            new TypeReference<Address>(true) {},
+            new TypeReference<Address>() {},
+            new TypeReference<Bytes32>() {},
+            new TypeReference<org.web3j.abi.datatypes.generated.Uint96>() {},
+            new TypeReference<Uint8>() {}
+        )
+    );
+
     private static final Event PROVIDER_ADDED_EVENT = new Event(
         PROVIDER_ADDED,
         Arrays.<TypeReference<?>>asList(
@@ -164,6 +178,7 @@ public class ContractEventListenerConfig {
         RESERVATION_DENIED, RESERVATION_DENIED_EVENT,
         RESERVATION_CANCELED, RESERVATION_CANCELED_EVENT,
         BOOKING_CANCELED, BOOKING_CANCELED_EVENT,
+        PROVIDER_BOOKING_CANCELED, PROVIDER_BOOKING_CANCELED_EVENT,
         PROVIDER_ADDED, PROVIDER_ADDED_EVENT,
         LAB_INTENT_PROCESSED, LAB_INTENT_PROCESSED_EVENT,
         RESERVATION_INTENT_PROCESSED, RESERVATION_INTENT_PROCESSED_EVENT
@@ -431,6 +446,7 @@ public class ContractEventListenerConfig {
                 case RESERVATION_DENIED -> handleReservationDenied(eventValues, eventLog);
                 case RESERVATION_CANCELED -> handleReservationCanceled(eventValues, eventLog);
                 case BOOKING_CANCELED -> handleBookingCanceled(eventValues, eventLog);
+                case PROVIDER_BOOKING_CANCELED -> handleProviderBookingCanceled(eventValues, eventLog);
                 case PROVIDER_ADDED -> handleProviderAdded(eventValues, eventLog);
                 case LAB_INTENT_PROCESSED -> handleLabIntentProcessed(eventValues, eventLog);
                 case RESERVATION_INTENT_PROCESSED -> handleReservationIntentProcessed(eventValues, eventLog);
@@ -535,6 +551,38 @@ public class ContractEventListenerConfig {
         );
 
         dispatchReservationLifecycleEvent("booking-canceled", payload);
+        persistLifecycle(payload, "CANCELLED");
+    }
+
+    private void handleProviderBookingCanceled(EventValues eventValues, Log eventLog) {
+        String reservationKey = toHex((Bytes32) eventValues.getIndexedValues().get(0));
+        BigInteger labId = ((Uint256) eventValues.getIndexedValues().get(1)).getValue();
+        String payerInstitution = ((Address) eventValues.getIndexedValues().get(2)).getValue();
+        String provider = ((Address) eventValues.getNonIndexedValues().get(0)).getValue();
+        BigInteger refundAmount = ((org.web3j.abi.datatypes.generated.Uint96)
+            eventValues.getNonIndexedValues().get(2)).getValue();
+        BigInteger reasonCode = ((Uint8) eventValues.getNonIndexedValues().get(3)).getValue();
+
+        log.info(
+            "Provider booking cancellation detected (key={} labId={} payer={} provider={} refund={} reason={} tx={})",
+            reservationKey,
+            labId,
+            payerInstitution,
+            provider,
+            refundAmount,
+            reasonCode,
+            eventLog.getTransactionHash()
+        );
+
+        ReservationEventPayload payload = buildPayload(
+            reservationKey,
+            labId,
+            Optional.ofNullable(payerInstitution),
+            Optional.empty(),
+            Optional.empty(),
+            eventLog
+        );
+        dispatchReservationLifecycleEvent("booking-canceled-by-provider", payload);
         persistLifecycle(payload, "CANCELLED");
     }
 

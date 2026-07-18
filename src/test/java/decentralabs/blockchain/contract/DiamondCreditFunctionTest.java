@@ -45,6 +45,19 @@ class DiamondCreditFunctionTest {
         assertThat(FunctionEncoder.encode(function).substring(0, 10)).isEqualTo(selector("totalBalanceOf(address)"));
     }
 
+    @Test
+    void providerBookingCancellationUsesTheProviderCancellationSelector() {
+        var function = Diamond.cancelConfirmedBookingByProviderFunction(
+            new byte[32],
+            BigInteger.valueOf(7)
+        );
+
+        assertThat(function.getName()).isEqualTo("cancelConfirmedBookingByProvider");
+        assertThat(FunctionEncoder.encode(function).substring(0, 10)).isEqualTo(selector(
+            "cancelConfirmedBookingByProvider(bytes32,uint8)"
+        ));
+    }
+
     private String selector(String signature) {
         return org.web3j.crypto.Hash.sha3String(signature).substring(0, 10);
     }
