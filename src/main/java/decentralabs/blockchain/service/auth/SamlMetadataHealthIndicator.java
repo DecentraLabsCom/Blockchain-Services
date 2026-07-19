@@ -22,9 +22,9 @@ public class SamlMetadataHealthIndicator implements HealthIndicator {
     @Override
     public Health health() {
         Map<String, Object> details = samlValidationService.metadataHealth();
-        Health.Builder builder = "UP".equals(details.get("status"))
-            ? Health.up()
-            : Health.down();
+        Health.Builder builder = "DOWN".equals(details.get("status"))
+            ? Health.down()
+            : Health.up();
         details.forEach(builder::withDetail);
         return builder.build();
     }

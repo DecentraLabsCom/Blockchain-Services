@@ -69,13 +69,18 @@ saml.metadata.allow-http=false
 saml.metadata.http.connect-timeout-ms=5000
 saml.metadata.http.read-timeout-ms=10000
 saml.metadata.http.call-timeout-ms=15000
-saml.metadata.health.cache-ms=30000
+saml.metadata.certificate-cache-ms=300000
+saml.metadata.refresh.interval-ms=30000
+saml.metadata.refresh.initial-delay-ms=0
 ```
 
-The readiness probe includes `samlMetadata` and downloads metadata for every
-whitelisted issuer. Check `GET /actuator/health/readiness` after changing the
-map. The setup scripts merge new issuer overrides from the template into an
-existing `blockchain-services/.env` without replacing operator-defined values.
+The readiness probe includes `samlMetadata` and reads the last background
+metadata snapshot. Each refresh validates every issuer independently, publishes
+certificate fingerprints for the authentication cache, and reports `DEGRADED`
+when only part of the whitelist is unavailable. Check
+`GET /actuator/health/readiness` after changing the map. The setup scripts merge
+new issuer overrides from the template into an existing
+`blockchain-services/.env` without replacing operator-defined values.
 
 ## Required identity data and failure modes
 

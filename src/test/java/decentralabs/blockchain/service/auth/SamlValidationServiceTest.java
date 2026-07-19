@@ -34,11 +34,13 @@ import java.security.spec.RSAPrivateCrtKeySpec;
 import java.util.Base64;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import decentralabs.blockchain.util.PucHashUtil;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.Mockito.mock;
 
 class SamlValidationServiceTest {
 
@@ -186,6 +188,7 @@ class SamlValidationServiceTest {
                 }
         );
 
+        samlValidationService.refreshMetadataSnapshotsNow();
         Map<String, Object> health = samlValidationService.metadataHealth();
 
         assertThat(health).containsEntry("status", "DOWN");
@@ -214,6 +217,7 @@ class SamlValidationServiceTest {
                 }
         );
 
+        samlValidationService.refreshMetadataSnapshotsNow();
         Map<String, Object> health = samlValidationService.metadataHealth();
 
         assertThat(health).containsEntry("status", "UP");
@@ -383,6 +387,98 @@ class SamlValidationServiceTest {
                 .containsEntry("puc", "user@university.edu|targeted-user-1")
                 .containsEntry("eduPersonPrincipalName", "user@university.edu")
                 .containsEntry("eduPersonTargetedID", "targeted-user-1");
+    }
+
+    @Test
+    void shouldRefreshExactlyOnceWhenTheCachedCertificateCannotVerifyTheSignature() throws Exception {
+        ReflectionTestUtils.setField(samlValidationService, "trustMode", "any");
+        ReflectionTestUtils.setField(samlValidationService, "metadataUrlOverride", "https://metadata.test.example/idp");
+        X509Certificate cachedCertificate = mock(X509Certificate.class);
+        @SuppressWarnings("unchecked")
+        Map<String, List<X509Certificate>> cache = (Map<String, List<X509Certificate>>)
+                ReflectionTestUtils.getField(samlValidationService, "certificateCache");
+        cache.put(TEST_ISSUER, List.of(cachedCertificate));
+
+        AtomicInteger downloads = new AtomicInteger();
+        ReflectionTestUtils.setField(
+                samlValidationService,
+                "metadataDownloader",
+                (SamlValidationService.MetadataDownloader) (url, tlsProfile) -> {
+                    downloads.incrementAndGet();
+                    return samlValidationService.parseCertificatesFromMetadataXml(testMetadataXml());
+                }
+        );
+
+        Map<String, String> attributes = samlValidationService.validateSamlAssertionWithSignature(
+                createSignedSamlAssertionWithAttributes(Map.of(
+                        "eduPersonPrincipalName", "user@university.edu",
+                        "eduPersonTargetedID", "targeted-user-1",
+                        "affiliation", "student@university.edu"
+                ))
+        );
+
+        assertThat(attributes).containsEntry("puc", "user@university.edu|targeted-user-1");
+        assertThat(downloads).hasValue(1);
+    }
+
+    @Test
+    void shouldNotRetryMetadataMoreThanOnceAfterASecondInvalidSignature() throws Exception {
+        ReflectionTestUtils.setField(samlValidationService, "trustMode", "any");
+        ReflectionTestUtils.setField(samlValidationService, "metadataUrlOverride", "https://metadata.test.example/idp");
+        X509Certificate cachedCertificate = mock(X509Certificate.class);
+        @SuppressWarnings("unchecked")
+        Map<String, List<X509Certificate>> cache = (Map<String, List<X509Certificate>>)
+                ReflectionTestUtils.getField(samlValidationService, "certificateCache");
+        cache.put(TEST_ISSUER, List.of(cachedCertificate));
+
+        AtomicInteger downloads = new AtomicInteger();
+        ReflectionTestUtils.setField(
+                samlValidationService,
+                "metadataDownloader",
+                (SamlValidationService.MetadataDownloader) (url, tlsProfile) -> {
+                    downloads.incrementAndGet();
+                    return List.of(mock(X509Certificate.class));
+                }
+        );
+
+        assertThatThrownBy(() -> samlValidationService.validateSamlAssertionWithSignature(
+                createSignedSamlAssertionWithAttributes(Map.of(
+                        "eduPersonPrincipalName", "user@university.edu",
+                        "eduPersonTargetedID", "targeted-user-1",
+                        "affiliation", "student@university.edu"
+                ))
+        )).hasMessageContaining("INVALID");
+        assertThat(downloads).hasValue(1);
+    }
+
+    @Test
+    void metadataHealthRefreshesTheAuthenticationSnapshotAndDoesNotDownloadOnRead() throws Exception {
+        ReflectionTestUtils.setField(samlValidationService, "trustMode", "whitelist");
+        ReflectionTestUtils.setField(samlValidationService, "trustedIdps", Map.of("test", TEST_ISSUER));
+        ReflectionTestUtils.setField(samlValidationService, "metadataOverrides", Map.of(
+                TEST_ISSUER, "https://metadata.test.example/idp"
+        ));
+        AtomicInteger downloads = new AtomicInteger();
+        ReflectionTestUtils.setField(
+                samlValidationService,
+                "metadataDownloader",
+                (SamlValidationService.MetadataDownloader) (url, tlsProfile) -> {
+                    downloads.incrementAndGet();
+                    return samlValidationService.parseCertificatesFromMetadataXml(testMetadataXml());
+                }
+        );
+
+        samlValidationService.refreshMetadataSnapshotsNow();
+        Map<String, Object> first = samlValidationService.metadataHealth();
+        Map<String, Object> second = samlValidationService.metadataHealth();
+
+        assertThat(first).containsEntry("status", "UP");
+        assertThat(second).containsEntry("status", "UP");
+        assertThat(downloads).hasValue(1);
+        @SuppressWarnings("unchecked")
+        Map<String, List<X509Certificate>> cache = (Map<String, List<X509Certificate>>)
+                ReflectionTestUtils.getField(samlValidationService, "certificateCache");
+        assertThat(cache.get(TEST_ISSUER)).hasSize(1);
     }
 
     @Test

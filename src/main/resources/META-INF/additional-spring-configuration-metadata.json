@@ -547,10 +547,22 @@
     "defaultValue": 15000
   },
   {
-    "name": "saml.metadata.health.cache-ms",
+    "name": "saml.metadata.certificate-cache-ms",
     "type": "java.lang.Long",
-    "description": "Cache duration for SAML metadata readiness probes.",
+    "description": "SAML certificate snapshot cache duration in milliseconds.",
+    "defaultValue": 300000
+  },
+  {
+    "name": "saml.metadata.refresh.interval-ms",
+    "type": "java.lang.Long",
+    "description": "Background SAML metadata refresh interval in milliseconds.",
     "defaultValue": 30000
+  },
+  {
+    "name": "saml.metadata.refresh.initial-delay-ms",
+    "type": "java.lang.Long",
+    "description": "Initial delay before the first background SAML metadata refresh.",
+    "defaultValue": 0
   },
   {
     "name": "private.key.path",

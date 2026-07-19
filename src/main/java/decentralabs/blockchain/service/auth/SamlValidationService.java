@@ -11,6 +11,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.w3c.dom.Document;
 import org.w3c.dom.Element;
@@ -27,6 +28,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.net.InetAddress;
 import java.net.URI;
+import java.security.MessageDigest;
 import java.security.cert.CertificateFactory;
 import java.security.cert.X509Certificate;
 import java.util.ArrayList;
@@ -138,8 +140,8 @@ public class SamlValidationService {
     @Value("${saml.metadata.http.logging.enabled:false}")
     private boolean metadataHttpLoggingEnabled;
 
-    @Value("${saml.metadata.health.cache-ms:30000}")
-    private long metadataHealthCacheMs = 30_000L;
+    @Value("${saml.metadata.certificate-cache-ms:300000}")
+    private long metadataCertificateCacheMs = 300_000L;
     
     // Optional: only used in whitelist mode
     private Map<String, String> trustedIdps = Collections.emptyMap();
@@ -156,7 +158,6 @@ public class SamlValidationService {
     }
 
     private MetadataDownloader metadataDownloader = (metadataUrl, tlsProfile) -> {
-        validateMetadataUrl(metadataUrl);
         String metadataXml = downloadMetadataXml(metadataUrl, tlsProfile);
         return parseCertificatesFromMetadataXml(metadataXml);
     };
@@ -185,6 +186,7 @@ public class SamlValidationService {
     // Cache for IdP certificates (issuer -> certificates)
     private static final int MAX_CERTIFICATE_CACHE_SIZE = 500;
     private final Map<String, List<X509Certificate>> certificateCache = new ConcurrentHashMap<>();
+    private final Map<String, CertificateCacheEntry> certificateSnapshots = new ConcurrentHashMap<>();
     
     /**
      * Validates SAML assertion with signature verification and extracts attributes
@@ -269,7 +271,7 @@ public class SamlValidationService {
         if ("whitelist".equalsIgnoreCase(trustMode) && (metadataUrl == null || metadataUrl.isBlank())) {
             throw new SecurityException("Whitelisted IdP requires an issuer-specific metadata URL: " + issuer);
         }
-        List<X509Certificate> certs = getIdpCertificates(issuer, metadataUrl);
+        List<X509Certificate> certs = getIdpCertificates(issuer, metadataUrl, false);
         if (certs.isEmpty()) {
             if (metadataUrl == null) {
                 throw new SecurityException("No metadata URL found for IdP: " + issuer);
@@ -280,7 +282,14 @@ public class SamlValidationService {
         // Verify signature
         boolean signatureValid = verifySignature(doc, certs);
         if (!signatureValid) {
-            throw new SecurityException("SAML assertion signature is INVALID");
+            // IdPs commonly publish the replacement signing certificate before
+            // they start using it.  Evict the issuer snapshot and perform one,
+            // and only one, refresh for this assertion.
+            evictCertificateCache(issuer);
+            List<X509Certificate> refreshedCerts = getIdpCertificates(issuer, metadataUrl, true);
+            if (refreshedCerts.isEmpty() || !verifySignature(doc, refreshedCerts)) {
+                throw new SecurityException("SAML assertion signature is INVALID");
+            }
         }
         
         // Extract attributes after signature validation.
@@ -578,41 +587,108 @@ public class SamlValidationService {
     }
     
     /**
-     * Gets IdP certificate from cache or retrieves from metadata endpoint
+     * Gets the current IdP certificate snapshot.  Authentication and the
+     * metadata readiness worker both publish through this method so a health
+     * check cannot be green while authentication is still pinned to K1.
      */
-    private List<X509Certificate> getIdpCertificates(String issuer, String metadataUrl) {
-        // Check cache first
-        if (certificateCache.containsKey(issuer)) {
-            logger.debug("Using cached certificate for IdP: {}", issuer);
-            return certificateCache.get(issuer);
+    private List<X509Certificate> getIdpCertificates(String issuer, String metadataUrl, boolean forceRefresh) {
+        String cacheKey = normalizeIssuer(issuer);
+        CertificateCacheEntry snapshot = certificateSnapshots.get(cacheKey);
+        long now = System.currentTimeMillis();
+        if (!forceRefresh && snapshot != null
+                && sameMetadataUrl(snapshot.metadataUrl(), metadataUrl)
+                && now - snapshot.fetchedAt() < Math.max(0L, metadataCertificateCacheMs)) {
+            logger.debug("Using cached SAML certificate snapshot for IdP: {} fingerprints={}", cacheKey, snapshot.fingerprints());
+            return snapshot.certificates();
+        }
+
+        // Keep compatibility with unit/integration fixtures that seed the
+        // certificate cache directly. Production entries always have a
+        // timestamped CertificateCacheEntry published alongside this map.
+        if (!forceRefresh && snapshot == null && certificateCache.containsKey(cacheKey)) {
+            return certificateCache.get(cacheKey);
         }
 
         if (metadataUrl == null || metadataUrl.isBlank()) {
             return Collections.emptyList();
         }
-        
-        // Try to retrieve from metadata URL
+
         try {
             List<X509Certificate> certs = retrieveCertificatesFromMetadata(metadataUrl, issuer);
             if (!certs.isEmpty()) {
-                if (certificateCache.size() >= MAX_CERTIFICATE_CACHE_SIZE) {
-                    logger.warn("Certificate cache reached max size ({}), evicting oldest entries", MAX_CERTIFICATE_CACHE_SIZE);
-                    var iterator = certificateCache.entrySet().iterator();
-                    int toRemove = certificateCache.size() / 4;
-                    for (int i = 0; i < toRemove && iterator.hasNext(); i++) {
-                        iterator.next();
-                        iterator.remove();
-                    }
-                }
-                certificateCache.put(issuer, certs);
-                logger.info("Retrieved and cached certificate from metadata for IdP: {}", issuer);
+                putCertificateSnapshot(cacheKey, metadataUrl, certs, now);
+                logger.info("Retrieved and cached SAML certificate snapshot for IdP {} fingerprints={}",
+                        cacheKey, certificateFingerprints(certs));
                 return certs;
             }
         } catch (Exception e) {
             logger.warn("Could not retrieve certificate from metadata URL: {}", metadataUrl, e);
         }
-        
+
         return Collections.emptyList();
+    }
+
+    private void putCertificateSnapshot(
+            String issuer,
+            String metadataUrl,
+            List<X509Certificate> certificates,
+            long fetchedAt) {
+        if (certificateCache.size() >= MAX_CERTIFICATE_CACHE_SIZE && !certificateCache.containsKey(issuer)) {
+            logger.warn("Certificate cache reached max size ({}), evicting oldest entries", MAX_CERTIFICATE_CACHE_SIZE);
+            var iterator = certificateCache.keySet().iterator();
+            int toRemove = Math.max(1, certificateCache.size() / 4);
+            for (int i = 0; i < toRemove && iterator.hasNext(); i++) {
+                String evictedIssuer = iterator.next();
+                iterator.remove();
+                certificateSnapshots.remove(evictedIssuer);
+            }
+        }
+        List<X509Certificate> immutableCertificates = List.copyOf(certificates);
+        certificateCache.put(issuer, immutableCertificates);
+        certificateSnapshots.put(
+                issuer,
+                new CertificateCacheEntry(
+                        normalizeMetadataUrl(metadataUrl),
+                        immutableCertificates,
+                        certificateFingerprints(immutableCertificates),
+                        fetchedAt
+                )
+        );
+    }
+
+    private void evictCertificateCache(String issuer) {
+        String cacheKey = normalizeIssuer(issuer);
+        certificateCache.remove(cacheKey);
+        certificateSnapshots.remove(cacheKey);
+    }
+
+    private boolean sameMetadataUrl(String left, String right) {
+        return normalizeMetadataUrl(left).equals(normalizeMetadataUrl(right));
+    }
+
+    private String normalizeMetadataUrl(String url) {
+        return url == null ? "" : url.trim();
+    }
+
+    private List<String> certificateFingerprints(List<X509Certificate> certificates) {
+        List<String> fingerprints = new ArrayList<>();
+        for (X509Certificate certificate : certificates) {
+            try {
+                if (certificate == null) {
+                    continue;
+                }
+                byte[] encoded = certificate.getEncoded();
+                if (encoded == null || encoded.length == 0) {
+                    continue;
+                }
+                fingerprints.add(Base64.getUrlEncoder().withoutPadding().encodeToString(
+                        MessageDigest.getInstance("SHA-256").digest(encoded)
+                ));
+            } catch (Exception ex) {
+                logger.warn("Unable to fingerprint SAML certificate", ex);
+            }
+        }
+        return List.copyOf(fingerprints);
     }
     
     private List<X509Certificate> retrieveCertificatesFromMetadata(String metadataUrl, String issuer) throws Exception {
@@ -658,35 +734,45 @@ public class SamlValidationService {
     }
 
     private String downloadMetadataXml(String metadataUrl, String tlsProfile) throws Exception {
-        Request request = new Request.Builder()
-            .url(metadataUrl)
-            .get()
-            .header("Accept", "application/samlmetadata+xml, application/xml, text/xml;q=0.9,*/*;q=0.8")
-            .header("User-Agent", "DecentraLabs-Blockchain-Services/1.0")
-            .build();
+        String currentUrl = metadataUrl;
+        for (int redirect = 0; redirect <= 5; redirect++) {
+            ValidatedMetadataUrl validated = validateMetadataUrl(currentUrl);
+            Request request = new Request.Builder()
+                .url(currentUrl)
+                .get()
+                .header("Accept", "application/samlmetadata+xml, application/xml, text/xml;q=0.9,*/*;q=0.8")
+                .header("User-Agent", "DecentraLabs-Blockchain-Services/1.0")
+                .build();
 
-        return executeMetadataRequest(buildMetadataHttpClient(tlsProfile), request);
-
-    }
-
-    private String executeMetadataRequest(OkHttpClient client, Request request) throws IOException {
-        try (Response response = client.newCall(request).execute()) {
-            if (!response.isSuccessful()) {
-                throw new IOException("Metadata request failed with HTTP " + response.code());
+            try (Response response = buildMetadataHttpClient(tlsProfile, Map.of(
+                    validated.host(), validated.addresses()
+            )).newCall(request).execute()) {
+                if (response.isRedirect()) {
+                    String location = response.header("Location");
+                    if (location == null || location.isBlank()) {
+                        throw new IOException("Metadata redirect did not include a Location header");
+                    }
+                    currentUrl = validated.uri().resolve(location).toString();
+                    continue;
+                }
+                if (!response.isSuccessful()) {
+                    throw new IOException("Metadata request failed with HTTP " + response.code());
+                }
+                ResponseBody body = response.body();
+                if (body == null) {
+                    throw new IOException("Metadata request failed with empty body");
+                }
+                String xml = body.string();
+                if (xml.isBlank()) {
+                    throw new IOException("Metadata request returned blank body");
+                }
+                return xml;
             }
-            ResponseBody body = response.body();
-            if (body == null) {
-                throw new IOException("Metadata request failed with empty body");
-            }
-            String xml = body.string();
-            if (xml.isBlank()) {
-                throw new IOException("Metadata request returned blank body");
-            }
-            return xml;
         }
+        throw new IOException("Metadata request exceeded the redirect limit");
     }
 
-    private OkHttpClient buildMetadataHttpClient(String tlsProfile) {
+    private OkHttpClient buildMetadataHttpClient(String tlsProfile, Map<String, List<InetAddress>> pinnedAddresses) {
         ConnectionSpec connectionSpec = "compatibility".equalsIgnoreCase(tlsProfile)
             ? ConnectionSpec.COMPATIBLE_TLS
             : ConnectionSpec.MODERN_TLS;
@@ -694,8 +780,16 @@ public class SamlValidationService {
             .connectTimeout(metadataHttpConnectTimeoutMs, TimeUnit.MILLISECONDS)
             .readTimeout(metadataHttpReadTimeoutMs, TimeUnit.MILLISECONDS)
             .callTimeout(metadataHttpCallTimeoutMs, TimeUnit.MILLISECONDS)
-            .followRedirects(true)
-            .followSslRedirects(true)
+            .followRedirects(false)
+            .followSslRedirects(false)
+            .retryOnConnectionFailure(false)
+            .dns(host -> {
+                List<InetAddress> addresses = pinnedAddresses.get(host.toLowerCase(Locale.ROOT));
+                if (addresses == null || addresses.isEmpty()) {
+                    throw new java.net.UnknownHostException("Metadata host was not pinned: " + host);
+                }
+                return addresses;
+            })
             .connectionSpecs(List.of(connectionSpec));
 
         if (metadataHttpLoggingEnabled) {
@@ -777,6 +871,9 @@ public class SamlValidationService {
             return "unknown";
         }
         PublicKey key = cert.getPublicKey();
+        if (key == null) {
+            return "unknown";
+        }
         if (key instanceof RSAPublicKey rsaKey) {
             return "RSA-" + rsaKey.getModulus().bitLength();
         }
@@ -790,8 +887,8 @@ public class SamlValidationService {
      * Validates metadata URL to prevent SSRF attacks
      * Only allows HTTPS URLs and blocks private/internal IP addresses
      */
-    private void validateMetadataUrl(String metadataUrl) throws Exception {
-        URI uri = URI.create(metadataUrl);
+    private ValidatedMetadataUrl validateMetadataUrl(String metadataUrl) throws Exception {
+        URI uri = URI.create(metadataUrl.trim());
         
         // Only allow HTTPS for metadata URLs unless explicitly allowed
         String scheme = uri.getScheme();
@@ -809,27 +906,35 @@ public class SamlValidationService {
         if (host == null || host.isEmpty()) {
             throw new SecurityException("Invalid metadata URL: no host specified");
         }
+        if (uri.getRawUserInfo() != null || uri.getFragment() != null) {
+            throw new SecurityException("Metadata URL must not contain credentials or a fragment");
+        }
+
+        String normalizedHost = host.toLowerCase(Locale.ROOT);
+        if (normalizedHost.equals("localhost")
+                || normalizedHost.endsWith(".local")
+                || normalizedHost.endsWith(".internal")
+                || normalizedHost.equals("127.0.0.1")
+                || normalizedHost.equals("::1")
+                || normalizedHost.equals("[::1]")
+                || normalizedHost.equals("169.254.169.254")
+                || normalizedHost.equals("metadata.google.internal")) {
+            throw new SecurityException("Metadata URL points to a private/internal host");
+        }
         
-        // Resolve the host to IP address to check for private/internal IPs
         try {
-            InetAddress addr = InetAddress.getByName(host);
-            
-            // Block private IP addresses (RFC 1918)
-            if (addr.isSiteLocalAddress() || addr.isLoopbackAddress() || addr.isLinkLocalAddress()) {
-                throw new SecurityException("Metadata URL points to private/internal IP address");
+            List<InetAddress> addresses = List.of(InetAddress.getAllByName(host));
+            if (addresses.isEmpty()) {
+                throw new SecurityException("Metadata URL host did not resolve to an address");
             }
-            
-            // Block localhost variations
-            if (host.equalsIgnoreCase("localhost") || host.equals("127.0.0.1") || host.equals("::1")) {
-                throw new SecurityException("Metadata URL cannot point to localhost");
+            for (InetAddress address : addresses) {
+                if (isNonPublicAddress(address)) {
+                    throw new SecurityException("Metadata URL points to a private/internal IP address");
+                }
             }
-            
-            // Block cloud metadata endpoints (AWS, GCP, Azure)
-            if (host.equals("169.254.169.254") || host.equals("metadata.google.internal")) {
-                throw new SecurityException("Metadata URL blocked for security reasons");
-            }
-            
-            logger.debug("Metadata URL validation passed for: {} (resolved to {})", metadataUrl, addr.getHostAddress());
+
+            logger.debug("Metadata URL validation passed for: {} (resolved to {})", metadataUrl, addresses);
+            return new ValidatedMetadataUrl(uri, normalizedHost, addresses);
         } catch (java.net.UnknownHostException e) {
             throw new SecurityException("Cannot resolve metadata URL host: " + host, e);
         }
@@ -1077,6 +1182,132 @@ public class SamlValidationService {
         return configured.trim().toLowerCase(Locale.ROOT);
     }
 
+    /**
+     * Refreshes every configured IdP in the background. Readiness only reads
+     * the resulting snapshot; it never performs a network call on the health
+     * request path.
+     */
+    @Scheduled(
+        fixedDelayString = "${saml.metadata.refresh.interval-ms:30000}",
+        initialDelayString = "${saml.metadata.refresh.initial-delay-ms:0}"
+    )
+    public void refreshMetadataSnapshotsNow() {
+        List<String> errors = configurationErrors();
+        if (!errors.isEmpty()) {
+            metadataHealthSnapshot = new MetadataHealthSnapshot(
+                    System.currentTimeMillis(),
+                    metadataHealthDetails("DOWN", errors, List.of(), List.of())
+            );
+            return;
+        }
+
+        if (!"whitelist".equalsIgnoreCase(trustMode)) {
+            metadataHealthSnapshot = new MetadataHealthSnapshot(
+                    System.currentTimeMillis(),
+                    metadataHealthDetails("UP", List.of(), List.of(), List.of())
+            );
+            return;
+        }
+
+        synchronized (metadataHealthLock) {
+            long now = System.currentTimeMillis();
+            List<String> checkedIssuers = new ArrayList<>();
+            List<String> failedIssuers = new ArrayList<>();
+            Map<String, List<String>> fingerprints = new LinkedHashMap<>();
+            for (String issuer : new LinkedHashSet<>(trustedIdps.values())) {
+                checkedIssuers.add(issuer);
+                String metadataUrl = findIssuerValue(metadataOverrides, issuer);
+                try {
+                    List<X509Certificate> certificates = retrieveCertificatesFromMetadata(metadataUrl, issuer);
+                    if (certificates == null || certificates.isEmpty()) {
+                        failedIssuers.add(issuer);
+                    } else {
+                        putCertificateSnapshot(normalizeIssuer(issuer), metadataUrl, certificates, now);
+                        fingerprints.put(issuer, certificateFingerprints(certificates));
+                    }
+                } catch (Exception ex) {
+                    failedIssuers.add(issuer);
+                    logger.warn("SAML metadata refresh failed for issuer {}: {}", issuer, ex.getMessage());
+                }
+            }
+
+            String status;
+            if (failedIssuers.isEmpty()) {
+                status = "UP";
+            } else if (failedIssuers.size() == checkedIssuers.size()) {
+                status = "DOWN";
+            } else {
+                status = "DEGRADED";
+            }
+            Map<String, Object> details = metadataHealthDetails(status, List.of(), checkedIssuers, failedIssuers);
+            details = new LinkedHashMap<>(details);
+            details.put("certificateFingerprints", Map.copyOf(fingerprints));
+            metadataHealthSnapshot = new MetadataHealthSnapshot(now, Map.copyOf(details));
+        }
+    }
+
+    private boolean isNonPublicAddress(InetAddress address) {
+        if (address == null || address.isAnyLocalAddress() || address.isLoopbackAddress()
+                || address.isLinkLocalAddress() || address.isSiteLocalAddress() || address.isMulticastAddress()) {
+            return true;
+        }
+        byte[] bytes = address.getAddress();
+        if (bytes.length == 4) {
+            return isNonPublicIpv4(bytes);
+        }
+        if (bytes.length != 16 || isIpv4Mapped(bytes)) {
+            return true;
+        }
+        int first = unsignedByte(bytes[0]);
+        if ((first & 0xe0) != 0x20) {
+            return true;
+        }
+        return hasPrefix(bytes, new int[] {0x20, 0x01, 0x0d, 0xb8}, 32)
+                || hasPrefix(bytes, new int[] {0xfc}, 7);
+    }
+
+    private boolean isNonPublicIpv4(byte[] bytes) {
+        int a = unsignedByte(bytes[0]);
+        int b = unsignedByte(bytes[1]);
+        int c = unsignedByte(bytes[2]);
+        return a == 0 || a == 10 || a == 127 || a >= 224
+                || (a == 100 && b >= 64 && b <= 127)
+                || (a == 169 && b == 254)
+                || (a == 172 && b >= 16 && b <= 31)
+                || (a == 192 && b == 168)
+                || (a == 192 && b == 0 && c == 0)
+                || (a == 192 && b == 0 && c == 2)
+                || (a == 192 && b == 31 && c == 196)
+                || (a == 192 && b == 52 && c == 193)
+                || (a == 192 && b == 88 && c == 99)
+                || (a == 192 && b == 175 && c == 48)
+                || (a == 198 && (b == 18 || b == 19))
+                || (a == 198 && b == 51 && c == 100)
+                || (a == 203 && b == 0 && c == 113);
+    }
+
+    private boolean isIpv4Mapped(byte[] bytes) {
+        for (int i = 0; i < 10; i++) {
+            if (bytes[i] != 0) return false;
+        }
+        return unsignedByte(bytes[10]) == 0xff && unsignedByte(bytes[11]) == 0xff;
+    }
+
+    private boolean hasPrefix(byte[] address, int[] prefix, int bits) {
+        int fullBytes = bits / 8;
+        int remainingBits = bits % 8;
+        for (int i = 0; i < fullBytes; i++) {
+            if (unsignedByte(address[i]) != prefix[i]) return false;
+        }
+        if (remainingBits == 0) return true;
+        int mask = 0xff << (8 - remainingBits);
+        return (unsignedByte(address[fullBytes]) & mask) == (prefix[fullBytes] & mask);
+    }
+
+    private int unsignedByte(byte value) {
+        return value & 0xff;
+    }
+
     public Map<String, Object> metadataHealth() {
         List<String> errors = configurationErrors();
         if (!errors.isEmpty()) {
@@ -1087,39 +1318,11 @@ public class SamlValidationService {
             return metadataHealthDetails("UP", List.of(), List.of(), List.of());
         }
 
-        long now = System.currentTimeMillis();
-        MetadataHealthSnapshot cachedHealth = metadataHealthSnapshot;
-        if (cachedHealth != null && now - cachedHealth.checkedAt() < Math.max(0L, metadataHealthCacheMs)) {
-            return cachedHealth.details();
+        MetadataHealthSnapshot snapshot = metadataHealthSnapshot;
+        if (snapshot == null) {
+            return metadataHealthDetails("DOWN", List.of("SAML metadata snapshot is not ready"), List.of(), List.of());
         }
-
-        synchronized (metadataHealthLock) {
-            cachedHealth = metadataHealthSnapshot;
-            if (cachedHealth != null && now - cachedHealth.checkedAt() < Math.max(0L, metadataHealthCacheMs)) {
-                return cachedHealth.details();
-            }
-
-            List<String> checkedIssuers = new ArrayList<>();
-            List<String> failedIssuers = new ArrayList<>();
-            for (String issuer : new LinkedHashSet<>(trustedIdps.values())) {
-                checkedIssuers.add(issuer);
-                String metadataUrl = findIssuerValue(metadataOverrides, issuer);
-                try {
-                    List<X509Certificate> certificates = retrieveCertificatesFromMetadata(metadataUrl, issuer);
-                    if (certificates == null || certificates.isEmpty()) {
-                        failedIssuers.add(issuer);
-                    }
-                } catch (Exception ex) {
-                    failedIssuers.add(issuer);
-                    logger.warn("SAML metadata readiness probe failed for issuer {}: {}", issuer, ex.getMessage());
-                }
-            }
-
-            String status = failedIssuers.isEmpty() ? "UP" : "DOWN";
-            Map<String, Object> details = metadataHealthDetails(status, List.of(), checkedIssuers, failedIssuers);
-            metadataHealthSnapshot = new MetadataHealthSnapshot(now, details);
-            return details;
-        }
+        return snapshot.details();
     }
 
     private Map<String, Object> metadataHealthDetails(
@@ -1140,12 +1343,26 @@ public class SamlValidationService {
     }
 
     private record MetadataHealthSnapshot(long checkedAt, Map<String, Object> details) {}
+
+    private record CertificateCacheEntry(
+            String metadataUrl,
+            List<X509Certificate> certificates,
+            List<String> fingerprints,
+            long fetchedAt
+    ) {}
+
+    private record ValidatedMetadataUrl(
+            URI uri,
+            String host,
+            List<InetAddress> addresses
+    ) {}
     
     /**
      * Clears certificate cache (useful for testing or forcing refresh)
      */
     public void clearCertificateCache() {
         certificateCache.clear();
+        certificateSnapshots.clear();
         logger.info("Certificate cache cleared");
     }
 
