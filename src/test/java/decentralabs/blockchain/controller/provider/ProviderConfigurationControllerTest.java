@@ -123,16 +123,7 @@ class ProviderConfigurationControllerTest {
     @Test
     @DisplayName("Should reject the retired editable provisioning form")
     void shouldRejectEditableProvisioningForm() {
-        ProviderConfigurationRequest request = new ProviderConfigurationRequest();
-        request.setMarketplaceBaseUrl("https://marketplace.example.com");
-        request.setProviderName("Test University");
-        request.setProviderEmail("!@!." + "!.".repeat(10_000));
-        request.setProviderCountry("US");
-        request.setProviderOrganization("university.edu");
-        request.setPublicBaseUrl("https://gateway.university.edu");
-        request.setProvisioningToken("old-token");
-
-        ResponseEntity<Map<String, Object>> response = controller.saveAndRegister(request);
+        ResponseEntity<Map<String, Object>> response = controller.saveAndRegister();
 
         assertEquals(HttpStatus.GONE, response.getStatusCode());
         assertEquals(false, response.getBody().get("success"));
@@ -143,18 +134,7 @@ class ProviderConfigurationControllerTest {
     @Test
     @DisplayName("Should require pairing even when the old form omits a token")
     void shouldRequirePairingForOldForm() throws Exception {
-        // Prepare request without token
-        ProviderConfigurationRequest request = new ProviderConfigurationRequest();
-        request.setMarketplaceBaseUrl("https://marketplace.example.com");
-        request.setProviderName("Test University");
-        request.setProviderEmail("test@university.edu");
-        request.setProviderCountry("US");
-        request.setProviderOrganization("university.edu");
-        request.setPublicBaseUrl("https://gateway.university.edu");
-        request.setProvisioningToken("");
-
-        // Execute
-        ResponseEntity<Map<String, Object>> response = controller.saveAndRegister(request);
+        ResponseEntity<Map<String, Object>> response = controller.saveAndRegister();
 
         // Verify
         assertEquals(HttpStatus.GONE, response.getStatusCode());
@@ -317,16 +297,7 @@ class ProviderConfigurationControllerTest {
     void shouldKeepEditableProvisioningFormRetiredWhenProviderModeIsDisabled() throws Exception {
         ReflectionTestUtils.setField(controller, "providerRegistrationEnabled", false);
 
-        ProviderConfigurationRequest request = new ProviderConfigurationRequest();
-        request.setMarketplaceBaseUrl("https://marketplace.example.com");
-        request.setProviderName("Test University");
-        request.setProviderEmail("test@university.edu");
-        request.setProviderCountry("US");
-        request.setProviderOrganization("university.edu");
-        request.setPublicBaseUrl("https://gateway.university.edu");
-        request.setProvisioningToken("valid-token-123");
-
-        ResponseEntity<Map<String, Object>> response = controller.saveAndRegister(request);
+        ResponseEntity<Map<String, Object>> response = controller.saveAndRegister();
 
         assertEquals(HttpStatus.GONE, response.getStatusCode());
         assertNotNull(response.getBody());

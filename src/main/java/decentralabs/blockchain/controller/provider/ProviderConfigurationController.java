@@ -1,7 +1,6 @@
 package decentralabs.blockchain.controller.provider;
 
 import decentralabs.blockchain.dto.provider.ConsumerProvisioningTokenPayload;
-import decentralabs.blockchain.dto.provider.ProviderConfigurationRequest;
 import decentralabs.blockchain.dto.provider.ProviderConfigurationResponse;
 import decentralabs.blockchain.dto.provider.ProvisioningTokenPayload;
 import decentralabs.blockchain.dto.provider.ProvisioningTokenRequest;
@@ -126,9 +125,7 @@ public class ProviderConfigurationController {
      */
     @PostMapping("/save-and-register")
     @ResponseBody
-    public ResponseEntity<Map<String, Object>> saveAndRegister(
-        @Valid @RequestBody ProviderConfigurationRequest request
-    ) {
+    public ResponseEntity<Map<String, Object>> saveAndRegister() {
         Map<String, Object> response = new HashMap<>();
         response.put("success", false);
         response.put("error", "Editable provisioning forms are retired. Create and approve an institutional pairing first.");
