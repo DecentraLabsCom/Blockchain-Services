@@ -152,7 +152,9 @@ sequenceDiagram
 ```
 
 Pairing validation includes challenge expiry, deployment identity, EIP-712
-signature recovery and exact wallet matching. Final provisioning validation
+signature recovery and exact wallet matching. An approved provisioning token is
+single-use: Marketplace atomically consumes the challenge and removes the raw
+token after successful delivery. Final provisioning validation
 includes signature, issuer, audience, replay (`jti`), role and URL/email sanity.
 The old editable `save-and-register` surface is retired so form values cannot
 select institutional identity. A `2xx` response with `registered=false` or
@@ -193,7 +195,7 @@ Provisioning:
 - `PUBLIC_BASE_URL`
 - `FEATURES_PROVIDERS_ENABLED`
 - `FEATURES_PROVIDERS_REGISTRATION_ENABLED`
-- `PROVISIONING_PAIRING_TTL_SECONDS` (Marketplace-side pairing lifetime, capped at 15 minutes)
+- `PROVISIONING_PAIRING_TTL_SECONDS` (Marketplace-side pairing lifetime, capped at 15 minutes; approved-pairing Redis retention extends through token expiry)
 - `PROVISIONING_TOKEN_HTTP_CONNECT_TIMEOUT_MS`
 - `PROVISIONING_TOKEN_HTTP_READ_TIMEOUT_MS`
 
