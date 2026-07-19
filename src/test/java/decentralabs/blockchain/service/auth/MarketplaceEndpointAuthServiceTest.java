@@ -9,6 +9,7 @@ import java.security.KeyPairGenerator;
 import java.security.PrivateKey;
 import java.util.Date;
 import java.util.Map;
+import decentralabs.blockchain.service.BackendUrlResolver;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -27,6 +28,9 @@ class MarketplaceEndpointAuthServiceTest {
     @Mock
     private MarketplaceKeyService marketplaceKeyService;
 
+    @Mock
+    private BackendUrlResolver backendUrlResolver;
+
     @InjectMocks
     private MarketplaceEndpointAuthService service;
 
@@ -37,7 +41,10 @@ class MarketplaceEndpointAuthServiceTest {
         // default configuration values
         ReflectionTestUtils.setField(service, "enabled", true);
         ReflectionTestUtils.setField(service, "issuer", "marketplace");
-        ReflectionTestUtils.setField(service, "audience", "blockchain-services");
+        ReflectionTestUtils.setField(service, "audience", "https://backend.example.edu");
+        ReflectionTestUtils.setField(service, "institutionId", "institution.edu");
+        ReflectionTestUtils.setField(service, "serviceSubject", "marketplace");
+        ReflectionTestUtils.setField(service, "maxTtlSeconds", 60L);
         ReflectionTestUtils.setField(service, "clockSkewSeconds", 60L);
 
         KeyPairGenerator keyGen = KeyPairGenerator.getInstance("RSA");
@@ -57,7 +64,7 @@ class MarketplaceEndpointAuthServiceTest {
         // add audience claim manually (newer JwtBuilder API expects the audience helper to be used via the builder,
         // but that helper doesn't accept a single string parameter, so it's simpler to include it in the map)
         Map<String, Object> payload = new java.util.HashMap<>(claims);
-        payload.put("aud", "blockchain-services");
+        payload.put("aud", "https://backend.example.edu");
         return Jwts.builder()
                 .claims(payload)
                 .issuer("marketplace")
@@ -146,5 +153,38 @@ class MarketplaceEndpointAuthServiceTest {
         String jwt = makeJwt(Map.of("puc", "u3", "scopes", java.util.List.of("a", "b")));
         Map<String, Object> claims = service.enforceToken(jwt, "b");
         assertThat(claims).containsEntry("puc", "u3");
+    }
+
+    @Test
+    void serviceAuthorizationRequiresInstitutionBoundMarketplaceCredential() {
+        String jwt = makeJwt(Map.of(
+            "sub", "marketplace",
+            "jti", "service-jti",
+            "institutionId", "institution.edu",
+            "scope", "onboarding:webauthn"
+        ));
+
+        Map<String, Object> claims = service.enforceServiceAuthorization(
+            "Bearer " + jwt,
+            "onboarding:webauthn"
+        );
+
+        assertThat(claims).containsEntry("institutionId", "institution.edu");
+    }
+
+    @Test
+    void serviceAuthorizationRejectsWrongSubject() {
+        String jwt = makeJwt(Map.of(
+            "sub", "blockchain-services",
+            "jti", "service-jti",
+            "institutionId", "institution.edu",
+            "scope", "onboarding:webauthn"
+        ));
+
+        assertThatThrownBy(() -> service.enforceServiceAuthorization(
+            "Bearer " + jwt,
+            "onboarding:webauthn"
+        )).isInstanceOf(ResponseStatusException.class)
+            .hasMessageContaining("invalid_marketplace_token");
     }
 }

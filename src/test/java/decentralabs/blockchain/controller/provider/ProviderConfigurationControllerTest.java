@@ -3,7 +3,6 @@ package decentralabs.blockchain.controller.provider;
 import decentralabs.blockchain.dto.provider.ProviderConfigurationRequest;
 import decentralabs.blockchain.dto.provider.ProviderConfigurationResponse;
 import decentralabs.blockchain.dto.provider.ProvisioningTokenRequest;
-import decentralabs.blockchain.dto.provider.ProvisioningTokenPayload;
 import decentralabs.blockchain.service.organization.InstitutionRegistrationService;
 import decentralabs.blockchain.service.organization.ProviderConfigurationPersistenceService;
 import decentralabs.blockchain.service.organization.ProvisioningTokenService;
@@ -122,73 +121,8 @@ class ProviderConfigurationControllerTest {
     }
 
     @Test
-    @DisplayName("Should save configuration and mark as registered on successful registration")
-    void shouldSaveAndMarkAsRegistered() throws Exception {
-        // Prepare request
-        ProviderConfigurationRequest request = new ProviderConfigurationRequest();
-        request.setMarketplaceBaseUrl("https://marketplace.example.com");
-        request.setProviderName("Test University");
-        request.setProviderEmail("test@university.edu");
-        request.setProviderCountry("US");
-        request.setProviderOrganization("university.edu");
-        request.setPublicBaseUrl("https://gateway.university.edu");
-        request.setProvisioningToken("valid-token-123");
-
-        // Mock successful registration
-        when(provisioningTokenService.validateAndExtract(anyString(), anyString(), anyString()))
-            .thenReturn(providerPayload());
-        when(registrationService.register(any())).thenReturn(true);
-
-        // Execute
-        ResponseEntity<Map<String, Object>> response = controller.saveAndRegister(request);
-
-        // Verify
-        assertEquals(HttpStatus.OK, response.getStatusCode());
-        assertNotNull(response.getBody());
-        assertEquals(true, response.getBody().get("success"));
-        assertEquals(true, response.getBody().get("registered"));
-
-        // Verify persistence was called
-        verify(persistenceService).saveConfigurationFromToken(any(ProvisioningTokenPayload.class));
-        verify(registrationService).markAsRegistered(any());
-        verify(registrationService).register(any());
-    }
-
-    @Test
-    @DisplayName("Should not mark as registered when registration fails")
-    void shouldNotMarkAsRegisteredOnFailure() throws Exception {
-        // Prepare request
-        ProviderConfigurationRequest request = new ProviderConfigurationRequest();
-        request.setMarketplaceBaseUrl("https://marketplace.example.com");
-        request.setProviderName("Test University");
-        request.setProviderEmail("test@university.edu");
-        request.setProviderCountry("US");
-        request.setProviderOrganization("university.edu");
-        request.setPublicBaseUrl("https://gateway.university.edu");
-        request.setProvisioningToken("valid-token-123");
-
-        // Mock failed registration
-        when(provisioningTokenService.validateAndExtract(anyString(), anyString(), anyString()))
-            .thenReturn(providerPayload());
-        when(registrationService.register(any())).thenReturn(false);
-
-        // Execute
-        ResponseEntity<Map<String, Object>> response = controller.saveAndRegister(request);
-
-        // Verify
-        assertEquals(HttpStatus.PARTIAL_CONTENT, response.getStatusCode());
-        assertNotNull(response.getBody());
-        assertEquals(true, response.getBody().get("success"));
-        assertEquals(false, response.getBody().get("registered"));
-
-        // Verify persistence was called but NOT marked as registered
-        verify(persistenceService).saveConfigurationFromToken(any(ProvisioningTokenPayload.class));
-        verify(registrationService, never()).markAsRegistered(any());
-    }
-
-    @Test
-    @DisplayName("Should reject pathological email input without a backtracking regex")
-    void shouldRejectPathologicalEmailInput() {
+    @DisplayName("Should reject the retired editable provisioning form")
+    void shouldRejectEditableProvisioningForm() {
         ProviderConfigurationRequest request = new ProviderConfigurationRequest();
         request.setMarketplaceBaseUrl("https://marketplace.example.com");
         request.setProviderName("Test University");
@@ -196,36 +130,19 @@ class ProviderConfigurationControllerTest {
         request.setProviderCountry("US");
         request.setProviderOrganization("university.edu");
         request.setPublicBaseUrl("https://gateway.university.edu");
+        request.setProvisioningToken("old-token");
 
         ResponseEntity<Map<String, Object>> response = controller.saveAndRegister(request);
 
-        assertEquals(HttpStatus.BAD_REQUEST, response.getStatusCode());
-        assertEquals("Invalid email format", response.getBody().get("error"));
+        assertEquals(HttpStatus.GONE, response.getStatusCode());
+        assertEquals(false, response.getBody().get("success"));
+        assertEquals("PAIRING_REQUIRED", response.getBody().get("code"));
         verifyNoInteractions(provisioningTokenService, registrationService, persistenceService);
     }
 
-    private ProvisioningTokenPayload providerPayload() {
-        return ProvisioningTokenPayload.builder()
-            .marketplaceBaseUrl("https://marketplace.example.com")
-            .registrationType("provider")
-            .institutionId("university.edu")
-            .walletAddress("0x1234567890123456789012345678901234567890")
-            .canonicalBackendOrigin("https://gateway.university.edu")
-            .chainId(java.math.BigInteger.valueOf(11_155_111L))
-            .registryContract("0xe49a2f59631717691642f929E0FeF1f705866600")
-            .jti("jti-1")
-            .nonce("0x1111111111111111111111111111111111111111111111111111111111111111")
-            .issuedAt(1_700_000_000L)
-            .expiresAt(1_700_000_300L)
-            .providerName("Test University")
-            .providerEmail("test@university.edu")
-            .providerCountry("US")
-            .build();
-    }
-
     @Test
-    @DisplayName("Should return error when provisioning token is missing")
-    void shouldReturnErrorWhenTokenMissing() throws Exception {
+    @DisplayName("Should require pairing even when the old form omits a token")
+    void shouldRequirePairingForOldForm() throws Exception {
         // Prepare request without token
         ProviderConfigurationRequest request = new ProviderConfigurationRequest();
         request.setMarketplaceBaseUrl("https://marketplace.example.com");
@@ -240,10 +157,10 @@ class ProviderConfigurationControllerTest {
         ResponseEntity<Map<String, Object>> response = controller.saveAndRegister(request);
 
         // Verify
-        assertEquals(HttpStatus.BAD_REQUEST, response.getStatusCode());
+        assertEquals(HttpStatus.GONE, response.getStatusCode());
         assertNotNull(response.getBody());
         assertEquals(false, response.getBody().get("success"));
-        assertTrue(response.getBody().get("error").toString().contains("Provisioning token is required"));
+        assertEquals("PAIRING_REQUIRED", response.getBody().get("code"));
 
         // Verify no persistence or registration was attempted
         verify(persistenceService, never()).saveConfiguration(any());
@@ -396,8 +313,8 @@ class ProviderConfigurationControllerTest {
     }
 
     @Test
-    @DisplayName("Should reject provider registration when provider mode is disabled")
-    void shouldRejectProviderRegistrationWhenDisabled() throws Exception {
+    @DisplayName("Should keep the retired editable form unavailable when provider mode is disabled")
+    void shouldKeepEditableProvisioningFormRetiredWhenProviderModeIsDisabled() throws Exception {
         ReflectionTestUtils.setField(controller, "providerRegistrationEnabled", false);
 
         ProviderConfigurationRequest request = new ProviderConfigurationRequest();
@@ -411,10 +328,10 @@ class ProviderConfigurationControllerTest {
 
         ResponseEntity<Map<String, Object>> response = controller.saveAndRegister(request);
 
-        assertEquals(HttpStatus.FORBIDDEN, response.getStatusCode());
+        assertEquals(HttpStatus.GONE, response.getStatusCode());
         assertNotNull(response.getBody());
         assertEquals(false, response.getBody().get("success"));
-        assertTrue(response.getBody().get("error").toString().contains("Provider registration is disabled"));
+        assertEquals("PAIRING_REQUIRED", response.getBody().get("code"));
 
         verify(persistenceService, never()).saveConfiguration(any());
         verify(registrationService, never()).register(any());

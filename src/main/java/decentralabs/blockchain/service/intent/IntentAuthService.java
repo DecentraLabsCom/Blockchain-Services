@@ -1,12 +1,16 @@
 package decentralabs.blockchain.service.intent;
 
+import decentralabs.blockchain.service.BackendUrlResolver;
 import decentralabs.blockchain.service.auth.MarketplaceKeyService;
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.Jws;
 import io.jsonwebtoken.JwtParser;
 import io.jsonwebtoken.Jwts;
+import java.net.URI;
 import java.security.PublicKey;
+import java.time.Instant;
 import java.util.Collection;
+import java.util.Locale;
 import java.util.Objects;
 import java.util.stream.Stream;
 import lombok.RequiredArgsConstructor;
@@ -22,6 +26,7 @@ import org.springframework.web.server.ResponseStatusException;
 public class IntentAuthService {
 
     private final MarketplaceKeyService marketplaceKeyService;
+    private final BackendUrlResolver backendUrlResolver;
 
     @Value("${intents.auth.enabled:true}")
     private boolean enabled;
@@ -29,11 +34,26 @@ public class IntentAuthService {
     @Value("${intents.auth.issuer:marketplace}")
     private String issuer;
 
-    @Value("${intents.auth.audience:blockchain-services}")
+    @Value("${intents.auth.audience:}")
     private String audience;
+
+    @Value("${intents.auth.institution-id:}")
+    private String institutionId;
+
+    @Value("${intents.auth.service-subject:marketplace}")
+    private String serviceSubject;
+
+    @Value("${intents.auth.max-ttl-seconds:60}")
+    private long maxTtlSeconds;
 
     @Value("${intents.auth.submit-scope:intents:submit}")
     private String submitScope;
+
+    @Value("${intents.auth.authorize-scope:intents:authorize}")
+    private String authorizeScope;
+
+    @Value("${intents.auth.registration-mined-scope:intents:registration-mined}")
+    private String registrationMinedScope;
 
     @Value("${intents.auth.status-scope:intents:status}")
     private String statusScope;
@@ -43,6 +63,14 @@ public class IntentAuthService {
 
     public void enforceSubmitAuthorization(String authorizationHeader) {
         enforceAuthorization(authorizationHeader, submitScope);
+    }
+
+    public void enforceAuthorizeAuthorization(String authorizationHeader) {
+        enforceAuthorization(authorizationHeader, authorizeScope);
+    }
+
+    public void enforceRegistrationMinedAuthorization(String authorizationHeader) {
+        enforceAuthorization(authorizationHeader, registrationMinedScope);
     }
 
     public void enforceStatusAuthorization(String authorizationHeader) {
@@ -71,16 +99,67 @@ public class IntentAuthService {
             JwtParser parser = Jwts.parser()
                 .verifyWith(marketplacePublicKey)
                 .requireIssuer(issuer)
-                .requireAudience(audience)
+                .requireAudience(resolveAudience())
                 .clockSkewSeconds(clockSkewSeconds)
                 .build();
             Jws<Claims> jws = parser.parseSignedClaims(token);
-            return jws.getPayload();
+            Claims claims = jws.getPayload();
+            validateServiceClaims(claims);
+            return claims;
         } catch (ResponseStatusException ex) {
             throw ex;
         } catch (Exception ex) {
             log.warn("Intent authorization JWT validation failed: {}", ex.getMessage());
             throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "invalid_intents_token");
+        }
+    }
+
+    private String resolveAudience() {
+        String configured = audience != null && !audience.isBlank()
+            ? audience.trim()
+            : backendUrlResolver.resolveBaseDomain();
+        try {
+            URI uri = URI.create(configured);
+            if (uri.getHost() == null || uri.getUserInfo() != null
+                || uri.getQuery() != null || uri.getFragment() != null
+                || (uri.getPath() != null && !uri.getPath().isBlank() && !"/".equals(uri.getPath()))
+                || (!"http".equalsIgnoreCase(uri.getScheme()) && !"https".equalsIgnoreCase(uri.getScheme()))) {
+                throw new IllegalArgumentException("Audience must be an exact HTTP(S) origin");
+            }
+            String authority = uri.getHost().toLowerCase(Locale.ROOT);
+            if (uri.getPort() > 0) authority += ":" + uri.getPort();
+            return uri.getScheme().toLowerCase(Locale.ROOT) + "://" + authority;
+        } catch (Exception ex) {
+            throw new IllegalArgumentException("Invalid intents JWT audience", ex);
+        }
+    }
+
+    private void validateServiceClaims(Claims claims) {
+        if (claims == null || !serviceSubject.equals(claims.getSubject())) {
+            throw new IllegalArgumentException("Invalid service token subject");
+        }
+        if (claims.getId() == null || claims.getId().isBlank()) {
+            throw new IllegalArgumentException("Service token jti is required");
+        }
+
+        String expectedInstitution = institutionId == null ? "" : institutionId.trim();
+        String tokenInstitution = claims.get("institutionId", String.class);
+        if (expectedInstitution.isBlank()
+            || tokenInstitution == null
+            || !expectedInstitution.equalsIgnoreCase(tokenInstitution.trim())) {
+            throw new IllegalArgumentException("Service token institutionId mismatch");
+        }
+
+        if (claims.getIssuedAt() == null || claims.getExpiration() == null) {
+            throw new IllegalArgumentException("Service token lifetime claims are required");
+        }
+        long issuedAt = claims.getIssuedAt().toInstant().getEpochSecond();
+        long expiresAt = claims.getExpiration().toInstant().getEpochSecond();
+        if (expiresAt <= issuedAt || expiresAt - issuedAt > maxTtlSeconds) {
+            throw new IllegalArgumentException("Service token lifetime is too long");
+        }
+        if (issuedAt > Instant.now().plusSeconds(clockSkewSeconds).getEpochSecond()) {
+            throw new IllegalArgumentException("Service token issuedAt is in the future");
         }
     }
 

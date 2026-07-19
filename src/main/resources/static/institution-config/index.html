@@ -1,657 +1,170 @@
-﻿<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>DecentraLabs - Provider Configuration</title>
-    <link rel="icon" type="image/x-icon" href="../wallet-dashboard/assets/images/favicon.ico">
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>DecentraLabs - Institutional Backend Pairing</title>
     <link rel="stylesheet" href="../wallet-dashboard/assets/css/admin.css">
-    <script src="assets/js/admin-csrf.js" defer></script>
     <style>
-        body {
-            min-height: 100vh;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
-        }
-
-        .config-container {
-            width: 100%;
-            max-width: 700px;
-            margin: 2rem;
-        }
-
-        .config-card {
-            background: white;
-            border-radius: 16px;
-            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
-            overflow: hidden;
-        }
-
-        .config-header {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
-            padding: 2.5rem 2rem;
-            text-align: center;
-        }
-
-        .config-header h1 {
-            margin: 0;
-            font-size: 2rem;
-            font-weight: 600;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            gap: 0.75rem;
-        }
-
-        .config-header p {
-            margin: 1rem 0 0 0;
-            opacity: 0.95;
-            font-size: 1rem;
-        }
-
-        .config-body {
-            padding: 2.5rem 2rem;
-        }
-
-        .form-section {
-            margin-bottom: 2rem;
-        }
-
-        .form-section:last-child {
-            margin-bottom: 0;
-        }
-
-        .form-section-title {
-            font-size: 1.1rem;
-            font-weight: 600;
-            color: #2d3748;
-            margin-bottom: 1rem;
-            padding-bottom: 0.5rem;
-            border-bottom: 2px solid #e2e8f0;
-            display: flex;
-            align-items: center;
-            gap: 0.5rem;
-        }
-
-        .form-group {
-            margin-bottom: 1.5rem;
-        }
-
-        .form-group label {
-            display: block;
-            font-weight: 500;
-            margin-bottom: 0.5rem;
-            color: #4a5568;
-            font-size: 0.95rem;
-        }
-
-        .form-group input {
-            width: 100%;
-            padding: 0.85rem 1rem;
-            border: 2px solid #e2e8f0;
-            border-radius: 8px;
-            font-size: 1rem;
-            transition: all 0.2s;
-            box-sizing: border-box;
-        }
-
-        .form-group input:focus {
-            outline: none;
-            border-color: #667eea;
-            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
-        }
-
-        .form-group input:disabled {
-            background-color: #f7fafc;
-            cursor: not-allowed;
-        }
-
-        .form-group textarea {
-            width: 100%;
-            padding: 0.85rem 1rem;
-            border: 2px solid #e2e8f0;
-            border-radius: 8px;
-            font-size: 0.95rem;
-            transition: all 0.2s;
-            box-sizing: border-box;
-            resize: vertical;
-        }
-
-        .form-group textarea:focus {
-            outline: none;
-            border-color: #667eea;
-            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
-        }
-
-        .form-hint {
-            font-size: 0.85rem;
-            color: #718096;
-            margin-top: 0.25rem;
-        }
-
-        .btn {
-            padding: 1rem 2rem;
-            border: none;
-            border-radius: 8px;
-            font-size: 1rem;
-            font-weight: 600;
-            cursor: pointer;
-            transition: all 0.2s;
-            display: inline-flex;
-            align-items: center;
-            justify-content: center;
-            gap: 0.5rem;
-        }
-
-        .btn:disabled {
-            opacity: 0.6;
-            cursor: not-allowed;
-        }
-
-        .btn-primary {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
-            width: 100%;
-        }
-
-        .btn-primary:hover:not(:disabled) {
-            transform: translateY(-2px);
-            box-shadow: 0 10px 20px rgba(102, 126, 234, 0.3);
-        }
-
-        .btn-secondary {
-            background: #e2e8f0;
-            color: #2d3748;
-            width: 100%;
-            margin-top: 0.75rem;
-        }
-
-        .btn-secondary:hover:not(:disabled) {
-            background: #cbd5e0;
-        }
-
-        .alert {
-            padding: 1rem;
-            border-radius: 8px;
-            margin-bottom: 1.5rem;
-            display: none;
-        }
-
-        .alert-success {
-            background-color: #c6f6d5;
-            color: #22543d;
-            border: 1px solid #9ae6b4;
-        }
-
-        .alert-error {
-            background-color: #fed7d7;
-            color: #742a2a;
-            border: 1px solid #fc8181;
-        }
-
-        .alert-info {
-            background-color: #bee3f8;
-            color: #2c5282;
-            border: 1px solid #90cdf4;
-        }
-
-        .loading-spinner {
-            display: inline-block;
-            width: 1rem;
-            height: 1rem;
-            border: 2px solid rgba(255, 255, 255, 0.3);
-            border-radius: 50%;
-            border-top-color: white;
-            animation: spin 0.8s linear infinite;
-        }
-
-        .is-hidden {
-            display: none !important;
-        }
-
-        .alert.is-visible {
-            display: block;
-        }
-
-        .form-group input.provisioning-token-applied:disabled {
-            background-color: #f0f4f8;
-            color: #718096;
-        }
-
-        .form-hint.provisioning-token-applied-hint {
-            color: #48bb78;
-        }
-
-        @keyframes spin {
-            to { transform: rotate(360deg); }
-        }
-
-        .config-footer {
-            background: #f7fafc;
-            padding: 1.5rem 2rem;
-            text-align: center;
-            font-size: 0.875rem;
-            color: #718096;
-        }
-
-        .status-badge {
-            display: inline-flex;
-            align-items: center;
-            gap: 0.5rem;
-            padding: 0.5rem 1rem;
-            border-radius: 20px;
-            font-size: 0.875rem;
-            font-weight: 600;
-            margin-top: 1rem;
-        }
-
-        .status-badge.registered {
-            background-color: #c6f6d5;
-            color: #22543d;
-        }
-
-        .status-badge.not-registered {
-            background-color: #fed7d7;
-            color: #742a2a;
-        }
+        .pairing-card { max-width: 760px; margin: 3rem auto; padding: 2rem; }
+        .readonly-grid { display: grid; gap: .75rem; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); }
+        .readonly-value { padding: .75rem; border: 1px solid #d7dee8; border-radius: .35rem; background: #f7f9fb; word-break: break-word; }
+        .challenge { font-family: monospace; min-height: 6rem; }
+        .is-hidden { display: none !important; }
+        .pairing-help { color: #536273; line-height: 1.5; }
+        .actions { display: flex; gap: .75rem; flex-wrap: wrap; margin-top: 1rem; }
     </style>
 </head>
 <body>
-    <div class="config-container">
-        <div class="config-card">
-            <div class="config-header">
-                <h1>
-                    <i class="fas fa-cog"></i>
-                    Provider Configuration
-                </h1>
-                <p>Configure your institution's provider settings to register with the DecentraLabs Marketplace</p>
-                <div id="statusBadge"></div>
-            </div>
+<main class="container">
+    <section class="card pairing-card">
+        <header class="config-header">
+            <h1><i class="fas fa-link"></i> Institutional Backend Pairing</h1>
+            <p>Pair this backend with a Marketplace institution using its server-side wallet and public origin.</p>
+            <div id="statusBadge"></div>
+        </header>
 
-            <div class="config-body">
-                <!-- Alert messages -->
-                <div id="successAlert" class="alert alert-success"></div>
-                <div id="errorAlert" class="alert alert-error"></div>
-                <div id="infoAlert" class="alert alert-info"></div>
-                <div id="registrationProgress" class="is-hidden"></div>
+        <div id="successAlert" class="alert alert-success"></div>
+        <div id="errorAlert" class="alert alert-error"></div>
+        <div id="infoAlert" class="alert alert-info"></div>
 
-                <form id="providerConfigForm"
-                    <!-- Marketplace Configuration -->
-                    <div class="form-section">
-                        <div class="form-section-title">
-                            <i class="fas fa-store"></i>
-                            Marketplace Configuration
-                        </div>
-                        <div class="form-group">
-                            <label for="marketplaceBaseUrl">Marketplace Base URL</label>
-                            <input 
-                                type="url" 
-                                id="marketplaceBaseUrl" 
-                                name="marketplaceBaseUrl" 
-                                placeholder="https://marketplace-decentralabs.vercel.app"
-                                required
-                            />
-                            <div class="form-hint">The base URL of the DecentraLabs Marketplace</div>
-                        </div>
-                        <div class="form-group">
-                            <label for="provisioningToken">Provisioning Token</label>
-                            <textarea
-                                id="provisioningToken"
-                                name="provisioningToken"
-                                rows="4"
-                                placeholder="Paste the provisioning token from the Marketplace"
-                                required
-                            ></textarea>
-                            <div class="form-hint">Required to register. Generate it from the Marketplace institutional onboarding flow.</div>
-                        </div>
-                    </div>
-
-                    <!-- Provider Information -->
-                    <div class="form-section">
-                        <div class="form-section-title">
-                            <i class="fas fa-university"></i>
-                            Provider Information
-                        </div>
-                        <div class="form-group">
-                            <label for="providerName">Institution Name</label>
-                            <input 
-                                type="text" 
-                                id="providerName" 
-                                name="providerName" 
-                                placeholder="My University"
-                                required
-                            />
-                            <div class="form-hint">Full name of your institution</div>
-                        </div>
-                        <div class="form-group">
-                            <label for="providerEmail">Contact Email</label>
-                            <input 
-                                type="email" 
-                                id="providerEmail" 
-                                name="providerEmail" 
-                                placeholder="contact@university.edu"
-                                required
-                            />
-                            <div class="form-hint">Primary contact email for administrative purposes</div>
-                        </div>
-                        <div class="form-group">
-                            <label for="providerCountry">Country</label>
-                            <input 
-                                type="text" 
-                                id="providerCountry" 
-                                name="providerCountry" 
-                                placeholder="Spain"
-                                required
-                            />
-                            <div class="form-hint">Country where your institution is located</div>
-                        </div>
-                        <div class="form-group">
-                            <label for="providerOrganization">Organization (schacHomeOrganization)</label>
-                            <input 
-                                type="text" 
-                                id="providerOrganization" 
-                                name="providerOrganization" 
-                                placeholder="university.edu"
-                                required
-                            />
-                            <div class="form-hint">SAML/eduGAIN schacHomeOrganization identifier</div>
-                        </div>
-                    </div>
-
-                    <!-- Service Configuration -->
-                    <div class="form-section">
-                        <div class="form-section-title">
-                            <i class="fas fa-server"></i>
-                            Service Configuration
-                        </div>
-                        <div class="form-group">
-                            <label for="publicBaseUrl">Public Base URL</label>
-                            <input 
-                                type="url" 
-                                id="publicBaseUrl" 
-                                name="publicBaseUrl" 
-                                placeholder="https://auth.university.edu"
-                                required
-                            />
-                            <div class="form-hint">Publicly accessible base URL for your authentication service (no trailing slash)</div>
-                        </div>
-                    </div>
-
-                    <!-- Action Buttons -->
-                    <button type="submit" class="btn btn-primary" id="saveAndRegisterBtn">
-                        <i class="fas fa-save"></i>
-                        <span id="btnText">Save & Register</span>
-                        <div id="btnSpinner" class="loading-spinner is-hidden"></div>
-                    </button>
-
-                    <button type="button" class="btn btn-secondary is-hidden" id="continueToDashboardBtn">
-                        <i class="fas fa-arrow-right"></i>
-                        Continue to Dashboard
-                    </button>
-                </form>
-            </div>
-
-            <div class="config-footer">
-                <i class="fas fa-shield-alt"></i>
-                All configuration data is stored securely and encrypted
-            </div>
+        <div class="readonly-grid">
+            <div class="readonly-value"><strong>Marketplace</strong><br><span id="marketplaceBaseUrl">Configured by server</span></div>
+            <div class="readonly-value"><strong>Backend origin</strong><br><span>Configured by server</span></div>
+            <div class="readonly-value"><strong>Institutional wallet</strong><br><span>Configured by server</span></div>
         </div>
-    </div>
 
-    <script>
-        // Check configuration status on load
-        async function loadConfigurationStatus() {
-            try {
-                const response = await fetch('/institution-config/status');
-                const data = await response.json();
+        <p class="pairing-help">
+            Generate a challenge in the Marketplace, paste it below, and select <strong>Offer backend pairing</strong>.
+            This backend reads the wallet and public origin from its own configuration. They are not accepted from this form.
+            After the Marketplace user approves the read-only offer, select <strong>Finalize registration</strong>.
+        </p>
 
-                // Populate form with existing values
-                if (data.marketplaceBaseUrl) {
-                    document.getElementById('marketplaceBaseUrl').value = data.marketplaceBaseUrl;
-                }
-                if (data.providerName) {
-                    document.getElementById('providerName').value = data.providerName;
-                }
-                if (data.providerEmail) {
-                    document.getElementById('providerEmail').value = data.providerEmail;
-                }
-                if (data.providerCountry) {
-                    document.getElementById('providerCountry').value = data.providerCountry;
-                }
-                if (data.providerOrganization) {
-                    document.getElementById('providerOrganization').value = data.providerOrganization;
-                }
-                if (data.publicBaseUrl) {
-                    document.getElementById('publicBaseUrl').value = data.publicBaseUrl;
-                }
+        <form id="pairingForm">
+            <div class="form-group">
+                <label for="pairingChallenge">Marketplace pairing challenge</label>
+                <textarea id="pairingChallenge" class="challenge" rows="4" required
+                          placeholder="0x..."></textarea>
+            </div>
+            <div class="actions">
+                <button type="submit" class="btn btn-primary" id="offerPairingBtn">
+                    <span id="offerBtnText">Offer backend pairing</span>
+                </button>
+                <button type="button" class="btn btn-secondary" id="completePairingBtn" disabled>
+                    Finalize registration
+                </button>
+            </div>
+        </form>
 
-                if (data.operatingMode === 'consumer-only' || data.providerRegistrationEnabled === false) {
-                    document.querySelector('.config-header h1').innerHTML = `
-                        <i class="fas fa-wallet"></i>
-                        Consumer-Only Deployment
-                    `;
-                    document.querySelector('.config-header p').textContent =
-                        'This deployment is limited to consumer institutions. Provider registration is disabled here.';
-                    showInfo('Use /wallet-dashboard to create or import the institutional wallet and apply a consumer provisioning token.');
+        <div id="pairingDetails" class="readonly-grid is-hidden" style="margin-top: 1.25rem"></div>
+        <div id="registrationProgress" class="is-hidden"></div>
+    </section>
+</main>
 
-                    const form = document.getElementById('providerConfigForm');
-                    const submitBtn = document.getElementById('saveAndRegisterBtn');
-                    if (form) {
-                        Array.from(form.querySelectorAll('input, textarea, button')).forEach((element) => {
-                            if (element.id !== 'continueToDashboardBtn') {
-                                element.disabled = true;
-                            }
-                        });
-                    }
-                    if (submitBtn) {
-                        submitBtn.classList.add('is-hidden');
-                    }
-                    document.getElementById('continueToDashboardBtn').classList.remove('is-hidden');
-                    document.getElementById('statusBadge').innerHTML = `
-                        <div class="status-badge not-registered">
-                            <i class="fas fa-info-circle"></i>
-                            Provider Registration Disabled
-                        </div>
-                    `;
-                    return;
-                }
+<script src="/institution-config/assets/js/admin-csrf.js"></script>
+<script>
+    const challengeField = document.getElementById('pairingChallenge');
+    const offerButton = document.getElementById('offerPairingBtn');
+    const offerButtonText = document.getElementById('offerBtnText');
+    const completeButton = document.getElementById('completePairingBtn');
+    const pairingDetails = document.getElementById('pairingDetails');
+    let currentPairing = null;
 
-                // Handle provisioning token field
-                const tokenField = document.getElementById('provisioningToken');
-                const tokenHint = tokenField.nextElementSibling;
-                
-                if (data.fromProvisioningToken && data.isRegistered) {
-                    // Token was used and registration completed
-                    tokenField.disabled = true;
-                    tokenField.placeholder = "Token already applied ✓";
-                    tokenField.classList.add('provisioning-token-applied');
-                    tokenHint.textContent = 'Provisioning token has been applied and registration is complete.';
-                    tokenHint.classList.add('provisioning-token-applied-hint');
-                } else if (data.isConfigured && !data.isRegistered) {
-                    // Configuration exists but not registered yet
-                    tokenField.required = true;
-                    tokenHint.textContent = 'Provisioning token required to complete registration.';
-                }
-
-                // Update status badge
-                const statusBadge = document.getElementById('statusBadge');
-                if (data.isRegistered) {
-                    statusBadge.innerHTML = `
-                        <div class="status-badge registered">
-                            <i class="fas fa-check-circle"></i>
-                            Provider Registered
-                        </div>
-                    `;
-                    showInfo('Provider is already registered. Reapply the still-valid provisioning token only if a provisioning saga needs to resume.');
-                    document.getElementById('continueToDashboardBtn').classList.remove('is-hidden');
-                } else {
-                    statusBadge.innerHTML = `
-                        <div class="status-badge not-registered">
-                            <i class="fas fa-exclamation-circle"></i>
-                            Not Registered
-                        </div>
-                    `;
-                }
-
-            } catch (error) {
-                console.error('Failed to load configuration status:', error);
-                showError('Failed to load configuration status. Please try again.');
-            }
-        }
-
-        // Form submission
-        document.getElementById('providerConfigForm').addEventListener('submit', async (e) => {
-            e.preventDefault();
-
-            const btn = document.getElementById('saveAndRegisterBtn');
-            const btnText = document.getElementById('btnText');
-            const btnSpinner = document.getElementById('btnSpinner');
-
-            // Show loading state
-            btn.disabled = true;
-            btnText.textContent = 'Registering...';
-            btnSpinner.classList.remove('is-hidden');
-            hideAlerts();
-            hideRegistrationProgress();
-
-            const formData = {
-                marketplaceBaseUrl: document.getElementById('marketplaceBaseUrl').value.trim(),
-                providerName: document.getElementById('providerName').value.trim(),
-                providerEmail: document.getElementById('providerEmail').value.trim(),
-                providerCountry: document.getElementById('providerCountry').value.trim(),
-                providerOrganization: document.getElementById('providerOrganization').value.trim(),
-                publicBaseUrl: document.getElementById('publicBaseUrl').value.trim(),
-                provisioningToken: document.getElementById('provisioningToken').value.trim()
-            };
-
-            // Show progress messages
-            showRegistrationProgress('Validating configuration...');
-            await new Promise(resolve => setTimeout(resolve, 500));
-            
-            updateRegistrationProgress('Contacting marketplace...');
-            await new Promise(resolve => setTimeout(resolve, 500));
-
-            try {
-                updateRegistrationProgress('Verifying credentials with marketplace...');
-                const response = await fetch('/institution-config/save-and-register', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify(formData)
-                });
-
-                updateRegistrationProgress('Processing registration on-chain...');
-                const result = await response.json();
-                
-                updateRegistrationProgress('Waiting for blockchain confirmation...');
-                await new Promise(resolve => setTimeout(resolve, 800));
-                
-                updateRegistrationProgress('Finalizing registration...');
-                await new Promise(resolve => setTimeout(resolve, 500));
-
-                hideRegistrationProgress();
-
-                if (result.success) {
-                    if (result.registered) {
-                        showSuccess('Configuration saved and provider registered successfully!');
-                        document.getElementById('continueToDashboardBtn').classList.remove('is-hidden');
-                        
-                        // Update status badge
-                        const statusBadge = document.getElementById('statusBadge');
-                        statusBadge.innerHTML = `
-                            <div class="status-badge registered">
-                                <i class="fas fa-check-circle"></i>
-                                Provider Registered
-                            </div>
-                        `;
-                    } else {
-                        showError('Registration failed. Retry with this still-valid provisioning token to resume from the last confirmed step.');
-                    }
-                } else {
-                    showError(result.error || 'Failed to save configuration');
-                }
-
-            } catch (error) {
-                console.error('Error:', error);
-                hideRegistrationProgress();
-                showError('Failed to save configuration. Please try again.');
-            } finally {
-                btn.disabled = false;
-                btnText.textContent = 'Save & Register';
-                btnSpinner.classList.add('is-hidden');
-            }
+    function hideAlerts() {
+        ['successAlert', 'errorAlert', 'infoAlert'].forEach((id) => {
+            document.getElementById(id).classList.remove('is-visible');
         });
+    }
 
-        // Continue to dashboard button
-        document.getElementById('continueToDashboardBtn').addEventListener('click', () => {
-            window.location.href = '/wallet-dashboard';
-        });
+    function show(id, message) {
+        const element = document.getElementById(id);
+        element.textContent = message;
+        element.classList.add('is-visible');
+    }
 
-        function showSuccess(message) {
-            const alert = document.getElementById('successAlert');
-            alert.textContent = message;
-            alert.classList.add('is-visible');
-        }
+    function renderDetails(data) {
+        currentPairing = data;
+        pairingDetails.innerHTML = `
+            <div class="readonly-value"><strong>Institution</strong><br>${escapeHtml(data.institutionId || '-')}</div>
+            <div class="readonly-value"><strong>Registration type</strong><br>${escapeHtml(data.registrationType || '-')}</div>
+            <div class="readonly-value"><strong>Institutional wallet</strong><br><code>${escapeHtml(data.walletAddress || '-')}</code></div>
+            <div class="readonly-value"><strong>Canonical backend origin</strong><br><code>${escapeHtml(data.canonicalBackendOrigin || '-')}</code></div>
+            <div class="readonly-value"><strong>Pairing status</strong><br>${escapeHtml(data.status || '-')}</div>
+        `;
+        pairingDetails.classList.remove('is-hidden');
+        completeButton.disabled = !data.challenge || data.status === 'EXPIRED';
+        document.getElementById('statusBadge').innerHTML =
+            `<div class="status-badge not-registered">Pairing ${escapeHtml(data.status || 'unknown')}</div>`;
+    }
 
-        function showError(message) {
-            const alert = document.getElementById('errorAlert');
-            alert.textContent = message;
-            alert.classList.add('is-visible');
-        }
+    function escapeHtml(value) {
+        return String(value).replace(/[&<>'"]/g, (character) => ({
+            '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;'
+        })[character]);
+    }
 
-        function showInfo(message) {
-            const alert = document.getElementById('infoAlert');
-            alert.textContent = message;
-            alert.classList.add('is-visible');
-        }
-
-        function showRegistrationProgress(message) {
-            const progressDiv = document.getElementById('registrationProgress');
-            if (!progressDiv) return;
-            
-            progressDiv.innerHTML = `
-                <div class="provisioning-progress">
-                    <div class="spinner-container">
-                        <div class="spinner"></div>
-                    </div>
-                    <div class="progress-message">${message}</div>
-                </div>
-            `;
-            progressDiv.classList.remove('is-hidden');
-        }
-
-        function updateRegistrationProgress(message) {
-            const messageEl = document.querySelector('#registrationProgress .progress-message');
-            if (messageEl) {
-                messageEl.textContent = message;
+    async function loadStatus() {
+        try {
+            const response = await fetch('/institution-config/status');
+            const data = await response.json();
+            document.getElementById('marketplaceBaseUrl').textContent = data.marketplaceBaseUrl || 'Configured by server';
+            if (data.isRegistered) {
+                document.getElementById('statusBadge').innerHTML = '<div class="status-badge registered">Registered</div>';
+                completeButton.disabled = true;
             }
-        }
-
-        function hideRegistrationProgress() {
-            const progressDiv = document.getElementById('registrationProgress');
-            if (progressDiv) {
-                progressDiv.classList.add('is-hidden');
-                progressDiv.innerHTML = '';
+            if (data.operatingMode === 'consumer-only' || data.providerRegistrationEnabled === false) {
+                show('infoAlert', 'Consumer-only deployment: provider registration is disabled.');
             }
+        } catch (error) {
+            show('errorAlert', 'Failed to load backend status.');
         }
+    }
 
-        function hideAlerts() {
-            document.getElementById('successAlert').classList.remove('is-visible');
-            document.getElementById('errorAlert').classList.remove('is-visible');
-            document.getElementById('infoAlert').classList.remove('is-visible');
+    document.getElementById('pairingForm').addEventListener('submit', async (event) => {
+        event.preventDefault();
+        hideAlerts();
+        offerButton.disabled = true;
+        offerButtonText.textContent = 'Pairing...';
+        try {
+            const challenge = challengeField.value.trim();
+            const response = await fetch('/institution-config/apply-pairing-challenge', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ challenge })
+            });
+            const data = await response.json();
+            if (!response.ok || !data.success) throw new Error(data.error || 'Pairing failed');
+            renderDetails({ ...data, challenge });
+            show('successAlert', 'Backend offer created. Approve the read-only values in the Marketplace, then finalize here.');
+        } catch (error) {
+            show('errorAlert', error.message || 'Pairing failed.');
+        } finally {
+            offerButton.disabled = false;
+            offerButtonText.textContent = 'Offer backend pairing';
         }
+    });
 
-        // Load configuration on page load
-        loadConfigurationStatus();
-    </script>
+    completeButton.addEventListener('click', async () => {
+        if (!currentPairing?.challenge) return;
+        hideAlerts();
+        completeButton.disabled = true;
+        try {
+            const response = await fetch('/institution-config/complete-pairing', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ challenge: currentPairing.challenge })
+            });
+            const data = await response.json();
+            if (!response.ok || !data.success) throw new Error(data.error || 'Registration is not ready');
+            show('successAlert', 'Institutional registration completed successfully.');
+            document.getElementById('statusBadge').innerHTML = '<div class="status-badge registered">Registered</div>';
+        } catch (error) {
+            show('errorAlert', error.message || 'Registration is not ready. Approve the pairing first.');
+            completeButton.disabled = false;
+        }
+    });
+
+    loadStatus();
+</script>
 </body>
 </html>
-
-
-

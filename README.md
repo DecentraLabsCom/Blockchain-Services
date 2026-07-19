@@ -95,8 +95,8 @@ browser ceremony and completion are intentionally session-bound; see the
 - Billing administration: `/billing/admin/**`, funding orders and provider
   receivables. Read-only and mutating routes are listed in the
   [wallet/billing guide](docs/services/wallet/WALLET_BILLING.md).
-- Provisioning: `GET /institution-config/status` and the four
-  `POST /institution-config/*` flows.
+- Provisioning: `GET /institution-config/status` plus the challenge/approval
+  flow under `POST /institution-config/*`.
 - Compliance exports: `/billing/compliance/**`.
 - Lab administration: `/lab-admin/**` and `/lab-content/**`.
 

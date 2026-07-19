@@ -4,7 +4,7 @@
 
 ## Effective trust model
 
-The packaged `application.properties` sets `saml.idp.trust-mode=any` unless `SAML_IDP_TRUST_MODE` is supplied. That is convenient for development, but production deployments should use `whitelist` and configure `saml.trusted.idp`. The Java field default is only a fallback when Spring is started without the packaged property file.
+The packaged `application.properties` sets `saml.idp.trust-mode=any` unless `SAML_IDP_TRUST_MODE` is supplied. That is convenient for development, but production deployments should use `whitelist` and configure `saml.trusted.idp`. In whitelist mode every permitted issuer must also have its own `saml.idp.metadata.override` entry; a global override or an assertion-provided URL does not satisfy this requirement. Startup validation rejects an incomplete map.
 
 ```mermaid
 flowchart TD
@@ -35,9 +35,14 @@ flowchart TD
 For an assertion with issuer `I`, the service resolves the metadata URL in this order:
 
 1. `saml.idp.metadata.override` map entry for `I`.
-2. The optional global `saml.idp.metadata.url` property.
-3. `AuthnContext/AuthenticatingAuthority` when it looks like a metadata endpoint.
-4. An `Extensions/MetadataURL` element.
+2. In `any` mode only, the optional global `saml.idp.metadata.url` property.
+3. In `any` mode only, `AuthnContext/AuthenticatingAuthority` when it looks like a metadata endpoint.
+4. In `any` mode only, an `Extensions/MetadataURL` element.
+
+The whitelist path is therefore deterministic: the issuer is allowed only when
+its configured metadata URL is present and its downloaded signing certificate
+can be validated. No inline certificate, legacy IdP URL construction or
+trust-all metadata fallback is used.
 
 Metadata transport rejects non-HTTPS URLs unless `saml.metadata.allow-http=true`, and blocks loopback, private, link-local and cloud-metadata targets. HTTP timeouts are configured under `saml.metadata.http.*`.
 
@@ -48,20 +53,29 @@ Certificates are cached in memory by issuer in a bounded `ConcurrentHashMap` (ma
 ## Configuration
 
 ```properties
-# Production baseline
+# Production baseline: every issuer in this map needs a matching metadata URL.
 saml.idp.trust-mode=whitelist
 saml.trusted.idp={'uned':'https://idp.uned.es','ucm':'https://idp.ucm.es'}
 
-# Optional issuer-specific or global metadata overrides
-saml.idp.metadata.override={'https://idp.uned.es':'https://idp.uned.es/metadata'}
+# Required issuer-specific metadata overrides in whitelist mode
+saml.idp.metadata.override={'https://idp.uned.es':'https://idp.uned.es/metadata','https://idp.ucm.es':'https://idp.ucm.es/metadata'}
 saml.idp.metadata.url=
+
+# Optional per-issuer TLS compatibility profile; default is modern.
+saml.idp.metadata.tls-profile={'https://legacy-idp.example':'compatibility'}
 
 # Metadata transport hardening
 saml.metadata.allow-http=false
 saml.metadata.http.connect-timeout-ms=5000
 saml.metadata.http.read-timeout-ms=10000
 saml.metadata.http.call-timeout-ms=15000
+saml.metadata.health.cache-ms=30000
 ```
+
+The readiness probe includes `samlMetadata` and downloads metadata for every
+whitelisted issuer. Check `GET /actuator/health/readiness` after changing the
+map. The setup scripts merge new issuer overrides from the template into an
+existing `blockchain-services/.env` without replacing operator-defined values.
 
 ## Required identity data and failure modes
 

@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.lenient;
 
 import decentralabs.blockchain.service.auth.MarketplaceKeyService;
+import decentralabs.blockchain.service.BackendUrlResolver;
 import io.jsonwebtoken.Jwts;
 import java.security.KeyPair;
 import java.security.KeyPairGenerator;
@@ -27,6 +28,9 @@ class IntentAuthServiceTest {
     @Mock
     private MarketplaceKeyService marketplaceKeyService;
 
+    @Mock
+    private BackendUrlResolver backendUrlResolver;
+
     @InjectMocks
     private IntentAuthService service;
 
@@ -36,7 +40,10 @@ class IntentAuthServiceTest {
     void setUp() throws Exception {
         ReflectionTestUtils.setField(service, "enabled", true);
         ReflectionTestUtils.setField(service, "issuer", "marketplace");
-        ReflectionTestUtils.setField(service, "audience", "blockchain-services");
+        ReflectionTestUtils.setField(service, "audience", "https://backend.example.edu");
+        ReflectionTestUtils.setField(service, "institutionId", "institution.edu");
+        ReflectionTestUtils.setField(service, "serviceSubject", "marketplace");
+        ReflectionTestUtils.setField(service, "maxTtlSeconds", 60L);
         ReflectionTestUtils.setField(service, "submitScope", "intents:submit");
         ReflectionTestUtils.setField(service, "statusScope", "intents:status");
         ReflectionTestUtils.setField(service, "clockSkewSeconds", 60L);
@@ -71,14 +78,14 @@ class IntentAuthServiceTest {
 
     @Test
     void submitAuthorization_acceptsValidTokenWithStringScope() {
-        String jwt = makeJwt(Map.of("scope", "read intents:submit write"));
+        String jwt = makeJwt(Map.of("scope", "intents:submit"));
 
         assertThatCode(() -> service.enforceSubmitAuthorization("Bearer " + jwt)).doesNotThrowAnyException();
     }
 
     @Test
     void statusAuthorization_acceptsValidTokenWithCollectionScope() {
-        String jwt = makeJwt(Map.of("scopes", List.of("foo", "intents:status")));
+        String jwt = makeJwt(Map.of("scopes", List.of("intents:status")));
 
         assertThatCode(() -> service.enforceStatusAuthorization("Bearer " + jwt)).doesNotThrowAnyException();
     }
@@ -93,23 +100,81 @@ class IntentAuthServiceTest {
     }
 
     @Test
+    void authorizationAndRegistrationUseDedicatedScopes() {
+        String authorizationJwt = makeJwt(Map.of("scope", "intents:authorize"));
+        assertThatCode(() -> service.enforceAuthorizeAuthorization("Bearer " + authorizationJwt))
+            .doesNotThrowAnyException();
+        assertThatThrownBy(() -> service.enforceSubmitAuthorization("Bearer " + authorizationJwt))
+            .isInstanceOf(ResponseStatusException.class)
+            .hasMessageContaining("missing_intents_scope");
+
+        String minedJwt = makeJwt(Map.of("scope", "intents:registration-mined"));
+        assertThatCode(() -> service.enforceRegistrationMinedAuthorization("Bearer " + minedJwt))
+            .doesNotThrowAnyException();
+    }
+
+    @Test
+    void submitAuthorization_rejectsTokenForAnotherBackendAudience() {
+        String jwt = makeJwt(Map.of("scope", "intents:submit", "aud", "https://other-backend.example"));
+
+        assertThatThrownBy(() -> service.enforceSubmitAuthorization("Bearer " + jwt))
+            .isInstanceOf(ResponseStatusException.class)
+            .hasMessageContaining("invalid_intents_token");
+    }
+
+    @Test
     void submitAuthorization_rejectsBadPrefix() {
         assertThatThrownBy(() -> service.enforceSubmitAuthorization("Token abc"))
             .isInstanceOf(ResponseStatusException.class)
             .hasMessageContaining("missing_intents_token");
     }
 
+    @Test
+    void submitAuthorization_rejectsTokenForAnotherInstitution() {
+        String jwt = makeJwt(Map.of("scope", "intents:submit", "institutionId", "other.edu"));
+
+        assertThatThrownBy(() -> service.enforceSubmitAuthorization("Bearer " + jwt))
+            .isInstanceOf(ResponseStatusException.class)
+            .hasMessageContaining("invalid_intents_token");
+    }
+
+    @Test
+    void submitAuthorization_rejectsNonMarketplaceSubject() {
+        String jwt = makeJwt(Map.of("scope", "intents:submit", "sub", "blockchain-services"));
+
+        assertThatThrownBy(() -> service.enforceSubmitAuthorization("Bearer " + jwt))
+            .isInstanceOf(ResponseStatusException.class)
+            .hasMessageContaining("invalid_intents_token");
+    }
+
+    @Test
+    void submitAuthorization_rejectsMissingJti() {
+        String jwt = makeJwt(Map.of("scope", "intents:submit"), false);
+
+        assertThatThrownBy(() -> service.enforceSubmitAuthorization("Bearer " + jwt))
+            .isInstanceOf(ResponseStatusException.class)
+            .hasMessageContaining("invalid_intents_token");
+    }
+
     private String makeJwt(Map<String, Object> claims) {
+        return makeJwt(claims, true);
+    }
+
+    private String makeJwt(Map<String, Object> claims, boolean includeJti) {
         PrivateKey privateKey = keyPair.getPrivate();
         long now = System.currentTimeMillis();
         Map<String, Object> payload = new java.util.HashMap<>(claims);
-        payload.put("aud", "blockchain-services");
-        return Jwts.builder()
+        payload.putIfAbsent("aud", "https://backend.example.edu");
+        payload.putIfAbsent("sub", "marketplace");
+        payload.putIfAbsent("institutionId", "institution.edu");
+        var builder = Jwts.builder()
             .claims(payload)
             .issuer("marketplace")
             .issuedAt(new Date(now))
-            .expiration(new Date(now + 60_000))
-            .signWith(privateKey)
-            .compact();
+            .expiration(new Date(now + 30_000));
+        if (includeJti) {
+            builder.id(java.util.UUID.randomUUID().toString());
+        }
+        return builder.signWith(privateKey).compact();
     }
 }

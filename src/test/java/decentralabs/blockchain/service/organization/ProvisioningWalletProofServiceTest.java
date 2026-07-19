@@ -55,6 +55,20 @@ class ProvisioningWalletProofServiceTest {
             .hasMessageContaining("does not match");
     }
 
+    @Test
+    void signsTheExactPairingClaims() {
+        ProvisioningPairingSecurityClaims claims = pairingClaims("https://gateway.example.edu");
+
+        String signature = service.signPairing(claims, WALLET);
+
+        assertThat(service.recoverPairingSigner(claims, signature))
+            .isEqualToIgnoringCase(WALLET.getAddress());
+        assertThat(service.recoverPairingSigner(
+            pairingClaims("https://attacker.example"),
+            signature
+        )).isNotEqualToIgnoringCase(WALLET.getAddress());
+    }
+
     private ProvisioningSecurityClaims claims(String backendOrigin) {
         return new ProvisioningSecurityClaims(
             "example.edu",
@@ -67,6 +81,20 @@ class ProvisioningWalletProofServiceTest {
             "0x1111111111111111111111111111111111111111111111111111111111111111",
             1_700_000_000L,
             1_700_000_300L
+        );
+    }
+
+    private ProvisioningPairingSecurityClaims pairingClaims(String backendOrigin) {
+        return new ProvisioningPairingSecurityClaims(
+            "example.edu",
+            WALLET.getAddress(),
+            backendOrigin,
+            "provider",
+            BigInteger.valueOf(11_155_111L),
+            "0xe49a2f59631717691642f929E0FeF1f705866600",
+            "0x2222222222222222222222222222222222222222222222222222222222222222",
+            1_700_000_000L,
+            1_700_000_600L
         );
     }
 }

@@ -24,6 +24,7 @@ import javax.xml.transform.TransformerFactory;
 import javax.xml.transform.dom.DOMSource;
 import javax.xml.transform.stream.StreamResult;
 import java.io.ByteArrayInputStream;
+import java.io.IOException;
 import java.io.StringWriter;
 import java.math.BigInteger;
 import java.security.KeyFactory;
@@ -96,10 +97,128 @@ class SamlValidationServiceTest {
         ReflectionTestUtils.setField(samlValidationService, "trustedIdps", Map.of(
                 "uned", "https://idp.uned.es"
         ));
+        ReflectionTestUtils.setField(samlValidationService, "metadataOverrides", Map.of(
+                "https://idp.uned.es", "https://idp.uned.es/metadata"
+        ));
 
         boolean configured = samlValidationService.isConfigured();
 
         assertThat(configured).isTrue();
+    }
+
+    @Test
+    void shouldRequireMetadataOverrideForEveryWhitelistedIdp() {
+        ReflectionTestUtils.setField(samlValidationService, "trustMode", "whitelist");
+        ReflectionTestUtils.setField(samlValidationService, "trustedIdps", Map.of(
+                "uned", "https://idp.uned.es",
+                "ucm", "https://idp.ucm.es"
+        ));
+        ReflectionTestUtils.setField(samlValidationService, "metadataOverrides", Map.of(
+                "https://idp.uned.es", "https://idp.uned.es/metadata"
+        ));
+
+        assertThat(samlValidationService.isConfigured()).isFalse();
+        assertThat(samlValidationService.configurationErrors())
+                .anyMatch(error -> error.contains("https://idp.ucm.es"));
+    }
+
+    @Test
+    void shouldNotUseGlobalMetadataOverrideAsWhitelistConfiguration() {
+        ReflectionTestUtils.setField(samlValidationService, "trustMode", "whitelist");
+        ReflectionTestUtils.setField(samlValidationService, "trustedIdps", Map.of(
+                "uned", "https://idp.uned.es"
+        ));
+        ReflectionTestUtils.setField(samlValidationService, "metadataUrlOverride", "https://metadata.example/idp");
+        ReflectionTestUtils.setField(samlValidationService, "metadataOverrides", Map.of());
+
+        assertThat(samlValidationService.isConfigured()).isFalse();
+    }
+
+    @Test
+    void shouldRejectUnknownIssuerTlsProfile() {
+        ReflectionTestUtils.setField(samlValidationService, "trustMode", "whitelist");
+        ReflectionTestUtils.setField(samlValidationService, "trustedIdps", Map.of(
+                "uned", "https://idp.uned.es"
+        ));
+        ReflectionTestUtils.setField(samlValidationService, "metadataOverrides", Map.of(
+                "https://idp.uned.es", "https://idp.uned.es/metadata"
+        ));
+        ReflectionTestUtils.setField(samlValidationService, "metadataTlsProfiles", Map.of(
+                "https://idp.uned.es", "legacy"
+        ));
+
+        assertThat(samlValidationService.isConfigured()).isFalse();
+        assertThat(samlValidationService.configurationErrors())
+                .anyMatch(error -> error.contains("legacy"));
+    }
+
+    @Test
+    void shouldResolveCompatibilityTlsProfileOnlyForConfiguredIssuer() {
+        ReflectionTestUtils.setField(samlValidationService, "metadataTlsProfiles", Map.of(
+                TEST_ISSUER, "compatibility"
+        ));
+
+        String configured = ReflectionTestUtils.invokeMethod(
+                samlValidationService, "resolveMetadataTlsProfile", TEST_ISSUER
+        );
+        String defaultProfile = ReflectionTestUtils.invokeMethod(
+                samlValidationService, "resolveMetadataTlsProfile", "https://other-idp.example"
+        );
+
+        assertThat(configured).isEqualTo("compatibility");
+        assertThat(defaultProfile).isEqualTo("modern");
+    }
+
+    @Test
+    void shouldReportMetadataHealthDownWhenMetadataProbeFails() {
+        ReflectionTestUtils.setField(samlValidationService, "trustMode", "whitelist");
+        ReflectionTestUtils.setField(samlValidationService, "trustedIdps", Map.of(
+                "test", TEST_ISSUER
+        ));
+        ReflectionTestUtils.setField(samlValidationService, "metadataOverrides", Map.of(
+                TEST_ISSUER, "https://metadata.test.example/idp"
+        ));
+        ReflectionTestUtils.setField(
+                samlValidationService,
+                "metadataDownloader",
+                (SamlValidationService.MetadataDownloader) (url, tlsProfile) -> {
+                    throw new IOException("metadata unavailable");
+                }
+        );
+
+        Map<String, Object> health = samlValidationService.metadataHealth();
+
+        assertThat(health).containsEntry("status", "DOWN");
+        assertThat(health.get("failedIssuers").toString()).contains(TEST_ISSUER);
+    }
+
+    @Test
+    void shouldReportMetadataHealthUpAfterConfiguredIssuerMetadataProbe() {
+        ReflectionTestUtils.setField(samlValidationService, "trustMode", "whitelist");
+        ReflectionTestUtils.setField(samlValidationService, "trustedIdps", Map.of(
+                "test", TEST_ISSUER
+        ));
+        ReflectionTestUtils.setField(samlValidationService, "metadataOverrides", Map.of(
+                TEST_ISSUER, "https://metadata.test.example/idp"
+        ));
+        ReflectionTestUtils.setField(samlValidationService, "metadataTlsProfiles", Map.of(
+                TEST_ISSUER, "compatibility"
+        ));
+        ReflectionTestUtils.setField(
+                samlValidationService,
+                "metadataDownloader",
+                (SamlValidationService.MetadataDownloader) (url, tlsProfile) -> {
+                    assertThat(url).isEqualTo("https://metadata.test.example/idp");
+                    assertThat(tlsProfile).isEqualTo("compatibility");
+                    return samlValidationService.parseCertificatesFromMetadataXml(testMetadataXml());
+                }
+        );
+
+        Map<String, Object> health = samlValidationService.metadataHealth();
+
+        assertThat(health).containsEntry("status", "UP");
+        assertThat(health.get("checkedIssuers").toString()).contains(TEST_ISSUER);
+        assertThat(health.get("failedIssuers").toString()).isEqualTo("[]");
     }
 
     @Test

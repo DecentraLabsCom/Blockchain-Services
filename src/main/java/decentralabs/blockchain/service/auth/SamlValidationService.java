@@ -6,6 +6,7 @@ import okhttp3.Request;
 import okhttp3.Response;
 import okhttp3.ResponseBody;
 import okhttp3.logging.HttpLoggingInterceptor;
+import jakarta.annotation.PostConstruct;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -136,10 +137,29 @@ public class SamlValidationService {
 
     @Value("${saml.metadata.http.logging.enabled:false}")
     private boolean metadataHttpLoggingEnabled;
+
+    @Value("${saml.metadata.health.cache-ms:30000}")
+    private long metadataHealthCacheMs = 30_000L;
     
     // Optional: only used in whitelist mode
     private Map<String, String> trustedIdps = Collections.emptyMap();
     private Map<String, String> metadataOverrides = Collections.emptyMap();
+    private Map<String, String> metadataTlsProfiles = Collections.emptyMap();
+
+    private volatile List<String> configurationErrors = List.of();
+    private volatile MetadataHealthSnapshot metadataHealthSnapshot;
+    private final Object metadataHealthLock = new Object();
+
+    @FunctionalInterface
+    public interface MetadataDownloader {
+        List<X509Certificate> download(String metadataUrl, String tlsProfile) throws Exception;
+    }
+
+    private MetadataDownloader metadataDownloader = (metadataUrl, tlsProfile) -> {
+        validateMetadataUrl(metadataUrl);
+        String metadataXml = downloadMetadataXml(metadataUrl, tlsProfile);
+        return parseCertificatesFromMetadataXml(metadataXml);
+    };
     
     @Autowired(required = false)
     public void setTrustedIdps(@Value("#{${saml.trusted.idp:{}}}") Map<String, String> trustedIdps) {
@@ -152,6 +172,13 @@ public class SamlValidationService {
     public void setMetadataOverrides(@Value("#{${saml.idp.metadata.override:{}}}") Map<String, String> metadataOverrides) {
         if (metadataOverrides != null) {
             this.metadataOverrides = metadataOverrides;
+        }
+    }
+
+    @Autowired(required = false)
+    public void setMetadataTlsProfiles(@Value("#{${saml.idp.metadata.tls-profile:{}}}") Map<String, String> metadataTlsProfiles) {
+        if (metadataTlsProfiles != null) {
+            this.metadataTlsProfiles = metadataTlsProfiles;
         }
     }
     
@@ -239,6 +266,9 @@ public class SamlValidationService {
         }
         
         String metadataUrl = resolveMetadataUrl(doc, issuer);
+        if ("whitelist".equalsIgnoreCase(trustMode) && (metadataUrl == null || metadataUrl.isBlank())) {
+            throw new SecurityException("Whitelisted IdP requires an issuer-specific metadata URL: " + issuer);
+        }
         List<X509Certificate> certs = getIdpCertificates(issuer, metadataUrl);
         if (certs.isEmpty()) {
             if (metadataUrl == null) {
@@ -521,10 +551,13 @@ public class SamlValidationService {
     }
 
     private String resolveMetadataUrl(Document doc, String issuer) {
-        String override = metadataOverrides.get(issuer);
+        String override = findIssuerValue(metadataOverrides, issuer);
         if (override != null && !override.isBlank()) {
             logger.info("Using metadata URL override for issuer {}", issuer);
             return override.trim();
+        }
+        if ("whitelist".equalsIgnoreCase(trustMode)) {
+            return null;
         }
         if (metadataUrlOverride != null && !metadataUrlOverride.isBlank()) {
             logger.info("Using global metadata URL override for issuer {}", issuer);
@@ -541,7 +574,7 @@ public class SamlValidationService {
             return false;
         }
         return trustedIdps.values().stream()
-                .anyMatch(trustedIssuer -> issuer.equals(trustedIssuer));
+                .anyMatch(trustedIssuer -> normalizeIssuer(issuer).equals(normalizeIssuer(trustedIssuer)));
     }
     
     /**
@@ -560,7 +593,7 @@ public class SamlValidationService {
         
         // Try to retrieve from metadata URL
         try {
-            List<X509Certificate> certs = retrieveCertificatesFromMetadata(metadataUrl);
+            List<X509Certificate> certs = retrieveCertificatesFromMetadata(metadataUrl, issuer);
             if (!certs.isEmpty()) {
                 if (certificateCache.size() >= MAX_CERTIFICATE_CACHE_SIZE) {
                     logger.warn("Certificate cache reached max size ({}), evicting oldest entries", MAX_CERTIFICATE_CACHE_SIZE);
@@ -582,18 +615,10 @@ public class SamlValidationService {
         return Collections.emptyList();
     }
     
-    /**
-     * Retrieves certificate from IdP metadata endpoint
-     * Security: Validates URL to prevent SSRF attacks
-     */
-    private List<X509Certificate> retrieveCertificatesFromMetadata(String metadataUrl) throws Exception {
+    private List<X509Certificate> retrieveCertificatesFromMetadata(String metadataUrl, String issuer) throws Exception {
         logger.debug("Retrieving certificate from metadata: {}", metadataUrl);
         
-        // Validate URL to prevent SSRF attacks
-        validateMetadataUrl(metadataUrl);
-        
-        String metadataXml = downloadMetadataXml(metadataUrl);
-        return parseCertificatesFromMetadataXml(metadataXml);
+        return metadataDownloader.download(metadataUrl, resolveMetadataTlsProfile(issuer));
     }
 
     List<X509Certificate> parseCertificatesFromMetadataXml(String metadataXml) throws Exception {
@@ -632,7 +657,7 @@ public class SamlValidationService {
         return allCerts;
     }
 
-    private String downloadMetadataXml(String metadataUrl) throws Exception {
+    private String downloadMetadataXml(String metadataUrl, String tlsProfile) throws Exception {
         Request request = new Request.Builder()
             .url(metadataUrl)
             .get()
@@ -640,7 +665,7 @@ public class SamlValidationService {
             .header("User-Agent", "DecentraLabs-Blockchain-Services/1.0")
             .build();
 
-        return executeMetadataRequest(buildMetadataHttpClient(), request);
+        return executeMetadataRequest(buildMetadataHttpClient(tlsProfile), request);
 
     }
 
@@ -661,14 +686,17 @@ public class SamlValidationService {
         }
     }
 
-    private OkHttpClient buildMetadataHttpClient() {
+    private OkHttpClient buildMetadataHttpClient(String tlsProfile) {
+        ConnectionSpec connectionSpec = "compatibility".equalsIgnoreCase(tlsProfile)
+            ? ConnectionSpec.COMPATIBLE_TLS
+            : ConnectionSpec.MODERN_TLS;
         OkHttpClient.Builder builder = new OkHttpClient.Builder()
             .connectTimeout(metadataHttpConnectTimeoutMs, TimeUnit.MILLISECONDS)
             .readTimeout(metadataHttpReadTimeoutMs, TimeUnit.MILLISECONDS)
             .callTimeout(metadataHttpCallTimeoutMs, TimeUnit.MILLISECONDS)
             .followRedirects(true)
             .followSslRedirects(true)
-            .connectionSpecs(List.of(ConnectionSpec.MODERN_TLS));
+            .connectionSpecs(List.of(connectionSpec));
 
         if (metadataHttpLoggingEnabled) {
             // Add basic HTTP logging for metadata requests when enabled (useful for debugging)
@@ -929,6 +957,189 @@ public class SamlValidationService {
         }
         return name.trim().toLowerCase();
     }
+
+    @PostConstruct
+    void validateConfigurationAtStartup() {
+        List<String> errors = collectConfigurationErrors();
+        configurationErrors = List.copyOf(errors);
+        if (!errors.isEmpty()) {
+            throw new IllegalStateException("Invalid SAML configuration: " + String.join("; ", errors));
+        }
+        logger.info("SAML validation configuration is valid (trust-mode={})", trustMode);
+    }
+
+    public List<String> configurationErrors() {
+        List<String> errors = collectConfigurationErrors();
+        configurationErrors = List.copyOf(errors);
+        return configurationErrors;
+    }
+
+    private List<String> collectConfigurationErrors() {
+        List<String> errors = new ArrayList<>();
+        String normalizedTrustMode = trustMode == null ? "" : trustMode.trim().toLowerCase(Locale.ROOT);
+        if (!"any".equals(normalizedTrustMode) && !"whitelist".equals(normalizedTrustMode)) {
+            errors.add("saml.idp.trust-mode must be 'any' or 'whitelist'");
+        }
+
+        if (metadataUrlOverride != null && !metadataUrlOverride.isBlank()) {
+            addMetadataUrlSyntaxError(errors, "global metadata override", metadataUrlOverride);
+        }
+
+        if (metadataOverrides != null) {
+            metadataOverrides.forEach((issuer, url) -> {
+                if (issuer == null || issuer.isBlank()) {
+                    errors.add("metadata override issuer must not be blank");
+                }
+                if (url == null || url.isBlank()) {
+                    errors.add("metadata override for issuer " + issuer + " must not be blank");
+                } else {
+                    addMetadataUrlSyntaxError(errors, "metadata override for issuer " + issuer, url);
+                }
+            });
+        }
+
+        if (metadataTlsProfiles != null) {
+            metadataTlsProfiles.forEach((issuer, profile) -> {
+                String normalizedProfile = profile == null ? "" : profile.trim().toLowerCase(Locale.ROOT);
+                if (!"modern".equals(normalizedProfile) && !"compatibility".equals(normalizedProfile)) {
+                    errors.add("unsupported TLS profile '" + profile + "' for issuer " + issuer
+                        + "; use 'modern' or 'compatibility'");
+                }
+            });
+        }
+
+        if ("whitelist".equals(normalizedTrustMode)) {
+            if (trustedIdps == null || trustedIdps.isEmpty()) {
+                errors.add("whitelist mode requires at least one trusted IdP issuer");
+            } else {
+                trustedIdps.values().forEach(issuer -> {
+                    if (issuer == null || issuer.isBlank()) {
+                        errors.add("trusted IdP issuer must not be blank");
+                        return;
+                    }
+                    String metadataUrl = findIssuerValue(metadataOverrides, issuer);
+                    if (metadataUrl == null || metadataUrl.isBlank()) {
+                        errors.add("whitelisted issuer " + issuer + " requires an issuer-specific metadata override");
+                    }
+                });
+            }
+        }
+
+        return errors;
+    }
+
+    private void addMetadataUrlSyntaxError(List<String> errors, String label, String rawUrl) {
+        try {
+            URI uri = URI.create(rawUrl.trim());
+            String scheme = uri.getScheme();
+            if (scheme == null || uri.getHost() == null || uri.getHost().isBlank()) {
+                errors.add(label + " must be an absolute URL with a host");
+                return;
+            }
+            if (!"https".equalsIgnoreCase(scheme)
+                && !(allowHttpMetadata && "http".equalsIgnoreCase(scheme))) {
+                errors.add(label + " must use HTTPS");
+            }
+        } catch (IllegalArgumentException ex) {
+            errors.add(label + " is not a valid URL");
+        }
+    }
+
+    private String findIssuerValue(Map<String, String> values, String issuer) {
+        if (values == null || issuer == null) {
+            return null;
+        }
+        String exact = values.get(issuer);
+        if (exact != null) {
+            return exact;
+        }
+        String normalizedIssuer = normalizeIssuer(issuer);
+        for (Map.Entry<String, String> entry : values.entrySet()) {
+            if (normalizedIssuer.equals(normalizeIssuer(entry.getKey()))) {
+                return entry.getValue();
+            }
+        }
+        return null;
+    }
+
+    private String normalizeIssuer(String issuer) {
+        if (issuer == null) {
+            return "";
+        }
+        return issuer.trim().replaceAll("/+$", "");
+    }
+
+    private String resolveMetadataTlsProfile(String issuer) {
+        String configured = findIssuerValue(metadataTlsProfiles, issuer);
+        if (configured == null || configured.isBlank()) {
+            return "modern";
+        }
+        return configured.trim().toLowerCase(Locale.ROOT);
+    }
+
+    public Map<String, Object> metadataHealth() {
+        List<String> errors = configurationErrors();
+        if (!errors.isEmpty()) {
+            return metadataHealthDetails("DOWN", errors, List.of(), List.of());
+        }
+
+        if (!"whitelist".equalsIgnoreCase(trustMode)) {
+            return metadataHealthDetails("UP", List.of(), List.of(), List.of());
+        }
+
+        long now = System.currentTimeMillis();
+        MetadataHealthSnapshot cachedHealth = metadataHealthSnapshot;
+        if (cachedHealth != null && now - cachedHealth.checkedAt() < Math.max(0L, metadataHealthCacheMs)) {
+            return cachedHealth.details();
+        }
+
+        synchronized (metadataHealthLock) {
+            cachedHealth = metadataHealthSnapshot;
+            if (cachedHealth != null && now - cachedHealth.checkedAt() < Math.max(0L, metadataHealthCacheMs)) {
+                return cachedHealth.details();
+            }
+
+            List<String> checkedIssuers = new ArrayList<>();
+            List<String> failedIssuers = new ArrayList<>();
+            for (String issuer : new LinkedHashSet<>(trustedIdps.values())) {
+                checkedIssuers.add(issuer);
+                String metadataUrl = findIssuerValue(metadataOverrides, issuer);
+                try {
+                    List<X509Certificate> certificates = retrieveCertificatesFromMetadata(metadataUrl, issuer);
+                    if (certificates == null || certificates.isEmpty()) {
+                        failedIssuers.add(issuer);
+                    }
+                } catch (Exception ex) {
+                    failedIssuers.add(issuer);
+                    logger.warn("SAML metadata readiness probe failed for issuer {}: {}", issuer, ex.getMessage());
+                }
+            }
+
+            String status = failedIssuers.isEmpty() ? "UP" : "DOWN";
+            Map<String, Object> details = metadataHealthDetails(status, List.of(), checkedIssuers, failedIssuers);
+            metadataHealthSnapshot = new MetadataHealthSnapshot(now, details);
+            return details;
+        }
+    }
+
+    private Map<String, Object> metadataHealthDetails(
+        String status,
+        List<String> errors,
+        List<String> checkedIssuers,
+        List<String> failedIssuers
+    ) {
+        Map<String, Object> details = new LinkedHashMap<>();
+        details.put("status", status);
+        details.put("trustMode", trustMode == null ? "" : trustMode);
+        details.put("checkedIssuers", List.copyOf(checkedIssuers));
+        details.put("failedIssuers", List.copyOf(failedIssuers));
+        if (!errors.isEmpty()) {
+            details.put("configurationErrors", List.copyOf(errors));
+        }
+        return Map.copyOf(details);
+    }
+
+    private record MetadataHealthSnapshot(long checkedAt, Map<String, Object> details) {}
     
     /**
      * Clears certificate cache (useful for testing or forcing refresh)
@@ -939,10 +1150,7 @@ public class SamlValidationService {
     }
 
     public boolean isConfigured() {
-        if ("any".equalsIgnoreCase(trustMode)) {
-            return true;
-        }
-        return trustedIdps != null && !trustedIdps.isEmpty();
+        return configurationErrors().isEmpty();
     }
 }
 

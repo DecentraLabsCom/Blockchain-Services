@@ -57,7 +57,7 @@ public class IntentController {
         @PathVariable String requestId,
         @RequestHeader(value = "Authorization", required = false) String authorizationHeader
     ) {
-        intentAuthService.enforceSubmitAuthorization(authorizationHeader);
+        intentAuthService.enforceRegistrationMinedAuthorization(authorizationHeader);
         if (intentService.findByRequestId(requestId).isPresent()) {
             intentExecutionService.processQueuedIntent(requestId);
         } else {
