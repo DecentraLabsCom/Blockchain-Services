@@ -77,11 +77,12 @@ public class WebauthnOnboardingController {
             @PathVariable String stableUserId,
             @RequestHeader(value = "Authorization", required = false) String authorizationHeader,
             @RequestParam(required = false) String institutionId) {
-        Map<String, Object> claims = marketplaceEndpointAuthService.enforceAuthorization(
+        Map<String, Object> claims = marketplaceEndpointAuthService.enforceServiceAuthorization(
             authorizationHeader,
             "onboarding:webauthn"
         );
         enforceUserScope(claims, stableUserId);
+        enforceInstitutionScope(claims, institutionId);
         log.debug("Key status check. stableUserIdPresent={} institutionIdPresent={}",
             stableUserId != null && !stableUserId.isBlank(),
             institutionId != null && !institutionId.isBlank());
@@ -118,11 +119,12 @@ public class WebauthnOnboardingController {
     public ResponseEntity<WebauthnOnboardingOptionsResponse> getOptions(
             @RequestHeader(value = "Authorization", required = false) String authorizationHeader,
             @Valid @RequestBody WebauthnOnboardingOptionsRequest request) {
-        Map<String, Object> claims = marketplaceEndpointAuthService.enforceAuthorization(
+        Map<String, Object> claims = marketplaceEndpointAuthService.enforceServiceAuthorization(
             authorizationHeader,
             "onboarding:webauthn"
         );
         enforceUserScope(claims, request.getStableUserId());
+        enforceInstitutionScope(claims, request.getInstitutionId());
         log.debug("WebAuthn options requested. institutionIdPresent={}",
             request.getInstitutionId() != null && !request.getInstitutionId().isBlank());
         WebauthnOnboardingOptionsResponse response = onboardingService.generateOptions(request);
@@ -163,13 +165,14 @@ public class WebauthnOnboardingController {
     public ResponseEntity<WebauthnOnboardingStatusResponse> getStatus(
             @PathVariable String sessionId,
             @RequestHeader(value = "Authorization", required = false) String authorizationHeader) {
-        Map<String, Object> claims = marketplaceEndpointAuthService.enforceAuthorization(
+        Map<String, Object> claims = marketplaceEndpointAuthService.enforceServiceAuthorization(
             authorizationHeader,
             "onboarding:webauthn"
         );
         log.debug("WebAuthn status check");
         WebauthnOnboardingStatusResponse response = onboardingService.getStatus(sessionId);
         enforceUserScope(claims, response.getStableUserId());
+        enforceInstitutionScope(claims, response.getInstitutionId());
         return ResponseEntity.ok(response);
     }
 
@@ -513,6 +516,17 @@ public class WebauthnOnboardingController {
         }
         if (!claimPuc.trim().equals(stableUserId.trim())) {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "marketplace_puc_mismatch");
+        }
+    }
+
+    private void enforceInstitutionScope(Map<String, Object> claims, String institutionId) {
+        if (claims == null || claims.isEmpty() || institutionId == null || institutionId.isBlank()) {
+            return;
+        }
+        String claimInstitution = firstClaim(claims, "institutionId");
+        if (claimInstitution == null || claimInstitution.isBlank()
+            || !claimInstitution.trim().equalsIgnoreCase(institutionId.trim())) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "marketplace_institution_mismatch");
         }
     }
 

@@ -66,7 +66,7 @@ class WebauthnOnboardingControllerTest {
             .setControllerAdvice(new decentralabs.blockchain.exception.GlobalExceptionHandler())
             .defaultRequest(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get("/").accept(org.springframework.http.MediaType.APPLICATION_JSON))
             .build();
-        when(marketplaceEndpointAuthService.enforceAuthorization(any(), any())).thenReturn(Collections.emptyMap());
+        when(marketplaceEndpointAuthService.enforceServiceAuthorization(any(), any())).thenReturn(Collections.emptyMap());
     }
 
     private com.fasterxml.jackson.databind.ObjectMapper objectMapper = new com.fasterxml.jackson.databind.ObjectMapper().registerModule(new com.fasterxml.jackson.datatype.jsr310.JavaTimeModule());
@@ -204,7 +204,7 @@ class WebauthnOnboardingControllerTest {
         request.setStableUserId("user@institution.edu");
         request.setInstitutionId("institution.edu");
 
-        when(marketplaceEndpointAuthService.enforceAuthorization(eq(null), eq("onboarding:webauthn")))
+        when(marketplaceEndpointAuthService.enforceServiceAuthorization(eq(null), eq("onboarding:webauthn")))
             .thenThrow(new ResponseStatusException(HttpStatus.UNAUTHORIZED, "missing_marketplace_token"));
 
         mockMvc.perform(post("/onboarding/webauthn/options")
@@ -328,7 +328,7 @@ class WebauthnOnboardingControllerTest {
 
     @Test
     void getKeyStatus_withoutAuth_returnsUnauthorized() throws Exception {
-        when(marketplaceEndpointAuthService.enforceAuthorization(eq(null), eq("onboarding:webauthn")))
+        when(marketplaceEndpointAuthService.enforceServiceAuthorization(eq(null), eq("onboarding:webauthn")))
             .thenThrow(new ResponseStatusException(HttpStatus.UNAUTHORIZED, "missing_marketplace_token"));
         mockMvc.perform(get("/onboarding/webauthn/key-status/user@institution.edu")
                 .with(SecurityMockMvcRequestPostProcessors.csrf()))

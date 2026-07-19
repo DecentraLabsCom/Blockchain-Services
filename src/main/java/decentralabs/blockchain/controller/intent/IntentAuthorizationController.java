@@ -43,7 +43,7 @@ public class IntentAuthorizationController {
         @RequestBody @Valid IntentAuthorizationRequest request,
         @RequestHeader(value = "Authorization", required = false) String authorizationHeader
     ) {
-        intentAuthService.enforceSubmitAuthorization(authorizationHeader);
+        intentAuthService.enforceAuthorizeAuthorization(authorizationHeader);
         IntentAuthorizationService.AuthorizationSession session = authorizationService.createSession(request);
         IntentAuthorizationSessionResponse response = IntentAuthorizationSessionResponse.builder()
             .sessionId(session.getSessionId())

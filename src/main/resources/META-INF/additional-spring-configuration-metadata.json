@@ -254,11 +254,6 @@
     "defaultValue": 1500
   },
   {
-    "name": "intents.api-key",
-    "type": "java.lang.String",
-    "description": "API key for intents service."
-  },
-  {
     "name": "intents.auth.enabled",
     "type": "java.lang.Boolean",
     "description": "Enable JWT auth for intents endpoints.",
@@ -273,8 +268,24 @@
   {
     "name": "intents.auth.audience",
     "type": "java.lang.String",
-    "description": "JWT audience expected for intents endpoints.",
-    "defaultValue": "blockchain-services"
+    "description": "Exact public origin expected as JWT audience for intents endpoints."
+  },
+  {
+    "name": "intents.auth.institution-id",
+    "type": "java.lang.String",
+    "description": "Institution identifier accepted in Marketplace service JWTs."
+  },
+  {
+    "name": "intents.auth.service-subject",
+    "type": "java.lang.String",
+    "description": "Subject required in Marketplace service JWTs.",
+    "defaultValue": "marketplace"
+  },
+  {
+    "name": "intents.auth.max-ttl-seconds",
+    "type": "java.lang.Long",
+    "description": "Maximum lifetime for Marketplace service JWTs.",
+    "defaultValue": 60
   },
   {
     "name": "intents.auth.submit-scope",
@@ -502,6 +513,16 @@
     "description": "Trusted IdP issuers JSON map (only used if trust-mode=whitelist)."
   },
   {
+    "name": "saml.idp.metadata.override",
+    "type": "java.lang.String",
+    "description": "Issuer-to-metadata URL map. Required for every whitelisted issuer."
+  },
+  {
+    "name": "saml.idp.metadata.tls-profile",
+    "type": "java.lang.String",
+    "description": "Issuer-to-TLS profile map; profiles are modern or compatibility."
+  },
+  {
     "name": "saml.metadata.allow-http",
     "type": "java.lang.Boolean",
     "description": "Allow HTTP SAML metadata URLs (not recommended).",
@@ -524,6 +545,12 @@
     "type": "java.lang.Integer",
     "description": "Total call timeout in milliseconds for IdP metadata download.",
     "defaultValue": 15000
+  },
+  {
+    "name": "saml.metadata.health.cache-ms",
+    "type": "java.lang.Long",
+    "description": "Cache duration for SAML metadata readiness probes.",
+    "defaultValue": 30000
   },
   {
     "name": "private.key.path",
@@ -1052,6 +1079,18 @@
     "type": "java.lang.Long",
     "description": "Tolerance in seconds when matching an observed access credential to its audit window.",
     "defaultValue": 30
+  },
+  {
+    "name": "intents.auth.authorize-scope",
+    "type": "java.lang.String",
+    "description": "Scope required to create WebAuthn authorization sessions.",
+    "defaultValue": "intents:authorize"
+  },
+  {
+    "name": "intents.auth.registration-mined-scope",
+    "type": "java.lang.String",
+    "description": "Scope required to notify that intent registration was mined.",
+    "defaultValue": "intents:registration-mined"
   },
   {
     "name": "session.attestation.publisher.stuck-transaction-ms",

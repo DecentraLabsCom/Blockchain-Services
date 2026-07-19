@@ -49,7 +49,7 @@ class WebauthnOnboardingControllerIntegrationTest {
             .setControllerAdvice(new decentralabs.blockchain.exception.GlobalExceptionHandler())
             .defaultRequest(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get("/").accept(org.springframework.http.MediaType.APPLICATION_JSON))
             .build();
-        when(marketplaceEndpointAuthService.enforceAuthorization(any(), any())).thenReturn(Collections.emptyMap());
+        when(marketplaceEndpointAuthService.enforceServiceAuthorization(any(), any())).thenReturn(Collections.emptyMap());
     }
 
     private com.fasterxml.jackson.databind.ObjectMapper objectMapper = new com.fasterxml.jackson.databind.ObjectMapper().registerModule(new com.fasterxml.jackson.datatype.jsr310.JavaTimeModule());

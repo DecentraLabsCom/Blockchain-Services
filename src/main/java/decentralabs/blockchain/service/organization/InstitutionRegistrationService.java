@@ -7,9 +7,11 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.RestTemplate;
@@ -46,6 +48,10 @@ public class InstitutionRegistrationService {
     @Value("${marketplace.url:https://marketplace-decentralabs.vercel.app}")
     private String marketplaceUrl = "https://marketplace-decentralabs.vercel.app";
 
+    /** Server-side public origin used for pairing; never selected by the browser. */
+    @Value("${public.base-url:}")
+    private String configuredPublicBaseUrl = "";
+
     /**
      * Register institution with marketplace based on role
      * 
@@ -64,6 +70,72 @@ public class InstitutionRegistrationService {
                 log.error("Unknown institution role: {}", request.getRole());
                 return false;
         }
+    }
+
+    /**
+     * Offers the backend identity for a Marketplace-generated pairing challenge.
+     * Wallet and public origin are read only from this backend's configuration.
+     */
+    public ProvisioningPairingPreparation preparePairing(String challenge) {
+        String normalizedChallenge = validateChallenge(challenge);
+        Map<String, Object> context = postPairing("/api/institutions/provisioning/pairings/inspect",
+            Map.of("challenge", normalizedChallenge));
+
+        String institutionId = requiredText(context, "institutionId");
+        String registrationType = requiredText(context, "registrationType");
+        java.math.BigInteger chainId = number(context, "chainId");
+        String registryContract = requiredText(context, "registryContract");
+        long issuedAt = number(context, "issuedAt").longValueExact();
+        long expiresAt = number(context, "expiresAt").longValueExact();
+        String walletAddress = institutionalWalletService.getInstitutionalWalletAddress();
+        if (walletAddress == null || walletAddress.isBlank()) {
+            throw new IllegalStateException("Institutional wallet address is not configured");
+        }
+        String canonicalBackendOrigin = validateOrigin(
+            configuredPublicBaseUrl,
+            "configured public backend origin"
+        );
+
+        ProvisioningPairingSecurityClaims claims = new ProvisioningPairingSecurityClaims(
+            institutionId,
+            walletAddress.trim(),
+            canonicalBackendOrigin,
+            registrationType,
+            chainId,
+            registryContract,
+            normalizedChallenge,
+            issuedAt,
+            expiresAt
+        );
+        String walletSignature = walletProofService.signPairing(
+            claims,
+            institutionalWalletService.getInstitutionalCredentials()
+        );
+        Map<String, Object> offer = postPairing("/api/institutions/provisioning/pairings/offer", Map.of(
+            "challenge", normalizedChallenge,
+            "walletAddress", walletAddress.trim(),
+            "canonicalBackendOrigin", canonicalBackendOrigin,
+            "walletSignature", walletSignature
+        ));
+
+        return new ProvisioningPairingPreparation(
+            requiredText(offer, "pairingId"),
+            requiredText(offer, "status"),
+            requiredText(offer, "institutionId"),
+            requiredText(offer, "registrationType"),
+            requiredText(offer, "walletAddress"),
+            requiredText(offer, "canonicalBackendOrigin"),
+            number(offer, "expiresAt").longValueExact()
+        );
+    }
+
+    /** Retrieves the approved token using only the original pairing challenge. */
+    public String retrieveProvisioningToken(String challenge) {
+        Map<String, Object> response = postPairing(
+            "/api/institutions/provisioning/pairings/token",
+            Map.of("challenge", validateChallenge(challenge))
+        );
+        return requiredText(response, "token");
     }
 
     /**
@@ -279,6 +351,45 @@ public class InstitutionRegistrationService {
             log.error("Institution registration request failed");
             throw new RuntimeException("Failed to communicate with marketplace", e);
         }
+    }
+
+    private Map<String, Object> postPairing(String endpoint, Map<String, String> body) {
+        String trustedMarketplaceBaseUrl = firstNonBlank(configuredMarketplaceBaseUrl, marketplaceUrl);
+        String url = buildMarketplaceUrl(trustedMarketplaceBaseUrl, endpoint);
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.APPLICATION_JSON);
+        ResponseEntity<Map<String, Object>> response = restTemplate.exchange(
+            url,
+            HttpMethod.POST,
+            new HttpEntity<>(body, headers),
+            new ParameterizedTypeReference<>() { }
+        );
+        if (!response.getStatusCode().is2xxSuccessful() || response.getBody() == null) {
+            throw new IllegalStateException("Marketplace pairing request failed");
+        }
+        return response.getBody();
+    }
+
+    private String validateChallenge(String challenge) {
+        if (challenge == null || !challenge.trim().matches("^0x[0-9a-fA-F]{64}$")) {
+            throw new IllegalArgumentException("Pairing challenge must be a 32-byte hex value");
+        }
+        return challenge.trim().toLowerCase();
+    }
+
+    private String requiredText(Map<String, Object> body, String field) {
+        Object value = body == null ? null : body.get(field);
+        if (value == null || value.toString().isBlank()) {
+            throw new IllegalArgumentException("Marketplace pairing response is missing " + field);
+        }
+        return value.toString().trim();
+    }
+
+    private java.math.BigInteger number(Map<String, Object> body, String field) {
+        Object value = body == null ? null : body.get(field);
+        if (value instanceof Number number) return new java.math.BigInteger(number.toString());
+        if (value instanceof String string && !string.isBlank()) return new java.math.BigInteger(string.trim());
+        throw new IllegalArgumentException("Marketplace pairing response is missing numeric " + field);
     }
 
     /**

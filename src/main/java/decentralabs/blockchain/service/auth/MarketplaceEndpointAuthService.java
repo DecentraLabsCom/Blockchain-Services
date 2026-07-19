@@ -1,12 +1,16 @@
 package decentralabs.blockchain.service.auth;
 
+import decentralabs.blockchain.service.BackendUrlResolver;
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.Jws;
 import io.jsonwebtoken.JwtParser;
 import io.jsonwebtoken.Jwts;
+import java.net.URI;
 import java.security.PublicKey;
+import java.time.Instant;
 import java.util.Collection;
 import java.util.Collections;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.stream.Stream;
@@ -23,6 +27,7 @@ import org.springframework.web.server.ResponseStatusException;
 public class MarketplaceEndpointAuthService {
 
     private final MarketplaceKeyService marketplaceKeyService;
+    private final BackendUrlResolver backendUrlResolver;
 
     @Value("${auth.marketplace-endpoints.enabled:true}")
     private boolean enabled;
@@ -30,8 +35,17 @@ public class MarketplaceEndpointAuthService {
     @Value("${auth.marketplace-endpoints.issuer:marketplace}")
     private String issuer;
 
-    @Value("${auth.marketplace-endpoints.audience:blockchain-services}")
+    @Value("${auth.marketplace-endpoints.audience:}")
     private String audience;
+
+    @Value("${auth.marketplace-endpoints.institution-id:}")
+    private String institutionId;
+
+    @Value("${auth.marketplace-endpoints.service-subject:marketplace}")
+    private String serviceSubject;
+
+    @Value("${auth.marketplace-endpoints.max-ttl-seconds:60}")
+    private long maxTtlSeconds;
 
     @Value("${auth.marketplace-endpoints.clock-skew-seconds:60}")
     private long clockSkewSeconds;
@@ -60,14 +74,32 @@ public class MarketplaceEndpointAuthService {
         return claims;
     }
 
+    public Map<String, Object> enforceServiceAuthorization(String authorizationHeader, String requiredScope) {
+        if (!enabled) {
+            return Collections.emptyMap();
+        }
+
+        String token = extractBearerToken(authorizationHeader);
+        if (token == null || token.isBlank()) {
+            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "missing_marketplace_token");
+        }
+
+        Claims claims = validateToken(token);
+        validateServiceClaims(claims);
+        if (requiredScope != null && !requiredScope.isBlank() && !scopeContainsRequiredScope(claims, requiredScope)) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "missing_marketplace_scope");
+        }
+        return claims;
+    }
+
     private Claims validateToken(String token) {
         try {
-            return parseTokenWithKey(token, marketplaceKeyService.getPublicKey(false));
+            return parseTokenWithKey(token, marketplaceKeyService.getPublicKey(false), resolveAudience());
         } catch (ResponseStatusException ex) {
             throw ex;
         } catch (Exception firstFailure) {
             try {
-                return parseTokenWithKey(token, marketplaceKeyService.getPublicKey(true));
+                return parseTokenWithKey(token, marketplaceKeyService.getPublicKey(true), resolveAudience());
             } catch (Exception refreshFailure) {
                 log.warn("Marketplace endpoint JWT validation failed after key refresh: {}",
                     refreshFailure.getMessage());
@@ -77,15 +109,62 @@ public class MarketplaceEndpointAuthService {
         }
     }
 
-    private Claims parseTokenWithKey(String token, PublicKey marketplacePublicKey) {
+    private Claims parseTokenWithKey(String token, PublicKey marketplacePublicKey, String expectedAudience) {
         JwtParser parser = Jwts.parser()
             .verifyWith(marketplacePublicKey)
             .requireIssuer(issuer)
-            .requireAudience(audience)
+            .requireAudience(expectedAudience)
             .clockSkewSeconds(clockSkewSeconds)
             .build();
         Jws<Claims> jws = parser.parseSignedClaims(token);
         return jws.getPayload();
+    }
+
+    private String resolveAudience() {
+        String configured = audience != null && !audience.isBlank()
+            ? audience.trim()
+            : backendUrlResolver.resolveBaseDomain();
+        try {
+            URI uri = URI.create(configured);
+            if (uri.getHost() == null || uri.getUserInfo() != null
+                || uri.getQuery() != null || uri.getFragment() != null
+                || (uri.getPath() != null && !uri.getPath().isBlank() && !"/".equals(uri.getPath()))
+                || (!"http".equalsIgnoreCase(uri.getScheme()) && !"https".equalsIgnoreCase(uri.getScheme()))) {
+                throw new IllegalArgumentException("Audience must be an exact HTTP(S) origin");
+            }
+            String authority = uri.getHost().toLowerCase(Locale.ROOT);
+            if (uri.getPort() > 0) authority += ":" + uri.getPort();
+            return uri.getScheme().toLowerCase(Locale.ROOT) + "://" + authority;
+        } catch (Exception ex) {
+            throw new IllegalArgumentException("Invalid marketplace JWT audience", ex);
+        }
+    }
+
+    private void validateServiceClaims(Claims claims) {
+        if (claims == null || !serviceSubject.equals(claims.getSubject())) {
+            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "invalid_marketplace_token");
+        }
+        if (claims.getId() == null || claims.getId().isBlank()) {
+            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "invalid_marketplace_token");
+        }
+
+        String expectedInstitution = institutionId == null ? "" : institutionId.trim();
+        String tokenInstitution = claims.get("institutionId", String.class);
+        if (expectedInstitution.isBlank()
+            || tokenInstitution == null
+            || !expectedInstitution.equalsIgnoreCase(tokenInstitution.trim())) {
+            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "invalid_marketplace_token");
+        }
+
+        if (claims.getIssuedAt() == null || claims.getExpiration() == null) {
+            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "invalid_marketplace_token");
+        }
+        long issuedAt = claims.getIssuedAt().toInstant().getEpochSecond();
+        long expiresAt = claims.getExpiration().toInstant().getEpochSecond();
+        if (expiresAt <= issuedAt || expiresAt - issuedAt > maxTtlSeconds
+            || issuedAt > Instant.now().plusSeconds(clockSkewSeconds).getEpochSecond()) {
+            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "invalid_marketplace_token");
+        }
     }
 
     private String extractBearerToken(String authorizationHeader) {

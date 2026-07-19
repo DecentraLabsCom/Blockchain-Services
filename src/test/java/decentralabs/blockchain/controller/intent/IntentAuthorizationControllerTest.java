@@ -62,7 +62,7 @@ class IntentAuthorizationControllerTest {
         IntentAuthorizationRequest request = validAuthorizationRequest();
         IntentAuthorizationService.AuthorizationSession session = session("session-123", "request-123", Instant.parse("2026-03-11T10:00:00Z"));
 
-        doNothing().when(intentAuthService).enforceSubmitAuthorization("Bearer jwt");
+        doNothing().when(intentAuthService).enforceAuthorizeAuthorization("Bearer jwt");
         when(authorizationService.createSession(any(IntentAuthorizationRequest.class))).thenReturn(session);
         when(authorizationService.buildCeremonyUrl("session-123")).thenReturn("https://backend/intents/authorize/ceremony/session-123");
 
@@ -76,7 +76,7 @@ class IntentAuthorizationControllerTest {
             .andExpect(jsonPath("$.requestId").value("request-123"))
             .andExpect(jsonPath("$.expiresAt").value("2026-03-11T10:00:00Z"));
 
-        verify(intentAuthService).enforceSubmitAuthorization("Bearer jwt");
+        verify(intentAuthService).enforceAuthorizeAuthorization("Bearer jwt");
         verify(authorizationService).createSession(any(IntentAuthorizationRequest.class));
         verify(authorizationService).buildCeremonyUrl("session-123");
     }
@@ -94,7 +94,7 @@ class IntentAuthorizationControllerTest {
             .andExpect(jsonPath("$.message").value("Validation failed"))
             .andExpect(jsonPath("$.errors.meta").exists());
 
-        verify(intentAuthService, never()).enforceSubmitAuthorization(any());
+        verify(intentAuthService, never()).enforceAuthorizeAuthorization(any());
         verify(authorizationService, never()).createSession(any());
     }
 

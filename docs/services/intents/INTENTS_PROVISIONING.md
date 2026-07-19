@@ -16,12 +16,16 @@ valid JWT with:
 
 | Operation | Scope | Configuration |
 | --- | --- | --- |
-| Submit, start authorization, notify registration | `intents:submit` | `intents.auth.submit-scope` |
+| Submit an intent | `intents:submit` | `intents.auth.submit-scope` |
+| Start WebAuthn authorization | `intents:authorize` | `intents.auth.authorize-scope` |
+| Notify registration mined | `intents:registration-mined` | `intents.auth.registration-mined-scope` |
 | Read intent/session status | `intents:status` | `intents.auth.status-scope` |
 
-The token must use issuer `marketplace`, audience `blockchain-services`, and the
-configured clock-skew window. Disable this check only for a deliberately
-isolated deployment; do not compensate by exposing `/intents` publicly.
+The token must use issuer `marketplace`, subject `marketplace`, a unique `jti`,
+the exact public origin of this backend as audience, the authenticated
+`institutionId`, and a lifetime no longer than the configured short TTL.
+Disable this check only for a deliberately isolated deployment; do not
+compensate by exposing `/intents` publicly.
 
 ## Endpoint contract
 
@@ -29,8 +33,8 @@ isolated deployment; do not compensate by exposing `/intents` publicly.
 | --- | --- | --- |
 | `POST /intents` | Submit bearer | Validates and ACKs an intent for queueing |
 | `GET /intents/{requestId}` | Status bearer | Returns execution status |
-| `POST /intents/{requestId}/registration-mined` | Submit bearer | Wakes queued processing after registration |
-| `POST /intents/authorize` | Submit bearer | Creates a WebAuthn authorization session |
+| `POST /intents/{requestId}/registration-mined` | Registration-mined bearer | Wakes queued processing after registration |
+| `POST /intents/authorize` | Authorize bearer | Creates a WebAuthn authorization session |
 | `GET /intents/authorize/status/{sessionId}` | Status bearer | Reads ceremony status |
 | `GET /intents/authorize/ceremony/{sessionId}` | Session URL | Serves the browser ceremony HTML |
 | `POST /intents/authorize/complete` | Session-bound body | Verifies the assertion and executes the intent |
@@ -102,17 +106,21 @@ only and does not authorize an intent.
 
 ## Provisioning surface
 
-`/institution-config/**` is localhost/private-network restricted. It is used by
-the wallet dashboard and setup tooling to apply a Marketplace-issued
-provisioning token.
+`/institution-config/**` is localhost/private-network restricted. Institutional
+registration uses a Marketplace-generated pairing challenge. The browser may
+enter only that challenge; wallet, backend origin, organization, network and
+registry contract come from verified SSO claims, backend configuration, or the
+Marketplace deployment configuration.
 
 | Method and path | Mode | Purpose |
 | --- | --- | --- |
 | `GET /institution-config/status` | Both | Current config, registration and feature flags |
-| `POST /institution-config/save-and-register` | Provider | Save editable config and register provider |
-| `POST /institution-config/retry-registration` | Provider | Retry provider registration from saved config |
-| `POST /institution-config/apply-provider-token` | Provider | Apply signed provider token and register |
-| `POST /institution-config/apply-consumer-token` | Consumer | Apply signed consumer token and register |
+| `POST /institution-config/apply-pairing-challenge` | Both | Offer the backend's server-configured wallet and origin for a challenge |
+| `POST /institution-config/complete-pairing` | Both | Retrieve the approved token and complete registration |
+| `POST /institution-config/apply-provider-token` | Provider/admin automation | Apply an already issued signed provider token |
+| `POST /institution-config/apply-consumer-token` | Consumer/admin automation | Apply an already issued signed consumer token |
+| `POST /institution-config/save-and-register` | Retired | Rejects the old editable-form flow |
+| `POST /institution-config/retry-registration` | Retired | Tokens are single-use; issue a new pairing |
 
 Provider registration endpoints additionally require
 `FEATURES_PROVIDERS_REGISTRATION_ENABLED=true`. Consumer token application does
@@ -126,19 +134,30 @@ sequenceDiagram
     participant M as Marketplace
     participant C as Smart contracts
 
-    Admin->>UI: Paste provisioning token
-    UI->>B: POST /institution-config/apply-*-token
-    B->>M: Fetch JWKS and validate issuer/audience/jti
-    B->>B: Persist configuration and role
-    B->>M: Register provider or consumer
+    Admin->>M: Start pairing from verified SAML session
+    M-->>Admin: Short-lived challenge
+    Admin->>UI: Paste challenge
+    UI->>B: POST /institution-config/apply-pairing-challenge
+    B->>M: Inspect challenge
+    B->>B: Read configured wallet and public origin
+    B->>B: Sign EIP-712 pairing declaration
+    B->>M: Offer signed pairing
+    M-->>Admin: Read-only wallet and backend origin
+    Admin->>M: Approve pairing
+    UI->>B: POST /institution-config/complete-pairing
+    B->>M: Retrieve approved token
+    B->>M: Validate issuer/audience/jti and register
     M->>C: Execute registration transaction
     B-->>UI: registered=true or partial failure
 ```
 
-Provisioning validation includes signature, issuer, audience, replay (`jti`),
-role and URL/email sanity. A `2xx` response with `registered=false` or HTTP
-`206` means configuration was saved but Marketplace registration still needs a
-retry; it is not proof of on-chain registration.
+Pairing validation includes challenge expiry, deployment identity, EIP-712
+signature recovery and exact wallet matching. Final provisioning validation
+includes signature, issuer, audience, replay (`jti`), role and URL/email sanity.
+The old editable `save-and-register` surface is retired so form values cannot
+select institutional identity. A `2xx` response with `registered=false` or
+HTTP `206` means Marketplace registration still needs an explicit new pairing;
+it is not proof of on-chain registration.
 
 The token application body is:
 
@@ -158,7 +177,12 @@ Intent authorization:
 - `INTENTS_AUTH_ENABLED`
 - `INTENTS_AUTH_ISSUER`
 - `INTENTS_AUTH_AUDIENCE`
+- `INTENTS_AUTH_INSTITUTION_ID`
+- `INTENTS_AUTH_SERVICE_SUBJECT`
+- `INTENTS_AUTH_MAX_TTL_SECONDS`
 - `INTENTS_AUTH_SUBMIT_SCOPE`
+- `INTENTS_AUTH_AUTHORIZE_SCOPE`
+- `INTENTS_AUTH_REGISTRATION_MINED_SCOPE`
 - `INTENTS_AUTH_STATUS_SCOPE`
 - `INTENTS_AUTH_CLOCK_SKEW_SECONDS`
 - `INTENT_TRUSTED_SIGNER`, `INTENT_DOMAIN_*`
@@ -169,6 +193,7 @@ Provisioning:
 - `PUBLIC_BASE_URL`
 - `FEATURES_PROVIDERS_ENABLED`
 - `FEATURES_PROVIDERS_REGISTRATION_ENABLED`
+- `PROVISIONING_PAIRING_TTL_SECONDS` (Marketplace-side pairing lifetime, capped at 15 minutes)
 - `PROVISIONING_TOKEN_HTTP_CONNECT_TIMEOUT_MS`
 - `PROVISIONING_TOKEN_HTTP_READ_TIMEOUT_MS`
 

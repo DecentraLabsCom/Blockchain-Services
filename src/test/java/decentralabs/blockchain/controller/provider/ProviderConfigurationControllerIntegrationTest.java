@@ -161,7 +161,7 @@ class ProviderConfigurationControllerIntegrationTest {
     }
 
     @Test
-    void saveAndRegister_returnsBadRequestForInvalidPublicBaseUrl() throws Exception {
+    void saveAndRegister_rejectsRetiredEditableForm() throws Exception {
         mockMvc.perform(post("/institution-config/save-and-register")
                 .with(csrf())
                 .with(req -> {
@@ -180,9 +180,9 @@ class ProviderConfigurationControllerIntegrationTest {
                       "provisioningToken":"valid-token"
                     }
                     """))
-            .andExpect(status().isBadRequest())
+            .andExpect(status().isGone())
             .andExpect(jsonPath("$.success").value(false))
-            .andExpect(jsonPath("$.error").value("Public base URL must not end with trailing slash"));
+            .andExpect(jsonPath("$.code").value("PAIRING_REQUIRED"));
 
         verify(persistenceService, never()).saveConfiguration(any());
         verify(registrationService, never()).register(any());

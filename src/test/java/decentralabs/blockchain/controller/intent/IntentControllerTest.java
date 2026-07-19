@@ -163,7 +163,7 @@ class IntentControllerTest {
                 .andExpect(jsonPath("$.requestId").value("req-123"))
                 .andExpect(jsonPath("$.status").value("accepted"));
 
-            verify(intentAuthService).enforceSubmitAuthorization(VALID_BEARER);
+            verify(intentAuthService).enforceRegistrationMinedAuthorization(VALID_BEARER);
             verify(intentExecutionService).processQueuedIntent("req-123");
         }
 
@@ -187,7 +187,7 @@ class IntentControllerTest {
         @DisplayName("Should reject mined signal without Authorization")
         void shouldRejectMinedSignalWithoutAuthorization() throws Exception {
             doThrow(new ResponseStatusException(HttpStatus.UNAUTHORIZED))
-                .when(intentAuthService).enforceSubmitAuthorization(eq(null));
+                .when(intentAuthService).enforceRegistrationMinedAuthorization(eq(null));
 
             mockMvc.perform(post("/intents/req-123/registration-mined")
                     .contentType(MediaType.APPLICATION_JSON)
