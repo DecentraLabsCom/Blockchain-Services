@@ -1,6 +1,5 @@
 package decentralabs.blockchain.controller.provider;
 
-import decentralabs.blockchain.dto.provider.ProviderConfigurationRequest;
 import decentralabs.blockchain.dto.provider.ProviderConfigurationResponse;
 import decentralabs.blockchain.dto.provider.ProvisioningTokenRequest;
 import decentralabs.blockchain.service.organization.InstitutionRegistrationService;
