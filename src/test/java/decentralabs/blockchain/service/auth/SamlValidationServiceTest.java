@@ -275,33 +275,37 @@ class SamlValidationServiceTest {
         ReflectionTestUtils.setField(samlValidationService, "trustMode", "any");
 
         assertThatThrownBy(() -> samlValidationService.validateSamlAssertionWithSignature(encodedSaml))
-                .isInstanceOf(Exception.class);
+                .isInstanceOf(SecurityException.class)
+                .hasMessageContaining("signature is INVALID");
     }
 
     @Test
-    void shouldRejectSamlAssertionWithoutPucIdentityAttributes() {
-        String samlWithoutPuc = createSamlAssertionWithAttributes(TEST_ISSUER, Map.of(
+    void shouldRejectSamlAssertionWithoutPucIdentityAttributes() throws Exception {
+        String encodedSaml = createSignedSamlAssertionWithAttributes(Map.of(
                 "affiliation", "student@uned.es"
         ));
-        String encodedSaml = Base64.getEncoder().encodeToString(samlWithoutPuc.getBytes());
 
         ReflectionTestUtils.setField(samlValidationService, "trustMode", "any");
 
         assertThatThrownBy(() -> samlValidationService.validateSamlAssertionWithSignature(encodedSaml))
-                .isInstanceOf(Exception.class);
+                .isInstanceOf(SecurityException.class)
+                .hasMessageContaining("PUC identity attributes");
     }
 
     @Test
-    void shouldRejectSamlAssertionWithoutAffiliation() {
-        String samlWithoutAffiliation = createSamlAssertionWithAttributes(TEST_ISSUER, Map.of(
+    void shouldAcceptSamlAssertionWithoutAffiliationWhenPucIdentityIsPresent() throws Exception {
+        String encodedSaml = createSignedSamlAssertionWithAttributes(Map.of(
                 "eduPersonPrincipalName", "user123"
         ));
-        String encodedSaml = Base64.getEncoder().encodeToString(samlWithoutAffiliation.getBytes());
 
         ReflectionTestUtils.setField(samlValidationService, "trustMode", "any");
 
-        assertThatThrownBy(() -> samlValidationService.validateSamlAssertionWithSignature(encodedSaml))
-                .isInstanceOf(Exception.class);
+        Map<String, String> attributes = samlValidationService.validateSamlAssertionWithSignature(encodedSaml);
+
+        assertThat(attributes)
+                .containsEntry("puc", "user123")
+                .containsKey("affiliation");
+        assertThat(attributes.get("affiliation")).isNull();
     }
 
     @Test
