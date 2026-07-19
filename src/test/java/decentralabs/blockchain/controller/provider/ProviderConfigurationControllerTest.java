@@ -1,8 +1,12 @@
 package decentralabs.blockchain.controller.provider;
 
 import decentralabs.blockchain.dto.provider.ProviderConfigurationResponse;
+import decentralabs.blockchain.dto.provider.ConsumerProvisioningTokenPayload;
+import decentralabs.blockchain.dto.provider.PairingChallengeRequest;
+import decentralabs.blockchain.dto.provider.ProvisioningTokenPayload;
 import decentralabs.blockchain.dto.provider.ProvisioningTokenRequest;
 import decentralabs.blockchain.service.organization.InstitutionRegistrationService;
+import decentralabs.blockchain.service.organization.InstitutionRole;
 import decentralabs.blockchain.service.organization.ProviderConfigurationPersistenceService;
 import decentralabs.blockchain.service.organization.ProvisioningTokenService;
 import org.junit.jupiter.api.BeforeEach;
@@ -16,6 +20,8 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.test.util.ReflectionTestUtils;
 
+import java.nio.charset.StandardCharsets;
+import java.util.Base64;
 import java.util.Map;
 import java.util.Properties;
 
@@ -131,23 +137,6 @@ class ProviderConfigurationControllerTest {
     }
 
     @Test
-    @DisplayName("Should require pairing even when the old form omits a token")
-    void shouldRequirePairingForOldForm() throws Exception {
-        ResponseEntity<Map<String, Object>> response = controller.saveAndRegister();
-
-        // Verify
-        assertEquals(HttpStatus.GONE, response.getStatusCode());
-        assertNotNull(response.getBody());
-        assertEquals(false, response.getBody().get("success"));
-        assertEquals("PAIRING_REQUIRED", response.getBody().get("code"));
-
-        // Verify no persistence or registration was attempted
-        verify(persistenceService, never()).saveConfiguration(any());
-        verify(registrationService, never()).markAsRegistered(any());
-        verify(registrationService, never()).register(any());
-    }
-
-    @Test
     @DisplayName("Should mark as registered after successful token application")
     void shouldMarkAsRegisteredAfterTokenApplication() throws Exception {
         // Prepare token request
@@ -243,6 +232,155 @@ class ProviderConfigurationControllerTest {
     }
 
     @Test
+    @DisplayName("Should return forbidden when provider registration is disabled for token application")
+    void shouldReturnForbiddenWhenProviderRegistrationDisabledForTokenApplication() {
+        ProvisioningTokenRequest tokenRequest = new ProvisioningTokenRequest();
+        tokenRequest.setToken("valid-jwt-token");
+        ReflectionTestUtils.setField(controller, "providerRegistrationEnabled", false);
+
+        ResponseEntity<Map<String, Object>> response = controller.applyProvisioningToken(tokenRequest);
+
+        assertEquals(HttpStatus.FORBIDDEN, response.getStatusCode());
+        assertNotNull(response.getBody());
+        assertEquals(false, response.getBody().get("success"));
+        verifyNoInteractions(provisioningTokenService, registrationService, persistenceService);
+    }
+
+    @Test
+    @DisplayName("Should complete provider pairing and return provider registration type")
+    void shouldCompleteProviderPairing() throws Exception {
+        String token = pairingToken("PROVIDER");
+        PairingChallengeRequest request = new PairingChallengeRequest("provider-challenge");
+        when(registrationService.retrieveProvisioningToken("provider-challenge")).thenReturn(token);
+        when(persistenceService.loadConfigurationSafe()).thenReturn(configurationProperties());
+        when(provisioningTokenService.validateAndExtract(
+            eq(token), eq("https://marketplace.example.com"), eq("https://gateway.example.com")
+        )).thenReturn(providerPayload());
+        when(registrationService.register(any())).thenReturn(true);
+
+        ResponseEntity<Map<String, Object>> response = controller.completePairing(request);
+
+        assertEquals(HttpStatus.OK, response.getStatusCode());
+        assertNotNull(response.getBody());
+        assertEquals(true, response.getBody().get("success"));
+        assertEquals(true, response.getBody().get("registered"));
+        assertEquals("PROVIDER", response.getBody().get("registrationType"));
+        verify(provisioningTokenService).validateAndExtract(
+            eq(token), eq("https://marketplace.example.com"), eq("https://gateway.example.com")
+        );
+        verify(provisioningTokenService, never()).validateAndExtractConsumer(anyString(), anyString(), anyString());
+        verify(registrationService).markAsRegistered(InstitutionRole.PROVIDER);
+    }
+
+    @Test
+    @DisplayName("Should complete consumer pairing and return consumer registration type")
+    void shouldCompleteConsumerPairing() throws Exception {
+        String token = pairingToken("CONSUMER");
+        PairingChallengeRequest request = new PairingChallengeRequest("consumer-challenge");
+        when(registrationService.retrieveProvisioningToken("consumer-challenge")).thenReturn(token);
+        when(persistenceService.loadConfigurationSafe()).thenReturn(configurationProperties());
+        when(provisioningTokenService.validateAndExtractConsumer(
+            eq(token), eq("https://marketplace.example.com"), eq("https://gateway.example.com")
+        )).thenReturn(consumerPayload());
+        when(registrationService.register(any())).thenReturn(true);
+
+        ResponseEntity<Map<String, Object>> response = controller.completePairing(request);
+
+        assertEquals(HttpStatus.OK, response.getStatusCode());
+        assertNotNull(response.getBody());
+        assertEquals(true, response.getBody().get("success"));
+        assertEquals(true, response.getBody().get("registered"));
+        assertEquals("CONSUMER", response.getBody().get("registrationType"));
+        verify(provisioningTokenService).validateAndExtractConsumer(
+            eq(token), eq("https://marketplace.example.com"), eq("https://gateway.example.com")
+        );
+        verify(provisioningTokenService, never()).validateAndExtract(anyString(), anyString(), anyString());
+        verify(registrationService).markAsRegistered(InstitutionRole.CONSUMER);
+    }
+
+    @Test
+    @DisplayName("Should reject malformed pairing token")
+    void shouldRejectMalformedPairingToken() {
+        PairingChallengeRequest request = new PairingChallengeRequest("malformed-challenge");
+        when(registrationService.retrieveProvisioningToken("malformed-challenge"))
+            .thenReturn("not-a-jwt");
+        when(persistenceService.loadConfigurationSafe()).thenReturn(new Properties());
+
+        ResponseEntity<Map<String, Object>> response = controller.completePairing(request);
+
+        assertEquals(HttpStatus.BAD_REQUEST, response.getStatusCode());
+        assertNotNull(response.getBody());
+        assertEquals(false, response.getBody().get("success"));
+        assertEquals("Malformed provisioning token", response.getBody().get("error"));
+        verifyNoInteractions(provisioningTokenService);
+        verify(persistenceService).loadConfigurationSafe();
+        verify(registrationService, never()).register(any());
+    }
+
+    @Test
+    @DisplayName("Should apply consumer provisioning token successfully")
+    void shouldApplyConsumerProvisioningTokenSuccessfully() throws Exception {
+        ProvisioningTokenRequest tokenRequest = new ProvisioningTokenRequest();
+        tokenRequest.setToken("valid-consumer-jwt-token");
+        ConsumerProvisioningTokenPayload payload = consumerPayload();
+        when(persistenceService.loadConfigurationSafe()).thenReturn(new Properties());
+        when(provisioningTokenService.validateAndExtractConsumer(anyString(), anyString(), anyString()))
+            .thenReturn(payload);
+        when(registrationService.register(any())).thenReturn(true);
+
+        ResponseEntity<Map<String, Object>> response = controller.applyConsumerProvisioningToken(tokenRequest);
+
+        assertEquals(HttpStatus.OK, response.getStatusCode());
+        assertNotNull(response.getBody());
+        assertEquals(true, response.getBody().get("success"));
+        assertEquals(true, response.getBody().get("registered"));
+        assertEquals(true, response.getBody().get("consumerMode"));
+        assertEquals("CONSUMER", response.getBody().get("registrationRole"));
+        verify(persistenceService).saveConfigurationFromConsumerToken(payload);
+        verify(registrationService).markAsRegistered(InstitutionRole.CONSUMER);
+    }
+
+    @Test
+    @DisplayName("Should return partial content when consumer registration does not complete")
+    void shouldReturnPartialContentWhenConsumerRegistrationFails() throws Exception {
+        ProvisioningTokenRequest tokenRequest = new ProvisioningTokenRequest();
+        tokenRequest.setToken("valid-consumer-jwt-token");
+        ConsumerProvisioningTokenPayload payload = consumerPayload();
+        when(persistenceService.loadConfigurationSafe()).thenReturn(new Properties());
+        when(provisioningTokenService.validateAndExtractConsumer(anyString(), anyString(), anyString()))
+            .thenReturn(payload);
+        when(registrationService.register(any())).thenReturn(false);
+
+        ResponseEntity<Map<String, Object>> response = controller.applyConsumerProvisioningToken(tokenRequest);
+
+        assertEquals(HttpStatus.PARTIAL_CONTENT, response.getStatusCode());
+        assertNotNull(response.getBody());
+        assertEquals(true, response.getBody().get("success"));
+        assertEquals(false, response.getBody().get("registered"));
+        verify(persistenceService).saveConfigurationFromConsumerToken(payload);
+        verify(registrationService, never()).markAsRegistered(any());
+    }
+
+    @Test
+    @DisplayName("Should return a bad request when consumer provisioning token is invalid")
+    void shouldReturnBadRequestWhenConsumerProvisioningTokenIsInvalid() throws Exception {
+        ProvisioningTokenRequest tokenRequest = new ProvisioningTokenRequest();
+        tokenRequest.setToken("invalid-consumer-jwt-token");
+        when(persistenceService.loadConfigurationSafe()).thenReturn(new Properties());
+        when(provisioningTokenService.validateAndExtractConsumer(anyString(), anyString(), anyString()))
+            .thenThrow(new IllegalArgumentException("Invalid consumer provisioning token"));
+
+        ResponseEntity<Map<String, Object>> response = controller.applyConsumerProvisioningToken(tokenRequest);
+
+        assertEquals(HttpStatus.BAD_REQUEST, response.getStatusCode());
+        assertNotNull(response.getBody());
+        assertEquals(false, response.getBody().get("success"));
+        assertEquals("Invalid consumer provisioning token", response.getBody().get("error"));
+        verify(persistenceService, never()).saveConfigurationFromConsumerToken(any());
+        verify(registrationService, never()).register(any());
+    }
+
+    @Test
     @DisplayName("Should handle empty configuration properties correctly")
     void shouldHandleEmptyConfiguration() {
         // Empty properties
@@ -305,5 +443,47 @@ class ProviderConfigurationControllerTest {
 
         verify(persistenceService, never()).saveConfiguration(any());
         verify(registrationService, never()).register(any());
+    }
+
+    private Properties configurationProperties() {
+        Properties props = new Properties();
+        props.setProperty("marketplace.base-url", "https://marketplace.example.com");
+        props.setProperty("public.base-url", "https://gateway.example.com");
+        return props;
+    }
+
+    private ProvisioningTokenPayload providerPayload() {
+        return ProvisioningTokenPayload.builder()
+            .marketplaceBaseUrl("https://marketplace.example.com")
+            .registrationType("PROVIDER")
+            .providerName("Provider University")
+            .providerEmail("provider@university.edu")
+            .providerCountry("ES")
+            .institutionId("provider.edu")
+            .walletAddress("0x1234567890123456789012345678901234567890")
+            .canonicalBackendOrigin("https://gateway.example.com")
+            .jti("provider-jti")
+            .build();
+    }
+
+    private ConsumerProvisioningTokenPayload consumerPayload() {
+        return ConsumerProvisioningTokenPayload.builder()
+            .marketplaceBaseUrl("https://marketplace.example.com")
+            .registrationType("CONSUMER")
+            .consumerName("Consumer University")
+            .institutionId("consumer.edu")
+            .walletAddress("0x1234567890123456789012345678901234567890")
+            .canonicalBackendOrigin("https://gateway.example.com")
+            .jti("consumer-jti")
+            .build();
+    }
+
+    private String pairingToken(String registrationType) {
+        String header = Base64.getUrlEncoder().withoutPadding()
+            .encodeToString("{\"alg\":\"none\"}".getBytes(StandardCharsets.UTF_8));
+        String payload = Base64.getUrlEncoder().withoutPadding()
+            .encodeToString(("{\"registrationType\":\"" + registrationType + "\"}")
+                .getBytes(StandardCharsets.UTF_8));
+        return header + "." + payload + ".signature";
     }
 }

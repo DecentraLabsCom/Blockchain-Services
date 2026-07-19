@@ -229,7 +229,7 @@ class SamlValidationServiceTest {
     void shouldClearCertificateCache() {
         // Populate cache via reflection
         @SuppressWarnings("unchecked")
-        Map<String, X509Certificate> cache = (Map<String, X509Certificate>) 
+        Map<String, List<X509Certificate>> cache = (Map<String, List<X509Certificate>>)
                 ReflectionTestUtils.getField(samlValidationService, "certificateCache");
         
         assertThat(cache).containsKey(TEST_ISSUER);
@@ -394,6 +394,23 @@ class SamlValidationServiceTest {
     }
 
     @Test
+    void shouldPreserveXmlSpecialCharactersInGeneratedSamlAttributes() throws Exception {
+        String specialValue = "Campus <A> & <B>";
+        String xml = createSamlAssertionWithAttributes(
+                TEST_ISSUER,
+                Map.of("custom&attribute", specialValue)
+        );
+
+        Document document = parseXML(xml);
+
+        assertThat(xml)
+                .contains("Name=\"custom&amp;attribute\"")
+                .contains("Campus &lt;A&gt; &amp; &lt;B&gt;");
+        assertThat(document.getElementsByTagNameNS("*", "AttributeValue").item(0).getTextContent())
+                .isEqualTo(specialValue);
+    }
+
+    @Test
     void shouldRefreshExactlyOnceWhenTheCachedCertificateCannotVerifyTheSignature() throws Exception {
         ReflectionTestUtils.setField(samlValidationService, "trustMode", "any");
         ReflectionTestUtils.setField(samlValidationService, "metadataUrlOverride", "https://metadata.test.example/idp");
@@ -456,7 +473,7 @@ class SamlValidationServiceTest {
     }
 
     @Test
-    void metadataHealthRefreshesTheAuthenticationSnapshotAndDoesNotDownloadOnRead() throws Exception {
+    void shouldRefreshMetadataOnceAndNotDownloadOnSubsequentHealthReads() throws Exception {
         ReflectionTestUtils.setField(samlValidationService, "trustMode", "whitelist");
         ReflectionTestUtils.setField(samlValidationService, "trustedIdps", Map.of("test", TEST_ISSUER));
         ReflectionTestUtils.setField(samlValidationService, "metadataOverrides", Map.of(
@@ -536,7 +553,7 @@ class SamlValidationServiceTest {
         return "<saml:Assertion xmlns:saml=\"urn:oasis:names:tc:SAML:2.0:assertion\" " +
                 "xmlns:ds=\"http://www.w3.org/2000/09/xmldsig#\" " +
                 "ID=\"_test123\" Version=\"2.0\">" +
-                "<saml:Issuer>" + issuer + "</saml:Issuer>" +
+                "<saml:Issuer>" + escapeXmlText(issuer) + "</saml:Issuer>" +
                 "</saml:Assertion>";
     }
 
@@ -545,12 +562,12 @@ class SamlValidationServiceTest {
         sb.append("<saml:Assertion xmlns:saml=\"urn:oasis:names:tc:SAML:2.0:assertion\" " +
                 "xmlns:ds=\"http://www.w3.org/2000/09/xmldsig#\" " +
                 "ID=\"_test123\" Version=\"2.0\">");
-        sb.append("<saml:Issuer>").append(issuer).append("</saml:Issuer>");
+        sb.append("<saml:Issuer>").append(escapeXmlText(issuer)).append("</saml:Issuer>");
         sb.append("<saml:AttributeStatement>");
         
         for (Map.Entry<String, String> entry : attributes.entrySet()) {
-            sb.append("<saml:Attribute Name=\"").append(entry.getKey()).append("\">");
-            sb.append("<saml:AttributeValue>").append(entry.getValue()).append("</saml:AttributeValue>");
+            sb.append("<saml:Attribute Name=\"").append(escapeXmlAttribute(entry.getKey())).append("\">");
+            sb.append("<saml:AttributeValue>").append(escapeXmlText(entry.getValue())).append("</saml:AttributeValue>");
             sb.append("</saml:Attribute>");
         }
         
@@ -558,6 +575,25 @@ class SamlValidationServiceTest {
         sb.append("</saml:Assertion>");
         
         return sb.toString();
+    }
+
+    private String escapeXmlText(String value) {
+        if (value == null) {
+            return "";
+        }
+        return value
+                .replace("&", "&amp;")
+                .replace("<", "&lt;")
+                .replace(">", "&gt;");
+    }
+
+    private String escapeXmlAttribute(String value) {
+        if (value == null) {
+            return "";
+        }
+        return escapeXmlText(value)
+                .replace("\"", "&quot;")
+                .replace("'", "&apos;");
     }
 
     private String createSignedSamlAssertionWithAttributes(Map<String, String> attributes) throws Exception {
