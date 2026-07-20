@@ -94,8 +94,8 @@ public class GlobalExceptionHandler {
 
         log.error(
             "Intent persistence unavailable at {}: {}",
-            LogSanitizer.sanitize(request.getRequestURI()),
-            LogSanitizer.sanitize(ex.getMessage())
+            String.valueOf(request.getRequestURI()).replaceAll("[\\r\\n\\t]+", "_"),
+            String.valueOf(ex.getMessage()).replaceAll("[\\r\\n\\t]+", "_")
         );
         return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).body(response);
     }

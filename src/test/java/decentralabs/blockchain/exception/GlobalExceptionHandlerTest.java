@@ -5,6 +5,9 @@ import static org.mockito.Mockito.*;
 
 import java.util.Map;
 
+import ch.qos.logback.classic.Logger;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.read.ListAppender;
 import org.junit.jupiter.api.BeforeEach;
 import jakarta.servlet.http.HttpServletRequest;
 import org.junit.jupiter.api.DisplayName;
@@ -15,6 +18,9 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.validation.BindingResult;
 import org.springframework.validation.FieldError;
 import org.springframework.web.bind.MethodArgumentNotValidException;
+import org.slf4j.LoggerFactory;
+
+import decentralabs.blockchain.service.intent.IntentPersistenceException;
 
 @DisplayName("GlobalExceptionHandler Tests")
 class GlobalExceptionHandlerTest {
@@ -29,6 +35,40 @@ class GlobalExceptionHandlerTest {
         // Configure request to be recognized as API request
         when(request.getHeader("Accept")).thenReturn("application/json");
         when(request.getRequestURI()).thenReturn("/api/test");
+    }
+
+    @Nested
+    @DisplayName("Intent Persistence Exception Tests")
+    class IntentPersistenceExceptionTests {
+
+        @Test
+        @DisplayName("Should return 503 without exposing persistence details")
+        void shouldReturn503WithoutExposingPersistenceDetails() {
+            when(request.getRequestURI()).thenReturn("/api/test\nforged-path");
+            IntentPersistenceException ex = new IntentPersistenceException("database failure\nforged entry");
+            Logger logger = (Logger) LoggerFactory.getLogger(GlobalExceptionHandler.class);
+            ListAppender<ILoggingEvent> appender = new ListAppender<>();
+            appender.start();
+            logger.addAppender(appender);
+
+            ResponseEntity<Map<String, Object>> response;
+            try {
+                response = handler.handleIntentPersistenceException(ex, request);
+            } finally {
+                logger.detachAppender(appender);
+            }
+
+            assertEquals(HttpStatus.SERVICE_UNAVAILABLE, response.getStatusCode());
+            assertNotNull(response.getBody());
+            assertEquals(false, response.getBody().get("success"));
+            assertEquals("Intent persistence is temporarily unavailable", response.getBody().get("message"));
+            assertEquals("INTENT_PERSISTENCE_UNAVAILABLE", response.getBody().get("code"));
+            assertEquals(503, response.getBody().get("status"));
+            assertFalse(response.getBody().toString().contains("database failure"));
+            assertTrue(appender.list.stream()
+                .map((ILoggingEvent event) -> event.getFormattedMessage())
+                .anyMatch(message -> message.contains("/api/test_forged-path: database failure_forged entry")));
+        }
     }
 
     @Nested

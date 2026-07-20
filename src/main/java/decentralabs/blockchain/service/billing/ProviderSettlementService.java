@@ -114,7 +114,7 @@ public class ProviderSettlementService {
 
         // codeql[java/log-injection]
         log.info("Approved provider invoice {} (approvedByPresent={}, approvalRefPresent={}, EUR {})", invoiceId,
-            approvedBy != null && !approvedBy.isBlank(), approvalRef != null && !approvalRef.isBlank(), eurAmount);
+            !approvedBy.isBlank(), !approvalRef.isBlank(), eurAmount);
         return approval;
     }
 
