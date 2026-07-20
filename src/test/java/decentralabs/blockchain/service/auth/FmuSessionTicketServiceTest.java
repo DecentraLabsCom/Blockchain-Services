@@ -113,16 +113,19 @@ class FmuSessionTicketServiceTest {
         assertThat(encryptedClaims.getValue()).startsWith("v1.").doesNotContain("user-1");
     }
 
-    @SuppressWarnings("unchecked")
     @Test
     void shouldRedeemPersistedTicketMultipleTimes() throws Exception {
         service = buildService(jdbcTemplate);
 
         long now = System.currentTimeMillis() / 1000;
         when(jdbcTemplate.update(org.mockito.ArgumentMatchers.contains("DELETE FROM fmu_session_tickets WHERE expires_at"), anyLong())).thenReturn(0);
-        when(jdbcTemplate.query(anyString(), any(PreparedStatementSetter.class), any(ResultSetExtractor.class)))
+        when(jdbcTemplate.query(
+            anyString(),
+            any(PreparedStatementSetter.class),
+            org.mockito.ArgumentMatchers.<ResultSetExtractor<Object>>any()
+        ))
             .thenAnswer(invocation -> {
-                ResultSetExtractor<Object> extractor = invocation.getArgument(2, ResultSetExtractor.class);
+                ResultSetExtractor<Object> extractor = invocation.getArgument(2);
                 ResultSet resultSet = org.mockito.Mockito.mock(ResultSet.class);
                 when(resultSet.next()).thenReturn(true);
                 when(resultSet.getString(1)).thenReturn(ticketCipher.encrypt("""

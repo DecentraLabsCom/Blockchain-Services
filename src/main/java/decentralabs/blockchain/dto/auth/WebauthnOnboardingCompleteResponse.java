@@ -7,7 +7,8 @@ import lombok.NoArgsConstructor;
 
 /**
  * Response after completing WebAuthn onboarding (success or failure).
- * This response is sent both to the browser and optionally to the SP via callback.
+ * The SP obtains the result through the authenticated status endpoint; no
+ * server-to-server callback is used.
  */
 @Data
 @Builder

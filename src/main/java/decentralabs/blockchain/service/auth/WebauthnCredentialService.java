@@ -23,10 +23,9 @@ import org.springframework.stereotype.Service;
 /**
  * Service for storing and retrieving WebAuthn credentials.
  * 
- * When running with Lab Gateway (MySQL available), credentials are persisted to the database.
- * When running standalone (no database), credentials are stored in memory only and will be
- * lost on service restart. This is acceptable for standalone mode since credential storage
- * is primarily needed for the Lab Gateway deployment.
+ * Credentials are persisted to the database by default. Memory-only storage is available only
+ * when explicitly enabled for an isolated development or standalone deployment; it must not be
+ * used by a deployment that accepts reservations.
  */
 @Service
 @Slf4j
@@ -40,7 +39,10 @@ public class WebauthnCredentialService {
     @Value("${webauthn.credentials.max-age-days:365}")
     private long credentialsMaxAgeDays;
 
-    private final JdbcTemplate jdbcTemplate; // May be null if no datasource
+    @Value("${webauthn.credentials.require-database:true}")
+    private boolean databaseRequired = true;
+
+    private final JdbcTemplate jdbcTemplate;
 
     /**
      * In-memory fallback storage when database is not available.
@@ -51,7 +53,8 @@ public class WebauthnCredentialService {
     public WebauthnCredentialService(ObjectProvider<JdbcTemplate> jdbcTemplateProvider) {
         this.jdbcTemplate = jdbcTemplateProvider.getIfAvailable();
         if (this.jdbcTemplate == null) {
-            log.warn("WebauthnCredentialService: No database configured. Credentials will be stored in memory only and lost on restart.");
+            log.warn("WebauthnCredentialService: No database configured. Durable credential operations require a datasource; "
+                + "memory-only mode must be explicitly enabled for isolated deployments.");
         }
     }
 
@@ -61,6 +64,7 @@ public class WebauthnCredentialService {
             throw new IllegalStateException(
                 "Invalid webauthn.credentials.table value: must match [a-zA-Z_][a-zA-Z0-9_]*");
         }
+        requireDatabaseIfConfigured();
     }
 
     /**
@@ -78,7 +82,6 @@ public class WebauthnCredentialService {
         String normalizedAttachment = normalize(authenticatorAttachment);
         String normalizedTransports = normalize(transports);
 
-        // Always store in memory (for immediate lookup)
         String key = normalizedPuc + ":" + normalizedCred;
         WebauthnCredential credential = new WebauthnCredential(
             normalizedCred, publicKey, aaguid, 
@@ -88,11 +91,10 @@ public class WebauthnCredentialService {
             residentKey,
             normalizedTransports.isEmpty() ? null : normalizedTransports
         );
-        inMemoryCredentials.put(key, credential);
-
-        // Also persist to database if available
         if (jdbcTemplate == null) {
-            log.debug("WebAuthn credential stored in memory only (no database)");
+            requireDatabaseIfConfigured();
+            inMemoryCredentials.put(key, credential);
+            log.warn("WebAuthn credential stored in explicitly enabled memory-only mode");
             return;
         }
 
@@ -123,8 +125,7 @@ public class WebauthnCredentialService {
                 normalizedTransports.isEmpty() ? null : normalizedTransports
             );
         } catch (DataAccessException ex) {
-            log.warn("webAuthn DB persistence failed (credential still in memory): {}", ex.getMessage());
-            // Don't throw - credential is still usable from memory
+            throw new IllegalStateException("WebAuthn credential durable persistence failed", ex);
         }
     }
 
@@ -133,18 +134,11 @@ public class WebauthnCredentialService {
         String normalizedCred = normalize(credentialId);
         long now = Instant.now().getEpochSecond();
 
-        // Update in-memory
         String key = normalizedPuc + ":" + normalizedCred;
-        WebauthnCredential existing = inMemoryCredentials.get(key);
-        if (existing != null) {
-            existing.setActive(false);
-            existing.setRevokedAt(now);
-            existing.setUpdatedAt(now);
-        }
-
-        // Also update database if available
         if (jdbcTemplate == null) {
-            log.debug("WebAuthn credential revoked in memory only (no database)");
+            requireDatabaseIfConfigured();
+            revokeInMemory(key, now);
+            log.warn("WebAuthn credential revoked in explicitly enabled memory-only mode");
             return;
         }
 
@@ -159,8 +153,7 @@ public class WebauthnCredentialService {
                 normalizedCred
             );
         } catch (DataAccessException ex) {
-            log.warn("webAuthn DB revoke failed: {}", ex.getMessage());
-            // Don't throw - credential is still revoked in memory
+            throw new IllegalStateException("WebAuthn credential durable revocation failed", ex);
         }
     }
 
@@ -175,21 +168,21 @@ public class WebauthnCredentialService {
         long cutoffEpoch = now.minus(credentialsMaxAgeDays, ChronoUnit.DAYS).getEpochSecond();
         long nowEpoch = now.getEpochSecond();
 
-        int memoryRevoked = 0;
-        for (WebauthnCredential credential : inMemoryCredentials.values()) {
-            if (!credential.isActive()) {
-                continue;
-            }
-            Long createdAt = credential.getCreatedAt();
-            if (createdAt != null && createdAt > 0 && createdAt <= cutoffEpoch) {
-                credential.setActive(false);
-                credential.setRevokedAt(nowEpoch);
-                credential.setUpdatedAt(nowEpoch);
-                memoryRevoked++;
-            }
-        }
-
         if (jdbcTemplate == null) {
+            requireDatabaseIfConfigured();
+            int memoryRevoked = 0;
+            for (WebauthnCredential credential : inMemoryCredentials.values()) {
+                if (!credential.isActive()) {
+                    continue;
+                }
+                Long createdAt = credential.getCreatedAt();
+                if (createdAt != null && createdAt > 0 && createdAt <= cutoffEpoch) {
+                    credential.setActive(false);
+                    credential.setRevokedAt(nowEpoch);
+                    credential.setUpdatedAt(nowEpoch);
+                    memoryRevoked++;
+                }
+            }
             if (memoryRevoked > 0) {
                 log.info("Revoked {} expired WebAuthn credential(s) from memory", memoryRevoked);
             }
@@ -201,12 +194,11 @@ public class WebauthnCredentialService {
                 "SET active=FALSE, revoked_at=FROM_UNIXTIME(?), updated_at=FROM_UNIXTIME(?) " +
                 "WHERE active=TRUE AND created_at < FROM_UNIXTIME(?)";
             int dbRevoked = jdbcTemplate.update(sql, nowEpoch, nowEpoch, cutoffEpoch);
-            if (dbRevoked > 0 || memoryRevoked > 0) {
-                log.info("Revoked {} expired WebAuthn credential(s) (db={}, memory={})",
-                    dbRevoked + memoryRevoked, dbRevoked, memoryRevoked);
+            if (dbRevoked > 0) {
+                log.info("Revoked {} expired WebAuthn credential(s) from database", dbRevoked);
             }
         } catch (DataAccessException ex) {
-            log.warn("webAuthn DB revoke-expired failed: {}", ex.getMessage());
+            throw new IllegalStateException("WebAuthn expired-credential revocation failed", ex);
         }
     }
 
@@ -218,16 +210,11 @@ public class WebauthnCredentialService {
         String normalizedPuc = normalize(puc);
         String normalizedCred = normalize(credentialId);
 
-        // Check in-memory first
         String key = normalizedPuc + ":" + normalizedCred;
-        WebauthnCredential inMemory = inMemoryCredentials.get(key);
-        if (inMemory != null) {
-            return Optional.of(inMemory);
-        }
-
-        // Fall back to database if available
         if (jdbcTemplate == null) {
-            return Optional.empty();
+            requireDatabaseIfConfigured();
+            WebauthnCredential inMemory = inMemoryCredentials.get(key);
+            return inMemory == null ? Optional.empty() : Optional.of(inMemory);
         }
 
         try {
@@ -264,24 +251,89 @@ public class WebauthnCredentialService {
         }
     }
 
-    public List<WebauthnCredential> getCredentials(String puc) {
-        String normalizedPuc = normalize(puc);
-        String keyPrefix = normalizedPuc + ":";
+    private void revokeInMemory(String key, long now) {
+        WebauthnCredential existing = inMemoryCredentials.get(key);
+        if (existing != null) {
+            existing.setActive(false);
+            existing.setRevokedAt(now);
+            existing.setUpdatedAt(now);
+        }
+    }
 
-        // Collect from in-memory
-        List<WebauthnCredential> result = new ArrayList<>();
-        for (var entry : inMemoryCredentials.entrySet()) {
-            if (entry.getKey().startsWith(keyPrefix)) {
-                result.add(entry.getValue());
+    private void requireDatabaseIfConfigured() {
+        if (databaseRequired && jdbcTemplate == null) {
+            throw new IllegalStateException(
+                "WebAuthn credential database is required; configure a datasource or explicitly disable "
+                    + "webauthn.credentials.require-database only for isolated memory-only deployments"
+            );
+        }
+    }
+
+    /**
+     * Applies the WebAuthn signature counter after a signature has been
+     * verified. A non-zero counter must move forward; when a database is
+     * configured the compare-and-set update also serializes assertions across
+     * backend instances.
+     */
+    public synchronized boolean advanceSignCount(String puc, String credentialId, long newSignCount) {
+        if (newSignCount < 0 || newSignCount > 0xFFFF_FFFFL) {
+            return false;
+        }
+
+        Optional<WebauthnCredential> found = findCredential(puc, credentialId);
+        if (found.isEmpty() || !found.get().isActive()) {
+            return false;
+        }
+
+        WebauthnCredential credential = found.get();
+        long currentSignCount = credential.getSignCount() == null ? 0L : credential.getSignCount();
+        if (currentSignCount > 0 && newSignCount > 0 && newSignCount <= currentSignCount) {
+            return false;
+        }
+        // Authenticators with a zero counter do not provide clone detection.
+        if (newSignCount <= currentSignCount) {
+            return true;
+        }
+
+        String normalizedPuc = normalize(puc);
+        String normalizedCred = normalize(credentialId);
+        long now = Instant.now().getEpochSecond();
+
+        if (jdbcTemplate != null) {
+            String sql = "UPDATE " + credentialsTable + " "
+                + "SET sign_count=?, updated_at=FROM_UNIXTIME(?) "
+                + "WHERE puc=? AND credential_id=? AND active=TRUE AND sign_count=?";
+            int updated = jdbcTemplate.update(sql,
+                newSignCount,
+                now,
+                normalizedPuc,
+                normalizedCred,
+                currentSignCount
+            );
+            if (updated != 1) {
+                return false;
             }
         }
 
-        // If no database, return in-memory results
+        credential.setSignCount(newSignCount);
+        credential.setUpdatedAt(now);
+        return true;
+    }
+
+    public List<WebauthnCredential> getCredentials(String puc) {
+        String normalizedPuc = normalize(puc);
         if (jdbcTemplate == null) {
+            requireDatabaseIfConfigured();
+            String keyPrefix = normalizedPuc + ":";
+            List<WebauthnCredential> result = new ArrayList<>();
+            for (var entry : inMemoryCredentials.entrySet()) {
+                if (entry.getKey().startsWith(keyPrefix)) {
+                    result.add(entry.getValue());
+                }
+            }
             return result;
         }
 
-        // Merge with database results (database may have credentials from previous sessions)
         try {
             String sql = "SELECT credential_id, public_key, aaguid, sign_count, active, " +
                 "UNIX_TIMESTAMP(created_at), UNIX_TIMESTAMP(updated_at), UNIX_TIMESTAMP(revoked_at), " +
@@ -304,18 +356,10 @@ public class WebauthnCredentialService {
                     rs.getString(11)
                 )
             );
-            
-            // Add DB credentials not already in memory
-            for (WebauthnCredential dbCred : dbCredentials) {
-                String key = normalizedPuc + ":" + dbCred.getCredentialId();
-                if (!inMemoryCredentials.containsKey(key)) {
-                    result.add(dbCred);
-                }
-            }
-            return result;
+            return dbCredentials;
         } catch (DataAccessException ex) {
-            log.warn("webAuthn DB fetch all failed, returning in-memory only: {}", ex.getMessage());
-            return result;
+            log.warn("webAuthn DB fetch all failed: {}", ex.getMessage());
+            throw ex;
         }
     }
 

@@ -41,6 +41,7 @@ import decentralabs.blockchain.dto.intent.ReservationIntentPayload;
 import decentralabs.blockchain.service.wallet.InstitutionalWalletService;
 import decentralabs.blockchain.service.wallet.InstitutionalTxManagerProvider;
 import decentralabs.blockchain.service.wallet.WalletService;
+import decentralabs.blockchain.service.labadmin.LabContentRetentionService;
 import lombok.extern.slf4j.Slf4j;
 
 @Service
@@ -62,6 +63,7 @@ public class IntentOnChainExecutor {
     private final ExecutorService cleanupExecutor;
     private final InstitutionalTxManagerProvider txManagerProvider;
     private final Eip712IntentVerifier intentVerifier;
+    private final LabContentRetentionService contentRetentionService;
     @Value("${blockchain.network.active:sepolia}")
     private String executionNetwork;
     public IntentOnChainExecutor(
@@ -74,7 +76,8 @@ public class IntentOnChainExecutor {
         @Value("${ethereum.gas.price.multiplier:1.2}") BigDecimal gasPriceMultiplier,
         @Value("${ethereum.gas.price.min-gwei:1}") BigDecimal gasPriceMinGwei,
         InstitutionalTxManagerProvider txManagerProvider,
-        Eip712IntentVerifier intentVerifier
+        Eip712IntentVerifier intentVerifier,
+        LabContentRetentionService contentRetentionService
     ) {
         this.walletService = walletService;
         this.institutionalWalletService = institutionalWalletService;
@@ -86,6 +89,7 @@ public class IntentOnChainExecutor {
         this.gasPriceMinGwei = gasPriceMinGwei;
         this.txManagerProvider = txManagerProvider;
         this.intentVerifier = intentVerifier;
+        this.contentRetentionService = contentRetentionService;
         this.cleanupExecutor = Executors.newSingleThreadExecutor(new ThreadFactory() {
             @Override
             public Thread newThread(Runnable r) {
@@ -114,7 +118,7 @@ public class IntentOnChainExecutor {
             case "LAB_UPDATE" -> send(buildUpdateLab(record), credentials, record, action);
             case "LAB_LIST" -> send(buildSimple(FunctionName.LIST_TOKEN, record), credentials, record, action);
             case "LAB_UNLIST" -> send(buildSimple(FunctionName.UNLIST_TOKEN, record), credentials, record, action);
-            case "LAB_DELETE" -> send(buildSimple(FunctionName.DELETE_LAB, record), credentials, record, action);
+            case "LAB_DELETE" -> executeLabDelete(record, credentials, action);
             case "LAB_SET_URI" -> send(buildSetTokenURI(record), credentials, record, action);
             case "CANCEL_RESERVATION_REQUEST" -> send(buildCancelReservation(record), credentials, record, action);
             case "RESERVATION_REQUEST" -> {
@@ -143,6 +147,29 @@ public class IntentOnChainExecutor {
                  "RESERVATION_REQUEST", "DIRECT_BOOKING", "CANCEL_BOOKING" -> true;
             default -> false;
         };
+    }
+
+    private ExecutionResult executeLabDelete(IntentRecord record, Credentials credentials, String action) throws Exception {
+        ActionIntentPayload payload = record.getActionPayload();
+        String metadataUri = null;
+        if (payload != null && payload.getLabId() != null) {
+            try {
+                metadataUri = walletService.getLabTokenUri(payload.getLabId()).orElse(null);
+            } catch (RuntimeException ex) {
+                log.warn("Unable to snapshot metadata URI before deleting lab {}: {}",
+                    payload.getLabId(), ex.getMessage());
+            }
+        }
+        ExecutionResult result = send(buildSimple(FunctionName.DELETE_LAB, record), credentials, record, action);
+        if (result.success() && payload != null && payload.getLabId() != null) {
+            try {
+                contentRetentionService.markDeleted(payload.getLabId(), metadataUri, result.txHash());
+            } catch (java.io.IOException ex) {
+                log.error("Lab {} deleted through intent but content tombstone could not be written: {}",
+                    payload.getLabId(), ex.getMessage(), ex);
+            }
+        }
+        return result;
     }
 
     private ExecutionResult send(Optional<Function> functionOpt, Credentials credentials, IntentRecord record, String action) throws Exception {

@@ -18,11 +18,16 @@ import java.time.Instant;
 public class ProviderPayout {
 
     private Long id;
+    private Long invoiceRecordId;
     private String labId;
     private String providerAddress;
+    private String claimId;
     private BigDecimal eurAmount;
     private BigDecimal creditAmount;
     private Instant paidAt;
+    private String paidBy;
+    private String paymentRef;
+    private String paymentAttestation;
     private String bankRef;
     private String eurcTxHash;
     private String usdcTxHash;

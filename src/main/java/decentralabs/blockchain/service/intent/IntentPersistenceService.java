@@ -5,15 +5,17 @@ import java.sql.SQLException;
 import java.sql.Timestamp;
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 import javax.sql.DataSource;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.JsonNode;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 
-import decentralabs.blockchain.dto.intent.IntentSubmission;
 import decentralabs.blockchain.dto.intent.IntentStatus;
 import decentralabs.blockchain.util.LogSanitizer;
 import lombok.extern.slf4j.Slf4j;
@@ -24,24 +26,29 @@ public class IntentPersistenceService {
 
     private final JdbcTemplate jdbcTemplate;
     private final ObjectMapper objectMapper = new ObjectMapper();
+    private final IntentPayloadCipher payloadCipher;
 
+    /** Constructor retained for isolated unit tests that do not load Spring. */
     public IntentPersistenceService(DataSource dataSource) {
+        this(dataSource, null);
+    }
+
+    @Autowired
+    public IntentPersistenceService(DataSource dataSource, IntentPayloadCipher payloadCipher) {
         this.jdbcTemplate = dataSource != null ? new JdbcTemplate(dataSource) : null;
+        this.payloadCipher = payloadCipher;
     }
 
     public void upsert(IntentRecord record) {
-        if (jdbcTemplate == null) {
-            log.debug("Skipping intent persistence (no datasource)");
-            return;
-        }
         try {
-            jdbcTemplate.update(
+            requireJdbcTemplate().update(
                 """
                 INSERT INTO intents (
                     request_id, status, action, provider, lab_id, reservation_key,
+                    puc_hash,
                     tx_hash, block_number, error, reason, updated_at, created_at,
                     nonce, expires_at, payload_json
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON DUPLICATE KEY UPDATE
                     status = VALUES(status),
                     tx_hash = VALUES(tx_hash),
@@ -51,6 +58,7 @@ public class IntentPersistenceService {
                     updated_at = VALUES(updated_at),
                     lab_id = VALUES(lab_id),
                     reservation_key = VALUES(reservation_key),
+                    puc_hash = VALUES(puc_hash),
                     nonce = VALUES(nonce),
                     expires_at = VALUES(expires_at),
                     payload_json = VALUES(payload_json)
@@ -61,6 +69,7 @@ public class IntentPersistenceService {
                 record.getProvider(),
                 record.getLabId(),
                 record.getReservationKey(),
+                record.getPucHash(),
                 record.getTxHash(),
                 record.getBlockNumber(),
                 record.getError(),
@@ -69,53 +78,54 @@ public class IntentPersistenceService {
                 Timestamp.from(record.getCreatedAt()),
                 record.getNonce(),
                 record.getExpiresAt(),
-                record.getPayloadJson()
+                protectPayload(record.getPayloadJson())
             );
         } catch (Exception e) {
-            log.warn("Intent persistence skipped");
+            log.warn("Intent persistence failed during upsert: {}", LogSanitizer.sanitize(e.getMessage()));
+            if (e instanceof IntentPersistenceException persistenceException) {
+                throw persistenceException;
+            }
+            throw new IntentPersistenceException("Intent persistence is unavailable", e);
         }
     }
 
     public Optional<IntentRecord> findByRequestId(String requestId) {
-        if (jdbcTemplate == null) {
-            return Optional.empty();
-        }
         try {
-            return jdbcTemplate.query(
+            return requireJdbcTemplate().query(
                 "SELECT * FROM intents WHERE request_id = ? LIMIT 1",
                 (rs, rowNum) -> mapRow(rs),
                 requestId
             ).stream().findFirst();
         } catch (Exception e) {
-            log.warn("Intent lookup skipped");
-            return Optional.empty();
+            log.warn("Intent lookup failed: {}", LogSanitizer.sanitize(e.getMessage()));
+            if (e instanceof IntentPersistenceException persistenceException) {
+                throw persistenceException;
+            }
+            throw new IntentPersistenceException("Intent persistence is unavailable", e);
         }
     }
 
     public List<IntentRecord> findPending() {
-        if (jdbcTemplate == null) {
-            return List.of();
-        }
         try {
-            return jdbcTemplate.query(
+            return requireJdbcTemplate().query(
                 "SELECT * FROM intents WHERE status IN ('queued', 'authorized_pending_registration', 'in_progress')",
                 (rs, rowNum) -> mapRow(rs)
             );
         } catch (Exception e) {
-            log.warn("Intent pending lookup skipped: {}", LogSanitizer.sanitize(e.getMessage()));
-            return List.of();
+            log.warn("Intent pending lookup failed: {}", LogSanitizer.sanitize(e.getMessage()));
+            if (e instanceof IntentPersistenceException persistenceException) {
+                throw persistenceException;
+            }
+            throw new IntentPersistenceException("Intent persistence is unavailable", e);
         }
     }
 
     public List<String> findExecutedReservationRequestKeys(Instant olderThan, int limit) {
-        if (jdbcTemplate == null) {
-            return List.of();
-        }
         if (olderThan == null || limit <= 0) {
             return List.of();
         }
         try {
-            return jdbcTemplate.queryForList(
+            return requireJdbcTemplate().queryForList(
                 """
                 SELECT reservation_key
                 FROM intents
@@ -132,29 +142,39 @@ public class IntentPersistenceService {
                 limit
             );
         } catch (Exception e) {
-            log.warn("Executed reservation intents lookup skipped: {}", LogSanitizer.sanitize(e.getMessage()));
-            return List.of();
+            log.warn("Executed reservation intents lookup failed: {}", LogSanitizer.sanitize(e.getMessage()));
+            if (e instanceof IntentPersistenceException persistenceException) {
+                throw persistenceException;
+            }
+            throw new IntentPersistenceException("Intent persistence is unavailable", e);
         }
     }
 
     public Optional<IntentRecord> findByReservationKey(String reservationKey) {
-        if (jdbcTemplate == null) {
-            return Optional.empty();
-        }
         try {
-            return jdbcTemplate.query(
+            return requireJdbcTemplate().query(
                 "SELECT * FROM intents WHERE reservation_key = ? ORDER BY updated_at DESC LIMIT 1",
                 (rs, rowNum) -> mapRow(rs),
                 reservationKey
             ).stream().findFirst();
         } catch (Exception e) {
             log.warn(
-                "Intent lookup by reservationKey skipped for {}: {}",
+                "Intent lookup by reservationKey failed for {}: {}",
                 LogSanitizer.sanitize(reservationKey),
                 LogSanitizer.sanitize(e.getMessage())
             );
-            return Optional.empty();
+            if (e instanceof IntentPersistenceException persistenceException) {
+                throw persistenceException;
+            }
+            throw new IntentPersistenceException("Intent persistence is unavailable", e);
         }
+    }
+
+    private JdbcTemplate requireJdbcTemplate() {
+        if (jdbcTemplate == null) {
+            throw new IntentPersistenceException("Intent persistence is unavailable");
+        }
+        return jdbcTemplate;
     }
 
     private IntentRecord mapRow(ResultSet rs) throws SQLException {
@@ -166,6 +186,7 @@ public class IntentPersistenceService {
         record.setStatus(IntentStatus.valueOf(rs.getString("status").toUpperCase().replace('-', '_')));
         record.setLabId(rs.getString("lab_id"));
         record.setReservationKey(rs.getString("reservation_key"));
+        record.setPucHash(rs.getString("puc_hash"));
         record.setTxHash(rs.getString("tx_hash"));
         record.setBlockNumber(rs.getObject("block_number", Long.class));
         record.setError(rs.getString("error"));
@@ -195,19 +216,26 @@ public class IntentPersistenceService {
             return;
         }
         try {
-            IntentSubmission submission = objectMapper.readValue(payloadJson, IntentSubmission.class);
-            record.setActionPayload(submission.getActionPayload());
-            record.setReservationPayload(submission.getReservationPayload());
-            record.setSignature(submission.getSignature());
+            IntentPersistencePayload payload = objectMapper.readValue(unprotectPayload(payloadJson), IntentPersistencePayload.class);
+            record.setActionPayload(payload.actionPayload());
+            record.setReservationPayload(payload.reservationPayload());
 
-            if (submission.getMeta() != null) {
-                record.setSigner(submission.getMeta().getSigner());
-                record.setExecutor(submission.getMeta().getExecutor());
-                record.setActionId(submission.getMeta().getAction());
-                record.setPayloadHash(submission.getMeta().getPayloadHash());
-                record.setNonce(submission.getMeta().getNonce());
-                record.setRequestedAt(submission.getMeta().getRequestedAt());
-                record.setExpiresAt(submission.getMeta().getExpiresAt());
+            if (record.getPucHash() == null) {
+                if (record.getReservationPayload() != null) {
+                    record.setPucHash(record.getReservationPayload().getPucHash());
+                } else if (record.getActionPayload() != null) {
+                    record.setPucHash(record.getActionPayload().getPucHash());
+                }
+            }
+
+            if (payload.meta() != null) {
+                record.setSigner(payload.meta().getSigner());
+                record.setExecutor(payload.meta().getExecutor());
+                record.setActionId(payload.meta().getAction());
+                record.setPayloadHash(payload.meta().getPayloadHash());
+                record.setNonce(payload.meta().getNonce());
+                record.setRequestedAt(payload.meta().getRequestedAt());
+                record.setExpiresAt(payload.meta().getExpiresAt());
             }
 
             if (record.getLabId() == null) {
@@ -227,6 +255,34 @@ public class IntentPersistenceService {
             }
         } catch (Exception ex) {
             log.warn("Unable to hydrate intent {} payload: {}", LogSanitizer.sanitize(record.getRequestId()), LogSanitizer.sanitize(ex.getMessage()));
+        }
+    }
+
+    private String protectPayload(String payloadJson) {
+        if (payloadJson == null || payloadJson.isBlank() || payloadCipher == null) {
+            return payloadJson;
+        }
+        try {
+            return objectMapper.writeValueAsString(Map.of("ciphertext", payloadCipher.encrypt(payloadJson)));
+        } catch (Exception ex) {
+            throw new IntentPersistenceException("Unable to protect intent payload", ex);
+        }
+    }
+
+    private String unprotectPayload(String persistedPayload) {
+        if (persistedPayload == null || persistedPayload.isBlank() || payloadCipher == null) {
+            return persistedPayload;
+        }
+        try {
+            JsonNode node = objectMapper.readTree(persistedPayload);
+            if (node.isObject() && node.has("ciphertext")) {
+                return payloadCipher.decrypt(node.get("ciphertext").asText());
+            }
+            // Legacy rows are accepted only long enough for the migration/next write
+            // to remove or encrypt them; no new row is written in this form.
+            return persistedPayload;
+        } catch (Exception ex) {
+            throw new IntentPersistenceException("Unable to unprotect intent payload", ex);
         }
     }
 }

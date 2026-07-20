@@ -26,6 +26,7 @@ import decentralabs.blockchain.service.intent.IntentOnChainExecutor.ExecutionRes
 import decentralabs.blockchain.service.wallet.InstitutionalTxManagerProvider;
 import decentralabs.blockchain.service.wallet.InstitutionalWalletService;
 import decentralabs.blockchain.service.wallet.WalletService;
+import decentralabs.blockchain.service.labadmin.LabContentRetentionService;
 
 @ExtendWith(MockitoExtension.class)
 @DisplayName("IntentOnChainExecutor Tests")
@@ -75,7 +76,8 @@ class IntentOnChainExecutorTest {
             GAS_PRICE_MULTIPLIER,
             GAS_PRICE_MIN_GWEI,
             txManagerProvider,
-            intentVerifier
+            intentVerifier,
+            mock(LabContentRetentionService.class)
         );
 
         // Create test credentials
@@ -652,7 +654,6 @@ class IntentOnChainExecutorTest {
         @DisplayName("buildCancelBooking builds cancelInstitutionalBookingWithIntent")
         void buildCancelBooking() throws Exception {
             IntentRecord record = new IntentRecord("req-cancel-book", "CANCEL_BOOKING", "0xprovider");
-            record.setPuc("alice@institution.example");
             ActionIntentPayload payload = new ActionIntentPayload();
             payload.setExecutor("0x8888888888888888888888888888888888888888");
             payload.setPucHash("0x" + "1".repeat(64));

@@ -12,5 +12,6 @@ public record LabAdminPublishRequest(
     String accessURI,
     String accessKey,
     Integer resourceType,
-    Boolean allowDuplicate
+    Boolean allowDuplicate,
+    String creatorPucHash
 ) {}

@@ -71,6 +71,9 @@ public class ContractEventListenerConfig {
     private static final String MISSING_PUC_PREFIX = "Missing PUC for reservation ";
     private static final int MAX_RESERVATION_PROCESSING_ATTEMPTS = 3;
     private static final long RESERVATION_RETRY_BACKOFF_MS = 120_000L;
+    private static final BigInteger PROVIDER_NOT_ELIGIBLE_REASON = BigInteger.valueOf(2);
+    private static final BigInteger PROVIDER_TECHNICAL_FAILURE_REASON = BigInteger.valueOf(6);
+    private static final BigInteger PROVIDER_UNAVAILABLE_REASON = BigInteger.valueOf(7);
 
     private final ConcurrentHashMap<String, ReservationProcessingState> reservationProcessingGuard = new ConcurrentHashMap<>();
 
@@ -639,7 +642,7 @@ public class ContractEventListenerConfig {
             eventLog.getBlockNumber().longValue(),
             null,
             reservationKey,
-            null,
+            pucHash,
             success ? null : reason
         );
     }
@@ -849,7 +852,7 @@ public class ContractEventListenerConfig {
                 );
                 return;
             }
-            autoDenyReservation(payload, ex.getMessage());
+            autoDenyReservation(payload, ex.getMessage(), classifyAutomaticDenialReason(ex));
         }
     }
 
@@ -861,7 +864,29 @@ public class ContractEventListenerConfig {
         return ex != null && ex.getMessage() != null && ex.getMessage().startsWith(MISSING_PUC_PREFIX);
     }
 
-    private void autoDenyReservation(ReservationEventPayload payload, String reason) {
+    private BigInteger classifyAutomaticDenialReason(Exception ex) {
+        String message = ex == null || ex.getMessage() == null
+            ? ""
+            : ex.getMessage().toLowerCase(Locale.ROOT);
+
+        if (message.contains("metadata")
+            || message.contains("configuration")
+            || message.contains("not configured")
+            || message.contains("unable to load")) {
+            return PROVIDER_UNAVAILABLE_REASON;
+        }
+        if (message.contains("not available")
+            || message.contains("outside available")
+            || message.contains("outside lab")
+            || message.contains("maintenance")
+            || message.contains("duration not allowed")
+            || message.contains("too many concurrent")) {
+            return PROVIDER_NOT_ELIGIBLE_REASON;
+        }
+        return PROVIDER_TECHNICAL_FAILURE_REASON;
+    }
+
+    private void autoDenyReservation(ReservationEventPayload payload, String reason, BigInteger reasonCode) {
         if (!isPending(payload) || !isStillPendingOnChain(payload.reservationKey())) {
             log.info(
                 "Reservation {} already processed on-chain. Skipping auto-denial (reason: {}).",
@@ -872,12 +897,13 @@ public class ContractEventListenerConfig {
             return;
         }
         log.info(
-            "Auto-denying reservation {} for lab {}: {}",
+            "Auto-denying reservation {} for lab {} with reasonCode {}: {}",
             payload.reservationKey(),
             payload.labId(),
+            reasonCode,
             reason
         );
-        denyReservationOnChain(payload.reservationKey(), reason);
+        denyReservationOnChain(payload.reservationKey(), reason, reasonCode);
     }
 
     private boolean isStillPendingOnChain(String reservationKey) {
@@ -1004,18 +1030,19 @@ public class ContractEventListenerConfig {
         log.info("Institutional reservation {} confirmed on-chain (tx={})", reservationKey, receipt.getTransactionHash());
     }
 
-    private void denyReservationOnChain(String reservationKey, String reason) {
+    private void denyReservationOnChain(String reservationKey, String reason, BigInteger reasonCode) {
         try {
             byte[] keyBytes = reservationKeyToBytes(reservationKey);
             TransactionReceipt receipt = executeWithGasRetry(
-                "denyReservationRequest",
+                "denyReservationRequestWithReason",
                 "event:deny-reservation:" + reservationKey,
-                contract -> contract.denyReservationRequest(keyBytes).send()
+                contract -> contract.denyReservationRequestWithReason(keyBytes, reasonCode).send()
             );
             log.info(
-                "Reservation {} denied on-chain (tx={}). Reason: {}",
+                "Reservation {} denied on-chain (tx={}) with reasonCode {}. Reason: {}",
                 reservationKey,
                 receipt.getTransactionHash(),
+                reasonCode,
                 reason
             );
             markReservationProcessed(reservationKey);

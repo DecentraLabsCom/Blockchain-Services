@@ -375,6 +375,12 @@
     "defaultValue": "webauthn_credentials"
   },
   {
+    "name": "webauthn.credentials.require-database",
+    "type": "java.lang.Boolean",
+    "description": "Fail closed when WebAuthn credential persistence has no database.",
+    "defaultValue": true
+  },
+  {
     "name": "webauthn.credentials.max-age-days",
     "type": "java.lang.Long",
     "description": "Maximum age (in days) before a WebAuthn credential is revoked.",
@@ -425,7 +431,7 @@
   {
     "name": "webauthn.attestation.conveyance",
     "type": "java.lang.String",
-    "description": "Attestation conveyance preference: none, indirect, or direct.",
+    "description": "Attestation conveyance policy. Only none is supported by the verifier.",
     "defaultValue": "none"
   },
   {
@@ -442,7 +448,7 @@
   {
     "name": "webauthn.user-verification",
     "type": "java.lang.String",
-    "description": "User verification preference: required, preferred, or discouraged.",
+    "description": "User verification policy. The verifier requires required for credentials used by intents.",
     "defaultValue": "preferred"
   },
   {
@@ -651,6 +657,18 @@
     "defaultValue": "/app/lab-content"
   },
   {
+    "name": "lab.content.retention",
+    "type": "java.time.Duration",
+    "description": "Retention period for tombstoned lab content after a confirmed on-chain deletion.",
+    "defaultValue": "7d"
+  },
+  {
+    "name": "lab.content.gc.interval-ms",
+    "type": "java.lang.Long",
+    "description": "Interval in milliseconds for garbage collecting expired lab-content tombstones.",
+    "defaultValue": 3600000
+  },
+  {
     "name": "fmu.data.path",
     "type": "java.lang.String",
     "description": "Base directory where provisioned FMU files are stored and discovered.",
@@ -814,6 +832,30 @@
     "type": "java.lang.Integer",
     "description": "Initial lookback blocks when starting.",
     "defaultValue": 100
+  },
+  {
+    "name": "contract.event.persistence.required",
+    "type": "java.lang.Boolean",
+    "description": "Require the durable contract-event journal before starting listeners.",
+    "defaultValue": true
+  },
+  {
+    "name": "contract.event.processing.max-attempts",
+    "type": "java.lang.Integer",
+    "description": "Maximum handler attempts before an event is moved to dead-letter state.",
+    "defaultValue": 10
+  },
+  {
+    "name": "contract.event.processing.retry-delay.seconds",
+    "type": "java.lang.Integer",
+    "description": "Delay before retrying a failed contract event handler.",
+    "defaultValue": 60
+  },
+  {
+    "name": "contract.event.processing.lease-timeout.seconds",
+    "type": "java.lang.Integer",
+    "description": "Time after which an abandoned event-processing lease can be reclaimed.",
+    "defaultValue": 300
   },
   {
     "name": "billing.admin.transactions.lookback-blocks",

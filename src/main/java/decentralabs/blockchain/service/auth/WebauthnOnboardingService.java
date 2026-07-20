@@ -5,7 +5,9 @@ import co.nstant.in.cbor.CborException;
 import co.nstant.in.cbor.model.ByteString;
 import co.nstant.in.cbor.model.DataItem;
 import co.nstant.in.cbor.model.Map;
+import co.nstant.in.cbor.model.NegativeInteger;
 import co.nstant.in.cbor.model.UnicodeString;
+import co.nstant.in.cbor.model.UnsignedInteger;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import decentralabs.blockchain.dto.auth.WebauthnOnboardingCompleteRequest;
@@ -45,7 +47,6 @@ import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
-import org.springframework.web.client.RestTemplate;
 import org.springframework.web.server.ResponseStatusException;
 
 /**
@@ -74,7 +75,6 @@ public class WebauthnOnboardingService {
     // COSE algorithm identifiers
     private static final int COSE_ALG_ES256 = -7;   // ECDSA w/ SHA-256
     private static final int COSE_ALG_RS256 = -257; // RSASSA-PKCS1-v1_5 w/ SHA-256
-    private static final int COSE_ALG_EDDSA = -8;   // EdDSA
 
     private final SecureRandom secureRandom = new SecureRandom();
     private final ObjectMapper objectMapper = new ObjectMapper();
@@ -97,7 +97,6 @@ public class WebauthnOnboardingService {
     private final WebauthnCredentialService credentialService;
     private final SamlValidationService samlValidationService; // May be null
     private final BackendUrlResolver backendUrlResolver;
-    private final RestTemplate restTemplate;
 
     @Value("${webauthn.rp.id:}")
     private String rpId;
@@ -132,7 +131,7 @@ public class WebauthnOnboardingService {
     @Value("${webauthn.resident-key:preferred}")
     private String residentKey;
 
-    @Value("${webauthn.user-verification:preferred}")
+    @Value("${webauthn.user-verification:required}")
     private String userVerification;
 
     @Value("${webauthn.validate-saml:true}")
@@ -151,7 +150,6 @@ public class WebauthnOnboardingService {
         this.credentialService = credentialService;
         this.samlValidationService = samlValidationServiceProvider.getIfAvailable();
         this.backendUrlResolver = backendUrlResolver;
-        this.restTemplate = new RestTemplate();
         if (this.samlValidationService == null) {
             log.warn("SamlValidationService not available. SAML assertion validation will be skipped.");
         }
@@ -159,6 +157,9 @@ public class WebauthnOnboardingService {
 
     @PostConstruct
     public void init() {
+        if (!"none".equalsIgnoreCase(attestationConveyance)) {
+            throw new IllegalStateException("Only attestation=none is supported by the WebAuthn RP");
+        }
         // Start periodic cleanup of expired sessions
         cleanupScheduler = Executors.newSingleThreadScheduledExecutor(r -> {
             Thread t = new Thread(r, "webauthn-session-cleanup");
@@ -265,7 +266,6 @@ public class WebauthnOnboardingService {
             request.getDisplayName(),
             request.getAssertionReference(),
             request.getAttributes(),
-            request.getCallbackUrl(),
             expiresAt
         );
         pendingSessions.put(sessionId, session);
@@ -293,8 +293,7 @@ public class WebauthnOnboardingService {
                 .build())
             .pubKeyCredParams(Arrays.asList(
                 PubKeyCredParam.builder().type("public-key").alg(COSE_ALG_ES256).build(),
-                PubKeyCredParam.builder().type("public-key").alg(COSE_ALG_RS256).build(),
-                PubKeyCredParam.builder().type("public-key").alg(COSE_ALG_EDDSA).build()
+                PubKeyCredParam.builder().type("public-key").alg(COSE_ALG_RS256).build()
             ))
             .timeout(timeoutMs)
             .attestation(attestationConveyance)
@@ -334,7 +333,11 @@ public class WebauthnOnboardingService {
             // Extract public key (COSE format) and convert to Base64 for storage
             String publicKeyBase64 = BASE64URL_ENCODER.encodeToString(attestationData.publicKeyCose);
             String aaguid = HexFormat.of().formatHex(attestationData.aaguid);
-            String credentialId = request.getCredentialId();
+            byte[] requestedCredentialId = decodeCredentialId(request.getCredentialId());
+            if (!MessageDigest.isEqual(requestedCredentialId, attestationData.credentialId)) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Credential ID mismatch");
+            }
+            String credentialId = BASE64URL_ENCODER.encodeToString(attestationData.credentialId);
 
             String transports = normalizeTransports(request.getTransports());
             String attachment = inferAuthenticatorAttachment(request.getTransports());
@@ -381,11 +384,6 @@ public class WebauthnOnboardingService {
             );
             completedSessions.put(sessionId, completed);
 
-            // Send callback to SP if URL was provided
-            if (session.getCallbackUrl() != null && !session.getCallbackUrl().isBlank()) {
-                sendCallbackToSp(session.getCallbackUrl(), response, null);
-            }
-
             return response;
 
         } catch (ResponseStatusException e) {
@@ -401,11 +399,6 @@ public class WebauthnOnboardingService {
                 Instant.now()
             );
             completedSessions.put(sessionId, failed);
-            
-            // Send failure callback if URL was provided
-            if (session.getCallbackUrl() != null && !session.getCallbackUrl().isBlank()) {
-                sendCallbackToSp(session.getCallbackUrl(), null, e.getReason());
-            }
             
             throw e;
         } catch (Exception e) {
@@ -423,11 +416,6 @@ public class WebauthnOnboardingService {
                 Instant.now()
             );
             completedSessions.put(sessionId, failed);
-            
-            // Send failure callback if URL was provided
-            if (session.getCallbackUrl() != null && !session.getCallbackUrl().isBlank()) {
-                sendCallbackToSp(session.getCallbackUrl(), null, "Attestation verification failed: " + e.getMessage());
-            }
             
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Attestation verification failed: " + e.getMessage());
         }
@@ -516,94 +504,12 @@ public class WebauthnOnboardingService {
                 .build())
             .pubKeyCredParams(Arrays.asList(
                 PubKeyCredParam.builder().type("public-key").alg(COSE_ALG_ES256).build(),
-                PubKeyCredParam.builder().type("public-key").alg(COSE_ALG_RS256).build(),
-                PubKeyCredParam.builder().type("public-key").alg(COSE_ALG_EDDSA).build()
+                PubKeyCredParam.builder().type("public-key").alg(COSE_ALG_RS256).build()
             ))
             .timeout(timeoutMs)
             .attestation(attestationConveyance)
             .authenticatorSelection(buildAuthenticatorSelection())
             .build();
-    }
-
-    /**
-     * Send callback notification to the SP with the onboarding result.
-     * This is done asynchronously to not block the response to the browser.
-     */
-    private void sendCallbackToSp(String callbackUrl, WebauthnOnboardingCompleteResponse successResponse, String errorMessage) {
-        try {
-            if (callbackUrl == null || callbackUrl.isBlank()) {
-                return;
-            }
-            final String callbackUrlForLog = sanitizeCallbackUrlForLog(callbackUrl);
-            java.util.Map<String, Object> payload = new java.util.HashMap<>();
-            if (successResponse != null) {
-                payload.put("status", "SUCCESS");
-                payload.put("stableUserId", successResponse.getStableUserId());
-                payload.put("institutionId", successResponse.getInstitutionId());
-                payload.put("credentialId", successResponse.getCredentialId());
-                payload.put("publicKey", successResponse.getPublicKey());
-                payload.put("rpId", successResponse.getRpId());
-                payload.put("aaguid", successResponse.getAaguid());
-            } else {
-                payload.put("status", "FAILED");
-                payload.put("error", errorMessage);
-            }
-            payload.put("timestamp", Instant.now().toString());
-
-            org.springframework.http.HttpHeaders headers = new org.springframework.http.HttpHeaders();
-            headers.setContentType(org.springframework.http.MediaType.APPLICATION_JSON);
-            org.springframework.http.HttpEntity<java.util.Map<String, Object>> entity = 
-                new org.springframework.http.HttpEntity<>(payload, headers);
-
-            // Execute callback asynchronously
-            new Thread(() -> {
-                try {
-                    restTemplate.postForEntity(callbackUrl, entity, String.class);
-                    log.info("Sent onboarding callback to SP: {} status={}",
-                        LogSanitizer.sanitize(callbackUrlForLog),
-                        successResponse != null ? "SUCCESS" : "FAILED");
-                } catch (Exception e) {
-                    String safeMessage = e.getMessage();
-                    if (safeMessage != null && safeMessage.contains(callbackUrl)) {
-                        safeMessage = safeMessage.replace(callbackUrl, callbackUrlForLog);
-                    }
-                    log.warn("Failed to send onboarding callback to {}: {}",
-                        LogSanitizer.sanitize(callbackUrlForLog), LogSanitizer.sanitize(safeMessage));
-                }
-            }).start();
-        } catch (Exception e) {
-            log.warn("Failed to prepare onboarding callback: {}", LogSanitizer.sanitize(e.getMessage()));
-        }
-    }
-
-    /**
-     * Redact sensitive callback query params (e.g. cb_token) from logs.
-     * Keeps scheme/host/path for diagnostics without leaking tokens.
-     */
-    private String sanitizeCallbackUrlForLog(String callbackUrl) {
-        if (callbackUrl == null || callbackUrl.isBlank()) {
-            return callbackUrl;
-        }
-        try {
-            java.net.URI parsed = new java.net.URI(callbackUrl);
-            if (parsed.getScheme() != null && parsed.getHost() != null) {
-                java.net.URI sanitized = new java.net.URI(
-                    parsed.getScheme(),
-                    null,
-                    parsed.getHost(),
-                    parsed.getPort(),
-                    parsed.getPath(),
-                    null,
-                    null
-                );
-                return sanitized.toString();
-            }
-            } catch (Exception ignored) {
-                log.debug("Unable to sanitize callback URL '{}'", LogSanitizer.sanitize(callbackUrl), ignored);
-                // Fallback below for malformed URLs.
-            }
-        int queryIndex = callbackUrl.indexOf('?');
-        return queryIndex >= 0 ? callbackUrl.substring(0, queryIndex) : callbackUrl;
     }
 
     /**
@@ -637,11 +543,24 @@ public class WebauthnOnboardingService {
      */
     private AttestationData parseAttestationObject(byte[] attestationObject) throws CborException {
         List<DataItem> items = new CborDecoder(new ByteArrayInputStream(attestationObject)).decode();
-        if (items.isEmpty() || !(items.get(0) instanceof Map)) {
+        if (items.size() != 1 || !(items.get(0) instanceof Map)) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Invalid attestation object format");
         }
 
         Map attestationMap = (Map) items.get(0);
+
+        DataItem fmtItem = attestationMap.get(new UnicodeString("fmt"));
+        if (!(fmtItem instanceof UnicodeString) || !"none".equals(((UnicodeString) fmtItem).getString())) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Unsupported attestation format");
+        }
+
+        DataItem attStmtItem = attestationMap.get(new UnicodeString("attStmt"));
+        if (!(attStmtItem instanceof Map) || !((Map) attStmtItem).getKeys().isEmpty()) {
+            // The RP deliberately requests attestation=none. Any non-empty
+            // statement would require a format-specific trust policy and
+            // cryptographic verification that this service does not provide.
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Attestation statement is not allowed");
+        }
         
         // Extract authData
         DataItem authDataItem = attestationMap.get(new UnicodeString("authData"));
@@ -688,6 +607,12 @@ public class WebauthnOnboardingService {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "User present flag not set");
         }
 
+        // Institutional credentials are later used to authorize spending
+        // intents, so registration must establish user verification too.
+        if ((flags & 0x04) == 0) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "User verification flag not set");
+        }
+
         // Check Attested credential data (AT) flag - must be set for registration
         if ((flags & 0x40) == 0) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Attested credential data not present");
@@ -701,6 +626,10 @@ public class WebauthnOnboardingService {
         offset += 4;
 
         // Parse attested credential data
+        if (authData.length < offset + 16 + 2) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Attested credential data truncated");
+        }
+
         // AAGUID (16 bytes)
         byte[] aaguid = Arrays.copyOfRange(authData, offset, offset + 16);
         offset += 16;
@@ -709,15 +638,95 @@ public class WebauthnOnboardingService {
         int credentialIdLength = ((authData[offset] & 0xFF) << 8) | (authData[offset + 1] & 0xFF);
         offset += 2;
 
-        // Skip credential ID (we already have it from the request)
+        if (credentialIdLength == 0 || authData.length < offset + credentialIdLength) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Invalid credential ID in authenticator data");
+        }
+
+        byte[] credentialId = Arrays.copyOfRange(authData, offset, offset + credentialIdLength);
         offset += credentialIdLength;
 
         // Rest is the COSE public key
+        if (offset >= authData.length) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Missing credential public key");
+        }
         byte[] publicKeyCose = Arrays.copyOfRange(authData, offset, authData.length);
+        validateCosePublicKey(publicKeyCose);
 
         boolean residentKey = (flags & 0x20) != 0;
 
-        return new AttestationData(aaguid, publicKeyCose, signCount, residentKey);
+        return new AttestationData(aaguid, credentialId, publicKeyCose, signCount, residentKey);
+    }
+
+    private byte[] decodeCredentialId(String credentialId) throws ResponseStatusException {
+        if (credentialId == null || credentialId.isBlank()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Credential ID is required");
+        }
+        try {
+            byte[] decoded = BASE64URL_DECODER.decode(credentialId);
+            if (decoded.length == 0 || decoded.length > 1023) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Invalid credential ID");
+            }
+            String canonical = BASE64URL_ENCODER.encodeToString(decoded);
+            if (!canonical.equals(credentialId)) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Credential ID is not canonical base64url");
+            }
+            return decoded;
+        } catch (IllegalArgumentException ex) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Invalid credential ID", ex);
+        }
+    }
+
+    private void validateCosePublicKey(byte[] publicKeyCose) throws ResponseStatusException {
+        try {
+            List<DataItem> items = new CborDecoder(new ByteArrayInputStream(publicKeyCose)).decode();
+            if (items.size() != 1 || !(items.get(0) instanceof Map coseKey)) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Invalid credential public key");
+            }
+            Long keyType = getCoseLong(coseKey, 1);
+            Long algorithm = getCoseLong(coseKey, 3);
+            if (keyType == null || algorithm == null) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Credential public key is missing type or algorithm");
+            }
+            if (keyType == 2L && algorithm == COSE_ALG_ES256) {
+                if (!Long.valueOf(1L).equals(getCoseLong(coseKey, -1))
+                    || !hasCoseBytes(coseKey, -2, 32)
+                    || !hasCoseBytes(coseKey, -3, 32)) {
+                    throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Invalid ES256 credential public key");
+                }
+                return;
+            }
+            if (keyType == 3L && algorithm == COSE_ALG_RS256) {
+                if (!hasCoseBytesAtLeast(coseKey, -1, 256 / 8)
+                    || !hasCoseBytesAtLeast(coseKey, -2, 3)) {
+                    throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Invalid RS256 credential public key");
+                }
+                return;
+            }
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Unsupported credential public key algorithm");
+        } catch (CborException ex) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Invalid credential public key", ex);
+        }
+    }
+
+    private Long getCoseLong(Map coseKey, long key) {
+        DataItem item = coseKey.get(key >= 0 ? new UnsignedInteger(key) : new NegativeInteger(key));
+        if (item instanceof UnsignedInteger unsignedInteger) {
+            return unsignedInteger.getValue().longValue();
+        }
+        if (item instanceof NegativeInteger negativeInteger) {
+            return negativeInteger.getValue().longValue();
+        }
+        return null;
+    }
+
+    private boolean hasCoseBytes(Map coseKey, long key, int expectedLength) {
+        DataItem item = coseKey.get(key >= 0 ? new UnsignedInteger(key) : new NegativeInteger(key));
+        return item instanceof ByteString byteString && byteString.getBytes().length == expectedLength;
+    }
+
+    private boolean hasCoseBytesAtLeast(Map coseKey, long key, int minimumLength) {
+        DataItem item = coseKey.get(key >= 0 ? new UnsignedInteger(key) : new NegativeInteger(key));
+        return item instanceof ByteString byteString && byteString.getBytes().length >= minimumLength;
     }
 
     /**
@@ -812,7 +821,7 @@ public class WebauthnOnboardingService {
             .authenticatorAttachment(authenticatorAttachment.isEmpty() ? null : authenticatorAttachment)
             .residentKey(residentKey)
             .requireResidentKey("required".equals(residentKey))
-            .userVerification(userVerification)
+            .userVerification("required")
             .build();
     }
 
@@ -943,7 +952,6 @@ public class WebauthnOnboardingService {
         private String displayName;
         private String assertionReference;
         private String attributes;
-        private String callbackUrl; // Optional SP callback URL
         private Instant expiresAt;
 
         public boolean isExpired() {
@@ -971,6 +979,7 @@ public class WebauthnOnboardingService {
     @AllArgsConstructor
     private static class AttestationData {
         private byte[] aaguid;
+        private byte[] credentialId;
         private byte[] publicKeyCose;
         private long signCount;
         private boolean residentKey;

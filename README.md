@@ -4,7 +4,8 @@ description: Canonical Spring Boot backend for institutional identity, funding, 
 
 # DecentraLabs blockchain services
 
-`Lab Gateway/blockchain-services` is the canonical Java 21 / Spring Boot backend
+`Lab Gateway/blockchain-services` is the canonical Java 21 / Spring Boot 4.1
+backend
 for the DecentraLabs gateway ecosystem. It is also publishable as a standalone
 WAR for an institution that only needs consumer funding and wallet operations.
 
@@ -16,9 +17,11 @@ The service owns four areas:
 - signed intent intake, WebAuthn authorization and on-chain execution;
 - provider/consumer registration and gateway configuration.
 
-See the [documentation index](SUMMARY.md) and the
-[architecture guide](docs/architecture/ARCHITECTURE.md) before changing a cross-service
-flow.
+Start with the [documentation index](SUMMARY.md). The essential companion
+documents are the [architecture guide](docs/architecture/ARCHITECTURE.md),
+[deployment guide](docs/configuration/DEPLOYMENT.md),
+[security baseline](docs/security/SECURITY.md) and
+[API reference](docs/reference/API_REFERENCE.md).
 
 ## Operating modes
 
@@ -47,9 +50,8 @@ flowchart LR
 The following is a navigation map, not a generated OpenAPI contract. Paths are
 implemented by the controllers in `src/main/java/decentralabs/blockchain/controller`.
 
-### Public identity and access (provider mode)
+### Identity and access
 
-- `GET /.well-known/openid-configuration`
 - `GET /auth/jwks`
 - `POST /auth/authorize-and-issue`
 - `POST /auth/access-credential`
@@ -59,16 +61,22 @@ implemented by the controllers in `src/main/java/decentralabs/blockchain/control
 - `POST /auth/fmu/session-ticket/issue`
 - `POST /auth/fmu/session-ticket/redeem`
 - `POST /auth/fmu/provider-describe-token`
-- `POST /webauthn/register` and `POST /webauthn/revoke`
+- `POST /webauthn/revoke`
 - `GET /onboarding/webauthn/key-status/{stableUserId}`
 - `POST /onboarding/webauthn/options`
 - `POST /onboarding/webauthn/complete`
 - `GET /onboarding/webauthn/status/{sessionId}`
 - `GET /onboarding/webauthn/ceremony/{sessionId}`
 
-The SAML/provider controllers are conditional on `FEATURES_PROVIDERS_ENABLED`.
-FMU ticket issuance validates a booking bearer; redemption requires a
-per-gateway session-observer credential.
+`/auth/jwks` and the FMU controllers are conditional on
+`FEATURES_PROVIDERS_ENABLED`. The SAML controller's `/auth` mappings are
+present in the application and must be treated as provider integration routes
+only in the intended Full topology. FMU ticket issuance validates a booking
+bearer; redemption requires a per-gateway session-observer credential.
+
+The controller maps OIDC discovery at `/.well-known/openid-configuration`, but
+the current security allow-list is `/auth/.well-known/*`; it is therefore not a
+supported reachable integration endpoint until the mappings are aligned.
 
 ### Intents
 
@@ -98,7 +106,8 @@ browser ceremony and completion are intentionally session-bound; see the
 - Provisioning: `GET /institution-config/status` plus the challenge/approval
   flow under `POST /institution-config/*`.
 - Compliance exports: `/billing/compliance/**`.
-- Lab administration: `/lab-admin/**` and `/lab-content/**`.
+- Lab administration: `/lab-admin/**` and `/lab-content/**`; see
+  [Lab administration and content](docs/services/lab-administration/LAB_ADMINISTRATION.md).
 
 These surfaces are network-restricted by `LocalhostOnlyFilter`; billing admin
 also requires a valid internal/access token according to deployment mode.
@@ -178,7 +187,9 @@ persistent data directory is an additional wallet-specific source and must be
 backed up together with its encryption key.
 
 The tracked `.env.example` is the authoritative list of deployable environment
-names. Never commit `.env`, private keys, wallet files or database volumes.
+names. Never commit `.env`, private keys, wallet files or database volumes. The
+[deployment guide](docs/configuration/DEPLOYMENT.md) groups the required settings
+and identifies state that must be persistent in production.
 
 ## Security baseline
 
@@ -193,8 +204,9 @@ names. Never commit `.env`, private keys, wallet files or database volumes.
   secret across Full/Lite instances.
 
 See [Security Configuration](docs/security/SECURITY.md) and
-[Authentication and access evidence](docs/services/authentication/AUTH.md) for the complete
-boundary and recovery rules.
+[Authentication and access evidence](docs/services/authentication/AUTH.md) for the
+public security and access boundary. Detailed recovery and compliance runbooks
+are maintainer documentation kept outside the public documentation index.
 
 ## Verification and release
 

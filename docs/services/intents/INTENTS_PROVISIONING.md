@@ -5,9 +5,10 @@ This guide covers two independent surfaces:
 1. intent submission and optional WebAuthn authorization under `/intents`;
 2. provider/consumer registration under `/institution-config`.
 
-Both surfaces are publicly routable at the Spring Security layer, but they
-perform their own JWT, scope, localhost and token validation. Keep the network
-boundary in place even when a route is technically `permitAll`.
+The intent routes are publicly routable at the Spring Security layer but enforce
+their own Marketplace JWT, scope and session checks. `/institution-config/**` is
+also protected by `LocalhostOnlyFilter`. Keep those boundaries in place even
+when a route is technically `permitAll` in the filter chain.
 
 ## Intent authorization
 
@@ -74,7 +75,18 @@ flowchart TD
 
 The direct ACK means “accepted for processing”, not “mined”. The status
 endpoint is the source for the later execution result. Typical states are
-`queued`, `in_progress`, `executed`, `failed` and `rejected`.
+`queued`, `authorized_pending_registration`, `in_progress`, `executed`,
+`failed` and `rejected`.
+
+Only the material required to resume on-chain execution is durable: intent
+metadata and the selected action/reservation payload. New payloads are wrapped
+with AES-256-GCM using the required `INTENT_PAYLOAD_ENCRYPTION_KEY`; provide a
+base64/base64url-encoded 32-byte key through the deployment secret store. The
+SAML assertion, WebAuthn assertion material, client signature and typed data
+are request-time verification inputs and are deliberately removed from the
+persistence boundary. Flyway migration 41 redacts those fields from legacy JSON
+rows. Terminal records also clear their execution payload. Do not depend on
+intent storage as an archive of federated identity or authenticator evidence.
 
 ## WebAuthn authorization flow
 

@@ -15,6 +15,7 @@ import org.springframework.web.servlet.ModelAndView;
 
 import java.util.HashMap;
 import java.util.Map;
+import decentralabs.blockchain.service.intent.IntentPersistenceException;
 import decentralabs.blockchain.util.LogSanitizer;
 
 /**
@@ -80,6 +81,23 @@ public class GlobalExceptionHandler {
             LogSanitizer.sanitize(request.getRequestURI()), ex.getStatusCode(),
             LogSanitizer.sanitize(ex.getReason()));
         return ResponseEntity.status(ex.getStatusCode()).body(response);
+    }
+
+    @ExceptionHandler(IntentPersistenceException.class)
+    public ResponseEntity<Map<String, Object>> handleIntentPersistenceException(
+            IntentPersistenceException ex, HttpServletRequest request) {
+        Map<String, Object> response = new HashMap<>();
+        response.put("success", false);
+        response.put("message", "Intent persistence is temporarily unavailable");
+        response.put("code", "INTENT_PERSISTENCE_UNAVAILABLE");
+        response.put("status", HttpStatus.SERVICE_UNAVAILABLE.value());
+
+        log.error(
+            "Intent persistence unavailable at {}: {}",
+            LogSanitizer.sanitize(request.getRequestURI()),
+            LogSanitizer.sanitize(ex.getMessage())
+        );
+        return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).body(response);
     }
 
     /**

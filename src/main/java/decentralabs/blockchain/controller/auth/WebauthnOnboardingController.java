@@ -152,8 +152,8 @@ public class WebauthnOnboardingController {
     /**
      * Get the status of a WebAuthn onboarding session.
      * 
-     * This endpoint allows the SP to poll for the onboarding result if callback
-     * delivery failed or wasn't configured. Status can be:
+     * This endpoint is the sole SP integration path for the onboarding result.
+     * The SP polls it after the browser ceremony. Status can be:
      * - PENDING: Browser hasn't completed the ceremony yet
      * - SUCCESS: Credential was registered successfully
      * - FAILED: Registration failed (error details included)

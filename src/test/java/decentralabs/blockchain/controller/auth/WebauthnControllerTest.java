@@ -22,7 +22,6 @@ import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 import decentralabs.blockchain.service.auth.MarketplaceEndpointAuthService;
-import decentralabs.blockchain.dto.auth.WebauthnRegisterRequest;
 import decentralabs.blockchain.dto.auth.WebauthnRevokeRequest;
 import decentralabs.blockchain.service.auth.WebauthnCredentialService;
 
@@ -51,138 +50,6 @@ class WebauthnControllerTest {
         objectMapper = new ObjectMapper();
         lenient().when(marketplaceEndpointAuthService.enforceAuthorization(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any()))
             .thenReturn(Collections.emptyMap());
-    }
-
-    @Nested
-    @DisplayName("Register Credential Endpoint Tests")
-    class RegisterCredentialTests {
-
-        @Test
-        @DisplayName("Should register credential successfully")
-        void shouldRegisterCredentialSuccessfully() throws Exception {
-            WebauthnRegisterRequest request = createValidRegisterRequest();
-
-            doNothing().when(credentialService).register(
-                request.getPuc(),
-                request.getCredentialId(),
-                request.getPublicKey(),
-                request.getAaguid(),
-                request.getSignCount(),
-                request.getAuthenticatorAttachment(),
-                request.getResidentKey(),
-                request.getTransports()
-            );
-
-            mockMvc.perform(post("/webauthn/register")
-                    .contentType(MediaType.APPLICATION_JSON)
-                    .content(objectMapper.writeValueAsString(request)))
-                .andExpect(status().isOk());
-
-            verify(credentialService).register(
-                request.getPuc(),
-                request.getCredentialId(),
-                request.getPublicKey(),
-                request.getAaguid(),
-                request.getSignCount(),
-                request.getAuthenticatorAttachment(),
-                request.getResidentKey(),
-                request.getTransports()
-            );
-        }
-
-        @Test
-        @DisplayName("Should reject registration with missing puc")
-        void shouldRejectRegistrationWithMissingPuc() throws Exception {
-            WebauthnRegisterRequest request = createValidRegisterRequest();
-            request.setPuc(null);
-
-            mockMvc.perform(post("/webauthn/register")
-                    .contentType(MediaType.APPLICATION_JSON)
-                    .content(objectMapper.writeValueAsString(request)))
-                .andExpect(status().isBadRequest());
-        }
-
-        @Test
-        @DisplayName("Should reject registration with empty puc")
-        void shouldRejectRegistrationWithEmptyPuc() throws Exception {
-            WebauthnRegisterRequest request = createValidRegisterRequest();
-            request.setPuc("");
-
-            mockMvc.perform(post("/webauthn/register")
-                    .contentType(MediaType.APPLICATION_JSON)
-                    .content(objectMapper.writeValueAsString(request)))
-                .andExpect(status().isBadRequest());
-        }
-
-        @Test
-        @DisplayName("Should reject registration with missing credentialId")
-        void shouldRejectRegistrationWithMissingCredentialId() throws Exception {
-            WebauthnRegisterRequest request = createValidRegisterRequest();
-            request.setCredentialId(null);
-
-            mockMvc.perform(post("/webauthn/register")
-                    .contentType(MediaType.APPLICATION_JSON)
-                    .content(objectMapper.writeValueAsString(request)))
-                .andExpect(status().isBadRequest());
-        }
-
-        @Test
-        @DisplayName("Should reject registration with missing publicKey")
-        void shouldRejectRegistrationWithMissingPublicKey() throws Exception {
-            WebauthnRegisterRequest request = createValidRegisterRequest();
-            request.setPublicKey(null);
-
-            mockMvc.perform(post("/webauthn/register")
-                    .contentType(MediaType.APPLICATION_JSON)
-                    .content(objectMapper.writeValueAsString(request)))
-                .andExpect(status().isBadRequest());
-        }
-
-        @Test
-        @DisplayName("Should register without optional aaguid")
-        void shouldRegisterWithoutAaguid() throws Exception {
-            WebauthnRegisterRequest request = createValidRegisterRequest();
-            request.setAaguid(null);
-
-            doNothing().when(credentialService).register(
-                request.getPuc(),
-                request.getCredentialId(),
-                request.getPublicKey(),
-                null,
-                request.getSignCount(),
-                request.getAuthenticatorAttachment(),
-                request.getResidentKey(),
-                request.getTransports()
-            );
-
-            mockMvc.perform(post("/webauthn/register")
-                    .contentType(MediaType.APPLICATION_JSON)
-                    .content(objectMapper.writeValueAsString(request)))
-                .andExpect(status().isOk());
-        }
-
-        @Test
-        @DisplayName("Should register without optional signCount")
-        void shouldRegisterWithoutSignCount() throws Exception {
-            WebauthnRegisterRequest request = createValidRegisterRequest();
-            request.setSignCount(null);
-
-            doNothing().when(credentialService).register(
-                request.getPuc(),
-                request.getCredentialId(),
-                request.getPublicKey(),
-                request.getAaguid(),
-                null,
-                request.getAuthenticatorAttachment(),
-                request.getResidentKey(),
-                request.getTransports()
-            );
-
-            mockMvc.perform(post("/webauthn/register")
-                    .contentType(MediaType.APPLICATION_JSON)
-                    .content(objectMapper.writeValueAsString(request)))
-                .andExpect(status().isOk());
-        }
     }
 
     @Nested
@@ -230,16 +97,6 @@ class WebauthnControllerTest {
                     .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isBadRequest());
         }
-    }
-
-    private WebauthnRegisterRequest createValidRegisterRequest() {
-        WebauthnRegisterRequest request = new WebauthnRegisterRequest();
-        request.setPuc("user-principal-claim-123");
-        request.setCredentialId("credential-id-abc");
-        request.setPublicKey("MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA...");
-        request.setAaguid("00000000-0000-0000-0000-000000000000");
-        request.setSignCount(0L);
-        return request;
     }
 
     private WebauthnRevokeRequest createValidRevokeRequest() {

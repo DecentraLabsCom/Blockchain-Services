@@ -104,6 +104,8 @@ class ProviderBillingControllerTest {
         when(providerSettlementService.submitInvoice(
             eq("12"),
             eq("0x1111111111111111111111111111111111111111"),
+            eq("CLAIM-1"),
+            eq("0x" + "11".repeat(32)),
             eq("INV-1"),
             eq(new BigDecimal("25.00")),
             eq(new BigDecimal("20.00"))
@@ -114,6 +116,8 @@ class ProviderBillingControllerTest {
                 .content("""
                     {
                       "providerAddress":"0x1111111111111111111111111111111111111111",
+                      "claimId":"CLAIM-1",
+                      "reservationHash":"0x1111111111111111111111111111111111111111111111111111111111111111",
                       "invoiceRef":"INV-1",
                       "eurAmount":"25.00",
                       "creditAmount":"20.00"

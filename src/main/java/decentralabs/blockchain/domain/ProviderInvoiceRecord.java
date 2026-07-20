@@ -22,6 +22,10 @@ public class ProviderInvoiceRecord {
     private Long id;
     private String labId;
     private String providerAddress;
+    /** Stable claim identifier shared by the reservation set and settlement records. */
+    private String claimId;
+    /** Hash of the canonical, sorted reservation-key set covered by this claim. */
+    private String reservationHash;
     private String invoiceRef;
     private BigDecimal eurAmount;
     private BigDecimal creditAmount;

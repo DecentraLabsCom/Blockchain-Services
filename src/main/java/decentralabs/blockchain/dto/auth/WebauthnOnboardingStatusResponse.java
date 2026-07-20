@@ -8,7 +8,7 @@ import lombok.NoArgsConstructor;
 
 /**
  * Response for checking the status of an onboarding session.
- * The SP can poll this endpoint to know the result without needing a callback.
+ * The SP polls this authenticated endpoint to obtain the result.
  */
 @Data
 @Builder

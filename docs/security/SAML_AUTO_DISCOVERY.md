@@ -48,7 +48,17 @@ Metadata transport rejects non-HTTPS URLs unless `saml.metadata.allow-http=true`
 
 ## Certificate cache and rotation
 
-Certificates are cached in memory by issuer in a bounded `ConcurrentHashMap` (maximum 500 issuers). There is no time-based expiry or cross-instance sharing. A process restart or `clearCertificateCache()` refreshes keys; planned key rotation therefore requires an operational cache clear/restart or a deployment that does not rely on stale certificates.
+Certificates are cached in memory by issuer in a bounded `ConcurrentHashMap`
+(maximum 500 issuers). A snapshot is reused only while its metadata URL matches
+and it is younger than `saml.metadata.certificate-cache-ms` (default five
+minutes). The scheduled readiness refresh also downloads every whitelisted
+issuer and publishes a new snapshot. If a signature fails, the validator evicts
+that issuer and performs one forced refresh before it rejects the assertion.
+
+The cache is not shared between instances. A process restart or
+`clearCertificateCache()` also forces refresh. Plan signing-key rotation with
+the metadata refresh/readiness state in mind; do not assume a stale snapshot is
+valid indefinitely.
 
 ## Configuration
 

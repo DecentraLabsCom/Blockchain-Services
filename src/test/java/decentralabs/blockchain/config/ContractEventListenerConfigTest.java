@@ -134,6 +134,27 @@ class ContractEventListenerConfigTest {
     }
 
     @Test
+    void classifiesAutomaticDenialsWithoutCollapsingIntoManualDecision() {
+        assertThat((BigInteger) ReflectionTestUtils.invokeMethod(
+            config,
+            "classifyAutomaticDenialReason",
+            new IllegalStateException("Unable to load lab metadata")
+        )).isEqualTo(BigInteger.valueOf(7));
+
+        assertThat((BigInteger) ReflectionTestUtils.invokeMethod(
+            config,
+            "classifyAutomaticDenialReason",
+            new IllegalArgumentException("Reservation time outside available hours")
+        )).isEqualTo(BigInteger.valueOf(2));
+
+        assertThat((BigInteger) ReflectionTestUtils.invokeMethod(
+            config,
+            "classifyAutomaticDenialReason",
+            new RuntimeException("RPC response could not be decoded")
+        )).isEqualTo(BigInteger.valueOf(6));
+    }
+
+    @Test
     void shouldPersistRequestedReservationUsingIndexedKey() throws Exception {
         ReflectionTestUtils.setField(config, "eventListeningEnabled", true);
 

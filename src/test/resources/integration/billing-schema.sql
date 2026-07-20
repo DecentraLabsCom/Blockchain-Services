@@ -105,6 +105,8 @@ CREATE TABLE IF NOT EXISTS provider_invoice_records (
     id              BIGINT AUTO_INCREMENT PRIMARY KEY,
     lab_id          VARCHAR(128)        NOT NULL,
     provider_address VARCHAR(42)        NOT NULL,
+    claim_id        VARCHAR(128)        NOT NULL UNIQUE,
+    reservation_hash CHAR(66)           NOT NULL,
     invoice_ref     VARCHAR(256)        NOT NULL,
     eur_amount      DECIMAL(18,2)       NOT NULL,
     credit_amount   DECIMAL(24,5)       NOT NULL DEFAULT 0,
@@ -125,14 +127,20 @@ CREATE TABLE IF NOT EXISTS provider_approvals (
 
 CREATE TABLE IF NOT EXISTS provider_payouts (
     id              BIGINT AUTO_INCREMENT PRIMARY KEY,
+    invoice_record_id BIGINT            NOT NULL,
     lab_id          VARCHAR(128)        NOT NULL,
     provider_address VARCHAR(42)        NOT NULL,
+    claim_id        VARCHAR(128)        NOT NULL,
     eur_amount      DECIMAL(18,2)       NOT NULL,
     credit_amount   DECIMAL(24,5)       NOT NULL DEFAULT 0,
+    paid_by         VARCHAR(42)         NOT NULL,
+    payment_ref     VARCHAR(256)        NOT NULL UNIQUE,
+    payment_attestation VARCHAR(256)    NOT NULL,
     bank_ref        VARCHAR(256)        NULL,
     eurc_tx_hash    VARCHAR(80)         NULL,
     usdc_tx_hash    VARCHAR(80)         NULL,
-    paid_at         TIMESTAMP           NOT NULL DEFAULT CURRENT_TIMESTAMP
+    paid_at         TIMESTAMP           NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (invoice_record_id) REFERENCES provider_invoice_records(id)
 );
 
 -- ============================================================================

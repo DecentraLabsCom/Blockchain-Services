@@ -2,6 +2,13 @@
 
 This is illustrative NFT/lab metadata for documentation and fixtures. URLs, dates and availability values are examples; they are not a live catalogue or an authorization source.
 
+For the gateway's full lab-administration setup, `name` and `description` are
+required top-level fields. Top-level `image`, `images` and `docs` values, when
+present, must be HTTPS or gateway content URLs. The `attributes` array below is
+consumer metadata; it does not bypass the on-chain lab configuration or access
+validation. See [Lab administration and content](../services/lab-administration/LAB_ADMINISTRATION.md)
+for publishing and content-retention behavior.
+
 The top-level object follows the common `name`, `description`, `image` and `attributes` shape. Attribute values are intentionally heterogeneous: strings, arrays, numbers and objects are all valid for the consumer that renders lab metadata. `opens`, `closes` and `unavailableWindows.*` use Unix seconds; `timezone` controls the interpretation of the human-readable hours.
 
 ```json

@@ -100,6 +100,8 @@ public class ProviderBillingController {
         ProviderInvoiceRecord record = providerSettlementService.submitInvoice(
             labId,
             request.getProviderAddress(),
+            request.getClaimId(),
+            request.getReservationHash(),
             request.getInvoiceRef(),
             request.getEurAmount(),
             request.getCreditAmount()
@@ -111,8 +113,8 @@ public class ProviderBillingController {
     public ResponseEntity<ProviderApproval> approveInvoice(
         @PathVariable long invoiceId,
         @Valid @RequestBody ApproveProviderInvoiceRequest request
-    ) {
-        EthereumAddressValidator.validate(request.getApprovedBy(), "approvedBy");
+        ) {
+            EthereumAddressValidator.validate(request.getApprovedBy(), "approvedBy");
         ProviderApproval approval = providerSettlementService.approveInvoice(
             invoiceId,
             request.getApprovedBy(),
@@ -122,18 +124,22 @@ public class ProviderBillingController {
         return ResponseEntity.ok(approval);
     }
 
-    @PostMapping("/provider-receivables/{labId}/pay")
+    @PostMapping("/provider-receivables/invoices/{invoiceId}/pay")
     public ResponseEntity<ProviderPayout> recordPayout(
-        @PathVariable String labId,
+        @PathVariable long invoiceId,
         @Valid @RequestBody RecordProviderPayoutRequest request
     ) {
         EthereumAddressValidator.validate(request.getProviderAddress(), "providerAddress");
+        EthereumAddressValidator.validate(request.getPaidBy(), "paidBy");
         BigDecimal creditAmount = request.getCreditAmount() != null ? request.getCreditAmount() : BigDecimal.ZERO;
         ProviderPayout payout = providerSettlementService.recordPayout(
-            labId,
+            invoiceId,
             request.getProviderAddress(),
+            request.getPaidBy(),
             request.getEurAmount(),
             creditAmount,
+            request.getPaymentRef(),
+            request.getPaymentAttestation(),
             request.getBankRef(),
             request.getEurcTxHash(),
             request.getUsdcTxHash()

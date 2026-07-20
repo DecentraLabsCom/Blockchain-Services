@@ -2,7 +2,11 @@ package decentralabs.blockchain.config;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.contains;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import io.reactivex.Flowable;
@@ -14,6 +18,9 @@ import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jdbc.core.PreparedStatementSetter;
+import org.springframework.jdbc.core.RowMapper;
 import org.springframework.test.util.ReflectionTestUtils;
 import org.web3j.abi.TypeReference;
 import org.web3j.abi.datatypes.Event;
@@ -30,12 +37,13 @@ class EventPollingFallbackServiceTest {
 
     @BeforeEach
     void setUp() {
-        service = new EventPollingFallbackService();
+        service = new EventPollingFallbackService(null);
         ReflectionTestUtils.setField(service, "pollingEnabled", false);
         ReflectionTestUtils.setField(service, "websocketEnabled", false);
         ReflectionTestUtils.setField(service, "pollingIntervalSeconds", 1);
         ReflectionTestUtils.setField(service, "maxBlockRange", 1000);
         ReflectionTestUtils.setField(service, "lookbackBlocks", 5);
+        ReflectionTestUtils.setField(service, "durableJournalRequired", false);
     }
 
     @Test
@@ -49,7 +57,7 @@ class EventPollingFallbackServiceTest {
     }
 
     @Test
-    void handleEventLog_deduplicatesAndUpdatesLastProcessedBlock() {
+    void handleEventLog_deduplicatesWithoutAdvancingPollingCursor() {
         Event event = new Event("ReservationRequested", List.of(TypeReference.create(Uint256.class)));
         AtomicInteger handled = new AtomicInteger();
         service.registerEvent("ReservationRequested", event, null, log -> handled.incrementAndGet());
@@ -64,7 +72,7 @@ class EventPollingFallbackServiceTest {
         assertThat(first).isTrue();
         assertThat(second).isFalse();
         assertThat(handled.get()).isEqualTo(1);
-        assertThat(service.getLastProcessedBlock(signature)).isEqualTo(BigInteger.valueOf(25));
+        assertThat(service.getLastProcessedBlock(signature)).isNull();
     }
 
     @Test
@@ -146,6 +154,51 @@ class EventPollingFallbackServiceTest {
     }
 
     @Test
+    void start_refusesMemoryOnlyEventListeningWhenDurableJournalIsRequired() {
+        Web3j web3j = mock(Web3j.class);
+        ReflectionTestUtils.setField(service, "durableJournalRequired", true);
+        service.initialize(web3j, "0xcontract");
+
+        service.start();
+
+        assertThat(ReflectionTestUtils.getField(service, "started")).isEqualTo(false);
+    }
+
+    @Test
+    void handleEventLog_usesDurableJournalAndAcknowledgesAfterHandler() {
+        JdbcTemplate jdbcTemplate = mock(JdbcTemplate.class);
+        ReflectionTestUtils.setField(service, "jdbcTemplate", jdbcTemplate);
+        ReflectionTestUtils.setField(service, "durableJournalRequired", true);
+        when(jdbcTemplate.query(
+            anyString(),
+            any(PreparedStatementSetter.class),
+            org.mockito.ArgumentMatchers.<RowMapper<Object>>any()
+        )).thenReturn(List.of());
+        when(jdbcTemplate.update(anyString(), any(Object[].class))).thenReturn(1);
+        when(jdbcTemplate.queryForObject(anyString(), eq(Integer.class), any(Object[].class))).thenReturn(1);
+
+        Web3j web3j = mock(Web3j.class);
+        AtomicInteger handled = new AtomicInteger();
+        Event event = new Event("ReservationRequested", List.of(TypeReference.create(Uint256.class)));
+        service.initialize(web3j, "0xcontract");
+        service.registerEvent("ReservationRequested", event, null, log -> handled.incrementAndGet());
+        String signature = org.web3j.abi.EventEncoder.encode(event);
+        Object registration = ((Map<?, ?>) ReflectionTestUtils.getField(service, "registeredEvents")).get(signature);
+
+        assertThat((boolean) ReflectionTestUtils.invokeMethod(
+            service,
+            "handleEventLog",
+            registration,
+            log(signature, "0xdurable", BigInteger.ONE, BigInteger.valueOf(20)),
+            "polling"
+        )).isTrue();
+        assertThat(handled.get()).isEqualTo(1);
+        verify(jdbcTemplate).update(contains("INSERT IGNORE INTO contract_event_journal"), any(Object[].class));
+        verify(jdbcTemplate).update(contains("SET status='PROCESSING'"), any(Object[].class));
+        verify(jdbcTemplate).update(contains("SET status='DONE'"), any(Object[].class));
+    }
+
+    @Test
     void resetForNetworkSwitch_clearsCachesAndRestarts() {
         Web3j first = mock(Web3j.class);
         Web3j second = mock(Web3j.class);
@@ -192,6 +245,50 @@ class EventPollingFallbackServiceTest {
             log(signature, "0xtx3", BigInteger.valueOf(3), BigInteger.valueOf(20)),
             "polling"
         )).isFalse();
+    }
+
+    @Test
+    void handleEventLog_retriesAfterHandlerFailureInsteadOfPoisoningDeduplication() {
+        Event event = new Event("ReservationRequested", List.of(TypeReference.create(Uint256.class)));
+        AtomicInteger attempts = new AtomicInteger();
+        service.registerEvent("ReservationRequested", event, null, log -> {
+            if (attempts.incrementAndGet() == 1) {
+                throw new IllegalStateException("transient failure");
+            }
+        });
+
+        String signature = org.web3j.abi.EventEncoder.encode(event);
+        Object registration = ((Map<?, ?>) ReflectionTestUtils.getField(service, "registeredEvents")).get(signature);
+        Log eventLog = log(signature, "0xretryable", BigInteger.ONE, BigInteger.valueOf(20));
+
+        assertThat((boolean) ReflectionTestUtils.invokeMethod(service, "handleEventLog", registration, eventLog, "polling"))
+            .isFalse();
+        assertThat((boolean) ReflectionTestUtils.invokeMethod(service, "handleEventLog", registration, eventLog, "polling"))
+            .isTrue();
+        assertThat(attempts.get()).isEqualTo(2);
+    }
+
+    @Test
+    void pollEventsForRegistration_doesNotAdvanceCursorWhenHandlerFails() throws Exception {
+        Web3j web3j = mock(Web3j.class);
+        Event event = new Event("ReservationRequested", List.of(TypeReference.create(Uint256.class)));
+        service.initialize(web3j, "0xcontract");
+        service.registerEvent("ReservationRequested", event, BigInteger.valueOf(15), log -> {
+            throw new IllegalStateException("transient failure");
+        });
+        String signature = org.web3j.abi.EventEncoder.encode(event);
+        Object registration = ((Map<?, ?>) ReflectionTestUtils.getField(service, "registeredEvents")).get(signature);
+
+        EthLog.LogObject logObject = new EthLog.LogObject();
+        logObject.setTopics(List.of(signature));
+        logObject.setTransactionHash("0xfailed-handler");
+        logObject.setLogIndex("0x1");
+        logObject.setBlockNumber("0x10");
+        stubLogs(web3j, logObject);
+
+        ReflectionTestUtils.invokeMethod(service, "pollEventsForRegistration", registration, BigInteger.valueOf(16));
+
+        assertThat(service.getLastProcessedBlock(signature)).isEqualTo(BigInteger.valueOf(15));
     }
 
     @Test

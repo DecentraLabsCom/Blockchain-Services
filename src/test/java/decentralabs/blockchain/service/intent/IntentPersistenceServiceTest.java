@@ -1,6 +1,7 @@
 package decentralabs.blockchain.service.intent;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
@@ -12,6 +13,7 @@ import java.time.Instant;
 import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
+import java.util.Base64;
 
 import javax.sql.DataSource;
 
@@ -64,6 +66,28 @@ class IntentPersistenceServiceTest {
     class UpsertTests {
 
         @Test
+        @DisplayName("Should encrypt durable intent payloads with the dedicated key")
+        void shouldEncryptDurableIntentPayloads() {
+            byte[] key = new byte[32];
+            String encodedKey = Base64.getEncoder().encodeToString(key);
+            IntentPersistenceService encryptedService = new IntentPersistenceService(
+                dataSource,
+                new IntentPayloadCipher(encodedKey)
+            );
+            ReflectionTestUtils.setField(encryptedService, "jdbcTemplate", jdbcTemplate);
+            IntentRecord record = createTestRecord("req-encrypted", "LAB_ADD", "test");
+            record.setPayloadJson("{\"secret\":\"execution-material\"}");
+
+            encryptedService.upsert(record);
+
+            ArgumentCaptor<Object[]> captor = ArgumentCaptor.forClass(Object[].class);
+            verify(jdbcTemplate).update(anyString(), captor.capture());
+            String persistedPayload = (String) captor.getValue()[15];
+            assertThat(persistedPayload).startsWith("{\"ciphertext\":\"v1.");
+            assertThat(persistedPayload).doesNotContain("execution-material");
+        }
+
+        @Test
         @DisplayName("Should upsert intent record with all fields")
         void shouldUpsertIntentRecordWithAllFields() {
             IntentRecord record = createTestRecord("req-001", "LAB_ADD", "github");
@@ -85,6 +109,7 @@ class IntentPersistenceServiceTest {
                 eq("github"),
                 eq("lab-42"),
                 any(), // reservation key
+                any(), // puc_hash
                 eq("0xabc123"),
                 eq(12345L),
                 any(), // error
@@ -98,24 +123,22 @@ class IntentPersistenceServiceTest {
         }
 
         @Test
-        @DisplayName("Should skip upsert when jdbcTemplate is null")
-        void shouldSkipUpsertWhenJdbcTemplateIsNull() {
+        @DisplayName("Should fail upsert when jdbcTemplate is null")
+        void shouldFailUpsertWhenJdbcTemplateIsNull() {
             IntentPersistenceService nullService = new IntentPersistenceService(null);
             IntentRecord record = createTestRecord("req-002", "LAB_UPDATE", "web");
 
-            // Should not throw
-            nullService.upsert(record);
+            assertThrows(IntentPersistenceException.class, () -> nullService.upsert(record));
         }
 
         @Test
-        @DisplayName("Should handle database exception gracefully")
-        void shouldHandleDatabaseExceptionGracefully() {
+        @DisplayName("Should surface database exception to the caller")
+        void shouldSurfaceDatabaseExceptionToCaller() {
             IntentRecord record = createTestRecord("req-003", "RESERVATION", "api");
             when(jdbcTemplate.update(anyString(), any(Object[].class)))
                 .thenThrow(new RuntimeException("Connection failed"));
 
-            // Should not throw
-            service.upsert(record);
+            assertThrows(IntentPersistenceException.class, () -> service.upsert(record));
         }
 
         @Test
@@ -134,24 +157,22 @@ class IntentPersistenceServiceTest {
     class FindByRequestIdTests {
 
         @Test
-        @DisplayName("Should return empty when jdbcTemplate is null")
-        void shouldReturnEmptyWhenJdbcTemplateIsNull() {
+        @DisplayName("Should fail lookup when jdbcTemplate is null")
+        void shouldFailLookupWhenJdbcTemplateIsNull() {
             IntentPersistenceService nullService = new IntentPersistenceService(null);
 
-            Optional<IntentRecord> result = nullService.findByRequestId("any-id");
-
-            assertThat(result).isEmpty();
+            assertThrows(IntentPersistenceException.class, () -> nullService.findByRequestId("any-id"));
         }
 
         @Test
         @DisplayName("Should find existing record by request ID")
-        @SuppressWarnings("unchecked")
         void shouldFindExistingRecordByRequestId() throws Exception {
             String requestId = "req-find-001";
             IntentRecord expectedRecord = createTestRecord(requestId, "LAB_ADD", "github");
             expectedRecord.setStatus(IntentStatus.EXECUTED);
 
-            when(jdbcTemplate.query(anyString(), any(RowMapper.class), eq(requestId)))
+            when(jdbcTemplate.query(
+                anyString(), org.mockito.ArgumentMatchers.<RowMapper<IntentRecord>>any(), eq(requestId)))
                 .thenReturn(List.of(expectedRecord));
 
             Optional<IntentRecord> result = service.findByRequestId(requestId);
@@ -162,9 +183,9 @@ class IntentPersistenceServiceTest {
 
         @Test
         @DisplayName("Should return empty when record not found")
-        @SuppressWarnings("unchecked")
         void shouldReturnEmptyWhenRecordNotFound() {
-            when(jdbcTemplate.query(anyString(), any(RowMapper.class), anyString()))
+            when(jdbcTemplate.query(
+                anyString(), org.mockito.ArgumentMatchers.<RowMapper<IntentRecord>>any(), anyString()))
                 .thenReturn(Collections.emptyList());
 
             Optional<IntentRecord> result = service.findByRequestId("nonexistent-id");
@@ -173,15 +194,13 @@ class IntentPersistenceServiceTest {
         }
 
         @Test
-        @DisplayName("Should handle query exception gracefully")
-        @SuppressWarnings("unchecked")
-        void shouldHandleQueryExceptionGracefully() {
-            when(jdbcTemplate.query(anyString(), any(RowMapper.class), anyString()))
+        @DisplayName("Should surface query exception to the caller")
+        void shouldSurfaceQueryExceptionToCaller() {
+            when(jdbcTemplate.query(
+                anyString(), org.mockito.ArgumentMatchers.<RowMapper<IntentRecord>>any(), anyString()))
                 .thenThrow(new RuntimeException("Query failed"));
 
-            Optional<IntentRecord> result = service.findByRequestId("error-id");
-
-            assertThat(result).isEmpty();
+            assertThrows(IntentPersistenceException.class, () -> service.findByRequestId("error-id"));
         }
     }
 

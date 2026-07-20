@@ -1,10 +1,13 @@
 package decentralabs.blockchain.service.auth;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.lenient;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -155,21 +158,18 @@ class WebauthnCredentialServiceTest {
         }
 
         @Test
-        @DisplayName("Should store in memory even when database fails during registration")
-        void shouldStoreInMemoryEvenWhenDatabaseFails() {
+        @DisplayName("Should reject registration when database persistence fails")
+        void shouldRejectRegistrationWhenDatabasePersistenceFails() {
             DataAccessException dbError = new DataAccessResourceFailureException("Connection failed");
             when(jdbcTemplate.update(anyString(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any()))
                 .thenThrow(dbError);
 
-            // Should not throw - stores in memory first, then logs DB error
-            webauthnCredentialService.register(
+            assertThatThrownBy(() -> webauthnCredentialService.register(
                 TEST_PUC, TEST_CREDENTIAL_ID, TEST_PUBLIC_KEY, TEST_AAGUID, 0L, null, null, null
-            );
-            
-            // Verify credential is still findable from in-memory storage
-            Optional<WebauthnCredential> found = webauthnCredentialService.findCredential(TEST_PUC, TEST_CREDENTIAL_ID);
-            assertThat(found).isPresent();
-            assertThat(found.get().getPublicKey()).isEqualTo(TEST_PUBLIC_KEY);
+            ))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("durable persistence failed")
+                .hasCause(dbError);
         }
     }
 
@@ -215,8 +215,8 @@ class WebauthnCredentialServiceTest {
         }
 
         @Test
-        @DisplayName("Should update in-memory even when database fails during revocation")
-        void shouldUpdateInMemoryEvenWhenDatabaseFails() {
+        @DisplayName("Should reject revocation when database persistence fails")
+        void shouldRejectRevocationWhenDatabasePersistenceFails() {
             // First register a credential
             webauthnCredentialService.register(
                 TEST_PUC, TEST_CREDENTIAL_ID, TEST_PUBLIC_KEY, TEST_AAGUID, 0L, null, null, null
@@ -227,13 +227,72 @@ class WebauthnCredentialServiceTest {
             when(jdbcTemplate.update(anyString(), any(), any(), any(), any()))
                 .thenThrow(dbError);
 
-            // Should not throw - updates in-memory first, then logs DB error
-            webauthnCredentialService.revoke(TEST_PUC, TEST_CREDENTIAL_ID);
-            
-            // Verify credential is marked as inactive in memory
-            Optional<WebauthnCredential> found = webauthnCredentialService.findCredential(TEST_PUC, TEST_CREDENTIAL_ID);
-            assertThat(found).isPresent();
-            assertThat(found.get().isActive()).isFalse();
+            assertThatThrownBy(() -> webauthnCredentialService.revoke(TEST_PUC, TEST_CREDENTIAL_ID))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("durable revocation failed")
+                .hasCause(dbError);
+        }
+
+        @Test
+        @DisplayName("Should reject expired-credential revocation when database persistence fails")
+        void shouldRejectExpiredRevocationWhenDatabasePersistenceFails() {
+            ReflectionTestUtils.setField(webauthnCredentialService, "credentialsMaxAgeDays", 365L);
+            DataAccessException dbError = new DataAccessResourceFailureException("Connection failed");
+            when(jdbcTemplate.update(anyString(), any(), any(), any())).thenThrow(dbError);
+
+            assertThatThrownBy(() -> webauthnCredentialService.revokeExpiredCredentials())
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("expired-credential revocation failed")
+                .hasCause(dbError);
+        }
+    }
+
+    @Nested
+    @DisplayName("Signature counter tests")
+    class SignCountTests {
+
+        @Test
+        @DisplayName("Should advance the counter with a durable compare-and-set update")
+        void shouldAdvanceSignCountDurably() {
+            WebauthnCredential credential = new WebauthnCredential(
+                TEST_CREDENTIAL_ID, TEST_PUBLIC_KEY, TEST_AAGUID, 5L, true, 0L, 0L, null, null, null, null
+            );
+            @SuppressWarnings("unchecked")
+            var inMemory = (java.util.Map<String, WebauthnCredential>) ReflectionTestUtils
+                .getField(webauthnCredentialService, "inMemoryCredentials");
+            inMemory.put(TEST_PUC + ":" + TEST_CREDENTIAL_ID, credential);
+            when(jdbcTemplate.query(
+                anyString(), any(PreparedStatementSetter.class),
+                org.mockito.ArgumentMatchers.<ResultSetExtractor<Object>>any()
+            )).thenReturn(Optional.of(credential));
+            when(jdbcTemplate.update(anyString(), any(), any(), any(), any(), any())).thenReturn(1);
+
+            assertThat(webauthnCredentialService.advanceSignCount(TEST_PUC, TEST_CREDENTIAL_ID, 6L)).isTrue();
+            assertThat(webauthnCredentialService.findCredential(TEST_PUC, TEST_CREDENTIAL_ID).orElseThrow().getSignCount())
+                .isEqualTo(6L);
+            verify(jdbcTemplate).update(
+                argThat(sql -> sql.contains("WHERE puc=? AND credential_id=? AND active=TRUE AND sign_count=?")),
+                eq(6L), any(Long.class), eq(TEST_PUC), eq(TEST_CREDENTIAL_ID), eq(5L)
+            );
+        }
+
+        @Test
+        @DisplayName("Should reject a non-increasing non-zero counter")
+        void shouldRejectCounterReplay() {
+            WebauthnCredential credential = new WebauthnCredential(
+                TEST_CREDENTIAL_ID, TEST_PUBLIC_KEY, TEST_AAGUID, 5L, true, 0L, 0L, null, null, null, null
+            );
+            @SuppressWarnings("unchecked")
+            var inMemory = (java.util.Map<String, WebauthnCredential>) ReflectionTestUtils
+                .getField(webauthnCredentialService, "inMemoryCredentials");
+            inMemory.put(TEST_PUC + ":" + TEST_CREDENTIAL_ID, credential);
+            when(jdbcTemplate.query(
+                anyString(), any(PreparedStatementSetter.class),
+                org.mockito.ArgumentMatchers.<ResultSetExtractor<Object>>any()
+            )).thenReturn(Optional.of(credential));
+
+            assertThat(webauthnCredentialService.advanceSignCount(TEST_PUC, TEST_CREDENTIAL_ID, 5L)).isFalse();
+            verify(jdbcTemplate, never()).update(anyString(), any(), any(), any(), any(), any());
         }
     }
 
@@ -243,7 +302,6 @@ class WebauthnCredentialServiceTest {
 
         @Test
         @DisplayName("Should find active credential")
-        @SuppressWarnings("unchecked")
         void shouldFindActiveCredential() {
             WebauthnCredential expected = new WebauthnCredential(
                 TEST_CREDENTIAL_ID,
@@ -262,7 +320,7 @@ class WebauthnCredentialServiceTest {
             when(jdbcTemplate.query(
                 anyString(),
                 any(PreparedStatementSetter.class),
-                any(ResultSetExtractor.class)
+                org.mockito.ArgumentMatchers.<ResultSetExtractor<Object>>any()
             )).thenReturn(Optional.of(expected));
 
             Optional<WebauthnCredential> result = webauthnCredentialService.findCredential(TEST_PUC, TEST_CREDENTIAL_ID);
@@ -274,12 +332,11 @@ class WebauthnCredentialServiceTest {
 
         @Test
         @DisplayName("Should return empty for non-existent credential")
-        @SuppressWarnings("unchecked")
         void shouldReturnEmptyForNonExistentCredential() {
             when(jdbcTemplate.query(
                 anyString(),
                 any(PreparedStatementSetter.class),
-                any(ResultSetExtractor.class)
+                org.mockito.ArgumentMatchers.<ResultSetExtractor<Object>>any()
             )).thenReturn(Optional.empty());
 
             Optional<WebauthnCredential> result = webauthnCredentialService.findCredential(TEST_PUC, "unknown-cred");
@@ -289,7 +346,6 @@ class WebauthnCredentialServiceTest {
 
         @Test
         @DisplayName("Should check if credential is active")
-        @SuppressWarnings("unchecked")
         void shouldCheckIfCredentialIsActive() {
             WebauthnCredential activeCred = new WebauthnCredential(
                 TEST_CREDENTIAL_ID, TEST_PUBLIC_KEY, TEST_AAGUID, 0L, true, 0L, 0L, null, null, null, null
@@ -297,7 +353,7 @@ class WebauthnCredentialServiceTest {
             when(jdbcTemplate.query(
                 anyString(),
                 any(PreparedStatementSetter.class),
-                any(ResultSetExtractor.class)
+                org.mockito.ArgumentMatchers.<ResultSetExtractor<Object>>any()
             )).thenReturn(Optional.of(activeCred));
 
             boolean isActive = webauthnCredentialService.isCredentialActive(TEST_PUC, TEST_CREDENTIAL_ID);
@@ -307,7 +363,6 @@ class WebauthnCredentialServiceTest {
 
         @Test
         @DisplayName("Should return false for revoked credential")
-        @SuppressWarnings("unchecked")
         void shouldReturnFalseForRevokedCredential() {
             WebauthnCredential revokedCred = new WebauthnCredential(
                 TEST_CREDENTIAL_ID, TEST_PUBLIC_KEY, TEST_AAGUID, 0L, false, 0L, 0L, Instant.now().getEpochSecond(), null, null, null
@@ -315,7 +370,7 @@ class WebauthnCredentialServiceTest {
             when(jdbcTemplate.query(
                 anyString(),
                 any(PreparedStatementSetter.class),
-                any(ResultSetExtractor.class)
+                org.mockito.ArgumentMatchers.<ResultSetExtractor<Object>>any()
             )).thenReturn(Optional.of(revokedCred));
 
             boolean isActive = webauthnCredentialService.isCredentialActive(TEST_PUC, TEST_CREDENTIAL_ID);
@@ -325,12 +380,11 @@ class WebauthnCredentialServiceTest {
 
         @Test
         @DisplayName("Should return false when credential not found")
-        @SuppressWarnings("unchecked")
         void shouldReturnFalseWhenCredentialNotFound() {
             when(jdbcTemplate.query(
                 anyString(),
                 any(PreparedStatementSetter.class),
-                any(ResultSetExtractor.class)
+                org.mockito.ArgumentMatchers.<ResultSetExtractor<Object>>any()
             )).thenReturn(Optional.empty());
 
             boolean isActive = webauthnCredentialService.isCredentialActive(TEST_PUC, "unknown");
@@ -339,14 +393,31 @@ class WebauthnCredentialServiceTest {
         }
 
         @Test
-        @DisplayName("Should return from memory when database fails during lookup")
-        void shouldReturnFromMemoryWhenDatabaseFails() {
-            // First register a credential (this stores in memory)
+        @DisplayName("Should read the durable credential after registration")
+        void shouldReadDurableCredentialAfterRegistration() {
             webauthnCredentialService.register(
                 TEST_PUC, TEST_CREDENTIAL_ID, TEST_PUBLIC_KEY, TEST_AAGUID, 10L, null, null, null
             );
-            
-            // Verify credential is findable from in-memory storage (DB query not needed)
+
+            WebauthnCredential expected = new WebauthnCredential(
+                TEST_CREDENTIAL_ID,
+                TEST_PUBLIC_KEY,
+                TEST_AAGUID,
+                10L,
+                true,
+                Instant.now().getEpochSecond(),
+                Instant.now().getEpochSecond(),
+                null,
+                null,
+                null,
+                null
+            );
+            when(jdbcTemplate.query(
+                anyString(),
+                any(PreparedStatementSetter.class),
+                org.mockito.ArgumentMatchers.<ResultSetExtractor<Object>>any()
+            )).thenReturn(Optional.of(expected));
+
             Optional<WebauthnCredential> result = webauthnCredentialService.findCredential(TEST_PUC, TEST_CREDENTIAL_ID);
 
             assertThat(result).isPresent();
@@ -360,7 +431,6 @@ class WebauthnCredentialServiceTest {
 
         @Test
         @DisplayName("Should return all credentials for PUC")
-        @SuppressWarnings("unchecked")
         void shouldReturnAllCredentialsForPuc() {
             List<WebauthnCredential> expected = List.of(
                 new WebauthnCredential("cred1", TEST_PUBLIC_KEY, TEST_AAGUID, 0L, true, 0L, 0L, null, null, null, null),
@@ -371,7 +441,7 @@ class WebauthnCredentialServiceTest {
             when(jdbcTemplate.query(
                 anyString(),
                 any(PreparedStatementSetter.class),
-                any(RowMapper.class)
+                org.mockito.ArgumentMatchers.<RowMapper<WebauthnCredential>>any()
             )).thenReturn(expected);
 
             List<WebauthnCredential> result = webauthnCredentialService.getCredentials(TEST_PUC);
@@ -383,12 +453,11 @@ class WebauthnCredentialServiceTest {
 
         @Test
         @DisplayName("Should return empty list when no credentials")
-        @SuppressWarnings("unchecked")
         void shouldReturnEmptyListWhenNoCredentials() {
             when(jdbcTemplate.query(
                 anyString(),
                 any(PreparedStatementSetter.class),
-                any(RowMapper.class)
+                org.mockito.ArgumentMatchers.<RowMapper<WebauthnCredential>>any()
             )).thenReturn(List.of());
 
             List<WebauthnCredential> result = webauthnCredentialService.getCredentials(TEST_PUC);
@@ -403,12 +472,11 @@ class WebauthnCredentialServiceTest {
 
         @Test
         @DisplayName("Should handle null PUC as empty string")
-        @SuppressWarnings("unchecked")
         void shouldHandleNullPucAsEmptyString() {
             when(jdbcTemplate.query(
                 anyString(),
                 any(PreparedStatementSetter.class),
-                any(ResultSetExtractor.class)
+                org.mockito.ArgumentMatchers.<ResultSetExtractor<Object>>any()
             )).thenReturn(Optional.empty());
 
             Optional<WebauthnCredential> result = webauthnCredentialService.findCredential(null, TEST_CREDENTIAL_ID);
@@ -419,12 +487,11 @@ class WebauthnCredentialServiceTest {
 
         @Test
         @DisplayName("Should handle null credential ID as empty string")
-        @SuppressWarnings("unchecked")
         void shouldHandleNullCredentialIdAsEmptyString() {
             when(jdbcTemplate.query(
                 anyString(),
                 any(PreparedStatementSetter.class),
-                any(ResultSetExtractor.class)
+                org.mockito.ArgumentMatchers.<ResultSetExtractor<Object>>any()
             )).thenReturn(Optional.empty());
 
             Optional<WebauthnCredential> result = webauthnCredentialService.findCredential(TEST_PUC, null);
@@ -444,6 +511,19 @@ class WebauthnCredentialServiceTest {
         void setUpInMemoryMode() {
             inMemoryOnlyService = new WebauthnCredentialService(nullJdbcTemplateProvider);
             ReflectionTestUtils.setField(inMemoryOnlyService, "credentialsTable", "webauthn_credentials");
+            ReflectionTestUtils.setField(inMemoryOnlyService, "databaseRequired", false);
+        }
+
+        @Test
+        @DisplayName("Should reject registration without a database unless explicitly opted into memory-only mode")
+        void shouldRejectRegistrationWithoutDatabaseByDefault() {
+            ReflectionTestUtils.setField(inMemoryOnlyService, "databaseRequired", true);
+
+            assertThatThrownBy(() -> inMemoryOnlyService.register(
+                TEST_PUC, TEST_CREDENTIAL_ID, TEST_PUBLIC_KEY, TEST_AAGUID, 0L, null, null, null
+            ))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("database is required");
         }
 
         @Test

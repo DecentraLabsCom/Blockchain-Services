@@ -1,5 +1,6 @@
 package decentralabs.blockchain.service.labadmin;
 
+import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import decentralabs.blockchain.contract.Diamond;
 import decentralabs.blockchain.dto.labadmin.LabAdminAssetResponse;
@@ -7,6 +8,7 @@ import decentralabs.blockchain.dto.labadmin.LabAdminPublishRequest;
 import decentralabs.blockchain.dto.labadmin.LabAdminTransactionResponse;
 import decentralabs.blockchain.service.BackendUrlResolver;
 import decentralabs.blockchain.service.guacamole.GuacamoleProvisioningService;
+import decentralabs.blockchain.service.health.LabMetadataService;
 import decentralabs.blockchain.service.wallet.InstitutionalTxManagerProvider;
 import decentralabs.blockchain.service.wallet.InstitutionalWalletService;
 import decentralabs.blockchain.service.wallet.WalletService;
@@ -25,8 +27,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ConcurrentMap;
+import java.util.regex.Pattern;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -35,10 +36,12 @@ import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 import org.springframework.web.multipart.MultipartFile;
 import org.web3j.protocol.Web3j;
+import org.web3j.protocol.core.methods.response.Log;
 import org.web3j.protocol.core.methods.response.TransactionReceipt;
 import org.web3j.tx.TransactionManager;
 import org.web3j.tx.gas.StaticGasProvider;
 import org.web3j.utils.Convert;
+import org.web3j.utils.Numeric;
 
 @Service
 @RequiredArgsConstructor
@@ -48,6 +51,10 @@ public class LabAdminService {
     private static final long MAX_ASSET_BYTES = 10L * 1024L * 1024L;
     private static final List<String> IMAGE_TYPES = List.of("image/jpeg", "image/png", "image/webp", "image/gif");
     private static final List<String> DOC_TYPES = List.of("application/pdf");
+    private static final Pattern BYTES32_PATTERN = Pattern.compile("0x[0-9a-fA-F]{64}");
+    private static final String ZERO_BYTES32 = "0x" + "0".repeat(64);
+    private static final String ERC721_TRANSFER_TOPIC =
+        "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef";
 
     public record LabAdminDeleteAssetResponse(boolean success, boolean deleted, String path) {}
 
@@ -57,7 +64,8 @@ public class LabAdminService {
     private final BackendUrlResolver backendUrlResolver;
     private final ObjectMapper objectMapper;
     private final GuacamoleProvisioningService guacamoleProvisioningService;
-    private final ConcurrentMap<String, Long> pendingPublishes = new ConcurrentHashMap<>();
+    private final LabContentRetentionService contentRetentionService;
+    private final LabMetadataService labMetadataService;
 
     @Value("${contract.address}")
     private String contractAddress;
@@ -77,6 +85,9 @@ public class LabAdminService {
     @Value("${ethereum.gas.limit.contract:300000}")
     private BigInteger contractGasLimit;
 
+    @Value("${provider.puc-hash:}")
+    private String configuredCreatorPucHash;
+
     public Map<String, Object> status() {
         String wallet = institutionalWalletService.getInstitutionalWalletAddress();
         boolean walletConfigured = institutionalWalletService.isConfigured();
@@ -86,6 +97,7 @@ public class LabAdminService {
         result.put("walletConfigured", walletConfigured);
         result.put("providerAddress", wallet);
         result.put("isProvider", provider);
+        result.put("creatorPucHashConfigured", hasText(configuredCreatorPucHash));
         result.put("publicBaseUrl", publicBaseUrl());
         result.put("contentBaseUrl", publicBaseUrl() + "/lab-content");
         result.put("recommendedRemoteAccessURI", publicBaseUrl() + "/guacamole");
@@ -145,6 +157,9 @@ public class LabAdminService {
         String fileName = safeFileName(file.getOriginalFilename(), contentType, normalizedKind);
         Path targetDir = contentRoot().resolve("content").resolve(contentId).resolve(normalizedKind).normalize();
         ensureWithinContentRoot(targetDir);
+        if (contentRetentionService.isTombstoned("content/" + contentId + "/metadata.json")) {
+            throw new IllegalStateException("Lab content is retained after deletion");
+        }
         Files.createDirectories(targetDir);
         Path target = targetDir.resolve(fileName).normalize();
         ensureWithinContentRoot(target);
@@ -174,12 +189,14 @@ public class LabAdminService {
     }
 
     /**
-     * Publishes one business command.  The optional idempotency key belongs to
-     * the HTTP command instance; it must not be derived only from the metadata
-     * or calldata because a later publish can legitimately repeat those values.
+     * Publishes one business command. The idempotency key belongs to the HTTP
+     * command instance and is required so the durable outbox can coordinate
+     * retries across replicas.
      */
     public LabAdminTransactionResponse publish(LabAdminPublishRequest request, String idempotencyKey) throws Exception {
+        String commandKey = requirePublishIdempotencyKey(idempotencyKey);
         String wallet = requireProviderWallet();
+        String creatorPucHash = resolveCreatorPucHash(request);
         String uri = resolveMetadataUri(request);
         BigInteger price = requireNonNegative(request.price(), "price");
         String accessURI = requireText(request.accessURI(), "accessURI", 500);
@@ -189,6 +206,10 @@ public class LabAdminService {
         boolean listImmediately = request.listImmediately() == null || request.listImmediately();
         boolean allowDuplicate = Boolean.TRUE.equals(request.allowDuplicate());
 
+        if (listImmediately) {
+            preflightMetadataUri(uri);
+        }
+
         List<BigInteger> before = walletService.getLabsOwnedByProvider(wallet);
         if (!allowDuplicate) {
             Optional<BigInteger> existingLab = findOwnedLabByUri(uri, before);
@@ -197,39 +218,45 @@ public class LabAdminService {
             }
         }
 
-        String pendingKey = pendingPublishKey(wallet, uri);
-        if (!allowDuplicate && pendingPublishes.putIfAbsent(pendingKey, System.currentTimeMillis()) != null) {
-            return new LabAdminTransactionResponse(
-                true,
-                "pendingPublish",
-                null,
-                "pending",
-                null,
-                uri
-            );
+        Diamond diamond = loadWritableDiamond(operationKey("publish", "request", commandKey));
+        TransactionReceipt receipt = listImmediately
+            ? diamond.addAndListLabWithPucHash(uri, price, accessURI, accessKey, resourceType, creatorPucHash).send()
+            : diamond.addLabWithPucHash(uri, price, accessURI, accessKey, resourceType, creatorPucHash).send();
+        if (receipt == null || !receipt.isStatusOK()) {
+            throw new IllegalStateException("Lab publication transaction was reverted");
         }
+        BigInteger labId = extractCreatedLabId(receipt, wallet);
 
-        try {
-            String operationBusinessId = idempotencyKey != null && !idempotencyKey.isBlank()
-                ? "request"
-                : pendingKey;
-            Diamond diamond = loadWritableDiamond(operationKey("publish", operationBusinessId, idempotencyKey));
-            TransactionReceipt receipt = listImmediately
-                ? diamond.addAndListLab(uri, price, accessURI, accessKey, resourceType).send()
-                : diamond.addLab(uri, price, accessURI, accessKey, resourceType).send();
-            BigInteger labId = inferCreatedLabId(wallet, before);
+        return new LabAdminTransactionResponse(
+            true,
+            listImmediately ? "addAndListLabWithPucHash" : "addLabWithPucHash",
+            receipt.getTransactionHash(),
+            receipt.getStatus(),
+            labId,
+            uri
+        );
+    }
 
-            return new LabAdminTransactionResponse(
-                true,
-                listImmediately ? "addAndListLab" : "addLab",
-                receipt.getTransactionHash(),
-                receipt.getStatus(),
-                labId,
-                uri
-            );
-        } finally {
-            pendingPublishes.remove(pendingKey);
-        }
+    public LabAdminTransactionResponse bindCreatorPucHash(BigInteger labId, String creatorPucHash) throws Exception {
+        return bindCreatorPucHash(labId, creatorPucHash, null);
+    }
+
+    public LabAdminTransactionResponse bindCreatorPucHash(
+        BigInteger labId, String creatorPucHash, String idempotencyKey
+    ) throws Exception {
+        requireOwnedLab(labId);
+        String normalizedPucHash = requireCreatorPucHash(creatorPucHash);
+        TransactionReceipt receipt = loadWritableDiamond(operationKey("bind-creator", labId, idempotencyKey))
+            .bindLabCreatorPucHash(labId, normalizedPucHash)
+            .send();
+        return new LabAdminTransactionResponse(
+            true,
+            "bindLabCreatorPucHash",
+            receipt.getTransactionHash(),
+            receipt.getStatus(),
+            labId,
+            walletService.getLabTokenUri(labId).orElse(null)
+        );
     }
 
     public LabAdminTransactionResponse update(BigInteger labId, LabAdminPublishRequest request) throws Exception {
@@ -285,6 +312,19 @@ public class LabAdminService {
         String uri = walletService.getLabTokenUri(labId).orElse(null);
         TransactionReceipt receipt = loadWritableDiamond(operationKey("delete", labId, idempotencyKey))
             .deleteLab(labId).send();
+        if (receipt == null) {
+            throw new IllegalStateException("Lab deletion transaction returned no receipt");
+        }
+        if (!receipt.isStatusOK()) {
+            throw new IllegalStateException("Lab deletion transaction was reverted");
+        }
+        try {
+            contentRetentionService.markDeleted(labId, uri, receipt.getTransactionHash());
+        } catch (IOException ex) {
+            // The chain is authoritative; retain the successful result and
+            // let the scheduled reconciler retry the off-chain hand-off.
+            log.error("Lab {} deleted on-chain but content tombstone could not be written: {}", labId, ex.getMessage(), ex);
+        }
         return new LabAdminTransactionResponse(
             true,
             "deleteLab",
@@ -303,6 +343,10 @@ public class LabAdminService {
         BigInteger labId, boolean listed, String idempotencyKey
     ) throws Exception {
         requireOwnedLab(labId);
+        String uri = walletService.getLabTokenUri(labId).orElse(null);
+        if (listed) {
+            preflightMetadataUri(uri);
+        }
         TransactionReceipt receipt = listed
             ? loadWritableDiamond(operationKey("list", labId, idempotencyKey)).listLab(labId).send()
             : loadWritableDiamond(operationKey("unlist", labId, idempotencyKey)).unlistLab(labId).send();
@@ -312,11 +356,43 @@ public class LabAdminService {
             receipt.getTransactionHash(),
             receipt.getStatus(),
             labId,
-            walletService.getLabTokenUri(labId).orElse(null)
+            uri
         );
     }
 
+    private void preflightMetadataUri(String metadataUri) throws IOException {
+        String uri = requireText(metadataUri, "metadataUri", 1000);
+        String gatewayPrefix = publicBaseUrl().replaceAll("/+$", "") + "/lab-content/";
+        if (uri.startsWith(gatewayPrefix)) {
+            String relativePath = uri.substring(gatewayPrefix.length());
+            Path metadataFile = contentRoot().resolve(relativePath).normalize();
+            ensureWithinContentRoot(metadataFile);
+            if (!Files.isRegularFile(metadataFile) || Files.size(metadataFile) > 1024L * 1024L) {
+                throw new IllegalArgumentException("Metadata preflight failed: document is unavailable");
+            }
+            try {
+                Map<String, Object> metadata = objectMapper.readValue(
+                    metadataFile.toFile(), new TypeReference<Map<String, Object>>() {}
+                );
+                normalizeGeneratedMetadata(metadata);
+                validateGeneratedMetadata(metadata);
+            } catch (IllegalArgumentException ex) {
+                throw ex;
+            } catch (Exception ex) {
+                throw new IllegalArgumentException("Metadata preflight failed: document is not valid JSON", ex);
+            }
+            return;
+        }
+
+        try {
+            labMetadataService.getLabMetadata(uri);
+        } catch (RuntimeException ex) {
+            throw new IllegalArgumentException("Metadata preflight failed: URI is not accessible", ex);
+        }
+    }
+
     public org.springframework.core.io.Resource loadContentResource(String relativePath) throws IOException {
+        contentRetentionService.assertAvailable(relativePath);
         Path target = contentRoot().resolve(relativePath).normalize();
         ensureWithinContentRoot(target);
         if (!Files.isRegularFile(target)) {
@@ -395,10 +471,46 @@ public class LabAdminService {
         }
     }
 
-    private BigInteger inferCreatedLabId(String wallet, List<BigInteger> before) {
-        List<BigInteger> after = walletService.getLabsOwnedByProvider(wallet);
-        after.removeAll(before);
-        return after.stream().max((left, right) -> left.compareTo(right)).orElse(null);
+    BigInteger extractCreatedLabId(TransactionReceipt receipt, String providerWallet) {
+        if (receipt == null || receipt.getLogs() == null) {
+            throw new IllegalStateException("Successful lab publication has no receipt logs");
+        }
+        String expectedProviderTopic = indexedAddressTopic(providerWallet);
+        for (Log logEntry : receipt.getLogs()) {
+            if (logEntry == null || !isContractLog(logEntry) || logEntry.getTopics() == null) {
+                continue;
+            }
+            List<String> topics = logEntry.getTopics();
+            if (topics.size() < 4 || !ERC721_TRANSFER_TOPIC.equalsIgnoreCase(topics.get(0))) {
+                continue;
+            }
+            if (!BigInteger.ZERO.equals(Numeric.toBigInt(topics.get(1)))) {
+                continue;
+            }
+            if (!expectedProviderTopic.equalsIgnoreCase(topics.get(2))) {
+                continue;
+            }
+            BigInteger tokenId = Numeric.toBigInt(topics.get(3));
+            if (tokenId != null) {
+                return tokenId;
+            }
+        }
+        throw new IllegalStateException("Successful lab publication has no mint Transfer event for the provider wallet");
+    }
+
+    private boolean isContractLog(Log logEntry) {
+        return logEntry.getAddress() == null
+            || contractAddress == null
+            || contractAddress.isBlank()
+            || contractAddress.equalsIgnoreCase(logEntry.getAddress());
+    }
+
+    private String indexedAddressTopic(String address) {
+        String normalized = Numeric.cleanHexPrefix(address == null ? "" : address).toLowerCase(Locale.ROOT);
+        if (!normalized.matches("[0-9a-f]{40}")) {
+            throw new IllegalArgumentException("provider wallet must be a valid address");
+        }
+        return "0x" + "0".repeat(24) + normalized;
     }
 
     Optional<BigInteger> findOwnedLabByUri(String uri, List<BigInteger> ownedLabs) {
@@ -441,8 +553,32 @@ public class LabAdminService {
         );
     }
 
-    private String pendingPublishKey(String wallet, String uri) {
-        return (wallet == null ? "" : wallet.toLowerCase(Locale.ROOT)) + "|" + (uri == null ? "" : uri);
+    private String requirePublishIdempotencyKey(String idempotencyKey) {
+        String normalized = idempotencyKey == null ? "" : idempotencyKey.trim();
+        if (normalized.isBlank()) {
+            throw new IllegalArgumentException("Idempotency-Key is required for lab publication");
+        }
+        if (normalized.length() > 128) {
+            throw new IllegalArgumentException("Idempotency-Key must not exceed 128 characters");
+        }
+        return normalized;
+    }
+
+    private String resolveCreatorPucHash(LabAdminPublishRequest request) {
+        String requested = request == null ? null : request.creatorPucHash();
+        return requireCreatorPucHash(hasText(requested) ? requested : configuredCreatorPucHash);
+    }
+
+    private String requireCreatorPucHash(String value) {
+        String normalized = value == null ? "" : value.trim();
+        if (!BYTES32_PATTERN.matcher(normalized).matches() || ZERO_BYTES32.equalsIgnoreCase(normalized)) {
+            throw new IllegalArgumentException("creatorPucHash must be a non-zero 0x-prefixed bytes32 value");
+        }
+        return normalized.toLowerCase(Locale.ROOT);
+    }
+
+    private boolean hasText(String value) {
+        return value != null && !value.isBlank();
     }
 
     private String operationKey(String action, Object businessId, String idempotencyKey) {

@@ -117,6 +117,27 @@ public class LabAdminController {
         }
     }
 
+    @PostMapping("/lab-admin/labs/{labId}/creator-binding")
+    public ResponseEntity<?> bindCreatorPucHash(
+        @PathVariable BigInteger labId,
+        @RequestBody(required = false) Map<String, String> body,
+        @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey
+    ) {
+        try {
+            String creatorPucHash = body == null ? null : body.get("creatorPucHash");
+            LabAdminTransactionResponse response = hasText(idempotencyKey)
+                ? labAdminService.bindCreatorPucHash(labId, creatorPucHash, idempotencyKey)
+                : labAdminService.bindCreatorPucHash(labId, creatorPucHash);
+            return ResponseEntity.ok(response);
+        } catch (IdempotencyKeyPayloadMismatchException ex) {
+            return idempotencyConflict(ex);
+        } catch (IllegalArgumentException | IllegalStateException ex) {
+            return badRequest(ex);
+        } catch (Exception ex) {
+            return internal("Failed to bind creator PUC hash", ex);
+        }
+    }
+
     @PutMapping("/lab-admin/labs/{labId}")
     public ResponseEntity<?> update(
         @PathVariable BigInteger labId,

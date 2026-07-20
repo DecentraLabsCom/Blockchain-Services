@@ -8,14 +8,17 @@ Marketplace APIs.
 
 `LocalhostOnlyFilter` protects `/wallet`, `/billing`, `/wallet-dashboard`,
 `/institution-config`, `/lab-admin` and `/access-audit/internal`. Requests are
-allowed from loopback by default. Private-network access requires the matching
-`SECURITY_ALLOW_PRIVATE_NETWORKS`, dashboard/CIDR settings and a valid route
-token where configured.
+allowed from loopback by default. Remote private-network access requires the
+matching `ADMIN_DASHBOARD_ALLOW_PRIVATE`, `SECURITY_ALLOW_PRIVATE_NETWORKS` and
+CIDR settings, plus a valid route token when access-token enforcement applies.
+Forwarded client addresses are considered only behind the configured trusted
+proxies.
 
 Billing admin routes additionally require `ROLE_INTERNAL` in provider mode. In
-consumer-only mode a valid `ADMIN_ACCESS_TOKEN` is still the intended control;
-the token may be supplied through `X-Access-Token` or the configured cookie, not
-through a query parameter.
+consumer-only mode the local/private-network filter is the boundary and a valid
+`ADMIN_ACCESS_TOKEN` is the intended remote-administration control. The token
+may be supplied through `X-Access-Token`, a Bearer header or the configured
+cookie, not through a query parameter.
 
 Never expose `/wallet/reveal` or mutating billing endpoints directly to the
 Internet.
@@ -152,10 +155,30 @@ retransmitted indefinitely.
 - `POST /billing/admin/notifications/send`
 - `POST /billing/admin/notifications/test`
 
+### Provider settlement claims
+
 Provider network and receivable operations are under `/billing/provider-network`
-and `/billing/provider-receivables`. Their exact payloads are defined by the
-controller DTOs; use the dashboard or generated API client rather than copying
-an old runbook example.
+and `/billing/provider-receivables`. Provider settlement is a local, auditable
+claim lifecycle rather than an implicit status switch:
+
+```mermaid
+stateDiagram-v2
+    [*] --> SUBMITTED: invoice with claimId + reservationHash + invoiceRef
+    SUBMITTED --> APPROVED: matching EUR approval + approvalRef
+    APPROVED --> PAID: matching EUR payment + paymentRef + attestation
+```
+
+An invoice requires a unique `claimId`, non-zero `reservationHash`, unique
+`invoiceRef`, provider address and positive EUR amount. Approval is allowed
+only from `SUBMITTED`; its EUR amount must exactly match the invoice and its
+`approvalRef` must be unique. Payment is allowed only from `APPROVED`; its
+provider and EUR amount must match the claim and it requires unique
+`paymentRef` plus a non-empty `paymentAttestation`. `bankRef`, `eurcTxHash` and
+`usdcTxHash` are optional supplementary evidence.
+
+Use the controller DTOs or dashboard for JSON field names. A client must not
+retry a new claim/payment reference after a lost response; first query the
+existing invoice or reconcile the unique reference.
 
 ## Compliance exports
 
@@ -169,13 +192,15 @@ The actual export paths are:
 - `GET /billing/compliance/exports/completed-payouts?providerAddress=0x...`
 - `GET /billing/compliance/exports/provider-network`
 
-See [Compliance Runbooks](../../operations/COMPLIANCE_RUNBOOKS.md) for the operational use of
-these exports.
+The operational use of these exports is maintained in private compliance
+runbooks.
 
 ## Dashboard and provisioning
 
 - `/wallet-dashboard/` serves the wallet and billing UI.
 - `/institution-config/` serves provider/consumer configuration UI.
+- `/lab-admin/**` is a separate provider-lab surface; see
+  [Lab administration and content](../lab-administration/LAB_ADMINISTRATION.md).
 - Provisioning token flows are documented in
   [Intents and provisioning](../intents/INTENTS_PROVISIONING.md).
 

@@ -88,6 +88,31 @@ class LabAdminControllerTest {
     }
 
     @Test
+    void creatorBindingForwardsHashAndIdempotencyKey() throws Exception {
+        String pucHash = "0x" + "1".repeat(64);
+        when(labAdminService.bindCreatorPucHash(BigInteger.valueOf(5), pucHash, "bind-command-1"))
+            .thenReturn(new decentralabs.blockchain.dto.labadmin.LabAdminTransactionResponse(
+                true,
+                "bindLabCreatorPucHash",
+                "0xtx",
+                "0x1",
+                BigInteger.valueOf(5),
+                "https://lab.example.edu/metadata.json"
+            ));
+
+        mockMvc.perform(post("/lab-admin/labs/5/creator-binding")
+                .header("Idempotency-Key", "bind-command-1")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"creatorPucHash\":\"" + pucHash + "\"}"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.success").value(true))
+            .andExpect(jsonPath("$.action").value("bindLabCreatorPucHash"))
+            .andExpect(jsonPath("$.labId").value(5));
+
+        verify(labAdminService).bindCreatorPucHash(BigInteger.valueOf(5), pucHash, "bind-command-1");
+    }
+
+    @Test
     void missingLabContentReturnsNotFound() throws Exception {
         when(labAdminService.loadContentResource(anyString()))
             .thenThrow(new FileNotFoundException("missing"));

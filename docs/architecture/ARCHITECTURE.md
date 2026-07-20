@@ -6,13 +6,13 @@ not a substitute for the endpoint-specific guides.
 
 ## Scope and deployment modes
 
-The service is a Spring Boot 4 application running on Java 21. It can be used in
+The service is a Spring Boot 4.1 application running on Java 21. It can be used in
 three ways:
 
 | Mode | Typical topology | Provider/auth surface | Consumer/wallet surface |
 | --- | --- | --- | --- |
 | Full gateway | Lab Gateway + embedded backend | Enabled when `FEATURES_PROVIDERS_ENABLED=true` | Enabled |
-| Lite gateway backend | Full gateway delegates to a Lite gateway | The Lite gateway is an access edge; Full remains the auth/provider authority | Enabled at the edge as configured |
+| Lite gateway edge | A Lite gateway trusts a remote Full gateway | Full remains the auth/provider authority; Lite validates remote issuer/JWKS | Present only when the Lite deployment explicitly needs this backend capability |
 | Standalone consumer | This repository without a provider gateway | Disabled by default | Enabled |
 
 `FEATURES_PROVIDERS_ENABLED` is `false` by default in
@@ -20,6 +20,10 @@ three ways:
 deployment supplies the values required for Full or Lite operation. Do not infer
 deployment mode from the repository name; inspect `ISSUER` in the gateway and
 the provider feature flags in this service.
+The provider feature controls the conditional OIDC/JWKS and FMU controllers and
+the health operating mode. The SAML controller's `/auth` mappings are not
+conditional, so network exposure and the intended topology remain essential
+controls.
 
 ## System context
 
@@ -40,6 +44,7 @@ flowchart LR
     Gateway --> Station
     Backend -->|Web3j| Contracts
     Backend --> MySQL
+    Backend -->|public metadata/content| User
     Gateway -.->|Full/Lite provisioning| Backend
 ```
 
@@ -52,6 +57,7 @@ flowchart LR
 | Backend → MySQL | Outbox, nonce, ticket, delivery and audit rows | Durable local state and migration schema |
 | Gateway → backend | Internal access-code or session-observer credentials | Per-gateway configured credentials; never user-supplied gateway IDs |
 | Gateway → Guacamole/FMUs/station | Provisioning and runtime calls | Gateway-side token validation plus backend authorization |
+| Operator → lab administration | Admin or Lab Manager network/token policy | Institutional provider wallet, content volume and on-chain receipts |
 
 ## Access and evidence flow
 
@@ -84,6 +90,19 @@ sequenceDiagram
 observations are correlated with the exact token and may use durable connection
 history to cover a short connection between polls. FMU realtime creation also
 requires durable observation before `session.created` is emitted.
+
+## Processing and persistence model
+
+MySQL is not just a cache. It owns durable access delivery, WebAuthn
+credentials, intent state, audit records, nonce/outbox coordination and the
+contract-event journal. Production deployments must persist it together with
+`/app/data` and the configured lab-content volume.
+
+Contract events use a durable journal keyed by contract, event signature,
+transaction hash and log index. Its cursor moves only when an event range is
+safe; retryable failures replay the same range, and exhausted rows become
+`DEAD_LETTER` for operator review. Detailed recovery procedures are maintained
+in private operator runbooks.
 
 ## Durable transaction flow
 
@@ -126,9 +145,11 @@ it, together with manual-intervention rows and stale `RETRY`/`SUBMITTING` rows.
 - [Authentication and access evidence](../services/authentication/AUTH.md)
 - [Intents and provisioning](../services/intents/INTENTS_PROVISIONING.md)
 - [Wallet, billing and administration](../services/wallet/WALLET_BILLING.md)
+- [Lab administration and content](../services/lab-administration/LAB_ADMINISTRATION.md)
+- [Deployment and configuration](../configuration/DEPLOYMENT.md)
 - [Security configuration](../security/SECURITY.md)
 - [SAML metadata discovery](../security/SAML_AUTO_DISCOVERY.md)
-- [Compliance exports and runbooks](../operations/COMPLIANCE_RUNBOOKS.md)
+- [API reference](../reference/API_REFERENCE.md)
 - [Example lab metadata](../reference/example-lab-metadata.md)
 
 When a document conflicts with a controller, `application.properties`, or a

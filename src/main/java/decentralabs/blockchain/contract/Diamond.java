@@ -512,6 +512,21 @@ public class Diamond extends Contract {
     }
 
     /**
+     * Deny a pending reservation request with an explicit provider reason code.
+     */
+    public RemoteFunctionCall<TransactionReceipt> denyReservationRequestWithReason(
+        byte[] reservationKey,
+        BigInteger reason
+    ) {
+        final Function function = new Function(
+            "denyReservationRequestWithReason",
+            Arrays.asList(new Bytes32(reservationKey), new Uint8(reason)),
+            List.of()
+        );
+        return executeRemoteCallTransaction(function);
+    }
+
+    /**
      * Add a lab owned by the transaction sender.
      */
     public RemoteFunctionCall<TransactionReceipt> addLab(
@@ -554,6 +569,73 @@ public class Diamond extends Contract {
                 new Utf8String(accessKey),
                 new Uint8(resourceType)
             ),
+            List.of()
+        );
+        return executeRemoteCallTransaction(function);
+    }
+
+    /**
+     * Add a lab and bind the creator PUC hash atomically.
+     */
+    public RemoteFunctionCall<TransactionReceipt> addLabWithPucHash(
+        String uri,
+        BigInteger price,
+        String accessURI,
+        String accessKey,
+        BigInteger resourceType,
+        String pucHash
+    ) {
+        final Function function = new Function(
+            "addLabWithPucHash",
+            Arrays.asList(
+                new Utf8String(uri),
+                new Uint96(price),
+                new Utf8String(accessURI),
+                new Utf8String(accessKey),
+                new Uint8(resourceType),
+                new Bytes32(toBytes32(pucHash))
+            ),
+            List.of()
+        );
+        return executeRemoteCallTransaction(function);
+    }
+
+    /**
+     * Add and list a lab with an atomic creator PUC binding.
+     */
+    public RemoteFunctionCall<TransactionReceipt> addAndListLabWithPucHash(
+        String uri,
+        BigInteger price,
+        String accessURI,
+        String accessKey,
+        BigInteger resourceType,
+        String pucHash
+    ) {
+        final Function function = new Function(
+            "addAndListLabWithPucHash",
+            Arrays.asList(
+                new Utf8String(uri),
+                new Uint96(price),
+                new Utf8String(accessURI),
+                new Utf8String(accessKey),
+                new Uint8(resourceType),
+                new Bytes32(toBytes32(pucHash))
+            ),
+            List.of()
+        );
+        return executeRemoteCallTransaction(function);
+    }
+
+    /**
+     * Bind an existing unbound lab to its creator PUC hash.
+     */
+    public RemoteFunctionCall<TransactionReceipt> bindLabCreatorPucHash(
+        BigInteger labId,
+        String pucHash
+    ) {
+        final Function function = new Function(
+            "bindLabCreatorPucHash",
+            Arrays.asList(new Uint256(labId), new Bytes32(toBytes32(pucHash))),
             List.of()
         );
         return executeRemoteCallTransaction(function);
@@ -875,6 +957,53 @@ public class Diamond extends Contract {
         return new Function(
             "requestProviderPayout",
             Arrays.asList(new Uint256(labId), new Uint256(maxBatch)),
+            List.of()
+        );
+    }
+
+    public static Function submitProviderSettlementClaimFunction(
+        byte[] claimId,
+        BigInteger labId,
+        BigInteger amount,
+        byte[] reservationsHash,
+        byte[] invoiceReferenceHash
+    ) {
+        return new Function(
+            "submitProviderSettlementClaim",
+            Arrays.asList(
+                new Bytes32(claimId),
+                new Uint256(labId),
+                new Uint256(amount),
+                new Bytes32(reservationsHash),
+                new Bytes32(invoiceReferenceHash)
+            ),
+            List.of()
+        );
+    }
+
+    public static Function approveProviderSettlementClaimFunction(
+        byte[] claimId,
+        byte[] approvalReferenceHash
+    ) {
+        return new Function(
+            "approveProviderSettlementClaim",
+            Arrays.asList(new Bytes32(claimId), new Bytes32(approvalReferenceHash)),
+            List.of()
+        );
+    }
+
+    public static Function recordProviderSettlementClaimPaymentFunction(
+        byte[] claimId,
+        byte[] paymentReferenceHash,
+        byte[] paymentAttestationHash
+    ) {
+        return new Function(
+            "recordProviderSettlementClaimPayment",
+            Arrays.asList(
+                new Bytes32(claimId),
+                new Bytes32(paymentReferenceHash),
+                new Bytes32(paymentAttestationHash)
+            ),
             List.of()
         );
     }

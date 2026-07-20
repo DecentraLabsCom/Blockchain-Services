@@ -34,8 +34,15 @@ ADMIN_ACCESS_TOKEN_REQUIRED=true
 
 Forwarded client IP headers are trusted only from
 `SECURITY_TRUSTED_PROXY_CIDRS`. Extend that list only for known reverse proxies.
-Tokens are accepted through the configured header or cookie; query-string
-tokens are intentionally rejected.
+Tokens are accepted through the configured header, an `Authorization: Bearer`
+header or the configured cookie; query-string tokens are intentionally rejected.
+
+Loopback is allowed by the local-only policy. For a remote private-network
+client, enable both private-network flags, constrain `ADMIN_ALLOWED_CIDRS` and
+keep `ADMIN_ACCESS_TOKEN_REQUIRED=true`. If `ADMIN_DASHBOARD_LOCAL_ONLY=false`,
+the route token becomes the remaining `LocalhostOnlyFilter` control. Provider
+mode adds Spring Security's `ROLE_INTERNAL` requirement to `/billing/admin/**`.
+Do not infer that a loopback rule alone grants the provider billing role.
 
 Provider mode also enforces `ROLE_INTERNAL` on `/billing/admin/**`; a valid
 `ADMIN_ACCESS_TOKEN` is therefore required even when the request originates on
@@ -71,6 +78,20 @@ filter plus the configured access token.
 - Keep `GUACAMOLE_PROVISIONER_ROUTES_JSON` explicit for remote/Lite gateways;
   never derive a remote credential from untrusted lab metadata.
 
+## Lab administration and content
+
+- `/lab-admin/**` accepts the ordinary admin route token or the dedicated
+  `X-Lab-Manager-Token` only from an allowed `LAB_MANAGER_ALLOWED_CIDRS` range.
+  The latter does not authorize wallet, billing or audit routes.
+- `/lab-content/**` is public read-only content with permissive read CORS so
+  lab metadata can reference it. Upload only public images, PDF documents and
+  metadata; never place keys, access credentials or operational documents in
+  `LAB_CONTENT_BASE_PATH`.
+- A lab deletion writes a tombstone after the on-chain receipt succeeds.
+  Tombstoned content is hidden immediately and purged only after
+  `LAB_CONTENT_RETENTION`. Restore the content volume before attempting manual
+  recovery.
+
 ## Wallet and transaction safety
 
 - Persist MySQL, wallet data and all durable outboxes before production use.
@@ -83,14 +104,34 @@ filter plus the configured access token.
 - Keep RPC failover endpoints under operator control and avoid embedding API
   keys in properties or documentation.
 
+## Durable event processing
+
+- Contract event handling requires the MySQL journal by default
+  (`CONTRACT_EVENT_PERSISTENCE_REQUIRED=true`). It uses leases, retry timing and
+  a durable cursor to avoid duplicate side effects across replicas.
+- `DEAD_LETTER` and `STUCK_UNKNOWN` rows are evidence, not cleanup targets.
+  Reconcile the chain and persisted state before any reviewed replay or manual
+  remediation.
+- Intent persistence excludes raw SAML/WebAuthn assertions and client
+  signatures, and encrypts the minimal retained execution payload with
+  `INTENT_PAYLOAD_ENCRYPTION_KEY`. Store that independent 32-byte AES key in a
+  secret manager; do not add authentication artefacts to logs or durable debug
+  records.
+
 ## Pre-deployment checklist
 
 - [ ] Provider/consumer mode and Full/Lite topology are explicit.
 - [ ] JWT key pair, wallet encryption key and database storage are persistent.
+- [ ] `INTENT_PAYLOAD_ENCRYPTION_KEY` is a managed 32-byte key before any
+      intent execution payload is persisted.
 - [ ] SAML trust mode is `whitelist`; metadata HTTP is disabled.
 - [ ] Marketplace public key and provisioning JWKS URLs use HTTPS.
 - [ ] Admin routes are loopback/private-network restricted and token protected.
 - [ ] Observer and gateway credentials are unique per gateway.
+- [ ] Lab-manager credentials and public lab-content storage are scoped to the
+      intended operator and contain no secrets.
+- [ ] WebAuthn credentials, contract-event journal and all durable queues have
+      persistent MySQL storage.
 - [ ] `./mvnw test` and `./mvnw -DskipTests package` pass.
 - [ ] `/actuator/health/readiness` is the orchestrator health check; `/health`
       is monitored for degraded queues and database errors.

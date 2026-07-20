@@ -53,9 +53,4 @@ public class WebauthnOnboardingOptionsRequest {
      */
     private String attributes;
 
-    /**
-     * Optional callback URL for the SP to receive onboarding result notifications.
-     * If provided, the WIB will POST the result to this URL when onboarding completes.
-     */
-    private String callbackUrl;
 }

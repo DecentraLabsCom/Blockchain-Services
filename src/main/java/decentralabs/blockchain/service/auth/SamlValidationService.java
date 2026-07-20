@@ -327,7 +327,7 @@ public class SamlValidationService {
             schacHomeOrganizations = List.of(affiliation);
         }
 
-        logger.info("SAML assertion validated WITH SIGNATURE for PUC: {}", puc);
+        logger.info("SAML assertion validated WITH SIGNATURE for pucHash={}", PucHashUtil.hashPuc(puc));
 
         Map<String, List<String>> capturedAttributes = new LinkedHashMap<>();
         putAttribute(capturedAttributes, "puc", puc);

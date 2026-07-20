@@ -18,6 +18,7 @@ import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.JsonNode;
 
 import jakarta.annotation.PostConstruct;
 import io.micrometer.core.instrument.MeterRegistry;
@@ -46,6 +47,7 @@ import decentralabs.blockchain.dto.intent.ReservationIntentPayload;
 import decentralabs.blockchain.service.auth.SamlValidationService;
 import decentralabs.blockchain.service.auth.WebauthnCredentialService;
 import decentralabs.blockchain.service.auth.WebauthnCredentialService.WebauthnCredential;
+import decentralabs.blockchain.service.BackendUrlResolver;
 import decentralabs.blockchain.service.wallet.WalletService;
 import decentralabs.blockchain.util.PucHashUtil;
 import decentralabs.blockchain.util.PucNormalizer;
@@ -54,6 +56,7 @@ import lombok.extern.slf4j.Slf4j;
 import java.security.AlgorithmParameters;
 import java.security.KeyFactory;
 import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.security.PublicKey;
 import java.security.Signature;
 import java.security.interfaces.ECPublicKey;
@@ -83,9 +86,22 @@ public class IntentService {
     private final SamlValidationService samlValidationService;
     private final WebauthnCredentialService webauthnCredentialService;
     private final WalletService walletService;
+    private final BackendUrlResolver backendUrlResolver;
     private final String contractAddress;
     private final MeterRegistry meterRegistry;
     private final ObjectMapper objectMapper = new ObjectMapper();
+
+    @Value("${webauthn.rp.id:}")
+    private String webauthnRpId = "";
+
+    @Value("${webauthn.rp.origins:https://localhost,https://localhost:443,https://localhost:8443}")
+    private String webauthnAllowedOrigins = "https://localhost,https://localhost:443,https://localhost:8443";
+
+    @Value("${gateway.server.name:localhost}")
+    private String gatewayServerName = "localhost";
+
+    @Value("${gateway.server.https-port:443}")
+    private String gatewayHttpsPort = "443";
 
     public IntentService(
         @Value("${intent.default-eta:15s}") String defaultEta,
@@ -97,7 +113,8 @@ public class IntentService {
         WebauthnCredentialService webauthnCredentialService,
         WalletService walletService,
         @Value("${contract.address}") String contractAddress,
-        MeterRegistry meterRegistry
+        MeterRegistry meterRegistry,
+        BackendUrlResolver backendUrlResolver
     ) {
         this.defaultEta = defaultEta;
         this.samlReplayTtlMs = samlReplayTtlMs;
@@ -109,6 +126,7 @@ public class IntentService {
         this.walletService = walletService;
         this.contractAddress = contractAddress;
         this.meterRegistry = meterRegistry;
+        this.backendUrlResolver = backendUrlResolver;
     }
 
     @PostConstruct
@@ -134,6 +152,14 @@ public class IntentService {
     }
 
     public IntentAckResponse processIntent(IntentSubmission submission) {
+        try {
+            return processIntentInternal(submission);
+        } finally {
+            clearTransientIdentityMaterial(submission);
+        }
+    }
+
+    private IntentAckResponse processIntentInternal(IntentSubmission submission) {
         IntentMeta meta = Optional.ofNullable(submission.getMeta())
             .orElseThrow(() -> new ResponseStatusException(HttpStatus.BAD_REQUEST, "Missing intent meta"));
         IntentAction action = resolveAction(meta);
@@ -165,6 +191,7 @@ public class IntentService {
         checkAssertionReplay(expectedAssertionHash);
 
         String puc = resolvePuc(validatedSamlUser);
+        String pucHash = PucHashUtil.hashPuc(puc);
         enforceLabCreatorOwnershipPrecheck(action, actionPayload);
         validateWebauthnAssertion(puc, credentialId, meta, submission);
 
@@ -187,7 +214,6 @@ public class IntentService {
         if (!verification.valid()) {
             return buildRejectedAck(meta.getRequestId(), "invalid_signature");
         }
-        markAssertionUsed(expectedAssertionHash);
 
         // Idempotent behavior: if already stored, return current ack status
         IntentRecord existing = intents.get(meta.getRequestId());
@@ -208,25 +234,34 @@ public class IntentService {
         record.setRequestedAt(meta.getRequestedAt());
         record.setExpiresAt(meta.getExpiresAt());
         record.setNonce(meta.getNonce());
-        record.setSignature(submission.getSignature());
-
         if (action.usesReservationPayload()) {
             record.setReservationPayload(reservationPayload);
             record.setReservationKey(normalizeBytes32(reservationPayload.getReservationKey()));
             record.setLabId(reservationPayload.getLabId() != null ? reservationPayload.getLabId().toString() : null);
-            record.setPuc(validatedSamlUser);
+            record.setPucHash(pucHash);
         } else {
             record.setActionPayload(actionPayload);
             record.setReservationKey(normalizeBytes32(actionPayload.getReservationKey()));
             record.setLabId(actionPayload.getLabId() != null ? actionPayload.getLabId().toString() : null);
-            record.setPuc(validatedSamlUser);
+            record.setPucHash(pucHash);
         }
 
-        record.setPayloadJson(serializePayload(submission));
+        record.setPayloadJson(serializePayload(IntentPersistencePayload.from(submission)));
 
+        try {
+            // Durability is part of acceptance: never publish an ACK that only
+            // exists in this process's memory.
+            persistenceService.upsert(record);
+        } catch (IntentPersistenceException ex) {
+            throw new ResponseStatusException(
+                HttpStatus.SERVICE_UNAVAILABLE,
+                "intent_persistence_unavailable",
+                ex
+            );
+        }
         intents.put(meta.getRequestId(), record);
         nonceIndex.put(buildNonceKey(meta), meta.getRequestId());
-        persistenceService.upsert(record);
+        markAssertionUsed(expectedAssertionHash);
 
         // All request-derived identifiers are control-character sanitized or masked.
         // codeql[java/log-injection]
@@ -277,6 +312,7 @@ public class IntentService {
                 if (record.getExpiresAt() != null && record.getExpiresAt() <= now) {
                     record.setStatus(IntentStatus.REJECTED);
                     record.setReason("expired");
+                    record.clearExecutionPayload();
                     persistenceService.upsert(record);
                     webhookService.notify(record);
                     log.info("Intent {} expired during reconciliation",
@@ -536,6 +572,7 @@ public class IntentService {
         IntentRecord record = intents.computeIfAbsent(requestId, id -> new IntentRecord(id, null, null));
         record.setStatus(IntentStatus.REJECTED);
         record.setReason(reason);
+        record.clearExecutionPayload();
         persistenceService.upsert(record);
         webhookService.notify(record);
         return buildAck(requestId, "rejected", reason);
@@ -696,7 +733,8 @@ public class IntentService {
             log.warn("WebAuthn validation failed: missing WebAuthn assertion");
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "missing_webauthn_assertion");
         }
-        WebauthnCredential cred = webauthnCredentialService.findCredential(puc, credentialId)
+        String normalizedCredentialId = normalizeCredentialId(credentialId);
+        WebauthnCredential cred = webauthnCredentialService.findCredential(puc, normalizedCredentialId)
             .orElseThrow(() -> {
                 log.warn("WebAuthn validation failed: WebAuthn credential not registered");
                 return new ResponseStatusException(HttpStatus.BAD_REQUEST, "webauthn_credential_not_registered");
@@ -722,6 +760,8 @@ public class IntentService {
         // codeql[java/user-controlled-bypass]
         verifyWebauthnAssertion(
             cred,
+            puc,
+            normalizedCredentialId,
             // codeql[java/user-controlled-bypass]
             validateWebauthnField(submission.getWebauthnClientDataJSON(), "clientDataJSON"),
             // codeql[java/user-controlled-bypass]
@@ -773,6 +813,8 @@ public class IntentService {
      */
     private void verifyWebauthnAssertion(
         WebauthnCredential cred,
+        String puc,
+        String credentialId,
         String clientDataJSONb64,
         String authenticatorDatab64,
         String signatureB64,
@@ -783,7 +825,8 @@ public class IntentService {
             byte[] authenticatorData = Base64.getUrlDecoder().decode(authenticatorDatab64);
             byte[] signature = Base64.getUrlDecoder().decode(signatureB64);
 
-            String challengeFromClient = extractChallengeFromClientData(clientData);
+            JsonNode parsedClientData = validateClientData(clientData, "webauthn.get", expectedChallenge);
+            String challengeFromClient = parsedClientData.path("challenge").asText();
             String expectedChallengeB64 = Base64.getUrlEncoder().withoutPadding().encodeToString(expectedChallenge.getBytes(StandardCharsets.UTF_8));
             if (!expectedChallengeB64.equals(challengeFromClient)) {
                 log.warn(
@@ -793,6 +836,8 @@ public class IntentService {
                 );
                 throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "webauthn_challenge_mismatch");
             }
+
+            AssertionAuthenticatorData parsedAuthenticatorData = parseAuthenticatorData(authenticatorData);
 
             byte[] clientHash = sha256(clientData);
             byte[] signed = concat(authenticatorData, clientHash);
@@ -812,6 +857,10 @@ public class IntentService {
                 );
                 throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "webauthn_signature_invalid");
             }
+
+            if (!webauthnCredentialService.advanceSignCount(puc, credentialId, parsedAuthenticatorData.signCount())) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "webauthn_sign_count_replay");
+            }
             log.info("WebAuthn assertion verified. publicKeyAlgorithm={}", publicKey.getAlgorithm());
         } catch (ResponseStatusException ex) {
             throw ex;
@@ -822,18 +871,128 @@ public class IntentService {
         }
     }
 
-    private String extractChallengeFromClientData(byte[] clientData) {
+    private JsonNode validateClientData(byte[] clientData, String expectedType, String expectedChallenge) {
         try {
-            Map<?,?> parsed = objectMapper.readValue(clientData, Map.class);
-            Object challenge = parsed.get("challenge");
-            if (challenge == null) {
-                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "webauthn_missing_challenge");
+            JsonNode parsed = objectMapper.readTree(clientData);
+            if (parsed == null || !parsed.isObject()) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "webauthn_clientdata_invalid");
             }
-            return challenge.toString();
+            if (!expectedType.equals(parsed.path("type").asText())) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "webauthn_clientdata_type_invalid");
+            }
+            String challenge = parsed.path("challenge").asText(null);
+            String expectedChallengeB64 = Base64.getUrlEncoder().withoutPadding()
+                .encodeToString(expectedChallenge.getBytes(StandardCharsets.UTF_8));
+            if (challenge == null || !expectedChallengeB64.equals(challenge)) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "webauthn_challenge_mismatch");
+            }
+            String origin = parsed.path("origin").asText(null);
+            if (!isOriginAllowed(origin)) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "webauthn_origin_invalid");
+            }
+            return parsed;
+        } catch (ResponseStatusException ex) {
+            throw ex;
         } catch (IOException ex) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "webauthn_clientdata_invalid", ex);
         }
     }
+
+    private AssertionAuthenticatorData parseAuthenticatorData(byte[] authenticatorData) {
+        if (authenticatorData == null || authenticatorData.length < 37) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "webauthn_authenticator_data_invalid");
+        }
+        byte[] rpIdHash = java.util.Arrays.copyOfRange(authenticatorData, 0, 32);
+        verifyRpIdHash(rpIdHash);
+        byte flags = authenticatorData[32];
+        if ((flags & 0x01) == 0) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "webauthn_user_presence_required");
+        }
+        if ((flags & 0x04) == 0) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "webauthn_user_verification_required");
+        }
+        long signCount = ((authenticatorData[33] & 0xFFL) << 24)
+            | ((authenticatorData[34] & 0xFFL) << 16)
+            | ((authenticatorData[35] & 0xFFL) << 8)
+            | (authenticatorData[36] & 0xFFL);
+        return new AssertionAuthenticatorData(signCount);
+    }
+
+    private void verifyRpIdHash(byte[] rpIdHash) {
+        try {
+            byte[] expectedHash = MessageDigest.getInstance("SHA-256")
+                .digest(getEffectiveWebauthnRpId().getBytes(StandardCharsets.UTF_8));
+            if (!MessageDigest.isEqual(rpIdHash, expectedHash)) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "webauthn_rp_id_hash_invalid");
+            }
+        } catch (NoSuchAlgorithmException ex) {
+            throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "webauthn_hash_unavailable", ex);
+        }
+    }
+
+    private boolean isOriginAllowed(String origin) {
+        if (origin == null || origin.isBlank()) {
+            return false;
+        }
+        return buildAllowedOrigins().stream().anyMatch(candidate -> candidate.equalsIgnoreCase(origin));
+    }
+
+    private java.util.List<String> buildAllowedOrigins() {
+        java.util.Set<String> origins = new java.util.HashSet<>();
+        if (webauthnAllowedOrigins != null && !webauthnAllowedOrigins.isBlank()) {
+            for (String origin : webauthnAllowedOrigins.split(",")) {
+                if (!origin.isBlank()) {
+                    origins.add(origin.trim());
+                }
+            }
+        }
+        String rpHost = getEffectiveWebauthnRpId();
+        if (rpHost != null && !rpHost.isBlank()) {
+            String port = "443".equals(gatewayHttpsPort) ? "" : ":" + gatewayHttpsPort;
+            origins.add("https://" + rpHost + port);
+        }
+        if (gatewayServerName != null && !gatewayServerName.isBlank()) {
+            String port = "443".equals(gatewayHttpsPort) ? "" : ":" + gatewayHttpsPort;
+            origins.add("https://" + gatewayServerName.trim() + port);
+        }
+        return java.util.List.copyOf(origins);
+    }
+
+    private String getEffectiveWebauthnRpId() {
+        if (webauthnRpId != null && !webauthnRpId.isBlank()) {
+            return webauthnRpId.trim();
+        }
+        try {
+            java.net.URI baseDomain = new java.net.URI(backendUrlResolver.resolveBaseDomain());
+            if (baseDomain.getHost() != null && !baseDomain.getHost().isBlank()) {
+                return baseDomain.getHost();
+            }
+        } catch (Exception ignored) {
+            // Fall back to the configured gateway name below.
+        }
+        return gatewayServerName == null || gatewayServerName.isBlank() ? "localhost" : gatewayServerName.trim();
+    }
+
+    private String normalizeCredentialId(String credentialId) {
+        if (credentialId == null || credentialId.isBlank()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "missing_webauthn_credential");
+        }
+        try {
+            byte[] decoded = Base64.getUrlDecoder().decode(credentialId);
+            if (decoded.length == 0 || decoded.length > 1023) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "webauthn_credential_invalid");
+            }
+            String canonical = Base64.getUrlEncoder().withoutPadding().encodeToString(decoded);
+            if (!canonical.equals(credentialId)) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "webauthn_credential_invalid");
+            }
+            return canonical;
+        } catch (IllegalArgumentException ex) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "webauthn_credential_invalid", ex);
+        }
+    }
+
+    private record AssertionAuthenticatorData(long signCount) {}
 
     private byte[] sha256(byte[] data) {
         try {
@@ -1058,10 +1217,10 @@ public class IntentService {
             }
         }
 
-        if (record == null || isBlank(record.getPuc())) {
+        if (record == null || isBlank(record.getPucHash())) {
             return Optional.empty();
         }
-        return Optional.of(record.getPuc());
+        return Optional.of(record.getPucHash());
     }
 
     public void markInProgress(IntentRecord record) {
@@ -1084,6 +1243,7 @@ public class IntentService {
         if (reservationKey != null) {
             record.setReservationKey(reservationKey);
         }
+        record.clearExecutionPayload();
         persistenceService.upsert(record);
         webhookService.notify(record);
     }
@@ -1102,6 +1262,7 @@ public class IntentService {
         if (blockNumber != null) {
             record.setBlockNumber(blockNumber);
         }
+        record.clearExecutionPayload();
         persistenceService.upsert(record);
         webhookService.notify(record);
     }
@@ -1117,7 +1278,7 @@ public class IntentService {
         Long blockNumber,
         String labId,
         String reservationKey,
-        String puc,
+        String pucHash,
         String reason
     ) {
         IntentRecord record = intents.computeIfAbsent(requestId, key -> new IntentRecord(requestId, null, null));
@@ -1130,11 +1291,16 @@ public class IntentService {
         if (reservationKey != null) {
             record.setReservationKey(reservationKey);
         }
-        if (puc != null && !puc.isBlank()) {
-            record.setPuc(puc);
+        if (pucHash != null && pucHash.matches("0x[0-9a-fA-F]{64}")) {
+            record.setPucHash(PucHashUtil.normalizeBytes32(pucHash));
         }
         record.setReason(reason);
         record.setError(reason);
+        if (record.getStatus() == IntentStatus.EXECUTED
+            || record.getStatus() == IntentStatus.FAILED
+            || record.getStatus() == IntentStatus.REJECTED) {
+            record.clearExecutionPayload();
+        }
         persistenceService.upsert(record);
         webhookService.notify(record);
     }
@@ -1161,5 +1327,18 @@ public class IntentService {
             log.debug("Unable to serialize intent payload", ex);
             return null;
         }
+    }
+
+    private void clearTransientIdentityMaterial(IntentSubmission submission) {
+        if (submission == null) {
+            return;
+        }
+        submission.setSamlAssertion(null);
+        submission.setWebauthnCredentialId(null);
+        submission.setWebauthnClientDataJSON(null);
+        submission.setWebauthnAuthenticatorData(null);
+        submission.setWebauthnSignature(null);
+        submission.setSignature(null);
+        submission.setTypedData(null);
     }
 }

@@ -7,6 +7,7 @@ import decentralabs.blockchain.dto.intent.ActionIntentPayload;
 import decentralabs.blockchain.dto.intent.IntentAction;
 import decentralabs.blockchain.dto.intent.IntentStatus;
 import decentralabs.blockchain.dto.intent.ReservationIntentPayload;
+import decentralabs.blockchain.util.PucHashUtil;
 
 public class IntentRecord {
     private final String requestId;
@@ -25,7 +26,7 @@ public class IntentRecord {
     private Long nonce;
     private Map<String, Object> data;
     private String payloadJson;
-    private String puc;
+    private String pucHash;
     private String signer;
     private String executor;
     private Integer actionId;
@@ -161,12 +162,28 @@ public class IntentRecord {
         this.payloadJson = payloadJson;
     }
 
-    public String getPuc() {
-        return puc;
+    public String getPucHash() {
+        return pucHash;
     }
 
+    public void setPucHash(String pucHash) {
+        this.pucHash = pucHash;
+    }
+
+    /**
+     * Legacy accessor retained for in-process callers; only the hash is kept.
+     */
+    @Deprecated
+    public String getPuc() {
+        return pucHash;
+    }
+
+    /**
+     * Legacy mutator retained for in-process callers; never retain the raw PUC.
+     */
+    @Deprecated
     public void setPuc(String puc) {
-        this.puc = puc;
+        this.pucHash = PucHashUtil.hashPuc(puc);
     }
 
     public String getSigner() {
@@ -231,6 +248,13 @@ public class IntentRecord {
 
     public void setReservationPayload(ReservationIntentPayload reservationPayload) {
         this.reservationPayload = reservationPayload;
+    }
+
+    public void clearExecutionPayload() {
+        this.payloadJson = null;
+        this.actionPayload = null;
+        this.reservationPayload = null;
+        this.signature = null;
     }
 
     public IntentAction getIntentAction() {

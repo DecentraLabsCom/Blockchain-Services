@@ -41,6 +41,8 @@ public class ProviderSettlementPersistenceService {
             .id(rs.getLong("id"))
             .labId(rs.getString("lab_id"))
             .providerAddress(rs.getString("provider_address"))
+            .claimId(rs.getString("claim_id"))
+            .reservationHash(rs.getString("reservation_hash"))
             .invoiceRef(rs.getString("invoice_ref"))
             .eurAmount(rs.getBigDecimal("eur_amount"))
             .creditAmount(rs.getBigDecimal("credit_amount"))
@@ -57,17 +59,20 @@ public class ProviderSettlementPersistenceService {
             jdbcTemplate.update(con -> {
                 PreparedStatement ps = con.prepareStatement(
                     """
-                    INSERT INTO provider_invoice_records (lab_id, provider_address, invoice_ref, eur_amount, credit_amount, status)
-                    VALUES (?, ?, ?, ?, ?, ?)
+                    INSERT INTO provider_invoice_records
+                        (lab_id, provider_address, claim_id, reservation_hash, invoice_ref, eur_amount, credit_amount, status)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     new String[]{"id"}
                 );
                 ps.setString(1, record.getLabId());
                 ps.setString(2, record.getProviderAddress());
-                ps.setString(3, record.getInvoiceRef());
-                ps.setBigDecimal(4, record.getEurAmount());
-                ps.setBigDecimal(5, record.getCreditAmount());
-                ps.setString(6, record.getStatus().name());
+                ps.setString(3, record.getClaimId());
+                ps.setString(4, record.getReservationHash());
+                ps.setString(5, record.getInvoiceRef());
+                ps.setBigDecimal(6, record.getEurAmount());
+                ps.setBigDecimal(7, record.getCreditAmount());
+                ps.setString(8, record.getStatus().name());
                 return ps;
             }, keyHolder);
             record.setId(keyHolder.getKey().longValue());
@@ -126,6 +131,36 @@ public class ProviderSettlementPersistenceService {
         }
     }
 
+    public boolean existsClaimId(String claimId) {
+        if (jdbcTemplate == null) return false;
+        try {
+            Integer count = jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM provider_invoice_records WHERE claim_id = ?",
+                Integer.class,
+                claimId
+            );
+            return count != null && count > 0;
+        } catch (DataAccessException ex) {
+            logMissing("provider_invoice_records", ex);
+            return false;
+        }
+    }
+
+    public boolean existsInvoiceRef(String invoiceRef) {
+        if (jdbcTemplate == null) return false;
+        try {
+            Integer count = jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM provider_invoice_records WHERE invoice_ref = ?",
+                Integer.class,
+                invoiceRef
+            );
+            return count != null && count > 0;
+        } catch (DataAccessException ex) {
+            logMissing("provider_invoice_records", ex);
+            return false;
+        }
+    }
+
     // ── Provider Approvals ──────────────────────────────────────────────
 
     @Transactional
@@ -160,11 +195,16 @@ public class ProviderSettlementPersistenceService {
     private static final RowMapper<ProviderPayout> PAYOUT_MAPPER = (rs, rowNum) ->
         ProviderPayout.builder()
             .id(rs.getLong("id"))
+            .invoiceRecordId(rs.getLong("invoice_record_id"))
             .labId(rs.getString("lab_id"))
             .providerAddress(rs.getString("provider_address"))
+            .claimId(rs.getString("claim_id"))
             .eurAmount(rs.getBigDecimal("eur_amount"))
             .creditAmount(rs.getBigDecimal("credit_amount"))
             .paidAt(toInstant(rs.getTimestamp("paid_at")))
+            .paidBy(rs.getString("paid_by"))
+            .paymentRef(rs.getString("payment_ref"))
+            .paymentAttestation(rs.getString("payment_attestation"))
             .bankRef(rs.getString("bank_ref"))
             .eurcTxHash(rs.getString("eurc_tx_hash"))
             .usdcTxHash(rs.getString("usdc_tx_hash"))
@@ -178,18 +218,25 @@ public class ProviderSettlementPersistenceService {
             jdbcTemplate.update(con -> {
                 PreparedStatement ps = con.prepareStatement(
                     """
-                    INSERT INTO provider_payouts (lab_id, provider_address, eur_amount, credit_amount, bank_ref, eurc_tx_hash, usdc_tx_hash)
-                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                    INSERT INTO provider_payouts
+                        (invoice_record_id, lab_id, provider_address, claim_id, eur_amount, credit_amount,
+                         paid_by, payment_ref, payment_attestation, bank_ref, eurc_tx_hash, usdc_tx_hash)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     new String[]{"id"}
                 );
-                ps.setString(1, payout.getLabId());
-                ps.setString(2, payout.getProviderAddress());
-                ps.setBigDecimal(3, payout.getEurAmount());
-                ps.setBigDecimal(4, payout.getCreditAmount());
-                ps.setString(5, payout.getBankRef());
-                ps.setString(6, payout.getEurcTxHash());
-                ps.setString(7, payout.getUsdcTxHash());
+                ps.setLong(1, payout.getInvoiceRecordId());
+                ps.setString(2, payout.getLabId());
+                ps.setString(3, payout.getProviderAddress());
+                ps.setString(4, payout.getClaimId());
+                ps.setBigDecimal(5, payout.getEurAmount());
+                ps.setBigDecimal(6, payout.getCreditAmount());
+                ps.setString(7, payout.getPaidBy());
+                ps.setString(8, payout.getPaymentRef());
+                ps.setString(9, payout.getPaymentAttestation());
+                ps.setString(10, payout.getBankRef());
+                ps.setString(11, payout.getEurcTxHash());
+                ps.setString(12, payout.getUsdcTxHash());
                 return ps;
             }, keyHolder);
             payout.setId(keyHolder.getKey().longValue());
@@ -197,6 +244,36 @@ public class ProviderSettlementPersistenceService {
         } catch (DataAccessException ex) {
             logMissing("provider_payouts", ex);
             return payout;
+        }
+    }
+
+    public boolean existsApprovalRef(String approvalRef) {
+        if (jdbcTemplate == null) return false;
+        try {
+            Integer count = jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM provider_approvals WHERE approval_ref = ?",
+                Integer.class,
+                approvalRef
+            );
+            return count != null && count > 0;
+        } catch (DataAccessException ex) {
+            logMissing("provider_approvals", ex);
+            return false;
+        }
+    }
+
+    public boolean existsPaymentRef(String paymentRef) {
+        if (jdbcTemplate == null) return false;
+        try {
+            Integer count = jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM provider_payouts WHERE payment_ref = ?",
+                Integer.class,
+                paymentRef
+            );
+            return count != null && count > 0;
+        } catch (DataAccessException ex) {
+            logMissing("provider_payouts", ex);
+            return false;
         }
     }
 

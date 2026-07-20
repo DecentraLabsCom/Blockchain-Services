@@ -129,8 +129,8 @@ class BillingDomainIntegrationTest {
     void cleanTables() {
         // Truncate in reverse FK order
         jdbcTemplate.execute("DELETE FROM provider_approvals");
-        jdbcTemplate.execute("DELETE FROM provider_invoice_records");
         jdbcTemplate.execute("DELETE FROM provider_payouts");
+        jdbcTemplate.execute("DELETE FROM provider_invoice_records");
         jdbcTemplate.execute("DELETE FROM payment_reconciliations");
         jdbcTemplate.execute("DELETE FROM funding_invoices");
         jdbcTemplate.execute("DELETE FROM credit_movements");
@@ -206,6 +206,8 @@ class BillingDomainIntegrationTest {
         ProviderInvoiceRecord record = providerSettlementService.submitInvoice(
                 "1",
                 "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb0001",
+                "CLAIM-2026-001",
+                "0x" + "11".repeat(32),
                 "PINV-2026-001",
                 new BigDecimal("800.00"),
                 new BigDecimal("8000.00"));
@@ -234,6 +236,8 @@ class BillingDomainIntegrationTest {
         ProviderInvoiceRecord record = providerSettlementService.submitInvoice(
                 "2",
                 "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb0002",
+                "CLAIM-REF-TEST",
+                "0x" + "22".repeat(32),
                 "PINV-REF-TEST",
                 new BigDecimal("200.00"),
                 null);
@@ -248,22 +252,70 @@ class BillingDomainIntegrationTest {
     }
 
     @Test
+    @DisplayName("invoice and approval references are unique")
+    void settlementReferencesAreUnique() {
+        ProviderInvoiceRecord record = providerSettlementService.submitInvoice(
+            "7",
+            "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb0007",
+            "CLAIM-UNIQUE-REF-1",
+            "0x" + "88".repeat(32),
+            "PINV-UNIQUE-REF",
+            new BigDecimal("30.00"),
+            null);
+
+        assertThatThrownBy(() -> providerSettlementService.submitInvoice(
+            "8",
+            "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb0008",
+            "CLAIM-UNIQUE-REF-2",
+            "0x" + "99".repeat(32),
+            "PINV-UNIQUE-REF",
+            new BigDecimal("30.00"),
+            null))
+            .isInstanceOf(IllegalArgumentException.class)
+            .hasMessageContaining("Invoice reference already used");
+
+        providerSettlementService.approveInvoice(
+            record.getId(),
+            "0xcccccccccccccccccccccccccccccccccccc0007",
+            "APPR-UNIQUE-REF",
+            new BigDecimal("30.00"));
+
+        ProviderInvoiceRecord other = providerSettlementService.submitInvoice(
+            "9",
+            "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb0009",
+            "CLAIM-UNIQUE-REF-3",
+            "0x" + "aa".repeat(32),
+            "PINV-UNIQUE-REF-2",
+            new BigDecimal("30.00"),
+            null);
+        assertThatThrownBy(() -> providerSettlementService.approveInvoice(
+            other.getId(),
+            "0xcccccccccccccccccccccccccccccccccccc0009",
+            "APPR-UNIQUE-REF",
+            new BigDecimal("30.00")))
+            .isInstanceOf(IllegalArgumentException.class)
+            .hasMessageContaining("Approval reference already used");
+    }
+
+    @Test
     @DisplayName("null approvalRef is accepted (optional field)")
     void approvalRefOptional() {
         ProviderInvoiceRecord record = providerSettlementService.submitInvoice(
                 "3",
                 "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb0003",
+                "CLAIM-NO-APPROVAL-REF",
+                "0x" + "33".repeat(32),
                 "PINV-NO-REF",
                 new BigDecimal("50.00"),
                 null);
 
-        ProviderApproval approval = providerSettlementService.approveInvoice(
+        assertThatThrownBy(() -> providerSettlementService.approveInvoice(
                 record.getId(),
                 "0xcccccccccccccccccccccccccccccccccccc0003",
                 null,
-                new BigDecimal("50.00"));
-
-        assertThat(approval.getApprovalRef()).isNull();
+                new BigDecimal("50.00")))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("Approval reference required");
     }
 
     @Test
@@ -272,6 +324,8 @@ class BillingDomainIntegrationTest {
         ProviderInvoiceRecord record = providerSettlementService.submitInvoice(
                 "4",
                 "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb0004",
+                "CLAIM-DOUBLE-APPROVE",
+                "0x" + "44".repeat(32),
                 "PINV-DOUBLE-APPROVE",
                 new BigDecimal("100.00"),
                 null);
@@ -289,6 +343,109 @@ class BillingDomainIntegrationTest {
                 new BigDecimal("100.00")))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("SUBMITTED");
+    }
+
+    @Test
+    @DisplayName("claims require a stable claim id and reservation-set hash")
+    void claimReferencesAreMandatory() {
+        assertThatThrownBy(() -> providerSettlementService.submitInvoice(
+                "5",
+                "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb0005",
+                "",
+                "0x" + "66".repeat(32),
+                "PINV-MISSING-CLAIM",
+                new BigDecimal("10.00"),
+                null))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("Claim ID required");
+
+        assertThatThrownBy(() -> providerSettlementService.submitInvoice(
+                "5",
+                "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb0005",
+                "CLAIM-MISSING-RESERVATIONS",
+                "",
+                "PINV-MISSING-RESERVATIONS",
+                new BigDecimal("10.00"),
+                null))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("Reservation hash required");
+    }
+
+    @Test
+    @DisplayName("payment requires a unique payment reference and attestation")
+    void paymentProofIsMandatoryAndUnique() {
+        ProviderInvoiceRecord record = providerSettlementService.submitInvoice(
+                "6",
+                "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb0006",
+                "CLAIM-PAYMENT-PROOF",
+                "0x" + "77".repeat(32),
+                "PINV-PAYMENT-PROOF",
+                new BigDecimal("10.00"),
+                null);
+        providerSettlementService.approveInvoice(
+                record.getId(),
+                "0xcccccccccccccccccccccccccccccccccccc0006",
+                "APPR-PAYMENT-PROOF",
+                new BigDecimal("10.00"));
+
+        assertThatThrownBy(() -> providerSettlementService.recordPayout(
+                record.getId(),
+                "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb0006",
+                "0xcccccccccccccccccccccccccccccccccccc0006",
+                new BigDecimal("10.00"),
+                BigDecimal.ZERO,
+                "PAY-MISSING-ATTESTATION",
+                "",
+                "BANK-1",
+                null,
+                null))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("Payment attestation required");
+
+        providerSettlementService.recordPayout(
+                record.getId(),
+                "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb0006",
+                "0xcccccccccccccccccccccccccccccccccccc0006",
+                new BigDecimal("10.00"),
+                BigDecimal.ZERO,
+                "PAY-UNIQUE-001",
+                "attestation:PAY-UNIQUE-001",
+                "BANK-1",
+                null,
+                null);
+
+        ProviderInvoiceRecord paid = providerSettlementService
+                .findInvoicesByProvider("0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb0006")
+                .stream().findFirst().orElseThrow();
+        assertThat(paid.getStatus()).isEqualTo(ProviderInvoiceRecord.Status.PAID);
+
+        ProviderInvoiceRecord other = providerSettlementService.submitInvoice(
+                "7",
+                "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb0007",
+                "CLAIM-PAYMENT-DUPLICATE",
+                "0x" + "88".repeat(32),
+                "PINV-PAYMENT-DUPLICATE",
+                new BigDecimal("10.00"),
+                null);
+        providerSettlementService.approveInvoice(
+                other.getId(),
+                "0xcccccccccccccccccccccccccccccccccccc0007",
+                "APPR-PAYMENT-DUPLICATE",
+                new BigDecimal("10.00"));
+
+        assertThatThrownBy(() -> providerSettlementService.recordPayout(
+                other.getId(),
+                "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb0007",
+                "0xcccccccccccccccccccccccccccccccccccc0007",
+                new BigDecimal("10.00"),
+                BigDecimal.ZERO,
+                "PAY-UNIQUE-001",
+                "attestation:PAY-UNIQUE-001",
+                "BANK-2",
+                null,
+                null))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("Payment reference already used");
     }
 
     // ── End-to-end validation ───────────────────────────────
@@ -367,7 +524,7 @@ class BillingDomainIntegrationTest {
 
             // 7. Accrue provider receivable — submit invoice
             ProviderInvoiceRecord provInvoice = providerSettlementService.submitInvoice(
-                    "LAB-001", PROVIDER, "PINV-E2E-001",
+                    "LAB-001", PROVIDER, "CLAIM-E2E-001", "0x" + "55".repeat(32), "PINV-E2E-001",
                     new BigDecimal("20.00"), new BigDecimal("200.0"));
             assertThat(provInvoice.getStatus()).isEqualTo(ProviderInvoiceRecord.Status.SUBMITTED);
 
@@ -378,8 +535,8 @@ class BillingDomainIntegrationTest {
 
             // 9. Execute payout
             providerSettlementService.recordPayout(
-                    "LAB-001", PROVIDER, new BigDecimal("20.00"), new BigDecimal("200.0"),
-                    "BANK-E2E-001", null, null);
+                    provInvoice.getId(), PROVIDER, ADMIN, new BigDecimal("20.00"), new BigDecimal("200.0"),
+                    "PAY-E2E-001", "attestation:E2E-001", "BANK-E2E-001", null, null);
 
             // Verify full audit trail — 3 movements: MINT, LOCK, CAPTURE
             List<CreditMovement> allMovements = creditProjectionService.getMovements(INSTITUTION, 20);

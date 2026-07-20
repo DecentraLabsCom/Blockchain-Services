@@ -4,9 +4,11 @@ import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
 import decentralabs.blockchain.dto.auth.WebauthnOnboardingCompleteRequest;
+import decentralabs.blockchain.dto.auth.WebauthnOnboardingCompleteResponse;
 import decentralabs.blockchain.dto.auth.WebauthnOnboardingOptionsRequest;
 import decentralabs.blockchain.dto.auth.WebauthnOnboardingOptionsResponse;
 import decentralabs.blockchain.service.BackendUrlResolver;
+import java.io.ByteArrayOutputStream;
 import java.lang.reflect.Field;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
@@ -75,7 +77,7 @@ class WebauthnOnboardingServiceTest {
         setField("attestationConveyance", "none");
         setField("authenticatorAttachment", "");
         setField("residentKey", "preferred");
-        setField("userVerification", "preferred");
+        setField("userVerification", "required");
         setField("validateSaml", validateSaml);
         setField("completedSessionTtlSeconds", 3600L);
     }
@@ -253,6 +255,93 @@ class WebauthnOnboardingServiceTest {
     }
 
     @Test
+    void completeOnboarding_rejectsCredentialIdNotBoundToAuthenticatorData() throws Exception {
+        WebauthnOnboardingOptionsRequest optionsRequest = new WebauthnOnboardingOptionsRequest();
+        optionsRequest.setStableUserId("user@institution.edu");
+        optionsRequest.setInstitutionId("institution.edu");
+        WebauthnOnboardingOptionsResponse options = service.generateOptions(optionsRequest);
+
+        byte[] embeddedCredentialId = "credential-from-authenticator".getBytes(StandardCharsets.UTF_8);
+        WebauthnOnboardingCompleteRequest request = completeRequest(
+            options,
+            BASE64URL_ENCODER.encodeToString("credential-from-request".getBytes(StandardCharsets.UTF_8)),
+            createValidAttestationObject(embeddedCredentialId, true, false)
+        );
+
+        ResponseStatusException ex = assertThrows(ResponseStatusException.class,
+            () -> service.completeOnboarding(request));
+        assertEquals("Credential ID mismatch", ex.getReason());
+        verifyNoInteractions(credentialService);
+    }
+
+    @Test
+    void completeOnboarding_rejectsRegistrationWithoutUserVerification() throws Exception {
+        WebauthnOnboardingOptionsRequest optionsRequest = new WebauthnOnboardingOptionsRequest();
+        optionsRequest.setStableUserId("user@institution.edu");
+        optionsRequest.setInstitutionId("institution.edu");
+        WebauthnOnboardingOptionsResponse options = service.generateOptions(optionsRequest);
+        byte[] credentialId = "credential-without-uv".getBytes(StandardCharsets.UTF_8);
+
+        ResponseStatusException ex = assertThrows(ResponseStatusException.class, () -> service.completeOnboarding(
+            completeRequest(
+                options,
+                BASE64URL_ENCODER.encodeToString(credentialId),
+                createValidAttestationObject(credentialId, false, false)
+            )
+        ));
+        assertEquals("User verification flag not set", ex.getReason());
+        verifyNoInteractions(credentialService);
+    }
+
+    @Test
+    void completeOnboarding_rejectsNonEmptyAttestationStatementUnderNonePolicy() throws Exception {
+        WebauthnOnboardingOptionsRequest optionsRequest = new WebauthnOnboardingOptionsRequest();
+        optionsRequest.setStableUserId("user@institution.edu");
+        optionsRequest.setInstitutionId("institution.edu");
+        WebauthnOnboardingOptionsResponse options = service.generateOptions(optionsRequest);
+        byte[] credentialId = "credential-with-attestation".getBytes(StandardCharsets.UTF_8);
+        String credentialIdB64 = BASE64URL_ENCODER.encodeToString(credentialId);
+
+        WebauthnOnboardingCompleteRequest request = completeRequest(
+            options,
+            credentialIdB64,
+            createValidAttestationObject(credentialId, true, true)
+        );
+
+        ResponseStatusException ex = assertThrows(ResponseStatusException.class,
+            () -> service.completeOnboarding(request));
+        assertEquals("Attestation statement is not allowed", ex.getReason());
+        verifyNoInteractions(credentialService);
+    }
+
+    @Test
+    void completeOnboarding_acceptsValidatedCredentialIdAndUserVerification() throws Exception {
+        WebauthnOnboardingOptionsRequest optionsRequest = new WebauthnOnboardingOptionsRequest();
+        optionsRequest.setStableUserId("user@institution.edu");
+        optionsRequest.setInstitutionId("institution.edu");
+        WebauthnOnboardingOptionsResponse options = service.generateOptions(optionsRequest);
+        byte[] credentialId = "credential-valid".getBytes(StandardCharsets.UTF_8);
+        String credentialIdB64 = BASE64URL_ENCODER.encodeToString(credentialId);
+
+        WebauthnOnboardingCompleteResponse response = service.completeOnboarding(
+            completeRequest(options, credentialIdB64, createValidAttestationObject(credentialId, true, false))
+        );
+
+        assertTrue(response.isSuccess());
+        assertEquals(credentialIdB64, response.getCredentialId());
+        verify(credentialService).register(
+            eq("user@institution.edu"),
+            eq(credentialIdB64),
+            anyString(),
+            anyString(),
+            eq(0L),
+            isNull(),
+            eq(false),
+            isNull()
+        );
+    }
+
+    @Test
     void completeOnboarding_sessionCanOnlyBeUsedOnce() throws Exception {
         // First generate options
         WebauthnOnboardingOptionsRequest optionsRequest = new WebauthnOnboardingOptionsRequest();
@@ -344,6 +433,91 @@ class WebauthnOnboardingServiceTest {
         byte[] finalResult = new byte[pos];
         System.arraycopy(result, 0, finalResult, 0, pos);
         return finalResult;
+    }
+
+    private WebauthnOnboardingCompleteRequest completeRequest(
+        WebauthnOnboardingOptionsResponse options,
+        String credentialId,
+        byte[] attestationObject
+    ) {
+        String clientDataJson = String.format(
+            "{\"type\":\"webauthn.create\",\"challenge\":\"%s\",\"origin\":\"https://localhost\"}",
+            options.getChallenge()
+        );
+        WebauthnOnboardingCompleteRequest request = new WebauthnOnboardingCompleteRequest();
+        request.setSessionId(options.getSessionId());
+        request.setCredentialId(credentialId);
+        request.setClientDataJSON(BASE64URL_ENCODER.encodeToString(clientDataJson.getBytes(StandardCharsets.UTF_8)));
+        request.setAttestationObject(BASE64URL_ENCODER.encodeToString(attestationObject));
+        return request;
+    }
+
+    private byte[] createValidAttestationObject(
+        byte[] credentialId,
+        boolean userVerified,
+        boolean nonEmptyAttestationStatement
+    ) throws Exception {
+        MessageDigest sha256 = MessageDigest.getInstance("SHA-256");
+        byte[] rpIdHash = sha256.digest("localhost".getBytes(StandardCharsets.UTF_8));
+        byte flags = (byte) (0x01 | 0x40 | (userVerified ? 0x04 : 0));
+        byte[] coseKey = createEs256CoseKey();
+
+        ByteArrayOutputStream authData = new ByteArrayOutputStream();
+        authData.writeBytes(rpIdHash);
+        authData.write(flags);
+        authData.writeBytes(new byte[] {0, 0, 0, 0});
+        authData.writeBytes(new byte[16]);
+        authData.write((credentialId.length >>> 8) & 0xff);
+        authData.write(credentialId.length & 0xff);
+        authData.writeBytes(credentialId);
+        authData.writeBytes(coseKey);
+
+        ByteArrayOutputStream result = new ByteArrayOutputStream();
+        result.write(0xA3);
+        writeText(result, "fmt");
+        writeText(result, "none");
+        writeText(result, "authData");
+        writeByteString(result, authData.toByteArray());
+        writeText(result, "attStmt");
+        if (nonEmptyAttestationStatement) {
+            result.write(0xA1);
+            writeText(result, "alg");
+            result.write(0x26); // -7
+        } else {
+            result.write(0xA0);
+        }
+        return result.toByteArray();
+    }
+
+    private byte[] createEs256CoseKey() throws Exception {
+        ByteArrayOutputStream result = new ByteArrayOutputStream();
+        result.write(0xA5);
+        result.write(0x01); // kty: EC2
+        result.write(0x02);
+        result.write(0x03); // alg: ES256 (-7)
+        result.write(0x26);
+        result.write(0x20); // crv: P-256
+        result.write(0x01);
+        result.write(0x21); // x
+        writeByteString(result, new byte[32]);
+        result.write(0x22); // y
+        writeByteString(result, new byte[32]);
+        return result.toByteArray();
+    }
+
+    private void writeText(ByteArrayOutputStream output, String value) {
+        byte[] bytes = value.getBytes(StandardCharsets.UTF_8);
+        output.write(0x60 | bytes.length);
+        output.writeBytes(bytes);
+    }
+
+    private void writeByteString(ByteArrayOutputStream output, byte[] value) {
+        if (value.length > 255) {
+            throw new IllegalArgumentException("Test value too large");
+        }
+        output.write(0x58);
+        output.write(value.length);
+        output.writeBytes(value);
     }
 
 }

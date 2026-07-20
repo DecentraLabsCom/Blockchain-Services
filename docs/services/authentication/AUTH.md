@@ -6,24 +6,32 @@ Ops Worker.
 
 ## Runtime boundary
 
-The SAML/provider controllers are created only when
-`features.providers.enabled=true` (`FEATURES_PROVIDERS_ENABLED=true`). The
-repository default is `false`, so a consumer-only standalone instance does not
-publish the provider authentication surface.
+`FEATURES_PROVIDERS_ENABLED=true` selects provider+consumer operation. The
+repository default is `false`, for a standalone consumer deployment. The
+feature condition applies to the OIDC/JWKS and FMU controller classes; it does
+not remove the `SamlAuthController` `/auth` mappings. Treat those mappings as a
+provider integration surface only in the intended Full topology, and retain the
+gateway/network boundary in consumer-only deployments.
 
 | Endpoint | Purpose | Primary proof |
 | --- | --- | --- |
+| `GET /auth/jwks` | Provider signing key set (conditional) | Public read; provider controller enabled |
 | `POST /auth/authorize-and-issue` | Validate a booking and deliver access | Marketplace JWT + SAML + on-chain state |
 | `POST /auth/access-credential` | Provider-side access credential flow | Provider request + booking checks |
 | `POST /auth/checkin-institutional` | Institutional wallet check-in | Institutional request and configured delegation policy |
 | `POST /auth/checkin-institutional/status` | Query a delegated consumer check-in | Marketplace JWT + reservation binding |
 | `POST /auth/access-code/redeem` | One-time browser/gateway delivery | Gateway ID + per-gateway redeemer credential |
-| `POST /auth/fmu/session-ticket/issue` | Issue reusable FMU ticket | Booking bearer and reservation window |
-| `POST /auth/fmu/session-ticket/redeem` | Exchange FMU ticket for claims | Per-gateway session-observer JWT |
+| `POST /auth/fmu/session-ticket/issue` | Issue reusable FMU ticket (conditional) | Booking bearer and reservation window |
+| `POST /auth/fmu/session-ticket/redeem` | Exchange FMU ticket for claims (conditional) | Per-gateway session-observer JWT |
 | `POST /access-audit/internal/session-observed` | Receive durable runtime observation | Per-gateway session-observer JWT |
 
 The backend never treats a request arriving at OpenResty as proof that a lab
 session was actually accepted or used.
+
+The controller maps OIDC discovery at `/.well-known/openid-configuration`, but
+the current Spring Security allow-list uses `/auth/.well-known/*`. Do not
+integrate against discovery until those two mappings are aligned; `/auth/jwks`
+is the supported key endpoint when provider mode is enabled.
 
 ## Browser access flow
 
@@ -225,6 +233,43 @@ the `targetGatewayId` claim of the validated booking bearer, so multiple
 gateways sharing an IP do not share the issue burst. Requests without a valid
 gateway claim fall back to an IP bucket. Ticket issuance still validates the
 booking bearer and its FMU claims.
+
+## WebAuthn credential lifecycle
+
+WebAuthn registration is an onboarding ceremony, not a generic registration
+endpoint. There is no `POST /webauthn/register` route.
+
+```mermaid
+sequenceDiagram
+    participant M as Marketplace / SP
+    participant B as blockchain-services
+    participant U as Browser
+    participant A as Authenticator
+    participant D as MySQL
+
+    M->>B: GET key-status + service JWT
+    M->>B: POST onboarding options + service JWT
+    B-->>M: sessionId + ceremony URL
+    M->>U: Open ceremony
+    U->>A: navigator.credentials.create()
+    U->>B: POST /onboarding/webauthn/complete
+    B->>B: Verify challenge, origin, RP ID and user verification
+    B->>D: Persist credential binding
+    M->>B: GET session status + service JWT
+```
+
+`key-status`, `options` and `status` require a Marketplace service JWT with
+`onboarding:webauthn`; the browser `complete` call and ceremony URL are bound to
+the short-lived onboarding session. Credential revocation is
+`POST /webauthn/revoke` and requires a Marketplace JWT with `webauthn:manage`.
+When the Marketplace token includes a PUC, it must match the PUC being revoked.
+
+Credential persistence requires MySQL by default
+(`WEBAUTHN_CREDENTIALS_REQUIRE_DATABASE=true`). Memory-only operation is for
+isolated development only. The RP accepts only `WEBAUTHN_ATTESTATION_CONVEYANCE=none`
+and requires user verification even if a weaker environment value is supplied.
+Set the RP ID and allowed origins deliberately; an origin mismatch fails the
+ceremony rather than falling back to an arbitrary browser origin.
 
 ## SAML, discovery and keys
 

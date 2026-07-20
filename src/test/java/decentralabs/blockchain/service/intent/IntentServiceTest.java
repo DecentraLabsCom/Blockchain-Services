@@ -5,7 +5,16 @@ import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
 import java.math.BigInteger;
+import java.lang.reflect.InvocationTargetException;
+import java.lang.reflect.Method;
+import java.nio.charset.StandardCharsets;
+import java.security.KeyPair;
+import java.security.KeyPairGenerator;
+import java.security.Signature;
+import java.security.interfaces.ECPublicKey;
+import java.security.spec.ECGenParameterSpec;
 import java.time.Instant;
+import java.util.Base64;
 import java.util.Map;
 import java.util.Optional;
 
@@ -23,13 +32,14 @@ import decentralabs.blockchain.dto.intent.ActionIntentPayload;
 import decentralabs.blockchain.dto.intent.IntentAction;
 import decentralabs.blockchain.dto.intent.IntentMeta;
 import decentralabs.blockchain.dto.intent.IntentStatus;
+import decentralabs.blockchain.util.PucHashUtil;
 import decentralabs.blockchain.dto.intent.IntentStatusResponse;
 import decentralabs.blockchain.dto.intent.IntentSubmission;
 import decentralabs.blockchain.dto.intent.ReservationIntentPayload;
 import decentralabs.blockchain.service.auth.SamlValidationService;
 import decentralabs.blockchain.service.auth.WebauthnCredentialService;
+import decentralabs.blockchain.service.BackendUrlResolver;
 import decentralabs.blockchain.service.wallet.WalletService;
-import decentralabs.blockchain.util.PucHashUtil;
 
 @ExtendWith(MockitoExtension.class)
 @DisplayName("IntentService Tests")
@@ -53,6 +63,9 @@ class IntentServiceTest {
     @Mock
     private WalletService walletService;
 
+    @Mock
+    private BackendUrlResolver backendUrlResolver;
+
     private IntentService service;
     private String creatorHashToReturn;
     private BigInteger labPriceToReturn;
@@ -73,7 +86,8 @@ class IntentServiceTest {
             webauthnCredentialService,
             walletService,
             "0x0000000000000000000000000000000000000001",
-            meterRegistry
+            meterRegistry,
+            backendUrlResolver
         ) {
             @Override
             String fetchCreatorPucHash(BigInteger labId) {
@@ -86,6 +100,29 @@ class IntentServiceTest {
             }
         };
         lenient().when(samlValidationService.resolveStableUserId(any(), any(), any())).thenCallRealMethod();
+    }
+
+    @Test
+    @DisplayName("Should clear federated and WebAuthn material after processing attempt")
+    void shouldClearTransientIdentityMaterialAfterProcessingAttempt() {
+        IntentSubmission submission = new IntentSubmission();
+        submission.setSamlAssertion("full-saml-assertion");
+        submission.setWebauthnCredentialId("credential-id");
+        submission.setWebauthnClientDataJSON("client-data");
+        submission.setWebauthnAuthenticatorData("authenticator-data");
+        submission.setWebauthnSignature("webauthn-signature");
+        submission.setSignature("eip712-signature");
+        submission.setTypedData(Map.of("domain", "sensitive"));
+
+        assertThrows(ResponseStatusException.class, () -> service.processIntent(submission));
+
+        assertNull(submission.getSamlAssertion());
+        assertNull(submission.getWebauthnCredentialId());
+        assertNull(submission.getWebauthnClientDataJSON());
+        assertNull(submission.getWebauthnAuthenticatorData());
+        assertNull(submission.getWebauthnSignature());
+        assertNull(submission.getSignature());
+        assertNull(submission.getTypedData());
     }
 
     @Test
@@ -102,7 +139,8 @@ class IntentServiceTest {
             webauthnCredentialService,
             walletService,
             "0x0000000000000000000000000000000000000001",
-            meterRegistry
+            meterRegistry,
+            backendUrlResolver
         );
 
         String hash = "0x" + "f".repeat(64);
@@ -128,6 +166,56 @@ class IntentServiceTest {
         Thread.sleep(200);
         // should not throw
         checkMethod.invoke(shortTtlService, hash);
+    }
+
+    @Test
+    @DisplayName("WebAuthn assertion validates ceremony fields and advances the counter")
+    void webauthnAssertionValidatesCeremonyAndCounter() throws Exception {
+        String puc = "user@institution.edu";
+        String credentialId = Base64.getUrlEncoder().withoutPadding()
+            .encodeToString("credential-assertion".getBytes(StandardCharsets.UTF_8));
+        String expectedChallenge = "challenge-data";
+
+        KeyPairGenerator keyPairGenerator = KeyPairGenerator.getInstance("EC");
+        keyPairGenerator.initialize(new ECGenParameterSpec("secp256r1"));
+        KeyPair keyPair = keyPairGenerator.generateKeyPair();
+        ECPublicKey publicKey = (ECPublicKey) keyPair.getPublic();
+        byte[] x = unsignedFixed(publicKey.getW().getAffineX().toByteArray(), 32);
+        byte[] y = unsignedFixed(publicKey.getW().getAffineY().toByteArray(), 32);
+        byte[] coseKey = coseEcKey(x, y);
+        String publicKeyB64 = Base64.getUrlEncoder().withoutPadding().encodeToString(coseKey);
+
+        String challengeB64 = Base64.getUrlEncoder().withoutPadding()
+            .encodeToString(expectedChallenge.getBytes(StandardCharsets.UTF_8));
+        byte[] clientData = ("{\"type\":\"webauthn.get\",\"challenge\":\"" + challengeB64
+            + "\",\"origin\":\"https://localhost\"}").getBytes(StandardCharsets.UTF_8);
+        byte[] authenticatorData = new byte[37];
+        byte[] rpIdHash = java.security.MessageDigest.getInstance("SHA-256")
+            .digest("localhost".getBytes(StandardCharsets.UTF_8));
+        System.arraycopy(rpIdHash, 0, authenticatorData, 0, 32);
+        authenticatorData[32] = 0x05; // UP + UV
+        authenticatorData[36] = 0x01; // sign count = 1
+        byte[] signed = concat(authenticatorData, java.security.MessageDigest.getInstance("SHA-256").digest(clientData));
+        Signature signer = Signature.getInstance("SHA256withECDSA");
+        signer.initSign(keyPair.getPrivate());
+        signer.update(signed);
+
+        WebauthnCredentialService.WebauthnCredential credential = new WebauthnCredentialService.WebauthnCredential(
+            credentialId, publicKeyB64, "aaguid", 0L, true, 1L, 1L, null, "platform", true, "internal"
+        );
+        when(webauthnCredentialService.advanceSignCount(puc, credentialId, 1L)).thenReturn(true);
+
+        invokeVerifyWebauthnAssertion(
+            credential,
+            puc,
+            credentialId,
+            Base64.getUrlEncoder().withoutPadding().encodeToString(clientData),
+            Base64.getUrlEncoder().withoutPadding().encodeToString(authenticatorData),
+            Base64.getUrlEncoder().withoutPadding().encodeToString(signer.sign()),
+            expectedChallenge
+        );
+
+        verify(webauthnCredentialService).advanceSignCount(puc, credentialId, 1L);
     }
 
     @Test
@@ -641,16 +729,16 @@ class IntentServiceTest {
         void shouldKeepPucFromOnChainReservationIntentEvent() {
             String requestId = "onchain-reservation-req";
             String reservationKey = "0x" + "12".repeat(32);
-            String puc = "user@example.edu|stable-id";
+            String pucHash = PucHashUtil.hashPuc("user@example.edu|stable-id");
 
-            service.updateFromOnChain(requestId, "executed", "0xtx", 1000L, null, reservationKey, puc, null);
+            service.updateFromOnChain(requestId, "executed", "0xtx", 1000L, null, reservationKey, pucHash, null);
 
-            assertEquals(Optional.of(puc), service.findPucByReservationKey(reservationKey));
+            assertEquals(Optional.of(pucHash), service.findPucByReservationKey(reservationKey));
             verify(persistenceService).upsert(argThat(record ->
                 record.getRequestId().equals(requestId) &&
                 record.getStatus() == IntentStatus.EXECUTED &&
                 reservationKey.equals(record.getReservationKey()) &&
-                puc.equals(record.getPuc())
+                pucHash.equals(record.getPucHash())
             ));
             verify(webhookService).notify(any());
         }
@@ -686,5 +774,68 @@ class IntentServiceTest {
             Map<String, IntentRecord> queued = service.getQueuedIntents();
             assertTrue(queued.isEmpty());
         }
+    }
+
+    private void invokeVerifyWebauthnAssertion(
+        WebauthnCredentialService.WebauthnCredential credential,
+        String puc,
+        String credentialId,
+        String clientData,
+        String authenticatorData,
+        String signature,
+        String expectedChallenge
+    ) throws Exception {
+        Method method = IntentService.class.getDeclaredMethod(
+            "verifyWebauthnAssertion",
+            WebauthnCredentialService.WebauthnCredential.class,
+            String.class,
+            String.class,
+            String.class,
+            String.class,
+            String.class,
+            String.class
+        );
+        method.setAccessible(true);
+        try {
+            method.invoke(service, credential, puc, credentialId, clientData, authenticatorData, signature, expectedChallenge);
+        } catch (InvocationTargetException ex) {
+            Throwable cause = ex.getCause();
+            if (cause instanceof Exception exception) {
+                throw exception;
+            }
+            throw ex;
+        }
+    }
+
+    private byte[] concat(byte[] first, byte[] second) {
+        byte[] result = new byte[first.length + second.length];
+        System.arraycopy(first, 0, result, 0, first.length);
+        System.arraycopy(second, 0, result, first.length, second.length);
+        return result;
+    }
+
+    private byte[] unsignedFixed(byte[] value, int length) {
+        byte[] result = new byte[length];
+        int sourceOffset = Math.max(0, value.length - length);
+        int copyLength = Math.min(value.length, length);
+        System.arraycopy(value, sourceOffset, result, length - copyLength, copyLength);
+        return result;
+    }
+
+    private byte[] coseEcKey(byte[] x, byte[] y) {
+        java.io.ByteArrayOutputStream result = new java.io.ByteArrayOutputStream();
+        result.write(0xA5);
+        result.write(0x01); result.write(0x02);
+        result.write(0x03); result.write(0x26);
+        result.write(0x20); result.write(0x01);
+        result.write(0x21); writeByteString(result, x);
+        result.write(0x22); writeByteString(result, y);
+        return result.toByteArray();
+    }
+
+    private void writeByteString(java.io.ByteArrayOutputStream output, byte[] value) {
+        output.write(0x58);
+        output.write(value.length);
+        output.writeBytes(value);
     }
 }
