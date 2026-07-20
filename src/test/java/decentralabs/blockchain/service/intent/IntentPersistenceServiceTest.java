@@ -210,7 +210,7 @@ class IntentPersistenceServiceTest {
 
         @Test
         @DisplayName("Should use correct wire value for QUEUED status")
-        void shouldUseCorrectWireValueForPending() {
+        void shouldUseCorrectWireValueForQueued() {
             IntentRecord record = createTestRecord("req-status-001", "LAB_ADD", "test");
             record.setStatus(IntentStatus.QUEUED);
 
@@ -225,7 +225,7 @@ class IntentPersistenceServiceTest {
 
         @Test
         @DisplayName("Should use correct wire value for EXECUTED status")
-        void shouldUseCorrectWireValueForConfirmed() {
+        void shouldUseCorrectWireValueForExecuted() {
             IntentRecord record = createTestRecord("req-status-002", "LAB_ADD", "test");
             record.setStatus(IntentStatus.EXECUTED);
 

@@ -156,7 +156,7 @@ public class LabContentRetentionService {
             int markerIndex = path.indexOf(marker);
             String relative = markerIndex >= 0
                 ? path.substring(markerIndex + marker.length())
-                : path.startsWith("content/") ? path.substring(1) : "";
+                : path.startsWith("content/") ? path : "";
             Path normalized = Path.of(relative).normalize();
             if (normalized.isAbsolute() || normalized.getNameCount() < 3
                 || !"content".equals(normalized.getName(0).toString())

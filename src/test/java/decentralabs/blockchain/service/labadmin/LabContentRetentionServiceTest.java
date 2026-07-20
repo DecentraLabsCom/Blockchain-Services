@@ -47,6 +47,22 @@ class LabContentRetentionServiceTest {
     }
 
     @Test
+    void marksContentWhenMetadataUriUsesRelativeContentPath() throws Exception {
+        Path contentDir = tempDir.resolve("content/lab-44");
+        Files.createDirectories(contentDir);
+        Files.writeString(contentDir.resolve("metadata.json"), "{\"name\":\"deleted\"}");
+
+        service.markDeleted(
+            BigInteger.valueOf(44),
+            "content/lab-44/metadata.json",
+            "0xdelete44",
+            Instant.now()
+        );
+
+        assertThat(service.isTombstoned("content/lab-44/metadata.json")).isTrue();
+    }
+
+    @Test
     void garbageCollectionDeletesOnlyExpiredTombstonedContent() throws Exception {
         Path contentDir = tempDir.resolve("content/lab-43");
         Files.createDirectories(contentDir.resolve("docs"));
