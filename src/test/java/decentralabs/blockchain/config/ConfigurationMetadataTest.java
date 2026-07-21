@@ -42,6 +42,20 @@ class ConfigurationMetadataTest {
             .path("defaultValue").asLong()).isEqualTo(100_000_000_000_000_000L);
     }
 
+    @Test
+    void documentsCustomPropertiesUsedByPairingAndMarketplaceAuth() throws Exception {
+        Map<String, JsonNode> properties = readProperties();
+
+        assertThat(properties).containsKeys(
+            "intent.payload.encryption-key",
+            "provider.puc-hash",
+            "auth.marketplace-endpoints.audience",
+            "auth.marketplace-endpoints.institution-id",
+            "auth.marketplace-endpoints.service-subject",
+            "auth.marketplace-endpoints.max-ttl-seconds"
+        );
+    }
+
     private Map<String, JsonNode> readProperties() throws Exception {
         try (InputStream input = getClass().getClassLoader()
             .getResourceAsStream("META-INF/additional-spring-configuration-metadata.json")) {

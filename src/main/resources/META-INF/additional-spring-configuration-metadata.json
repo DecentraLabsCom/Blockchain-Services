@@ -5,6 +5,33 @@
     "description": "Base domain for the service. Can be overridden via BASE_DOMAIN environment variable."
   },
   {
+    "name": "intent.payload.encryption-key",
+    "type": "java.lang.String",
+    "description": "Base64URL-encoded AES-256 key used to encrypt intent payloads."
+  },
+  {
+    "name": "auth.marketplace-endpoints.audience",
+    "type": "java.lang.String",
+    "description": "Expected audience for Marketplace service JWTs."
+  },
+  {
+    "name": "auth.marketplace-endpoints.institution-id",
+    "type": "java.lang.String",
+    "description": "Institution identifier accepted in Marketplace service JWTs."
+  },
+  {
+    "name": "auth.marketplace-endpoints.service-subject",
+    "type": "java.lang.String",
+    "description": "Subject required in Marketplace service JWTs.",
+    "defaultValue": "marketplace"
+  },
+  {
+    "name": "auth.marketplace-endpoints.max-ttl-seconds",
+    "type": "java.lang.Long",
+    "description": "Maximum lifetime for Marketplace service JWTs.",
+    "defaultValue": 60
+  },
+  {
     "name": "auth.base-path",
     "type": "java.lang.String",
     "description": "Base path for auth endpoints (must remain /auth to match gateway).",
@@ -1036,6 +1063,11 @@
     "name": "provider.organization",
     "type": "java.lang.String",
     "description": "Organization name of the lab provider"
+  },
+  {
+    "name": "provider.puc-hash",
+    "type": "java.lang.String",
+    "description": "Non-zero 0x-prefixed PUC hash bound to Gateway-created labs."
   },
   {
     "name": "public.base-url",

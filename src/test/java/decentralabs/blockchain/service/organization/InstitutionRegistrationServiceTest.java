@@ -80,21 +80,16 @@ class InstitutionRegistrationServiceTest {
     void shouldDerivePairingOriginFromGatewayUrl() {
         when(backendUrlResolver.resolveBaseDomain()).thenReturn("https://gateway.full.example");
         when(walletService.getInstitutionalWalletAddress()).thenReturn("0xABC123");
-        when(restTemplate.exchange(
-            anyString(),
-            eq(org.springframework.http.HttpMethod.POST),
-            any(HttpEntity.class),
-            ArgumentMatchers.<org.springframework.core.ParameterizedTypeReference<Map<String, Object>>>any()
-        )).thenReturn(
-            ResponseEntity.ok(Map.of(
+        stubPairingResponses(
+            Map.of(
                 "institutionId", "institution-1",
                 "registrationType", "PROVIDER",
                 "chainId", 11_155_111L,
                 "registryContract", "0xregistry",
                 "issuedAt", 100L,
                 "expiresAt", 200L
-            )),
-            ResponseEntity.ok(Map.of(
+            ),
+            Map.of(
                 "pairingId", "pairing-1",
                 "status", "OFFERED",
                 "institutionId", "institution-1",
@@ -102,7 +97,7 @@ class InstitutionRegistrationServiceTest {
                 "walletAddress", "0xABC123",
                 "canonicalBackendOrigin", "https://gateway.full.example",
                 "expiresAt", 200L
-            ))
+            )
         );
 
         ReflectionTestUtils.setField(service, "configuredPublicBaseUrl", "");
@@ -122,21 +117,16 @@ class InstitutionRegistrationServiceTest {
     @DisplayName("Should prefer an explicit public base URL override for pairing")
     void shouldPreferExplicitPublicBaseUrlOverride() {
         when(walletService.getInstitutionalWalletAddress()).thenReturn("0xABC123");
-        when(restTemplate.exchange(
-            anyString(),
-            eq(org.springframework.http.HttpMethod.POST),
-            any(HttpEntity.class),
-            ArgumentMatchers.<org.springframework.core.ParameterizedTypeReference<Map<String, Object>>>any()
-        )).thenReturn(
-            ResponseEntity.ok(Map.of(
+        stubPairingResponses(
+            Map.of(
                 "institutionId", "institution-1",
                 "registrationType", "PROVIDER",
                 "chainId", 11_155_111L,
                 "registryContract", "0xregistry",
                 "issuedAt", 100L,
                 "expiresAt", 200L
-            )),
-            ResponseEntity.ok(Map.of(
+            ),
+            Map.of(
                 "pairingId", "pairing-1",
                 "status", "OFFERED",
                 "institutionId", "institution-1",
@@ -144,7 +134,7 @@ class InstitutionRegistrationServiceTest {
                 "walletAddress", "0xABC123",
                 "canonicalBackendOrigin", "https://override.example",
                 "expiresAt", 200L
-            ))
+            )
         );
 
         ReflectionTestUtils.setField(service, "configuredPublicBaseUrl", "https://override.example");
@@ -510,6 +500,18 @@ class InstitutionRegistrationServiceTest {
         
         assertEquals("0xwallet-signature", body.get("walletSignature"));
         assertFalse(body.containsKey("walletAddress"));
+    }
+
+    private void stubPairingResponses(Map<String, Object> inspection, Map<String, Object> offer) {
+        int[] responseIndex = {0};
+        when(restTemplate.exchange(
+            anyString(),
+            eq(org.springframework.http.HttpMethod.POST),
+            any(HttpEntity.class),
+            ArgumentMatchers.<org.springframework.core.ParameterizedTypeReference<Map<String, Object>>>any()
+        )).thenAnswer(invocation -> ResponseEntity.ok(
+            responseIndex[0]++ == 0 ? inspection : offer
+        ));
     }
 
     private ProvisioningSecurityClaims providerClaims() {
