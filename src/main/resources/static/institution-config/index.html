@@ -13,6 +13,17 @@
         .is-hidden { display: none !important; }
         .pairing-help { color: #536273; line-height: 1.5; }
         .actions { display: flex; gap: .75rem; flex-wrap: wrap; margin-top: 1rem; }
+        .pairing-progress { display: grid; gap: .6rem; margin: 1rem 0; padding: .85rem 1rem; border: 1px solid #bfdbfe; border-radius: .4rem; background: #eff6ff; color: #1e3a8a; }
+        .pairing-progress.is-success { border-color: #bbf7d0; background: #f0fdf4; color: #166534; }
+        .pairing-progress.is-error { border-color: #fecaca; background: #fef2f2; color: #991b1b; }
+        .pairing-progress-message { display: flex; align-items: center; gap: .55rem; }
+        .pairing-progress-spinner { width: .9rem; height: .9rem; border: .15rem solid currentColor; border-right-color: transparent; border-radius: 50%; animation: pairing-progress-spin .8s linear infinite; }
+        .pairing-progress-spinner.is-hidden { display: none; }
+        .pairing-progress-track { height: .22rem; overflow: hidden; border-radius: 999px; background: rgba(30, 64, 175, .15); }
+        .pairing-progress-bar { width: 35%; height: 100%; border-radius: inherit; background: currentColor; animation: pairing-progress-slide 1.2s ease-in-out infinite; }
+        .pairing-progress:not(.is-active) .pairing-progress-track { display: none; }
+        @keyframes pairing-progress-spin { to { transform: rotate(360deg); } }
+        @keyframes pairing-progress-slide { 0% { transform: translateX(-120%); } 100% { transform: translateX(330%); } }
     </style>
 </head>
 <body>
@@ -24,9 +35,21 @@
             <div id="statusBadge"></div>
         </header>
 
+        <nav class="pairing-navigation" aria-label="Pairing navigation">
+            <a id="walletDashboardLink" href="/wallet-dashboard/">&larr; Back to wallet dashboard</a>
+            <a id="marketplaceApprovalLink" class="is-hidden" href="https://marketplace-decentralabs.vercel.app/" target="_blank" rel="noopener noreferrer">Open Marketplace to approve pairing &rarr;</a>
+        </nav>
+
         <div id="successAlert" class="alert alert-success"></div>
         <div id="errorAlert" class="alert alert-error"></div>
         <div id="infoAlert" class="alert alert-info"></div>
+        <div id="pairingProgress" class="pairing-progress is-hidden" role="status" aria-live="polite" aria-atomic="true" aria-busy="false">
+            <div class="pairing-progress-message">
+                <span id="pairing-progress-spinner" class="pairing-progress-spinner is-hidden" aria-hidden="true"></span>
+                <span id="pairingProgressMessage"></span>
+            </div>
+            <div class="pairing-progress-track" aria-hidden="true"><div class="pairing-progress-bar"></div></div>
+        </div>
 
         <div class="readonly-grid">
             <div class="readonly-value"><strong>Marketplace</strong><br><span id="marketplaceBaseUrl">Configured by server</span></div>
@@ -35,10 +58,19 @@
         </div>
 
         <p class="pairing-help">
-            Generate a challenge in the Marketplace, paste it below, and select <strong>Offer backend pairing</strong>.
+            <strong>Step 1:</strong> Generate a short-lived <code>0x...</code> pairing challenge in the Marketplace.
+            <strong>Step 2:</strong> paste it below and select <strong>Offer backend pairing</strong>.
             This backend reads the wallet and public origin from its own configuration. They are not accepted from this form.
-            After the Marketplace user approves the read-only offer, select <strong>Finalize registration</strong>.
+            <strong>Step 3:</strong> approve the read-only offer in the Marketplace.
+            <strong>Step 4:</strong> return here and select <strong>Complete pairing</strong>.
         </p>
+
+        <ol id="pairingSteps" class="pairing-flow-steps">
+            <li data-step="1" class="is-current"><span>1</span><strong>Generate challenge</strong><small>Marketplace</small></li>
+            <li data-step="2"><span>2</span><strong>Offer backend</strong><small>This page</small></li>
+            <li data-step="3"><span>3</span><strong>Approve offer</strong><small>Marketplace</small></li>
+            <li data-step="4"><span>4</span><strong>Complete pairing</strong><small>This page</small></li>
+        </ol>
 
         <form id="pairingForm">
             <div class="form-group">
@@ -47,11 +79,11 @@
                           placeholder="0x..."></textarea>
             </div>
             <div class="actions">
-                <button type="submit" class="btn btn-primary" id="offerPairingBtn">
-                    <span id="offerBtnText">Offer backend pairing</span>
+                <button type="submit" class="btn btn-primary" id="offerPairingBtn" aria-busy="false">
+                    <span id="offerBtnText">Offer backend identity</span>
                 </button>
-                <button type="button" class="btn btn-secondary" id="completePairingBtn" disabled>
-                    Finalize registration
+                <button type="button" class="btn btn-secondary" id="completePairingBtn" aria-busy="false" disabled>
+                    Complete pairing after approval
                 </button>
             </div>
         </form>
@@ -62,109 +94,6 @@
 </main>
 
 <script src="/institution-config/assets/js/admin-csrf.js"></script>
-<script>
-    const challengeField = document.getElementById('pairingChallenge');
-    const offerButton = document.getElementById('offerPairingBtn');
-    const offerButtonText = document.getElementById('offerBtnText');
-    const completeButton = document.getElementById('completePairingBtn');
-    const pairingDetails = document.getElementById('pairingDetails');
-    let currentPairing = null;
-
-    function hideAlerts() {
-        ['successAlert', 'errorAlert', 'infoAlert'].forEach((id) => {
-            document.getElementById(id).classList.remove('is-visible');
-        });
-    }
-
-    function show(id, message) {
-        const element = document.getElementById(id);
-        element.textContent = message;
-        element.classList.add('is-visible');
-    }
-
-    function renderDetails(data) {
-        currentPairing = data;
-        pairingDetails.innerHTML = `
-            <div class="readonly-value"><strong>Institution</strong><br>${escapeHtml(data.institutionId || '-')}</div>
-            <div class="readonly-value"><strong>Registration type</strong><br>${escapeHtml(data.registrationType || '-')}</div>
-            <div class="readonly-value"><strong>Institutional wallet</strong><br><code>${escapeHtml(data.walletAddress || '-')}</code></div>
-            <div class="readonly-value"><strong>Canonical backend origin</strong><br><code>${escapeHtml(data.canonicalBackendOrigin || '-')}</code></div>
-            <div class="readonly-value"><strong>Pairing status</strong><br>${escapeHtml(data.status || '-')}</div>
-        `;
-        pairingDetails.classList.remove('is-hidden');
-        completeButton.disabled = !data.challenge || data.status === 'EXPIRED';
-        document.getElementById('statusBadge').innerHTML =
-            `<div class="status-badge not-registered">Pairing ${escapeHtml(data.status || 'unknown')}</div>`;
-    }
-
-    function escapeHtml(value) {
-        return String(value).replace(/[&<>'"]/g, (character) => ({
-            '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;'
-        })[character]);
-    }
-
-    async function loadStatus() {
-        try {
-            const response = await fetch('/institution-config/status');
-            const data = await response.json();
-            document.getElementById('marketplaceBaseUrl').textContent = data.marketplaceBaseUrl || 'Configured by server';
-            if (data.isRegistered) {
-                document.getElementById('statusBadge').innerHTML = '<div class="status-badge registered">Registered</div>';
-                completeButton.disabled = true;
-            }
-            if (data.operatingMode === 'consumer-only' || data.providerRegistrationEnabled === false) {
-                show('infoAlert', 'Consumer-only deployment: provider registration is disabled.');
-            }
-        } catch (error) {
-            show('errorAlert', 'Failed to load backend status.');
-        }
-    }
-
-    document.getElementById('pairingForm').addEventListener('submit', async (event) => {
-        event.preventDefault();
-        hideAlerts();
-        offerButton.disabled = true;
-        offerButtonText.textContent = 'Pairing...';
-        try {
-            const challenge = challengeField.value.trim();
-            const response = await fetch('/institution-config/apply-pairing-challenge', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ challenge })
-            });
-            const data = await response.json();
-            if (!response.ok || !data.success) throw new Error(data.error || 'Pairing failed');
-            renderDetails({ ...data, challenge });
-            show('successAlert', 'Backend offer created. Approve the read-only values in the Marketplace, then finalize here.');
-        } catch (error) {
-            show('errorAlert', error.message || 'Pairing failed.');
-        } finally {
-            offerButton.disabled = false;
-            offerButtonText.textContent = 'Offer backend pairing';
-        }
-    });
-
-    completeButton.addEventListener('click', async () => {
-        if (!currentPairing?.challenge) return;
-        hideAlerts();
-        completeButton.disabled = true;
-        try {
-            const response = await fetch('/institution-config/complete-pairing', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ challenge: currentPairing.challenge })
-            });
-            const data = await response.json();
-            if (!response.ok || !data.success) throw new Error(data.error || 'Registration is not ready');
-            show('successAlert', 'Institutional registration completed successfully.');
-            document.getElementById('statusBadge').innerHTML = '<div class="status-badge registered">Registered</div>';
-        } catch (error) {
-            show('errorAlert', error.message || 'Registration is not ready. Approve the pairing first.');
-            completeButton.disabled = false;
-        }
-    });
-
-    loadStatus();
-</script>
+<script src="/institution-config/assets/js/pairing.js?v=pairing-flow-v1"></script>
 </body>
 </html>

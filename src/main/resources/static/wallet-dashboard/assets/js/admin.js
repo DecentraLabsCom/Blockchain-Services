@@ -15,8 +15,8 @@ const DashboardState = {
     isProvider: false,
     isOperator: false,
     welcomeModalDismissed: false,
-    inviteTokenApplied: false,  // Track if invite token has been applied
-    invitePromptedWallet: null,  // Track which wallet has been prompted this session
+    institutionRegistered: false,
+    marketplaceUrl: 'https://marketplace-decentralabs.vercel.app/',
     collectLabs: [],
     collectLabNames: {},
     selectedCollectLabId: null,
@@ -171,31 +171,6 @@ function updateCollectDetailVisibility() {
     if (actionsEl) {
         actionsEl.classList.toggle('hidden', !DashboardState.isProvider || !showDetails);
     }
-}
-
-function loadInviteTokenState(address, contractAddress = null) {
-    // Registration state is authoritative in blockchain-services. Do not
-    // persist token-adjacent state in browser storage, where XSS would make
-    // administrative state durable outside the server-side session.
-    return false;
-}
-
-function persistInviteTokenState(address, applied, contractAddress = null) {
-    // Deliberately kept as a no-op for callers that update the in-memory UI.
-}
-
-function maybePromptInviteToken(force = false) {
-    const wallet = DashboardState.walletAddress;
-    if (!wallet || DashboardState.inviteTokenApplied) {
-        return;
-    }
-    if (!force && !DashboardState.welcomeModalDismissed) {
-        return;
-    }
-    if (!force && DashboardState.invitePromptedWallet === wallet) {
-        return;
-    }
-    showProvisioningTokenModal();
 }
 
 // Utility: Format wei to ETH
@@ -777,10 +752,8 @@ function updateDashboardAccessError(statusCode) {
 }
 
 function updateOperatingModeNotices(providerConfig) {
-    const welcomeInstruction = document.getElementById('welcomeTokenInstruction');
-    const welcomeHelp = document.getElementById('welcomeTokenHelp');
-    const tokenIntro = document.getElementById('provisioningTokenIntro');
-    const tokenModes = document.getElementById('provisioningTokenModes');
+    const welcomeInstruction = document.getElementById('welcomePairingInstruction');
+    const welcomeHelp = document.getElementById('welcomePairingHelp');
 
     const operatingMode = providerConfig && providerConfig.operatingMode
         ? providerConfig.operatingMode
@@ -800,67 +773,50 @@ function updateOperatingModeNotices(providerConfig) {
 
     if (welcomeInstruction) {
         welcomeInstruction.innerHTML = providerMode
-            ? 'Next, apply your <strong>provisioning token</strong> from the marketplace.'
-            : 'Next, apply your <strong>consumer provisioning token</strong> from the marketplace.';
+            ? '<strong>Pair this backend</strong> with your institution through the Marketplace.'
+            : '<strong>Pair this consumer backend</strong> with your institution through the Marketplace.';
     }
 
     if (welcomeHelp) {
         welcomeHelp.textContent = providerMode
-            ? 'If you do not have one yet, request access for your institution.'
-            : 'Request a consumer token if your institution only needs to finance and manage reservation and access costs for its own users.';
+            ? 'Generate a short-lived pairing challenge in the Marketplace, paste it into backend pairing setup, offer this backend\'s configured wallet and public origin, approve those read-only values in the Marketplace, then complete pairing in backend pairing setup.'
+            : 'Generate a short-lived consumer pairing challenge in the Marketplace, paste it into backend pairing setup, offer this backend\'s configured wallet and public origin, approve those read-only values in the Marketplace, then complete pairing in backend pairing setup.';
     }
 
-    if (tokenIntro) {
-        tokenIntro.textContent = providerMode
-            ? 'Paste the provisioning token provided by the DecentraLabs marketplace to register your institution on-chain.'
-            : 'Paste the consumer provisioning token provided by the DecentraLabs marketplace to register your institution for reservation and access funding.';
-    }
-
-    if (tokenModes) {
-        tokenModes.innerHTML = providerMode
-            ? 'Supports both <strong>Provider</strong> (publishes labs) and <strong>Consumer</strong> (only reserves labs) tokens.'
-            : 'This deployment is configured for <strong>Consumer</strong> tokens only.';
-    }
+    updateInstitutionPairingGuidance(providerConfig);
 }
 
-// Update header button visibility based on wallet and token status
-function updateApplyInviteButtonVisibility() {
-    const headerBtn = document.getElementById('applyProvisioningTokenHeaderBtn');
+function updateInstitutionPairingGuidance(providerConfig) {
+    const section = document.getElementById('institutionPairingSection');
+    const status = document.getElementById('institutionPairingStatus');
+    const help = document.getElementById('institutionPairingHelp');
+    if (!section) return;
+
+    const registered = providerConfig && (
+        providerConfig.registered === true || providerConfig.isRegistered === true
+    );
+    DashboardState.institutionRegistered = Boolean(registered);
+
+    if (status) {
+        status.textContent = registered
+            ? `Paired${providerConfig.registrationRole ? ` as ${providerConfig.registrationRole.toLowerCase()}` : ''}`
+            : 'Pairing required';
+        status.classList.toggle('registered', Boolean(registered));
+    }
+
+    if (help && providerConfig?.operatingMode === 'consumer-only') {
+        help.textContent = 'This deployment is consumer-only. Pair it with the Marketplace to finance reservations and access for your institution.';
+    }
+
+    section.classList.toggle('hidden', !DashboardState.walletAddress || Boolean(registered));
+    updateInstitutionPairingButtonVisibility();
+}
+
+function updateInstitutionPairingButtonVisibility() {
+    const headerBtn = document.getElementById('openInstitutionConfigHeaderBtn');
     if (headerBtn) {
-        // Show button only if wallet is configured AND token not yet applied
-        const shouldShow = DashboardState.walletAddress && !DashboardState.inviteTokenApplied;
+        const shouldShow = DashboardState.walletAddress && !DashboardState.institutionRegistered;
         headerBtn.style.display = shouldShow ? 'inline-flex' : 'none';
-    }
-}
-
-// Show/hide invite token modal
-function showProvisioningTokenModal() {
-    const modal = document.getElementById('provisioningTokenModal');
-    const tokenInput = document.getElementById('provisioningTokenInput');
-    const resultDiv = document.getElementById('provisioningResult');
-    
-    if (!DashboardState.walletAddress) {
-        showToast('Configure your institutional wallet before applying a token.', 'error');
-        return;
-    }
-
-    if (DashboardState.walletAddress) {
-        DashboardState.invitePromptedWallet = DashboardState.walletAddress;
-    }
-    
-    if (modal) {
-        modal.classList.add('show');
-        modal.style.display = '';
-        if (tokenInput) tokenInput.value = '';
-        if (resultDiv) resultDiv.innerHTML = '';
-    }
-}
-
-function hideProvisioningTokenModal() {
-    const modal = document.getElementById('provisioningTokenModal');
-    if (modal) {
-        modal.classList.remove('show');
-        modal.style.display = '';
     }
 }
 
@@ -887,192 +843,6 @@ function extractResponseErrorMessage(response, result, fallbackMessage) {
     );
 }
 
-async function applyProvisioningToken() {
-    const tokenInput = document.getElementById('provisioningTokenInput');
-    if (!tokenInput) {
-        return;
-    }
-
-    const token = tokenInput.value.trim();
-    if (!token) {
-        showToast('Provisioning token cannot be empty.', 'error');
-        return;
-    }
-
-    if (!DashboardState.walletAddress) {
-        showToast('Configure your institutional wallet before applying a token.', 'error');
-        return;
-    }
-
-    const applyBtn = document.getElementById('applyProvisioningBtn');
-    
-    // Disable button during processing
-    if (applyBtn) applyBtn.disabled = true;
-
-    try {
-        // Show progress spinner with initial message
-        showProvisioningProgress('Validating token format...');
-        
-        // Detect token type by decoding JWT payload
-        const tokenType = detectTokenType(token);
-        const endpoint = tokenType === 'consumer' 
-            ? '/institution-config/apply-consumer-token'
-            : '/institution-config/apply-provider-token';
-        
-        // Update progress message
-        updateProvisioningProgress('Contacting marketplace...');
-        
-        // Add artificial delay to show the "contacting marketplace" message
-        await new Promise(resolve => setTimeout(resolve, 800));
-        
-        // Update progress message
-        updateProvisioningProgress('Verifying credentials with marketplace...');
-        
-        const response = await fetch(endpoint, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ token })
-        });
-
-        // Update progress message
-        updateProvisioningProgress('Processing registration on-chain...');
-
-        const result = await readJsonResponse(response);
-        if (result.parseError) {
-            throw new Error('Invalid response from server.');
-        }
-        if (!result.data) {
-            throw new Error('Empty response from server.');
-        }
-        const data = result.data;
-        if (!response.ok) {
-            throw new Error(data.error || 'Unable to apply provisioning token.');
-        }
-
-        // Update progress message
-        updateProvisioningProgress('Waiting for blockchain confirmation...');
-        
-        // Add artificial delay to show the blockchain confirmation message
-        await new Promise(resolve => setTimeout(resolve, 1000));
-        
-        // Update progress message
-        updateProvisioningProgress('Finalizing registration...');
-
-        renderProvisioningResult(data, tokenType);
-
-        const registrationCompleted = data.success && data.registered === true;
-
-        if (registrationCompleted) {
-            DashboardState.inviteTokenApplied = true;
-            persistInviteTokenState(
-                DashboardState.walletAddress,
-                true,
-                DashboardState.contractAddress
-            );
-            DashboardState.invitePromptedWallet = DashboardState.walletAddress;
-            updateApplyInviteButtonVisibility();
-        }
-
-        const title = registrationCompleted
-            ? (tokenType === 'consumer' ? 'Consumer Token Applied' : 'Provider Token Applied')
-            : (tokenType === 'consumer' ? 'Consumer Token Saved' : 'Provider Token Saved');
-        const message = registrationCompleted
-            ? `Registration completed successfully. Type: ${tokenType}`
-            : `Token validated and configuration saved, but registration did not complete. Request a fresh token and retry. Type: ${tokenType}`;
-
-        await showInfoModal(title, message, registrationCompleted);
-
-        if (registrationCompleted) {
-            hideProvisioningTokenModal();
-        }
-        await refreshAllData();
-    } catch (error) {
-        console.error('Failed to apply provisioning token:', error);
-        showToast(error.message || 'Failed to apply provisioning token', 'error');
-        renderProvisioningResult({ error: error.message }, 'unknown');
-    } finally {
-        // Re-enable button
-        if (applyBtn) applyBtn.disabled = false;
-    }
-}
-
-// Show provisioning progress spinner
-function showProvisioningProgress(message) {
-    const resultDiv = document.getElementById('provisioningResult');
-    if (!resultDiv) return;
-    
-    resultDiv.innerHTML = `
-        <div class="provisioning-progress">
-            <div class="spinner-container">
-                <div class="spinner"></div>
-            </div>
-            <div class="progress-message">${escapeHtml(message)}</div>
-        </div>
-    `;
-}
-
-// Update provisioning progress message
-function updateProvisioningProgress(message) {
-    const messageEl = document.querySelector('#provisioningResult .progress-message');
-    if (messageEl) {
-        messageEl.textContent = message;
-    }
-}
-
-// Helper function to detect token type from JWT payload
-function detectTokenType(token) {
-    try {
-        const parts = token.split('.');
-        if (parts.length !== 3) return 'provider'; // Default to provider
-        
-        const base64UrlPayload = parts[1];
-        const base64Payload = base64UrlPayload.replace(/-/g, '+').replace(/_/g, '/');
-        const paddedBase64Payload = base64Payload + '='.repeat((4 - (base64Payload.length % 4)) % 4);
-        const payload = JSON.parse(atob(paddedBase64Payload));
-        return payload.registrationType || 'provider';
-    } catch (error) {
-        console.warn('Failed to decode token, defaulting to provider type', error);
-        return 'provider';
-    }
-}
-
-// Render provisioning result
-function renderProvisioningResult(data, tokenType) {
-    const resultDiv = document.getElementById('provisioningResult');
-    if (!resultDiv) return;
-    
-    if (data.error) {
-        resultDiv.innerHTML = `<div class="error-message"><i class="fas fa-exclamation-triangle"></i> ${escapeHtml(data.error)}</div>`;
-        return;
-    }
-    
-    if (data.success) {
-        const config = data.config || {};
-        const registrationCompleted = data.registered === true;
-        let html = registrationCompleted
-            ? '<div class="success-message"><i class="fas fa-check-circle"></i> Token applied successfully!</div>'
-            : '<div class="warning-message"><i class="fas fa-exclamation-triangle"></i> Token validated, but registration did not complete.</div>';
-        html += '<div class="token-details">';
-        html += `<p><strong>Type:</strong> ${tokenType === 'consumer' ? 'Consumer (reserves only)' : 'Provider (publishes labs)'}</p>`;
-        
-        if (tokenType === 'consumer') {
-            if (config.consumerName) html += `<p><strong>Name:</strong> ${escapeHtml(config.consumerName)}</p>`;
-            if (config.consumerOrganization) html += `<p><strong>Organization:</strong> ${escapeHtml(config.consumerOrganization)}</p>`;
-        } else {
-            if (config.providerName) html += `<p><strong>Provider:</strong> ${escapeHtml(config.providerName)}</p>`;
-            if (config.providerOrganization) html += `<p><strong>Organization:</strong> ${escapeHtml(config.providerOrganization)}</p>`;
-            if (config.publicBaseUrl) html += `<p><strong>Auth URI:</strong> ${escapeHtml(config.publicBaseUrl)}</p>`;
-        }
-        
-        html += `<p><strong>Registered:</strong> ${data.registered ? 'Yes ✓' : 'Pending'}</p>`;
-        if (!registrationCompleted) {
-            html += '<p><strong>Next step:</strong> Request a fresh invitation token and retry.</p>';
-        }
-        html += '</div>';
-        resultDiv.innerHTML = html;
-    }
-}
-
 // Welcome Modal Functions
 function showWelcomeModal() {
     const modal = document.getElementById('welcomeModal');
@@ -1092,10 +862,11 @@ function hideWelcomeModal(dismissed = false) {
 }
 
 function updateMarketplaceUrl(url) {
-    const link = document.getElementById('marketplaceLink');
-    if (link && url) {
+    if (typeof url !== 'string' || !url.trim()) return;
+    DashboardState.marketplaceUrl = url;
+    document.querySelectorAll('[data-marketplace-link]').forEach((link) => {
         link.href = url;
-    }
+    });
 }
 
 function renderWalletSetupPrompt() {
@@ -1142,46 +913,31 @@ async function loadSystemStatus() {
             DashboardState.isInstitution = data.institutionControlsEnabled === true || data.isInstitution === true;
             DashboardState.isProvider = data.providerControlsEnabled === true || data.isProvider === true;
             DashboardState.isOperator = data.operatorControlsEnabled === true || data.isDefaultAdmin === true;
-            const previousWallet = DashboardState.walletAddress;
             DashboardState.walletAddress = walletAddress || null;
             DashboardState.contractAddress = contractAddress;
             
-            if (DashboardState.walletAddress !== previousWallet) {
-                DashboardState.invitePromptedWallet = null;
-            }
-            
             if (DashboardState.walletAddress) {
-                const storedInviteApplied = loadInviteTokenState(
-                    DashboardState.walletAddress,
-                    DashboardState.contractAddress
-                );
                 const registrationApplied = providerConfig && (providerConfig.registered === true || providerConfig.isRegistered === true);
 
-                DashboardState.inviteTokenApplied = storedInviteApplied || registrationApplied;
-
-                if (registrationApplied) {
-                    persistInviteTokenState(
-                        DashboardState.walletAddress,
-                        true,
-                        DashboardState.contractAddress
-                    );
-                    DashboardState.invitePromptedWallet = DashboardState.walletAddress;
-                }
+                DashboardState.institutionRegistered = Boolean(registrationApplied);
             } else {
-                DashboardState.inviteTokenApplied = false;
-                DashboardState.invitePromptedWallet = null;
+                DashboardState.institutionRegistered = false;
                 DashboardState.contractAddress = null;
-                hideProvisioningTokenModal();
             }
             
             // Update marketplace URL if provided
             if (data.marketplaceUrl) {
                 updateMarketplaceUrl(data.marketplaceUrl);
+            } else if (providerConfig && providerConfig.marketplaceBaseUrl) {
+                updateMarketplaceUrl(providerConfig.marketplaceBaseUrl);
             }
+
+            updateInstitutionPairingGuidance(providerConfig);
+            updateInstitutionPairingButtonVisibility();
             
-            // Show welcome modal after wallet exists and token is still pending
-            const shouldPromptToken = !!walletAddress && !DashboardState.inviteTokenApplied;
-            if (shouldPromptToken && !DashboardState.welcomeModalDismissed) {
+            // Show welcome modal while pairing is still required
+            const shouldPromptPairing = !!walletAddress && !DashboardState.institutionRegistered;
+            if (shouldPromptPairing && !DashboardState.welcomeModalDismissed) {
                 showWelcomeModal();
             } else {
                 hideWelcomeModal(false);
@@ -1208,9 +964,6 @@ async function loadSystemStatus() {
                 revealPrivateKeyBtn.disabled = !walletAddress;
             }
             
-            // Update Apply Invite Token button visibility
-            updateApplyInviteButtonVisibility();
-            maybePromptInviteToken();
             updateRoleBasedSections();
             
             // Show/hide wallet setup dropdown
@@ -1263,10 +1016,7 @@ async function loadSystemStatus() {
         DashboardState.isInstitution = false;
         DashboardState.isProvider = false;
         DashboardState.isOperator = false;
-        DashboardState.inviteTokenApplied = false;
-        DashboardState.invitePromptedWallet = null;
-        hideProvisioningTokenModal();
-        updateApplyInviteButtonVisibility();
+        DashboardState.institutionRegistered = false;
         renderWalletSetupPrompt();
         updateRoleBasedSections();
 
@@ -2679,15 +2429,6 @@ function setupFormHandlers() {
 
 // Setup button handlers
 function setupButtonHandlers() {
-    // Welcome modal continue button
-    const continueBtn = document.getElementById('continueBtn');
-    if (continueBtn) {
-        continueBtn.addEventListener('click', () => {
-            hideWelcomeModal(true);
-            showProvisioningTokenModal();
-        });
-    }
-    
     // Refresh button
     const refreshBtn = document.getElementById('refreshBtn');
     if (refreshBtn) {
@@ -2700,28 +2441,6 @@ function setupButtonHandlers() {
         refreshBalanceBtn.addEventListener('click', loadBalances);
     }
 
-    // Apply Invite Token button in header
-    const applyProvisioningTokenHeaderBtn = document.getElementById('applyProvisioningTokenHeaderBtn');
-    if (applyProvisioningTokenHeaderBtn) {
-        applyProvisioningTokenHeaderBtn.addEventListener('click', showProvisioningTokenModal);
-    }
-    
-    // Apply Invite Token button in modal
-    const applyProvisioningBtn = document.getElementById('applyProvisioningBtn');
-    if (applyProvisioningBtn) {
-        applyProvisioningBtn.addEventListener('click', applyProvisioningToken);
-    }
-    
-    // Cancel/Close Invite Modal buttons
-    const closeProvisioningModalBtn = document.getElementById('closeProvisioningModalBtn');
-    const cancelProvisioningBtn = document.getElementById('cancelProvisioningBtn');
-    if (closeProvisioningModalBtn) {
-        closeProvisioningModalBtn.addEventListener('click', hideProvisioningTokenModal);
-    }
-    if (cancelProvisioningBtn) {
-        cancelProvisioningBtn.addEventListener('click', hideProvisioningTokenModal);
-    }
-    
     // Network buttons
     const sepoliaBtn = document.getElementById('sepoliaBtn');
     const mainnetBtn = document.getElementById('mainnetBtn');
@@ -2920,9 +2639,7 @@ function setupButtonHandlers() {
                     await showInfoModal('Institutional Wallet Created', content, true);
                     
                     DashboardState.walletAddress = data.address;
-                    DashboardState.inviteTokenApplied = false;
-                    DashboardState.invitePromptedWallet = null;
-                    persistInviteTokenState(data.address, false, DashboardState.contractAddress);
+                    DashboardState.institutionRegistered = false;
                     
                     // Refresh dashboard to show new wallet
                     await refreshAllData();
@@ -3010,9 +2727,7 @@ function setupButtonHandlers() {
                     await showInfoModal('Institutional Wallet Imported', content, true);
                     
                     DashboardState.walletAddress = data.address;
-                    DashboardState.inviteTokenApplied = false;
-                    DashboardState.invitePromptedWallet = null;
-                    persistInviteTokenState(data.address, false, DashboardState.contractAddress);
+                    DashboardState.institutionRegistered = false;
                     
                     // Refresh dashboard to show imported wallet
                     await refreshAllData();
