@@ -74,7 +74,8 @@ class InstitutionPairingUiTest {
         assertThat(script).contains("setPairingProgress('', { tone: 'info' })");
         assertThat(script).contains("Completing pairing with approved server-side credentials");
         assertThat(script).contains("Offering backend identity");
-        assertThat(script).contains("then return here to complete pairing");
+        assertThat(script).contains("then complete pairing here");
+        assertThat(script).doesNotContain("Review and approve the read-only wallet and origin values");
         assertThat(script).doesNotContain("apply-provider-token");
         assertThat(script).doesNotContain("apply-consumer-token");
         assertThat(styles).contains(".pairing-flow-steps li.is-current {");
@@ -86,6 +87,11 @@ class InstitutionPairingUiTest {
         assertThat(pairingStyles).contains("#pairingForm.pairing-form");
         assertThat(pairingStyles).contains("gap: 1.25rem;");
         assertThat(pairingStyles).contains(".pairing-form-actions");
+        assertThat(pairingStyles).contains("justify-content: center;");
+        assertThat(pairingStyles).contains("background: var(--bg-secondary);");
+        assertThat(pairingStyles).contains("color: var(--text-primary);");
+        assertThat(pairingStyles).contains(".alert.is-visible");
+        assertThat(pairingStyles).contains(".readonly-value code");
     }
 
     @Test

@@ -131,7 +131,6 @@
         if (data.status === 'AWAITING_APPROVAL') {
             updateSteps(3);
             setPairingProgress('Backend offer created. Waiting for Marketplace approval.', { tone: 'info' });
-            show('infoAlert', 'Review and approve the read-only wallet and origin values in the Marketplace, then return here to complete pairing.');
         } else if (data.status === 'APPROVED') {
             updateSteps(4);
             setPairingProgress('Marketplace approval received. Complete pairing here.', { tone: 'info' });
