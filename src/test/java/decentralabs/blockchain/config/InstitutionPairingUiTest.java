@@ -31,21 +31,20 @@ class InstitutionPairingUiTest {
         String page = readResource("static/institution-config/index.html");
         String script = readResource("static/institution-config/assets/js/pairing.js");
         String styles = readResource("static/wallet-dashboard/assets/css/admin.css");
+        String pairingStyles = readResource("static/institution-config/assets/css/pairing.css");
 
         assertThat(page).contains("id=\"pairingSteps\"");
         assertThat(page).contains("id=\"walletDashboardLink\"");
         assertThat(page).contains("id=\"marketplaceApprovalLink\"");
         assertThat(page).contains("id=\"pairingProgress\"");
+        assertThat(page).contains("assets/css/pairing.css");
+        assertThat(page).doesNotContain("<style>");
         assertThat(page).contains("role=\"status\"");
         assertThat(page).contains("aria-live=\"polite\"");
         assertThat(page).contains("pairing-progress-spinner");
         assertThat(page).contains("rows=\"2\"");
-        assertThat(page).contains("min-height: 3.75rem; height: 3.75rem");
-        assertThat(page).contains("padding-left: 3rem");
-        assertThat(page).contains("margin-top: 2rem");
+        assertThat(page).contains("class=\"pairing-form\"");
         assertThat(page).contains("class=\"actions pairing-form-actions\"");
-        assertThat(page).contains(".pairing-form-actions { margin-top: 2rem; padding-top: .75rem; }");
-        assertThat(page).contains(".pairing-details { margin-top: 1.25rem; }");
         assertThat(page).doesNotContain("style=");
         assertThat(page).contains("class=\"pairing-instructions\"");
         assertThat(page).contains("Open Marketplace to generate pairing challenge");
@@ -80,6 +79,13 @@ class InstitutionPairingUiTest {
         assertThat(script).doesNotContain("apply-consumer-token");
         assertThat(styles).contains(".pairing-flow-steps li.is-current {");
         assertThat(styles).contains("box-shadow:");
+        assertThat(pairingStyles).contains("min-height: 3.75rem;");
+        assertThat(pairingStyles).contains("margin: 1.25rem 0 1.25rem 2rem;");
+        assertThat(pairingStyles).contains("padding: 0 0 0 2rem;");
+        assertThat(pairingStyles).contains("margin-top: 2rem;");
+        assertThat(pairingStyles).contains("#pairingForm.pairing-form");
+        assertThat(pairingStyles).contains("gap: 1.25rem;");
+        assertThat(pairingStyles).contains(".pairing-form-actions");
     }
 
     @Test
