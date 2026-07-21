@@ -1120,10 +1120,10 @@ public class WalletService {
 
         do {
             Function function = Diamond.getCreditLotsFunction(accountAddress, offset, CREDIT_LEDGER_PAGE_SIZE);
-            List<Type> decoded = decodeCreditPage(web3j, function, "getCreditLots");
+            var decoded = decodeCreditPage(web3j, function, "getCreditLots");
             @SuppressWarnings("unchecked")
             DynamicArray<Diamond.CreditLotStruct> page = (DynamicArray<Diamond.CreditLotStruct>) decoded.getFirst();
-            total = (BigInteger) decoded.get(1).getValue();
+            total = (BigInteger) ((Type<?>) decoded.get(1)).getValue();
 
             for (Diamond.CreditLotStruct lot : page.getValue()) {
                 result.add(new CreditLedgerSnapshot.Lot(
@@ -1154,11 +1154,11 @@ public class WalletService {
 
         do {
             Function function = Diamond.getCreditMovementsFunction(accountAddress, offset, CREDIT_LEDGER_PAGE_SIZE);
-            List<Type> decoded = decodeCreditPage(web3j, function, "getCreditMovements");
+            var decoded = decodeCreditPage(web3j, function, "getCreditMovements");
             @SuppressWarnings("unchecked")
             DynamicArray<Diamond.CreditMovementStruct> page =
                 (DynamicArray<Diamond.CreditMovementStruct>) decoded.getFirst();
-            total = (BigInteger) decoded.get(1).getValue();
+            total = (BigInteger) ((Type<?>) decoded.get(1)).getValue();
 
             for (Diamond.CreditMovementStruct movement : page.getValue()) {
                 result.add(new CreditLedgerSnapshot.Movement(
@@ -1177,7 +1177,7 @@ public class WalletService {
         return result;
     }
 
-    private List<Type> decodeCreditPage(Web3j web3j, Function function, String functionName)
+    private List<?> decodeCreditPage(Web3j web3j, Function function, String functionName)
         throws Exception {
         EthCall response = web3j.ethCall(
             Transaction.createEthCallTransaction(null, contractAddress, FunctionEncoder.encode(function)),
@@ -1187,8 +1187,7 @@ public class WalletService {
             throw new IllegalStateException(functionName + " returned an RPC error");
         }
 
-        @SuppressWarnings("rawtypes")
-        List<Type> decoded = FunctionReturnDecoder.decode(response.getValue(), function.getOutputParameters());
+        var decoded = FunctionReturnDecoder.decode(response.getValue(), function.getOutputParameters());
         if (decoded.size() < 2) {
             throw new IllegalStateException(functionName + " returned an invalid page");
         }
