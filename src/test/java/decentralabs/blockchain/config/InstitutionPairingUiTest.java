@@ -41,8 +41,10 @@ class InstitutionPairingUiTest {
         assertThat(page).contains("pairing-progress-spinner");
         assertThat(page).contains("rows=\"2\"");
         assertThat(page).contains("min-height: 3.75rem; height: 3.75rem");
-        assertThat(page).contains("padding-left: 2rem");
+        assertThat(page).contains("padding-left: 3rem");
         assertThat(page).contains("margin-top: 2rem");
+        assertThat(page).contains("class=\"actions pairing-form-actions\"");
+        assertThat(page).contains(".pairing-form-actions { margin-top: 2rem; padding-top: .75rem; }");
         assertThat(page).contains(".pairing-details { margin-top: 1.25rem; }");
         assertThat(page).doesNotContain("style=");
         assertThat(page).contains("class=\"pairing-instructions\"");
