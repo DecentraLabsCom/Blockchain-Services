@@ -766,7 +766,7 @@ function updateDashboardAccessError(statusCode) {
 
     if (statusCode === 401) {
         badge.textContent = 'Access Policy Requires Token';
-        footer.textContent = 'Enter the Wallet & Billing access token to load dashboard access policy.';
+        footer.textContent = 'Enter the Gateway administrator token to load dashboard access policy.';
     } else if (statusCode === 403) {
         badge.textContent = 'Access Policy Blocked';
         footer.textContent = 'This network is blocked by the dashboard access policy.';
