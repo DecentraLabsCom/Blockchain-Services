@@ -9,10 +9,12 @@
         .pairing-card { max-width: 760px; margin: 3rem auto; padding: 2rem; }
         .readonly-grid { display: grid; gap: .75rem; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); }
         .readonly-value { padding: .75rem; border: 1px solid #d7dee8; border-radius: .35rem; background: #f7f9fb; word-break: break-word; }
-        .challenge { font-family: monospace; min-height: 6rem; }
+        .pairing-details { margin-top: 1.25rem; }
+        .challenge { font-family: monospace; min-height: 3.75rem; height: 3.75rem; resize: vertical; }
         .is-hidden { display: none !important; }
-        .pairing-help { color: #536273; line-height: 1.5; }
-        .actions { display: flex; gap: .75rem; flex-wrap: wrap; margin-top: 1rem; }
+        .pairing-instructions { margin: .75rem 0 1.25rem; padding-left: 1.35rem; color: #536273; line-height: 1.5; }
+        .pairing-instructions li + li { margin-top: .65rem; }
+        .actions { display: flex; gap: .75rem; flex-wrap: wrap; margin-top: 1.5rem; }
         .pairing-progress { display: grid; gap: .6rem; margin: 1rem 0; padding: .85rem 1rem; border: 1px solid #bfdbfe; border-radius: .4rem; background: #eff6ff; color: #1e3a8a; }
         .pairing-progress.is-success { border-color: #bbf7d0; background: #f0fdf4; color: #166534; }
         .pairing-progress.is-error { border-color: #fecaca; background: #fef2f2; color: #991b1b; }
@@ -31,7 +33,7 @@
     <section class="card pairing-card">
         <header class="config-header">
             <h1><i class="fas fa-link"></i> Institutional Backend Pairing</h1>
-            <p>Pair this backend with a Marketplace institution using its server-side wallet and public origin.</p>
+            <p>Pair this backend with an institution recognized by DecentraLabs using its server-side wallet and public origin.</p>
             <div id="statusBadge"></div>
         </header>
 
@@ -51,19 +53,12 @@
             <div class="pairing-progress-track" aria-hidden="true"><div class="pairing-progress-bar"></div></div>
         </div>
 
-        <div class="readonly-grid">
-            <div class="readonly-value"><strong>Marketplace</strong><br><span id="marketplaceBaseUrl">Configured by server</span></div>
-            <div class="readonly-value"><strong>Backend origin</strong><br><span>Configured by server</span></div>
-            <div class="readonly-value"><strong>Institutional wallet</strong><br><span>Configured by server</span></div>
-        </div>
-
-        <p class="pairing-help">
-            <strong>Step 1:</strong> Generate a short-lived <code>0x...</code> pairing challenge in the Marketplace.
-            <strong>Step 2:</strong> paste it below and select <strong>Offer backend pairing</strong>.
-            This backend reads the wallet and public origin from its own configuration. They are not accepted from this form.
-            <strong>Step 3:</strong> approve the read-only offer in the Marketplace.
-            <strong>Step 4:</strong> return here and select <strong>Complete pairing</strong>.
-        </p>
+        <ul class="pairing-instructions">
+            <li><strong>Step 1:</strong> Generate a short-lived <code>0x...</code> pairing challenge in the Marketplace.</li>
+            <li><strong>Step 2:</strong> Paste it below and select <strong>Offer backend pairing</strong>. This backend reads the wallet and public origin from its own configuration; they are not accepted from this form.</li>
+            <li><strong>Step 3:</strong> Approve the read-only offer in the Marketplace.</li>
+            <li><strong>Step 4:</strong> Return here and select <strong>Complete pairing</strong>.</li>
+        </ul>
 
         <ol id="pairingSteps" class="pairing-flow-steps">
             <li data-step="1" class="is-current"><span>1</span><strong>Generate challenge</strong><small>Marketplace</small></li>
@@ -75,7 +70,7 @@
         <form id="pairingForm">
             <div class="form-group">
                 <label for="pairingChallenge">Marketplace pairing challenge</label>
-                <textarea id="pairingChallenge" class="challenge" rows="4" required
+                <textarea id="pairingChallenge" class="challenge" rows="2" required
                           placeholder="0x..."></textarea>
             </div>
             <div class="actions">
@@ -88,7 +83,7 @@
             </div>
         </form>
 
-        <div id="pairingDetails" class="readonly-grid is-hidden" style="margin-top: 1.25rem"></div>
+        <div id="pairingDetails" class="readonly-grid pairing-details is-hidden"></div>
         <div id="registrationProgress" class="is-hidden"></div>
     </section>
 </main>

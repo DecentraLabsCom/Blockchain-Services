@@ -37,6 +37,12 @@
         element.classList.add('is-visible');
     }
 
+    function showError(message) {
+        hideAlerts();
+        setPairingProgress('', { tone: 'info' });
+        show('errorAlert', message);
+    }
+
     function escapeHtml(value) {
         return String(value).replace(/[&<>'"]/g, (character) => ({
             '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;'
@@ -98,14 +104,18 @@
         setPairingProgress('Loading backend pairing status...', { active: true });
         try {
             const response = await fetch('/institution-config/status');
-            const data = await response.json();
-            document.getElementById('marketplaceBaseUrl').textContent = data.marketplaceBaseUrl || 'Configured by server';
+            const data = await response.json().catch(() => ({}));
+            if (!response.ok) throw new Error(data.error || 'Failed to load backend status.');
+            const configuredOrigin = typeof data.publicBaseUrl === 'string' ? data.publicBaseUrl.trim() : '';
             setMarketplaceApprovalLink(data.marketplaceBaseUrl);
             if (data.isRegistered) {
                 document.getElementById('statusBadge').innerHTML = '<div class="status-badge registered">Paired</div>';
                 completeButton.disabled = true;
                 updateSteps(5);
                 setPairingProgress('Pairing complete. This backend is ready for institutional use.', { tone: 'success' });
+            } else if (!configuredOrigin) {
+                showError('Pairing cannot start: configured public backend origin is required. Set PUBLIC_BASE_URL in blockchain-services/.env and reload this page.');
+                updateSteps(1);
             } else {
                 setPairingProgress('Ready to offer this backend for pairing.', { tone: 'info' });
             }
@@ -113,8 +123,7 @@
                 show('infoAlert', 'Consumer-only deployment: use a consumer pairing challenge from the Marketplace.');
             }
         } catch (_error) {
-            setPairingProgress('Unable to load backend pairing status.', { tone: 'error' });
-            show('errorAlert', 'Failed to load backend status.');
+            showError(_error.message || 'Failed to load backend status.');
         }
     }
 
@@ -123,7 +132,7 @@
         hideAlerts();
         const challenge = challengeField.value.trim();
         if (!/^0x[0-9a-fA-F]{64}$/.test(challenge)) {
-            show('errorAlert', 'Paste the complete 32-byte pairing challenge from the Marketplace (0x followed by 64 hexadecimal characters).');
+            showError('Paste the complete 32-byte pairing challenge from the Marketplace (0x followed by 64 hexadecimal characters).');
             updateSteps(1);
             return;
         }
@@ -144,8 +153,7 @@
             renderDetails({ ...data, challenge });
             show('successAlert', 'Backend offer created. Approve the read-only values in the Marketplace, then complete pairing here.');
         } catch (error) {
-            setPairingProgress(error.message || 'Backend offer failed.', { tone: 'error' });
-            show('errorAlert', error.message || 'Pairing offer failed.');
+            showError(error.message || 'Pairing offer failed.');
         } finally {
             offerButton.disabled = false;
             offerButton.setAttribute('aria-busy', 'false');
@@ -178,8 +186,7 @@
             document.getElementById('statusBadge').innerHTML = '<div class="status-badge registered">Paired</div>';
             updateSteps(5);
         } catch (error) {
-            setPairingProgress(error.message || 'Pairing completion failed.', { tone: 'error' });
-            show('errorAlert', error.message || 'Pairing is not ready. Approve the pairing first.');
+            showError(error.message || 'Pairing is not ready. Approve the pairing first.');
             completeButton.disabled = false;
         } finally {
             offerButton.disabled = false;
