@@ -264,6 +264,15 @@ the short-lived onboarding session. Credential revocation is
 `POST /webauthn/revoke` and requires a Marketplace JWT with `webauthn:manage`.
 When the Marketplace token includes a PUC, it must match the PUC being revoked.
 
+Marketplace service-token configuration is derived by default. The audience
+uses `BASE_DOMAIN` or `PUBLIC_BASE_URL`, then `SERVER_NAME` plus
+`HTTPS_PORT`; `AUTH_MARKETPLACE_ENDPOINTS_AUDIENCE` is only an explicit
+override. Issuer and subject default to `marketplace`. The institution binding
+uses `AUTH_MARKETPLACE_ENDPOINTS_INSTITUTION_ID` or `PROVIDER_ORGANIZATION`
+when provided, otherwise it is loaded from the persisted
+`config/provider.properties` provisioning record. Pairing writes that record
+after successful registration.
+
 Credential persistence requires MySQL by default
 (`WEBAUTHN_CREDENTIALS_REQUIRE_DATABASE=true`). Memory-only operation is for
 isolated development only. The RP accepts only `WEBAUTHN_ATTESTATION_CONVEYANCE=none`

@@ -202,13 +202,19 @@ public class ProviderConfigurationController {
                     token, snapshot.marketplaceBaseUrl(), snapshot.publicBaseUrl()
                 );
                 registered = registrationService.register(buildProviderRegistrationRequest(token, payload));
-                if (registered) registrationService.markAsRegistered(InstitutionRole.PROVIDER);
+                if (registered) {
+                    persistenceService.saveConfigurationFromToken(payload);
+                    registrationService.markAsRegistered(InstitutionRole.PROVIDER);
+                }
             } else {
                 ConsumerProvisioningTokenPayload payload = provisioningTokenService.validateAndExtractConsumer(
                     token, snapshot.marketplaceBaseUrl(), snapshot.publicBaseUrl()
                 );
                 registered = registrationService.register(buildConsumerRegistrationRequest(token, payload));
-                if (registered) registrationService.markAsRegistered(InstitutionRole.CONSUMER);
+                if (registered) {
+                    persistenceService.saveConfigurationFromConsumerToken(payload);
+                    registrationService.markAsRegistered(InstitutionRole.CONSUMER);
+                }
             }
             response.put("success", true);
             response.put("registered", registered);

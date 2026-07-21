@@ -9,7 +9,9 @@ import java.security.KeyPairGenerator;
 import java.security.PrivateKey;
 import java.util.Date;
 import java.util.Map;
+import java.util.Properties;
 import decentralabs.blockchain.service.BackendUrlResolver;
+import decentralabs.blockchain.service.organization.ProviderConfigurationPersistenceService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -30,6 +32,9 @@ class MarketplaceEndpointAuthServiceTest {
 
     @Mock
     private BackendUrlResolver backendUrlResolver;
+
+    @Mock
+    private ProviderConfigurationPersistenceService providerConfigurationPersistenceService;
 
     @InjectMocks
     private MarketplaceEndpointAuthService service;
@@ -176,6 +181,47 @@ class MarketplaceEndpointAuthServiceTest {
     void serviceAuthorizationRejectsWrongSubject() {
         String jwt = makeJwt(Map.of(
             "sub", "blockchain-services",
+            "jti", "service-jti",
+            "institutionId", "institution.edu",
+            "scope", "onboarding:webauthn"
+        ));
+
+        assertThatThrownBy(() -> service.enforceServiceAuthorization(
+            "Bearer " + jwt,
+            "onboarding:webauthn"
+        )).isInstanceOf(ResponseStatusException.class)
+            .hasMessageContaining("invalid_marketplace_token");
+    }
+
+    @Test
+    void serviceAuthorizationUsesPersistedProviderOrganizationWhenNoOverrideIsSet() {
+        ReflectionTestUtils.setField(service, "institutionId", "");
+        Properties persisted = new Properties();
+        persisted.setProperty("provider.organization", "institution.edu");
+        when(providerConfigurationPersistenceService.loadConfigurationSafe()).thenReturn(persisted);
+
+        String jwt = makeJwt(Map.of(
+            "sub", "marketplace",
+            "jti", "service-jti",
+            "institutionId", "institution.edu",
+            "scope", "onboarding:webauthn"
+        ));
+
+        Map<String, Object> claims = service.enforceServiceAuthorization(
+            "Bearer " + jwt,
+            "onboarding:webauthn"
+        );
+
+        assertThat(claims).containsEntry("institutionId", "institution.edu");
+    }
+
+    @Test
+    void serviceAuthorizationRejectsWhenNoInstitutionIdentityCanBeResolved() {
+        ReflectionTestUtils.setField(service, "institutionId", "");
+        when(providerConfigurationPersistenceService.loadConfigurationSafe()).thenReturn(new Properties());
+
+        String jwt = makeJwt(Map.of(
+            "sub", "marketplace",
             "jti", "service-jti",
             "institutionId", "institution.edu",
             "scope", "onboarding:webauthn"

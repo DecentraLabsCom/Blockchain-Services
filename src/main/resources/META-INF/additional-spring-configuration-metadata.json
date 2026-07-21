@@ -10,14 +10,20 @@
     "description": "Base64URL-encoded AES-256 key used to encrypt intent payloads."
   },
   {
+    "name": "auth.marketplace-endpoints.issuer",
+    "type": "java.lang.String",
+    "description": "Issuer expected for Marketplace service JWTs.",
+    "defaultValue": "marketplace"
+  },
+  {
     "name": "auth.marketplace-endpoints.audience",
     "type": "java.lang.String",
-    "description": "Expected audience for Marketplace service JWTs."
+    "description": "Expected audience for Marketplace service JWTs. Defaults to the configured public backend origin."
   },
   {
     "name": "auth.marketplace-endpoints.institution-id",
     "type": "java.lang.String",
-    "description": "Institution identifier accepted in Marketplace service JWTs."
+    "description": "Optional institution override accepted in Marketplace service JWTs; otherwise use persisted provider.organization."
   },
   {
     "name": "auth.marketplace-endpoints.service-subject",

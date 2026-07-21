@@ -2,6 +2,7 @@ package decentralabs.blockchain.service.intent;
 
 import decentralabs.blockchain.service.BackendUrlResolver;
 import decentralabs.blockchain.service.auth.MarketplaceKeyService;
+import decentralabs.blockchain.service.organization.ProviderConfigurationPersistenceService;
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.Jws;
 import io.jsonwebtoken.JwtParser;
@@ -12,6 +13,7 @@ import java.time.Instant;
 import java.util.Collection;
 import java.util.Locale;
 import java.util.Objects;
+import java.util.Properties;
 import java.util.stream.Stream;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -27,6 +29,7 @@ public class IntentAuthService {
 
     private final MarketplaceKeyService marketplaceKeyService;
     private final BackendUrlResolver backendUrlResolver;
+    private final ProviderConfigurationPersistenceService providerConfigurationPersistenceService;
 
     @Value("${intents.auth.enabled:true}")
     private boolean enabled;
@@ -142,7 +145,7 @@ public class IntentAuthService {
             throw new IllegalArgumentException("Service token jti is required");
         }
 
-        String expectedInstitution = institutionId == null ? "" : institutionId.trim();
+        String expectedInstitution = resolveExpectedInstitution();
         String tokenInstitution = claims.get("institutionId", String.class);
         if (expectedInstitution.isBlank()
             || tokenInstitution == null
@@ -161,6 +164,17 @@ public class IntentAuthService {
         if (issuedAt > Instant.now().plusSeconds(clockSkewSeconds).getEpochSecond()) {
             throw new IllegalArgumentException("Service token issuedAt is in the future");
         }
+    }
+
+    private String resolveExpectedInstitution() {
+        String configured = institutionId == null ? "" : institutionId.trim();
+        if (!configured.isBlank()) {
+            return configured;
+        }
+
+        Properties persisted = providerConfigurationPersistenceService.loadConfigurationSafe();
+        String persistedOrganization = persisted.getProperty("provider.organization", "");
+        return persistedOrganization == null ? "" : persistedOrganization.trim();
     }
 
     private String extractBearerToken(String authorizationHeader) {

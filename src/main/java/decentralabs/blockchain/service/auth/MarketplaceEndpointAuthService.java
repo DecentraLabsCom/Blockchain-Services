@@ -1,6 +1,7 @@
 package decentralabs.blockchain.service.auth;
 
 import decentralabs.blockchain.service.BackendUrlResolver;
+import decentralabs.blockchain.service.organization.ProviderConfigurationPersistenceService;
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.Jws;
 import io.jsonwebtoken.JwtParser;
@@ -13,6 +14,7 @@ import java.util.Collections;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Properties;
 import java.util.stream.Stream;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -28,6 +30,7 @@ public class MarketplaceEndpointAuthService {
 
     private final MarketplaceKeyService marketplaceKeyService;
     private final BackendUrlResolver backendUrlResolver;
+    private final ProviderConfigurationPersistenceService providerConfigurationPersistenceService;
 
     @Value("${auth.marketplace-endpoints.enabled:true}")
     private boolean enabled;
@@ -148,7 +151,7 @@ public class MarketplaceEndpointAuthService {
             throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "invalid_marketplace_token");
         }
 
-        String expectedInstitution = institutionId == null ? "" : institutionId.trim();
+        String expectedInstitution = resolveExpectedInstitution();
         String tokenInstitution = claims.get("institutionId", String.class);
         if (expectedInstitution.isBlank()
             || tokenInstitution == null
@@ -165,6 +168,24 @@ public class MarketplaceEndpointAuthService {
             || issuedAt > Instant.now().plusSeconds(clockSkewSeconds).getEpochSecond()) {
             throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "invalid_marketplace_token");
         }
+    }
+
+    /**
+     * Resolve the backend identity without requiring operators to duplicate the
+     * institution identifier in a second environment variable. An explicit
+     * auth override remains authoritative; the persisted provisioning
+     * configuration is the safe fallback because it was written from the
+     * Marketplace-issued provisioning claims.
+     */
+    private String resolveExpectedInstitution() {
+        String configured = institutionId == null ? "" : institutionId.trim();
+        if (!configured.isBlank()) {
+            return configured;
+        }
+
+        Properties persisted = providerConfigurationPersistenceService.loadConfigurationSafe();
+        String persistedOrganization = persisted.getProperty("provider.organization", "");
+        return persistedOrganization == null ? "" : persistedOrganization.trim();
     }
 
     private String extractBearerToken(String authorizationHeader) {

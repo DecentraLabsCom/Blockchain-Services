@@ -269,6 +269,7 @@ class ProviderConfigurationControllerTest {
             eq(token), eq("https://marketplace.example.com"), eq("https://gateway.example.com")
         );
         verify(provisioningTokenService, never()).validateAndExtractConsumer(anyString(), anyString(), anyString());
+        verify(persistenceService).saveConfigurationFromToken(any(ProvisioningTokenPayload.class));
         verify(registrationService).markAsRegistered(InstitutionRole.PROVIDER);
     }
 
@@ -295,6 +296,7 @@ class ProviderConfigurationControllerTest {
             eq(token), eq("https://marketplace.example.com"), eq("https://gateway.example.com")
         );
         verify(provisioningTokenService, never()).validateAndExtract(anyString(), anyString(), anyString());
+        verify(persistenceService).saveConfigurationFromConsumerToken(any(ConsumerProvisioningTokenPayload.class));
         verify(registrationService).markAsRegistered(InstitutionRole.CONSUMER);
     }
 

@@ -6,6 +6,7 @@ import static org.mockito.Mockito.lenient;
 
 import decentralabs.blockchain.service.auth.MarketplaceKeyService;
 import decentralabs.blockchain.service.BackendUrlResolver;
+import decentralabs.blockchain.service.organization.ProviderConfigurationPersistenceService;
 import io.jsonwebtoken.Jwts;
 import java.security.KeyPair;
 import java.security.KeyPairGenerator;
@@ -13,6 +14,7 @@ import java.security.PrivateKey;
 import java.util.Date;
 import java.util.List;
 import java.util.Map;
+import java.util.Properties;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -30,6 +32,9 @@ class IntentAuthServiceTest {
 
     @Mock
     private BackendUrlResolver backendUrlResolver;
+
+    @Mock
+    private ProviderConfigurationPersistenceService providerConfigurationPersistenceService;
 
     @InjectMocks
     private IntentAuthService service;
@@ -154,6 +159,20 @@ class IntentAuthServiceTest {
         assertThatThrownBy(() -> service.enforceSubmitAuthorization("Bearer " + jwt))
             .isInstanceOf(ResponseStatusException.class)
             .hasMessageContaining("invalid_intents_token");
+    }
+
+    @Test
+    void submitAuthorization_usesPersistedProviderOrganizationWhenNoOverrideIsSet() {
+        ReflectionTestUtils.setField(service, "institutionId", "");
+        Properties persisted = new Properties();
+        persisted.setProperty("provider.organization", "institution.edu");
+        org.mockito.Mockito.when(providerConfigurationPersistenceService.loadConfigurationSafe())
+            .thenReturn(persisted);
+
+        String jwt = makeJwt(Map.of("scope", "intents:submit"));
+
+        assertThatCode(() -> service.enforceSubmitAuthorization("Bearer " + jwt))
+            .doesNotThrowAnyException();
     }
 
     private String makeJwt(Map<String, Object> claims) {

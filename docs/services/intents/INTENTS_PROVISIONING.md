@@ -199,6 +199,12 @@ Intent authorization:
 - `INTENTS_AUTH_REGISTRATION_MINED_SCOPE`
 - `INTENTS_AUTH_STATUS_SCOPE`
 - `INTENTS_AUTH_CLOCK_SKEW_SECONDS`
+
+`INTENTS_AUTH_AUDIENCE` and `INTENTS_AUTH_INSTITUTION_ID` are optional
+overrides. When omitted, the audience is derived from the backend public-origin
+configuration and the institution binding is read from the persisted
+`provider.organization` provisioning record. The service subject and issuer
+default to `marketplace`.
 - `INTENT_TRUSTED_SIGNER`, `INTENT_DOMAIN_*`
 
 Provisioning:
