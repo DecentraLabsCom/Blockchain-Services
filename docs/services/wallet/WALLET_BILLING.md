@@ -63,6 +63,14 @@ Funding-order and credit-account routes are available under `/billing`:
 - `GET /billing/credit-accounts/{address}/lots`
 - `GET /billing/credit-accounts/{address}/movements`
 
+Credit-account reads reconcile the requested address from the Diamond before
+serving the SQL projection. This backfills accounts created on-chain (including
+provider onboarding credits), refreshes lot balances, and upserts movements by
+their stable on-chain index. MySQL remains the query/compliance projection; the
+contract remains the balance source of truth. If the RPC is temporarily
+unavailable, an existing SQL snapshot is served without replacing it with a
+fabricated zero balance.
+
 The current billing model is based on internal service credits. They are not redeemable for cash or transferable as money. Eligible reservation
 cancellations and service non-delivery may return the applicable credits to the institutional account according to the reservation lifecycle; funding, credit lots, expiry and movements are represented in the backend and reconciled with Smart-Contracts state.
 

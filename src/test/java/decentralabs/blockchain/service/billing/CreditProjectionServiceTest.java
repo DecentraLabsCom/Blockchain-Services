@@ -1,7 +1,9 @@
 package decentralabs.blockchain.service.billing;
 
 import decentralabs.blockchain.domain.*;
+import decentralabs.blockchain.dto.billing.CreditLedgerSnapshot;
 import decentralabs.blockchain.service.persistence.CreditAccountPersistenceService;
+import decentralabs.blockchain.service.wallet.WalletService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -12,7 +14,9 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.math.BigDecimal;
+import java.math.BigInteger;
 import java.time.Instant;
+import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.*;
@@ -24,13 +28,46 @@ class CreditProjectionServiceTest {
     @Mock
     private CreditAccountPersistenceService persistence;
 
+    @Mock
+    private WalletService walletService;
+
     private CreditProjectionService service;
 
     private static final String ADDRESS = "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 
     @BeforeEach
     void setUp() {
-        service = new CreditProjectionService(persistence);
+        service = new CreditProjectionService(persistence, walletService);
+    }
+
+    @Test
+    @DisplayName("Reconciles a missing SQL account from the on-chain ledger")
+    void reconcilesMissingAccountFromChain() {
+        CreditLedgerSnapshot snapshot = new CreditLedgerSnapshot(
+                new BigDecimal("1000").movePointRight(5).toBigInteger(),
+                BigDecimal.ZERO.toBigInteger(),
+                List.of(new CreditLedgerSnapshot.Lot(
+                        0,
+                        BigInteger.ZERO, "0x" + "00".repeat(32),
+                        new BigDecimal("1000").movePointRight(5).toBigInteger(),
+                        new BigDecimal("1000").movePointRight(5).toBigInteger(),
+                        BigInteger.ZERO, BigInteger.valueOf(1_700_000_000L), BigInteger.ZERO, false
+                )),
+                List.of(new CreditLedgerSnapshot.Movement(
+                        "MINT", new BigDecimal("1000").movePointRight(5).toBigInteger(),
+                        "0x" + "00".repeat(32), BigInteger.valueOf(1_700_000_000L), 0
+                ))
+        );
+        when(walletService.getCreditLedgerSnapshot(ADDRESS)).thenReturn(snapshot);
+
+        CreditAccount account = service.reconcileAccount(ADDRESS);
+
+        assertThat(account.getAccountAddress()).isEqualTo(ADDRESS);
+        assertThat(account.getAvailable()).isEqualByComparingTo("1000.00000");
+        assertThat(account.getLocked()).isEqualByComparingTo("0.00000");
+        verify(persistence).upsertCreditAccount(account);
+        verify(persistence).upsertCreditLot(any(CreditLot.class));
+        verify(persistence).upsertCreditMovement(any(CreditMovement.class));
     }
 
     // ── syncAccount ─────────────────────────────────────────────────────

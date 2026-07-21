@@ -152,6 +152,7 @@ public class CreditAccountPersistenceService {
             .amount(rs.getBigDecimal("amount"))
             .reservationRef(rs.getString("reservation_ref"))
             .reference(rs.getString("reference"))
+            .sourceKey(rs.getString("source_key"))
             .createdAt(toInstant(rs.getTimestamp("created_at")))
             .build();
 
@@ -167,6 +168,34 @@ public class CreditAccountPersistenceService {
                 movement.getAccountAddress(), movement.getLotIndex(),
                 movement.getMovementType().name(), movement.getAmount(),
                 movement.getReservationRef(), movement.getReference()
+            );
+        } catch (DataAccessException ex) {
+            logMissing("credit_movements", ex);
+        }
+    }
+
+    /**
+     * Upserts a movement identified by its source key. On-chain movement
+     * indexes are stable, so this prevents a read-triggered reconciliation
+     * from duplicating the audit trail on every Marketplace request.
+     */
+    @Transactional
+    public void upsertCreditMovement(CreditMovement movement) {
+        if (jdbcTemplate == null) return;
+        try {
+            jdbcTemplate.update(
+                """
+                INSERT INTO credit_movements (account_address, lot_index, movement_type, amount, reservation_ref, reference, source_key, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                ON DUPLICATE KEY UPDATE
+                    movement_type=VALUES(movement_type), amount=VALUES(amount),
+                    reservation_ref=VALUES(reservation_ref), reference=VALUES(reference),
+                    created_at=VALUES(created_at)
+                """,
+                movement.getAccountAddress(), movement.getLotIndex(),
+                movement.getMovementType().name(), movement.getAmount(),
+                movement.getReservationRef(), movement.getReference(), movement.getSourceKey(),
+                toTimestamp(movement.getCreatedAt())
             );
         } catch (DataAccessException ex) {
             logMissing("credit_movements", ex);

@@ -76,7 +76,9 @@ CREATE TABLE IF NOT EXISTS credit_movements (
     amount          DECIMAL(24,5)       NOT NULL,
     reservation_ref VARCHAR(66)         NULL,
     reference       VARCHAR(256)        NULL,
-    created_at      TIMESTAMP           NOT NULL DEFAULT CURRENT_TIMESTAMP
+    source_key      VARCHAR(128)        NULL,
+    created_at      TIMESTAMP           NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE (account_address, source_key)
 );
 
 -- ============================================================================

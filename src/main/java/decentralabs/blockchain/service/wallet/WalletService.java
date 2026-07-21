@@ -39,6 +39,7 @@ import org.web3j.utils.Convert;
 import org.web3j.utils.Numeric;
 
 import decentralabs.blockchain.dto.billing.InstitutionalUserFinancialStats;
+import decentralabs.blockchain.dto.billing.CreditLedgerSnapshot;
 import decentralabs.blockchain.dto.wallet.*;
 import decentralabs.blockchain.util.CreditUnitConverter;
 import decentralabs.blockchain.service.persistence.WalletPersistenceService;
@@ -71,6 +72,9 @@ import java.util.concurrent.TimeUnit;
 @RequiredArgsConstructor
 @Slf4j
 public class WalletService {
+
+    private static final BigInteger CREDIT_LEDGER_PAGE_SIZE = BigInteger.valueOf(50);
+    private static final int MAX_CREDIT_LEDGER_ITEMS = 1000;
 
     private final WalletPersistenceService walletPersistenceService;
     private final ApplicationEventPublisher eventPublisher;
@@ -1057,6 +1061,151 @@ public class WalletService {
             log.debug("Service credit balance lookup failed (context omitted)", e);
             return BigInteger.ZERO;
         }
+    }
+
+    /**
+     * Reads the complete service-credit snapshot needed by the billing
+     * projection. Unlike the legacy balance helper, this method is strict:
+     * an RPC/ABI failure is surfaced instead of being converted to a zero
+     * balance, so reconciliation can never overwrite a real balance with 0.
+     */
+    public CreditLedgerSnapshot getCreditLedgerSnapshot(String accountAddress) {
+        if (accountAddress == null || accountAddress.isBlank()) {
+            throw new IllegalArgumentException("Credit account is required");
+        }
+
+        try {
+            Web3j web3j = getWeb3jInstance();
+            BigInteger available = readSingleCreditValue(
+                web3j, Diamond.availableBalanceOfFunction(accountAddress), "availableBalanceOf"
+            );
+            BigInteger locked = readSingleCreditValue(
+                web3j, Diamond.lockedBalanceOfFunction(accountAddress), "lockedBalanceOf"
+            );
+            List<CreditLedgerSnapshot.Lot> lots = readCreditLots(web3j, accountAddress);
+            List<CreditLedgerSnapshot.Movement> movements = readCreditMovements(web3j, accountAddress);
+            return new CreditLedgerSnapshot(available, locked, lots, movements);
+        } catch (Exception e) {
+            log.warn(
+                "Service-credit ledger reconciliation failed for {}",
+                LogSanitizer.maskIdentifier(accountAddress)
+            );
+            throw new IllegalStateException("Service-credit ledger could not be read", e);
+        }
+    }
+
+    private BigInteger readSingleCreditValue(Web3j web3j, Function function, String functionName)
+        throws Exception {
+        EthCall response = web3j.ethCall(
+            Transaction.createEthCallTransaction(null, contractAddress, FunctionEncoder.encode(function)),
+            DefaultBlockParameterName.LATEST
+        ).send();
+        if (response == null || response.hasError()) {
+            throw new IllegalStateException(functionName + " returned an RPC error");
+        }
+
+        @SuppressWarnings("rawtypes")
+        List<Type> decoded = FunctionReturnDecoder.decode(response.getValue(), function.getOutputParameters());
+        if (decoded.isEmpty()) {
+            throw new IllegalStateException(functionName + " returned no value");
+        }
+        return (BigInteger) decoded.getFirst().getValue();
+    }
+
+    private List<CreditLedgerSnapshot.Lot> readCreditLots(Web3j web3j, String accountAddress)
+        throws Exception {
+        List<CreditLedgerSnapshot.Lot> result = new ArrayList<>();
+        BigInteger offset = BigInteger.ZERO;
+        BigInteger total = BigInteger.ZERO;
+
+        do {
+            Function function = Diamond.getCreditLotsFunction(accountAddress, offset, CREDIT_LEDGER_PAGE_SIZE);
+            List<Type> decoded = decodeCreditPage(web3j, function, "getCreditLots");
+            @SuppressWarnings("unchecked")
+            DynamicArray<Diamond.CreditLotStruct> page = (DynamicArray<Diamond.CreditLotStruct>) decoded.getFirst();
+            total = (BigInteger) decoded.get(1).getValue();
+
+            for (Diamond.CreditLotStruct lot : page.getValue()) {
+                result.add(new CreditLedgerSnapshot.Lot(
+                    result.size(),
+                    lot.lotId.getValue(),
+                    Numeric.toHexString(lot.fundingOrderId.getValue()),
+                    lot.creditAmount.getValue(),
+                    lot.remaining.getValue(),
+                    lot.eurGrossAmount.getValue(),
+                    lot.issuedAt.getValue(),
+                    lot.expiresAt.getValue(),
+                    lot.expired.getValue()
+                ));
+            }
+
+            offset = offset.add(BigInteger.valueOf(page.getValue().size()));
+            if (page.getValue().isEmpty()) break;
+        } while (offset.compareTo(total) < 0 && result.size() < MAX_CREDIT_LEDGER_ITEMS);
+
+        return result;
+    }
+
+    private List<CreditLedgerSnapshot.Movement> readCreditMovements(Web3j web3j, String accountAddress)
+        throws Exception {
+        List<CreditLedgerSnapshot.Movement> result = new ArrayList<>();
+        BigInteger offset = BigInteger.ZERO;
+        BigInteger total = BigInteger.ZERO;
+
+        do {
+            Function function = Diamond.getCreditMovementsFunction(accountAddress, offset, CREDIT_LEDGER_PAGE_SIZE);
+            List<Type> decoded = decodeCreditPage(web3j, function, "getCreditMovements");
+            @SuppressWarnings("unchecked")
+            DynamicArray<Diamond.CreditMovementStruct> page =
+                (DynamicArray<Diamond.CreditMovementStruct>) decoded.getFirst();
+            total = (BigInteger) decoded.get(1).getValue();
+
+            for (Diamond.CreditMovementStruct movement : page.getValue()) {
+                result.add(new CreditLedgerSnapshot.Movement(
+                    creditMovementType(movement.kind.getValue()),
+                    movement.amount.getValue(),
+                    Numeric.toHexString(movement.reference.getValue()),
+                    movement.timestamp.getValue(),
+                    result.size()
+                ));
+            }
+
+            offset = offset.add(BigInteger.valueOf(page.getValue().size()));
+            if (page.getValue().isEmpty()) break;
+        } while (offset.compareTo(total) < 0 && result.size() < MAX_CREDIT_LEDGER_ITEMS);
+
+        return result;
+    }
+
+    private List<Type> decodeCreditPage(Web3j web3j, Function function, String functionName)
+        throws Exception {
+        EthCall response = web3j.ethCall(
+            Transaction.createEthCallTransaction(null, contractAddress, FunctionEncoder.encode(function)),
+            DefaultBlockParameterName.LATEST
+        ).send();
+        if (response == null || response.hasError()) {
+            throw new IllegalStateException(functionName + " returned an RPC error");
+        }
+
+        @SuppressWarnings("rawtypes")
+        List<Type> decoded = FunctionReturnDecoder.decode(response.getValue(), function.getOutputParameters());
+        if (decoded.size() < 2) {
+            throw new IllegalStateException(functionName + " returned an invalid page");
+        }
+        return decoded;
+    }
+
+    private String creditMovementType(BigInteger kind) {
+        return switch (kind.intValue()) {
+            case 0 -> "MINT";
+            case 1 -> "LOCK";
+            case 2 -> "CAPTURE";
+            case 3 -> "RELEASE";
+            case 4 -> "CANCEL";
+            case 5 -> "EXPIRE";
+            case 6 -> "ADJUST";
+            default -> throw new IllegalStateException("Unknown on-chain credit movement kind: " + kind);
+        };
     }
 
     private String computePucHash(String puc) {

@@ -17,7 +17,7 @@ import java.time.Instant;
 @AllArgsConstructor
 public class CreditMovement {
 
-    public enum Type { MINT, LOCK, CAPTURE, CANCEL, ADJUST, EXPIRE }
+    public enum Type { MINT, LOCK, CAPTURE, RELEASE, CANCEL, ADJUST, EXPIRE }
 
     private Long id;
     private String accountAddress;
@@ -26,5 +26,7 @@ public class CreditMovement {
     private BigDecimal amount;
     private String reservationRef;
     private String reference;
+    /** Stable source identifier used to make on-chain reconciliation idempotent. */
+    private String sourceKey;
     private Instant createdAt;
 }

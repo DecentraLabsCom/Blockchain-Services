@@ -7,6 +7,7 @@ import org.web3j.abi.FunctionEncoder;
 import org.web3j.abi.TypeReference;
 import org.web3j.abi.datatypes.Function;
 import org.web3j.abi.datatypes.StaticStruct;
+import org.web3j.abi.datatypes.DynamicArray;
 import org.web3j.abi.datatypes.Type;
 import org.web3j.abi.datatypes.Address;
 import org.web3j.abi.datatypes.Bool;
@@ -159,6 +160,66 @@ public class Diamond extends Contract {
             this.requestedAt = requestedAt;
             this.expiresAt = expiresAt;
             this.state = state;
+        }
+    }
+
+    /** Static ABI representation of ServiceCreditFacet.CreditLot. */
+    public static class CreditLotStruct extends StaticStruct {
+        public final Uint256 lotId;
+        public final Bytes32 fundingOrderId;
+        public final Uint256 creditAmount;
+        public final Uint256 remaining;
+        public final Uint256 eurGrossAmount;
+        public final Uint48 issuedAt;
+        public final Uint48 expiresAt;
+        public final Bool expired;
+
+        public CreditLotStruct(
+            Uint256 lotId,
+            Bytes32 fundingOrderId,
+            Uint256 creditAmount,
+            Uint256 remaining,
+            Uint256 eurGrossAmount,
+            Uint48 issuedAt,
+            Uint48 expiresAt,
+            Bool expired
+        ) {
+            super(lotId, fundingOrderId, creditAmount, remaining, eurGrossAmount, issuedAt, expiresAt, expired);
+            this.lotId = lotId;
+            this.fundingOrderId = fundingOrderId;
+            this.creditAmount = creditAmount;
+            this.remaining = remaining;
+            this.eurGrossAmount = eurGrossAmount;
+            this.issuedAt = issuedAt;
+            this.expiresAt = expiresAt;
+            this.expired = expired;
+        }
+    }
+
+    /** Static ABI representation of ServiceCreditFacet.CreditMovement. */
+    public static class CreditMovementStruct extends StaticStruct {
+        public final Uint8 kind;
+        public final Uint256 amount;
+        public final Uint256 balanceAfter;
+        public final Uint256 lockedAfter;
+        public final Bytes32 reference;
+        public final Uint48 timestamp;
+
+        public CreditMovementStruct(
+            Uint8 kind,
+            Uint256 amount,
+            Uint256 balanceAfter,
+            Uint256 lockedAfter,
+            Bytes32 reference,
+            Uint48 timestamp
+        ) {
+            super(kind, amount, balanceAfter, lockedAfter, reference, timestamp);
+            this.kind = kind;
+            this.amount = amount;
+            this.balanceAfter = balanceAfter;
+            this.lockedAfter = lockedAfter;
+            this.reference = reference;
+            this.timestamp = timestamp;
         }
     }
 
@@ -950,6 +1011,44 @@ public class Diamond extends Contract {
             "totalBalanceOf",
             List.of(new Address(creditAccount)),
             List.of(new TypeReference<Uint256>() {})
+        );
+    }
+
+    public static Function availableBalanceOfFunction(String creditAccount) {
+        return new Function(
+            "availableBalanceOf",
+            List.of(new Address(creditAccount)),
+            List.of(new TypeReference<Uint256>() {})
+        );
+    }
+
+    public static Function lockedBalanceOfFunction(String creditAccount) {
+        return new Function(
+            "lockedBalanceOf",
+            List.of(new Address(creditAccount)),
+            List.of(new TypeReference<Uint256>() {})
+        );
+    }
+
+    public static Function getCreditLotsFunction(String creditAccount, BigInteger offset, BigInteger limit) {
+        return new Function(
+            "getCreditLots",
+            Arrays.asList(new Address(creditAccount), new Uint256(offset), new Uint256(limit)),
+            Arrays.asList(
+                new TypeReference<DynamicArray<CreditLotStruct>>() {},
+                new TypeReference<Uint256>() {}
+            )
+        );
+    }
+
+    public static Function getCreditMovementsFunction(String creditAccount, BigInteger offset, BigInteger limit) {
+        return new Function(
+            "getCreditMovements",
+            Arrays.asList(new Address(creditAccount), new Uint256(offset), new Uint256(limit)),
+            Arrays.asList(
+                new TypeReference<DynamicArray<CreditMovementStruct>>() {},
+                new TypeReference<Uint256>() {}
+            )
         );
     }
 
