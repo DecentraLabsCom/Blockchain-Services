@@ -12,9 +12,9 @@
         .pairing-details { margin-top: 1.25rem; }
         .challenge { font-family: monospace; min-height: 3.75rem; height: 3.75rem; resize: vertical; }
         .is-hidden { display: none !important; }
-        .pairing-instructions { margin: .75rem 0 1.25rem; padding-left: 1.35rem; color: #536273; line-height: 1.5; }
+        .pairing-instructions { margin: .75rem 0 1.25rem; padding-left: 2rem; color: #536273; line-height: 1.5; }
         .pairing-instructions li + li { margin-top: .65rem; }
-        .actions { display: flex; gap: .75rem; flex-wrap: wrap; margin-top: 1.5rem; }
+        .actions { display: flex; gap: .75rem; flex-wrap: wrap; margin-top: 2rem; }
         .pairing-progress { display: grid; gap: .6rem; margin: 1rem 0; padding: .85rem 1rem; border: 1px solid #bfdbfe; border-radius: .4rem; background: #eff6ff; color: #1e3a8a; }
         .pairing-progress.is-success { border-color: #bbf7d0; background: #f0fdf4; color: #166534; }
         .pairing-progress.is-error { border-color: #fecaca; background: #fef2f2; color: #991b1b; }
@@ -39,7 +39,7 @@
 
         <nav class="pairing-navigation" aria-label="Pairing navigation">
             <a id="walletDashboardLink" href="/wallet-dashboard/">&larr; Back to wallet dashboard</a>
-            <a id="marketplaceApprovalLink" class="is-hidden" href="https://marketplace-decentralabs.vercel.app/" target="_blank" rel="noopener noreferrer">Open Marketplace to approve pairing &rarr;</a>
+            <a id="marketplaceApprovalLink" href="https://marketplace-decentralabs.vercel.app/" target="_blank" rel="noopener noreferrer">Open Marketplace to generate pairing challenge &rarr;</a>
         </nav>
 
         <div id="successAlert" class="alert alert-success"></div>

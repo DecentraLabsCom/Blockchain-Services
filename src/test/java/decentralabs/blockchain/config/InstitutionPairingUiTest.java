@@ -30,6 +30,7 @@ class InstitutionPairingUiTest {
     void institutionConfig_exposesNavigationForEachPairingStep() throws IOException {
         String page = readResource("static/institution-config/index.html");
         String script = readResource("static/institution-config/assets/js/pairing.js");
+        String styles = readResource("static/wallet-dashboard/assets/css/admin.css");
 
         assertThat(page).contains("id=\"pairingSteps\"");
         assertThat(page).contains("id=\"walletDashboardLink\"");
@@ -40,10 +41,12 @@ class InstitutionPairingUiTest {
         assertThat(page).contains("pairing-progress-spinner");
         assertThat(page).contains("rows=\"2\"");
         assertThat(page).contains("min-height: 3.75rem; height: 3.75rem");
-        assertThat(page).contains("margin-top: 1.5rem");
+        assertThat(page).contains("padding-left: 2rem");
+        assertThat(page).contains("margin-top: 2rem");
         assertThat(page).contains(".pairing-details { margin-top: 1.25rem; }");
         assertThat(page).doesNotContain("style=");
         assertThat(page).contains("class=\"pairing-instructions\"");
+        assertThat(page).contains("Open Marketplace to generate pairing challenge");
         assertThat(page).contains("<li><strong>Step 1:</strong>");
         assertThat(page).contains("<li><strong>Step 4:</strong>");
         assertThat(page).doesNotContain("id=\"marketplaceBaseUrl\"");
@@ -55,6 +58,16 @@ class InstitutionPairingUiTest {
         assertThat(script).contains("apply-pairing-challenge");
         assertThat(script).contains("complete-pairing");
         assertThat(script).contains("setPairingProgress");
+        assertThat(script).contains("challengeField.addEventListener('input'");
+        assertThat(script).contains("isValidPairingChallenge");
+        assertThat(script).contains("function updateMarketplaceLink");
+        assertThat(script).contains("Open Marketplace to generate pairing challenge");
+        assertThat(script).contains("Open Marketplace to approve pairing");
+        assertThat(script).contains("currentStep === 1");
+        assertThat(script).contains("currentStep === 3");
+        assertThat(script).contains("updateSteps(3)");
+        assertThat(script).contains("updateSteps(4)");
+        assertThat(script).contains("updateSteps(5)");
         assertThat(script).contains("function showError");
         assertThat(script).contains("configured public backend origin is required");
         assertThat(script).contains("setPairingProgress('', { tone: 'info' })");
@@ -63,6 +76,8 @@ class InstitutionPairingUiTest {
         assertThat(script).contains("then return here to complete pairing");
         assertThat(script).doesNotContain("apply-provider-token");
         assertThat(script).doesNotContain("apply-consumer-token");
+        assertThat(styles).contains(".pairing-flow-steps li.is-current {");
+        assertThat(styles).contains("box-shadow:");
     }
 
     @Test

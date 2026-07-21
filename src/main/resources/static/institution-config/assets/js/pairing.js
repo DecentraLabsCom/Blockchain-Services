@@ -10,6 +10,9 @@
     const pairingProgress = document.getElementById('pairingProgress');
     const pairingProgressMessage = document.getElementById('pairingProgressMessage');
     const pairingProgressSpinner = document.getElementById('pairing-progress-spinner');
+    const PAIRING_CHALLENGE_PATTERN = /^0x[0-9a-fA-F]{64}$/;
+    let activeStep = 1;
+    let marketplaceLinkAvailable = Boolean(marketplaceApprovalLink?.getAttribute('href'));
     let currentPairing = null;
 
     function setPairingProgress(message, { active = false, tone = 'info' } = {}) {
@@ -49,25 +52,65 @@
         })[character]);
     }
 
+    function updateMarketplaceLink(currentStep) {
+        if (!marketplaceApprovalLink || !marketplaceLinkAvailable) return;
+        if (currentStep === 1) {
+            marketplaceApprovalLink.textContent = 'Open Marketplace to generate pairing challenge →';
+            marketplaceApprovalLink.classList.remove('is-hidden');
+        } else if (currentStep === 3) {
+            marketplaceApprovalLink.textContent = 'Open Marketplace to approve pairing →';
+            marketplaceApprovalLink.classList.remove('is-hidden');
+        } else {
+            marketplaceApprovalLink.classList.add('is-hidden');
+        }
+    }
+
     function updateSteps(currentStep) {
+        activeStep = currentStep;
         document.querySelectorAll('#pairingSteps [data-step]').forEach((step) => {
             const stepNumber = Number(step.dataset.step);
             step.classList.toggle('is-complete', stepNumber < currentStep);
             step.classList.toggle('is-current', stepNumber === currentStep);
         });
+        updateMarketplaceLink(currentStep);
     }
 
+    function isValidPairingChallenge(value) {
+        return PAIRING_CHALLENGE_PATTERN.test(String(value || '').trim());
+    }
+
+    challengeField.addEventListener('input', () => {
+        const challenge = challengeField.value.trim();
+        if (currentPairing && currentPairing.challenge !== challenge) {
+            currentPairing = null;
+            pairingDetails.classList.add('is-hidden');
+            completeButton.disabled = true;
+            marketplaceApprovalLink?.classList.add('is-hidden');
+        }
+        updateSteps(isValidPairingChallenge(challenge) ? 2 : 1);
+    });
+
     function setMarketplaceApprovalLink(url) {
-        if (!marketplaceApprovalLink || typeof url !== 'string' || !url.trim()) return;
+        if (!marketplaceApprovalLink || typeof url !== 'string' || !url.trim()) {
+            marketplaceLinkAvailable = false;
+            marketplaceApprovalLink?.classList.add('is-hidden');
+            return;
+        }
         try {
             const parsed = new URL(url.trim(), window.location.origin);
             const isLocalHttp = parsed.protocol === 'http:'
                 && ['localhost', '127.0.0.1', '[::1]'].includes(parsed.hostname);
-            if (parsed.protocol !== 'https:' && !isLocalHttp) return;
+            if (parsed.protocol !== 'https:' && !isLocalHttp) {
+                marketplaceLinkAvailable = false;
+                marketplaceApprovalLink.classList.add('is-hidden');
+                return;
+            }
             marketplaceApprovalLink.href = parsed.origin;
-            marketplaceApprovalLink.classList.remove('is-hidden');
+            marketplaceLinkAvailable = true;
+            updateMarketplaceLink(activeStep);
         } catch (_error) {
-            // Keep the link hidden when the server does not expose a valid origin.
+            marketplaceLinkAvailable = false;
+            marketplaceApprovalLink.classList.add('is-hidden');
         }
     }
 
@@ -131,12 +174,13 @@
         event.preventDefault();
         hideAlerts();
         const challenge = challengeField.value.trim();
-        if (!/^0x[0-9a-fA-F]{64}$/.test(challenge)) {
+        if (!isValidPairingChallenge(challenge)) {
             showError('Paste the complete 32-byte pairing challenge from the Marketplace (0x followed by 64 hexadecimal characters).');
             updateSteps(1);
             return;
         }
 
+        updateSteps(2);
         offerButton.disabled = true;
         completeButton.disabled = true;
         offerButton.setAttribute('aria-busy', 'true');
@@ -164,6 +208,7 @@
     completeButton.addEventListener('click', async () => {
         if (!currentPairing?.challenge) return;
         hideAlerts();
+        updateSteps(4);
         completeButton.disabled = true;
         offerButton.disabled = true;
         completeButton.setAttribute('aria-busy', 'true');
@@ -187,6 +232,7 @@
             updateSteps(5);
         } catch (error) {
             showError(error.message || 'Pairing is not ready. Approve the pairing first.');
+            if (currentPairing?.status !== 'APPROVED') updateSteps(3);
             completeButton.disabled = false;
         } finally {
             offerButton.disabled = false;
