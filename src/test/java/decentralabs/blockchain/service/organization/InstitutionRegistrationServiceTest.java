@@ -1,12 +1,14 @@
 package decentralabs.blockchain.service.organization;
 
 import decentralabs.blockchain.service.billing.InstitutionalAdminService;
+import decentralabs.blockchain.service.BackendUrlResolver;
 import decentralabs.blockchain.service.wallet.InstitutionalWalletService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
+import org.mockito.ArgumentMatchers;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.http.HttpEntity;
@@ -46,6 +48,9 @@ class InstitutionRegistrationServiceTest {
     @Mock
     private ProvisioningWalletProofService walletProofService;
 
+    @Mock
+    private BackendUrlResolver backendUrlResolver;
+
     private InstitutionRegistrationService service;
 
     @BeforeEach
@@ -55,7 +60,8 @@ class InstitutionRegistrationServiceTest {
                 walletService,
                 configPersistenceService,
                 restTemplate,
-                walletProofService
+                walletProofService,
+                backendUrlResolver
         );
         ReflectionTestUtils.setField(service, "configuredMarketplaceBaseUrl", "https://marketplace.example.com");
         ReflectionTestUtils.setField(service, "marketplaceUrl", "https://marketplace.example.com");
@@ -63,6 +69,92 @@ class InstitutionRegistrationServiceTest {
             any(),
             nullable(org.web3j.crypto.Credentials.class)
         )).thenReturn("0xwallet-signature");
+        lenient().when(walletProofService.signPairing(
+            any(),
+            nullable(org.web3j.crypto.Credentials.class)
+        )).thenReturn("0xpairing-signature");
+    }
+
+    @Test
+    @DisplayName("Should derive pairing origin from the gateway URL when no override is configured")
+    void shouldDerivePairingOriginFromGatewayUrl() {
+        when(backendUrlResolver.resolveBaseDomain()).thenReturn("https://gateway.full.example");
+        when(walletService.getInstitutionalWalletAddress()).thenReturn("0xABC123");
+        when(restTemplate.exchange(
+            anyString(),
+            eq(org.springframework.http.HttpMethod.POST),
+            any(HttpEntity.class),
+            ArgumentMatchers.<org.springframework.core.ParameterizedTypeReference<Map<String, Object>>>any()
+        )).thenReturn(
+            ResponseEntity.ok(Map.of(
+                "institutionId", "institution-1",
+                "registrationType", "PROVIDER",
+                "chainId", 11_155_111L,
+                "registryContract", "0xregistry",
+                "issuedAt", 100L,
+                "expiresAt", 200L
+            )),
+            ResponseEntity.ok(Map.of(
+                "pairingId", "pairing-1",
+                "status", "OFFERED",
+                "institutionId", "institution-1",
+                "registrationType", "PROVIDER",
+                "walletAddress", "0xABC123",
+                "canonicalBackendOrigin", "https://gateway.full.example",
+                "expiresAt", 200L
+            ))
+        );
+
+        ReflectionTestUtils.setField(service, "configuredPublicBaseUrl", "");
+
+        ProvisioningPairingPreparation result = service.preparePairing(
+            "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        );
+
+        assertEquals("https://gateway.full.example", result.canonicalBackendOrigin());
+        ArgumentCaptor<ProvisioningPairingSecurityClaims> claimsCaptor =
+            ArgumentCaptor.forClass(ProvisioningPairingSecurityClaims.class);
+        verify(walletProofService).signPairing(claimsCaptor.capture(), nullable(org.web3j.crypto.Credentials.class));
+        assertEquals("https://gateway.full.example", claimsCaptor.getValue().canonicalBackendOrigin());
+    }
+
+    @Test
+    @DisplayName("Should prefer an explicit public base URL override for pairing")
+    void shouldPreferExplicitPublicBaseUrlOverride() {
+        when(walletService.getInstitutionalWalletAddress()).thenReturn("0xABC123");
+        when(restTemplate.exchange(
+            anyString(),
+            eq(org.springframework.http.HttpMethod.POST),
+            any(HttpEntity.class),
+            ArgumentMatchers.<org.springframework.core.ParameterizedTypeReference<Map<String, Object>>>any()
+        )).thenReturn(
+            ResponseEntity.ok(Map.of(
+                "institutionId", "institution-1",
+                "registrationType", "PROVIDER",
+                "chainId", 11_155_111L,
+                "registryContract", "0xregistry",
+                "issuedAt", 100L,
+                "expiresAt", 200L
+            )),
+            ResponseEntity.ok(Map.of(
+                "pairingId", "pairing-1",
+                "status", "OFFERED",
+                "institutionId", "institution-1",
+                "registrationType", "PROVIDER",
+                "walletAddress", "0xABC123",
+                "canonicalBackendOrigin", "https://override.example",
+                "expiresAt", 200L
+            ))
+        );
+
+        ReflectionTestUtils.setField(service, "configuredPublicBaseUrl", "https://override.example");
+
+        ProvisioningPairingPreparation result = service.preparePairing(
+            "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        );
+
+        assertEquals("https://override.example", result.canonicalBackendOrigin());
+        verify(backendUrlResolver, never()).resolveBaseDomain();
     }
 
     @Test

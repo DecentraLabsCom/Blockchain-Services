@@ -1,5 +1,6 @@
 package decentralabs.blockchain.service.organization;
 
+import decentralabs.blockchain.service.BackendUrlResolver;
 import decentralabs.blockchain.service.billing.InstitutionalAdminService;
 import decentralabs.blockchain.service.wallet.InstitutionalWalletService;
 import lombok.RequiredArgsConstructor;
@@ -37,6 +38,7 @@ public class InstitutionRegistrationService {
     private final ProviderConfigurationPersistenceService configPersistenceService;
     private final RestTemplate restTemplate;
     private final ProvisioningWalletProofService walletProofService;
+    private final BackendUrlResolver backendUrlResolver;
 
     /**
      * Server-side Marketplace origin used for registration trust.
@@ -91,8 +93,12 @@ public class InstitutionRegistrationService {
         if (walletAddress == null || walletAddress.isBlank()) {
             throw new IllegalStateException("Institutional wallet address is not configured");
         }
+        String configuredBackendOrigin = firstNonBlank(configuredPublicBaseUrl, null);
+        if (configuredBackendOrigin == null) {
+            configuredBackendOrigin = backendUrlResolver.resolveBaseDomain();
+        }
         String canonicalBackendOrigin = validateOrigin(
-            configuredPublicBaseUrl,
+            configuredBackendOrigin,
             "configured public backend origin"
         );
 
