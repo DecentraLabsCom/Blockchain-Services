@@ -18,6 +18,16 @@ public class LocalhostFilterTestController {
         return ResponseEntity.ok("ok");
     }
 
+    @GetMapping("/billing/credit-accounts/{address}")
+    public ResponseEntity<String> billingCreditAccount() {
+        return ResponseEntity.ok("ok");
+    }
+
+    @PostMapping("/billing/funding-orders")
+    public ResponseEntity<String> billingFundingOrder() {
+        return ResponseEntity.ok("ok");
+    }
+
     @GetMapping("/wallet-dashboard/index.html")
     public ResponseEntity<String> walletDashboard() {
         return ResponseEntity.ok("ok");

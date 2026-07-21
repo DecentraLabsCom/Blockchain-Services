@@ -37,6 +37,9 @@ public class LocalhostOnlyFilter extends OncePerRequestFilter {
     @Value("${gateway.lab-manager.token-header:X-Lab-Manager-Token}")
     private String labManagerTokenHeader;
 
+    @Value("${auth.marketplace-endpoints.enabled:true}")
+    private boolean marketplaceBillingReadsEnabled;
+
     public LocalhostOnlyFilter(AdminNetworkAccessPolicy adminNetworkAccessPolicy) {
         this.adminNetworkAccessPolicy = adminNetworkAccessPolicy;
     }
@@ -54,6 +57,15 @@ public class LocalhostOnlyFilter extends OncePerRequestFilter {
         );
         
         log.debug("LocalhostOnlyFilter: path={}, clientIp={}", path, clientIp);
+
+        if (isMarketplaceBillingReadRequest(request)) {
+            // FundingController performs the cryptographic JWT and scope
+            // validation. This filter only prevents the localhost policy from
+            // blocking that authenticated server-to-server read before it can
+            // reach the controller.
+            filterChain.doFilter(request, response);
+            return;
+        }
         
         if (requiresLocalhost(request) && !adminNetworkAccessPolicy.isRequestAllowed(request, () -> hasValidRouteToken(request))) {
             log.warn("Blocked non-localhost request: path={}, clientIp={}", path, clientIp);
@@ -63,6 +75,26 @@ public class LocalhostOnlyFilter extends OncePerRequestFilter {
         }
 
         filterChain.doFilter(request, response);
+    }
+
+    private boolean isMarketplaceBillingReadRequest(HttpServletRequest request) {
+        if (!marketplaceBillingReadsEnabled
+            || !("GET".equalsIgnoreCase(request.getMethod()) || "HEAD".equalsIgnoreCase(request.getMethod()))) {
+            return false;
+        }
+
+        String path = request.getRequestURI();
+        boolean billingReadPath = path != null
+            && (path.startsWith("/billing/credit-accounts/")
+                || path.equals("/billing/funding-orders")
+                || path.startsWith("/billing/funding-orders/"));
+        if (!billingReadPath) {
+            return false;
+        }
+
+        String authorization = request.getHeader("Authorization");
+        return authorization != null && authorization.trim().regionMatches(true, 0, "Bearer ", 0, 7)
+            && authorization.trim().length() > 7;
     }
 
     private boolean requiresLocalhost(HttpServletRequest request) {

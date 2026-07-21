@@ -11,6 +11,7 @@ import decentralabs.blockchain.domain.FundingOrder;
 import decentralabs.blockchain.exception.GlobalExceptionHandler;
 import decentralabs.blockchain.service.billing.CreditProjectionService;
 import decentralabs.blockchain.service.billing.FundingOrderService;
+import decentralabs.blockchain.service.auth.MarketplaceEndpointAuthService;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.List;
@@ -33,6 +34,9 @@ class FundingControllerTest {
 
     @Mock
     private CreditProjectionService creditProjectionService;
+
+    @Mock
+    private MarketplaceEndpointAuthService marketplaceEndpointAuthService;
 
     @InjectMocks
     private FundingController fundingController;
@@ -96,13 +100,27 @@ class FundingControllerTest {
             .thenReturn(List.of());
 
         mockMvc.perform(get("/billing/funding-orders")
+                .header("Authorization", "Bearer marketplace-service-token")
                 .param("institution", "0x1111111111111111111111111111111111111111"))
             .andExpect(status().isOk());
     }
 
     @Test
+    void listFundingOrders_requiresBillingReadScopeWhenServiceTokenIsPresent() throws Exception {
+        org.mockito.Mockito.doThrow(new org.springframework.web.server.ResponseStatusException(
+            org.springframework.http.HttpStatus.FORBIDDEN, "missing_marketplace_scope"))
+            .when(marketplaceEndpointAuthService)
+            .enforceServiceAuthorization("Bearer marketplace-service-token", "billing:read");
+
+        mockMvc.perform(get("/billing/funding-orders")
+                .header("Authorization", "Bearer marketplace-service-token"))
+            .andExpect(status().isForbidden());
+    }
+
+    @Test
     void getCreditAccount_rejectsInvalidAddress() throws Exception {
-        mockMvc.perform(get("/billing/credit-accounts/not-an-address"))
+        mockMvc.perform(get("/billing/credit-accounts/not-an-address")
+                .header("Authorization", "Bearer marketplace-service-token"))
             .andExpect(status().isBadRequest())
             .andExpect(jsonPath("$.success").value(false));
     }
@@ -111,7 +129,8 @@ class FundingControllerTest {
     void getFundingOrder_returnsNotFoundWhenMissing() throws Exception {
         when(fundingOrderService.findById(33L)).thenReturn(Optional.empty());
 
-        mockMvc.perform(get("/billing/funding-orders/33"))
+        mockMvc.perform(get("/billing/funding-orders/33")
+                .header("Authorization", "Bearer marketplace-service-token"))
             .andExpect(status().isNotFound());
     }
 }

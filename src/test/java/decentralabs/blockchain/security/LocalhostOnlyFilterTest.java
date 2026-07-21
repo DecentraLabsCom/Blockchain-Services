@@ -32,6 +32,7 @@ class LocalhostOnlyFilterTest {
         ReflectionTestUtils.setField(filter, "accessTokenCookie", "access_token");
         ReflectionTestUtils.setField(filter, "labManagerToken", "lab-manager-token");
         ReflectionTestUtils.setField(filter, "labManagerTokenHeader", "X-Lab-Manager-Token");
+        ReflectionTestUtils.setField(filter, "marketplaceBillingReadsEnabled", true);
         mockMvc = MockMvcBuilders
             .standaloneSetup(new LocalhostFilterTestController())
             .addFilters(filter)
@@ -158,6 +159,22 @@ class LocalhostOnlyFilterTest {
     void walletHealth_allowsPublicIpWithoutToken() throws Exception {
         mockMvc.perform(get("/wallet/health").with(req -> { req.setRemoteAddr("8.8.8.8"); return req; }))
             .andExpect(status().isOk());
+    }
+
+    @Test
+    void marketplaceBillingRead_allowsPublicIpWithBearerServiceToken() throws Exception {
+        mockMvc.perform(get("/billing/credit-accounts/0x1111111111111111111111111111111111111111")
+                .header("Authorization", "Bearer marketplace-service-token")
+                .with(req -> { req.setRemoteAddr("8.8.8.8"); return req; }))
+            .andExpect(status().isOk());
+    }
+
+    @Test
+    void marketplaceBillingWrite_remainsBlockedWithBearerServiceToken() throws Exception {
+        mockMvc.perform(post("/billing/funding-orders")
+                .header("Authorization", "Bearer marketplace-service-token")
+                .with(req -> { req.setRemoteAddr("8.8.8.8"); return req; }))
+            .andExpect(status().isForbidden());
     }
 
     @Test
