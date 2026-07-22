@@ -387,14 +387,12 @@
         </plugins>
     </build>
 
-    <!-- Direct Maven Central fallback: the GCS mirror configured in
-         settings.xml does not yet index every artifact (e.g. Flyway 12.x).
-         Using a different <id> so the <mirrorOf>central</mirrorOf> rule
-         does not intercept this repository. -->
+    <!-- Direct Maven Central fallback for artifacts not available through
+         the configured mirror (e.g. Flyway 12.x). -->
     <repositories>
         <repository>
             <id>central-direct</id>
-            <url>https://repo1.maven.org/maven2</url>
+            <url>https://repo.maven.apache.org/maven2</url>
             <releases><enabled>true</enabled></releases>
             <snapshots><enabled>false</enabled></snapshots>
         </repository>
@@ -402,7 +400,7 @@
     <pluginRepositories>
         <pluginRepository>
             <id>central-direct</id>
-            <url>https://repo1.maven.org/maven2</url>
+            <url>https://repo.maven.apache.org/maven2</url>
             <releases><enabled>true</enabled></releases>
             <snapshots><enabled>false</enabled></snapshots>
         </pluginRepository>
