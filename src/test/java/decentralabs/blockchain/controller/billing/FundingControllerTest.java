@@ -1,6 +1,7 @@
 package decentralabs.blockchain.controller.billing;
 
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -115,6 +116,17 @@ class FundingControllerTest {
         mockMvc.perform(get("/billing/funding-orders")
                 .header("Authorization", "Bearer marketplace-service-token"))
             .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void listFundingOrders_requiresMarketplaceTokenWhenLocalFilterMarkerIsAbsent() throws Exception {
+        doThrow(new org.springframework.web.server.ResponseStatusException(
+            org.springframework.http.HttpStatus.UNAUTHORIZED, "missing_marketplace_token"))
+            .when(marketplaceEndpointAuthService)
+            .enforceServiceAuthorization(null, "billing:read");
+
+        mockMvc.perform(get("/billing/funding-orders"))
+            .andExpect(status().isUnauthorized());
     }
 
     @Test

@@ -70,6 +70,27 @@ class CreditProjectionServiceTest {
         verify(persistence).upsertCreditMovement(any(CreditMovement.class));
     }
 
+    @Test
+    @DisplayName("Credit reads do not mutate the SQL projection")
+    void creditReadsDoNotMutateProjection() {
+        when(walletService.getCreditLedgerSnapshot(ADDRESS))
+            .thenReturn(new CreditLedgerSnapshot(
+                BigInteger.ZERO,
+                BigInteger.ZERO,
+                List.of(),
+                List.of()
+            ));
+
+        service.getAccount(ADDRESS);
+        service.getLots(ADDRESS);
+        service.getMovements(ADDRESS, 10);
+
+        verify(walletService, times(3)).getCreditLedgerSnapshot(ADDRESS);
+        verify(persistence, never()).upsertCreditAccount(any(CreditAccount.class));
+        verify(persistence, never()).upsertCreditLot(any(CreditLot.class));
+        verify(persistence, never()).upsertCreditMovement(any(CreditMovement.class));
+    }
+
     // ── syncAccount ─────────────────────────────────────────────────────
 
     @Nested

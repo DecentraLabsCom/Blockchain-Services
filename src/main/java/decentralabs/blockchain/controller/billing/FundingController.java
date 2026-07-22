@@ -9,12 +9,13 @@ import decentralabs.blockchain.dto.billing.IssueFundingInvoiceRequest;
 import decentralabs.blockchain.service.billing.CreditProjectionService;
 import decentralabs.blockchain.service.billing.FundingOrderService;
 import decentralabs.blockchain.service.auth.MarketplaceEndpointAuthService;
+import decentralabs.blockchain.security.LocalhostOnlyFilter;
 import decentralabs.blockchain.util.EthereumAddressValidator;
 import jakarta.validation.Valid;
+import jakarta.servlet.http.HttpServletRequest;
 import java.util.Map;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -51,11 +52,11 @@ public class FundingController {
 
     @GetMapping("/funding-orders")
     public ResponseEntity<?> listFundingOrders(
-        @RequestHeader(value = "Authorization", required = false) String authorizationHeader,
+        HttpServletRequest request,
         @RequestParam(required = false) String institution,
         @RequestParam(required = false) String status
     ) {
-        authorizeMarketplaceReadIfPresent(authorizationHeader);
+        authorizeMarketplaceRead(request);
         if (status != null) {
             FundingOrder.Status resolvedStatus = FundingOrder.Status.valueOf(status.toUpperCase());
             return ResponseEntity.ok(fundingOrderService.findByStatus(resolvedStatus));
@@ -69,10 +70,10 @@ public class FundingController {
 
     @GetMapping("/funding-orders/{id}")
     public ResponseEntity<?> getFundingOrder(
-        @RequestHeader(value = "Authorization", required = false) String authorizationHeader,
+        HttpServletRequest request,
         @PathVariable long id
     ) {
-        authorizeMarketplaceReadIfPresent(authorizationHeader);
+        authorizeMarketplaceRead(request);
         return fundingOrderService.findById(id)
             .map(ResponseEntity::ok)
             .orElse(ResponseEntity.notFound().build());
@@ -115,10 +116,10 @@ public class FundingController {
 
     @GetMapping("/credit-accounts/{address}")
     public ResponseEntity<?> getCreditAccount(
-        @RequestHeader(value = "Authorization", required = false) String authorizationHeader,
+        HttpServletRequest request,
         @PathVariable String address
     ) {
-        authorizeMarketplaceReadIfPresent(authorizationHeader);
+        authorizeMarketplaceRead(request);
         EthereumAddressValidator.validate(address, "address");
         return creditProjectionService.getAccount(address)
             .map(ResponseEntity::ok)
@@ -127,21 +128,21 @@ public class FundingController {
 
     @GetMapping("/credit-accounts/{address}/lots")
     public ResponseEntity<?> getCreditLots(
-        @RequestHeader(value = "Authorization", required = false) String authorizationHeader,
+        HttpServletRequest request,
         @PathVariable String address
     ) {
-        authorizeMarketplaceReadIfPresent(authorizationHeader);
+        authorizeMarketplaceRead(request);
         EthereumAddressValidator.validate(address, "address");
         return ResponseEntity.ok(creditProjectionService.getLots(address));
     }
 
     @GetMapping("/credit-accounts/{address}/movements")
     public ResponseEntity<?> getCreditMovements(
-        @RequestHeader(value = "Authorization", required = false) String authorizationHeader,
+        HttpServletRequest request,
         @PathVariable String address,
         @RequestParam(defaultValue = "100") int limit
     ) {
-        authorizeMarketplaceReadIfPresent(authorizationHeader);
+        authorizeMarketplaceRead(request);
         EthereumAddressValidator.validate(address, "address");
         int safeLimit = Math.min(Math.max(limit, 1), 1000);
         return ResponseEntity.ok(creditProjectionService.getMovements(address, safeLimit));
@@ -154,12 +155,17 @@ public class FundingController {
      * the read endpoints remain protected even when the backend is reached
      * directly instead of through OpenResty.
      */
-    private void authorizeMarketplaceReadIfPresent(String authorizationHeader) {
-        if (authorizationHeader != null && !authorizationHeader.isBlank()) {
+    private void authorizeMarketplaceRead(HttpServletRequest request) {
+        // The local exemption is a server-set attribute written by
+        // LocalhostOnlyFilter only after its network and route-token checks.
+        // Every request without that trusted marker must present a valid
+        // Marketplace service JWT, including requests with no Authorization
+        // header or a malformed one.
+        // codeql[java/user-controlled-bypass]
+        if (!Boolean.TRUE.equals(
+            request.getAttribute(LocalhostOnlyFilter.LOCAL_BILLING_READ_ALLOWED_ATTRIBUTE))) {
             marketplaceEndpointAuthService.enforceServiceAuthorization(
-                authorizationHeader,
-                BILLING_READ_SCOPE
-            );
+                request.getHeader("Authorization"), BILLING_READ_SCOPE);
         }
     }
 }

@@ -7,6 +7,7 @@ import decentralabs.blockchain.dto.billing.CreditLedgerSnapshot;
 import decentralabs.blockchain.service.persistence.CreditAccountPersistenceService;
 import decentralabs.blockchain.service.wallet.WalletService;
 import decentralabs.blockchain.util.CreditUnitConverter;
+import decentralabs.blockchain.util.LogSanitizer;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
@@ -18,8 +19,6 @@ import java.time.Instant;
 import java.util.List;
 import java.util.Locale;
 import java.util.Optional;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ConcurrentMap;
 
 /**
  * Projects on-chain credit ledger state into off-chain MySQL for querying,
@@ -31,10 +30,6 @@ public class CreditProjectionService {
 
     private final CreditAccountPersistenceService persistence;
     private final WalletService walletService;
-    private final ConcurrentMap<String, Long> lastReconciledAt = new ConcurrentHashMap<>();
-    private final ConcurrentMap<String, Object> reconciliationLocks = new ConcurrentHashMap<>();
-
-    private static final long READ_RECONCILIATION_MIN_INTERVAL_MS = 5_000L;
 
     @Autowired
     public CreditProjectionService(CreditAccountPersistenceService persistence, WalletService walletService) {
@@ -108,7 +103,7 @@ public class CreditProjectionService {
      */
     @Transactional
     public CreditAccount reconcileAccount(String address) {
-        String normalized = address.toLowerCase(Locale.ROOT);
+        String normalized = normalizeAddress(address);
         if (walletService == null) {
             return persistence.findCreditAccount(normalized)
                 .orElseGet(() -> emptyAccount(normalized));
@@ -116,7 +111,77 @@ public class CreditProjectionService {
 
         CreditLedgerSnapshot snapshot = walletService.getCreditLedgerSnapshot(normalized);
         CreditAccount previous = persistence.findCreditAccount(normalized).orElse(null);
-        CreditAccount account = CreditAccount.builder()
+        CreditAccount account = toCreditAccount(normalized, snapshot, previous);
+        persistence.upsertCreditAccount(account);
+
+        for (CreditLedgerSnapshot.Lot lot : snapshot.lots()) {
+            persistence.upsertCreditLot(toCreditLot(normalized, lot));
+        }
+
+        for (CreditLedgerSnapshot.Movement movement : snapshot.movements()) {
+            persistence.upsertCreditMovement(toDomainMovement(normalized, movement));
+        }
+        return account;
+    }
+
+    public Optional<CreditAccount> getAccount(String address) {
+        String normalized = normalizeAddress(address);
+        if (walletService == null) {
+            return persistence.findCreditAccount(normalized);
+        }
+        try {
+            CreditLedgerSnapshot snapshot = walletService.getCreditLedgerSnapshot(normalized);
+            CreditAccount previous = persistence.findCreditAccount(normalized).orElse(null);
+            return Optional.of(toCreditAccount(normalized, snapshot, previous));
+        } catch (RuntimeException ex) {
+            logReadFallback(normalized);
+            return persistence.findCreditAccount(normalized);
+        }
+    }
+
+    public List<CreditLot> getLots(String address) {
+        String normalized = normalizeAddress(address);
+        if (walletService == null) {
+            return persistence.findCreditLots(normalized);
+        }
+        try {
+            CreditLedgerSnapshot snapshot = walletService.getCreditLedgerSnapshot(normalized);
+            return snapshot.lots().stream()
+                .map(lot -> toCreditLot(normalized, lot))
+                .toList();
+        } catch (RuntimeException ex) {
+            logReadFallback(normalized);
+            return persistence.findCreditLots(normalized);
+        }
+    }
+
+    public List<CreditLot> getExpiringLots(Instant before) {
+        return persistence.findExpiringLots(before);
+    }
+
+    public List<CreditMovement> getMovements(String address, int limit) {
+        String normalized = normalizeAddress(address);
+        if (walletService == null) {
+            return persistence.findMovements(normalized, limit);
+        }
+        try {
+            CreditLedgerSnapshot snapshot = walletService.getCreditLedgerSnapshot(normalized);
+            return snapshot.movements().stream()
+                .map(movement -> toDomainMovement(normalized, movement))
+                .limit(limit)
+                .toList();
+        } catch (RuntimeException ex) {
+            logReadFallback(normalized);
+            return persistence.findMovements(normalized, limit);
+        }
+    }
+
+    private CreditAccount toCreditAccount(
+        String normalized,
+        CreditLedgerSnapshot snapshot,
+        CreditAccount previous
+    ) {
+        return CreditAccount.builder()
             .accountAddress(normalized)
             .available(toCredits(snapshot.available()))
             .locked(toCredits(snapshot.locked()))
@@ -127,71 +192,37 @@ public class CreditProjectionService {
             .adjusted(previous == null ? BigDecimal.ZERO : valueOrZero(previous.getAdjusted()))
             .expired(previous == null ? BigDecimal.ZERO : valueOrZero(previous.getExpired()))
             .build();
-        persistence.upsertCreditAccount(account);
+    }
 
-        Instant now = Instant.now();
-        for (CreditLedgerSnapshot.Lot lot : snapshot.lots()) {
-            Instant expiresAt = toInstant(lot.expiresAtEpochSeconds());
-            boolean expired = lot.expired()
-                || (expiresAt != null && !expiresAt.isAfter(now));
-            syncLot(
-                normalized,
-                lot.index(),
-                parseFundingOrderId(lot.fundingOrderReference()),
-                toEur(lot.eurGrossAmountCents()),
-                toCredits(lot.creditAmount()),
-                toCredits(lot.remaining()),
-                toInstant(lot.issuedAtEpochSeconds()),
-                expiresAt,
-                expired
-            );
+    private CreditLot toCreditLot(String normalized, CreditLedgerSnapshot.Lot lot) {
+        Instant expiresAt = toInstant(lot.expiresAtEpochSeconds());
+        boolean expired = lot.expired()
+            || (expiresAt != null && !expiresAt.isAfter(Instant.now()));
+        return CreditLot.builder()
+            .accountAddress(normalized)
+            .lotIndex(lot.index())
+            .fundingOrderId(parseFundingOrderId(lot.fundingOrderReference()))
+            .eurGrossAmount(toEur(lot.eurGrossAmountCents()))
+            .creditAmount(toCredits(lot.creditAmount()))
+            .remaining(toCredits(lot.remaining()))
+            .issuedAt(toInstant(lot.issuedAtEpochSeconds()))
+            .expiresAt(expiresAt)
+            .expired(expired)
+            .build();
+    }
+
+    private void logReadFallback(String normalized) {
+        // The address is sanitized and masked before it reaches the logger;
+        // this is a deliberate safe fallback when the RPC is unavailable.
+        // codeql[java/log-injection]
+        log.warn("Credit projection read fallback for {}", LogSanitizer.maskIdentifier(normalized));
+    }
+
+    private String normalizeAddress(String address) {
+        if (address == null || address.isBlank()) {
+            throw new IllegalArgumentException("Credit account is required");
         }
-
-        for (CreditLedgerSnapshot.Movement movement : snapshot.movements()) {
-            persistence.upsertCreditMovement(toDomainMovement(normalized, movement));
-        }
-        lastReconciledAt.put(normalized, System.currentTimeMillis());
-        return account;
-    }
-
-    public Optional<CreditAccount> getAccount(String address) {
-        reconcileForRead(address);
-        return persistence.findCreditAccount(address.toLowerCase(Locale.ROOT));
-    }
-
-    public List<CreditLot> getLots(String address) {
-        reconcileForRead(address);
-        return persistence.findCreditLots(address.toLowerCase(Locale.ROOT));
-    }
-
-    public List<CreditLot> getExpiringLots(Instant before) {
-        return persistence.findExpiringLots(before);
-    }
-
-    public List<CreditMovement> getMovements(String address, int limit) {
-        reconcileForRead(address);
-        return persistence.findMovements(address.toLowerCase(Locale.ROOT), limit);
-    }
-
-    private void reconcileForRead(String address) {
-        if (walletService == null) return;
-        String normalized = address.toLowerCase(Locale.ROOT);
-        long now = System.currentTimeMillis();
-        Long last = lastReconciledAt.get(normalized);
-        if (last != null && now - last < READ_RECONCILIATION_MIN_INTERVAL_MS) return;
-        Object lock = reconciliationLocks.computeIfAbsent(normalized, ignored -> new Object());
-        synchronized (lock) {
-            long lockedNow = System.currentTimeMillis();
-            Long lockedLast = lastReconciledAt.get(normalized);
-            if (lockedLast != null && lockedNow - lockedLast < READ_RECONCILIATION_MIN_INTERVAL_MS) return;
-            try {
-                reconcileAccount(normalized);
-            } catch (RuntimeException ex) {
-                // The SQL projection remains a safe stale fallback when the RPC
-                // is temporarily unavailable. Never fabricate a zero balance.
-                log.warn("Credit projection reconciliation unavailable for {}", maskAddress(normalized));
-            }
-        }
+        return address.toLowerCase(Locale.ROOT);
     }
 
     private CreditMovement toDomainMovement(String address, CreditLedgerSnapshot.Movement movement) {
@@ -259,8 +290,4 @@ public class CreditProjectionService {
         return reference;
     }
 
-    private String maskAddress(String address) {
-        if (address == null || address.length() < 10) return "address";
-        return address.substring(0, 6) + "…" + address.substring(address.length() - 4);
-    }
 }

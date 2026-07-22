@@ -1086,6 +1086,9 @@ public class WalletService {
             List<CreditLedgerSnapshot.Movement> movements = readCreditMovements(web3j, accountAddress);
             return new CreditLedgerSnapshot(available, locked, lots, movements);
         } catch (Exception e) {
+            // The account address is masked and sanitized before logging;
+            // CodeQL does not model this project-local sanitizer.
+            // codeql[java/log-injection]
             log.warn(
                 "Service-credit ledger reconciliation failed for {}",
                 LogSanitizer.maskIdentifier(accountAddress)

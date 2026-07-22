@@ -20,6 +20,9 @@ import org.springframework.web.filter.OncePerRequestFilter;
 @Order(0)
 @Slf4j
 public class LocalhostOnlyFilter extends OncePerRequestFilter {
+    public static final String LOCAL_BILLING_READ_ALLOWED_ATTRIBUTE =
+        LocalhostOnlyFilter.class.getName() + ".localBillingReadAllowed";
+
     private final AdminNetworkAccessPolicy adminNetworkAccessPolicy;
 
     @Value("${security.access-token:}")
@@ -56,6 +59,9 @@ public class LocalhostOnlyFilter extends OncePerRequestFilter {
             request.getRemoteAddr() != null ? request.getRemoteAddr() : ""
         );
         
+        // Both values are sanitized before logging; CodeQL does not model this
+        // project-local sanitizer.
+        // codeql[java/log-injection]
         log.debug("LocalhostOnlyFilter: path={}, clientIp={}", path, clientIp);
 
         if (isMarketplaceBillingReadRequest(request)) {
@@ -66,35 +72,46 @@ public class LocalhostOnlyFilter extends OncePerRequestFilter {
             filterChain.doFilter(request, response);
             return;
         }
-        
-        if (requiresLocalhost(request) && !adminNetworkAccessPolicy.isRequestAllowed(request, () -> hasValidRouteToken(request))) {
+
+        boolean localRouteAllowed = !requiresLocalhost(request)
+            || adminNetworkAccessPolicy.isRequestAllowed(request, () -> hasValidRouteToken(request));
+        if (!localRouteAllowed) {
             log.warn("Blocked non-localhost request: path={}, clientIp={}", path, clientIp);
             response.sendError(HttpServletResponse.SC_FORBIDDEN,
                 "Endpoint is available from localhost only");
             return;
         }
 
+        if (isBillingReadRequest(request)) {
+            // This attribute is server-set only after the network policy has
+            // allowed the local route. Remote requests must be authorized by
+            // FundingController with the Marketplace service JWT.
+            request.setAttribute(LOCAL_BILLING_READ_ALLOWED_ATTRIBUTE, Boolean.TRUE);
+        }
+
         filterChain.doFilter(request, response);
     }
 
     private boolean isMarketplaceBillingReadRequest(HttpServletRequest request) {
-        if (!marketplaceBillingReadsEnabled
-            || !("GET".equalsIgnoreCase(request.getMethod()) || "HEAD".equalsIgnoreCase(request.getMethod()))) {
-            return false;
-        }
-
-        String path = request.getRequestURI();
-        boolean billingReadPath = path != null
-            && (path.startsWith("/billing/credit-accounts/")
-                || path.equals("/billing/funding-orders")
-                || path.startsWith("/billing/funding-orders/"));
-        if (!billingReadPath) {
+        if (!marketplaceBillingReadsEnabled || !isBillingReadRequest(request)) {
             return false;
         }
 
         String authorization = request.getHeader("Authorization");
         return authorization != null && authorization.trim().regionMatches(true, 0, "Bearer ", 0, 7)
             && authorization.trim().length() > 7;
+    }
+
+    private boolean isBillingReadRequest(HttpServletRequest request) {
+        if (!("GET".equalsIgnoreCase(request.getMethod()) || "HEAD".equalsIgnoreCase(request.getMethod()))) {
+            return false;
+        }
+
+        String path = request.getRequestURI();
+        return path != null
+            && (path.startsWith("/billing/credit-accounts/")
+                || path.equals("/billing/funding-orders")
+                || path.startsWith("/billing/funding-orders/"));
     }
 
     private boolean requiresLocalhost(HttpServletRequest request) {
