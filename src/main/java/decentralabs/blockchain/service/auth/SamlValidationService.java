@@ -1,10 +1,12 @@
 package decentralabs.blockchain.service.auth;
 
+import okhttp3.CipherSuite;
 import okhttp3.ConnectionSpec;
 import okhttp3.OkHttpClient;
 import okhttp3.Request;
 import okhttp3.Response;
 import okhttp3.ResponseBody;
+import okhttp3.TlsVersion;
 import okhttp3.logging.HttpLoggingInterceptor;
 import jakarta.annotation.PostConstruct;
 import org.slf4j.Logger;
@@ -61,6 +63,9 @@ import decentralabs.blockchain.util.PucNormalizer;
 public class SamlValidationService {
     
     private static final Logger logger = LoggerFactory.getLogger(SamlValidationService.class);
+    private static final String TLS_PROFILE_MODERN = "modern";
+    private static final String TLS_PROFILE_COMPATIBILITY = "compatibility";
+    private static final String TLS_PROFILE_LEGACY_RSA = "legacy-rsa";
     public static final String STABLE_USER_ID_MODE_PRINCIPAL = "principal";
     public static final String STABLE_USER_ID_MODE_PRINCIPAL_TARGETED_ID = "principal_targeted_id";
 
@@ -773,9 +778,7 @@ public class SamlValidationService {
     }
 
     private OkHttpClient buildMetadataHttpClient(String tlsProfile, Map<String, List<InetAddress>> pinnedAddresses) {
-        ConnectionSpec connectionSpec = "compatibility".equalsIgnoreCase(tlsProfile)
-            ? ConnectionSpec.COMPATIBLE_TLS
-            : ConnectionSpec.MODERN_TLS;
+        ConnectionSpec connectionSpec = buildMetadataConnectionSpec(tlsProfile);
         OkHttpClient.Builder builder = new OkHttpClient.Builder()
             .connectTimeout(metadataHttpConnectTimeoutMs, TimeUnit.MILLISECONDS)
             .readTimeout(metadataHttpReadTimeoutMs, TimeUnit.MILLISECONDS)
@@ -798,6 +801,22 @@ public class SamlValidationService {
         }
 
         return builder.build();
+    }
+
+    private ConnectionSpec buildMetadataConnectionSpec(String tlsProfile) {
+        String normalizedProfile = tlsProfile == null
+            ? TLS_PROFILE_MODERN
+            : tlsProfile.trim().toLowerCase(Locale.ROOT);
+
+        return switch (normalizedProfile) {
+            case TLS_PROFILE_COMPATIBILITY -> ConnectionSpec.COMPATIBLE_TLS;
+            case TLS_PROFILE_LEGACY_RSA -> new ConnectionSpec.Builder(true)
+                .cipherSuites(CipherSuite.TLS_RSA_WITH_AES_256_CBC_SHA256)
+                .tlsVersions(TlsVersion.TLS_1_2)
+                .supportsTlsExtensions(true)
+                .build();
+            default -> ConnectionSpec.MODERN_TLS;
+        };
     }
 
     /**
@@ -1106,9 +1125,11 @@ public class SamlValidationService {
         if (metadataTlsProfiles != null) {
             metadataTlsProfiles.forEach((issuer, profile) -> {
                 String normalizedProfile = profile == null ? "" : profile.trim().toLowerCase(Locale.ROOT);
-                if (!"modern".equals(normalizedProfile) && !"compatibility".equals(normalizedProfile)) {
+                if (!TLS_PROFILE_MODERN.equals(normalizedProfile)
+                    && !TLS_PROFILE_COMPATIBILITY.equals(normalizedProfile)
+                    && !TLS_PROFILE_LEGACY_RSA.equals(normalizedProfile)) {
                     errors.add("unsupported TLS profile '" + profile + "' for issuer " + issuer
-                        + "; use 'modern' or 'compatibility'");
+                        + "; use 'modern', 'compatibility' or 'legacy-rsa'");
                 }
             });
         }
@@ -1177,7 +1198,7 @@ public class SamlValidationService {
     private String resolveMetadataTlsProfile(String issuer) {
         String configured = findIssuerValue(metadataTlsProfiles, issuer);
         if (configured == null || configured.isBlank()) {
-            return "modern";
+            return TLS_PROFILE_MODERN;
         }
         return configured.trim().toLowerCase(Locale.ROOT);
     }

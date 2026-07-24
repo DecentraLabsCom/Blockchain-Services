@@ -71,8 +71,13 @@ saml.trusted.idp={'uned':'https://idp.uned.es','ucm':'https://idp.ucm.es'}
 saml.idp.metadata.override={'https://idp.uned.es':'https://idp.uned.es/metadata','https://idp.ucm.es':'https://idp.ucm.es/metadata'}
 saml.idp.metadata.url=
 
-# Optional per-issuer TLS compatibility profile; default is modern.
+# Optional per-issuer TLS profile; default is modern. Supported values are
+# modern, compatibility, and legacy-rsa.
 saml.idp.metadata.tls-profile={'https://legacy-idp.example':'compatibility'}
+
+# SIR2/RedIRIS FPP example. Use legacy-rsa only for an endpoint that requires
+# the TLS_RSA_WITH_AES_256_CBC_SHA256 cipher suite.
+# saml.idp.metadata.tls-profile={'https://fpp.sir2.rediris.es/es.decentralabs.marketplace/idp':'legacy-rsa'}
 
 # Metadata transport hardening
 saml.metadata.allow-http=false
@@ -91,6 +96,11 @@ when only part of the whitelist is unavailable. Check
 `GET /actuator/health/readiness` after changing the map. The setup scripts merge
 new issuer overrides from the template into an existing
 `blockchain-services/.env` without replacing operator-defined values.
+
+The `legacy-rsa` profile is intentionally issuer-specific and restricted to
+TLS 1.2 with `TLS_RSA_WITH_AES_256_CBC_SHA256`. It exists for old metadata
+servers such as the SIR2/RedIRIS FPP endpoint and must not be used as a global
+default.
 
 ## Required identity data and failure modes
 

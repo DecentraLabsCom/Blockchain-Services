@@ -1,5 +1,6 @@
 package decentralabs.blockchain.service.auth;
 
+import okhttp3.ConnectionSpec;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.test.util.ReflectionTestUtils;
@@ -152,6 +153,34 @@ class SamlValidationServiceTest {
         assertThat(samlValidationService.isConfigured()).isFalse();
         assertThat(samlValidationService.configurationErrors())
                 .anyMatch(error -> error.contains("legacy"));
+    }
+
+    @Test
+    void shouldAcceptLegacyRsaTlsProfile() {
+        ReflectionTestUtils.setField(samlValidationService, "trustMode", "any");
+        ReflectionTestUtils.setField(samlValidationService, "metadataTlsProfiles", Map.of(
+                TEST_ISSUER, "legacy-rsa"
+        ));
+
+        assertThat(samlValidationService.isConfigured()).isTrue();
+
+        String configured = ReflectionTestUtils.invokeMethod(
+                samlValidationService, "resolveMetadataTlsProfile", TEST_ISSUER
+        );
+
+        assertThat(configured).isEqualTo("legacy-rsa");
+    }
+
+    @Test
+    void shouldBuildLegacyRsaTlsSpecForTls12Only() {
+        ConnectionSpec connectionSpec = ReflectionTestUtils.invokeMethod(
+                samlValidationService, "buildMetadataConnectionSpec", "legacy-rsa"
+        );
+
+        assertThat(connectionSpec.tlsVersions().toString()).isEqualTo("[TLS_1_2]");
+        assertThat(connectionSpec.cipherSuites().toString())
+                .isEqualTo("[TLS_RSA_WITH_AES_256_CBC_SHA256]");
+        assertThat(connectionSpec.supportsTlsExtensions()).isTrue();
     }
 
     @Test
