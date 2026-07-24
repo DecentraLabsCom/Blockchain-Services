@@ -1,6 +1,7 @@
 package decentralabs.blockchain.service.auth;
 
 import okhttp3.ConnectionSpec;
+import okhttp3.OkHttpClient;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.test.util.ReflectionTestUtils;
@@ -31,6 +32,7 @@ import java.math.BigInteger;
 import java.security.KeyFactory;
 import java.security.PrivateKey;
 import java.security.cert.X509Certificate;
+import javax.net.ssl.SSLSocket;
 import java.security.spec.RSAPrivateCrtKeySpec;
 import java.util.Base64;
 import java.util.List;
@@ -181,6 +183,22 @@ class SamlValidationServiceTest {
         assertThat(connectionSpec.cipherSuites().toString())
                 .isEqualTo("[TLS_RSA_WITH_AES_256_CBC_SHA256]");
         assertThat(connectionSpec.supportsTlsExtensions()).isTrue();
+    }
+
+    @Test
+    void shouldEnableLegacyRsaCipherOnMetadataSocketFactory() throws Exception {
+        OkHttpClient client = ReflectionTestUtils.invokeMethod(
+                samlValidationService,
+                "buildMetadataHttpClient",
+                "legacy-rsa",
+                Map.of()
+        );
+
+        try (SSLSocket sslSocket = (SSLSocket) client.sslSocketFactory().createSocket()) {
+            assertThat(sslSocket.getEnabledProtocols()).containsExactly("TLSv1.2");
+            assertThat(sslSocket.getEnabledCipherSuites())
+                    .containsExactly("TLS_RSA_WITH_AES_256_CBC_SHA256");
+        }
     }
 
     @Test

@@ -30,6 +30,9 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.net.InetAddress;
 import java.net.URI;
+import java.net.Socket;
+import java.security.GeneralSecurityException;
+import java.security.KeyStore;
 import java.security.MessageDigest;
 import java.security.cert.CertificateFactory;
 import java.security.cert.X509Certificate;
@@ -47,6 +50,12 @@ import java.util.concurrent.TimeUnit;
 import java.security.PublicKey;
 import java.security.interfaces.ECPublicKey;
 import java.security.interfaces.RSAPublicKey;
+import javax.net.ssl.SSLContext;
+import javax.net.ssl.SSLSocket;
+import javax.net.ssl.SSLSocketFactory;
+import javax.net.ssl.TrustManager;
+import javax.net.ssl.TrustManagerFactory;
+import javax.net.ssl.X509TrustManager;
 import decentralabs.blockchain.util.PucHashUtil;
 import decentralabs.blockchain.util.PucNormalizer;
 
@@ -795,12 +804,131 @@ public class SamlValidationService {
             })
             .connectionSpecs(List.of(connectionSpec));
 
+        if (TLS_PROFILE_LEGACY_RSA.equalsIgnoreCase(tlsProfile)) {
+            configureLegacyRsaTls(builder);
+        }
+
         if (metadataHttpLoggingEnabled) {
             // Add basic HTTP logging for metadata requests when enabled (useful for debugging)
             builder.addInterceptor(new HttpLoggingInterceptor().setLevel(HttpLoggingInterceptor.Level.BASIC));
         }
 
         return builder.build();
+    }
+
+    private void configureLegacyRsaTls(OkHttpClient.Builder builder) {
+        try {
+            X509TrustManager trustManager = defaultTrustManager();
+            SSLContext sslContext = SSLContext.getInstance("TLS");
+            sslContext.init(null, new TrustManager[] {trustManager}, null);
+            builder.sslSocketFactory(
+                new LegacyRsaSslSocketFactory(sslContext.getSocketFactory()),
+                trustManager
+            );
+        } catch (GeneralSecurityException ex) {
+            throw new IllegalStateException("Unable to configure legacy RSA TLS profile", ex);
+        }
+    }
+
+    private X509TrustManager defaultTrustManager() throws GeneralSecurityException {
+        TrustManagerFactory factory = TrustManagerFactory.getInstance(
+            TrustManagerFactory.getDefaultAlgorithm()
+        );
+        factory.init((KeyStore) null);
+        for (TrustManager trustManager : factory.getTrustManagers()) {
+            if (trustManager instanceof X509TrustManager x509TrustManager) {
+                return x509TrustManager;
+            }
+        }
+        throw new GeneralSecurityException("No default X509 trust manager is available");
+    }
+
+    private static final class LegacyRsaSslSocketFactory extends SSLSocketFactory {
+        private static final String LEGACY_CIPHER_SUITE =
+            CipherSuite.TLS_RSA_WITH_AES_256_CBC_SHA256.javaName();
+        private static final String LEGACY_TLS_VERSION = TlsVersion.TLS_1_2.javaName();
+
+        private final SSLSocketFactory delegate;
+
+        private LegacyRsaSslSocketFactory(SSLSocketFactory delegate) {
+            this.delegate = delegate;
+        }
+
+        @Override
+        public String[] getDefaultCipherSuites() {
+            return new String[] {LEGACY_CIPHER_SUITE};
+        }
+
+        @Override
+        public String[] getSupportedCipherSuites() {
+            return delegate.getSupportedCipherSuites();
+        }
+
+        @Override
+        public Socket createSocket() throws IOException {
+            return configure(delegate.createSocket());
+        }
+
+        @Override
+        public Socket createSocket(Socket socket, String host, int port, boolean autoClose)
+                throws IOException {
+            return configure(delegate.createSocket(socket, host, port, autoClose));
+        }
+
+        @Override
+        public Socket createSocket(Socket socket, InputStream consumed, boolean autoClose)
+                throws IOException {
+            return configure(delegate.createSocket(socket, consumed, autoClose));
+        }
+
+        @Override
+        public Socket createSocket(String host, int port) throws IOException {
+            return configure(delegate.createSocket(host, port));
+        }
+
+        @Override
+        public Socket createSocket(String host, int port, InetAddress localAddress, int localPort)
+                throws IOException {
+            return configure(delegate.createSocket(host, port, localAddress, localPort));
+        }
+
+        @Override
+        public Socket createSocket(InetAddress host, int port) throws IOException {
+            return configure(delegate.createSocket(host, port));
+        }
+
+        @Override
+        public Socket createSocket(
+                InetAddress address,
+                int port,
+                InetAddress localAddress,
+                int localPort
+        ) throws IOException {
+            return configure(delegate.createSocket(address, port, localAddress, localPort));
+        }
+
+        private Socket configure(Socket socket) throws IOException {
+            if (!(socket instanceof SSLSocket sslSocket)) {
+                return socket;
+            }
+            boolean supported = false;
+            for (String cipherSuite : sslSocket.getSupportedCipherSuites()) {
+                if (LEGACY_CIPHER_SUITE.equals(cipherSuite)) {
+                    supported = true;
+                    break;
+                }
+            }
+            if (!supported) {
+                throw new IOException("JVM does not support " + LEGACY_CIPHER_SUITE);
+            }
+            try {
+                sslSocket.setEnabledProtocols(new String[] {LEGACY_TLS_VERSION});
+                sslSocket.setEnabledCipherSuites(new String[] {LEGACY_CIPHER_SUITE});
+            } catch (IllegalArgumentException ex) {
+                throw new IOException("JVM cannot enable " + LEGACY_CIPHER_SUITE, ex);
+            }
+            return sslSocket;
+        }
     }
 
     private ConnectionSpec buildMetadataConnectionSpec(String tlsProfile) {
@@ -810,10 +938,9 @@ public class SamlValidationService {
 
         return switch (normalizedProfile) {
             case TLS_PROFILE_COMPATIBILITY -> ConnectionSpec.COMPATIBLE_TLS;
-            case TLS_PROFILE_LEGACY_RSA -> new ConnectionSpec.Builder(true)
+            case TLS_PROFILE_LEGACY_RSA -> new ConnectionSpec.Builder(ConnectionSpec.MODERN_TLS)
                 .cipherSuites(CipherSuite.TLS_RSA_WITH_AES_256_CBC_SHA256)
                 .tlsVersions(TlsVersion.TLS_1_2)
-                .supportsTlsExtensions(true)
                 .build();
             default -> ConnectionSpec.MODERN_TLS;
         };
