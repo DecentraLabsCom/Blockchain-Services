@@ -562,6 +562,44 @@ body {
     gap: var(--spacing-md);
 }
 
+.provisioning-token-form {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-sm);
+    background: rgba(0, 212, 255, 0.06);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-md);
+    padding: var(--spacing-md);
+}
+
+.provisioning-token-form .btn {
+    width: 100%;
+}
+
+.provisioning-token-help {
+    color: var(--text-muted);
+    font-size: 0.85rem;
+    line-height: 1.45;
+}
+
+.provisioning-token-status {
+    min-height: 1.4em;
+    color: var(--text-secondary);
+    font-size: 0.9rem;
+}
+
+.provisioning-token-status.pending {
+    color: var(--neon-yellow);
+}
+
+.provisioning-token-status.success {
+    color: var(--neon-green);
+}
+
+.provisioning-token-status.error {
+    color: var(--neon-red);
+}
+
 .btn-marketplace {
     background: linear-gradient(135deg, var(--neon-blue) 0%, var(--neon-purple) 100%);
     color: white;

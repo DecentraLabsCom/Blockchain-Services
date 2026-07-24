@@ -18,9 +18,11 @@ class InstitutionPairingUiTest {
         assertThat(page).contains("href=\"/institution-config/\"");
         assertThat(page).contains("Pairing challenge");
         assertThat(page).contains("Wallet ready for pairing.");
-        assertThat(page).contains("Generate a short-lived pairing challenge");
-        assertThat(page.toLowerCase()).doesNotContain("obtain a provisioning token");
-        assertThat(page.toLowerCase()).doesNotContain("enter a provisioning token");
+        assertThat(page).contains("id=\"provisioningTokenForm\"");
+        assertThat(page).contains("id=\"provisioningTokenInput\"");
+        assertThat(page).contains("id=\"applyProvisioningTokenBtn\"");
+        assertThat(page).contains("Apply provisioning token");
+        assertThat(page).doesNotContain("id=\"marketplaceLink\"");
         assertThat(page).doesNotContain("provisioningTokenModal");
         assertThat(page).doesNotContain("signed provisioning JWT");
         assertThat(page).doesNotContain("applyProvisioningTokenHeaderBtn");
@@ -95,15 +97,21 @@ class InstitutionPairingUiTest {
     }
 
     @Test
-    void walletDashboardScriptDoesNotExposeJwtAlternative() throws IOException {
+    void walletDashboardScriptOffersDirectProvisioningTokenFlow() throws IOException {
+        String page = readResource("static/wallet-dashboard/index.html");
         String script = readResource("static/wallet-dashboard/assets/js/admin.js");
+        String apiScript = readResource("static/wallet-dashboard/assets/js/api.js");
 
+        assertThat(page).contains("Apply provisioning token");
+        assertThat(page).contains("Open backend pairing setup");
         assertThat(script).contains("institutionPairingSection");
         assertThat(script).contains("openInstitutionConfigHeaderBtn");
-        assertThat(script).doesNotContain("applyProvisioningToken");
-        assertThat(script).doesNotContain("apply-provider-token");
-        assertThat(script).doesNotContain("apply-consumer-token");
-        assertThat(script).doesNotContain("provisioningTokenModal");
+        assertThat(script).contains("applyProvisioningToken");
+        assertThat(script).contains("provisioningTokenForm");
+        assertThat(script).contains("registered !== true");
+        assertThat(script).doesNotContain("console.log('Provisioning token");
+        assertThat(apiScript).contains("/institution-config/apply-provider-token");
+        assertThat(apiScript).contains("/institution-config/apply-consumer-token");
     }
 
     private String readResource(String path) throws IOException {

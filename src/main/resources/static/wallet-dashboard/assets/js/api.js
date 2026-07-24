@@ -160,6 +160,21 @@ const API = {
     },
 
     /**
+     * Apply an administrator-issued provisioning token.
+     * Consumer-only deployments use the consumer endpoint; Full provider
+     * deployments use the provider endpoint.
+     */
+    async applyProvisioningToken(token, operatingMode = 'provider-consumer') {
+        const endpoint = operatingMode === 'consumer-only'
+            ? '/institution-config/apply-consumer-token'
+            : '/institution-config/apply-provider-token';
+        return await this.request(endpoint, {
+            method: 'POST',
+            body: JSON.stringify({ token })
+        });
+    },
+
+    /**
      * GET /billing/admin/balance?chainId=X
      * Get institutional wallet balance
      * @param {number|null} chainId - Optional chain ID, null for all networks

@@ -773,14 +773,12 @@ function updateOperatingModeNotices(providerConfig) {
 
     if (welcomeInstruction) {
         welcomeInstruction.innerHTML = providerMode
-            ? '<strong>Pair this backend</strong> with your institution through the Marketplace.'
-            : '<strong>Pair this consumer backend</strong> with your institution through the Marketplace.';
+            ? '<strong>Register this backend</strong> with your institution.'
+            : '<strong>Register this consumer backend</strong> with your institution.';
     }
 
     if (welcomeHelp) {
-        welcomeHelp.textContent = providerMode
-            ? 'Generate a short-lived pairing challenge in the Marketplace, paste it into backend pairing setup, offer this backend\'s configured wallet and public origin, approve those read-only values in the Marketplace, then complete pairing in backend pairing setup.'
-            : 'Generate a short-lived consumer pairing challenge in the Marketplace, paste it into backend pairing setup, offer this backend\'s configured wallet and public origin, approve those read-only values in the Marketplace, then complete pairing in backend pairing setup.';
+        welcomeHelp.textContent = 'If a DecentraLabs administrator gave you a provisioning token, apply it below. Otherwise open backend pairing setup; that page explains the pairing challenge flow and links to the Marketplace.';
     }
 
     updateInstitutionPairingGuidance(providerConfig);
@@ -867,6 +865,65 @@ function updateMarketplaceUrl(url) {
     document.querySelectorAll('[data-marketplace-link]').forEach((link) => {
         link.href = url;
     });
+}
+
+function setProvisioningTokenStatus(message, tone = '') {
+    const status = document.getElementById('provisioningTokenStatus');
+    if (!status) return;
+    status.textContent = message || '';
+    status.className = 'provisioning-token-status';
+    if (tone) {
+        status.classList.add(tone);
+    }
+}
+
+function isProvisioningTokenShapeValid(token) {
+    return /^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/.test(token);
+}
+
+async function applyProvisioningToken(event) {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const input = document.getElementById('provisioningTokenInput');
+    const submitButton = document.getElementById('applyProvisioningTokenBtn');
+    if (!input || !submitButton) return;
+
+    const token = input.value.trim();
+    if (!token) {
+        setProvisioningTokenStatus('Paste the provisioning token first.', 'error');
+        input.focus();
+        return;
+    }
+    if (!isProvisioningTokenShapeValid(token)) {
+        setProvisioningTokenStatus('Invalid token format. Paste the complete provisioning token.', 'error');
+        input.focus();
+        return;
+    }
+
+    submitButton.disabled = true;
+    submitButton.setAttribute('aria-busy', 'true');
+    setProvisioningTokenStatus('Applying provisioning token...', 'pending');
+
+    try {
+        const data = await API.applyProvisioningToken(token, DashboardState.operatingMode);
+        if (!data.success || data.registered !== true) {
+            throw new Error(data.error || 'The provisioning token was not registered completely.');
+        }
+
+        DashboardState.institutionRegistered = true;
+        setProvisioningTokenStatus('Institution registered successfully.', 'success');
+        showToast('Institution registered successfully.', 'success');
+        hideWelcomeModal(true);
+        form.reset();
+        await loadSystemStatus();
+    } catch (error) {
+        setProvisioningTokenStatus(error.message || 'Failed to apply provisioning token.', 'error');
+        showToast(`Provisioning failed: ${error.message}`, 'error');
+    } finally {
+        input.value = '';
+        submitButton.disabled = false;
+        submitButton.setAttribute('aria-busy', 'false');
+    }
 }
 
 function renderWalletSetupPrompt() {
@@ -2433,6 +2490,11 @@ function setupButtonHandlers() {
     const refreshBtn = document.getElementById('refreshBtn');
     if (refreshBtn) {
         refreshBtn.addEventListener('click', refreshAllData);
+    }
+
+    const provisioningTokenForm = document.getElementById('provisioningTokenForm');
+    if (provisioningTokenForm) {
+        provisioningTokenForm.addEventListener('submit', applyProvisioningToken);
     }
     
     // Refresh balance button (optional - may not exist)

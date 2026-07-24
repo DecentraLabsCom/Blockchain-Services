@@ -18,17 +18,34 @@
             <div class="welcome-modal-body">
                 <div class="welcome-message">
                     <p><strong>Wallet ready for pairing.</strong></p>
-                    <p id="welcomePairingInstruction">Pair this backend with your institution through the Marketplace.</p>
-                    <p id="welcomePairingHelp">Generate a short-lived pairing challenge in the Marketplace, paste it into backend pairing setup, offer this backend's configured wallet and public origin, approve those read-only values in the Marketplace, then complete pairing in backend pairing setup.</p>
+                    <p id="welcomePairingInstruction">Register this backend with your institution.</p>
+                    <p id="welcomePairingHelp">If a DecentraLabs administrator gave you a provisioning token, apply it below. Otherwise open backend pairing setup; that page explains the pairing challenge flow and links to the Marketplace.</p>
                 </div>
                 <div class="welcome-actions">
-                    <a id="marketplaceLink" data-marketplace-link href="https://marketplace-decentralabs.vercel.app/" target="_blank" rel="noopener noreferrer" class="btn-marketplace">
-                        <i class="fas fa-store"></i>
-                        1. Generate pairing challenge in Marketplace
-                    </a>
+                    <form id="provisioningTokenForm" class="provisioning-token-form" autocomplete="off">
+                        <div class="form-group">
+                            <label for="provisioningTokenInput">Provisioning token from administrator</label>
+                            <input
+                                type="password"
+                                id="provisioningTokenInput"
+                                name="provisioningToken"
+                                placeholder="Paste the provisioning token"
+                                autocomplete="off"
+                                autocapitalize="off"
+                                spellcheck="false"
+                                required
+                            >
+                        </div>
+                        <p class="provisioning-token-help">The token is sent securely to this backend and is not saved in the browser.</p>
+                        <button type="submit" class="btn btn-primary" id="applyProvisioningTokenBtn" aria-busy="false">
+                            <i class="fas fa-key"></i>
+                            Apply provisioning token
+                        </button>
+                        <p id="provisioningTokenStatus" class="provisioning-token-status" role="status" aria-live="polite" aria-atomic="true"></p>
+                    </form>
                     <a id="institutionPairingWelcomeBtn" href="/institution-config/" class="btn-pairing">
                         <i class="fas fa-link"></i>
-                        2. Open backend pairing setup
+                        Open backend pairing setup
                     </a>
                 </div>
             </div>

@@ -129,14 +129,20 @@ Marketplace deployment configuration.
 | `GET /institution-config/status` | Both | Current config, registration and feature flags |
 | `POST /institution-config/apply-pairing-challenge` | Both | Offer the backend's server-configured wallet and origin for a challenge |
 | `POST /institution-config/complete-pairing` | Both | Retrieve the approved token and complete registration |
-| `POST /institution-config/apply-provider-token` | Provider/admin automation | Apply an already issued signed provider token |
-| `POST /institution-config/apply-consumer-token` | Consumer/admin automation | Apply an already issued signed consumer token |
+| `POST /institution-config/apply-provider-token` | Provider/direct-token onboarding | Apply an already issued signed provider token |
+| `POST /institution-config/apply-consumer-token` | Consumer/direct-token onboarding | Apply an already issued signed consumer token |
 | `POST /institution-config/save-and-register` | Retired | Rejects the old editable-form flow |
 | `POST /institution-config/retry-registration` | Retired | Tokens are single-use; issue a new pairing |
 
 Provider registration endpoints additionally require
 `FEATURES_PROVIDERS_REGISTRATION_ENABLED=true`. Consumer token application does
 not require provider mode.
+
+The wallet dashboard welcome modal offers the direct-token path when the
+institution has received a provisioning token from a DecentraLabs administrator.
+Provider + consumer deployments submit it to `apply-provider-token`; consumer-only
+deployments submit it to `apply-consumer-token`. If no direct token is available, the modal links to the backend pairing setup, which contains
+the Marketplace challenge instructions.
 
 ```mermaid
 sequenceDiagram
