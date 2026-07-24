@@ -904,11 +904,19 @@ public class IntentService {
         }
         byte[] rpIdHash = java.util.Arrays.copyOfRange(authenticatorData, 0, 32);
         verifyRpIdHash(rpIdHash);
-        byte flags = authenticatorData[32];
-        if ((flags & 0x01) == 0) {
+        int flags = authenticatorData[32] & 0xFF;
+        boolean userPresent = (flags & 0x01) != 0;
+        boolean userVerified = (flags & 0x04) != 0;
+        if (!userPresent) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "webauthn_user_presence_required");
         }
-        if ((flags & 0x04) == 0) {
+        if (!userVerified) {
+            log.warn(
+                "WebAuthn authenticator data missing user verification. flags=0x{} userPresent={} userVerified={}",
+                String.format(Locale.ROOT, "%02x", flags),
+                userPresent,
+                userVerified
+            );
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "webauthn_user_verification_required");
         }
         long signCount = ((authenticatorData[33] & 0xFFL) << 24)
