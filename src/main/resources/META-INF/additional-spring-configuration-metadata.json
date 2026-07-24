@@ -470,7 +470,8 @@
   {
     "name": "webauthn.authenticator.attachment",
     "type": "java.lang.String",
-    "description": "Authenticator attachment preference: platform, cross-platform, or empty."
+    "description": "Authenticator attachment preference: platform (default), cross-platform, or empty. Use cross-platform for external FIDO2 security keys.",
+    "defaultValue": "platform"
   },
   {
     "name": "webauthn.resident-key",

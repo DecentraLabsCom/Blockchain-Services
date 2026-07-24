@@ -52,13 +52,29 @@ and units.
 | Database | `SPRING_DATASOURCE_URL`, `SPRING_DATASOURCE_USERNAME`, `SPRING_DATASOURCE_PASSWORD` | Flyway validates migrations at startup. |
 | Signing and Marketplace | `PRIVATE_KEY_PATH`, `PUBLIC_KEY_PATH`, `MARKETPLACE_PUBLIC_KEY_URL`, `PUBLIC_BASE_URL` | Mount private keys read-only and use HTTPS endpoints. |
 | Provider mode | `FEATURES_PROVIDERS_ENABLED`, `FEATURES_PROVIDERS_REGISTRATION_ENABLED`, `FEATURES_ORGANIZATIONS_ENABLED` | Registration is independently feature-gated. |
-| WebAuthn | `WEBAUTHN_RP_ID`, `WEBAUTHN_RP_ORIGINS`, `WEBAUTHN_USER_VERIFICATION`, `WEBAUTHN_ATTESTATION_CONVEYANCE` | Verification is required; only `none` attestation is accepted. |
+| WebAuthn | `WEBAUTHN_RP_ID`, `WEBAUTHN_RP_ORIGINS`, `WEBAUTHN_AUTHENTICATOR_ATTACHMENT`, `WEBAUTHN_USER_VERIFICATION`, `WEBAUTHN_ATTESTATION_CONVEYANCE` | Verification is required; local `platform` authenticators are the default and only `none` attestation is accepted. |
 | Intents | `INTENT_PAYLOAD_ENCRYPTION_KEY`, `INTENTS_AUTH_*`, `INTENT_DOMAIN_*` | The payload key is a base64/base64url 32-byte AES-256 key and is required to persist execution payloads. |
 | SAML | `SAML_IDP_TRUST_MODE`, `SAML_TRUSTED_IDP`, `SAML_IDP_METADATA_OVERRIDE` | Use `whitelist` in production. |
 | Admin boundary | `ADMIN_DASHBOARD_*`, `SECURITY_ALLOW_PRIVATE_NETWORKS`, `ADMIN_ALLOWED_CIDRS`, `ADMIN_ACCESS_TOKEN_*` | See [Security](../security/SECURITY.md). |
 | Gateway integration | `ACCESS_CODE_REDEEMER_CREDENTIALS_JSON`, `SESSION_OBSERVER_CREDENTIALS_JSON`, `LAB_MANAGER_TOKEN*` | Credentials are per gateway; never reuse the admin token as an observer credential. |
 | Lab content | `LAB_CONTENT_BASE_PATH`, `LAB_CONTENT_RETENTION`, `LAB_CONTENT_GC_INTERVAL_MS`, `LAB_CONTENT_MAX_*` | The public content route serves only safe uploaded assets and generated metadata. |
 | Durable workers | `INSTITUTIONAL_*_OUTBOX_*`, `CONTRACT_EVENT_*`, `HEALTH_QUEUE_STUCK_THRESHOLD_SECONDS` | Tune only with an operator who owns reconciliation. |
+
+### WebAuthn authenticator attachment
+
+The default `WEBAUTHN_AUTHENTICATOR_ATTACHMENT=platform` registers a
+credential with the authenticator local to the user's device: for example,
+Windows Hello, Touch ID, Face ID or an Android screen-lock authenticator. With
+`WEBAUTHN_USER_VERIFICATION=required`, the local authenticator may verify the
+user with a device PIN, passcode, pattern or biometric; biometrics are not
+required by this setting.
+
+Set `WEBAUTHN_AUTHENTICATOR_ATTACHMENT=cross-platform` when the deployment is
+intended to use an external FIDO2 security key or another roaming authenticator.
+Leave it empty only when the deployment must accept local, external and hybrid
+choices. The attachment setting applies when registering a credential; changing
+it does not convert existing credentials, so users must register a new
+credential after changing the setting.
 
 ## 4. Start and verify
 

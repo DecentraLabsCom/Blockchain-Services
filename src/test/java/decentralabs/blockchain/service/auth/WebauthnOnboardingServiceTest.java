@@ -79,7 +79,7 @@ class WebauthnOnboardingServiceTest {
         setField("sessionTtlSeconds", 300L);
         setField("cleanupIntervalSeconds", 60L);
         setField("attestationConveyance", "none");
-        setField("authenticatorAttachment", "");
+        setField("authenticatorAttachment", "platform");
         setField("residentKey", "preferred");
         setField("userVerification", "required");
         setField("validateSaml", validateSaml);
@@ -107,6 +107,7 @@ class WebauthnOnboardingServiceTest {
         assertEquals("none", response.getAttestation());
         assertFalse(response.getPubKeyCredParams().isEmpty());
         assertEquals(-7, response.getPubKeyCredParams().get(0).getAlg()); // ES256
+        assertEquals("platform", response.getAuthenticatorSelection().getAuthenticatorAttachment());
         assertEquals("required", response.getAuthenticatorSelection().getUserVerification());
     }
 
