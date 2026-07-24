@@ -7,6 +7,84 @@ echo "Starting Blockchain Services..."
 echo "Environment: ${SPRING_PROFILES_ACTIVE:-default}"
 echo "Java Options: ${JAVA_OPTS:-default}"
 
+# Java 21.0.10+ disables TLS_RSA_* in jdk.tls.disabledAlgorithms. The
+# SIR2/RedIRIS metadata endpoint still requires TLS_RSA_WITH_AES_256_CBC_SHA256.
+# Build a small appended security-properties file before starting Java so the
+# override is applied before JSSE initializes. It is enabled only when the
+# issuer-specific legacy-rsa SAML profile is configured.
+if [[ "${SAML_IDP_METADATA_TLS_PROFILE:-}" == *legacy-rsa* ]]; then
+    JAVA_HOME_RESOLVED="${JAVA_HOME:-}"
+    if [ -z "$JAVA_HOME_RESOLVED" ]; then
+        JAVA_BIN_RESOLVED="$(readlink -f "$(command -v java)")"
+        JAVA_HOME_RESOLVED="$(dirname "$(dirname "$JAVA_BIN_RESOLVED")")"
+    fi
+
+    JAVA_SECURITY_FILE="$JAVA_HOME_RESOLVED/conf/security/java.security"
+    LEGACY_RSA_SECURITY_FILE="/tmp/blockchain-services-legacy-rsa.security"
+    if [ ! -r "$JAVA_SECURITY_FILE" ]; then
+        echo "ERROR: Java security properties file not found: $JAVA_SECURITY_FILE" >&2
+        exit 1
+    fi
+
+    awk '
+        BEGIN {
+            collecting = 0
+            found = 0
+            value = ""
+        }
+        {
+            if (!collecting) {
+                if ($0 !~ /^[[:space:]]*jdk[.]tls[.]disabledAlgorithms[[:space:]]*=/) {
+                    next
+                }
+                collecting = 1
+                found = 1
+                line = $0
+                sub(/^[^=]*=[[:space:]]*/, "", line)
+            } else {
+                line = $0
+            }
+
+            continued = (line ~ /\\[[:space:]]*$/)
+            sub(/\\[[:space:]]*$/, "", line)
+            value = value " " line
+
+            if (!continued) {
+                count = split(value, tokens, ",")
+                cleaned = ""
+                for (i = 1; i <= count; i++) {
+                    token = tokens[i]
+                    sub(/^[[:space:]]+/, "", token)
+                    sub(/[[:space:]]+$/, "", token)
+                    if (token == "" || token == "TLS_RSA_*" || token == "TLS_RSA_") {
+                        continue
+                    }
+                    if (cleaned != "") {
+                        cleaned = cleaned ", "
+                    }
+                    cleaned = cleaned token
+                }
+                print "jdk.tls.disabledAlgorithms=" cleaned
+                exit
+            }
+        }
+        END {
+            if (!found) {
+                exit 1
+            }
+        }
+    ' "$JAVA_SECURITY_FILE" > "$LEGACY_RSA_SECURITY_FILE"
+
+    if [ ! -s "$LEGACY_RSA_SECURITY_FILE" ]; then
+        echo "ERROR: Could not create legacy RSA Java security override" >&2
+        exit 1
+    fi
+
+    JAVA_OPTS="${JAVA_OPTS:-} -Djava.security.properties=$LEGACY_RSA_SECURITY_FILE"
+    export JAVA_OPTS
+    echo "Legacy RSA Java security override enabled from $LEGACY_RSA_SECURITY_FILE"
+fi
+
 # Wait for dependencies
 echo "Waiting for dependencies..."
 
