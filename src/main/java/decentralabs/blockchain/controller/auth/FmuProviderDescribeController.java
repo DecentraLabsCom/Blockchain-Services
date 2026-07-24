@@ -1,5 +1,6 @@
 package decentralabs.blockchain.controller.auth;
 
+import decentralabs.blockchain.service.BackendUrlResolver;
 import decentralabs.blockchain.service.auth.JwtService;
 import decentralabs.blockchain.service.auth.MarketplaceEndpointAuthService;
 import java.math.BigInteger;
@@ -38,6 +39,7 @@ public class FmuProviderDescribeController {
 
     private final MarketplaceEndpointAuthService marketplaceEndpointAuthService;
     private final JwtService jwtService;
+    private final BackendUrlResolver backendUrlResolver;
 
     @Value("${auth.fmu.provider-describe-token.ttl-seconds:60}")
     private int ttlSeconds;
@@ -63,6 +65,12 @@ public class FmuProviderDescribeController {
             Map<String, Object> claims = new HashMap<>();
             claims.put("accessKey", trimmed);
             claims.put("resourceType", "fmu");
+            // This token is intentionally scoped to metadata discovery. The
+            // runner accepts it only on /simulations/describe and still
+            // requires reservation claims for execution/session endpoints.
+            claims.put("aud", backendUrlResolver.resolveBaseDomain() + "/fmu");
+            claims.put("scope", "fmu:describe");
+            claims.put("purpose", "provider-describe");
             claims.put("exp", BigInteger.valueOf(now + ttlSeconds));
 
             String token = jwtService.generateToken(claims, null);

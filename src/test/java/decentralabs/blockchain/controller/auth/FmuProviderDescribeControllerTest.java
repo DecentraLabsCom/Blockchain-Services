@@ -9,6 +9,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import decentralabs.blockchain.service.BackendUrlResolver;
 import decentralabs.blockchain.service.auth.JwtService;
 import decentralabs.blockchain.service.auth.MarketplaceEndpointAuthService;
 import java.util.Collections;
@@ -32,6 +33,7 @@ class FmuProviderDescribeControllerTest {
 
     private MarketplaceEndpointAuthService authService;
     private JwtService jwtService;
+    private BackendUrlResolver backendUrlResolver;
     private FmuProviderDescribeController controller;
     private MockMvc mockMvc;
     private final ObjectMapper objectMapper = new ObjectMapper();
@@ -40,7 +42,9 @@ class FmuProviderDescribeControllerTest {
     void setUp() {
         authService = mock(MarketplaceEndpointAuthService.class);
         jwtService = mock(JwtService.class);
-        controller = new FmuProviderDescribeController(authService, jwtService);
+        backendUrlResolver = mock(BackendUrlResolver.class);
+        when(backendUrlResolver.resolveBaseDomain()).thenReturn("https://gateway.example");
+        controller = new FmuProviderDescribeController(authService, jwtService, backendUrlResolver);
         ReflectionTestUtils.setField(controller, "ttlSeconds", 60);
         mockMvc = MockMvcBuilders.standaloneSetup(controller).build();
     }
@@ -173,6 +177,12 @@ class FmuProviderDescribeControllerTest {
             "Expected accessKey=BouncingBall.fmu, got " + claims.get("accessKey");
         assert "fmu".equals(claims.get("resourceType")) :
             "Expected resourceType=fmu, got " + claims.get("resourceType");
+        assert "https://gateway.example/fmu".equals(claims.get("aud")) :
+            "Expected FMU audience, got " + claims.get("aud");
+        assert "fmu:describe".equals(claims.get("scope")) :
+            "Expected describe scope, got " + claims.get("scope");
+        assert "provider-describe".equals(claims.get("purpose")) :
+            "Expected provider-describe purpose, got " + claims.get("purpose");
     }
 
     @Test
