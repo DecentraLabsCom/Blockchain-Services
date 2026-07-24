@@ -31,10 +31,13 @@ import java.io.StringWriter;
 import java.math.BigInteger;
 import java.security.KeyFactory;
 import java.security.PrivateKey;
+import java.security.Security;
 import java.security.cert.X509Certificate;
 import javax.net.ssl.SSLSocket;
+import javax.net.ssl.SSLContext;
 import java.security.spec.RSAPrivateCrtKeySpec;
 import java.util.Base64;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -186,7 +189,7 @@ class SamlValidationServiceTest {
     }
 
     @Test
-    void shouldEnableLegacyRsaCipherOnMetadataSocketFactory() throws Exception {
+    void shouldConfigureLegacyRsaCipherWhenJvmSupportsIt() throws Exception {
         OkHttpClient client = ReflectionTestUtils.invokeMethod(
                 samlValidationService,
                 "buildMetadataHttpClient",
@@ -194,10 +197,54 @@ class SamlValidationServiceTest {
                 Map.of()
         );
 
+        boolean supportedByJvm = Arrays.asList(
+                SSLContext.getDefault().getSupportedSSLParameters().getCipherSuites()
+        ).contains("TLS_RSA_WITH_AES_256_CBC_SHA256");
+
+        if (!supportedByJvm) {
+            assertThatThrownBy(() -> client.sslSocketFactory().createSocket())
+                    .isInstanceOf(IOException.class)
+                    .hasMessage("JVM does not support TLS_RSA_WITH_AES_256_CBC_SHA256");
+            return;
+        }
+
         try (SSLSocket sslSocket = (SSLSocket) client.sslSocketFactory().createSocket()) {
             assertThat(sslSocket.getEnabledProtocols()).containsExactly("TLSv1.2");
             assertThat(sslSocket.getEnabledCipherSuites())
                     .containsExactly("TLS_RSA_WITH_AES_256_CBC_SHA256");
+        }
+    }
+
+    @Test
+    void shouldRemoveOnlyTlsRsaWildcardFromDisabledAlgorithms() {
+        String configured = "SSLv3, TLS_RSA_*, TLS_RSA_, DH keySize < 1024, RSA keySize < 2048";
+
+        String remaining = ReflectionTestUtils.invokeMethod(
+                samlValidationService,
+                "removeLegacyRsaDisabledAlgorithm",
+                configured
+        );
+
+        assertThat(remaining)
+                .isEqualTo("SSLv3, DH keySize < 1024, RSA keySize < 2048");
+    }
+
+    @Test
+    void shouldReenableLegacyRsaCipherWhenJvmDisablesIt() {
+        String property = "jdk.tls.disabledAlgorithms";
+        String original = Security.getProperty(property);
+        try {
+            Security.setProperty(property, original + ", TLS_RSA_*");
+
+            ReflectionTestUtils.invokeMethod(
+                    samlValidationService,
+                    "reenableLegacyRsaCipherSuite"
+            );
+
+            assertThat(Security.getProperty(property)).doesNotContain("TLS_RSA_*");
+            assertThat(Security.getProperty(property)).contains("SSLv3");
+        } finally {
+            Security.setProperty(property, original);
         }
     }
 

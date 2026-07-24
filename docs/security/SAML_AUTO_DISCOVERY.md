@@ -100,7 +100,10 @@ new issuer overrides from the template into an existing
 The `legacy-rsa` profile is intentionally issuer-specific and restricted to
 TLS 1.2 with `TLS_RSA_WITH_AES_256_CBC_SHA256`. It exists for old metadata
 servers such as the SIR2/RedIRIS FPP endpoint and must not be used as a global
-default.
+default. Java 21.0.10 and later disable `TLS_RSA_*` by default; when this
+profile is explicitly selected, the service removes only that wildcard from
+`jdk.tls.disabledAlgorithms` before creating the dedicated metadata client.
+All other disabled-algorithm restrictions remain in force.
 
 ## Required identity data and failure modes
 

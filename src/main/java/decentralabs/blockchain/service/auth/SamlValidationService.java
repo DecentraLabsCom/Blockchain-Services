@@ -34,6 +34,7 @@ import java.net.Socket;
 import java.security.GeneralSecurityException;
 import java.security.KeyStore;
 import java.security.MessageDigest;
+import java.security.Security;
 import java.security.cert.CertificateFactory;
 import java.security.cert.X509Certificate;
 import java.util.ArrayList;
@@ -75,6 +76,9 @@ public class SamlValidationService {
     private static final String TLS_PROFILE_MODERN = "modern";
     private static final String TLS_PROFILE_COMPATIBILITY = "compatibility";
     private static final String TLS_PROFILE_LEGACY_RSA = "legacy-rsa";
+    private static final String TLS_DISABLED_ALGORITHMS_PROPERTY = "jdk.tls.disabledAlgorithms";
+    private static final String TLS_RSA_DISABLED_ALGORITHM = "TLS_RSA_*";
+    private static final String TLS_RSA_DISABLED_PREFIX = "TLS_RSA_";
     public static final String STABLE_USER_ID_MODE_PRINCIPAL = "principal";
     public static final String STABLE_USER_ID_MODE_PRINCIPAL_TARGETED_ID = "principal_targeted_id";
 
@@ -818,8 +822,9 @@ public class SamlValidationService {
 
     private void configureLegacyRsaTls(OkHttpClient.Builder builder) {
         try {
+            reenableLegacyRsaCipherSuite();
             X509TrustManager trustManager = defaultTrustManager();
-            SSLContext sslContext = SSLContext.getInstance("TLS");
+            SSLContext sslContext = SSLContext.getInstance("TLSv1.2");
             sslContext.init(null, new TrustManager[] {trustManager}, null);
             builder.sslSocketFactory(
                 new LegacyRsaSslSocketFactory(sslContext.getSocketFactory()),
@@ -828,6 +833,47 @@ public class SamlValidationService {
         } catch (GeneralSecurityException ex) {
             throw new IllegalStateException("Unable to configure legacy RSA TLS profile", ex);
         }
+    }
+
+    /**
+     * Java 21.0.10+ disables all TLS_RSA_* cipher suites by default. This
+     * profile is an explicit, issuer-scoped compatibility opt-in, so remove
+     * only that wildcard while preserving every other JSSE restriction.
+     */
+    private void reenableLegacyRsaCipherSuite() {
+        String disabledAlgorithms = Security.getProperty(TLS_DISABLED_ALGORITHMS_PROPERTY);
+        String remainingAlgorithms = removeLegacyRsaDisabledAlgorithm(disabledAlgorithms);
+        if (disabledAlgorithms != null && !disabledAlgorithms.equals(remainingAlgorithms)) {
+            Security.setProperty(TLS_DISABLED_ALGORITHMS_PROPERTY, remainingAlgorithms);
+            logger.warn(
+                "Enabled TLS_RSA_* for the explicit legacy-rsa SAML metadata profile; "
+                    + "keep this profile restricted to the legacy issuer"
+            );
+        }
+    }
+
+    private static String removeLegacyRsaDisabledAlgorithm(String disabledAlgorithms) {
+        if (disabledAlgorithms == null || disabledAlgorithms.isBlank()) {
+            return disabledAlgorithms;
+        }
+
+        StringBuilder remaining = new StringBuilder();
+        for (String configuredAlgorithm : disabledAlgorithms.split(",")) {
+            String algorithm = configuredAlgorithm.trim();
+            if (algorithm.isEmpty() || isLegacyRsaDisabledAlgorithm(algorithm)) {
+                continue;
+            }
+            if (remaining.length() > 0) {
+                remaining.append(", ");
+            }
+            remaining.append(algorithm);
+        }
+        return remaining.toString();
+    }
+
+    private static boolean isLegacyRsaDisabledAlgorithm(String algorithm) {
+        return TLS_RSA_DISABLED_ALGORITHM.equalsIgnoreCase(algorithm)
+            || TLS_RSA_DISABLED_PREFIX.equalsIgnoreCase(algorithm);
     }
 
     private X509TrustManager defaultTrustManager() throws GeneralSecurityException {
@@ -1216,7 +1262,16 @@ public class SamlValidationService {
         if (!errors.isEmpty()) {
             throw new IllegalStateException("Invalid SAML configuration: " + String.join("; ", errors));
         }
+        if (hasLegacyRsaProfile()) {
+            reenableLegacyRsaCipherSuite();
+        }
         logger.info("SAML validation configuration is valid (trust-mode={})", trustMode);
+    }
+
+    private boolean hasLegacyRsaProfile() {
+        return metadataTlsProfiles.values().stream()
+            .filter(profile -> profile != null)
+            .anyMatch(profile -> TLS_PROFILE_LEGACY_RSA.equalsIgnoreCase(profile.trim()));
     }
 
     public List<String> configurationErrors() {
