@@ -98,7 +98,7 @@ public class IntentAuthorizationController {
         Map<String, Object> options = new HashMap<>();
         options.put("sessionId", session.getSessionId());
         options.put("challenge", session.getChallenge());
-        options.put("allowCredentials", session.getCredentialIds());
+        options.put("allowCredentials", session.getAllowedCredentials());
         options.put("rpId", authorizationService.getRelyingPartyId());
         options.put("timeout", DEFAULT_TIMEOUT_MS);
         options.put("userVerification", normalizeUserVerification(userVerification));
@@ -293,18 +293,21 @@ public class IntentAuthorizationController {
           showStatus('pending');
 
           try {
-            const allowCredentialIds = Array.isArray(options.allowCredentials)
+            const allowCredentials = Array.isArray(options.allowCredentials)
               ? options.allowCredentials
               : [];
-            if (!allowCredentialIds.length) {
+            if (!allowCredentials.length) {
               throw new Error('No credential available for this authorization session');
             }
             const publicKey = {
               challenge: base64UrlToArrayBuffer(options.challenge),
               rpId: options.rpId,
-              allowCredentials: allowCredentialIds.map((credentialId) => ({
-                id: base64UrlToArrayBuffer(credentialId),
+              allowCredentials: allowCredentials.map((credential) => ({
+                id: base64UrlToArrayBuffer(credential.id),
                 type: 'public-key',
+                ...(Array.isArray(credential.transports) && credential.transports.length > 0
+                  ? { transports: credential.transports }
+                  : {}),
               })),
               userVerification: options.userVerification || 'required',
               timeout: options.timeout || 90000,

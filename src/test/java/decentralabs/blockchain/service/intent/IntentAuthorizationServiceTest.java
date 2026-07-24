@@ -85,7 +85,9 @@ class IntentAuthorizationServiceTest {
         IntentAuthorizationService.AuthorizationSession session = service.createSession(validAuthorizationRequest());
 
         assertThat(session.getSessionId()).hasSize(32);
-        assertThat(session.getCredentialIds()).containsExactly("cred-new", "cred-old");
+        assertThat(session.getAllowedCredentials())
+            .extracting(IntentAuthorizationService.AllowedCredential::getId)
+            .containsExactly("cred-new", "cred-old");
         assertThat(session.getReturnUrl()).isEqualTo("https://app.example/callback");
         assertThat(new String(Base64.getUrlDecoder().decode(session.getChallenge()), StandardCharsets.UTF_8))
             .isEqualTo("user@example.edu|request-123|0xpayload|7|100|200|3");
@@ -112,6 +114,21 @@ class IntentAuthorizationServiceTest {
         verify(webauthnCredentialService).getCredentials("user@example.edu");
         assertThat(new String(Base64.getUrlDecoder().decode(session.getChallenge()), StandardCharsets.UTF_8))
             .startsWith("user@example.edu|request-123|");
+    }
+
+    @Test
+    void createSession_preservesStoredWebAuthnTransportsForBrowserHints() {
+        when(webauthnCredentialService.getCredentials("user@example.edu"))
+            .thenReturn(List.of(credential("cred-1", true, 100L, "hybrid,internal,unknown")));
+
+        IntentAuthorizationService.AuthorizationSession session = service.createSession(validAuthorizationRequest());
+
+        assertThat(session.getAllowedCredentials())
+            .singleElement()
+            .satisfies(allowed -> {
+                assertThat(allowed.getId()).isEqualTo("cred-1");
+                assertThat(allowed.getTransports()).containsExactly("hybrid", "internal");
+            });
     }
 
     @Test
@@ -242,7 +259,7 @@ class IntentAuthorizationServiceTest {
         IntentAuthorizationService.AuthorizationSession pending = new IntentAuthorizationService.AuthorizationSession(
             "expired-pending",
             buildSubmission(),
-            List.of("cred-1"),
+            List.of(new IntentAuthorizationService.AllowedCredential("cred-1", List.of())),
             "challenge",
             null,
             Instant.now().minusSeconds(5)
@@ -324,6 +341,10 @@ class IntentAuthorizationServiceTest {
     }
 
     private WebauthnCredential credential(String credentialId, boolean active, Long createdAt) {
-        return new WebauthnCredential(credentialId, "public-key", null, 0L, active, createdAt, createdAt, null, null, null, null);
+        return credential(credentialId, active, createdAt, null);
+    }
+
+    private WebauthnCredential credential(String credentialId, boolean active, Long createdAt, String transports) {
+        return new WebauthnCredential(credentialId, "public-key", null, 0L, active, createdAt, createdAt, null, null, null, transports);
     }
 }

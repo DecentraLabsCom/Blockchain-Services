@@ -137,7 +137,10 @@ class IntentAuthorizationControllerTest {
     void getCeremonyPage_returnsHtmlWithSessionData() throws Exception {
         IntentAuthorizationService.AuthorizationSession session = session("session-abc", "request-xyz", Instant.parse("2026-03-11T10:00:00Z"));
         session.setChallenge("challenge-b64");
-        session.setCredentialIds(List.of("cred-1", "cred-2"));
+        session.setAllowedCredentials(List.of(
+            new IntentAuthorizationService.AllowedCredential("cred-1", List.of("internal")),
+            new IntentAuthorizationService.AllowedCredential("cred-2", List.of("hybrid", "internal"))
+        ));
         session.setReturnUrl("https://app.example/callback");
 
         when(authorizationService.getSession("session-abc")).thenReturn(session);
@@ -149,7 +152,8 @@ class IntentAuthorizationControllerTest {
             .andExpect(content().string(org.hamcrest.Matchers.containsString("Authorize Intent")))
             .andExpect(content().string(org.hamcrest.Matchers.containsString("\"sessionId\":\"session-abc\"")))
             .andExpect(content().string(org.hamcrest.Matchers.containsString("\"requestId\":\"request-xyz\"")))
-            .andExpect(content().string(org.hamcrest.Matchers.containsString("\"allowCredentials\":[\"cred-1\",\"cred-2\"]")))
+            .andExpect(content().string(org.hamcrest.Matchers.containsString(
+                "\"allowCredentials\":[{\"id\":\"cred-1\",\"transports\":[\"internal\"]},{\"id\":\"cred-2\",\"transports\":[\"hybrid\",\"internal\"]}]")))
             .andExpect(content().string(org.hamcrest.Matchers.containsString("\"rpId\":\"example.com\"")))
             .andExpect(content().string(org.hamcrest.Matchers.containsString("\"userVerification\":\"required\"")))
             .andExpect(content().string(org.hamcrest.Matchers.containsString("/intents/authorize/client-error")));
@@ -257,7 +261,7 @@ class IntentAuthorizationControllerTest {
         return new IntentAuthorizationService.AuthorizationSession(
             sessionId,
             submission,
-            List.of("cred-1"),
+            List.of(new IntentAuthorizationService.AllowedCredential("cred-1", List.of("internal"))),
             "challenge",
             "https://app.example/callback",
             expiresAt

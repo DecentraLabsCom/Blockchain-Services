@@ -3,9 +3,12 @@ package decentralabs.blockchain.service.intent;
 import java.nio.charset.StandardCharsets;
 import java.security.SecureRandom;
 import java.time.Instant;
+import java.util.Arrays;
 import java.util.Comparator;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
@@ -43,6 +46,9 @@ import decentralabs.blockchain.util.PucNormalizer;
 public class IntentAuthorizationService {
 
     private static final SecureRandom RANDOM = new SecureRandom();
+    private static final Set<String> WEBAUTHN_TRANSPORTS = Set.of(
+        "usb", "nfc", "ble", "smart-card", "hybrid", "internal"
+    );
 
     private final IntentService intentService;
     private final IntentExecutionService intentExecutionService;
@@ -116,13 +122,17 @@ public class IntentAuthorizationService {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "missing_puc_for_webauthn");
         }
 
-        List<WebauthnCredential> activeCredentials = selectCredentials(puc);
-        List<String> credentialIds = activeCredentials.stream()
-            .map(credential -> credential.getCredentialId())
-            .filter(id -> id != null && !id.isBlank())
-            .distinct()
+        Set<String> seenCredentialIds = new HashSet<>();
+        List<AllowedCredential> allowedCredentials = selectCredentials(puc).stream()
+            .map(credential -> new AllowedCredential(
+                credential.getCredentialId(),
+                normalizeTransports(credential.getTransports())
+            ))
+            .filter(credential -> credential.getId() != null
+                && !credential.getId().isBlank()
+                && seenCredentialIds.add(credential.getId()))
             .toList();
-        if (credentialIds.isEmpty()) {
+        if (allowedCredentials.isEmpty()) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "webauthn_credential_not_registered");
         }
 
@@ -136,7 +146,7 @@ public class IntentAuthorizationService {
         AuthorizationSession session = new AuthorizationSession(
             sessionId,
             submission,
-            credentialIds,
+            allowedCredentials,
             challengeB64,
             request.getReturnUrl(),
             expiresAt
@@ -152,7 +162,7 @@ public class IntentAuthorizationService {
             LogSanitizer.sanitize(request.getStableUserIdMode()),
             PucHashUtil.hashPuc(puc),
             LogSanitizer.sanitize(expectedPucHash(submission.getActionPayload(), submission.getReservationPayload())),
-            credentialIds.size(),
+            allowedCredentials.size(),
             LogSanitizer.sanitize(getRelyingPartyId())
         );
         return session;
@@ -202,7 +212,8 @@ public class IntentAuthorizationService {
         }
         log.info(
             "Intent authorization completion received. credentialAllowed={} credentialIdPresent={}",
-            session.getCredentialIds() != null && session.getCredentialIds().contains(request.getCredentialId()),
+            session.getAllowedCredentials() != null && session.getAllowedCredentials().stream()
+                .anyMatch(credential -> credential.getId().equals(request.getCredentialId())),
             request.getCredentialId() != null && !request.getCredentialId().isBlank()
         );
         if (session.isExpired()) {
@@ -213,13 +224,14 @@ public class IntentAuthorizationService {
             log.warn("Intent authorization completion rejected: missing WebAuthn credential");
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "missing_webauthn_credential");
         }
-        if (session.getCredentialIds() == null || session.getCredentialIds().isEmpty()) {
+        if (session.getAllowedCredentials() == null || session.getAllowedCredentials().isEmpty()) {
             log.warn("Intent authorization completion rejected: WebAuthn credential not registered");
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "webauthn_credential_not_registered");
         }
-        if (!session.getCredentialIds().contains(request.getCredentialId())) {
+        if (session.getAllowedCredentials().stream()
+            .noneMatch(credential -> credential.getId().equals(request.getCredentialId()))) {
             log.warn("Intent authorization completion rejected: WebAuthn credential not allowed (allowedCredentials={})",
-                session.getCredentialIds().size());
+                session.getAllowedCredentials().size());
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "webauthn_credential_not_allowed");
         }
 
@@ -299,6 +311,18 @@ public class IntentAuthorizationService {
             credentials.size()
         );
         return activeCredentials;
+    }
+
+    private List<String> normalizeTransports(String transports) {
+        if (transports == null || transports.isBlank()) {
+            return List.of();
+        }
+        return Arrays.stream(transports.split(","))
+            .map(String::trim)
+            .map(value -> value.toLowerCase(Locale.ROOT))
+            .filter(WEBAUTHN_TRANSPORTS::contains)
+            .distinct()
+            .toList();
     }
 
     private String resolvePuc(IntentSubmission submission) {
@@ -455,7 +479,7 @@ public class IntentAuthorizationService {
         private String sessionId;
         @ToString.Exclude
         private IntentSubmission submission;
-        private List<String> credentialIds;
+        private List<AllowedCredential> allowedCredentials;
         private String challenge;
         private String returnUrl;
         private Instant expiresAt;
@@ -463,6 +487,13 @@ public class IntentAuthorizationService {
         public boolean isExpired() {
             return Instant.now().isAfter(expiresAt);
         }
+    }
+
+    @Data
+    @AllArgsConstructor
+    public static class AllowedCredential {
+        private String id;
+        private List<String> transports;
     }
 
     private record AuthorizationResult(
