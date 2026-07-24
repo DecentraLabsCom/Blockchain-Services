@@ -318,7 +318,7 @@ public class IntentAuthorizationService {
             return List.of();
         }
         return Arrays.stream(transports.split(","))
-            .map(String::trim)
+            .map(value -> value.trim())
             .map(value -> value.toLowerCase(Locale.ROOT))
             .filter(WEBAUTHN_TRANSPORTS::contains)
             .distinct()

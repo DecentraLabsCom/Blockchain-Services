@@ -10,6 +10,8 @@ import decentralabs.blockchain.service.intent.IntentAuthService;
 import decentralabs.blockchain.service.intent.IntentAuthorizationService;
 import jakarta.validation.Valid;
 import java.util.HashMap;
+import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -37,6 +39,9 @@ public class IntentAuthorizationController {
 
     @Value("${webauthn.user-verification:required}")
     private String userVerification;
+
+    @Value("${webauthn.authenticator.attachment:platform}")
+    private String authenticatorAttachment;
 
     @PostMapping("/authorize")
     public ResponseEntity<IntentAuthorizationSessionResponse> authorizeIntent(
@@ -102,6 +107,10 @@ public class IntentAuthorizationController {
         options.put("rpId", authorizationService.getRelyingPartyId());
         options.put("timeout", DEFAULT_TIMEOUT_MS);
         options.put("userVerification", normalizeUserVerification(userVerification));
+        List<String> hints = buildAuthenticatorHints(authenticatorAttachment);
+        if (!hints.isEmpty()) {
+            options.put("hints", hints);
+        }
         options.put("returnUrl", session.getReturnUrl());
         options.put("requestId", session.getSubmission().getMeta().getRequestId());
 
@@ -309,6 +318,9 @@ public class IntentAuthorizationController {
                   ? { transports: credential.transports }
                   : {}),
               })),
+              ...(Array.isArray(options.hints) && options.hints.length > 0
+                ? { hints: options.hints }
+                : {}),
               userVerification: options.userVerification || 'required',
               timeout: options.timeout || 90000,
             };
@@ -401,6 +413,17 @@ public class IntentAuthorizationController {
         return switch (normalized) {
             case "required", "preferred", "discouraged" -> normalized;
             default -> "required";
+        };
+    }
+
+    private List<String> buildAuthenticatorHints(String configured) {
+        if (configured == null || configured.isBlank()) {
+            return List.of();
+        }
+        return switch (configured.trim().toLowerCase(Locale.ROOT)) {
+            case "platform" -> List.of("client-device");
+            case "cross-platform" -> List.of("security-key");
+            default -> List.of();
         };
     }
 }

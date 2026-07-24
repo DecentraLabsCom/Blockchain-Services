@@ -51,6 +51,7 @@ class IntentAuthorizationControllerTest {
     @BeforeEach
     void setUp() {
         IntentAuthorizationController controller = new IntentAuthorizationController(authorizationService, intentAuthService);
+        org.springframework.test.util.ReflectionTestUtils.setField(controller, "authenticatorAttachment", "platform");
         mockMvc = MockMvcBuilders.standaloneSetup(controller)
             .setControllerAdvice(new GlobalExceptionHandler())
             .build();
@@ -155,6 +156,7 @@ class IntentAuthorizationControllerTest {
             .andExpect(content().string(org.hamcrest.Matchers.containsString(
                 "\"allowCredentials\":[{\"id\":\"cred-1\",\"transports\":[\"internal\"]},{\"id\":\"cred-2\",\"transports\":[\"hybrid\",\"internal\"]}]")))
             .andExpect(content().string(org.hamcrest.Matchers.containsString("\"rpId\":\"example.com\"")))
+            .andExpect(content().string(org.hamcrest.Matchers.containsString("\"hints\":[\"client-device\"]")))
             .andExpect(content().string(org.hamcrest.Matchers.containsString("\"userVerification\":\"required\"")))
             .andExpect(content().string(org.hamcrest.Matchers.containsString("/intents/authorize/client-error")));
     }

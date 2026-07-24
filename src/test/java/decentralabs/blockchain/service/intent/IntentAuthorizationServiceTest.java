@@ -86,7 +86,7 @@ class IntentAuthorizationServiceTest {
 
         assertThat(session.getSessionId()).hasSize(32);
         assertThat(session.getAllowedCredentials())
-            .extracting(IntentAuthorizationService.AllowedCredential::getId)
+            .extracting((IntentAuthorizationService.AllowedCredential credential) -> credential.getId())
             .containsExactly("cred-new", "cred-old");
         assertThat(session.getReturnUrl()).isEqualTo("https://app.example/callback");
         assertThat(new String(Base64.getUrlDecoder().decode(session.getChallenge()), StandardCharsets.UTF_8))
