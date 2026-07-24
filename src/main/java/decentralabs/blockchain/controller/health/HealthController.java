@@ -101,15 +101,15 @@ public class HealthController {
             healthStatus.put("wallet_configured", institutionalWalletService.isConfigured());
             healthStatus.put("treasury_configured", isTreasuryConfigured());
             boolean providerRegistered = institutionRegistrationService.isRegistered(InstitutionRole.PROVIDER);
-            boolean consumerRegistered = institutionRegistrationService.isRegistered(InstitutionRole.CONSUMER);
-            boolean institutionRegistered = providersEnabled ? providerRegistered : consumerRegistered;
+            boolean consumerRegistered = institutionRegistrationService.isRegistered(InstitutionRole.CONSUMER)
+                || providerRegistered;
+            boolean registrationReady = providersEnabled ? providerRegistered : consumerRegistered;
             healthStatus.put("operating_mode", providersEnabled ? "provider-consumer" : "consumer-only");
             healthStatus.put("provider_registered", providerRegistered);
             healthStatus.put("consumer_registered", consumerRegistered);
-            healthStatus.put("institution_registered", institutionRegistered);
             // Treat invite token capability as ready when a secret is configured
             // or when the institution has already completed registration.
-            healthStatus.put("invite_token_configured", isInviteTokenConfigured() || institutionRegistered);
+            healthStatus.put("invite_token_configured", isInviteTokenConfigured() || registrationReady);
             healthStatus.put("endpoints", getEndpointStatus());
 
             return buildResponse(healthStatus);

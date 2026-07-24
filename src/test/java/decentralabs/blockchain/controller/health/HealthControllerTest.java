@@ -469,7 +469,6 @@ class HealthControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.operating_mode").value("consumer-only"))
                 .andExpect(jsonPath("$.consumer_registered").value(true))
-                .andExpect(jsonPath("$.institution_registered").value(true))
                 .andExpect(jsonPath("$.endpoints.['authorize-and-issue']").value("disabled (providers flag off)"))
                 .andExpect(jsonPath("$.endpoints.['checkin-institutional']").value("disabled (providers flag off)"));
         }
@@ -561,7 +560,33 @@ class HealthControllerTest {
             mockMvc.perform(get("/health"))
                 .andExpect(status().isServiceUnavailable())
                 .andExpect(jsonPath("$.consumer_registered").value(false))
-                .andExpect(jsonPath("$.institution_registered").value(false));
+                .andExpect(jsonPath("$.provider_registered").value(false));
+        }
+
+        @Test
+        @DisplayName("Should return UP for a registered consumer-only institution")
+        void shouldReturnUpForRegisteredConsumerOnlyInstitution() throws Exception {
+            setupHealthyEnvironment();
+            ReflectionTestUtils.setField(healthController, "providersEnabled", false);
+            when(institutionRegistrationService.isRegistered(InstitutionRole.PROVIDER)).thenReturn(false);
+            when(institutionRegistrationService.isRegistered(InstitutionRole.CONSUMER)).thenReturn(true);
+
+            mockMvc.perform(get("/health"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("UP"))
+                .andExpect(jsonPath("$.provider_registered").value(false))
+                .andExpect(jsonPath("$.consumer_registered").value(true));
+        }
+
+        @Test
+        @DisplayName("Should expose provider institutions as consumers in provider-consumer mode")
+        void shouldExposeProviderInstitutionsAsConsumers() throws Exception {
+            setupHealthyEnvironment();
+
+            mockMvc.perform(get("/health"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.provider_registered").value(true))
+                .andExpect(jsonPath("$.consumer_registered").value(true));
         }
     }
 
