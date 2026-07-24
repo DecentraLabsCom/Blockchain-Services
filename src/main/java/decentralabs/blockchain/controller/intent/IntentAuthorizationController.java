@@ -35,7 +35,7 @@ public class IntentAuthorizationController {
     private final IntentAuthService intentAuthService;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
-    @Value("${webauthn.user-verification:preferred}")
+    @Value("${webauthn.user-verification:required}")
     private String userVerification;
 
     @PostMapping("/authorize")
@@ -392,12 +392,12 @@ public class IntentAuthorizationController {
 
     private String normalizeUserVerification(String configured) {
         if (configured == null || configured.isBlank()) {
-            return "preferred";
+            return "required";
         }
         String normalized = configured.trim().toLowerCase();
         return switch (normalized) {
             case "required", "preferred", "discouraged" -> normalized;
-            default -> "preferred";
+            default -> "required";
         };
     }
 }

@@ -35,6 +35,7 @@ import java.util.Base64;
 import java.util.HashSet;
 import java.util.HexFormat;
 import java.util.List;
+import java.util.Locale;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executors;
@@ -67,6 +68,8 @@ import org.springframework.web.server.ResponseStatusException;
 @Service
 @Slf4j
 public class WebauthnOnboardingService {
+
+    private static final String REQUIRED_USER_VERIFICATION = "required";
 
     private static final int CHALLENGE_LENGTH = 32; // 256 bits
     private static final Base64.Encoder BASE64URL_ENCODER = Base64.getUrlEncoder().withoutPadding();
@@ -160,6 +163,14 @@ public class WebauthnOnboardingService {
         if (!"none".equalsIgnoreCase(attestationConveyance)) {
             throw new IllegalStateException("Only attestation=none is supported by the WebAuthn RP");
         }
+        String configuredUserVerification = userVerification == null
+            ? ""
+            : userVerification.trim().toLowerCase(Locale.ROOT);
+        if (!REQUIRED_USER_VERIFICATION.equals(configuredUserVerification)) {
+            throw new IllegalStateException(
+                "WebAuthn user verification must be configured as 'required' because credentials authorize spending intents"
+            );
+        }
         // Start periodic cleanup of expired sessions
         cleanupScheduler = Executors.newSingleThreadScheduledExecutor(r -> {
             Thread t = new Thread(r, "webauthn-session-cleanup");
@@ -172,7 +183,12 @@ public class WebauthnOnboardingService {
             cleanupIntervalSeconds,
             TimeUnit.SECONDS
         );
-        log.info("WebAuthn Onboarding Service initialized. RP ID: {}, Session TTL: {}s", getEffectiveRpId(), sessionTtlSeconds);
+        log.info(
+            "WebAuthn Onboarding Service initialized. RP ID: {}, Session TTL: {}s, userVerification={}",
+            getEffectiveRpId(),
+            sessionTtlSeconds,
+            REQUIRED_USER_VERIFICATION
+        );
     }
 
     /**
@@ -599,17 +615,28 @@ public class WebauthnOnboardingService {
         verifyRpIdHash(rpIdHash);
 
         // Parse flags
-        byte flags = authData[offset];
+        int flags = authData[offset] & 0xFF;
+        boolean userPresent = (flags & 0x01) != 0;
+        boolean userVerified = (flags & 0x04) != 0;
         offset += 1;
 
+        if (!userPresent || !userVerified) {
+            log.warn(
+                "WebAuthn registration authenticator data rejected. flags=0x{} userPresent={} userVerified={}",
+                String.format(Locale.ROOT, "%02x", flags),
+                userPresent,
+                userVerified
+            );
+        }
+
         // Check User Present (UP) flag
-        if ((flags & 0x01) == 0) {
+        if (!userPresent) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "User present flag not set");
         }
 
         // Institutional credentials are later used to authorize spending
         // intents, so registration must establish user verification too.
-        if ((flags & 0x04) == 0) {
+        if (!userVerified) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "User verification flag not set");
         }
 
@@ -821,7 +848,7 @@ public class WebauthnOnboardingService {
             .authenticatorAttachment(authenticatorAttachment.isEmpty() ? null : authenticatorAttachment)
             .residentKey(residentKey)
             .requireResidentKey("required".equals(residentKey))
-            .userVerification("required")
+            .userVerification(REQUIRED_USER_VERIFICATION)
             .build();
     }
 

@@ -61,9 +61,13 @@ class WebauthnOnboardingServiceTest {
     }
 
     private void setField(String fieldName, Object value) throws Exception {
+        setField(service, fieldName, value);
+    }
+
+    private void setField(WebauthnOnboardingService target, String fieldName, Object value) throws Exception {
         Field field = WebauthnOnboardingService.class.getDeclaredField(fieldName);
         field.setAccessible(true);
-        field.set(service, value);
+        field.set(target, value);
     }
 
     private void configureService(boolean validateSaml) throws Exception {
@@ -103,6 +107,24 @@ class WebauthnOnboardingServiceTest {
         assertEquals("none", response.getAttestation());
         assertFalse(response.getPubKeyCredParams().isEmpty());
         assertEquals(-7, response.getPubKeyCredParams().get(0).getAlg()); // ES256
+        assertEquals("required", response.getAuthenticatorSelection().getUserVerification());
+    }
+
+    @Test
+    void init_rejectsNonRequiredUserVerificationPolicy() throws Exception {
+        WebauthnOnboardingService misconfiguredService = new WebauthnOnboardingService(
+            credentialService,
+            samlValidationServiceProvider,
+            backendUrlResolver
+        );
+        setField(misconfiguredService, "attestationConveyance", "none");
+        setField(misconfiguredService, "userVerification", "preferred");
+
+        IllegalStateException ex = assertThrows(IllegalStateException.class, misconfiguredService::init);
+        assertEquals(
+            "WebAuthn user verification must be configured as 'required' because credentials authorize spending intents",
+            ex.getMessage()
+        );
     }
 
     @Test
