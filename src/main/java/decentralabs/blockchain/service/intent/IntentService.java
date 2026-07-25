@@ -404,7 +404,7 @@ public class IntentService {
                 throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Invalid reservation window");
             }
             if (action == IntentAction.RESERVATION_REQUEST || action == IntentAction.DIRECT_BOOKING) {
-                validateReservationPrice(reservationPayload);
+                validateReservationPrice(action, reservationPayload);
             }
         } else {
             if (actionPayload == null) {
@@ -517,10 +517,19 @@ public class IntentService {
         }
     }
 
-    void validateReservationPrice(ReservationIntentPayload payload) {
+    void validateReservationPrice(IntentAction action, ReservationIntentPayload payload) {
         if (payload == null || payload.getPrice() == null || payload.getStart() == null || payload.getEnd() == null) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Missing reservation price");
         }
+
+        if (action == IntentAction.DIRECT_BOOKING
+            && walletService.isLabOwnedByProvider(payload.getExecutor(), payload.getLabId())) {
+            if (payload.getPrice().signum() != 0) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "reservation_price_mismatch");
+            }
+            return;
+        }
+
         BigInteger pricePerSecond = fetchLabPrice(payload.getLabId());
         BigInteger durationSeconds = BigInteger.valueOf(payload.getEnd() - payload.getStart());
         BigInteger expected = pricePerSecond.multiply(durationSeconds);

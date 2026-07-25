@@ -427,6 +427,45 @@ class IntentServiceTest {
     class ReservationPayloadValidationTests {
 
         @Test
+        @DisplayName("Should allow zero price for direct booking of a lab owned by the executor")
+        void shouldAllowZeroPriceForOwnInstitutionDirectBooking() {
+            IntentMeta meta = createValidMeta();
+            meta.setAction(IntentAction.DIRECT_BOOKING.getId());
+
+            ReservationIntentPayload payload = createValidReservationPayload();
+            payload.setPrice(BigInteger.ZERO);
+            when(walletService.isLabOwnedByProvider(payload.getExecutor(), payload.getLabId())).thenReturn(true);
+
+            assertDoesNotThrow(() -> service.validateReservationPrice(IntentAction.DIRECT_BOOKING, payload));
+        }
+
+        @Test
+        @DisplayName("Should reject a non-zero price for direct booking of an owned lab")
+        void shouldRejectNonZeroPriceForOwnInstitutionDirectBooking() {
+            ReservationIntentPayload payload = createValidReservationPayload();
+            payload.setPrice(BigInteger.TWO);
+            when(walletService.isLabOwnedByProvider(payload.getExecutor(), payload.getLabId())).thenReturn(true);
+
+            ResponseStatusException ex = assertThrows(ResponseStatusException.class,
+                () -> service.validateReservationPrice(IntentAction.DIRECT_BOOKING, payload));
+
+            assertEquals("reservation_price_mismatch", ex.getReason());
+        }
+
+        @Test
+        @DisplayName("Should reject zero price for a direct booking of an external lab")
+        void shouldRejectZeroPriceForExternalDirectBooking() {
+            ReservationIntentPayload payload = createValidReservationPayload();
+            payload.setPrice(BigInteger.ZERO);
+            when(walletService.isLabOwnedByProvider(payload.getExecutor(), payload.getLabId())).thenReturn(false);
+
+            ResponseStatusException ex = assertThrows(ResponseStatusException.class,
+                () -> service.validateReservationPrice(IntentAction.DIRECT_BOOKING, payload));
+
+            assertEquals("reservation_price_mismatch", ex.getReason());
+        }
+
+        @Test
         @DisplayName("Should reject reservation with missing labId")
         void shouldRejectMissingLabId() {
             IntentMeta meta = createValidMeta();
