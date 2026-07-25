@@ -115,7 +115,8 @@ filter plus the configured access token.
 - Intent persistence excludes raw SAML/WebAuthn assertions and client
   signatures, and encrypts the minimal retained execution payload with
   `INTENT_PAYLOAD_ENCRYPTION_KEY`. Store that independent 32-byte AES key in a
-  secret manager; do not add authentication artefacts to logs or durable debug
+  secret manager or the protected persistent key file created by the
+  entrypoint; do not add authentication artefacts to logs or durable debug
   records.
 
 ## Pre-deployment checklist

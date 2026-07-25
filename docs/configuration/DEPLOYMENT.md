@@ -60,6 +60,14 @@ and units.
 | Lab content | `LAB_CONTENT_BASE_PATH`, `LAB_CONTENT_RETENTION`, `LAB_CONTENT_GC_INTERVAL_MS`, `LAB_CONTENT_MAX_*` | The public content route serves only safe uploaded assets and generated metadata. |
 | Durable workers | `INSTITUTIONAL_*_OUTBOX_*`, `CONTRACT_EVENT_*`, `HEALTH_QUEUE_STUCK_THRESHOLD_SECONDS` | Tune only with an operator who owns reconciliation. |
 
+`INTENT_PAYLOAD_ENCRYPTION_KEY` must be a base64/base64url-encoded 32-byte
+AES key. The Full Gateway setup prompts for it and generates one when the
+answer is empty. A direct Docker start also generates it once when the
+variable is empty and persists it at
+`/app/data/.intent-payload-encryption-key`. Back up this key together with
+the backend data volume and never replace it while encrypted intent rows are
+being retained.
+
 ### WebAuthn authenticator attachment
 
 The default `WEBAUTHN_AUTHENTICATOR_ATTACHMENT=platform` registers a

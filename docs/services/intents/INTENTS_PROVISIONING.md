@@ -82,6 +82,9 @@ Only the material required to resume on-chain execution is durable: intent
 metadata and the selected action/reservation payload. New payloads are wrapped
 with AES-256-GCM using the required `INTENT_PAYLOAD_ENCRYPTION_KEY`; provide a
 base64/base64url-encoded 32-byte key through the deployment secret store. The
+Full Gateway setup asks for the key and generates one if left empty; direct
+Docker starts persist an automatically generated key at
+`/app/data/.intent-payload-encryption-key`. The
 SAML assertion, WebAuthn assertion material, client signature and typed data
 are request-time verification inputs and are deliberately removed from the
 persistence boundary. Flyway migration 41 redacts those fields from legacy JSON

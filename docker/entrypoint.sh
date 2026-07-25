@@ -119,6 +119,29 @@ fi
 
 echo "MySQL is ready!"
 
+# Durable AES-256 key for encrypted intent execution payloads. The Full Gateway
+# setup normally writes this to blockchain-services/.env; keep standalone and
+# non-interactive deployments safe by generating it once when the env value is
+# empty and persisting it in the mounted application data directory.
+INTENT_PAYLOAD_KEY_FILE="${INTENT_PAYLOAD_ENCRYPTION_KEY_FILE:-/app/data/.intent-payload-encryption-key}"
+if [ -z "${INTENT_PAYLOAD_ENCRYPTION_KEY:-}" ]; then
+    mkdir -p "$(dirname "$INTENT_PAYLOAD_KEY_FILE")"
+    if [ -s "$INTENT_PAYLOAD_KEY_FILE" ]; then
+        INTENT_PAYLOAD_ENCRYPTION_KEY="$(tr -d '\r\n' < "$INTENT_PAYLOAD_KEY_FILE")"
+        echo "Using the persisted intent payload encryption key."
+    else
+        INTENT_PAYLOAD_ENCRYPTION_KEY="$(openssl rand -base64 32 | tr -d '\r\n')"
+        if [ -z "$INTENT_PAYLOAD_ENCRYPTION_KEY" ]; then
+            echo "ERROR: Unable to generate the intent payload encryption key." >&2
+            exit 1
+        fi
+        (umask 077 && printf '%s\n' "$INTENT_PAYLOAD_ENCRYPTION_KEY" > "$INTENT_PAYLOAD_KEY_FILE")
+        chmod 600 "$INTENT_PAYLOAD_KEY_FILE"
+        echo "Generated and persisted the intent payload encryption key."
+    fi
+    export INTENT_PAYLOAD_ENCRYPTION_KEY
+fi
+
 # Check configuration (if mounted)
 if [ -f "./config/application.properties" ]; then
     CONFIG_LOCATION="file:./config/application.properties"
