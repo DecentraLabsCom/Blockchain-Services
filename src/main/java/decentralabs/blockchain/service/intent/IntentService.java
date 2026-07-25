@@ -103,6 +103,9 @@ public class IntentService {
     @Value("${gateway.server.https-port:443}")
     private String gatewayHttpsPort = "443";
 
+    @Value("${webauthn.user-verification:preferred}")
+    private String webauthnUserVerification = "preferred";
+
     public IntentService(
         @Value("${intent.default-eta:15s}") String defaultEta,
         @Value("${intent.saml.replay-ttl-ms:60000}") long samlReplayTtlMs,
@@ -910,7 +913,7 @@ public class IntentService {
         if (!userPresent) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "webauthn_user_presence_required");
         }
-        if (!userVerified) {
+        if (!userVerified && "required".equals(normalizeUserVerificationPolicy())) {
             log.warn(
                 "WebAuthn authenticator data missing user verification. flags=0x{} userPresent={} userVerified={}",
                 String.format(Locale.ROOT, "%02x", flags),
@@ -918,6 +921,13 @@ public class IntentService {
                 userVerified
             );
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "webauthn_user_verification_required");
+        }
+        if (!userVerified) {
+            log.info(
+                "WebAuthn authenticator data accepted without user verification. flags=0x{} policy={}",
+                String.format(Locale.ROOT, "%02x", flags),
+                normalizeUserVerificationPolicy()
+            );
         }
         long signCount = ((authenticatorData[33] & 0xFFL) << 24)
             | ((authenticatorData[34] & 0xFFL) << 16)
@@ -936,6 +946,13 @@ public class IntentService {
         } catch (NoSuchAlgorithmException ex) {
             throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "webauthn_hash_unavailable", ex);
         }
+    }
+
+    private String normalizeUserVerificationPolicy() {
+        if (webauthnUserVerification == null || webauthnUserVerification.isBlank()) {
+            return "preferred";
+        }
+        return webauthnUserVerification.trim().toLowerCase(Locale.ROOT);
     }
 
     private boolean isOriginAllowed(String origin) {

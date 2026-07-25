@@ -253,7 +253,7 @@ sequenceDiagram
     M->>U: Open ceremony
     U->>A: navigator.credentials.create()
     U->>B: POST /onboarding/webauthn/complete
-    B->>B: Verify challenge, origin, RP ID and user verification
+    B->>B: Verify challenge, origin, RP ID and configured UV policy
     B->>D: Persist credential binding
     M->>B: GET session status + service JWT
 ```
@@ -275,10 +275,12 @@ after successful registration.
 
 Credential persistence requires MySQL by default
 (`WEBAUTHN_CREDENTIALS_REQUIRE_DATABASE=true`). Memory-only operation is for
-isolated development only. The RP accepts only `WEBAUTHN_ATTESTATION_CONVEYANCE=none`
-and requires user verification even if a weaker environment value is supplied.
-Set the RP ID and allowed origins deliberately; an origin mismatch fails the
-ceremony rather than falling back to an arbitrary browser origin.
+isolated development only. The RP accepts only `WEBAUTHN_ATTESTATION_CONVEYANCE=none`.
+The default `WEBAUTHN_USER_VERIFICATION=preferred` requests user verification
+when possible and accepts an assertion without UV; `required` is available when
+the deployment must reject clients that do not return `UV=true`. Set the RP ID
+and allowed origins deliberately; an origin mismatch fails the ceremony rather
+than falling back to an arbitrary browser origin.
 
 ## SAML, discovery and keys
 

@@ -27,6 +27,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.springframework.web.server.ResponseStatusException;
+import org.springframework.test.util.ReflectionTestUtils;
 
 import decentralabs.blockchain.dto.intent.ActionIntentPayload;
 import decentralabs.blockchain.dto.intent.IntentAction;
@@ -216,6 +217,27 @@ class IntentServiceTest {
         );
 
         verify(webauthnCredentialService).advanceSignCount(puc, credentialId, 1L);
+    }
+
+    @Test
+    @DisplayName("Preferred verification accepts an assertion without the UV flag")
+    void preferredVerificationAcceptsAssertionWithoutUv() throws Exception {
+        ReflectionTestUtils.setField(service, "webauthnRpId", "localhost");
+        byte[] authenticatorData = authenticatorDataWithFlags(0x01);
+
+        assertDoesNotThrow(() -> invokeParseAuthenticatorData(authenticatorData));
+    }
+
+    @Test
+    @DisplayName("Required verification rejects an assertion without the UV flag")
+    void requiredVerificationRejectsAssertionWithoutUv() throws Exception {
+        ReflectionTestUtils.setField(service, "webauthnRpId", "localhost");
+        ReflectionTestUtils.setField(service, "webauthnUserVerification", "required");
+        byte[] authenticatorData = authenticatorDataWithFlags(0x01);
+
+        ResponseStatusException ex = assertThrows(ResponseStatusException.class,
+            () -> invokeParseAuthenticatorData(authenticatorData));
+        assertEquals("webauthn_user_verification_required", ex.getReason());
     }
 
     @Test
@@ -805,6 +827,29 @@ class IntentServiceTest {
             }
             throw ex;
         }
+    }
+
+    private Object invokeParseAuthenticatorData(byte[] authenticatorData) throws Exception {
+        Method method = IntentService.class.getDeclaredMethod("parseAuthenticatorData", byte[].class);
+        method.setAccessible(true);
+        try {
+            return method.invoke(service, (Object) authenticatorData);
+        } catch (InvocationTargetException ex) {
+            Throwable cause = ex.getCause();
+            if (cause instanceof Exception exception) {
+                throw exception;
+            }
+            throw ex;
+        }
+    }
+
+    private byte[] authenticatorDataWithFlags(int flags) throws Exception {
+        byte[] authenticatorData = new byte[37];
+        byte[] rpIdHash = java.security.MessageDigest.getInstance("SHA-256")
+            .digest("localhost".getBytes(StandardCharsets.UTF_8));
+        System.arraycopy(rpIdHash, 0, authenticatorData, 0, 32);
+        authenticatorData[32] = (byte) flags;
+        return authenticatorData;
     }
 
     private byte[] concat(byte[] first, byte[] second) {

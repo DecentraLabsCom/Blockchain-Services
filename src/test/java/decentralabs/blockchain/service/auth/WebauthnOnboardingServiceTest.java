@@ -81,7 +81,7 @@ class WebauthnOnboardingServiceTest {
         setField("attestationConveyance", "none");
         setField("authenticatorAttachment", "platform");
         setField("residentKey", "preferred");
-        setField("userVerification", "required");
+        setField("userVerification", "preferred");
         setField("validateSaml", validateSaml);
         setField("completedSessionTtlSeconds", 3600L);
     }
@@ -108,11 +108,11 @@ class WebauthnOnboardingServiceTest {
         assertFalse(response.getPubKeyCredParams().isEmpty());
         assertEquals(-7, response.getPubKeyCredParams().get(0).getAlg()); // ES256
         assertEquals("platform", response.getAuthenticatorSelection().getAuthenticatorAttachment());
-        assertEquals("required", response.getAuthenticatorSelection().getUserVerification());
+        assertEquals("preferred", response.getAuthenticatorSelection().getUserVerification());
     }
 
     @Test
-    void init_rejectsNonRequiredUserVerificationPolicy() throws Exception {
+    void init_acceptsPreferredUserVerificationPolicy() throws Exception {
         WebauthnOnboardingService misconfiguredService = new WebauthnOnboardingService(
             credentialService,
             samlValidationServiceProvider,
@@ -120,10 +120,25 @@ class WebauthnOnboardingServiceTest {
         );
         setField(misconfiguredService, "attestationConveyance", "none");
         setField(misconfiguredService, "userVerification", "preferred");
+        setField(misconfiguredService, "cleanupIntervalSeconds", 60L);
+
+        assertDoesNotThrow(misconfiguredService::init);
+        misconfiguredService.shutdown();
+    }
+
+    @Test
+    void init_rejectsInvalidUserVerificationPolicy() throws Exception {
+        WebauthnOnboardingService misconfiguredService = new WebauthnOnboardingService(
+            credentialService,
+            samlValidationServiceProvider,
+            backendUrlResolver
+        );
+        setField(misconfiguredService, "attestationConveyance", "none");
+        setField(misconfiguredService, "userVerification", "invalid");
 
         IllegalStateException ex = assertThrows(IllegalStateException.class, misconfiguredService::init);
         assertEquals(
-            "WebAuthn user verification must be configured as 'required' because credentials authorize spending intents",
+            "WebAuthn user verification must be one of: required, preferred, discouraged",
             ex.getMessage()
         );
     }
@@ -298,7 +313,36 @@ class WebauthnOnboardingServiceTest {
     }
 
     @Test
-    void completeOnboarding_rejectsRegistrationWithoutUserVerification() throws Exception {
+    void completeOnboarding_acceptsRegistrationWithoutUserVerificationWhenPreferred() throws Exception {
+        WebauthnOnboardingOptionsRequest optionsRequest = new WebauthnOnboardingOptionsRequest();
+        optionsRequest.setStableUserId("user@institution.edu");
+        optionsRequest.setInstitutionId("institution.edu");
+        WebauthnOnboardingOptionsResponse options = service.generateOptions(optionsRequest);
+        byte[] credentialId = "credential-without-uv".getBytes(StandardCharsets.UTF_8);
+
+        WebauthnOnboardingCompleteResponse response = service.completeOnboarding(
+            completeRequest(
+                options,
+                BASE64URL_ENCODER.encodeToString(credentialId),
+                createValidAttestationObject(credentialId, false, false)
+            )
+        );
+        assertTrue(response.isSuccess());
+        verify(credentialService).register(
+            eq("user@institution.edu"),
+            eq(BASE64URL_ENCODER.encodeToString(credentialId)),
+            anyString(),
+            anyString(),
+            eq(0L),
+            isNull(),
+            eq(false),
+            isNull()
+        );
+    }
+
+    @Test
+    void completeOnboarding_rejectsRegistrationWithoutUserVerificationWhenRequired() throws Exception {
+        setField("userVerification", "required");
         WebauthnOnboardingOptionsRequest optionsRequest = new WebauthnOnboardingOptionsRequest();
         optionsRequest.setStableUserId("user@institution.edu");
         optionsRequest.setInstitutionId("institution.edu");

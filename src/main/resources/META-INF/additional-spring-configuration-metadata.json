@@ -482,7 +482,7 @@
   {
     "name": "webauthn.user-verification",
     "type": "java.lang.String",
-    "description": "User verification policy. The verifier requires required for credentials used by intents.",
+    "description": "User verification policy for registration and intent authorization: preferred (default), required, or discouraged.",
     "defaultValue": "preferred"
   },
   {

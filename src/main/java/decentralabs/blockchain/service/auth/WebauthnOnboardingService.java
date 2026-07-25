@@ -70,6 +70,9 @@ import org.springframework.web.server.ResponseStatusException;
 public class WebauthnOnboardingService {
 
     private static final String REQUIRED_USER_VERIFICATION = "required";
+    private static final Set<String> USER_VERIFICATION_POLICIES = Set.of(
+        "required", "preferred", "discouraged"
+    );
 
     private static final int CHALLENGE_LENGTH = 32; // 256 bits
     private static final Base64.Encoder BASE64URL_ENCODER = Base64.getUrlEncoder().withoutPadding();
@@ -134,7 +137,7 @@ public class WebauthnOnboardingService {
     @Value("${webauthn.resident-key:preferred}")
     private String residentKey;
 
-    @Value("${webauthn.user-verification:required}")
+    @Value("${webauthn.user-verification:preferred}")
     private String userVerification;
 
     @Value("${webauthn.validate-saml:true}")
@@ -163,12 +166,10 @@ public class WebauthnOnboardingService {
         if (!"none".equalsIgnoreCase(attestationConveyance)) {
             throw new IllegalStateException("Only attestation=none is supported by the WebAuthn RP");
         }
-        String configuredUserVerification = userVerification == null
-            ? ""
-            : userVerification.trim().toLowerCase(Locale.ROOT);
-        if (!REQUIRED_USER_VERIFICATION.equals(configuredUserVerification)) {
+        String configuredUserVerification = normalizeUserVerificationPolicy();
+        if (!USER_VERIFICATION_POLICIES.contains(configuredUserVerification)) {
             throw new IllegalStateException(
-                "WebAuthn user verification must be configured as 'required' because credentials authorize spending intents"
+                "WebAuthn user verification must be one of: required, preferred, discouraged"
             );
         }
         // Start periodic cleanup of expired sessions
@@ -187,7 +188,7 @@ public class WebauthnOnboardingService {
             "WebAuthn Onboarding Service initialized. RP ID: {}, Session TTL: {}s, userVerification={}",
             getEffectiveRpId(),
             sessionTtlSeconds,
-            REQUIRED_USER_VERIFICATION
+            configuredUserVerification
         );
     }
 
@@ -622,10 +623,11 @@ public class WebauthnOnboardingService {
 
         if (!userPresent || !userVerified) {
             log.warn(
-                "WebAuthn registration authenticator data rejected. flags=0x{} userPresent={} userVerified={}",
+                "WebAuthn registration authenticator data does not include user verification. flags=0x{} userPresent={} userVerified={} policy={}",
                 String.format(Locale.ROOT, "%02x", flags),
                 userPresent,
-                userVerified
+                userVerified,
+                normalizeUserVerificationPolicy()
             );
         }
 
@@ -634,9 +636,7 @@ public class WebauthnOnboardingService {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "User present flag not set");
         }
 
-        // Institutional credentials are later used to authorize spending
-        // intents, so registration must establish user verification too.
-        if (!userVerified) {
+        if (!userVerified && REQUIRED_USER_VERIFICATION.equals(normalizeUserVerificationPolicy())) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "User verification flag not set");
         }
 
@@ -848,8 +848,15 @@ public class WebauthnOnboardingService {
             .authenticatorAttachment(authenticatorAttachment.isEmpty() ? null : authenticatorAttachment)
             .residentKey(residentKey)
             .requireResidentKey("required".equals(residentKey))
-            .userVerification(REQUIRED_USER_VERIFICATION)
+            .userVerification(normalizeUserVerificationPolicy())
             .build();
+    }
+
+    private String normalizeUserVerificationPolicy() {
+        if (userVerification == null || userVerification.isBlank()) {
+            return "preferred";
+        }
+        return userVerification.trim().toLowerCase(Locale.ROOT);
     }
 
     private String normalizeTransports(String[] transports) {

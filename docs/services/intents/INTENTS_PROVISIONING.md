@@ -116,6 +116,14 @@ sequenceDiagram
 callback is not delivered. `POST /intents/authorize/client-error` is diagnostic
 only and does not authorize an intent.
 
+The authorization ceremony uses `WEBAUTHN_USER_VERIFICATION` and defaults to
+`preferred`: the browser is asked to perform user verification, but the intent
+can continue when the returned authenticator data has `UV=false`. With
+`required`, both the browser ceremony and the backend reject such an
+assertion with `webauthn_user_verification_required`. This is the only reliable
+signal; entering a PIN in a browser/provider dialog does not by itself prove
+that the signed WebAuthn assertion contains the UV flag.
+
 ## Provisioning surface
 
 `/institution-config/**` is localhost/private-network restricted. Institutional

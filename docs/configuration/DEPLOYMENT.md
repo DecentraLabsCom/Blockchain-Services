@@ -52,7 +52,7 @@ and units.
 | Database | `SPRING_DATASOURCE_URL`, `SPRING_DATASOURCE_USERNAME`, `SPRING_DATASOURCE_PASSWORD` | Flyway validates migrations at startup. |
 | Signing and Marketplace | `PRIVATE_KEY_PATH`, `PUBLIC_KEY_PATH`, `MARKETPLACE_PUBLIC_KEY_URL`, `PUBLIC_BASE_URL` | Mount private keys read-only and use HTTPS endpoints. |
 | Provider mode | `FEATURES_PROVIDERS_ENABLED`, `FEATURES_PROVIDERS_REGISTRATION_ENABLED`, `FEATURES_ORGANIZATIONS_ENABLED` | Registration is independently feature-gated. |
-| WebAuthn | `WEBAUTHN_RP_ID`, `WEBAUTHN_RP_ORIGINS`, `WEBAUTHN_AUTHENTICATOR_ATTACHMENT`, `WEBAUTHN_USER_VERIFICATION`, `WEBAUTHN_ATTESTATION_CONVEYANCE` | Verification is required; local `platform` authenticators are the default and only `none` attestation is accepted. |
+| WebAuthn | `WEBAUTHN_RP_ID`, `WEBAUTHN_RP_ORIGINS`, `WEBAUTHN_AUTHENTICATOR_ATTACHMENT`, `WEBAUTHN_USER_VERIFICATION`, `WEBAUTHN_ATTESTATION_CONVEYANCE` | `preferred` verification is the default for browser/provider compatibility; `required` remains available as a strict policy. Only `none` attestation is accepted. |
 | Intents | `INTENT_PAYLOAD_ENCRYPTION_KEY`, `INTENTS_AUTH_*`, `INTENT_DOMAIN_*` | The payload key is a base64/base64url 32-byte AES-256 key and is required to persist execution payloads. |
 | SAML | `SAML_IDP_TRUST_MODE`, `SAML_TRUSTED_IDP`, `SAML_IDP_METADATA_OVERRIDE` | Use `whitelist` in production. |
 | Admin boundary | `ADMIN_DASHBOARD_*`, `SECURITY_ALLOW_PRIVATE_NETWORKS`, `ADMIN_ALLOWED_CIDRS`, `ADMIN_ACCESS_TOKEN_*` | See [Security](../security/SECURITY.md). |
@@ -64,10 +64,16 @@ and units.
 
 The default `WEBAUTHN_AUTHENTICATOR_ATTACHMENT=platform` registers a
 credential with the authenticator local to the user's device: for example,
-Windows Hello, Touch ID, Face ID or an Android screen-lock authenticator. With
-`WEBAUTHN_USER_VERIFICATION=required`, the local authenticator may verify the
-user with a device PIN, passcode, pattern or biometric; biometrics are not
-required by this setting.
+Windows Hello, Touch ID, Face ID or an Android screen-lock authenticator.
+`WEBAUTHN_USER_VERIFICATION=preferred` asks the browser/provider to verify the
+user when possible but permits an assertion without the UV flag. Set it to
+`required` when every registered client must return `UV=true`; the backend then
+rejects registration and intent authorization when the flag is absent. Set it
+to `discouraged` only when the deployment deliberately does not request UV.
+
+The PIN or biometric dialog shown by a browser is not itself proof of WebAuthn
+user verification. The signed authenticator-data UV flag is authoritative, and
+support can vary by browser, operating system and passkey provider.
 
 Set `WEBAUTHN_AUTHENTICATOR_ATTACHMENT=cross-platform` when the deployment is
 intended to use an external FIDO2 security key or another roaming authenticator.
@@ -75,6 +81,15 @@ Leave it empty only when the deployment must accept local, external and hybrid
 choices. The attachment setting applies when registering a credential; changing
 it does not convert existing credentials, so users must register a new
 credential after changing the setting.
+
+### WebAuthn authorization hints and transports
+
+The authorization ceremony sends each allowed credential by credential ID and
+does not send the optional `hints` or `transports` fields to the browser. Those
+fields are advisory, and stale or mixed values from a passkey provider can
+prevent a valid browser/provider from selecting the credential. Registration
+transport metadata is still retained for diagnostics, but it is not treated as
+a security restriction.
 
 ## 4. Start and verify
 

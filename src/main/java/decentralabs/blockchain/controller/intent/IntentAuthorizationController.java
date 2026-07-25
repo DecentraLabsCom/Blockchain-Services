@@ -10,7 +10,6 @@ import decentralabs.blockchain.service.intent.IntentAuthService;
 import decentralabs.blockchain.service.intent.IntentAuthorizationService;
 import jakarta.validation.Valid;
 import java.util.HashMap;
-import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import lombok.RequiredArgsConstructor;
@@ -37,11 +36,8 @@ public class IntentAuthorizationController {
     private final IntentAuthService intentAuthService;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
-    @Value("${webauthn.user-verification:required}")
+    @Value("${webauthn.user-verification:preferred}")
     private String userVerification;
-
-    @Value("${webauthn.authenticator.attachment:platform}")
-    private String authenticatorAttachment;
 
     @PostMapping("/authorize")
     public ResponseEntity<IntentAuthorizationSessionResponse> authorizeIntent(
@@ -103,14 +99,15 @@ public class IntentAuthorizationController {
         Map<String, Object> options = new HashMap<>();
         options.put("sessionId", session.getSessionId());
         options.put("challenge", session.getChallenge());
-        options.put("allowCredentials", session.getAllowedCredentials());
+        // Credential transports and authenticator hints are advisory. Do not
+        // send them here: a stale or mixed provider hint can prevent a valid
+        // browser/provider from selecting the credential by ID.
+        options.put("allowCredentials", session.getAllowedCredentials().stream()
+            .map(credential -> Map.of("id", credential.getId()))
+            .toList());
         options.put("rpId", authorizationService.getRelyingPartyId());
         options.put("timeout", DEFAULT_TIMEOUT_MS);
         options.put("userVerification", normalizeUserVerification(userVerification));
-        List<String> hints = buildAuthenticatorHints(authenticatorAttachment);
-        if (!hints.isEmpty()) {
-            options.put("hints", hints);
-        }
         options.put("returnUrl", session.getReturnUrl());
         options.put("requestId", session.getSubmission().getMeta().getRequestId());
 
@@ -314,14 +311,8 @@ public class IntentAuthorizationController {
               allowCredentials: allowCredentials.map((credential) => ({
                 id: base64UrlToArrayBuffer(credential.id),
                 type: 'public-key',
-                ...(Array.isArray(credential.transports) && credential.transports.length > 0
-                  ? { transports: credential.transports }
-                  : {}),
               })),
-              ...(Array.isArray(options.hints) && options.hints.length > 0
-                ? { hints: options.hints }
-                : {}),
-              userVerification: options.userVerification || 'required',
+              userVerification: options.userVerification || 'preferred',
               timeout: options.timeout || 90000,
             };
 
@@ -407,23 +398,12 @@ public class IntentAuthorizationController {
 
     private String normalizeUserVerification(String configured) {
         if (configured == null || configured.isBlank()) {
-            return "required";
+            return "preferred";
         }
-        String normalized = configured.trim().toLowerCase();
+        String normalized = configured.trim().toLowerCase(Locale.ROOT);
         return switch (normalized) {
             case "required", "preferred", "discouraged" -> normalized;
-            default -> "required";
-        };
-    }
-
-    private List<String> buildAuthenticatorHints(String configured) {
-        if (configured == null || configured.isBlank()) {
-            return List.of();
-        }
-        return switch (configured.trim().toLowerCase(Locale.ROOT)) {
-            case "platform" -> List.of("client-device");
-            case "cross-platform" -> List.of("security-key");
-            default -> List.of();
+            default -> "preferred";
         };
     }
 }
