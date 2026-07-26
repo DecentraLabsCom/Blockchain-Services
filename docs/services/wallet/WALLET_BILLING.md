@@ -76,7 +76,7 @@ cancellations and service non-delivery may return the applicable credits to the 
 
 The canonical on-chain scale is 7 decimal places: `10,000,000` raw units per
 credit. Backend SQL projections store human credit amounts with the same
-precision after migration `V10__credit_scale_seven_decimals.sql`; raw values
+precision after migration `V44__credit_scale_seven_decimals.sql`; raw values
 must be converted through `CreditUnitConverter` rather than by literals.
 
 ## Administrative transaction API
