@@ -336,7 +336,7 @@ public class WalletService {
     
     /**
      * Gets the institutional user spending limit from the Diamond contract
-     * @return User spending limit in credit base units (5 decimals), or null if error
+     * @return User spending limit in credit base units (7 decimals), or null if error
      */
     public BigInteger getInstitutionalUserLimit(String providerAddress) {
         if (providerAddress == null || providerAddress.isBlank()) {
@@ -429,7 +429,7 @@ public class WalletService {
     
     /**
      * Gets the institutional billing balance from the Diamond contract
-     * @return Billing balance in base units (5 decimals), or null if error
+     * @return Billing balance in base units (7 decimals), or null if error
      */
     public BigInteger getInstitutionalBillingBalance(String providerAddress) {
         if (providerAddress == null || providerAddress.isBlank()) {

@@ -178,7 +178,7 @@ function updateCollectDetailVisibility() {
 // this affects all ETH-formatting but the original request only
 // targeted the "ETH Balance" display.
 const MAX_ETH_DECIMALS = 12;
-const CREDIT_DECIMALS = 5;
+const CREDIT_DECIMALS = 7;
 const CREDIT_RAW_BASE = 10n ** BigInt(CREDIT_DECIMALS);
 
 // Converts a raw or formatted value to a human-readable ETH/credit amount.

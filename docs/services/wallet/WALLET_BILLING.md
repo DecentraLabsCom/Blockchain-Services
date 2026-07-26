@@ -74,6 +74,11 @@ MySQL for reporting and compliance queries.
 The current billing model is based on internal service credits. They are not redeemable for cash or transferable as money. Eligible reservation
 cancellations and service non-delivery may return the applicable credits to the institutional account according to the reservation lifecycle; funding, credit lots, expiry and movements are represented in the backend and reconciled with Smart-Contracts state.
 
+The canonical on-chain scale is 7 decimal places: `10,000,000` raw units per
+credit. Backend SQL projections store human credit amounts with the same
+precision after migration `V10__credit_scale_seven_decimals.sql`; raw values
+must be converted through `CreditUnitConverter` rather than by literals.
+
 ## Administrative transaction API
 
 ### Signed admin execution

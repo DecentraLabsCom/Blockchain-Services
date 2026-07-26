@@ -9,15 +9,15 @@ import java.math.RoundingMode;
  *
  * Commercial policy:
  * - 10 credits = 1 EUR
- * - service credits use 5 on-chain decimal places
+ * - service credits use 7 on-chain decimal places
  */
 public final class CreditUnitConverter {
 
-    public static final int CREDIT_DECIMALS = 5;
+    public static final int CREDIT_DECIMALS = 7;
     public static final BigDecimal CREDITS_PER_EUR = BigDecimal.TEN;
-    public static final BigDecimal RAW_PER_CREDIT = BigDecimal.valueOf(100_000L);
+    public static final BigDecimal RAW_PER_CREDIT = BigDecimal.valueOf(10_000_000L);
     public static final BigDecimal RAW_PER_EUR = RAW_PER_CREDIT.multiply(CREDITS_PER_EUR);
-    public static final String DEFAULT_USER_LIMIT_RAW = "1000000"; // 10 credits
+    public static final String DEFAULT_USER_LIMIT_RAW = "100000000"; // 10 credits
 
     private CreditUnitConverter() {
     }

@@ -13,10 +13,10 @@ import java.math.BigInteger;
 @Builder
 public class StakeInfo {
     
-    /** Amount of service credits currently bonded (5 decimals) */
+    /** Amount of service credits currently bonded (7 decimals) */
     private BigInteger stakedAmount;
     
-    /** Total amount of credits slashed historically (5 decimals) */
+    /** Total amount of credits slashed historically (7 decimals) */
     private BigInteger slashedAmount;
     
     /** Timestamp of the last reservation (Unix seconds) */

@@ -329,14 +329,14 @@ class AdminDashboardControllerTest {
             );
             when(walletService.getProviderReceivableStatus(BigInteger.valueOf(3))).thenReturn(
                 Optional.of(new ProviderReceivableStatus(
-                    BigInteger.valueOf(1_000_000),
-                    BigInteger.valueOf(1_000_000),
+                    BigInteger.valueOf(100_000_000),
+                    BigInteger.valueOf(100_000_000),
                     BigInteger.valueOf(2),
-                    BigInteger.valueOf(250_000),
-                    BigInteger.valueOf(300_000),
-                    BigInteger.valueOf(200_000),
-                    BigInteger.valueOf(150_000),
-                    BigInteger.valueOf(100_000),
+                    BigInteger.valueOf(25_000_000),
+                    BigInteger.valueOf(30_000_000),
+                    BigInteger.valueOf(20_000_000),
+                    BigInteger.valueOf(15_000_000),
+                    BigInteger.valueOf(10_000_000),
                     BigInteger.ZERO,
                     BigInteger.ZERO,
                     BigInteger.valueOf(1_700_000_000L)
@@ -389,13 +389,13 @@ class AdminDashboardControllerTest {
             when(walletService.isLabOwnedByProvider(VALID_ADDRESS, BigInteger.valueOf(3))).thenReturn(true);
             when(walletService.getProviderReceivableStatus(BigInteger.valueOf(3))).thenReturn(
                 Optional.of(new ProviderReceivableStatus(
-                    BigInteger.valueOf(2_000_000),
-                    BigInteger.valueOf(2_000_000),
+                    BigInteger.valueOf(200_000_000),
+                    BigInteger.valueOf(200_000_000),
                     BigInteger.ZERO,
-                    BigInteger.valueOf(500_000),
-                    BigInteger.valueOf(750_000),
-                    BigInteger.valueOf(250_000),
-                    BigInteger.valueOf(500_000),
+                    BigInteger.valueOf(50_000_000),
+                    BigInteger.valueOf(75_000_000),
+                    BigInteger.valueOf(25_000_000),
+                    BigInteger.valueOf(50_000_000),
                     BigInteger.ZERO,
                     BigInteger.ZERO,
                     BigInteger.ZERO,
@@ -437,10 +437,10 @@ class AdminDashboardControllerTest {
             );
             when(walletService.getProviderReceivableStatus(BigInteger.ONE)).thenReturn(
                 Optional.of(new ProviderReceivableStatus(
-                    BigInteger.valueOf(100_000),
-                    BigInteger.valueOf(100_000),
+                    BigInteger.valueOf(10_000_000),
+                    BigInteger.valueOf(10_000_000),
                     BigInteger.ONE,
-                    BigInteger.valueOf(100_000),
+                    BigInteger.valueOf(10_000_000),
                     BigInteger.ZERO,
                     BigInteger.ZERO,
                     BigInteger.ZERO,
@@ -452,13 +452,13 @@ class AdminDashboardControllerTest {
             );
             when(walletService.getProviderReceivableStatus(BigInteger.TWO)).thenReturn(
                 Optional.of(new ProviderReceivableStatus(
-                    BigInteger.valueOf(200_000),
-                    BigInteger.valueOf(200_000),
+                    BigInteger.valueOf(20_000_000),
+                    BigInteger.valueOf(20_000_000),
                     BigInteger.ZERO,
                     BigInteger.ZERO,
-                    BigInteger.valueOf(50_000),
+                    BigInteger.valueOf(5_000_000),
                     BigInteger.ZERO,
-                    BigInteger.valueOf(150_000),
+                    BigInteger.valueOf(15_000_000),
                     BigInteger.ZERO,
                     BigInteger.ZERO,
                     BigInteger.ZERO,
@@ -491,21 +491,21 @@ class AdminDashboardControllerTest {
         @DisplayName("Should include service credit balance in billing info")
         void shouldIncludeServiceCreditBalanceInBillingInfo() throws Exception {
             when(institutionalWalletService.getInstitutionalWalletAddress()).thenReturn(VALID_ADDRESS);
-            when(walletService.getInstitutionalUserLimit(VALID_ADDRESS)).thenReturn(BigInteger.valueOf(1_000_000));
+            when(walletService.getInstitutionalUserLimit(VALID_ADDRESS)).thenReturn(BigInteger.valueOf(100_000_000));
             when(walletService.getInstitutionalSpendingPeriod(VALID_ADDRESS)).thenReturn(BigInteger.valueOf(86_400));
             when(walletService.getInstitutionalCurrentPeriodStart(VALID_ADDRESS))
                 .thenReturn(Optional.of(BigInteger.valueOf(1_700_000_000L)));
-            when(walletService.getInstitutionalBillingBalance(VALID_ADDRESS)).thenReturn(BigInteger.valueOf(250_000));
-            when(walletService.getTotalServiceCreditBalance(VALID_ADDRESS)).thenReturn(BigInteger.valueOf(750_000));
+            when(walletService.getInstitutionalBillingBalance(VALID_ADDRESS)).thenReturn(BigInteger.valueOf(25_000_000));
+            when(walletService.getTotalServiceCreditBalance(VALID_ADDRESS)).thenReturn(BigInteger.valueOf(75_000_000));
             when(walletService.isLabProvider(VALID_ADDRESS)).thenReturn(false);
 
             mockMvc.perform(get("/billing/admin/billing-info"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.success").value(true))
                 .andExpect(jsonPath("$.walletConfigured").value(true))
-                .andExpect(jsonPath("$.serviceCreditBalance").value("750000"))
+                .andExpect(jsonPath("$.serviceCreditBalance").value("75000000"))
                 .andExpect(jsonPath("$.serviceCreditBalanceFormatted").value("7.5"))
-                .andExpect(jsonPath("$.billingBalance").value("250000"))
+                .andExpect(jsonPath("$.billingBalance").value("25000000"))
                 .andExpect(jsonPath("$.billingBalanceFormatted").value("2.5"))
                 .andExpect(jsonPath("$.periodStart").value(1_700_000_000L))
                 .andExpect(jsonPath("$.periodEnd").value(1_700_086_400L));

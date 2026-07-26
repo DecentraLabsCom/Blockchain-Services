@@ -44,17 +44,17 @@ class CreditProjectionServiceTest {
     @DisplayName("Reconciles a missing SQL account from the on-chain ledger")
     void reconcilesMissingAccountFromChain() {
         CreditLedgerSnapshot snapshot = new CreditLedgerSnapshot(
-                new BigDecimal("1000").movePointRight(5).toBigInteger(),
+                new BigDecimal("1000").movePointRight(7).toBigInteger(),
                 BigDecimal.ZERO.toBigInteger(),
                 List.of(new CreditLedgerSnapshot.Lot(
                         0,
                         BigInteger.ZERO, "0x" + "00".repeat(32),
-                        new BigDecimal("1000").movePointRight(5).toBigInteger(),
-                        new BigDecimal("1000").movePointRight(5).toBigInteger(),
+                        new BigDecimal("1000").movePointRight(7).toBigInteger(),
+                        new BigDecimal("1000").movePointRight(7).toBigInteger(),
                         BigInteger.ZERO, BigInteger.valueOf(1_700_000_000L), BigInteger.ZERO, false
                 )),
                 List.of(new CreditLedgerSnapshot.Movement(
-                        "MINT", new BigDecimal("1000").movePointRight(5).toBigInteger(),
+                        "MINT", new BigDecimal("1000").movePointRight(7).toBigInteger(),
                         "0x" + "00".repeat(32), BigInteger.valueOf(1_700_000_000L), 0
                 ))
         );
@@ -63,8 +63,8 @@ class CreditProjectionServiceTest {
         CreditAccount account = service.reconcileAccount(ADDRESS);
 
         assertThat(account.getAccountAddress()).isEqualTo(ADDRESS);
-        assertThat(account.getAvailable()).isEqualByComparingTo("1000.00000");
-        assertThat(account.getLocked()).isEqualByComparingTo("0.00000");
+        assertThat(account.getAvailable()).isEqualByComparingTo("1000.0000000");
+        assertThat(account.getLocked()).isEqualByComparingTo("0.0000000");
         verify(persistence).upsertCreditAccount(account);
         verify(persistence).upsertCreditLot(any(CreditLot.class));
         verify(persistence).upsertCreditMovement(any(CreditMovement.class));

@@ -219,8 +219,8 @@ class LabMetadataServiceTest {
                     "pricing": {
                         "displayAmount": "25",
                         "displayUnit": "day",
-                        "rawPricePerSecond": "29",
-                        "roundingMode": "ceil-per-second",
+                        "rawPricePerSecond": "1389",
+                        "roundingMode": "nearest-per-second",
                         "billingMode": "linear-duration"
                     },
                     "bookingMode": "calendar-period",

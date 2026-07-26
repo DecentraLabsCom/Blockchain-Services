@@ -198,7 +198,7 @@ class WalletServiceTest {
         stubGetBalance(walletAddress, BigInteger.ONE);
         stubEthCalls(
             web3j,
-            ethCallResponse(encodeValues(new org.web3j.abi.datatypes.generated.Uint256(BigInteger.valueOf(1_500_000))))
+            ethCallResponse(encodeValues(new org.web3j.abi.datatypes.generated.Uint256(BigInteger.valueOf(150_000_000))))
         );
 
         BalanceResponse response = spyService.getBalance(walletAddress);
@@ -207,7 +207,7 @@ class WalletServiceTest {
         assertThat(response.getBalanceWei()).isEqualTo("1");
         assertThat(response.getBalanceEth()).isEqualTo("1E-18");
         assertThat(response.getLabCreditAddress()).isEqualTo("0x2222222222222222222222222222222222222222");
-        assertThat(response.getLabBalanceRaw()).isEqualTo("1500000");
+        assertThat(response.getLabBalanceRaw()).isEqualTo("150000000");
         assertThat(response.getLabBalance()).isEqualTo("15");
         assertThat(response.getNetwork()).isEqualTo("sepolia");
     }
