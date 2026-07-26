@@ -2,6 +2,7 @@ package decentralabs.blockchain.controller.labadmin;
 
 import decentralabs.blockchain.dto.labadmin.LabAdminAssetResponse;
 import decentralabs.blockchain.dto.labadmin.LabAdminPublishRequest;
+import decentralabs.blockchain.dto.labadmin.LabAdminReservationCancelRequest;
 import decentralabs.blockchain.dto.labadmin.LabAdminTransactionResponse;
 import decentralabs.blockchain.exception.IdempotencyKeyPayloadMismatchException;
 import decentralabs.blockchain.service.auth.JwtService;
@@ -54,6 +55,36 @@ public class LabAdminController {
             return ok(labAdminService.listLabs());
         } catch (Exception ex) {
             return badRequest(ex);
+        }
+    }
+
+    @GetMapping("/lab-admin/reservations/upcoming")
+    public ResponseEntity<?> upcomingReservations() {
+        try {
+            return ok(labAdminService.listUpcomingReservations());
+        } catch (IllegalArgumentException | IllegalStateException ex) {
+            return badRequest(ex);
+        } catch (Exception ex) {
+            return internal("Failed to list upcoming reservations", ex);
+        }
+    }
+
+    @PostMapping("/lab-admin/reservations/{reservationKey}/cancel")
+    public ResponseEntity<?> cancelReservation(
+        @PathVariable String reservationKey,
+        @RequestBody(required = false) LabAdminReservationCancelRequest request,
+        @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey
+    ) {
+        try {
+            Integer reasonCode = request == null ? null : request.reasonCode();
+            LabAdminTransactionResponse response = labAdminService.cancelReservation(
+                reservationKey, reasonCode, idempotencyKey
+            );
+            return ResponseEntity.ok(response);
+        } catch (IllegalArgumentException | IllegalStateException ex) {
+            return badRequest(ex);
+        } catch (Exception ex) {
+            return internal("Failed to cancel reservation", ex);
         }
     }
 

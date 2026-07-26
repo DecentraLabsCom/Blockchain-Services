@@ -3,10 +3,15 @@ package decentralabs.blockchain.service.labadmin;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.doReturn;
+import static org.mockito.Mockito.spy;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import static org.mockito.ArgumentMatchers.eq;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import decentralabs.blockchain.contract.Diamond;
+import decentralabs.blockchain.dto.labadmin.LabAdminReservation;
 import decentralabs.blockchain.service.BackendUrlResolver;
 import decentralabs.blockchain.service.guacamole.GuacamoleProvisioningService;
 import decentralabs.blockchain.service.health.LabMetadataService;
@@ -28,6 +33,8 @@ import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.test.util.ReflectionTestUtils;
 import org.web3j.protocol.core.methods.response.Log;
 import org.web3j.protocol.core.methods.response.TransactionReceipt;
+import org.web3j.protocol.core.RemoteFunctionCall;
+import org.web3j.utils.Numeric;
 
 class LabAdminServiceTest {
 
@@ -36,6 +43,7 @@ class LabAdminServiceTest {
 
     private LabAdminService service;
     private WalletService walletService;
+    private InstitutionalWalletService institutionalWalletService;
     private LabMetadataService labMetadataService;
     private LabContentRetentionService contentRetentionService;
 
@@ -45,11 +53,12 @@ class LabAdminServiceTest {
         when(resolver.resolveBaseDomain()).thenReturn("https://lab.example.edu");
 
         walletService = mock(WalletService.class);
+        institutionalWalletService = mock(InstitutionalWalletService.class);
         labMetadataService = mock(LabMetadataService.class);
         contentRetentionService = new LabContentRetentionService();
         ReflectionTestUtils.setField(contentRetentionService, "contentBasePath", tempDir.resolve("lab-content").toString());
         service = new LabAdminService(
-            mock(InstitutionalWalletService.class),
+            institutionalWalletService,
             mock(InstitutionalTxManagerProvider.class),
             walletService,
             resolver,
@@ -60,6 +69,7 @@ class LabAdminServiceTest {
         );
         ReflectionTestUtils.setField(service, "contentBasePath", tempDir.resolve("lab-content").toString());
         ReflectionTestUtils.setField(service, "fmuDataPath", tempDir.resolve("fmu-data").toString());
+        service = spy(service);
     }
 
     @Test
@@ -301,5 +311,134 @@ class LabAdminServiceTest {
         assertThatThrownBy(() -> service.publish(null))
             .isInstanceOf(IllegalArgumentException.class)
             .hasMessageContaining("Idempotency-Key is required");
+    }
+
+    @Test
+    void reservationCancellationRequiresABytes32Key() {
+        assertThatThrownBy(() -> service.cancelReservation("0x1234", 7, "cancel-command-1"))
+            .isInstanceOf(IllegalArgumentException.class)
+            .hasMessageContaining("reservationKey must be a 0x-prefixed bytes32 value");
+    }
+
+    @Test
+    void reservationCancellationRequiresAValidReasonAndIdempotencyKey() {
+        String reservationKey = "0x" + "ab".repeat(32);
+
+        assertThatThrownBy(() -> service.cancelReservation(reservationKey, 0, "cancel-command-1"))
+            .isInstanceOf(IllegalArgumentException.class)
+            .hasMessageContaining("reasonCode must be between 1 and 255");
+        assertThatThrownBy(() -> service.cancelReservation(reservationKey, 7, null))
+            .isInstanceOf(IllegalArgumentException.class)
+            .hasMessageContaining("Idempotency-Key is required");
+    }
+
+    @Test
+    void listsFutureProviderReservationsWithCreditValues() throws Exception {
+        String wallet = "0x1111111111111111111111111111111111111111";
+        BigInteger labId = BigInteger.valueOf(7);
+        byte[] key = Numeric.hexStringToByteArray("0x" + "ab".repeat(32));
+        long now = System.currentTimeMillis() / 1000;
+        Diamond.Reservation reservation = new Diamond.Reservation(
+            labId,
+            "0x2222222222222222222222222222222222222222",
+            BigInteger.valueOf(25_000_000),
+            wallet,
+            BigInteger.ONE,
+            BigInteger.valueOf(now + 3600),
+            BigInteger.valueOf(now + 7200),
+            BigInteger.ZERO,
+            BigInteger.ZERO,
+            wallet,
+            wallet,
+            BigInteger.valueOf(20_000_000)
+        );
+        Diamond diamond = mock(Diamond.class);
+        RemoteFunctionCall<BigInteger> count = mock(RemoteFunctionCall.class);
+        RemoteFunctionCall<byte[]> keyCall = mock(RemoteFunctionCall.class);
+        RemoteFunctionCall<Diamond.Reservation> reservationCall = mock(RemoteFunctionCall.class);
+        when(institutionalWalletService.isConfigured()).thenReturn(true);
+        when(institutionalWalletService.getInstitutionalWalletAddress()).thenReturn(wallet);
+        when(walletService.isLabProvider(wallet)).thenReturn(true);
+        when(walletService.getLabsOwnedByProvider(wallet)).thenReturn(List.of(labId));
+        when(diamond.getReservationsOfToken(labId)).thenReturn(count);
+        when(count.send()).thenReturn(BigInteger.ONE);
+        when(diamond.getReservationOfTokenByIndex(labId, BigInteger.ZERO)).thenReturn(keyCall);
+        when(keyCall.send()).thenReturn(key);
+        when(diamond.getReservation(key)).thenReturn(reservationCall);
+        when(reservationCall.send()).thenReturn(reservation);
+        doReturn(diamond).when(service).loadReadonlyDiamond();
+
+        Map<String, Object> response = service.listUpcomingReservations();
+
+        assertThat(response.get("count")).isEqualTo(1);
+        List<?> reservations = (List<?>) response.get("reservations");
+        assertThat(reservations).hasSize(1);
+        LabAdminReservation listed = (LabAdminReservation) reservations.get(0);
+        assertThat(listed.priceCredits()).isEqualTo("2.5");
+        assertThat(listed.providerShareCredits()).isEqualTo("2");
+        assertThat(listed.cancellable()).isTrue();
+    }
+
+    @Test
+    void confirmedReservationUsesProviderCancellationTransaction() throws Exception {
+        String wallet = "0x1111111111111111111111111111111111111111";
+        BigInteger labId = BigInteger.valueOf(7);
+        String keyHex = "0x" + "cd".repeat(32);
+        byte[] key = Numeric.hexStringToByteArray(keyHex);
+        long now = System.currentTimeMillis() / 1000;
+        Diamond.Reservation reservation = new Diamond.Reservation(
+            labId,
+            "0x2222222222222222222222222222222222222222",
+            BigInteger.valueOf(25_000_000),
+            wallet,
+            BigInteger.ONE,
+            BigInteger.valueOf(now + 3600),
+            BigInteger.valueOf(now + 7200),
+            BigInteger.ZERO,
+            BigInteger.ZERO,
+            wallet,
+            wallet,
+            BigInteger.valueOf(20_000_000)
+        );
+        Diamond readonly = mock(Diamond.class);
+        Diamond writable = mock(Diamond.class);
+        RemoteFunctionCall<Diamond.Reservation> reservationCall = mock(RemoteFunctionCall.class);
+        RemoteFunctionCall<TransactionReceipt> transactionCall = mock(RemoteFunctionCall.class);
+        TransactionReceipt receipt = new TransactionReceipt();
+        receipt.setStatus("0x1");
+        receipt.setTransactionHash("0xtx");
+        when(institutionalWalletService.isConfigured()).thenReturn(true);
+        when(institutionalWalletService.getInstitutionalWalletAddress()).thenReturn(wallet);
+        when(walletService.isLabProvider(wallet)).thenReturn(true);
+        when(walletService.isLabOwnedByProvider(wallet, labId)).thenReturn(true);
+        when(readonly.getReservation(org.mockito.ArgumentMatchers.any(byte[].class))).thenReturn(reservationCall);
+        when(reservationCall.send()).thenReturn(reservation);
+        when(writable.cancelConfirmedBookingByProvider(
+            org.mockito.ArgumentMatchers.any(byte[].class), eq(BigInteger.valueOf(7))
+        )).thenReturn(transactionCall);
+        when(transactionCall.send()).thenReturn(receipt);
+        doReturn(readonly).when(service).loadReadonlyDiamond();
+        doReturn(writable).when(service).loadWritableDiamond(org.mockito.ArgumentMatchers.anyString());
+
+        var response = service.cancelReservation(keyHex, 7, "cancel-command-1");
+
+        assertThat(response.action()).isEqualTo("cancelConfirmedBookingByProvider");
+        assertThat(response.transactionHash()).isEqualTo("0xtx");
+        verify(writable).cancelConfirmedBookingByProvider(
+            org.mockito.ArgumentMatchers.any(byte[].class), eq(BigInteger.valueOf(7))
+        );
+    }
+
+    @Test
+    void pendingReservationsOnlyAllowProviderDenialReasons() {
+        assertThat((boolean) ReflectionTestUtils.invokeMethod(
+            service, "isPendingProviderReason", BigInteger.ONE
+        )).isTrue();
+        assertThat((boolean) ReflectionTestUtils.invokeMethod(
+            service, "isPendingProviderReason", BigInteger.valueOf(7)
+        )).isTrue();
+        assertThat((boolean) ReflectionTestUtils.invokeMethod(
+            service, "isPendingProviderReason", BigInteger.valueOf(3)
+        )).isFalse();
     }
 }

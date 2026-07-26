@@ -588,6 +588,16 @@ public class Diamond extends Contract {
     }
 
     /**
+     * Cancel a confirmed institutional booking as its current lab provider.
+     */
+    public RemoteFunctionCall<TransactionReceipt> cancelConfirmedBookingByProvider(
+        byte[] reservationKey,
+        BigInteger reasonCode
+    ) {
+        return executeRemoteCallTransaction(cancelConfirmedBookingByProviderFunction(reservationKey, reasonCode));
+    }
+
+    /**
      * Add a lab owned by the transaction sender.
      */
     public RemoteFunctionCall<TransactionReceipt> addLab(

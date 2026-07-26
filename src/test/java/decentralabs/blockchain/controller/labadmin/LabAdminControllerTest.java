@@ -60,6 +60,58 @@ class LabAdminControllerTest {
     }
 
     @Test
+    void upcomingReservationsDelegatesToService() throws Exception {
+        when(labAdminService.listUpcomingReservations()).thenReturn(Map.of(
+            "success", true,
+            "count", 1,
+            "reservations", java.util.List.of(Map.of("reservationKey", "0x" + "ab".repeat(32)))
+        ));
+
+        mockMvc.perform(get("/lab-admin/reservations/upcoming"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.success").value(true))
+            .andExpect(jsonPath("$.count").value(1))
+            .andExpect(jsonPath("$.reservations[0].reservationKey").value("0x" + "ab".repeat(32)));
+    }
+
+    @Test
+    void cancelReservationForwardsKeyReasonAndIdempotencyKey() throws Exception {
+        when(labAdminService.cancelReservation(
+            "0x" + "ab".repeat(32), 7, "cancel-command-1"
+        )).thenReturn(new decentralabs.blockchain.dto.labadmin.LabAdminTransactionResponse(
+            true,
+            "cancelConfirmedBookingByProvider",
+            "0xtx",
+            "0x1",
+            BigInteger.valueOf(5),
+            null
+        ));
+
+        mockMvc.perform(post("/lab-admin/reservations/0x" + "ab".repeat(32) + "/cancel")
+                .header("Idempotency-Key", "cancel-command-1")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"reasonCode\":7}"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.action").value("cancelConfirmedBookingByProvider"));
+
+        verify(labAdminService).cancelReservation("0x" + "ab".repeat(32), 7, "cancel-command-1");
+    }
+
+    @Test
+    void cancelReservationValidationErrorsReturnBadRequest() throws Exception {
+        when(labAdminService.cancelReservation(anyString(), eq(7), eq("cancel-command-1")))
+            .thenThrow(new IllegalStateException("Reservation is not owned by this provider wallet"));
+
+        mockMvc.perform(post("/lab-admin/reservations/0x" + "ab".repeat(32) + "/cancel")
+                .header("Idempotency-Key", "cancel-command-1")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"reasonCode\":7}"))
+            .andExpect(status().isBadRequest())
+            .andExpect(jsonPath("$.success").value(false))
+            .andExpect(jsonPath("$.error").value("Reservation is not owned by this provider wallet"));
+    }
+
+    @Test
     void publishValidationErrorsReturnBadRequest() throws Exception {
         when(labAdminService.publish(any(LabAdminPublishRequest.class)))
             .thenThrow(new IllegalArgumentException("Metadata URL is required"));

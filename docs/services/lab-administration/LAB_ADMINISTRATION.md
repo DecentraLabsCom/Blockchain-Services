@@ -22,6 +22,8 @@ connection strings and internal runbooks out of the uploaded content tree.
 | --- | --- |
 | `GET /lab-admin/status` | Provider wallet, configured creator PUC hash, content URLs, FMU inventory and Guacamole availability. |
 | `GET /lab-admin/labs` | Labs owned by the institutional provider wallet. |
+| `GET /lab-admin/reservations/upcoming` | Upcoming pending, confirmed or access-authorized reservations for provider-owned labs. |
+| `POST /lab-admin/reservations/{reservationKey}/cancel` | Deny a pending request or cancel a confirmed booking before it starts. |
 | `GET /lab-admin/guacamole/connections` | Safe Guacamole connection catalogue for administration. |
 | `POST /lab-admin/assets` | Upload a JPEG/PNG/WebP/GIF image or PDF document. |
 | `DELETE /lab-admin/assets` | Delete an uploaded image or document by its returned path. |
@@ -81,6 +83,31 @@ with a different command returns `409 IDEMPOTENCY_KEY_PAYLOAD_MISMATCH`.
 Publishing specifically requires an idempotency key; without one the request is
 rejected. The service returns an existing owned lab for the same metadata URI
 unless `allowDuplicate=true`.
+
+## Upcoming reservations and provider cancellation
+
+`GET /lab-admin/reservations/upcoming` reads the active reservation index for
+each lab owned by the configured institutional provider wallet. It returns
+reservations whose status is `PENDING`, `CONFIRMED` or `ACCESS_AUTHORIZED` and
+whose start time has not passed. Prices are returned both as raw on-chain
+units and as service credits; service credits use seven decimal places.
+
+`POST /lab-admin/reservations/{reservationKey}/cancel` requires a unique
+`Idempotency-Key` and a JSON body with a `reasonCode` from `1` to `255`:
+
+```json
+{ "reasonCode": 7 }
+```
+
+For `PENDING` reservations the provider reasons accepted by the contract are
+`1` (manual), `2` (not eligible), `6` (technical failure) and `7` (provider
+unavailable). For `CONFIRMED` reservations the endpoint calls
+`cancelConfirmedBookingByProvider`; the contract requires the provider to own
+the lab and the reservation to start in the future, and refunds the full
+reservation price as service credits. `ACCESS_AUTHORIZED` and already-started
+reservations are intentionally not cancellable by this endpoint. The contract
+re-checks ownership and state at transaction time, so a race with a consumer
+or another operator fails safely rather than cancelling a changed booking.
 
 An update that only changes the gateway-hosted metadata can return
 `status: "offchain_updated"` without a chain transaction. All other on-chain
@@ -143,4 +170,3 @@ Before publishing, confirm:
 
 The generic lab metadata example remains available in
 [example-lab-metadata.md](../../reference/example-lab-metadata.md).
-

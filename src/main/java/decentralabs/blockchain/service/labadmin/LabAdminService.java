@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import decentralabs.blockchain.contract.Diamond;
 import decentralabs.blockchain.dto.labadmin.LabAdminAssetResponse;
 import decentralabs.blockchain.dto.labadmin.LabAdminPublishRequest;
+import decentralabs.blockchain.dto.labadmin.LabAdminReservation;
 import decentralabs.blockchain.dto.labadmin.LabAdminTransactionResponse;
 import decentralabs.blockchain.service.BackendUrlResolver;
 import decentralabs.blockchain.service.guacamole.GuacamoleProvisioningService;
@@ -12,6 +13,7 @@ import decentralabs.blockchain.service.health.LabMetadataService;
 import decentralabs.blockchain.service.wallet.InstitutionalTxManagerProvider;
 import decentralabs.blockchain.service.wallet.InstitutionalWalletService;
 import decentralabs.blockchain.service.wallet.WalletService;
+import decentralabs.blockchain.util.CreditUnitConverter;
 import decentralabs.blockchain.util.LogSanitizer;
 import java.io.IOException;
 import java.math.BigInteger;
@@ -19,6 +21,7 @@ import java.net.URI;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -53,8 +56,13 @@ public class LabAdminService {
     private static final List<String> DOC_TYPES = List.of("application/pdf");
     private static final Pattern BYTES32_PATTERN = Pattern.compile("0x[0-9a-fA-F]{64}");
     private static final String ZERO_BYTES32 = "0x" + "0".repeat(64);
+    private static final String ZERO_ADDRESS = "0x" + "0".repeat(40);
     private static final String ERC721_TRANSFER_TOPIC =
         "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef";
+    private static final BigInteger STATUS_PENDING = BigInteger.ZERO;
+    private static final BigInteger STATUS_CONFIRMED = BigInteger.ONE;
+    private static final BigInteger STATUS_ACCESS_AUTHORIZED = BigInteger.valueOf(2);
+    private static final int MAX_UPCOMING_RESERVATIONS = 500;
 
     public record LabAdminDeleteAssetResponse(boolean success, boolean deleted, String path) {}
 
@@ -135,6 +143,212 @@ public class LabAdminService {
             labs.add(item);
         }
         return Map.of("success", true, "providerAddress", wallet, "labs", labs);
+    }
+
+    public Map<String, Object> listUpcomingReservations() throws Exception {
+        String wallet = requireProviderWallet();
+        Diamond diamond = loadReadonlyDiamond();
+        long now = Instant.now().getEpochSecond();
+        List<LabAdminReservation> reservations = new ArrayList<>();
+        boolean truncated = false;
+
+        for (BigInteger labId : walletService.getLabsOwnedByProvider(wallet)) {
+            if (reservations.size() >= MAX_UPCOMING_RESERVATIONS) {
+                truncated = true;
+                break;
+            }
+            BigInteger reservationCount;
+            try {
+                reservationCount = diamond.getReservationsOfToken(labId).send();
+            } catch (Exception ex) {
+                log.debug("Unable to load reservations for lab {}", labId, ex);
+                continue;
+            }
+            if (reservationCount == null || reservationCount.signum() <= 0) {
+                continue;
+            }
+
+            BigInteger limit = reservationCount.min(BigInteger.valueOf(MAX_UPCOMING_RESERVATIONS));
+            for (BigInteger index = BigInteger.ZERO;
+                 index.compareTo(limit) < 0 && reservations.size() < MAX_UPCOMING_RESERVATIONS;
+                 index = index.add(BigInteger.ONE)) {
+                try {
+                    byte[] key = diamond.getReservationOfTokenByIndex(labId, index).send();
+                    Diamond.Reservation reservation = diamond.getReservation(key).send();
+                    if (!isUpcomingReservation(reservation, now)
+                        || !wallet.equalsIgnoreCase(reservation.labProvider)) {
+                        continue;
+                    }
+                    reservations.add(toLabAdminReservation(key, reservation, now));
+                } catch (Exception ex) {
+                    log.debug("Unable to load reservation {} for lab {}", index, labId, ex);
+                }
+            }
+            if (reservationCount.compareTo(limit) > 0) {
+                truncated = true;
+            }
+        }
+
+        reservations.sort(java.util.Comparator
+            .comparingLong(LabAdminReservation::start)
+            .thenComparing(LabAdminReservation::labId)
+            .thenComparing(LabAdminReservation::reservationKey));
+        return Map.of(
+            "success", true,
+            "providerAddress", wallet,
+            "asOf", now,
+            "count", reservations.size(),
+            "truncated", truncated,
+            "reservations", reservations
+        );
+    }
+
+    public LabAdminTransactionResponse cancelReservation(
+        String reservationKey,
+        Integer reasonCode,
+        String idempotencyKey
+    ) throws Exception {
+        String normalizedKey = normalizeReservationKey(reservationKey);
+        BigInteger normalizedReason = requireProviderReason(reasonCode);
+        String commandKey = requireReservationIdempotencyKey(idempotencyKey);
+        String wallet = requireProviderWallet();
+        byte[] key = Numeric.hexStringToByteArray(normalizedKey);
+        Diamond.Reservation reservation = loadReadonlyDiamond().getReservation(key).send();
+        if (!hasReservation(reservation)) {
+            throw new IllegalArgumentException("Reservation was not found");
+        }
+        if (!wallet.equalsIgnoreCase(reservation.labProvider)
+            || !walletService.isLabOwnedByProvider(wallet, reservation.labId)) {
+            throw new IllegalStateException("Reservation is not owned by this provider wallet");
+        }
+        long now = Instant.now().getEpochSecond();
+        if (reservation.start == null || reservation.start.longValueExact() <= now) {
+            throw new IllegalStateException("Reservation has already started or is no longer cancellable");
+        }
+
+        String action;
+        TransactionReceipt receipt;
+        if (STATUS_PENDING.equals(reservation.status)) {
+            if (!isPendingProviderReason(normalizedReason)) {
+                throw new IllegalArgumentException(
+                    "Pending reservations require a provider reason code: 1, 2, 6 or 7"
+                );
+            }
+            action = "denyReservationRequestWithReason";
+            receipt = loadWritableDiamond(operationKey("deny-reservation", normalizedKey, commandKey))
+                .denyReservationRequestWithReason(key, normalizedReason)
+                .send();
+        } else if (STATUS_CONFIRMED.equals(reservation.status)) {
+            action = "cancelConfirmedBookingByProvider";
+            receipt = loadWritableDiamond(operationKey("cancel-reservation", normalizedKey, commandKey))
+                .cancelConfirmedBookingByProvider(key, normalizedReason)
+                .send();
+        } else {
+            throw new IllegalStateException("Reservation status is not cancellable: "
+                + describeReservationStatus(reservation.status));
+        }
+
+        if (receipt == null || !receipt.isStatusOK()) {
+            throw new IllegalStateException("Reservation cancellation transaction was reverted");
+        }
+        return new LabAdminTransactionResponse(
+            true,
+            action,
+            receipt.getTransactionHash(),
+            receipt.getStatus(),
+            reservation.labId,
+            null
+        );
+    }
+
+    private boolean isUpcomingReservation(Diamond.Reservation reservation, long now) {
+        if (!hasReservation(reservation) || reservation.start == null) {
+            return false;
+        }
+        int status = reservation.status.intValue();
+        return (status == STATUS_PENDING.intValue()
+            || status == STATUS_CONFIRMED.intValue()
+            || status == STATUS_ACCESS_AUTHORIZED.intValue())
+            && reservation.start.longValueExact() >= now;
+    }
+
+    private LabAdminReservation toLabAdminReservation(
+        byte[] key,
+        Diamond.Reservation reservation,
+        long now
+    ) {
+        int status = reservation.status.intValueExact();
+        long start = reservation.start.longValueExact();
+        long end = reservation.end.longValueExact();
+        return new LabAdminReservation(
+            Numeric.toHexString(key),
+            reservation.labId.toString(),
+            reservation.renter,
+            status,
+            describeReservationStatus(reservation.status),
+            start,
+            end,
+            reservation.price.toString(),
+            CreditUnitConverter.formatRawCredits(reservation.price),
+            reservation.providerShare.toString(),
+            CreditUnitConverter.formatRawCredits(reservation.providerShare),
+            start > now && (STATUS_PENDING.equals(reservation.status) || STATUS_CONFIRMED.equals(reservation.status))
+        );
+    }
+
+    private boolean hasReservation(Diamond.Reservation reservation) {
+        return reservation != null
+            && reservation.labId != null
+            && reservation.renter != null
+            && !ZERO_ADDRESS.equalsIgnoreCase(reservation.renter)
+            && reservation.status != null;
+    }
+
+    private String normalizeReservationKey(String value) {
+        String normalized = value == null ? "" : value.trim();
+        if (!BYTES32_PATTERN.matcher(normalized).matches()) {
+            throw new IllegalArgumentException("reservationKey must be a 0x-prefixed bytes32 value");
+        }
+        return normalized.toLowerCase(Locale.ROOT);
+    }
+
+    private BigInteger requireProviderReason(Integer reasonCode) {
+        if (reasonCode == null || reasonCode < 1 || reasonCode > 255) {
+            throw new IllegalArgumentException("reasonCode must be between 1 and 255");
+        }
+        return BigInteger.valueOf(reasonCode.longValue());
+    }
+
+    private String requireReservationIdempotencyKey(String idempotencyKey) {
+        String normalized = idempotencyKey == null ? "" : idempotencyKey.trim();
+        if (normalized.isBlank()) {
+            throw new IllegalArgumentException("Idempotency-Key is required for reservation cancellation");
+        }
+        if (normalized.length() > 128) {
+            throw new IllegalArgumentException("Idempotency-Key must not exceed 128 characters");
+        }
+        return normalized;
+    }
+
+    private boolean isPendingProviderReason(BigInteger reasonCode) {
+        return BigInteger.ONE.equals(reasonCode)
+            || BigInteger.valueOf(2).equals(reasonCode)
+            || BigInteger.valueOf(6).equals(reasonCode)
+            || BigInteger.valueOf(7).equals(reasonCode);
+    }
+
+    private String describeReservationStatus(BigInteger status) {
+        if (status == null) {
+            return "UNKNOWN";
+        }
+        return switch (status.intValue()) {
+            case 0 -> "PENDING";
+            case 1 -> "CONFIRMED";
+            case 2 -> "ACCESS_AUTHORIZED";
+            case 3 -> "COLLECTED";
+            case 4 -> "CANCELLED";
+            default -> "UNKNOWN(" + status + ")";
+        };
     }
 
     public LabAdminAssetResponse saveAsset(String requestedContentId, String kind, MultipartFile file) throws IOException {
@@ -610,7 +824,7 @@ public class LabAdminService {
         }
     }
 
-    private Diamond loadReadonlyDiamond() {
+    Diamond loadReadonlyDiamond() {
         Web3j currentWeb3j = walletService.getWeb3jInstance();
         return Diamond.load(
             contractAddress,
@@ -620,7 +834,7 @@ public class LabAdminService {
         );
     }
 
-    private Diamond loadWritableDiamond(String operationKey) {
+    Diamond loadWritableDiamond(String operationKey) {
         Web3j currentWeb3j = walletService.getWeb3jInstance();
         TransactionManager txManager = txManagerProvider.get(currentWeb3j, operationKey);
         return Diamond.load(
