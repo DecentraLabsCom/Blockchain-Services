@@ -303,6 +303,29 @@ class SecurityConfigIntegrationTest {
     }
 
     @Test
+    void sessionObserved_requiresSessionObserverRoleFromDockerNetwork() throws Exception {
+        mockMvc.perform(post("/access-audit/internal/session-observed")
+                .with(anonymous())
+                .with(req -> {
+                    req.setRemoteAddr("172.22.0.3");
+                    return req;
+                }))
+            .andExpect(status().isForbidden());
+    }
+
+    @Test
+    @WithMockUser(roles = "SESSION_OBSERVER")
+    void sessionObserved_allowsSessionObserverRoleFromDockerNetwork() throws Exception {
+        mockMvc.perform(post("/access-audit/internal/session-observed")
+                .with(req -> {
+                    req.setRemoteAddr("172.22.0.3");
+                    return req;
+                }))
+            .andExpect(status().isOk())
+            .andExpect(content().string("session-observed-ok"));
+    }
+
+    @Test
     void accessCredentialEndpoint_isAccessibleWithoutSpringAuthentication() throws Exception {
         mockMvc.perform(post("/auth/access-credential")
                 .contentType(MediaType.APPLICATION_JSON)
@@ -387,6 +410,11 @@ class SecurityConfigIntegrationTest {
         @PostMapping("/auth/fmu/session-ticket/redeem")
         String fmuSessionTicketRedeem() {
             return "fmu-session-ticket-ok";
+        }
+
+        @PostMapping("/access-audit/internal/session-observed")
+        String sessionObserved() {
+            return "session-observed-ok";
         }
 
         @PostMapping("/auth/access-credential")

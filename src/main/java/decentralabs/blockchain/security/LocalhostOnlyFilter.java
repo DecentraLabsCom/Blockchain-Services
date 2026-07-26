@@ -20,6 +20,8 @@ import org.springframework.web.filter.OncePerRequestFilter;
 @Order(0)
 @Slf4j
 public class LocalhostOnlyFilter extends OncePerRequestFilter {
+    private static final String SESSION_OBSERVED_PATH = "/access-audit/internal/session-observed";
+
     public static final String LOCAL_BILLING_READ_ALLOWED_ATTRIBUTE =
         LocalhostOnlyFilter.class.getName() + ".localBillingReadAllowed";
 
@@ -117,6 +119,13 @@ public class LocalhostOnlyFilter extends OncePerRequestFilter {
     private boolean requiresLocalhost(HttpServletRequest request) {
         String path = request.getRequestURI();
         if (path.equals("/wallet/health") || path.equals("/billing/health")) {
+            return false;
+        }
+        // The FMU runner calls this endpoint from the Docker network. Keep the
+        // network gate out of the way for this one callback so that the
+        // SessionObserverAuthenticationFilter and Spring Security can enforce
+        // the required short-lived SESSION_OBSERVER credential.
+        if ("POST".equalsIgnoreCase(request.getMethod()) && SESSION_OBSERVED_PATH.equals(path)) {
             return false;
         }
         // Protect wallet/billing APIs, admin notifications, and the wallet dashboard UI.

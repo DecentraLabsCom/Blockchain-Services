@@ -53,7 +53,7 @@ class LocalhostOnlyFilterTest {
     }
 
     @Test
-    void accessAuditInternalEndpoint_blocksPrivateNetworkWithoutToken() throws Exception {
+    void accessAuditSessionObserved_allowsPrivateNetworkForSessionObserverChain() throws Exception {
         ReflectionTestUtils.setField(adminNetworkAccessPolicy, "adminDashboardAllowPrivate", true);
         ReflectionTestUtils.setField(adminNetworkAccessPolicy, "allowPrivateNetworks", true);
         mockMvc = MockMvcBuilders
@@ -62,6 +62,34 @@ class LocalhostOnlyFilterTest {
             .build();
 
         mockMvc.perform(post("/access-audit/internal/session-observed")
+                .with(req -> { req.setRemoteAddr("172.17.0.1"); return req; }))
+            .andExpect(status().isOk());
+    }
+
+    @Test
+    void accessAuditInternalOtherEndpoint_remainsBlockedFromPrivateNetwork() throws Exception {
+        ReflectionTestUtils.setField(adminNetworkAccessPolicy, "adminDashboardAllowPrivate", true);
+        ReflectionTestUtils.setField(adminNetworkAccessPolicy, "allowPrivateNetworks", true);
+        mockMvc = MockMvcBuilders
+            .standaloneSetup(new LocalhostFilterTestController())
+            .addFilters(filter)
+            .build();
+
+        mockMvc.perform(post("/access-audit/internal/other")
+                .with(req -> { req.setRemoteAddr("172.17.0.1"); return req; }))
+            .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void accessAuditSessionObserved_nonPostMethod_remainsBlockedFromPrivateNetwork() throws Exception {
+        ReflectionTestUtils.setField(adminNetworkAccessPolicy, "adminDashboardAllowPrivate", true);
+        ReflectionTestUtils.setField(adminNetworkAccessPolicy, "allowPrivateNetworks", true);
+        mockMvc = MockMvcBuilders
+            .standaloneSetup(new LocalhostFilterTestController())
+            .addFilters(filter)
+            .build();
+
+        mockMvc.perform(get("/access-audit/internal/session-observed")
                 .with(req -> { req.setRemoteAddr("172.17.0.1"); return req; }))
             .andExpect(status().isForbidden());
     }
