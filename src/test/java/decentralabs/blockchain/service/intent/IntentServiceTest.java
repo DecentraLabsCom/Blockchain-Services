@@ -145,17 +145,22 @@ class IntentServiceTest {
         );
 
         String hash = "0x" + "f".repeat(64);
-        // Use reflection to invoke private methods
-        var markMethod = IntentService.class.getDeclaredMethod("markAssertionUsed", String.class);
-        var checkMethod = IntentService.class.getDeclaredMethod("checkAssertionReplay", String.class);
+        String requestId = "ttl-request";
+        // Use reflection to invoke the request-scoped replay methods
+        var markMethod = IntentService.class.getDeclaredMethod(
+            "markAssertionUsed", String.class, String.class
+        );
+        var checkMethod = IntentService.class.getDeclaredMethod(
+            "checkAssertionReplay", String.class, String.class
+        );
         markMethod.setAccessible(true);
         checkMethod.setAccessible(true);
 
         // Mark used and expect a replay immediately
-        markMethod.invoke(shortTtlService, hash);
+        markMethod.invoke(shortTtlService, hash, requestId);
         ResponseStatusException ex = assertThrows(ResponseStatusException.class, () -> {
             try {
-                checkMethod.invoke(shortTtlService, hash);
+                checkMethod.invoke(shortTtlService, hash, requestId);
             } catch (Exception e) {
                 // unwrap reflection exception
                 throw e.getCause();
@@ -166,7 +171,7 @@ class IntentServiceTest {
         // Wait for TTL to expire and then expect no exception
         Thread.sleep(200);
         // should not throw
-        checkMethod.invoke(shortTtlService, hash);
+        checkMethod.invoke(shortTtlService, hash, requestId);
     }
 
     @Test

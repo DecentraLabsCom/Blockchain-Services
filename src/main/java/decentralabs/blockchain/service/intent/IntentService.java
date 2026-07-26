@@ -706,10 +706,6 @@ public class IntentService {
         return Numeric.toBigInt(normalized).equals(BigInteger.ZERO);
     }
 
-    private void checkAssertionReplay(String assertionHash) {
-        checkAssertionReplay(assertionHash, null);
-    }
-
     private void checkAssertionReplay(String assertionHash, String requestId) {
         if (assertionHash == null || assertionHash.isBlank()) {
             return;
@@ -720,10 +716,6 @@ public class IntentService {
         if (expiresAt != null && expiresAt > nowMs) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "assertion_replay");
         }
-    }
-
-    private void markAssertionUsed(String assertionHash) {
-        markAssertionUsed(assertionHash, null);
     }
 
     private void markAssertionUsed(String assertionHash, String requestId) {
