@@ -23,6 +23,7 @@ import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
@@ -150,6 +151,8 @@ public class LabAdminService {
         Diamond diamond = loadReadonlyDiamond();
         long now = Instant.now().getEpochSecond();
         List<LabAdminReservation> reservations = new ArrayList<>();
+        Map<BigInteger, String> labNames = new HashMap<>();
+        Map<String, String> institutionNames = new HashMap<>();
         boolean truncated = false;
 
         for (BigInteger labId : walletService.getLabsOwnedByProvider(wallet)) {
@@ -179,7 +182,21 @@ public class LabAdminService {
                         || !wallet.equalsIgnoreCase(reservation.labProvider)) {
                         continue;
                     }
-                    reservations.add(toLabAdminReservation(key, reservation, now));
+                    String labName = labNames.get(reservation.labId);
+                    if (!labNames.containsKey(reservation.labId)) {
+                        labName = resolveLabName(diamond, reservation.labId);
+                        labNames.put(reservation.labId, labName);
+                    }
+                    String institutionAddress = reservation.payerInstitution;
+                    String institutionKey = normalizeAddressKey(institutionAddress);
+                    String institutionName = institutionNames.get(institutionKey);
+                    if (!institutionNames.containsKey(institutionKey)) {
+                        institutionName = resolveInstitutionName(diamond, institutionAddress);
+                        institutionNames.put(institutionKey, institutionName);
+                    }
+                    reservations.add(toLabAdminReservation(
+                        key, reservation, labName, institutionName, now
+                    ));
                 } catch (Exception ex) {
                     log.debug("Unable to load reservation {} for lab {}", index, labId, ex);
                 }
@@ -278,6 +295,8 @@ public class LabAdminService {
     private LabAdminReservation toLabAdminReservation(
         byte[] key,
         Diamond.Reservation reservation,
+        String labName,
+        String institutionName,
         long now
     ) {
         int status = reservation.status.intValueExact();
@@ -286,7 +305,10 @@ public class LabAdminService {
         return new LabAdminReservation(
             Numeric.toHexString(key),
             reservation.labId.toString(),
+            labName,
             reservation.renter,
+            institutionName,
+            reservation.payerInstitution,
             status,
             describeReservationStatus(reservation.status),
             start,
@@ -297,6 +319,54 @@ public class LabAdminService {
             CreditUnitConverter.formatRawCredits(reservation.providerShare),
             start > now && (STATUS_PENDING.equals(reservation.status) || STATUS_CONFIRMED.equals(reservation.status))
         );
+    }
+
+    private String resolveLabName(Diamond diamond, BigInteger labId) {
+        try {
+            Diamond.Lab lab = diamond.getLab(labId).send();
+            if (lab == null || lab.base == null || !hasText(lab.base.uri)) {
+                return null;
+            }
+            var metadata = labMetadataService.getLabMetadata(lab.base.uri);
+            return metadata == null || !hasText(metadata.getName())
+                ? null
+                : metadata.getName().trim();
+        } catch (Exception ex) {
+            log.debug("Unable to resolve name for lab {}", labId, ex);
+            return null;
+        }
+    }
+
+    private String resolveInstitutionName(Diamond diamond, String institutionAddress) {
+        if (!hasText(institutionAddress) || ZERO_ADDRESS.equalsIgnoreCase(institutionAddress)) {
+            return null;
+        }
+        try {
+            String[] organizations = diamond
+                .getRegisteredSchacHomeOrganizations(institutionAddress)
+                .send();
+            if (organizations == null) {
+                return null;
+            }
+            List<String> names = new ArrayList<>();
+            for (String organization : organizations) {
+                if (!hasText(organization)) {
+                    continue;
+                }
+                String normalized = organization.trim();
+                if (!names.contains(normalized)) {
+                    names.add(normalized);
+                }
+            }
+            return String.join(", ", names);
+        } catch (Exception ex) {
+            log.debug("Unable to resolve institution name for wallet {}", institutionAddress, ex);
+            return null;
+        }
+    }
+
+    private String normalizeAddressKey(String address) {
+        return address == null ? "" : address.toLowerCase(Locale.ROOT);
     }
 
     private boolean hasReservation(Diamond.Reservation reservation) {

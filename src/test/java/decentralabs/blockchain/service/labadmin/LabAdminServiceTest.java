@@ -11,6 +11,7 @@ import static org.mockito.ArgumentMatchers.eq;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import decentralabs.blockchain.contract.Diamond;
+import decentralabs.blockchain.dto.health.LabMetadata;
 import decentralabs.blockchain.dto.labadmin.LabAdminReservation;
 import decentralabs.blockchain.service.BackendUrlResolver;
 import decentralabs.blockchain.service.guacamole.GuacamoleProvisioningService;
@@ -335,9 +336,11 @@ class LabAdminServiceTest {
     @Test
     void listsFutureProviderReservationsWithCreditValues() throws Exception {
         String wallet = "0x1111111111111111111111111111111111111111";
+        String institution = "0x3333333333333333333333333333333333333333";
         BigInteger labId = BigInteger.valueOf(7);
         byte[] key = Numeric.hexStringToByteArray("0x" + "ab".repeat(32));
         long now = System.currentTimeMillis() / 1000;
+        String metadataUri = "https://lab.example.edu/lab-content/content/lab-demo/metadata.json";
         Diamond.Reservation reservation = new Diamond.Reservation(
             labId,
             "0x2222222222222222222222222222222222222222",
@@ -348,14 +351,27 @@ class LabAdminServiceTest {
             BigInteger.valueOf(now + 7200),
             BigInteger.ZERO,
             BigInteger.ZERO,
-            wallet,
-            wallet,
+            institution,
+            institution,
             BigInteger.valueOf(20_000_000)
         );
         Diamond diamond = mock(Diamond.class);
+        Diamond.Lab lab = new Diamond.Lab(
+            labId,
+            new Diamond.LabBase(
+                metadataUri,
+                BigInteger.valueOf(25_000_000),
+                "https://lab.example.edu/fmu",
+                "BouncingBall.fmu",
+                BigInteger.ZERO,
+                BigInteger.ONE
+            )
+        );
         RemoteFunctionCall<BigInteger> count = mockRemoteFunctionCall();
         RemoteFunctionCall<byte[]> keyCall = mockRemoteFunctionCall();
         RemoteFunctionCall<Diamond.Reservation> reservationCall = mockRemoteFunctionCall();
+        RemoteFunctionCall<Diamond.Lab> labCall = mockRemoteFunctionCall();
+        RemoteFunctionCall<String[]> institutionCall = mockRemoteFunctionCall();
         when(institutionalWalletService.isConfigured()).thenReturn(true);
         when(institutionalWalletService.getInstitutionalWalletAddress()).thenReturn(wallet);
         when(walletService.isLabProvider(wallet)).thenReturn(true);
@@ -366,6 +382,13 @@ class LabAdminServiceTest {
         when(keyCall.send()).thenReturn(key);
         when(diamond.getReservation(key)).thenReturn(reservationCall);
         when(reservationCall.send()).thenReturn(reservation);
+        when(diamond.getLab(labId)).thenReturn(labCall);
+        when(labCall.send()).thenReturn(lab);
+        when(labMetadataService.getLabMetadata(metadataUri)).thenReturn(
+            LabMetadata.builder().name("Circuit Lab").build()
+        );
+        when(diamond.getRegisteredSchacHomeOrganizations(institution)).thenReturn(institutionCall);
+        when(institutionCall.send()).thenReturn(new String[] {"UNED"});
         doReturn(diamond).when(service).loadReadonlyDiamond();
 
         Map<String, Object> response = service.listUpcomingReservations();
@@ -376,6 +399,9 @@ class LabAdminServiceTest {
         LabAdminReservation listed = (LabAdminReservation) reservations.get(0);
         assertThat(listed.priceCredits()).isEqualTo("2.5");
         assertThat(listed.providerShareCredits()).isEqualTo("2");
+        assertThat(listed.labName()).isEqualTo("Circuit Lab");
+        assertThat(listed.institutionName()).isEqualTo("UNED");
+        assertThat(listed.institutionAddress()).isEqualTo(institution);
         assertThat(listed.cancellable()).isTrue();
     }
 

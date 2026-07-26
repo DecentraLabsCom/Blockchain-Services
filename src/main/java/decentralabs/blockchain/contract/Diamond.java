@@ -281,6 +281,25 @@ public class Diamond extends Contract {
     }
 
     /**
+     * Get the organization identifiers registered by an institution wallet.
+     */
+    public RemoteFunctionCall<String[]> getRegisteredSchacHomeOrganizations(String institution) {
+        final Function function = new Function(
+            "getRegisteredSchacHomeOrganizations",
+            Arrays.asList(new Address(institution)),
+            Arrays.asList(new TypeReference<DynamicArray<Utf8String>>() {})
+        );
+        return new RemoteFunctionCall<>(function,
+            () -> {
+                Type<?> result = executeCallSingleValueReturn(function);
+                DynamicArray<?> organizations = (DynamicArray<?>) result;
+                return organizations.getValue().stream()
+                    .map(value -> ((Utf8String) value).getValue())
+                    .toArray(String[]::new);
+            });
+    }
+
+    /**
      * Get the authorized backend wallet for an institution (InstitutionalTreasuryFacet)
      */
     @SuppressWarnings("rawtypes")
