@@ -191,7 +191,10 @@ public class IntentService {
             LogSanitizer.sanitize(expectedPucHash(actionPayload, reservationPayload)),
             action.getWireValue()
         );
-        checkAssertionReplay(expectedAssertionHash);
+        // A federated SAML assertion is reused by the authenticated Marketplace
+        // session for multiple independent intents. Scope replay detection to
+        // the intent request so a second legitimate booking is not rejected.
+        checkAssertionReplay(expectedAssertionHash, meta.getRequestId());
 
         String puc = resolvePuc(validatedSamlUser);
         String pucHash = PucHashUtil.hashPuc(puc);
@@ -264,7 +267,7 @@ public class IntentService {
         }
         intents.put(meta.getRequestId(), record);
         nonceIndex.put(buildNonceKey(meta), meta.getRequestId());
-        markAssertionUsed(expectedAssertionHash);
+        markAssertionUsed(expectedAssertionHash, meta.getRequestId());
 
         // All request-derived identifiers are control-character sanitized or masked.
         // codeql[java/log-injection]
@@ -704,24 +707,39 @@ public class IntentService {
     }
 
     private void checkAssertionReplay(String assertionHash) {
+        checkAssertionReplay(assertionHash, null);
+    }
+
+    private void checkAssertionReplay(String assertionHash, String requestId) {
         if (assertionHash == null || assertionHash.isBlank()) {
             return;
         }
         long nowMs = Instant.now().toEpochMilli();
         purgeExpiredAssertions(nowMs);
-        Long expiresAt = assertionReplayCache.get(assertionHash);
+        Long expiresAt = assertionReplayCache.get(assertionReplayKey(assertionHash, requestId));
         if (expiresAt != null && expiresAt > nowMs) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "assertion_replay");
         }
     }
 
     private void markAssertionUsed(String assertionHash) {
+        markAssertionUsed(assertionHash, null);
+    }
+
+    private void markAssertionUsed(String assertionHash, String requestId) {
         if (assertionHash == null || assertionHash.isBlank()) {
             return;
         }
         long nowMs = Instant.now().toEpochMilli();
         long ttl = samlReplayTtlMs <= 0 ? 0 : samlReplayTtlMs;
-        assertionReplayCache.put(assertionHash, nowMs + ttl);
+        assertionReplayCache.put(assertionReplayKey(assertionHash, requestId), nowMs + ttl);
+    }
+
+    private String assertionReplayKey(String assertionHash, String requestId) {
+        if (requestId == null || requestId.isBlank()) {
+            return assertionHash;
+        }
+        return assertionHash + ":" + requestId;
     }
 
     private void purgeExpiredAssertions(long nowMs) {

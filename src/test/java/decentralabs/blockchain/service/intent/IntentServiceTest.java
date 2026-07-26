@@ -170,6 +170,33 @@ class IntentServiceTest {
     }
 
     @Test
+    @DisplayName("The same SAML assertion can authorize separate intents")
+    void sameSamlAssertionCanAuthorizeSeparateIntents() throws Exception {
+        String hash = "0x" + "e".repeat(64);
+        var markMethod = IntentService.class.getDeclaredMethod(
+            "markAssertionUsed", String.class, String.class
+        );
+        var checkMethod = IntentService.class.getDeclaredMethod(
+            "checkAssertionReplay", String.class, String.class
+        );
+        markMethod.setAccessible(true);
+        checkMethod.setAccessible(true);
+
+        markMethod.invoke(service, hash, "request-1");
+
+        ResponseStatusException sameIntent = assertThrows(ResponseStatusException.class, () -> {
+            try {
+                checkMethod.invoke(service, hash, "request-1");
+            } catch (Exception e) {
+                throw e.getCause();
+            }
+        });
+        assertEquals("assertion_replay", sameIntent.getReason());
+
+        assertDoesNotThrow(() -> checkMethod.invoke(service, hash, "request-2"));
+    }
+
+    @Test
     @DisplayName("WebAuthn assertion validates ceremony fields and advances the counter")
     void webauthnAssertionValidatesCeremonyAndCounter() throws Exception {
         String puc = "user@institution.edu";
