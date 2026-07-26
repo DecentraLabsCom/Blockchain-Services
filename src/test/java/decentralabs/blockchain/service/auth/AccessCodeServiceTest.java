@@ -4,6 +4,7 @@ import decentralabs.blockchain.dto.auth.AccessCodeResponse;
 import decentralabs.blockchain.dto.auth.AuthResponse;
 import java.util.Map;
 import java.util.Base64;
+import java.util.LinkedHashSet;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -81,6 +82,51 @@ class AccessCodeServiceTest {
         assertThat(issued.getLabURL()).isEqualTo("https://lab.example/fmu/model");
         assertThat(issued.getResourceType()).isEqualTo("fmu");
         assertThat(service.redeem(issued.getAccessCode(), "lab.example").getToken()).isEqualTo("fmu-jwt");
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void issuesOpaqueCodesWhenParsedJwtExposesAudienceAsSingletonCollection() {
+        ObjectProvider<JdbcTemplate> provider = mock(ObjectProvider.class);
+        when(provider.getIfAvailable()).thenReturn(null);
+        JwtService jwtService = mock(JwtService.class);
+        String accessUrl = "https://lab.example/fmu/model";
+        when(jwtService.extractAllClaims("fmu-jwt")).thenReturn(Map.of(
+            "resourceType", "fmu",
+            "labURL", accessUrl,
+            // JJWT parses the registered aud claim as a singleton LinkedHashSet.
+            "aud", new LinkedHashSet<>(java.util.List.of(accessUrl)),
+            "targetGatewayId", "lab.example"
+        ));
+        AccessCodeService service = new AccessCodeService(provider, jwtService, new AccessCodeTokenCipher(""));
+
+        AccessCodeResponse issued = service.issue("fmu-jwt");
+
+        assertThat(issued.getAccessCode()).isNotBlank();
+        assertThat(issued.getLabURL()).isEqualTo(accessUrl);
+        assertThat(issued.getResourceType()).isEqualTo("fmu");
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void rejectsCredentialsWithMultipleAudienceValues() {
+        ObjectProvider<JdbcTemplate> provider = mock(ObjectProvider.class);
+        when(provider.getIfAvailable()).thenReturn(null);
+        JwtService jwtService = mock(JwtService.class);
+        when(jwtService.extractAllClaims("multi-audience-jwt")).thenReturn(Map.of(
+            "resourceType", "fmu",
+            "labURL", "https://lab.example/fmu/model",
+            "aud", new LinkedHashSet<>(java.util.List.of(
+                "https://lab.example/fmu/model",
+                "https://other.example/fmu/model"
+            )),
+            "targetGatewayId", "lab.example"
+        ));
+        AccessCodeService service = new AccessCodeService(provider, jwtService, new AccessCodeTokenCipher(""));
+
+        assertThatThrownBy(() -> service.issue("multi-audience-jwt"))
+            .isInstanceOf(ResponseStatusException.class)
+            .hasMessageContaining("Invalid access credential destination");
     }
 
     @Test

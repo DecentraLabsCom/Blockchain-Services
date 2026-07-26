@@ -353,9 +353,9 @@ class LabAdminServiceTest {
             BigInteger.valueOf(20_000_000)
         );
         Diamond diamond = mock(Diamond.class);
-        RemoteFunctionCall<BigInteger> count = mock(RemoteFunctionCall.class);
-        RemoteFunctionCall<byte[]> keyCall = mock(RemoteFunctionCall.class);
-        RemoteFunctionCall<Diamond.Reservation> reservationCall = mock(RemoteFunctionCall.class);
+        RemoteFunctionCall<BigInteger> count = mockRemoteFunctionCall();
+        RemoteFunctionCall<byte[]> keyCall = mockRemoteFunctionCall();
+        RemoteFunctionCall<Diamond.Reservation> reservationCall = mockRemoteFunctionCall();
         when(institutionalWalletService.isConfigured()).thenReturn(true);
         when(institutionalWalletService.getInstitutionalWalletAddress()).thenReturn(wallet);
         when(walletService.isLabProvider(wallet)).thenReturn(true);
@@ -384,7 +384,6 @@ class LabAdminServiceTest {
         String wallet = "0x1111111111111111111111111111111111111111";
         BigInteger labId = BigInteger.valueOf(7);
         String keyHex = "0x" + "cd".repeat(32);
-        byte[] key = Numeric.hexStringToByteArray(keyHex);
         long now = System.currentTimeMillis() / 1000;
         Diamond.Reservation reservation = new Diamond.Reservation(
             labId,
@@ -402,8 +401,8 @@ class LabAdminServiceTest {
         );
         Diamond readonly = mock(Diamond.class);
         Diamond writable = mock(Diamond.class);
-        RemoteFunctionCall<Diamond.Reservation> reservationCall = mock(RemoteFunctionCall.class);
-        RemoteFunctionCall<TransactionReceipt> transactionCall = mock(RemoteFunctionCall.class);
+        RemoteFunctionCall<Diamond.Reservation> reservationCall = mockRemoteFunctionCall();
+        RemoteFunctionCall<TransactionReceipt> transactionCall = mockRemoteFunctionCall();
         TransactionReceipt receipt = new TransactionReceipt();
         receipt.setStatus("0x1");
         receipt.setTransactionHash("0xtx");
@@ -440,5 +439,10 @@ class LabAdminServiceTest {
         assertThat((boolean) ReflectionTestUtils.invokeMethod(
             service, "isPendingProviderReason", BigInteger.valueOf(3)
         )).isFalse();
+    }
+
+    @SuppressWarnings("unchecked")
+    private static <T> RemoteFunctionCall<T> mockRemoteFunctionCall() {
+        return (RemoteFunctionCall<T>) mock(RemoteFunctionCall.class);
     }
 }

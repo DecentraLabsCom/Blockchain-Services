@@ -448,6 +448,15 @@ public class AccessCodeService {
 
     private String stringClaim(Map<String, Object> claims, String name) {
         Object value = claims.get(name);
+        if (value instanceof java.util.Collection<?> values) {
+            // JJWT exposes the registered `aud` claim as a collection after parsing,
+            // even when the token was issued with a single audience string. Access
+            // credentials are bound to exactly one gateway destination.
+            if (values.size() != 1) {
+                return null;
+            }
+            value = values.iterator().next();
+        }
         return value == null ? null : String.valueOf(value);
     }
 

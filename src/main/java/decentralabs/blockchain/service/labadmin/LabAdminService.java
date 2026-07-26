@@ -189,10 +189,13 @@ public class LabAdminService {
             }
         }
 
-        reservations.sort(java.util.Comparator
-            .comparingLong(LabAdminReservation::start)
-            .thenComparing(LabAdminReservation::labId)
-            .thenComparing(LabAdminReservation::reservationKey));
+        reservations.sort((left, right) -> {
+            int comparison = Long.compare(left.start(), right.start());
+            if (comparison != 0) return comparison;
+            comparison = left.labId().compareTo(right.labId());
+            if (comparison != 0) return comparison;
+            return left.reservationKey().compareTo(right.reservationKey());
+        });
         return Map.of(
             "success", true,
             "providerAddress", wallet,
