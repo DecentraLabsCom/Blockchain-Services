@@ -67,7 +67,9 @@ sequenceDiagram
 `resourceType`, `allowDuplicate` and `creatorPucHash`.
 
 - Use `setupMode: "quick"` with an HTTPS `metadataUrl` for externally hosted
-  metadata.
+  metadata. Its origin must be one of the provider backend origins registered
+  on-chain for the provider wallet; arbitrary HTTPS URLs and `ipfs://` are
+  rejected by the backend preflight.
 - Use the default/full setup with a `metadata` object to generate
   `content/<contentId>/metadata.json` under `LAB_CONTENT_BASE_PATH`.
 - Generated metadata must include `name` (maximum 160 characters) and
@@ -77,6 +79,9 @@ sequenceDiagram
   access configuration is validated against its resource type.
 - Listing performs a metadata preflight. For gateway-hosted metadata, that
   means valid JSON, a file no larger than 1 MiB and the required fields.
+  For remote metadata, the preflight uses the same HTTPS-only, exact-origin,
+  DNS-pinned client as reservation processing, with bounded body/JSON size,
+  content type, redirects, timeouts and concurrency.
 
 Use a unique `Idempotency-Key` for every mutating request. Reusing the same key
 with a different command returns `409 IDEMPOTENCY_KEY_PAYLOAD_MISMATCH`.

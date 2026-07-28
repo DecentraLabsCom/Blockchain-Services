@@ -324,7 +324,7 @@ class AdminDashboardControllerTest {
             when(walletService.isLabProvider(VALID_ADDRESS)).thenReturn(true);
             when(walletService.getLabsOwnedByProvider(VALID_ADDRESS)).thenReturn(List.of(BigInteger.valueOf(3)));
             when(walletService.getLabTokenUri(BigInteger.valueOf(3))).thenReturn(Optional.of("https://example.com/lab-3.json"));
-            when(labMetadataService.getLabMetadata("https://example.com/lab-3.json")).thenReturn(
+            when(labMetadataService.getLabMetadataForLab(BigInteger.valueOf(3))).thenReturn(
                 decentralabs.blockchain.dto.health.LabMetadata.builder().name("Quantum Lab").build()
             );
             when(walletService.getProviderReceivableStatus(BigInteger.valueOf(3))).thenReturn(
@@ -432,7 +432,7 @@ class AdminDashboardControllerTest {
 
             when(walletService.isLabOwnedByProvider(VALID_ADDRESS, BigInteger.TWO)).thenReturn(true);
             when(walletService.getLabTokenUri(BigInteger.TWO)).thenReturn(Optional.of("https://example.com/lab-2.json"));
-            when(labMetadataService.getLabMetadata("https://example.com/lab-2.json")).thenReturn(
+            when(labMetadataService.getLabMetadataForLab(BigInteger.valueOf(2))).thenReturn(
                 decentralabs.blockchain.dto.health.LabMetadata.builder().name("Lab Two").build()
             );
             when(walletService.getProviderReceivableStatus(BigInteger.ONE)).thenReturn(

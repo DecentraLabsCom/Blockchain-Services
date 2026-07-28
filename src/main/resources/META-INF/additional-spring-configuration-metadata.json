@@ -688,7 +688,7 @@
     "name": "lab.content.base-path",
     "type": "java.lang.String",
     "description": "Base directory where Lab Manager stores generated lab metadata, images, and documentation.",
-    "defaultValue": "/app/lab-content"
+    "defaultValue": "/app/lab-metadata-fixtures"
   },
   {
     "name": "lab.content.retention",
@@ -701,6 +701,48 @@
     "type": "java.lang.Long",
     "description": "Interval in milliseconds for garbage collecting expired lab-content tombstones.",
     "defaultValue": 3600000
+  },
+  {
+    "name": "lab.metadata.max-bytes",
+    "type": "java.lang.Long",
+    "description": "Maximum response size for an on-chain lab metadata document.",
+    "defaultValue": 1048576
+  },
+  {
+    "name": "lab.metadata.max-concurrent-fetches",
+    "type": "java.lang.Integer",
+    "description": "Maximum number of concurrent remote lab metadata fetches per backend instance.",
+    "defaultValue": 8
+  },
+  {
+    "name": "lab.metadata.http.connect-timeout-ms",
+    "type": "java.lang.Long",
+    "description": "Connection timeout in milliseconds for remote lab metadata.",
+    "defaultValue": 5000
+  },
+  {
+    "name": "lab.metadata.http.read-timeout-ms",
+    "type": "java.lang.Long",
+    "description": "Read timeout in milliseconds for remote lab metadata.",
+    "defaultValue": 10000
+  },
+  {
+    "name": "lab.metadata.http.call-timeout-ms",
+    "type": "java.lang.Long",
+    "description": "Total call timeout in milliseconds for remote lab metadata.",
+    "defaultValue": 15000
+  },
+  {
+    "name": "lab.metadata.local.enabled",
+    "type": "java.lang.Boolean",
+    "description": "Enables local lab metadata fixtures. Keep disabled in production.",
+    "defaultValue": false
+  },
+  {
+    "name": "lab.metadata.local.root",
+    "type": "java.lang.String",
+    "description": "Dedicated root directory for explicitly enabled local lab metadata fixtures.",
+    "defaultValue": "/app/lab-content"
   },
   {
     "name": "fmu.data.path",

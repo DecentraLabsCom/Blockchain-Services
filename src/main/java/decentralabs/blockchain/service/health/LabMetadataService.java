@@ -1,5 +1,7 @@
 package decentralabs.blockchain.service.health;
 
+import com.fasterxml.jackson.core.JsonFactory;
+import com.fasterxml.jackson.core.StreamReadConstraints;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import decentralabs.blockchain.dto.health.AllowedDuration;
@@ -8,12 +10,14 @@ import decentralabs.blockchain.dto.health.MaintenanceWindow;
 import decentralabs.blockchain.dto.health.PeriodRules;
 import decentralabs.blockchain.dto.health.PricingMetadata;
 import decentralabs.blockchain.dto.health.TimeRange;
+import decentralabs.blockchain.service.wallet.WalletService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.cache.annotation.Cacheable;
 import org.springframework.stereotype.Service;
-import org.springframework.web.client.RestTemplate;
 
+import java.io.IOException;
+import java.util.Collection;
 import java.time.DayOfWeek;
 import java.time.Duration;
 import java.time.Instant;
@@ -35,39 +39,77 @@ import java.util.stream.StreamSupport;
 @Slf4j
 public class LabMetadataService {
 
-    private final RestTemplate restTemplate;
+    private static final int MAX_JSON_DEPTH = 64;
+    private static final int MAX_JSON_STRING_LENGTH = 20_000;
+    private static final int MAX_JSON_NUMBER_LENGTH = 256;
+    private static final int MAX_ATTRIBUTES = 128;
+    private static final int MAX_LIST_ITEMS = 512;
+
+    private final SafeLabMetadataClient metadataClient;
     private final ObjectMapper objectMapper;
 
     @Value("${lab.metadata.cache.enabled:true}")
     private boolean cacheEnabled;
 
-    public LabMetadataService() {
-        this.restTemplate = new RestTemplate();
-        this.objectMapper = new ObjectMapper();
+    private final WalletService walletService;
+
+    public LabMetadataService(SafeLabMetadataClient metadataClient, WalletService walletService) {
+        this.metadataClient = metadataClient;
+        this.walletService = walletService;
+        this.objectMapper = new ObjectMapper(JsonFactory.builder()
+            .streamReadConstraints(StreamReadConstraints.builder()
+                .maxNestingDepth(MAX_JSON_DEPTH)
+                .maxStringLength(MAX_JSON_STRING_LENGTH)
+                .maxNumberLength(MAX_JSON_NUMBER_LENGTH)
+                .build())
+            .build());
     }
 
     /**
-     * Fetches lab metadata from URL or local file path
+     * Fetches local fixture metadata. Remote metadata must use one of the
+     * authority-bound methods below.
      */
-    @Cacheable(value = "labMetadata", key = "#metadataUri", condition = "#root.target.cacheEnabled")
+    @Cacheable(value = "labMetadata", key = "'local:' + #metadataUri", condition = "#root.target.cacheEnabled")
     public LabMetadata getLabMetadata(String metadataUri) {
+        return loadMetadata(metadataUri, List.of());
+    }
+
+    /**
+     * Fetches the canonical metadata for a lab after resolving its current
+     * owner/provider/backend association on-chain.
+     */
+    @Cacheable(value = "labMetadata", key = "'lab:' + #labId", condition = "#root.target.cacheEnabled")
+    public LabMetadata getLabMetadataForLab(java.math.BigInteger labId) {
+        if (labId == null || labId.signum() < 0) {
+            throw new IllegalArgumentException("labId is invalid");
+        }
+        String metadataUri = walletService.getLabTokenUri(labId)
+            .orElseThrow(() -> new IllegalArgumentException("Lab metadata URI is missing"));
+        return loadMetadata(metadataUri, walletService.getLabMetadataOrigins(labId));
+    }
+
+    /**
+     * Fetches a provider-submitted URI using only origins registered by that
+     * provider on-chain. The URI is used for publication preflight, before a
+     * new lab token exists.
+     */
+    @Cacheable(value = "labMetadata", key = "'uri:' + #metadataUri", condition = "#root.target.cacheEnabled")
+    public LabMetadata getLabMetadataForProvider(String providerAddress, String metadataUri) {
+        return loadMetadata(metadataUri, walletService.getMetadataOriginsForProvider(providerAddress));
+    }
+
+    private LabMetadata loadMetadata(String metadataUri, Collection<String> allowedOrigins) {
         try {
-            log.debug("Fetching lab metadata from: {}", metadataUri);
-
-            String jsonContent;
-            if (metadataUri.startsWith("http")) {
-                jsonContent = restTemplate.getForObject(metadataUri, String.class);
-            } else {
-                // Assume local file path
-                java.nio.file.Path path = java.nio.file.Paths.get(metadataUri);
-                jsonContent = java.nio.file.Files.readString(path);
-            }
-
+            log.debug("Fetching lab metadata document");
+            byte[] jsonContent = metadataClient.fetch(metadataUri, allowedOrigins);
             JsonNode rootNode = objectMapper.readTree(jsonContent);
+            if (rootNode == null || !rootNode.isObject()) {
+                throw new IOException("Metadata document must be a JSON object");
+            }
             return parseLabMetadata(rootNode);
 
         } catch (Exception e) {
-            log.error("Failed to fetch/parse lab metadata from {}: {}", metadataUri, e.getMessage());
+            log.error("Failed to fetch/parse lab metadata: {}", e.getMessage());
             throw new RuntimeException("Unable to load lab metadata", e);
         }
     }
@@ -99,6 +141,9 @@ public class LabMetadataService {
         // Parse attributes
         JsonNode attributesNode = rootNode.get("attributes");
         if (attributesNode != null && attributesNode.isArray()) {
+            if (attributesNode.size() > MAX_ATTRIBUTES) {
+                throw new IllegalArgumentException("Metadata contains too many attributes");
+            }
             for (JsonNode attr : attributesNode) {
                 String traitType = attr.get("trait_type").asText();
                 JsonNode valueNode = attr.get("value");
@@ -193,6 +238,9 @@ public class LabMetadataService {
             return List.of();
         }
         List<Integer> list = new ArrayList<>();
+        if (node.size() > MAX_LIST_ITEMS) {
+            throw new IllegalArgumentException("Metadata list contains too many items");
+        }
         for (JsonNode item : node) {
             try {
                 list.add(item.asInt());
@@ -206,6 +254,9 @@ public class LabMetadataService {
     private List<AllowedDuration> parseAllowedDurations(JsonNode node) {
         if (node == null || !node.isArray()) {
             return List.of();
+        }
+        if (node.size() > MAX_LIST_ITEMS) {
+            throw new IllegalArgumentException("Metadata list contains too many items");
         }
         List<AllowedDuration> durations = new ArrayList<>();
         for (JsonNode item : node) {
@@ -224,6 +275,9 @@ public class LabMetadataService {
     private List<String> parseStringList(JsonNode node) {
         if (node == null || !node.isArray()) {
             return List.of();
+        }
+        if (node.size() > MAX_LIST_ITEMS) {
+            throw new IllegalArgumentException("Metadata list contains too many items");
         }
         List<String> list = new ArrayList<>();
         for (JsonNode item : node) {

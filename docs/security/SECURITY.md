@@ -87,6 +87,14 @@ filter plus the configured access token.
   lab metadata can reference it. Upload only public images, PDF documents and
   metadata; never place keys, access credentials or operational documents in
   `LAB_CONTENT_BASE_PATH`.
+- On-chain `tokenURI` values are untrusted. `SafeLabMetadataClient` accepts
+  only HTTPS, requires the exact origin registered by the current provider,
+  resolves and pins every DNS address, blocks loopback/private/link-local/
+  metadata/reserved networks, rejects cross-origin redirects, requires a JSON
+  content type, and enforces a 1 MiB body limit, bounded JSON parsing,
+  timeouts and a per-instance concurrency cap. Arbitrary filesystem paths and
+  `ipfs://` are rejected. Local metadata is available only as an explicitly
+  enabled fixture under `LAB_METADATA_LOCAL_ROOT`.
 - A lab deletion writes a tombstone after the on-chain receipt succeeds.
   Tombstoned content is hidden immediately and purged only after
   `LAB_CONTENT_RETENTION`. Restore the content volume before attempting manual
@@ -126,6 +134,8 @@ filter plus the configured access token.
 - [ ] `INTENT_PAYLOAD_ENCRYPTION_KEY` is a managed 32-byte key before any
       intent execution payload is persisted.
 - [ ] SAML trust mode is `whitelist`; metadata HTTP is disabled.
+- [ ] `LAB_METADATA_LOCAL_ENABLED=false` in production and the provider's
+      on-chain backend origin is the intended HTTPS origin for lab metadata.
 - [ ] Marketplace public key and provisioning JWKS URLs use HTTPS.
 - [ ] Admin routes are loopback/private-network restricted and token protected.
 - [ ] Observer and gateway credentials are unique per gateway.

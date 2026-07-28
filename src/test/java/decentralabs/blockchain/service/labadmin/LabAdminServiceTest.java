@@ -290,19 +290,24 @@ class LabAdminServiceTest {
         ReflectionTestUtils.invokeMethod(
             service,
             "preflightMetadataUri",
-            "https://lab.example.edu/lab-content/content/lab-demo/metadata.json"
+            "https://lab.example.edu/lab-content/content/lab-demo/metadata.json",
+            "0xprovider"
         );
     }
 
     @Test
     void metadataPreflightRejectsUnavailableExternalDocument() {
-        when(labMetadataService.getLabMetadata("https://metadata.example/lab.json"))
+        when(labMetadataService.getLabMetadataForProvider(
+            eq("0xprovider"),
+            eq("https://metadata.example/lab.json")
+        ))
             .thenThrow(new RuntimeException("upstream unavailable"));
 
         assertThatThrownBy(() -> ReflectionTestUtils.invokeMethod(
             service,
             "preflightMetadataUri",
-            "https://metadata.example/lab.json"
+            "https://metadata.example/lab.json",
+            "0xprovider"
         )).isInstanceOf(IllegalArgumentException.class)
             .hasMessageContaining("Metadata preflight failed");
     }
@@ -384,7 +389,7 @@ class LabAdminServiceTest {
         when(reservationCall.send()).thenReturn(reservation);
         when(diamond.getLab(labId)).thenReturn(labCall);
         when(labCall.send()).thenReturn(lab);
-        when(labMetadataService.getLabMetadata(metadataUri)).thenReturn(
+        when(labMetadataService.getLabMetadataForLab(eq(labId))).thenReturn(
             LabMetadata.builder().name("Circuit Lab").build()
         );
         when(diamond.getRegisteredSchacHomeOrganizations(institution)).thenReturn(institutionCall);

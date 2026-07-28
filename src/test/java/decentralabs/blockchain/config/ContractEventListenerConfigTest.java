@@ -658,16 +658,6 @@ class ContractEventListenerConfigTest {
         stubReservationPucHash(diamond, storedPucHash);
 
         @SuppressWarnings("unchecked")
-        var labCall = (org.web3j.protocol.core.RemoteFunctionCall<decentralabs.blockchain.contract.Diamond.Lab>) mock(org.web3j.protocol.core.RemoteFunctionCall.class);
-        decentralabs.blockchain.contract.Diamond.LabBase base =
-            new decentralabs.blockchain.contract.Diamond.LabBase(
-                "ipfs://institutional-lab-metadata", BigInteger.ZERO, "", "", BigInteger.ZERO, BigInteger.ZERO
-            );
-        decentralabs.blockchain.contract.Diamond.Lab lab =
-            new decentralabs.blockchain.contract.Diamond.Lab(BigInteger.valueOf(16), base);
-        when(labCall.send()).thenReturn(lab);
-        when(diamond.getLab(any(BigInteger.class))).thenReturn(labCall);
-        @SuppressWarnings("unchecked")
         var ownerCall = (org.web3j.protocol.core.RemoteFunctionCall<String>) mock(org.web3j.protocol.core.RemoteFunctionCall.class);
         when(ownerCall.send()).thenReturn("0x00000000000000000000000000000000000000dd");
         when(diamond.ownerOf(any(BigInteger.class))).thenReturn(ownerCall);
@@ -683,7 +673,8 @@ class ContractEventListenerConfigTest {
 
         LabMetadata metadata = new LabMetadata();
         metadata.setName("Institutional Test Lab");
-        when(labMetadataService.getLabMetadata("ipfs://institutional-lab-metadata")).thenReturn(metadata);
+        when(labMetadataService.getLabMetadataForLab(eq(BigInteger.valueOf(16))))
+            .thenReturn(metadata);
         doNothing().when(labMetadataService).validateAvailability(any(), any(), any(), anyInt());
 
         Map<String, Event> supported = getSupportedEvents();
@@ -927,13 +918,6 @@ class ContractEventListenerConfigTest {
         when(providerBackendCall.send()).thenReturn(providerBackend);
         when(diamond.getAuthorizedBackend(eq(providerInstitution))).thenReturn(providerBackendCall);
 
-        @SuppressWarnings("unchecked")
-        var labCall = (org.web3j.protocol.core.RemoteFunctionCall<decentralabs.blockchain.contract.Diamond.Lab>) mock(org.web3j.protocol.core.RemoteFunctionCall.class);
-        var base = new decentralabs.blockchain.contract.Diamond.LabBase(
-            "ipfs://provider-lab", BigInteger.ONE, "", "", BigInteger.ZERO, BigInteger.ZERO
-        );
-        when(labCall.send()).thenReturn(new decentralabs.blockchain.contract.Diamond.Lab(BigInteger.valueOf(20), base));
-        when(diamond.getLab(any(BigInteger.class))).thenReturn(labCall);
         ReflectionTestUtils.setField(config, "cachedDiamond", diamond);
 
         var writableDiamond = mock(decentralabs.blockchain.contract.Diamond.class);
@@ -945,7 +929,8 @@ class ContractEventListenerConfigTest {
 
         LabMetadata metadata = new LabMetadata();
         metadata.setName("Provider Lab");
-        when(labMetadataService.getLabMetadata("ipfs://provider-lab")).thenReturn(metadata);
+        when(labMetadataService.getLabMetadataForLab(eq(BigInteger.valueOf(20))))
+            .thenReturn(metadata);
         doNothing().when(labMetadataService).validateAvailability(any(), any(), any(), anyInt());
 
         Log eventLog = buildReservationRequestedLog(BigInteger.valueOf(20), "0x" + "cc".repeat(32), "0xprovider-backend");

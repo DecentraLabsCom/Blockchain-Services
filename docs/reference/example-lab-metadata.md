@@ -2,6 +2,10 @@
 
 This is illustrative NFT/lab metadata for documentation and fixtures. URLs, dates and availability values are examples; they are not a live catalogue or an authorization source.
 
+When this document is fetched by `blockchain-services`, the `tokenURI` must
+be an HTTPS URL whose origin is registered for the provider on-chain. The
+backend does not fetch arbitrary `http://`, `ipfs://` or filesystem targets.
+
 For the gateway's full lab-administration setup, `name` and `description` are
 required top-level fields. Top-level `image`, `images` and `docs` values, when
 present, must be HTTPS or gateway content URLs. The `attributes` array below is

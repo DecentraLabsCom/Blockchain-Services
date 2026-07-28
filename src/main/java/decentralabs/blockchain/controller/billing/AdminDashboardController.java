@@ -618,17 +618,17 @@ public class AdminDashboardController {
     private String resolveLabDisplayName(BigInteger labId) {
         String fallback = "Lab #" + labId;
         return walletService.getLabTokenUri(labId)
-            .flatMap(this::resolveLabNameFromMetadata)
+            .flatMap(uri -> resolveLabNameFromMetadata(labId, uri))
             .orElse(fallback);
     }
 
-    private Optional<String> resolveLabNameFromMetadata(String metadataUri) {
+    private Optional<String> resolveLabNameFromMetadata(BigInteger labId, String metadataUri) {
         if (metadataUri == null || metadataUri.isBlank()) {
             return Optional.empty();
         }
 
         try {
-            var metadata = labMetadataService.getLabMetadata(metadataUri);
+            var metadata = labMetadataService.getLabMetadataForLab(labId);
             if (metadata == null || metadata.getName() == null) {
                 return Optional.empty();
             }

@@ -47,6 +47,7 @@ import decentralabs.blockchain.util.LogSanitizer;
 
 import java.math.BigDecimal;
 import java.math.BigInteger;
+import java.net.URI;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.security.SecureRandom;
@@ -635,6 +636,100 @@ public class WalletService {
         } catch (Exception e) {
             log.debug("Failed to resolve tokenURI for lab {}: {}", labId, LogSanitizer.sanitize(e.getMessage()));
             return getLabBaseUri(labId);
+        }
+    }
+
+    /**
+     * Resolves the exact HTTPS origins allowed to serve metadata for a lab.
+     *
+     * <p>The lab owner is read with ERC-721 {@code ownerOf}, must still be a
+     * registered provider, and the origins come only from that owner's
+     * on-chain organization/backend associations. Caller-supplied URLs are
+     * deliberately not accepted here.</p>
+     */
+    public List<String> getLabMetadataOrigins(BigInteger labId) {
+        if (labId == null || labId.compareTo(BigInteger.ZERO) <= 0) {
+            return List.of();
+        }
+        try {
+            Web3j web3j = getWeb3jInstance();
+            Optional<String> owner = getLabOwner(labId, web3j);
+            if (owner.isEmpty()) {
+                return List.of();
+            }
+            return getMetadataOriginsForProvider(owner.get());
+        } catch (Exception e) {
+            log.warn("Failed to resolve metadata origins for lab {}", labId, e);
+            return List.of();
+        }
+    }
+
+    /** Resolves the registered HTTPS metadata origins for a provider wallet. */
+    public List<String> getMetadataOriginsForProvider(String providerAddress) {
+        if (providerAddress == null || providerAddress.isBlank()) {
+            return List.of();
+        }
+        try {
+            if (!isLabProvider(providerAddress)) {
+                return List.of();
+            }
+            Web3j web3j = getWeb3jInstance();
+            Diamond diamond = Diamond.load(
+                contractAddress,
+                web3j,
+                new ReadonlyTransactionManager(web3j, contractAddress),
+                new StaticGasProvider(BigInteger.ZERO, BigInteger.ZERO)
+            );
+            String[] organizations = diamond.getRegisteredSchacHomeOrganizations(providerAddress).send();
+            if (organizations == null || organizations.length == 0) {
+                return List.of();
+            }
+
+            return Arrays.stream(organizations)
+                .filter(Objects::nonNull)
+                .map(value -> value.trim())
+                .filter(value -> !value.isEmpty())
+                .map(organization -> {
+                    try {
+                        return diamond.getSchacHomeOrganizationBackend(organization).send();
+                    } catch (Exception ex) {
+                        return null;
+                    }
+                })
+                .map(this::toMetadataOrigin)
+                .flatMap(optional -> optional.stream())
+                .distinct()
+                .toList();
+        } catch (Exception e) {
+            log.warn("Failed to resolve metadata origins for provider {}", providerAddress, e);
+            return List.of();
+        }
+    }
+
+    private Optional<String> toMetadataOrigin(String backendUrl) {
+        if (backendUrl == null || backendUrl.isBlank()) {
+            return Optional.empty();
+        }
+        try {
+            URI uri = URI.create(backendUrl.trim());
+            if (!"https".equalsIgnoreCase(uri.getScheme())
+                || uri.getHost() == null
+                || uri.getRawUserInfo() != null
+                || uri.getRawQuery() != null
+                || uri.getRawFragment() != null) {
+                return Optional.empty();
+            }
+            int port = uri.getPort() < 0 ? 443 : uri.getPort();
+            if (port <= 0 || port > 65535) {
+                return Optional.empty();
+            }
+            String host = uri.getHost().toLowerCase(Locale.ROOT);
+            if (host.contains(":")) {
+                host = "[" + host + "]";
+            }
+            return Optional.of(port == 443 ? "https://" + host : "https://" + host + ":" + port);
+        } catch (IllegalArgumentException ex) {
+            return Optional.empty();
         }
     }
 

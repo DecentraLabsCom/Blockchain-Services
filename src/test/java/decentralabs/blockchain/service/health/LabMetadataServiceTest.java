@@ -2,12 +2,13 @@ package decentralabs.blockchain.service.health;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
-import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.when;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.charset.StandardCharsets;
 import java.time.DayOfWeek;
 import java.time.Instant;
 import java.time.LocalTime;
@@ -22,17 +23,19 @@ import org.junit.jupiter.api.io.TempDir;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.test.util.ReflectionTestUtils;
-import org.springframework.web.client.RestTemplate;
-
 import decentralabs.blockchain.dto.health.AllowedDuration;
 import decentralabs.blockchain.dto.health.LabMetadata;
 import decentralabs.blockchain.dto.health.PeriodRules;
+import decentralabs.blockchain.service.wallet.WalletService;
 
 @ExtendWith(MockitoExtension.class)
 class LabMetadataServiceTest {
 
     @Mock
-    private RestTemplate restTemplate;
+    private SafeLabMetadataClient metadataClient;
+
+    @Mock
+    private WalletService walletService;
 
     private LabMetadataService metadataService;
 
@@ -41,8 +44,7 @@ class LabMetadataServiceTest {
 
     @BeforeEach
     void setUp() {
-        metadataService = new LabMetadataService();
-        ReflectionTestUtils.setField(metadataService, "restTemplate", restTemplate);
+        metadataService = new LabMetadataService(metadataClient, walletService);
         ReflectionTestUtils.setField(metadataService, "cacheEnabled", true);
     }
 
@@ -54,7 +56,7 @@ class LabMetadataServiceTest {
         @DisplayName("Should fetch and parse metadata from HTTP URL")
         void shouldFetchAndParseMetadataFromHttpUrl() {
             String json = createMinimalMetadataJson("Test Lab", "A test laboratory", "https://image.url/lab.png");
-            when(restTemplate.getForObject(anyString(), eq(String.class))).thenReturn(json);
+            when(metadataClient.fetch(anyString(), any())).thenReturn(json.getBytes(StandardCharsets.UTF_8));
 
             LabMetadata metadata = metadataService.getLabMetadata("https://example.com/metadata.json");
 
@@ -68,7 +70,7 @@ class LabMetadataServiceTest {
         @DisplayName("Should parse metadata with all attributes")
         void shouldParseMetadataWithAllAttributes() {
             String json = createCompleteMetadataJson();
-            when(restTemplate.getForObject(anyString(), eq(String.class))).thenReturn(json);
+            when(metadataClient.fetch(anyString(), any())).thenReturn(json.getBytes(StandardCharsets.UTF_8));
 
             LabMetadata metadata = metadataService.getLabMetadata("https://example.com/complete.json");
 
@@ -83,7 +85,7 @@ class LabMetadataServiceTest {
         @Test
         @DisplayName("Should throw exception when HTTP fetch fails")
         void shouldThrowExceptionWhenHttpFetchFails() {
-            when(restTemplate.getForObject(anyString(), eq(String.class)))
+            when(metadataClient.fetch(anyString(), any()))
                 .thenThrow(new RuntimeException("Connection refused"));
 
             assertThatThrownBy(() -> metadataService.getLabMetadata("https://unreachable.com/metadata.json"))
@@ -94,7 +96,8 @@ class LabMetadataServiceTest {
         @Test
         @DisplayName("Should throw exception for invalid JSON")
         void shouldThrowExceptionForInvalidJson() {
-            when(restTemplate.getForObject(anyString(), eq(String.class))).thenReturn("not valid json");
+            when(metadataClient.fetch(anyString(), any()))
+                .thenReturn("not valid json".getBytes(StandardCharsets.UTF_8));
 
             assertThatThrownBy(() -> metadataService.getLabMetadata("https://example.com/invalid.json"))
                 .isInstanceOf(RuntimeException.class);
@@ -103,7 +106,7 @@ class LabMetadataServiceTest {
         @Test
         @DisplayName("Should handle null response")
         void shouldHandleNullResponse() {
-            when(restTemplate.getForObject(anyString(), eq(String.class))).thenReturn(null);
+            when(metadataClient.fetch(anyString(), any())).thenReturn((byte[]) null);
 
             assertThatThrownBy(() -> metadataService.getLabMetadata("https://example.com/null.json"))
                 .isInstanceOf(RuntimeException.class);
@@ -120,6 +123,7 @@ class LabMetadataServiceTest {
             String json = createMinimalMetadataJson("Local Lab", "Local description", "file:///image.png");
             Path metadataFile = tempDir.resolve("metadata.json");
             Files.writeString(metadataFile, json);
+            when(metadataClient.fetch(anyString(), any())).thenReturn(json.getBytes(StandardCharsets.UTF_8));
 
             LabMetadata metadata = metadataService.getLabMetadata(metadataFile.toString());
 
@@ -147,7 +151,7 @@ class LabMetadataServiceTest {
         @DisplayName("Should parse epoch seconds for opens/closes")
         void shouldParseEpochSecondsForOpensCloses() {
             String json = createMetadataJsonWithOpensCloses(1704067200L, 1735689600L);
-            when(restTemplate.getForObject(anyString(), eq(String.class))).thenReturn(json);
+            when(metadataClient.fetch(anyString(), any())).thenReturn(json.getBytes(StandardCharsets.UTF_8));
 
             LabMetadata metadata = metadataService.getLabMetadata("https://example.com/metadata.json");
 
@@ -159,7 +163,7 @@ class LabMetadataServiceTest {
         @DisplayName("Should parse available hours time range")
         void shouldParseAvailableHoursTimeRange() {
             String json = createMetadataJsonWithAvailableHours("09:00", "18:00");
-            when(restTemplate.getForObject(anyString(), eq(String.class))).thenReturn(json);
+            when(metadataClient.fetch(anyString(), any())).thenReturn(json.getBytes(StandardCharsets.UTF_8));
 
             LabMetadata metadata = metadataService.getLabMetadata("https://example.com/metadata.json");
 
@@ -172,7 +176,7 @@ class LabMetadataServiceTest {
         @DisplayName("Should parse unavailable windows")
         void shouldParseUnavailableWindows() {
             String json = createMetadataJsonWithUnavailableWindows();
-            when(restTemplate.getForObject(anyString(), eq(String.class))).thenReturn(json);
+            when(metadataClient.fetch(anyString(), any())).thenReturn(json.getBytes(StandardCharsets.UTF_8));
 
             LabMetadata metadata = metadataService.getLabMetadata("https://example.com/metadata.json");
 
@@ -184,7 +188,7 @@ class LabMetadataServiceTest {
         @DisplayName("Should handle missing optional attributes")
         void shouldHandleMissingOptionalAttributes() {
             String json = createMinimalMetadataJson("Minimal Lab", "Minimal desc", "https://img.url");
-            when(restTemplate.getForObject(anyString(), eq(String.class))).thenReturn(json);
+            when(metadataClient.fetch(anyString(), any())).thenReturn(json.getBytes(StandardCharsets.UTF_8));
 
             LabMetadata metadata = metadataService.getLabMetadata("https://example.com/metadata.json");
 
@@ -198,7 +202,7 @@ class LabMetadataServiceTest {
         @DisplayName("Should parse documentation links")
         void shouldParseDocumentationLinks() {
             String json = createMetadataJsonWithDocs();
-            when(restTemplate.getForObject(anyString(), eq(String.class))).thenReturn(json);
+            when(metadataClient.fetch(anyString(), any())).thenReturn(json.getBytes(StandardCharsets.UTF_8));
 
             LabMetadata metadata = metadataService.getLabMetadata("https://example.com/metadata.json");
 
@@ -236,7 +240,7 @@ class LabMetadataServiceTest {
                     "attributes": []
                 }
                 """;
-            when(restTemplate.getForObject(anyString(), eq(String.class))).thenReturn(json);
+            when(metadataClient.fetch(anyString(), any())).thenReturn(json.getBytes(StandardCharsets.UTF_8));
 
             LabMetadata metadata = metadataService.getLabMetadata("https://example.com/long.json");
 
@@ -260,7 +264,7 @@ class LabMetadataServiceTest {
                     ]
                 }
                 """;
-            when(restTemplate.getForObject(anyString(), eq(String.class))).thenReturn(json);
+            when(metadataClient.fetch(anyString(), any())).thenReturn(json.getBytes(StandardCharsets.UTF_8));
 
             LabMetadata metadata = metadataService.getLabMetadata("https://example.com/fmu.json");
 

@@ -327,7 +327,7 @@ public class LabAdminService {
             if (lab == null || lab.base == null || !hasText(lab.base.uri)) {
                 return null;
             }
-            var metadata = labMetadataService.getLabMetadata(lab.base.uri);
+            var metadata = labMetadataService.getLabMetadataForLab(labId);
             return metadata == null || !hasText(metadata.getName())
                 ? null
                 : metadata.getName().trim();
@@ -494,7 +494,7 @@ public class LabAdminService {
         boolean allowDuplicate = Boolean.TRUE.equals(request.allowDuplicate());
 
         if (listImmediately) {
-            preflightMetadataUri(uri);
+            preflightMetadataUri(uri, wallet);
         }
 
         List<BigInteger> before = walletService.getLabsOwnedByProvider(wallet);
@@ -632,7 +632,7 @@ public class LabAdminService {
         requireOwnedLab(labId);
         String uri = walletService.getLabTokenUri(labId).orElse(null);
         if (listed) {
-            preflightMetadataUri(uri);
+            preflightMetadataUri(uri, requireProviderWallet());
         }
         TransactionReceipt receipt = listed
             ? loadWritableDiamond(operationKey("list", labId, idempotencyKey)).listLab(labId).send()
@@ -647,7 +647,7 @@ public class LabAdminService {
         );
     }
 
-    private void preflightMetadataUri(String metadataUri) throws IOException {
+    private void preflightMetadataUri(String metadataUri, String providerAddress) throws IOException {
         String uri = requireText(metadataUri, "metadataUri", 1000);
         String gatewayPrefix = publicBaseUrl().replaceAll("/+$", "") + "/lab-content/";
         if (uri.startsWith(gatewayPrefix)) {
@@ -672,7 +672,7 @@ public class LabAdminService {
         }
 
         try {
-            labMetadataService.getLabMetadata(uri);
+            labMetadataService.getLabMetadataForProvider(providerAddress, uri);
         } catch (RuntimeException ex) {
             throw new IllegalArgumentException("Metadata preflight failed: URI is not accessible", ex);
         }

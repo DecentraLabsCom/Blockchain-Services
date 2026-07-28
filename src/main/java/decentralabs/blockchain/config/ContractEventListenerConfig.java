@@ -204,7 +204,6 @@ public class ContractEventListenerConfig {
     private volatile BigInteger writableDiamondGasPriceWei;
     private volatile String writableDiamondOperationKey;
 
-    private final Map<BigInteger, String> labMetadataUriCache = new ConcurrentHashMap<>();
 
     @Value("${contract.events.to.listen:}")
     private String eventsToListen;
@@ -1050,37 +1049,10 @@ public class ContractEventListenerConfig {
     }
 
     private Optional<LabMetadata> loadLabMetadata(BigInteger labId) {
-        return fetchLabMetadataUri(labId).flatMap(uri -> {
-            try {
-                return Optional.ofNullable(labMetadataService.getLabMetadata(uri));
-            } catch (RuntimeException ex) {
-                log.error("Failed to load metadata for lab {} ({}): {}", labId, uri, ex.getMessage());
-                return Optional.empty();
-            }
-        });
-    }
-
-    private Optional<String> fetchLabMetadataUri(BigInteger labId) {
-        if (labId == null) {
-            return Optional.empty();
-        }
-
-        String cached = labMetadataUriCache.get(labId);
-        if (cached != null) {
-            return Optional.of(cached);
-        }
-
         try {
-            Diamond contract = getDiamondContract();
-            Diamond.Lab lab = contract.getLab(labId).send();
-            if (lab == null || lab.base == null) {
-                return Optional.empty();
-            }
-            Optional<String> uri = normalizeNonEmptyString(lab.base.uri);
-            uri.ifPresent(value -> labMetadataUriCache.put(labId, value));
-            return uri;
+            return Optional.ofNullable(labMetadataService.getLabMetadataForLab(labId));
         } catch (Exception ex) {
-            log.warn("Unable to fetch metadata URI for lab {}: {}", labId, ex.getMessage());
+            log.warn("Unable to load metadata for lab {}: {}", labId, ex.getMessage());
             return Optional.empty();
         }
     }
