@@ -109,6 +109,13 @@ reservations are intentionally not cancellable by this endpoint. The contract
 re-checks ownership and state at transaction time, so a race with a consumer
 or another operator fails safely rather than cancelling a changed booking.
 
+At contract level, denial and provider cancellation are authorized for the
+current lab owner or the backend currently authorized by that owner. This
+lab-admin endpoint signs with the configured provider wallet and therefore uses
+the owner path; the event-driven provider worker uses the delegated-backend
+path when that wallet is the active on-chain backend. A payer institution or
+unrelated backend cannot deny an external request.
+
 An update that only changes the gateway-hosted metadata can return
 `status: "offchain_updated"` without a chain transaction. All other on-chain
 mutations return the transaction receipt status and hash; receipt success is

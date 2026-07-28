@@ -32,7 +32,7 @@ import org.springframework.web.server.ResponseStatusException;
  */
 @RestController
 @RequestMapping("/auth/fmu/provider-describe-token")
-@ConditionalOnProperty(value = "features.providers.enabled", havingValue = "true", matchIfMissing = true)
+@ConditionalOnProperty(value = "features.providers.enabled", havingValue = "true", matchIfMissing = false)
 @RequiredArgsConstructor
 @Slf4j
 public class FmuProviderDescribeController {

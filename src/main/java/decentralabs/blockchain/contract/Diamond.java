@@ -317,6 +317,23 @@ public class Diamond extends Contract {
     }
 
     /**
+     * Get the current owner of a lab token (ERC-721 ownerOf semantics).
+     */
+    @SuppressWarnings("rawtypes")
+    public RemoteFunctionCall<String> ownerOf(BigInteger labId) {
+        final Function function = new Function(
+            "ownerOf",
+            Arrays.asList(new Uint256(labId)),
+            Arrays.asList(new TypeReference<Address>() {})
+        );
+        return new RemoteFunctionCall<>(function,
+            () -> {
+                Type result = executeCallSingleValueReturn(function);
+                return (String) result.getValue();
+            });
+    }
+
+    /**
      * Admin helper to grant institution role and register an organization (InstitutionFacet)
      */
     public RemoteFunctionCall<TransactionReceipt> grantInstitutionRole(String institution, String organization) {

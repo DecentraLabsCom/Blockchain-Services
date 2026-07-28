@@ -121,6 +121,9 @@ public class IntentOnChainExecutor {
             case "LAB_DELETE" -> executeLabDelete(record, credentials, action);
             case "LAB_SET_URI" -> send(buildSetTokenURI(record), credentials, record, action);
             case "CANCEL_RESERVATION_REQUEST" -> send(buildCancelReservation(record), credentials, record, action);
+            // This postflight only releases expired reservations. It never
+            // confirms or denies the request; external approval remains a
+            // provider-owner/backend event-listener responsibility.
             case "RESERVATION_REQUEST" -> {
                 ExecutionResult result = send(buildReservationRequest(record), credentials, record, action);
                 if (result.success()) {

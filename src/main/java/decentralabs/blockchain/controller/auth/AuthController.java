@@ -22,7 +22,7 @@ import org.springframework.web.bind.annotation.*;
  * (institutional SAML-based authentication).
  */
 @RestController
-@ConditionalOnProperty(value = "features.providers.enabled", havingValue = "true", matchIfMissing = true)
+@ConditionalOnProperty(value = "features.providers.enabled", havingValue = "true", matchIfMissing = false)
 @Slf4j
 public class AuthController {
 

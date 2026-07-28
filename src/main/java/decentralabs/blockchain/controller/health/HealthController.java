@@ -47,7 +47,7 @@ public class HealthController {
     @Value("${private.key.path:}")
     private String privateKeyPath;
 
-    @Value("${features.providers.enabled:true}")
+    @Value("${features.providers.enabled:false}")
     private boolean providersEnabled;
 
     @Value("${contract.event.listening.enabled:true}")

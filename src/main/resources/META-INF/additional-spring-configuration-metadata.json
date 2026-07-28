@@ -488,7 +488,7 @@
   {
     "name": "features.providers.enabled",
     "type": "java.lang.Boolean",
-    "description": "Enable provider features.",
+    "description": "Enable provider features and provider-side reservation confirmation/denial automation.",
     "defaultValue": false
   },
   {

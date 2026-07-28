@@ -11,7 +11,6 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.Optional;
 
-import decentralabs.blockchain.config.ContractEventListenerConfig;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -21,7 +20,6 @@ import org.mockito.Captor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.beans.factory.ObjectProvider;
 
 import decentralabs.blockchain.dto.intent.IntentStatus;
 import decentralabs.blockchain.service.intent.IntentOnChainExecutor.ExecutionResult;
@@ -43,9 +41,6 @@ class IntentExecutionServiceTest {
     @Mock
     private IntentRegistrationVerifier registrationVerifier;
 
-    @Mock
-    private ObjectProvider<ContractEventListenerConfig> reservationAutoApprovalProcessor;
-    
     @InjectMocks
     private IntentExecutionService executionService;
 
@@ -309,26 +304,19 @@ class IntentExecutionServiceTest {
         }
 
         @Test
-        @DisplayName("Should trigger reservation auto-approval after reservation request execution")
-        void shouldTriggerAutoApprovalAfterReservationRequestExecution() throws Exception {
+        @DisplayName("Should leave provider approval to the reservation event listener")
+        void shouldLeaveProviderApprovalToReservationEventListener() throws Exception {
             // Given
             IntentRecord intent = createIntentRecord("req-reservation", "RESERVATION_REQUEST", IntentStatus.QUEUED);
             intent.setReservationKey("0x" + "12".repeat(32));
             when(intentService.findByRequestId("req-reservation")).thenReturn(Optional.of(intent));
             when(onChainExecutor.execute(intent))
                 .thenReturn(new ExecutionResult(true, "0xreservation", 102L, null, "0x" + "34".repeat(32), null));
-            ContractEventListenerConfig processor = mock(ContractEventListenerConfig.class);
-            doAnswer(invocation -> {
-                java.util.function.Consumer<ContractEventListenerConfig> consumer = invocation.getArgument(0);
-                consumer.accept(processor);
-                return null;
-            }).when(reservationAutoApprovalProcessor).ifAvailable(any());
-
             // When
             executionService.processQueuedIntent("req-reservation");
 
             // Then
-            verify(processor).processReservationRequestFromChain("0x" + "34".repeat(32));
+            verify(intentService).markExecuted(intent, "0xreservation", 102L, null, "0x" + "34".repeat(32));
         }
 
         @Test
@@ -345,7 +333,7 @@ class IntentExecutionServiceTest {
             executionService.processQueuedIntent("req-direct");
 
             // Then
-            verify(reservationAutoApprovalProcessor, never()).ifAvailable(any());
+            verify(intentService).markExecuted(intent, "0xdirect", 103L, null, "0x" + "56".repeat(32));
         }
         
         @Test

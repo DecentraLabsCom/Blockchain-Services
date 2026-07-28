@@ -26,7 +26,7 @@ import org.web3j.crypto.Credentials;
  * Service for managing the institutional wallet used for automated transactions.
  * 
  * This service manages a SINGLE wallet that is used for:
- * - Automatic reservation confirmations/denials (event listeners)
+ * - Provider-side automatic reservation confirmations/denials (event listeners)
  * - Institutional reservations (billing operations)
  * - Administrative operations (billing admin)
  * 

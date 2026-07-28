@@ -526,7 +526,7 @@ public class IntentService {
         }
 
         if (action == IntentAction.DIRECT_BOOKING
-            && walletService.isLabOwnedByProvider(payload.getExecutor(), payload.getLabId())) {
+            && walletService.isLabOwnedByProviderOrAuthorizedBackend(payload.getExecutor(), payload.getLabId())) {
             if (payload.getPrice().signum() != 0) {
                 throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "reservation_price_mismatch");
             }

@@ -51,7 +51,7 @@ and units.
 | Chain and wallet | `CONTRACT_ADDRESS`, `BLOCKCHAIN_NETWORK_ACTIVE`, RPC URL, `INSTITUTIONAL_WALLET_*` or an encrypted persisted wallet | The wallet signs automated transactions. Keep RPC credentials outside Git. |
 | Database | `SPRING_DATASOURCE_URL`, `SPRING_DATASOURCE_USERNAME`, `SPRING_DATASOURCE_PASSWORD` | Flyway validates migrations at startup. |
 | Signing and Marketplace | `PRIVATE_KEY_PATH`, `PUBLIC_KEY_PATH`, `MARKETPLACE_PUBLIC_KEY_URL`, `PUBLIC_BASE_URL` | Mount private keys read-only and use HTTPS endpoints. |
-| Provider mode | `FEATURES_PROVIDERS_ENABLED`, `FEATURES_PROVIDERS_REGISTRATION_ENABLED`, `FEATURES_ORGANIZATIONS_ENABLED` | Registration is independently feature-gated. |
+| Provider mode | `FEATURES_PROVIDERS_ENABLED`, `FEATURES_PROVIDERS_REGISTRATION_ENABLED`, `FEATURES_ORGANIZATIONS_ENABLED` | Registration is independently feature-gated. Provider reservation confirmation/denial automation is enabled only when the provider flag is true and the wallet is the current lab owner or its authorized backend. |
 | WebAuthn | `WEBAUTHN_RP_ID`, `WEBAUTHN_RP_ORIGINS`, `WEBAUTHN_AUTHENTICATOR_ATTACHMENT`, `WEBAUTHN_USER_VERIFICATION`, `WEBAUTHN_ATTESTATION_CONVEYANCE` | `preferred` verification is the default for browser/provider compatibility; `required` remains available as a strict policy. Only `none` attestation is accepted. |
 | Intents | `INTENT_PAYLOAD_ENCRYPTION_KEY`, `INTENTS_AUTH_*`, `INTENT_DOMAIN_*` | The payload key is a base64/base64url 32-byte AES-256 key and is required to persist execution payloads. |
 | SAML | `SAML_IDP_TRUST_MODE`, `SAML_TRUSTED_IDP`, `SAML_IDP_METADATA_OVERRIDE` | Use `whitelist` in production. |

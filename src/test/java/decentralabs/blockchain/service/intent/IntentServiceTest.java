@@ -459,14 +459,25 @@ class IntentServiceTest {
     class ReservationPayloadValidationTests {
 
         @Test
-        @DisplayName("Should allow zero price for direct booking of a lab owned by the executor")
+        @DisplayName("Should allow zero price for direct booking of an own lab")
         void shouldAllowZeroPriceForOwnInstitutionDirectBooking() {
             IntentMeta meta = createValidMeta();
             meta.setAction(IntentAction.DIRECT_BOOKING.getId());
 
             ReservationIntentPayload payload = createValidReservationPayload();
             payload.setPrice(BigInteger.ZERO);
-            when(walletService.isLabOwnedByProvider(payload.getExecutor(), payload.getLabId())).thenReturn(true);
+            when(walletService.isLabOwnedByProviderOrAuthorizedBackend(payload.getExecutor(), payload.getLabId())).thenReturn(true);
+
+            assertDoesNotThrow(() -> service.validateReservationPrice(IntentAction.DIRECT_BOOKING, payload));
+        }
+
+        @Test
+        @DisplayName("Should allow zero price when the direct-booking executor is the owner's backend")
+        void shouldAllowZeroPriceForOwnerBackendDirectBooking() {
+            ReservationIntentPayload payload = createValidReservationPayload();
+            payload.setExecutor("0x00000000000000000000000000000000000000b2");
+            payload.setPrice(BigInteger.ZERO);
+            when(walletService.isLabOwnedByProviderOrAuthorizedBackend(payload.getExecutor(), payload.getLabId())).thenReturn(true);
 
             assertDoesNotThrow(() -> service.validateReservationPrice(IntentAction.DIRECT_BOOKING, payload));
         }
@@ -476,7 +487,7 @@ class IntentServiceTest {
         void shouldRejectNonZeroPriceForOwnInstitutionDirectBooking() {
             ReservationIntentPayload payload = createValidReservationPayload();
             payload.setPrice(BigInteger.TWO);
-            when(walletService.isLabOwnedByProvider(payload.getExecutor(), payload.getLabId())).thenReturn(true);
+            when(walletService.isLabOwnedByProviderOrAuthorizedBackend(payload.getExecutor(), payload.getLabId())).thenReturn(true);
 
             ResponseStatusException ex = assertThrows(ResponseStatusException.class,
                 () -> service.validateReservationPrice(IntentAction.DIRECT_BOOKING, payload));
@@ -489,7 +500,7 @@ class IntentServiceTest {
         void shouldRejectZeroPriceForExternalDirectBooking() {
             ReservationIntentPayload payload = createValidReservationPayload();
             payload.setPrice(BigInteger.ZERO);
-            when(walletService.isLabOwnedByProvider(payload.getExecutor(), payload.getLabId())).thenReturn(false);
+            when(walletService.isLabOwnedByProviderOrAuthorizedBackend(payload.getExecutor(), payload.getLabId())).thenReturn(false);
 
             ResponseStatusException ex = assertThrows(ResponseStatusException.class,
                 () -> service.validateReservationPrice(IntentAction.DIRECT_BOOKING, payload));

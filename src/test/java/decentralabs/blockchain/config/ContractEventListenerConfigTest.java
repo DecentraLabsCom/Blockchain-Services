@@ -82,6 +82,7 @@ class ContractEventListenerConfigTest {
         config = new ContractEventListenerConfig(
             eventPollingFallbackService,
             txManagerProvider,
+            institutionalWalletService,
             walletService,
             labMetadataService,
             reservationNotificationService,
@@ -628,8 +629,11 @@ class ContractEventListenerConfigTest {
     }
 
     @Test
-    void shouldConfirmInstitutionalReservationWithStoredPucHash() throws Exception {
+    void shouldConfirmInstitutionalReservationWithProviderWalletAndStoredPucHash() throws Exception {
         ReflectionTestUtils.setField(config, "eventListeningEnabled", true);
+        ReflectionTestUtils.setField(config, "providerFeaturesEnabled", true);
+        when(institutionalWalletService.getInstitutionalWalletAddress())
+            .thenReturn("0x00000000000000000000000000000000000000dd");
 
         var diamond = mock(decentralabs.blockchain.contract.Diamond.class);
         @SuppressWarnings("unchecked")
@@ -663,6 +667,10 @@ class ContractEventListenerConfigTest {
             new decentralabs.blockchain.contract.Diamond.Lab(BigInteger.valueOf(16), base);
         when(labCall.send()).thenReturn(lab);
         when(diamond.getLab(any(BigInteger.class))).thenReturn(labCall);
+        @SuppressWarnings("unchecked")
+        var ownerCall = (org.web3j.protocol.core.RemoteFunctionCall<String>) mock(org.web3j.protocol.core.RemoteFunctionCall.class);
+        when(ownerCall.send()).thenReturn("0x00000000000000000000000000000000000000dd");
+        when(diamond.ownerOf(any(BigInteger.class))).thenReturn(ownerCall);
 
         ReflectionTestUtils.setField(config, "cachedDiamond", diamond);
 
@@ -708,8 +716,11 @@ class ContractEventListenerConfigTest {
     }
 
     @Test
-    void shouldConfirmCrossInstitutionalReservationWithPayerInstitution() throws Exception {
+    void shouldNotConfirmCrossInstitutionalReservationWithPayerInstitution() throws Exception {
         ReflectionTestUtils.setField(config, "eventListeningEnabled", true);
+        ReflectionTestUtils.setField(config, "providerFeaturesEnabled", true);
+        when(institutionalWalletService.getInstitutionalWalletAddress())
+            .thenReturn("0x00000000000000000000000000000000000000cc");
 
         String payerInstitution = "0x00000000000000000000000000000000000000cc";
         String providerInstitution = "0x00000000000000000000000000000000000000dd";
@@ -736,29 +747,10 @@ class ContractEventListenerConfigTest {
         String storedPucHash = "0x" + "34".repeat(32);
         stubReservationPucHash(diamond, storedPucHash);
 
-        @SuppressWarnings("unchecked")
-        var labCall = (org.web3j.protocol.core.RemoteFunctionCall<decentralabs.blockchain.contract.Diamond.Lab>) mock(org.web3j.protocol.core.RemoteFunctionCall.class);
-        decentralabs.blockchain.contract.Diamond.LabBase base =
-            new decentralabs.blockchain.contract.Diamond.LabBase(
-                "ipfs://cross-institutional-lab", BigInteger.ONE, "", "", BigInteger.ZERO, BigInteger.ZERO
-            );
-        decentralabs.blockchain.contract.Diamond.Lab lab =
-            new decentralabs.blockchain.contract.Diamond.Lab(BigInteger.valueOf(18), base);
-        when(labCall.send()).thenReturn(lab);
-        when(diamond.getLab(any(BigInteger.class))).thenReturn(labCall);
         ReflectionTestUtils.setField(config, "cachedDiamond", diamond);
 
         var writableDiamond = mock(decentralabs.blockchain.contract.Diamond.class);
         ReflectionTestUtils.setField(config, "writableDiamond", writableDiamond);
-        @SuppressWarnings("unchecked")
-        var confirmCall = (org.web3j.protocol.core.RemoteFunctionCall<org.web3j.protocol.core.methods.response.TransactionReceipt>) mock(org.web3j.protocol.core.RemoteFunctionCall.class);
-        when(confirmCall.send()).thenReturn(new org.web3j.protocol.core.methods.response.TransactionReceipt());
-        when(writableDiamond.confirmInstitutionalReservationRequestWithPucHash(any(), any(), any())).thenReturn(confirmCall);
-
-        LabMetadata metadata = new LabMetadata();
-        metadata.setName("Cross Institutional Lab");
-        when(labMetadataService.getLabMetadata("ipfs://cross-institutional-lab")).thenReturn(metadata);
-        doNothing().when(labMetadataService).validateAvailability(any(), any(), any(), anyInt());
 
         Map<String, Event> supported = getSupportedEvents();
         Event eventDefinition = supported.get("ReservationRequested");
@@ -781,11 +773,210 @@ class ContractEventListenerConfigTest {
 
         ReflectionTestUtils.invokeMethod(config, "handleContractEvent", "ReservationRequested", eventDefinition, eventLog);
 
+        verify(diamond, never()).getLab(any(BigInteger.class));
+        verify(writableDiamond, never()).confirmInstitutionalReservationRequestWithPucHash(any(), any(), any());
+        verify(writableDiamond, never()).denyReservationRequest(any(byte[].class));
+    }
+
+    @Test
+    void shouldKeepConsumerOnlyReservationListenerInformational() throws Exception {
+        ReflectionTestUtils.setField(config, "eventListeningEnabled", true);
+        ReflectionTestUtils.setField(config, "providerFeaturesEnabled", false);
+
+        var diamond = mock(decentralabs.blockchain.contract.Diamond.class);
+        @SuppressWarnings("unchecked")
+        var reservationCall = (org.web3j.protocol.core.RemoteFunctionCall<decentralabs.blockchain.contract.Diamond.Reservation>) mock(org.web3j.protocol.core.RemoteFunctionCall.class);
+        var reservation = new decentralabs.blockchain.contract.Diamond.Reservation(
+            BigInteger.valueOf(21),
+            "0x00000000000000000000000000000000000000cc",
+            BigInteger.ZERO,
+            "0x00000000000000000000000000000000000000dd",
+            BigInteger.ZERO,
+            BigInteger.valueOf(1000),
+            BigInteger.valueOf(2000),
+            BigInteger.ZERO,
+            BigInteger.ZERO,
+            "0x00000000000000000000000000000000000000cc",
+            "0x00000000000000000000000000000000000000dd",
+            BigInteger.ZERO
+        );
+        when(reservationCall.send()).thenReturn(reservation);
+        when(diamond.getReservation(any(byte[].class))).thenReturn(reservationCall);
+        stubReservationPucHash(diamond, "0x" + "57".repeat(32));
+        ReflectionTestUtils.setField(config, "cachedDiamond", diamond);
+
+        var writableDiamond = mock(decentralabs.blockchain.contract.Diamond.class);
+        ReflectionTestUtils.setField(config, "writableDiamond", writableDiamond);
+
+        ReflectionTestUtils.invokeMethod(
+            config,
+            "handleContractEvent",
+            "ReservationRequested",
+            getSupportedEvents().get("ReservationRequested"),
+            buildReservationRequestedLog(BigInteger.valueOf(21), "0x" + "dd".repeat(32), "0xconsumer-only")
+        );
+
+        verify(institutionalWalletService, never()).getInstitutionalWalletAddress();
+        verify(diamond, never()).ownerOf(any(BigInteger.class));
+        verify(diamond, never()).getLab(any(BigInteger.class));
+        verifyNoInteractions(labMetadataService, writableDiamond);
+    }
+
+    @Test
+    void shouldNotRunReservationReconciliationWhenProviderAutomationIsDisabled() {
+        ReflectionTestUtils.setField(config, "reservationReconcileEnabled", true);
+        ReflectionTestUtils.setField(config, "providerFeaturesEnabled", false);
+
+        config.reconcilePendingReservations();
+
+        verifyNoInteractions(reservationPersistenceService, intentPersistenceService);
+    }
+
+    @Test
+    void shouldSkipReservationProcessingWhenLocalWalletHasNoOnChainRole() throws Exception {
+        ReflectionTestUtils.setField(config, "eventListeningEnabled", true);
+        ReflectionTestUtils.setField(config, "providerFeaturesEnabled", true);
+        when(institutionalWalletService.getInstitutionalWalletAddress())
+            .thenReturn("0x00000000000000000000000000000000000000ee");
+
+        String payerInstitution = "0x00000000000000000000000000000000000000cc";
+        String providerInstitution = "0x00000000000000000000000000000000000000dd";
+        var diamond = mock(decentralabs.blockchain.contract.Diamond.class);
+
+        @SuppressWarnings("unchecked")
+        var reservationCall = (org.web3j.protocol.core.RemoteFunctionCall<decentralabs.blockchain.contract.Diamond.Reservation>) mock(org.web3j.protocol.core.RemoteFunctionCall.class);
+        var reservation = new decentralabs.blockchain.contract.Diamond.Reservation(
+            BigInteger.valueOf(19),
+            payerInstitution,
+            BigInteger.valueOf(3600),
+            providerInstitution,
+            BigInteger.ZERO,
+            BigInteger.valueOf(1000),
+            BigInteger.valueOf(2000),
+            BigInteger.ZERO,
+            BigInteger.ZERO,
+            payerInstitution,
+            providerInstitution,
+            BigInteger.ZERO
+        );
+        when(reservationCall.send()).thenReturn(reservation);
+        when(diamond.getReservation(any(byte[].class))).thenReturn(reservationCall);
+        stubReservationPucHash(diamond, "0x" + "45".repeat(32));
+
+        @SuppressWarnings("unchecked")
+        var ownerCall = (org.web3j.protocol.core.RemoteFunctionCall<String>) mock(org.web3j.protocol.core.RemoteFunctionCall.class);
+        when(ownerCall.send()).thenReturn(providerInstitution);
+        when(diamond.ownerOf(any(BigInteger.class))).thenReturn(ownerCall);
+
+        @SuppressWarnings("unchecked")
+        var providerBackendCall = (org.web3j.protocol.core.RemoteFunctionCall<String>) mock(org.web3j.protocol.core.RemoteFunctionCall.class);
+        when(providerBackendCall.send()).thenReturn("0x0000000000000000000000000000000000000002");
+        when(diamond.getAuthorizedBackend(eq(providerInstitution))).thenReturn(providerBackendCall);
+
+        ReflectionTestUtils.setField(config, "cachedDiamond", diamond);
+        var writableDiamond = mock(decentralabs.blockchain.contract.Diamond.class);
+        ReflectionTestUtils.setField(config, "writableDiamond", writableDiamond);
+
+        Log eventLog = buildReservationRequestedLog(BigInteger.valueOf(19), "0x" + "bb".repeat(32), "0xunrelated");
+        Event eventDefinition = getSupportedEvents().get("ReservationRequested");
+
+        ReflectionTestUtils.invokeMethod(config, "handleContractEvent", "ReservationRequested", eventDefinition, eventLog);
+
+        verify(diamond, never()).getLab(any(BigInteger.class));
+        verifyNoInteractions(labMetadataService, writableDiamond);
+    }
+
+    @Test
+    void shouldAllowProviderBackendToAutoConfirmWhenProviderAutomationIsEnabled() throws Exception {
+        ReflectionTestUtils.setField(config, "eventListeningEnabled", true);
+        ReflectionTestUtils.setField(config, "providerFeaturesEnabled", true);
+
+        String payerInstitution = "0x00000000000000000000000000000000000000cc";
+        String providerInstitution = "0x00000000000000000000000000000000000000dd";
+        String providerBackend = "0x00000000000000000000000000000000000000bb";
+        when(institutionalWalletService.getInstitutionalWalletAddress()).thenReturn(providerBackend);
+
+        var diamond = mock(decentralabs.blockchain.contract.Diamond.class);
+        @SuppressWarnings("unchecked")
+        var reservationCall = (org.web3j.protocol.core.RemoteFunctionCall<decentralabs.blockchain.contract.Diamond.Reservation>) mock(org.web3j.protocol.core.RemoteFunctionCall.class);
+        var reservation = new decentralabs.blockchain.contract.Diamond.Reservation(
+            BigInteger.valueOf(20),
+            payerInstitution,
+            BigInteger.valueOf(3600),
+            providerInstitution,
+            BigInteger.ZERO,
+            BigInteger.valueOf(1000),
+            BigInteger.valueOf(2000),
+            BigInteger.ZERO,
+            BigInteger.ZERO,
+            payerInstitution,
+            providerInstitution,
+            BigInteger.ZERO
+        );
+        when(reservationCall.send()).thenReturn(reservation);
+        when(diamond.getReservation(any(byte[].class))).thenReturn(reservationCall);
+        stubReservationPucHash(diamond, "0x" + "56".repeat(32));
+
+        @SuppressWarnings("unchecked")
+        var ownerCall = (org.web3j.protocol.core.RemoteFunctionCall<String>) mock(org.web3j.protocol.core.RemoteFunctionCall.class);
+        when(ownerCall.send()).thenReturn(providerInstitution);
+        when(diamond.ownerOf(any(BigInteger.class))).thenReturn(ownerCall);
+
+        @SuppressWarnings("unchecked")
+        var providerBackendCall = (org.web3j.protocol.core.RemoteFunctionCall<String>) mock(org.web3j.protocol.core.RemoteFunctionCall.class);
+        when(providerBackendCall.send()).thenReturn(providerBackend);
+        when(diamond.getAuthorizedBackend(eq(providerInstitution))).thenReturn(providerBackendCall);
+
+        @SuppressWarnings("unchecked")
+        var labCall = (org.web3j.protocol.core.RemoteFunctionCall<decentralabs.blockchain.contract.Diamond.Lab>) mock(org.web3j.protocol.core.RemoteFunctionCall.class);
+        var base = new decentralabs.blockchain.contract.Diamond.LabBase(
+            "ipfs://provider-lab", BigInteger.ONE, "", "", BigInteger.ZERO, BigInteger.ZERO
+        );
+        when(labCall.send()).thenReturn(new decentralabs.blockchain.contract.Diamond.Lab(BigInteger.valueOf(20), base));
+        when(diamond.getLab(any(BigInteger.class))).thenReturn(labCall);
+        ReflectionTestUtils.setField(config, "cachedDiamond", diamond);
+
+        var writableDiamond = mock(decentralabs.blockchain.contract.Diamond.class);
+        ReflectionTestUtils.setField(config, "writableDiamond", writableDiamond);
+        @SuppressWarnings("unchecked")
+        var confirmCall = (org.web3j.protocol.core.RemoteFunctionCall<org.web3j.protocol.core.methods.response.TransactionReceipt>) mock(org.web3j.protocol.core.RemoteFunctionCall.class);
+        when(confirmCall.send()).thenReturn(new org.web3j.protocol.core.methods.response.TransactionReceipt());
+        when(writableDiamond.confirmInstitutionalReservationRequestWithPucHash(any(), any(), any())).thenReturn(confirmCall);
+
+        LabMetadata metadata = new LabMetadata();
+        metadata.setName("Provider Lab");
+        when(labMetadataService.getLabMetadata("ipfs://provider-lab")).thenReturn(metadata);
+        doNothing().when(labMetadataService).validateAvailability(any(), any(), any(), anyInt());
+
+        Log eventLog = buildReservationRequestedLog(BigInteger.valueOf(20), "0x" + "cc".repeat(32), "0xprovider-backend");
+        Event eventDefinition = getSupportedEvents().get("ReservationRequested");
+
+        ReflectionTestUtils.invokeMethod(config, "handleContractEvent", "ReservationRequested", eventDefinition, eventLog);
+
         verify(writableDiamond).confirmInstitutionalReservationRequestWithPucHash(
             eq(payerInstitution),
             any(byte[].class),
-            eq(storedPucHash)
+            eq("0x" + "56".repeat(32))
         );
-        verify(writableDiamond, never()).denyReservationRequest(any(byte[].class));
+    }
+
+    private Log buildReservationRequestedLog(BigInteger labId, String reservationKey, String transactionHash) {
+        Event eventDefinition = getSupportedEvents().get("ReservationRequested");
+        String signature = EventEncoder.encode(eventDefinition);
+        String renterTopic = encodeAddressTopic("0x00000000000000000000000000000000000000cc");
+        String labIdTopic = encodeUintTopic(labId);
+        String reservationKeyTopic = Numeric.toHexStringNoPrefixZeroPadded(
+            Numeric.toBigInt(reservationKey), 64
+        );
+        String data = "0x"
+            + encodeUintData(BigInteger.valueOf(1000))
+            + encodeUintData(BigInteger.valueOf(2000));
+
+        Log eventLog = new Log();
+        eventLog.setTopics(List.of(signature, renterTopic, labIdTopic, "0x" + reservationKeyTopic));
+        eventLog.setData(data);
+        eventLog.setTransactionHash(transactionHash);
+        eventLog.setBlockNumber("0x500");
+        return eventLog;
     }
 }

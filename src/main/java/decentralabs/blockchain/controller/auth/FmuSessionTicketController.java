@@ -20,7 +20,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 @RestController
 @RequestMapping("/auth/fmu/session-ticket")
-@ConditionalOnProperty(value = "features.providers.enabled", havingValue = "true", matchIfMissing = true)
+@ConditionalOnProperty(value = "features.providers.enabled", havingValue = "true", matchIfMissing = false)
 @RequiredArgsConstructor
 @Slf4j
 public class FmuSessionTicketController {

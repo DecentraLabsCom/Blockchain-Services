@@ -10,6 +10,7 @@ import decentralabs.blockchain.service.persistence.ReservationPersistenceService
 import decentralabs.blockchain.service.intent.IntentPersistenceService;
 import decentralabs.blockchain.service.intent.IntentService;
 import decentralabs.blockchain.service.wallet.InstitutionalTxManagerProvider;
+import decentralabs.blockchain.service.wallet.InstitutionalWalletService;
 import decentralabs.blockchain.service.wallet.WalletService;
 import java.math.BigDecimal;
 import java.math.BigInteger;
@@ -79,6 +80,7 @@ public class ContractEventListenerConfig {
 
     private final EventPollingFallbackService eventPollingFallbackService;
     private final InstitutionalTxManagerProvider txManagerProvider;
+    private final InstitutionalWalletService institutionalWalletService;
 
     private static final Event RESERVATION_REQUESTED_EVENT = new Event(
         RESERVATION_REQUESTED,
@@ -210,6 +212,10 @@ public class ContractEventListenerConfig {
     @Value("${contract.event.listening.enabled:true}")
     private boolean eventListeningEnabled;
 
+    /** Provider-side confirmation and denial automation is opt-in. */
+    @Value("${features.providers.enabled:false}")
+    private boolean providerFeaturesEnabled;
+
     @Value("${contract.event.start.block:latest}")
     private String startBlock;
 
@@ -302,6 +308,12 @@ public class ContractEventListenerConfig {
     @Scheduled(fixedDelayString = "${contract.reservation.reconcile.interval.ms:120000}")
     public void reconcilePendingReservations() {
         if (!reservationReconcileEnabled) {
+            return;
+        }
+        // Reconciliation is the provider-side write worker. Consumer-only
+        // instances still receive and persist lifecycle events, but must not
+        // scan pending requests for confirmation/denial work.
+        if (!providerFeaturesEnabled) {
             return;
         }
         if (reservationReconcileBatchSize <= 0) {
@@ -732,15 +744,6 @@ public class ContractEventListenerConfig {
         );
     }
 
-    public void processReservationRequestFromChain(String reservationKey) {
-        Optional<ReservationEventPayload> payload = buildPayloadFromChain(reservationKey);
-        if (payload.isEmpty()) {
-            log.warn("Reservation postflight skipped {}: not found on-chain", reservationKey);
-            return;
-        }
-        processReservationRequest(payload.get());
-    }
-
     private void dispatchReservationLifecycleEvent(String action, ReservationEventPayload payload) {
         log.info(
             "Reservation {} | key={} labId={} tx={} block={}",
@@ -820,6 +823,15 @@ public class ContractEventListenerConfig {
             return;
         }
 
+        if (!isProviderProcessingAuthority(payload)) {
+            log.debug(
+                "Skipping reservation {}: local wallet has no confirmation role for lab {}",
+                payload.reservationKey(),
+                payload.labId()
+            );
+            return;
+        }
+
         if (!shouldAttemptReservationProcessing(payload.reservationKey())) {
             return;
         }
@@ -835,11 +847,16 @@ public class ContractEventListenerConfig {
 
             labMetadataService.validateAvailability(metadata, start, end, DEFAULT_RESERVATION_USER_COUNT);
             confirmInstitutionalReservationOnChain(payload);
-            log.info("Institutional reservation {} auto-approved for lab {}", payload.reservationKey(), payload.labId());
+            log.info(
+                "Institutional reservation {} confirmed by provider for lab {} by {} role",
+                payload.reservationKey(),
+                payload.labId(),
+                "provider"
+            );
             markReservationProcessed(payload.reservationKey());
         } catch (Exception ex) {
             log.warn(
-                "Auto-approval failed for reservation {} on lab {}: {}",
+                "Provider approval failed for reservation {} on lab {}: {}",
                 payload.reservationKey(),
                 payload.labId(),
                 ex.getMessage()
@@ -854,6 +871,60 @@ public class ContractEventListenerConfig {
             }
             autoDenyReservation(payload, ex.getMessage(), classifyAutomaticDenialReason(ex));
         }
+    }
+
+    /**
+     * Resolves whether this provider instance may perform automatic approval.
+     *
+     * <p>External reservation requests require an explicit provider-side
+     * confirmation. Only the current lab owner or its authorized backend may
+     * write, and only provider-enabled instances are eligible. Every other
+     * listener remains informational. This check runs before loading lab
+     * metadata so payer and unrelated backends do not perform expensive reads
+     * or submit doomed transactions.</p>
+     */
+    private boolean isProviderProcessingAuthority(ReservationEventPayload payload) {
+        if (!providerFeaturesEnabled || payload.labId() == null) {
+            return false;
+        }
+
+        String localWallet = normalizeAddress(institutionalWalletService.getInstitutionalWalletAddress()).orElse(null);
+        if (localWallet == null) {
+            return false;
+        }
+
+        Diamond contract;
+        try {
+            contract = getDiamondContract();
+        } catch (Exception ex) {
+            log.warn("Unable to load Diamond contract while resolving reservation authority: {}", ex.getMessage());
+            return false;
+        }
+
+        try {
+            String labOwner = contract.ownerOf(payload.labId()).send();
+            Optional<String> normalizedOwner = normalizeAddress(labOwner);
+            if (normalizedOwner.isEmpty()) {
+                return false;
+            }
+            if (localWallet.equals(normalizedOwner.get())) {
+                return true;
+            }
+
+            String providerBackend = contract.getAuthorizedBackend(normalizedOwner.get()).send();
+            if (localWallet.equals(normalizeAddress(providerBackend).orElse(null))) {
+                return true;
+            }
+        } catch (Exception ex) {
+            log.warn(
+                "Unable to resolve lab owner/backend for reservation {} and lab {}: {}",
+                payload.reservationKey(),
+                payload.labId(),
+                ex.getMessage()
+            );
+        }
+
+        return false;
     }
 
     private boolean isPending(ReservationEventPayload payload) {

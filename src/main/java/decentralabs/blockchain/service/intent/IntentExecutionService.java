@@ -1,6 +1,5 @@
 package decentralabs.blockchain.service.intent;
 
-import decentralabs.blockchain.config.ContractEventListenerConfig;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
@@ -10,7 +9,6 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.stream.Collectors;
 
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.beans.factory.ObjectProvider;
 import io.micrometer.observation.annotation.Observed;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
@@ -27,7 +25,6 @@ public class IntentExecutionService {
     private final IntentService intentService;
     private final IntentOnChainExecutor onChainExecutor;
     private final IntentRegistrationVerifier registrationVerifier;
-    private final ObjectProvider<ContractEventListenerConfig> reservationAutoApprovalProcessor;
     private final ConcurrentHashMap<String, AtomicBoolean> executionGuards = new ConcurrentHashMap<>();
 
     @Value("${intent.execution-interval-ms:1000}")
@@ -113,7 +110,6 @@ public class IntentExecutionService {
             IntentOnChainExecutor.ExecutionResult result = onChainExecutor.execute(record);
             if (result.success()) {
                 intentService.markExecuted(record, result.txHash(), result.blockNumber(), result.labId(), result.reservationKey());
-                triggerReservationPostflight(record, result);
             } else {
                 log.warn("Intent {} failed on-chain: reason={} txHash={} blockNumber={}",
                     record.getRequestId(), result.reason(), result.txHash(), result.blockNumber());
@@ -133,30 +129,4 @@ public class IntentExecutionService {
         }
     }
 
-    private void triggerReservationPostflight(IntentRecord record, IntentOnChainExecutor.ExecutionResult result) {
-        if (!"RESERVATION_REQUEST".equalsIgnoreCase(record.getAction())) {
-            return;
-        }
-        String reservationKey = result.reservationKey();
-        if (reservationKey == null || reservationKey.isBlank()) {
-            reservationKey = record.getReservationKey();
-        }
-        if (reservationKey == null || reservationKey.isBlank()) {
-            log.warn("Reservation intent {} executed without reservation key; skipping auto-approval postflight", record.getRequestId());
-            return;
-        }
-        String key = reservationKey;
-        reservationAutoApprovalProcessor.ifAvailable(processor -> {
-            try {
-                processor.processReservationRequestFromChain(key);
-            } catch (Exception ex) {
-                log.warn(
-                    "Reservation postflight failed for intent {} key {}: {}",
-                    record.getRequestId(),
-                    key,
-                    ex.getMessage()
-                );
-            }
-        });
-    }
 }

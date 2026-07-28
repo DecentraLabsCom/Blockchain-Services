@@ -555,6 +555,42 @@ public class WalletService {
     }
 
     /**
+     * Checks the executor authority used by an own-lab direct-booking intent.
+     *
+     * <p>The executor may be the current ERC-721 lab owner or the backend
+     * currently authorized by that owner. This deliberately does not change
+     * {@link #isLabOwnedByProvider(String, BigInteger)}, which is used by
+     * provider-management and payout paths that require direct ownership.
+     */
+    public boolean isLabOwnedByProviderOrAuthorizedBackend(String executorAddress, BigInteger labId) {
+        if (executorAddress == null || executorAddress.isBlank() || labId == null || labId.compareTo(BigInteger.ZERO) <= 0) {
+            return false;
+        }
+        try {
+            Web3j web3j = getWeb3jInstance();
+            Optional<String> owner = getLabOwner(labId, web3j);
+            if (owner.isEmpty()) {
+                return false;
+            }
+            if (owner.get().equalsIgnoreCase(executorAddress)) {
+                return true;
+            }
+
+            Diamond diamond = Diamond.load(
+                contractAddress,
+                web3j,
+                new ReadonlyTransactionManager(web3j, contractAddress),
+                new StaticGasProvider(BigInteger.ZERO, BigInteger.ZERO)
+            );
+            String authorizedBackend = diamond.getAuthorizedBackend(owner.get()).send();
+            return authorizedBackend != null && authorizedBackend.equalsIgnoreCase(executorAddress);
+        } catch (Exception e) {
+            log.warn("Failed to resolve direct-booking authority for lab {}", labId, e);
+            return false;
+        }
+    }
+
+    /**
      * Returns a metadata URI for a lab token.
      * Tries ERC-721 tokenURI first and falls back to Lab.base.uri from getLab().
      */
