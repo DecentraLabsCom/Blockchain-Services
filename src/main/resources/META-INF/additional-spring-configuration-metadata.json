@@ -934,6 +934,18 @@
     "defaultValue": 300
   },
   {
+    "name": "contract.event.confirmations.required",
+    "type": "java.lang.Integer",
+    "description": "Required block confirmations before acknowledging a contract event.",
+    "defaultValue": 12
+  },
+  {
+    "name": "contract.event.canonicality.verification.enabled",
+    "type": "java.lang.Boolean",
+    "description": "Verify canonical block hashes before durably processing contract events.",
+    "defaultValue": true
+  },
+  {
     "name": "billing.admin.transactions.lookback-blocks",
     "type": "java.lang.Integer",
     "description": "Lookback block window for treasury admin on-chain transaction history queries.",
