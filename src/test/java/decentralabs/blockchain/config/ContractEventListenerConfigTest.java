@@ -40,6 +40,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doNothing;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -104,15 +105,16 @@ class ContractEventListenerConfigTest {
         );
         ReflectionTestUtils.setField(config, "diamondContractAddress", "0x1234567890abcdef");
         ReflectionTestUtils.setField(config, "startBlock", "latest");
-        when(walletService.getWeb3jInstance()).thenReturn(web3j);
+        lenient().when(walletService.getWeb3jInstance()).thenReturn(web3j);
+        lenient().when(stationCapacityService.requireCapacity()).thenReturn(Integer.MAX_VALUE);
         @SuppressWarnings("unchecked")
         Request<?, EthChainId> chainIdRequest = (Request<?, EthChainId>) mock(Request.class);
         EthChainId chainIdResponse = mock(EthChainId.class);
-        org.mockito.Mockito.doReturn(chainIdRequest).when(web3j).ethChainId();
-        when(chainIdRequest.send()).thenReturn(chainIdResponse);
-        when(chainIdResponse.getChainId()).thenReturn(BigInteger.valueOf(11155111));
+        lenient().doReturn(chainIdRequest).when(web3j).ethChainId();
+        lenient().when(chainIdRequest.send()).thenReturn(chainIdResponse);
+        lenient().when(chainIdResponse.getChainId()).thenReturn(BigInteger.valueOf(11155111));
 
-        org.mockito.Mockito.doAnswer(invocation -> {
+        lenient().doAnswer(invocation -> {
             DistributedReservationAvailabilityLockService.LockAction<?> action = invocation.getArgument(1);
             try {
                 action.run();
