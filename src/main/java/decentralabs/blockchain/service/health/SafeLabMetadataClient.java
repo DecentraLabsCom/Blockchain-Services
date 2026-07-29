@@ -118,7 +118,7 @@ public class SafeLabMetadataClient {
             }
 
             URI current = initialUri;
-            for (int redirect = 0; redirect < MAX_REDIRECTS; redirect++) {
+            for (int redirect = 0; redirect <= MAX_REDIRECTS; redirect++) {
                 URI requestUri = current;
                 exactAllowedOrigin(requestUri, List.of(expectedOrigin));
                 List<InetAddress> addresses = resolveAndValidate(requestUri.getHost());

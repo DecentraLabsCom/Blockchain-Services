@@ -466,9 +466,8 @@ class IntentServiceTest {
 
             ReservationIntentPayload payload = createValidReservationPayload();
             payload.setPrice(BigInteger.ZERO);
-            when(walletService.isLabOwnedByProviderOrAuthorizedBackend(payload.getExecutor(), payload.getLabId())).thenReturn(true);
 
-            assertDoesNotThrow(() -> service.validateReservationPrice(IntentAction.DIRECT_BOOKING, payload));
+            assertDoesNotThrow(() -> service.validateReservationPrice(IntentAction.DIRECT_BOOKING, payload, true));
         }
 
         @Test
@@ -477,9 +476,8 @@ class IntentServiceTest {
             ReservationIntentPayload payload = createValidReservationPayload();
             payload.setExecutor("0x00000000000000000000000000000000000000b2");
             payload.setPrice(BigInteger.ZERO);
-            when(walletService.isLabOwnedByProviderOrAuthorizedBackend(payload.getExecutor(), payload.getLabId())).thenReturn(true);
 
-            assertDoesNotThrow(() -> service.validateReservationPrice(IntentAction.DIRECT_BOOKING, payload));
+            assertDoesNotThrow(() -> service.validateReservationPrice(IntentAction.DIRECT_BOOKING, payload, true));
         }
 
         @Test
@@ -487,10 +485,9 @@ class IntentServiceTest {
         void shouldRejectNonZeroPriceForOwnInstitutionDirectBooking() {
             ReservationIntentPayload payload = createValidReservationPayload();
             payload.setPrice(BigInteger.TWO);
-            when(walletService.isLabOwnedByProviderOrAuthorizedBackend(payload.getExecutor(), payload.getLabId())).thenReturn(true);
 
             ResponseStatusException ex = assertThrows(ResponseStatusException.class,
-                () -> service.validateReservationPrice(IntentAction.DIRECT_BOOKING, payload));
+                () -> service.validateReservationPrice(IntentAction.DIRECT_BOOKING, payload, true));
 
             assertEquals("reservation_price_mismatch", ex.getReason());
         }
@@ -500,22 +497,30 @@ class IntentServiceTest {
         void shouldRejectZeroPriceForExternalDirectBooking() {
             ReservationIntentPayload payload = createValidReservationPayload();
             payload.setPrice(BigInteger.ZERO);
-            when(walletService.isLabOwnedByProviderOrAuthorizedBackend(payload.getExecutor(), payload.getLabId())).thenReturn(false);
 
             ResponseStatusException ex = assertThrows(ResponseStatusException.class,
-                () -> service.validateReservationPrice(IntentAction.DIRECT_BOOKING, payload));
+                () -> service.validateReservationPrice(IntentAction.DIRECT_BOOKING, payload, false));
 
             assertEquals("reservation_price_mismatch", ex.getReason());
         }
 
         @Test
-        @DisplayName("Should resolve lab authority before selecting the reservation price policy")
-        void shouldResolveLabAuthorityBeforeSelectingReservationPricePolicy() {
+        @DisplayName("Should resolve lab authority before validating reservation price fields")
+        void shouldResolveLabAuthorityBeforeValidatingReservationPriceFields() {
+            IntentMeta meta = createValidMeta();
+            meta.setAction(IntentAction.RESERVATION_REQUEST.getId());
             ReservationIntentPayload payload = createValidReservationPayload();
-            when(walletService.isLabOwnedByProviderOrAuthorizedBackend(payload.getExecutor(), payload.getLabId())).thenReturn(true);
+            payload.setPrice(null);
 
-            assertDoesNotThrow(() -> service.validateReservationPrice(IntentAction.RESERVATION_REQUEST, payload));
+            IntentSubmission submission = new IntentSubmission();
+            submission.setMeta(meta);
+            submission.setReservationPayload(payload);
+            submission.setWebauthnCredentialId("cred");
 
+            ResponseStatusException ex = assertThrows(ResponseStatusException.class,
+                () -> service.processIntent(submission));
+
+            assertEquals("Missing reservation price", ex.getReason());
             verify(walletService).isLabOwnedByProviderOrAuthorizedBackend(payload.getExecutor(), payload.getLabId());
         }
 
@@ -666,10 +671,11 @@ class IntentServiceTest {
                 IntentAction.class,
                 IntentMeta.class,
                 ActionIntentPayload.class,
-                ReservationIntentPayload.class
+                ReservationIntentPayload.class,
+                boolean.class
             );
             validatePayload.setAccessible(true);
-            assertDoesNotThrow(() -> validatePayload.invoke(service, IntentAction.LAB_ADD_AND_LIST, meta, payload, null));
+            assertDoesNotThrow(() -> validatePayload.invoke(service, IntentAction.LAB_ADD_AND_LIST, meta, payload, null, false));
         }
 
         @Test

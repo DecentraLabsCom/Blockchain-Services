@@ -169,8 +169,12 @@ public class IntentService {
         ActionIntentPayload actionPayload = submission.getActionPayload();
         ReservationIntentPayload reservationPayload = submission.getReservationPayload();
         String credentialId = requireWebauthnCredentialId(submission);
+        boolean executorHasLabAuthority = walletService.isLabOwnedByProviderOrAuthorizedBackend(
+            reservationPayload == null ? null : reservationPayload.getExecutor(),
+            reservationPayload == null ? null : reservationPayload.getLabId()
+        );
 
-        validatePayload(action, meta, actionPayload, reservationPayload);
+        validatePayload(action, meta, actionPayload, reservationPayload, executorHasLabAuthority);
 
         String samlAssertion = requireSamlAssertion(submission);
         String expectedAssertionHash = computeAssertionHash(samlAssertion);
@@ -241,9 +245,11 @@ public class IntentService {
         record.setExpiresAt(meta.getExpiresAt());
         record.setNonce(meta.getNonce());
         if (action.usesReservationPayload()) {
-            record.setReservationPayload(reservationPayload);
-            record.setReservationKey(normalizeBytes32(reservationPayload.getReservationKey()));
-            record.setLabId(reservationPayload.getLabId() != null ? reservationPayload.getLabId().toString() : null);
+            ReservationIntentPayload validatedReservationPayload = Optional.ofNullable(reservationPayload)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.BAD_REQUEST, "Missing reservation payload"));
+            record.setReservationPayload(validatedReservationPayload);
+            record.setReservationKey(normalizeBytes32(validatedReservationPayload.getReservationKey()));
+            record.setLabId(validatedReservationPayload.getLabId() != null ? validatedReservationPayload.getLabId().toString() : null);
             record.setPucHash(pucHash);
         } else {
             record.setActionPayload(actionPayload);
@@ -357,7 +363,8 @@ public class IntentService {
         IntentAction action,
         IntentMeta meta,
         ActionIntentPayload actionPayload,
-        ReservationIntentPayload reservationPayload
+        ReservationIntentPayload reservationPayload,
+        boolean executorHasLabAuthority
     ) {
         if (meta.getRequestId() == null || meta.getRequestId().isBlank()) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Missing requestId");
@@ -407,7 +414,7 @@ public class IntentService {
                 throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Invalid reservation window");
             }
             if (action == IntentAction.RESERVATION_REQUEST || action == IntentAction.DIRECT_BOOKING) {
-                validateReservationPrice(action, reservationPayload);
+                validateReservationPrice(action, reservationPayload, executorHasLabAuthority);
             }
         } else {
             if (actionPayload == null) {
@@ -520,15 +527,15 @@ public class IntentService {
         }
     }
 
-    void validateReservationPrice(IntentAction action, ReservationIntentPayload payload) {
+    void validateReservationPrice(
+        IntentAction action,
+        ReservationIntentPayload payload,
+        boolean executorHasLabAuthority
+    ) {
         if (payload == null || payload.getPrice() == null || payload.getStart() == null || payload.getEnd() == null) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Missing reservation price");
         }
 
-        boolean executorHasLabAuthority = walletService.isLabOwnedByProviderOrAuthorizedBackend(
-            payload.getExecutor(),
-            payload.getLabId()
-        );
         if (action == IntentAction.DIRECT_BOOKING && executorHasLabAuthority) {
             if (payload.getPrice().signum() != 0) {
                 throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "reservation_price_mismatch");
