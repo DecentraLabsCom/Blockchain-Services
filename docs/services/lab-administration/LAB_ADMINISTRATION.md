@@ -108,10 +108,15 @@ For `PENDING` reservations the provider reasons accepted by the contract are
 `1` (manual), `2` (not eligible), `6` (technical failure) and `7` (provider
 unavailable). For `CONFIRMED` reservations the endpoint calls
 `cancelConfirmedBookingByProvider`; the contract requires the provider to own
-the lab and the reservation to start in the future, and refunds the full
-reservation price as service credits. `ACCESS_AUTHORIZED` and already-started
-reservations are intentionally not cancellable by this endpoint. The contract
-re-checks ownership and state at transaction time, so a race with a consumer
+the lab and refunds the full reservation price as service credits. Ordinary
+provider cancellation is limited to the pre-start window and scores the lab
+-1 with at least 24 hours' notice or -2 with less than 24 hours' notice. Reason
+code `8` (`PROVIDER_SERVICE_FAILURE`) is the explicit no-service path: it may
+also cancel an `ACCESS_AUTHORIZED` or already-started reservation while the
+one-day `SessionStarted` attestation grace remains open, provided no
+`SessionStarted` evidence exists; it scores -3. `PENDING` technical denials do
+not incur this cancellation penalty. The contract re-checks ownership, state
+and the attestation condition at transaction time, so a race with a consumer
 or another operator fails safely rather than cancelling a changed booking.
 
 At contract level, denial and provider cancellation are authorized for the

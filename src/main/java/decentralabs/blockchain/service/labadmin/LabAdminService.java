@@ -63,6 +63,7 @@ public class LabAdminService {
     private static final BigInteger STATUS_PENDING = BigInteger.ZERO;
     private static final BigInteger STATUS_CONFIRMED = BigInteger.ONE;
     private static final BigInteger STATUS_ACCESS_AUTHORIZED = BigInteger.valueOf(2);
+    private static final BigInteger PROVIDER_SERVICE_FAILURE_REASON = BigInteger.valueOf(8);
     private static final int MAX_UPCOMING_RESERVATIONS = 500;
 
     public record LabAdminDeleteAssetResponse(boolean success, boolean deleted, String path) {}
@@ -242,7 +243,8 @@ public class LabAdminService {
             throw new IllegalStateException("Reservation is not owned by this provider wallet");
         }
         long now = Instant.now().getEpochSecond();
-        if (reservation.start == null || reservation.start.longValueExact() <= now) {
+        boolean serviceFailure = PROVIDER_SERVICE_FAILURE_REASON.equals(normalizedReason);
+        if (!serviceFailure && (reservation.start == null || reservation.start.longValueExact() <= now)) {
             throw new IllegalStateException("Reservation has already started or is no longer cancellable");
         }
 
@@ -258,7 +260,8 @@ public class LabAdminService {
             receipt = loadWritableDiamond(operationKey("deny-reservation", normalizedKey, commandKey))
                 .denyReservationRequestWithReason(key, normalizedReason)
                 .send();
-        } else if (STATUS_CONFIRMED.equals(reservation.status)) {
+        } else if (STATUS_CONFIRMED.equals(reservation.status)
+            || (serviceFailure && STATUS_ACCESS_AUTHORIZED.equals(reservation.status))) {
             action = "cancelConfirmedBookingByProvider";
             receipt = loadWritableDiamond(operationKey("cancel-reservation", normalizedKey, commandKey))
                 .cancelConfirmedBookingByProvider(key, normalizedReason)

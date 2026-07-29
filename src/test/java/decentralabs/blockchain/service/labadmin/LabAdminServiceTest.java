@@ -460,6 +460,55 @@ class LabAdminServiceTest {
     }
 
     @Test
+    void serviceFailureCanCancelAnAlreadyStartedAccessAuthorizedReservation() throws Exception {
+        String wallet = "0x1111111111111111111111111111111111111111";
+        BigInteger labId = BigInteger.valueOf(7);
+        String keyHex = "0x" + "ef".repeat(32);
+        long now = System.currentTimeMillis() / 1000;
+        Diamond.Reservation reservation = new Diamond.Reservation(
+            labId,
+            "0x2222222222222222222222222222222222222222",
+            BigInteger.valueOf(25_000_000),
+            wallet,
+            BigInteger.valueOf(2),
+            BigInteger.valueOf(now - 600),
+            BigInteger.valueOf(now + 3_000),
+            BigInteger.ZERO,
+            BigInteger.ZERO,
+            wallet,
+            wallet,
+            BigInteger.valueOf(20_000_000)
+        );
+        Diamond readonly = mock(Diamond.class);
+        Diamond writable = mock(Diamond.class);
+        RemoteFunctionCall<Diamond.Reservation> reservationCall = mockRemoteFunctionCall();
+        RemoteFunctionCall<TransactionReceipt> transactionCall = mockRemoteFunctionCall();
+        TransactionReceipt receipt = new TransactionReceipt();
+        receipt.setStatus("0x1");
+        receipt.setTransactionHash("0xservice-failure");
+        when(institutionalWalletService.isConfigured()).thenReturn(true);
+        when(institutionalWalletService.getInstitutionalWalletAddress()).thenReturn(wallet);
+        when(walletService.isLabProvider(wallet)).thenReturn(true);
+        when(walletService.isLabOwnedByProvider(wallet, labId)).thenReturn(true);
+        when(readonly.getReservation(org.mockito.ArgumentMatchers.any(byte[].class))).thenReturn(reservationCall);
+        when(reservationCall.send()).thenReturn(reservation);
+        when(writable.cancelConfirmedBookingByProvider(
+            org.mockito.ArgumentMatchers.any(byte[].class), eq(BigInteger.valueOf(8))
+        )).thenReturn(transactionCall);
+        when(transactionCall.send()).thenReturn(receipt);
+        doReturn(readonly).when(service).loadReadonlyDiamond();
+        doReturn(writable).when(service).loadWritableDiamond(org.mockito.ArgumentMatchers.anyString());
+
+        var response = service.cancelReservation(keyHex, 8, "service-failure-command-1");
+
+        assertThat(response.action()).isEqualTo("cancelConfirmedBookingByProvider");
+        assertThat(response.transactionHash()).isEqualTo("0xservice-failure");
+        verify(writable).cancelConfirmedBookingByProvider(
+            org.mockito.ArgumentMatchers.any(byte[].class), eq(BigInteger.valueOf(8))
+        );
+    }
+
+    @Test
     void pendingReservationsOnlyAllowProviderDenialReasons() {
         assertThat((boolean) ReflectionTestUtils.invokeMethod(
             service, "isPendingProviderReason", BigInteger.ONE
