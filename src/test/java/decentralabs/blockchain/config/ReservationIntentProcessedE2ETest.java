@@ -9,6 +9,7 @@ import decentralabs.blockchain.service.intent.IntentRecord;
 import decentralabs.blockchain.service.intent.IntentService;
 import decentralabs.blockchain.service.intent.IntentWebhookService;
 import decentralabs.blockchain.service.provider.DistributedReservationAvailabilityLockService;
+import decentralabs.blockchain.service.provider.StationCapacityService;
 import decentralabs.blockchain.service.wallet.InstitutionalTxManagerProvider;
 import decentralabs.blockchain.service.wallet.InstitutionalWalletService;
 import decentralabs.blockchain.service.wallet.WalletService;
@@ -50,6 +51,9 @@ class ReservationIntentProcessedE2ETest {
 
     @Mock
     private DistributedReservationAvailabilityLockService reservationAvailabilityLockService;
+
+    @Mock
+    private StationCapacityService stationCapacityService;
 
     @Mock
     private WalletService walletService;
@@ -104,6 +108,7 @@ class ReservationIntentProcessedE2ETest {
             txManagerProvider,
             institutionalWalletService,
             reservationAvailabilityLockService,
+            stationCapacityService,
             walletService,
             labMetadataService,
             reservationNotificationService,

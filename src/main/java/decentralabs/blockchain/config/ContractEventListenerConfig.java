@@ -242,10 +242,6 @@ public class ContractEventListenerConfig {
     @Value("${contract.reservation.reconcile.batch-size:50}")
     private int reservationReconcileBatchSize;
 
-    ContractEventListenerConfig(StationCapacityService stationCapacityService) {
-        this.stationCapacityService = stationCapacityService;
-    }
-
     /**
      * Configure event listeners for Diamond contract on application startup.
      * Uses EventPollingFallbackService for reliable event capture with both

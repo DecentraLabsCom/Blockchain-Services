@@ -6,6 +6,7 @@ import decentralabs.blockchain.service.health.LabMetadataService;
 import decentralabs.blockchain.service.intent.IntentPersistenceService;
 import decentralabs.blockchain.service.intent.IntentService;
 import decentralabs.blockchain.service.persistence.ReservationPersistenceService;
+import decentralabs.blockchain.service.provider.StationCapacityService;
 import decentralabs.blockchain.service.wallet.InstitutionalTxManagerProvider;
 import decentralabs.blockchain.service.wallet.InstitutionalWalletService;
 import decentralabs.blockchain.service.wallet.WalletService;
@@ -64,6 +65,9 @@ class ContractEventListenerConfigTest {
     private DistributedReservationAvailabilityLockService reservationAvailabilityLockService;
 
     @Mock
+    private StationCapacityService stationCapacityService;
+
+    @Mock
     private InstitutionalTxManagerProvider txManagerProvider;
 
     @Mock
@@ -90,6 +94,7 @@ class ContractEventListenerConfigTest {
             txManagerProvider,
             institutionalWalletService,
             reservationAvailabilityLockService,
+            stationCapacityService,
             walletService,
             labMetadataService,
             reservationNotificationService,
