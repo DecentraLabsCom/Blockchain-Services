@@ -83,7 +83,9 @@ class IntentAuthorizationSessionPersistenceMySqlIntegrationTest {
             Optional<IntentAuthorizationSessionPersistenceService.ClaimedSession> firstClaim = first.get();
             Optional<IntentAuthorizationSessionPersistenceService.ClaimedSession> secondClaim = second.get();
 
-            assertThat(List.of(firstClaim, secondClaim).stream().filter(Optional::isPresent).count()).isEqualTo(1L);
+            long successfulClaims = (firstClaim.isPresent() ? 1L : 0L)
+                + (secondClaim.isPresent() ? 1L : 0L);
+            assertThat(successfulClaims).isEqualTo(1L);
             IntentAuthorizationSessionPersistenceService.ClaimedSession claim = firstClaim.orElseGet(secondClaim::orElseThrow);
             IntentAckResponse ack = new IntentAckResponse();
             ack.setRequestId("request-123");
@@ -91,10 +93,9 @@ class IntentAuthorizationSessionPersistenceMySqlIntegrationTest {
 
             assertThat(replicaA.complete(claim, "SUCCESS", ack, null, 200, Instant.now(), 300)
                 || replicaB.complete(claim, "SUCCESS", ack, null, 200, Instant.now(), 300)).isTrue();
-            assertThat(replicaB.find("0123456789abcdef0123456789abcdef"))
-                .get()
-                .extracting(IntentAuthorizationSessionPersistenceService.StoredSession::status)
-                .isEqualTo("SUCCESS");
+            IntentAuthorizationSessionPersistenceService.StoredSession stored =
+                replicaB.find("0123456789abcdef0123456789abcdef").orElseThrow();
+            assertThat(stored.status()).isEqualTo("SUCCESS");
         } finally {
             executor.shutdownNow();
             executor.awaitTermination(5, TimeUnit.SECONDS);

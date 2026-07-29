@@ -37,13 +37,14 @@ class DistributedReservationAvailabilityLockServiceTest {
     private DistributedReservationAvailabilityLockService service;
 
     @BeforeEach
+    @SuppressWarnings("unchecked")
     void setUp() throws Exception {
         service = new DistributedReservationAvailabilityLockService(jdbcTemplateProvider);
         ReflectionTestUtils.setField(service, "lockTimeoutSeconds", 2);
 
         when(jdbcTemplateProvider.getIfAvailable()).thenReturn(jdbcTemplate);
-        when(jdbcTemplate.execute(any(ConnectionCallback.class))).thenAnswer(invocation -> {
-            ConnectionCallback<?> callback = invocation.getArgument(0);
+        when(jdbcTemplate.execute((ConnectionCallback<Object>) any())).thenAnswer(invocation -> {
+            ConnectionCallback<Object> callback = invocation.getArgument(0);
             return callback.doInConnection(connection);
         });
         when(connection.prepareStatement("SELECT GET_LOCK(?, ?)")).thenReturn(acquireStatement);
@@ -75,7 +76,7 @@ class DistributedReservationAvailabilityLockServiceTest {
     @Test
     void doesNotRunTheActionWhenMySqlCannotAcquireTheLock() throws Exception {
         when(acquireResult.getInt(1)).thenReturn(0);
-        var action = mock(DistributedReservationAvailabilityLockService.LockAction.class);
+        DistributedReservationAvailabilityLockService.LockAction<Void> action = mock();
 
         assertThatThrownBy(() -> service.withLock(key(16), action))
             .isInstanceOf(DistributedReservationAvailabilityLockService.DistributedLockException.class)
