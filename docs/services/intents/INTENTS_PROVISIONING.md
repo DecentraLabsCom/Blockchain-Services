@@ -28,6 +28,30 @@ the exact public origin of this backend as audience, the authenticated
 Disable this check only for a deliberately isolated deployment; do not
 compensate by exposing `/intents` publicly.
 
+### Trust boundary
+
+WebAuthn is an off-chain authorization gate implemented by this backend. The
+Diamond does not receive or verify the WebAuthn assertion. On-chain intent
+consumption verifies the caller/executor, action, payload hash, registered
+intent, nonce and expiry. This prevents replay and payload substitution, but
+does not make the institutional backend or its managed wallet untrusted: a
+compromised backend can bypass this service and use any institution/backend
+contract selector that its wallet is authorized to call.
+
+In particular, `DIRECT_BOOKING` is action `11` and the executor builds
+`institutionalDirectBookingWithIntent`, which requires a registered pending
+intent and is restricted to an own-lab booking. It is not the same as the
+separate `institutionalReservationRequest` selector. That selector is a direct
+institution/backend request path without intent or WebAuthn verification. It
+has no caller in the current Marketplace or canonical backend implementation,
+but remains in the current Diamond selector allowlist and must be treated as
+an administrative surface until a reviewed selector upgrade removes it.
+
+Marketplace may send the signed intent package to `/intents/authorize` and
+register the intent while the WebAuthn session is being created; the browser
+completes WebAuthn afterward. The session package, registration and WebAuthn
+assertion must not be described as an on-chain proof of one another.
+
 ## Endpoint contract
 
 | Method and path | Auth | Result |
