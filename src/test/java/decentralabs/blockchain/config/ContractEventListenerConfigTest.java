@@ -219,6 +219,65 @@ class ContractEventListenerConfigTest {
     }
 
     @Test
+    void shouldPropagateEssentialLifecyclePersistenceFailureToJournal() {
+        ReflectionTestUtils.setField(config, "eventListeningEnabled", true);
+        org.mockito.Mockito.doThrow(new IllegalStateException("database unavailable"))
+            .when(reservationPersistenceService)
+            .upsertReservation(any(), any(), any(), any(), any(), eq("PENDING"));
+
+        Log eventLog = buildReservationRequestedLog(
+            BigInteger.valueOf(42), "0x" + "11".repeat(32), "0xessential-persistence"
+        );
+
+        assertThatThrownBy(() -> ReflectionTestUtils.invokeMethod(
+            config,
+            "handleContractEvent",
+            "ReservationRequested",
+            getSupportedEvents().get("ReservationRequested"),
+            eventLog
+        )).hasMessage("database unavailable");
+    }
+
+    @Test
+    void shouldPropagateEssentialDecisionFailureToJournal() throws Exception {
+        ReflectionTestUtils.setField(config, "eventListeningEnabled", true);
+        ReflectionTestUtils.setField(config, "providerFeaturesEnabled", true);
+        when(institutionalWalletService.getInstitutionalWalletAddress())
+            .thenReturn("0x00000000000000000000000000000000000000ee");
+
+        var diamond = mock(decentralabs.blockchain.contract.Diamond.class);
+        @SuppressWarnings("unchecked")
+        var reservationCall = (org.web3j.protocol.core.RemoteFunctionCall<decentralabs.blockchain.contract.Diamond.Reservation>) mock(org.web3j.protocol.core.RemoteFunctionCall.class);
+        when(reservationCall.send()).thenReturn(new decentralabs.blockchain.contract.Diamond.Reservation(
+            BigInteger.valueOf(42),
+            "0x00000000000000000000000000000000000000cc",
+            BigInteger.ONE,
+            "0x00000000000000000000000000000000000000dd",
+            BigInteger.ZERO,
+            BigInteger.valueOf(1000),
+            BigInteger.valueOf(2000),
+            BigInteger.ZERO,
+            BigInteger.ZERO,
+            "0x00000000000000000000000000000000000000cc",
+            "0x00000000000000000000000000000000000000dd",
+            BigInteger.ZERO
+        ));
+        when(diamond.getReservation(any(byte[].class))).thenReturn(reservationCall);
+        stubReservationPucHash(diamond, "0x" + "13".repeat(32));
+        ReflectionTestUtils.setField(config, "cachedDiamond", diamond);
+        when(diamond.ownerOf(any(BigInteger.class)))
+            .thenThrow(new IllegalStateException("rpc unavailable"));
+
+        assertThatThrownBy(() -> ReflectionTestUtils.invokeMethod(
+            config,
+            "handleContractEvent",
+            "ReservationRequested",
+            getSupportedEvents().get("ReservationRequested"),
+            buildReservationRequestedLog(BigInteger.valueOf(42), "0x" + "12".repeat(32), "0xessential-decision")
+        )).hasRootCauseMessage("rpc unavailable");
+    }
+
+    @Test
     void shouldPersistConfirmedReservationLifecycle() throws Exception {
         ReflectionTestUtils.setField(config, "eventListeningEnabled", true);
 

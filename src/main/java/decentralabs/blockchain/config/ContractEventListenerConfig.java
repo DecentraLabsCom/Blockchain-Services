@@ -446,29 +446,27 @@ public class ContractEventListenerConfig {
      * Handle incoming contract events with decoded payloads.
      */
     private void handleContractEvent(String eventName, Event eventDefinition, Log eventLog) {
-        try {
-            EventValues eventValues = Contract.staticExtractEventParameters(eventDefinition, eventLog);
+        EventValues eventValues = Contract.staticExtractEventParameters(eventDefinition, eventLog);
 
-            if (eventValues == null) {
-                log.warn("Could not decode {} event in tx {}", eventName, eventLog.getTransactionHash());
-                return;
-            }
+        if (eventValues == null) {
+            throw new IllegalStateException(
+                "Could not decode " + eventName + " event in tx " + eventLog.getTransactionHash()
+            );
+        }
 
-            switch (eventName) {
-                case RESERVATION_REQUESTED -> handleReservationRequested(eventValues, eventLog);
-                case RESERVATION_CONFIRMED -> handleReservationConfirmed(eventValues, eventLog);
-                case RESERVATION_DENIED -> handleReservationDenied(eventValues, eventLog);
-                case RESERVATION_CANCELED -> handleReservationCanceled(eventValues, eventLog);
-                case BOOKING_CANCELED -> handleBookingCanceled(eventValues, eventLog);
-                case PROVIDER_BOOKING_CANCELED -> handleProviderBookingCanceled(eventValues, eventLog);
-                case PROVIDER_ADDED -> handleProviderAdded(eventValues, eventLog);
-                case LAB_INTENT_PROCESSED -> handleLabIntentProcessed(eventValues, eventLog);
-                case RESERVATION_INTENT_PROCESSED -> handleReservationIntentProcessed(eventValues, eventLog);
-                default -> log.warn("Unhandled event type: {}", eventName);
-            }
-
-        } catch (Exception e) {
-            log.error("Error processing {} event (tx {}): {}", eventName, eventLog.getTransactionHash(), e.getMessage(), e);
+        // This callback is invoked by the durable journal. Essential effects must
+        // escape this method so a partial event is retried instead of acknowledged.
+        switch (eventName) {
+            case RESERVATION_REQUESTED -> handleReservationRequested(eventValues, eventLog);
+            case RESERVATION_CONFIRMED -> handleReservationConfirmed(eventValues, eventLog);
+            case RESERVATION_DENIED -> handleReservationDenied(eventValues, eventLog);
+            case RESERVATION_CANCELED -> handleReservationCanceled(eventValues, eventLog);
+            case BOOKING_CANCELED -> handleBookingCanceled(eventValues, eventLog);
+            case PROVIDER_BOOKING_CANCELED -> handleProviderBookingCanceled(eventValues, eventLog);
+            case PROVIDER_ADDED -> handleProviderAdded(eventValues, eventLog);
+            case LAB_INTENT_PROCESSED -> handleLabIntentProcessed(eventValues, eventLog);
+            case RESERVATION_INTENT_PROCESSED -> handleReservationIntentProcessed(eventValues, eventLog);
+            default -> throw new IllegalArgumentException("Unhandled event type: " + eventName);
         }
     }
 
@@ -782,18 +780,16 @@ public class ContractEventListenerConfig {
         Instant endTs = payload.endEpoch().map(val -> Instant.ofEpochSecond(val.longValue())).orElse(null);
         String renter = payload.renter().orElse(null);
         String labId = payload.labId() != null ? payload.labId().toString() : null;
-        try {
-            reservationPersistenceService.upsertReservation(
-                payload.reservationKey(),
-                renter,
-                labId,
-                startTs,
-                endTs,
-                status
-            );
-        } catch (Exception ex) {
-            log.debug("Skipping reservation persistence for {}: {}", payload.reservationKey(), ex.getMessage());
-        }
+        reservationPersistenceService.upsertReservation(
+            payload.reservationKey(),
+            renter,
+            labId,
+            startTs,
+            endTs,
+            status
+        );
+        // Lifecycle persistence is essential. Do not absorb failures here: the
+        // journal must retry the event and keep its cursor pinned.
     }
 
     private void processReservationRequest(ReservationEventPayload payload) {
@@ -866,7 +862,9 @@ public class ContractEventListenerConfig {
                     "Leaving reservation {} pending for retry because the PUC is not available locally yet.",
                     payload.reservationKey()
                 );
-                return;
+                throw new IllegalStateException(
+                    "Provider approval remains retryable for reservation " + payload.reservationKey(), ex
+                );
             }
             autoDenyReservation(payload, ex.getMessage(), classifyAutomaticDenialReason(ex));
         }
@@ -896,12 +894,17 @@ public class ContractEventListenerConfig {
         try {
             contract = getDiamondContract();
         } catch (Exception ex) {
-            log.warn("Unable to load Diamond contract while resolving reservation authority: {}", ex.getMessage());
-            return false;
+            throw new IllegalStateException(
+                "Unable to load Diamond contract while resolving reservation authority", ex
+            );
         }
 
         try {
-            String labOwner = contract.ownerOf(payload.labId()).send();
+            var ownerCall = contract.ownerOf(payload.labId());
+            if (ownerCall == null) {
+                return false;
+            }
+            String labOwner = ownerCall.send();
             Optional<String> normalizedOwner = normalizeAddress(labOwner);
             if (normalizedOwner.isEmpty()) {
                 return false;
@@ -910,16 +913,19 @@ public class ContractEventListenerConfig {
                 return true;
             }
 
-            String providerBackend = contract.getAuthorizedBackend(normalizedOwner.get()).send();
+            var backendCall = contract.getAuthorizedBackend(normalizedOwner.get());
+            if (backendCall == null) {
+                return false;
+            }
+            String providerBackend = backendCall.send();
             if (localWallet.equals(normalizeAddress(providerBackend).orElse(null))) {
                 return true;
             }
         } catch (Exception ex) {
-            log.warn(
-                "Unable to resolve lab owner/backend for reservation {} and lab {}: {}",
-                payload.reservationKey(),
-                payload.labId(),
-                ex.getMessage()
+            throw new IllegalStateException(
+                "Unable to resolve lab owner/backend for reservation " + payload.reservationKey()
+                    + " and lab " + payload.labId(),
+                ex
             );
         }
 
@@ -1092,6 +1098,7 @@ public class ContractEventListenerConfig {
         } catch (Exception ex) {
             log.error("Failed to deny reservation {}: {}", reservationKey, ex.getMessage(), ex);
             recordReservationFailure(reservationKey, ex.getMessage());
+            throw new IllegalStateException("Failed to deny reservation " + reservationKey + " on-chain", ex);
         }
     }
 

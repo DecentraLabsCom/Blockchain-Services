@@ -98,11 +98,13 @@ credentials, intent state, audit records, nonce/outbox coordination and the
 contract-event journal. Production deployments must persist it together with
 `/app/data` and the configured lab-content volume.
 
-Contract events use a durable journal keyed by contract, event signature,
-transaction hash and log index. Its cursor moves only when an event range is
-safe; retryable failures replay the same range, and exhausted rows become
-`DEAD_LETTER` for operator review. Detailed recovery procedures are maintained
-in private operator runbooks.
+Contract events use a durable journal keyed by chain ID, contract address, event
+signature, transaction hash, block hash and log index. Logs are processed only
+after the configured confirmation depth and a canonical block-hash check. Its
+cursor moves only when an event range is safe; retryable failures replay the same
+range, and exhausted rows become `DEAD_LETTER` for operator review. Recent rows
+are rechecked for reorgs and become `ORPHANED`, which rewinds the cursor so the
+replacement canonical range can be reconciled.
 
 ## Durable transaction flow
 

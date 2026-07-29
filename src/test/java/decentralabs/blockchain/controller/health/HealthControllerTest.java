@@ -268,6 +268,21 @@ class HealthControllerTest {
         }
 
         @Test
+        @DisplayName("Should expose contract-event dead letters and degrade health")
+        void shouldExposeContractEventDeadLetters() throws Exception {
+            setupHealthyEnvironment();
+            when(jdbcTemplate.queryForObject(
+                org.mockito.ArgumentMatchers.contains("FROM contract_event_journal WHERE status = 'DEAD_LETTER'"),
+                eq(Integer.class)
+            )).thenReturn(2);
+
+            mockMvc.perform(get("/health"))
+                .andExpect(status().isServiceUnavailable())
+                .andExpect(jsonPath("$.contract_events_dead_letter").value(2))
+                .andExpect(jsonPath("$.contract_events_orphaned").value(0));
+        }
+
+        @Test
         @DisplayName("Should count a failed pre-broadcast check-in that still owns a nonce")
         void shouldCountFailedCheckInNonceAsBacklog() throws Exception {
             setupHealthyEnvironment();

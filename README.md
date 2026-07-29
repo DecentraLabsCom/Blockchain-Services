@@ -115,6 +115,8 @@ also requires a valid internal/access token according to deployment mode.
 ### Health and metrics
 
 - `GET /health` — detailed application status, including durable queue health.
+- `GET /billing/admin/contract-events/dead-letter` — localhost/private-network
+  operator view of durable event dead letters.
 - `GET /actuator/health/liveness`
 - `GET /actuator/health/readiness`
 - `GET /actuator/prometheus`

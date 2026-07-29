@@ -25,6 +25,7 @@ import org.web3j.protocol.core.DefaultBlockParameter;
 import org.web3j.protocol.core.DefaultBlockParameterName;
 import org.web3j.protocol.core.methods.request.EthFilter;
 import org.web3j.protocol.core.methods.response.EthLog;
+import org.web3j.protocol.core.methods.response.EthBlock;
 import org.web3j.protocol.core.methods.response.Log;
 
 /**
@@ -71,6 +72,12 @@ public class EventPollingFallbackService {
     @Value("${contract.event.processing.lease-timeout.seconds:300}")
     private int processingLeaseTimeoutSeconds = 300;
 
+    @Value("${contract.event.confirmations.required:12}")
+    private int requiredConfirmations = 12;
+
+    @Value("${contract.event.canonicality.verification.enabled:true}")
+    private boolean canonicalityVerificationEnabled = true;
+
     private final ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor(r -> {
         Thread t = new Thread(r, "event-polling-fallback");
         t.setDaemon(true);
@@ -98,6 +105,7 @@ public class EventPollingFallbackService {
 
     private volatile Web3j web3j;
     private volatile String contractAddress;
+    private volatile BigInteger chainId = BigInteger.ZERO;
     private volatile boolean started = false;
 
     EventPollingFallbackService(JdbcTemplate jdbcTemplate) {
@@ -155,6 +163,15 @@ public class EventPollingFallbackService {
         if (durableJournalRequired && jdbcTemplate == null) {
             log.error("Cannot start contract event listeners: durable event journal is unavailable");
             return;
+        }
+
+        if (jdbcTemplate != null) {
+            try {
+                chainId = web3j.ethChainId().send().getChainId();
+            } catch (Exception ex) {
+                log.error("Cannot start contract event listeners: chain ID could not be resolved", ex);
+                return;
+            }
         }
 
         started = true;
@@ -279,9 +296,13 @@ public class EventPollingFallbackService {
 
         try {
             BigInteger currentBlock = web3j.ethBlockNumber().send().getBlockNumber();
+            BigInteger confirmedHead = confirmedHead(currentBlock);
+            if (confirmedHead.signum() < 0) {
+                return;
+            }
             
             for (EventRegistration reg : registeredEvents.values()) {
-                pollEventsForRegistration(reg, currentBlock);
+                pollEventsForRegistration(reg, confirmedHead);
             }
         } catch (Exception e) {
             log.warn("Polling cycle failed: {}", e.getMessage());
@@ -290,6 +311,9 @@ public class EventPollingFallbackService {
 
     private void pollEventsForRegistration(EventRegistration registration, BigInteger currentBlock) {
         try {
+            if (jdbcTemplate != null && canonicalityVerificationEnabled && !reconcileReorgs(registration, currentBlock)) {
+                return;
+            }
             int effectiveLookback = Math.max(0, lookbackBlocks);
             int effectiveRange = Math.max(1, maxBlockRange);
             BigInteger lastBlock = loadDurableCursor(registration.signature);
@@ -423,7 +447,12 @@ public class EventPollingFallbackService {
             return EventProcessingResult.INVALID;
         }
 
-        EventKey key = eventKey(registration, eventLog);
+        EventObservation observation = verifyCanonicalityAndDepth(eventLog);
+        if (observation == null) {
+            return EventProcessingResult.RETRY_REQUIRED;
+        }
+
+        EventKey key = eventKey(registration, eventLog, observation.confirmations());
         if (key == null) {
             log.warn("Ignoring '{}' event with incomplete identity (tx={}, logIndex={}, block={})",
                 registration.eventName, eventLog.getTransactionHash(), eventLog.getLogIndex(), eventLog.getBlockNumber());
@@ -495,25 +524,69 @@ public class EventPollingFallbackService {
         }
     }
 
-    private EventKey eventKey(EventRegistration registration, Log eventLog) {
+    private BigInteger confirmedHead(BigInteger currentBlock) {
+        return currentBlock.subtract(BigInteger.valueOf(Math.max(0, requiredConfirmations)));
+    }
+
+    /**
+     * A log is eligible only after the configured confirmation depth and a
+     * positive canonicality check against its block hash. A transient RPC
+     * failure deliberately returns null so the journal does not acknowledge it.
+     */
+    private EventObservation verifyCanonicalityAndDepth(Log eventLog) {
+        if (jdbcTemplate == null || !canonicalityVerificationEnabled) {
+            return new EventObservation(true, BigInteger.ZERO);
+        }
+        String blockHash = eventLog.getBlockHash();
+        BigInteger blockNumber = eventLog.getBlockNumber();
+        if (blockHash == null || blockHash.isBlank() || blockNumber == null) {
+            return null;
+        }
+        try {
+            BigInteger currentBlock = web3j.ethBlockNumber().send().getBlockNumber();
+            BigInteger confirmations = currentBlock.subtract(blockNumber);
+            if (confirmations.compareTo(BigInteger.valueOf(Math.max(0, requiredConfirmations))) < 0) {
+                return null;
+            }
+            EthBlock response = web3j.ethGetBlockByHash(blockHash, false).send();
+            EthBlock.Block block = response == null ? null : response.getBlock();
+            if (block == null || block.getHash() == null
+                || !blockHash.equalsIgnoreCase(block.getHash())
+                || block.getNumber() == null
+                || !blockNumber.equals(block.getNumber())) {
+                return null;
+            }
+            return new EventObservation(true, confirmations);
+        } catch (Exception ex) {
+            log.warn("Unable to verify canonicality for event block {}: {}", blockNumber, ex.getMessage());
+            return null;
+        }
+    }
+
+    private EventKey eventKey(EventRegistration registration, Log eventLog, BigInteger confirmations) {
         String transactionHash = eventLog.getTransactionHash();
         BigInteger logIndex = eventLog.getLogIndex();
         BigInteger blockNumber = eventLog.getBlockNumber();
+        String blockHash = eventLog.getBlockHash();
         if (transactionHash == null || transactionHash.isBlank()
             || logIndex == null
             || blockNumber == null
+            || (jdbcTemplate != null && (blockHash == null || blockHash.isBlank()))
             || (jdbcTemplate != null && (contractAddress == null || contractAddress.isBlank()))) {
             return null;
         }
         try {
             return new EventKey(
+                chainId,
                 contractAddress == null || contractAddress.isBlank()
                     ? "in-memory"
                     : contractAddress.trim().toLowerCase(Locale.ROOT),
                 registration.signature,
                 transactionHash.trim().toLowerCase(Locale.ROOT),
                 logIndex,
-                blockNumber
+                blockNumber,
+                jdbcTemplate == null ? "in-memory" : blockHash.trim().toLowerCase(Locale.ROOT),
+                confirmations
             );
         } catch (RuntimeException ex) {
             return null;
@@ -526,15 +599,18 @@ public class EventPollingFallbackService {
         }
 
         String insert = "INSERT IGNORE INTO contract_event_journal "
-            + "(contract_address, event_signature, transaction_hash, log_index, block_number, event_name, "
-            + "status, attempts, next_attempt_at, first_seen_at, updated_at) "
-            + "VALUES (?, ?, ?, ?, ?, ?, 'PENDING', 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)";
+            + "(chain_id, contract_address, event_signature, transaction_hash, log_index, block_number, block_hash, "
+            + "confirmations, canonical_status, event_name, status, attempts, next_attempt_at, first_seen_at, updated_at) "
+            + "VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'CANONICAL', ?, 'PENDING', 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)";
         jdbcTemplate.update(insert,
+            key.chainId(),
             key.contractAddress(),
             key.eventSignature(),
             key.transactionHash(),
             new java.math.BigDecimal(key.logIndex()),
             new java.math.BigDecimal(key.blockNumber()),
+            key.blockHash(),
+            new java.math.BigDecimal(key.confirmations()),
             registration.eventName
         );
 
@@ -545,16 +621,19 @@ public class EventPollingFallbackService {
         int claimed = jdbcTemplate.update(
             "UPDATE contract_event_journal SET status='PROCESSING', lease_id=?, attempts=attempts+1, "
                 + "updated_at=CURRENT_TIMESTAMP, last_error=NULL "
-                + "WHERE contract_address=? AND event_signature=? AND transaction_hash=? AND log_index=? "
+                + "WHERE chain_id=? AND contract_address=? AND event_signature=? AND transaction_hash=? AND log_index=? AND block_hash=? AND block_number=? "
                 + "AND status NOT IN ('DONE', 'DEAD_LETTER') "
                 + "AND (status <> 'PROCESSING' OR updated_at < ?) "
                 + "AND (status <> 'FAILED' OR next_attempt_at <= CURRENT_TIMESTAMP) "
                 + "AND attempts < ?",
             leaseId,
+            key.chainId(),
             key.contractAddress(),
             key.eventSignature(),
             key.transactionHash(),
             new java.math.BigDecimal(key.logIndex()),
+            key.blockHash(),
+            new java.math.BigDecimal(key.blockNumber()),
             staleBefore,
             effectiveMaxAttempts()
         );
@@ -562,26 +641,32 @@ public class EventPollingFallbackService {
         if (claimed == 1) {
             Integer attempts = jdbcTemplate.queryForObject(
                 "SELECT attempts FROM contract_event_journal "
-                    + "WHERE contract_address=? AND event_signature=? AND transaction_hash=? AND log_index=? "
+                    + "WHERE chain_id=? AND contract_address=? AND event_signature=? AND transaction_hash=? AND log_index=? AND block_hash=? AND block_number=? "
                     + "AND lease_id=?",
-                Integer.class,
-                key.contractAddress(),
-                key.eventSignature(),
-                key.transactionHash(),
-                new java.math.BigDecimal(key.logIndex()),
-                leaseId
+                    Integer.class,
+                    key.chainId(),
+                    key.contractAddress(),
+                    key.eventSignature(),
+                    key.transactionHash(),
+                    new java.math.BigDecimal(key.logIndex()),
+                    key.blockHash(),
+                    new java.math.BigDecimal(key.blockNumber()),
+                    leaseId
             );
             return DurableClaim.claimed(leaseId, attempts == null ? 1 : attempts);
         }
 
         String status = jdbcTemplate.query(
             "SELECT status FROM contract_event_journal "
-                + "WHERE contract_address=? AND event_signature=? AND transaction_hash=? AND log_index=?",
+                + "WHERE chain_id=? AND contract_address=? AND event_signature=? AND transaction_hash=? AND log_index=? AND block_hash=? AND block_number=?",
             ps -> {
-                ps.setString(1, key.contractAddress());
-                ps.setString(2, key.eventSignature());
-                ps.setString(3, key.transactionHash());
-                ps.setBigDecimal(4, new java.math.BigDecimal(key.logIndex()));
+                ps.setBigDecimal(1, new java.math.BigDecimal(key.chainId()));
+                ps.setString(2, key.contractAddress());
+                ps.setString(3, key.eventSignature());
+                ps.setString(4, key.transactionHash());
+                ps.setBigDecimal(5, new java.math.BigDecimal(key.logIndex()));
+                ps.setString(6, key.blockHash());
+                ps.setBigDecimal(7, new java.math.BigDecimal(key.blockNumber()));
             },
             (rs, rowNum) -> rs.getString(1)
         ).stream().findFirst().orElse(null);
@@ -596,14 +681,18 @@ public class EventPollingFallbackService {
 
     private EventProcessingResult markDurableEventCompleted(EventKey key, String leaseId) {
         int updated = jdbcTemplate.update(
-            "UPDATE contract_event_journal SET status='DONE', lease_id=NULL, processed_at=CURRENT_TIMESTAMP, "
-                + "updated_at=CURRENT_TIMESTAMP, last_error=NULL "
-                + "WHERE contract_address=? AND event_signature=? AND transaction_hash=? AND log_index=? "
+            "UPDATE contract_event_journal SET status='DONE', canonical_status='CANONICAL', confirmations=?, "
+                + "lease_id=NULL, processed_at=CURRENT_TIMESTAMP, updated_at=CURRENT_TIMESTAMP, last_error=NULL "
+                + "WHERE chain_id=? AND contract_address=? AND event_signature=? AND transaction_hash=? AND log_index=? AND block_hash=? AND block_number=? "
                 + "AND status='PROCESSING' AND lease_id=?",
+            new java.math.BigDecimal(key.confirmations()),
+            key.chainId(),
             key.contractAddress(),
             key.eventSignature(),
             key.transactionHash(),
             new java.math.BigDecimal(key.logIndex()),
+            key.blockHash(),
+            new java.math.BigDecimal(key.blockNumber()),
             leaseId
         );
         return updated == 1 ? EventProcessingResult.PROCESSED : EventProcessingResult.RETRY_REQUIRED;
@@ -622,17 +711,20 @@ public class EventPollingFallbackService {
         int updated;
         try {
             updated = jdbcTemplate.update(
-                "UPDATE contract_event_journal SET status=?, lease_id=NULL, next_attempt_at=?, "
+                "UPDATE contract_event_journal SET status=?, canonical_status='UNKNOWN', lease_id=NULL, next_attempt_at=?, "
                     + "last_error=?, updated_at=CURRENT_TIMESTAMP "
-                    + "WHERE contract_address=? AND event_signature=? AND transaction_hash=? AND log_index=? "
+                    + "WHERE chain_id=? AND contract_address=? AND event_signature=? AND transaction_hash=? AND log_index=? AND block_hash=? AND block_number=? "
                     + "AND status='PROCESSING' AND lease_id=?",
                 deadLetter ? "DEAD_LETTER" : "FAILED",
                 nextAttempt,
                 truncateError(errorMessage),
+                key.chainId(),
                 key.contractAddress(),
                 key.eventSignature(),
                 key.transactionHash(),
                 new java.math.BigDecimal(key.logIndex()),
+                key.blockHash(),
+                new java.math.BigDecimal(key.blockNumber()),
                 claim.leaseId()
             );
         } catch (Exception ex) {
@@ -667,10 +759,11 @@ public class EventPollingFallbackService {
             return null;
         }
         return jdbcTemplate.query(
-            "SELECT last_processed_block FROM contract_event_cursor WHERE contract_address=? AND event_signature=?",
+            "SELECT last_processed_block FROM contract_event_cursor WHERE chain_id=? AND contract_address=? AND event_signature=?",
             ps -> {
-                ps.setString(1, contractAddress.trim().toLowerCase(Locale.ROOT));
-                ps.setString(2, eventSignature);
+                ps.setBigDecimal(1, new java.math.BigDecimal(chainId));
+                ps.setString(2, contractAddress.trim().toLowerCase(Locale.ROOT));
+                ps.setString(3, eventSignature);
             },
             (rs, rowNum) -> new BigInteger(rs.getString(1))
         ).stream().findFirst().orElse(null);
@@ -680,17 +773,136 @@ public class EventPollingFallbackService {
         if (jdbcTemplate == null || contractAddress == null || contractAddress.isBlank()) {
             return;
         }
+        String blockHash = canonicalBlockHash(blockNumber);
+        if (blockHash == null) {
+            log.warn("Not advancing event cursor at block {} because canonical block hash is unavailable", blockNumber);
+            return;
+        }
         jdbcTemplate.update(
             "INSERT INTO contract_event_cursor "
-                + "(contract_address, event_signature, last_processed_block, updated_at) "
-                + "VALUES (?, ?, ?, CURRENT_TIMESTAMP) "
+                + "(chain_id, contract_address, event_signature, last_processed_block, last_processed_block_hash, updated_at) "
+                + "VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP) "
                 + "ON DUPLICATE KEY UPDATE "
                 + "last_processed_block=GREATEST(last_processed_block, VALUES(last_processed_block)), "
+                + "last_processed_block_hash=IF(last_processed_block <= VALUES(last_processed_block), VALUES(last_processed_block_hash), last_processed_block_hash), "
                 + "updated_at=CURRENT_TIMESTAMP",
+            chainId,
             contractAddress.trim().toLowerCase(Locale.ROOT),
             eventSignature,
-            blockNumber
+            blockNumber,
+            blockHash
         );
+    }
+
+    private String canonicalBlockHash(BigInteger blockNumber) {
+        if (web3j == null || blockNumber == null) {
+            return null;
+        }
+        try {
+            EthBlock response = web3j.ethGetBlockByNumber(
+                DefaultBlockParameter.valueOf(blockNumber), false
+            ).send();
+            EthBlock.Block block = response == null ? null : response.getBlock();
+            return block == null ? null : block.getHash();
+        } catch (Exception ex) {
+            log.warn("Unable to resolve canonical hash for cursor block {}: {}", blockNumber, ex.getMessage());
+            return null;
+        }
+    }
+
+    /**
+     * Re-checks recent DONE rows. A block hash disappearing from the canonical
+     * chain marks the row orphaned and rewinds the cursor to replay that range.
+     * Side effects remain idempotent and are driven again only by the canonical
+     * replacement log.
+     */
+    private boolean reconcileReorgs(EventRegistration registration, BigInteger confirmedHead) {
+        BigInteger from = confirmedHead.subtract(BigInteger.valueOf(Math.max(0, lookbackBlocks)));
+        if (from.signum() < 0) {
+            from = BigInteger.ZERO;
+        }
+        BigInteger scanFrom = from;
+        List<JournalBlock> blocks = jdbcTemplate.query(
+            "SELECT chain_id, block_number, block_hash FROM contract_event_journal "
+                + "WHERE chain_id=? AND contract_address=? AND event_signature=? "
+                + "AND canonical_status='CANONICAL' AND block_number BETWEEN ? AND ?",
+            ps -> {
+                ps.setBigDecimal(1, new java.math.BigDecimal(chainId));
+                ps.setString(2, normalizedContractAddress());
+                ps.setString(3, registration.signature);
+                ps.setBigDecimal(4, new java.math.BigDecimal(scanFrom));
+                ps.setBigDecimal(5, new java.math.BigDecimal(confirmedHead));
+            },
+            (rs, rowNum) -> new JournalBlock(
+                rs.getBigDecimal("chain_id").toBigIntegerExact(),
+                rs.getBigDecimal("block_number").toBigIntegerExact(),
+                rs.getString("block_hash")
+            )
+        );
+
+        for (JournalBlock journalBlock : blocks) {
+            CanonicalState state = canonicalState(journalBlock.blockHash(), journalBlock.blockNumber());
+            if (state == CanonicalState.UNKNOWN) {
+                return false;
+            }
+            if (state == CanonicalState.ORPHANED) {
+                markOrphaned(registration, journalBlock);
+            }
+        }
+        return true;
+    }
+
+    private CanonicalState canonicalState(String blockHash, BigInteger blockNumber) {
+        try {
+            EthBlock response = web3j.ethGetBlockByHash(blockHash, false).send();
+            EthBlock.Block block = response == null ? null : response.getBlock();
+            if (block == null || block.getHash() == null || block.getNumber() == null) {
+                return CanonicalState.ORPHANED;
+            }
+            return blockHash.equalsIgnoreCase(block.getHash()) && blockNumber.equals(block.getNumber())
+                ? CanonicalState.CANONICAL
+                : CanonicalState.ORPHANED;
+        } catch (Exception ex) {
+            log.warn("Unable to reconcile canonical block {}: {}", blockNumber, ex.getMessage());
+            return CanonicalState.UNKNOWN;
+        }
+    }
+
+    private void markOrphaned(EventRegistration registration, JournalBlock journalBlock) {
+        int updated = jdbcTemplate.update(
+            "UPDATE contract_event_journal SET status='ORPHANED', canonical_status='ORPHANED', "
+                + "lease_id=NULL, last_error=?, updated_at=CURRENT_TIMESTAMP "
+                + "WHERE chain_id=? AND contract_address=? AND event_signature=? "
+                + "AND block_number=? AND block_hash=?",
+            "block hash is no longer canonical",
+            journalBlock.chainId(),
+            normalizedContractAddress(),
+            registration.signature,
+            new java.math.BigDecimal(journalBlock.blockNumber()),
+            journalBlock.blockHash()
+        );
+        if (updated > 0) {
+            jdbcTemplate.update(
+                "UPDATE contract_event_cursor SET last_processed_block=?, last_processed_block_hash=NULL "
+                    + "WHERE chain_id=? AND contract_address=? AND event_signature=? "
+                    + "AND last_processed_block >= ?",
+                journalBlock.blockNumber().subtract(BigInteger.ONE),
+                journalBlock.chainId(),
+                normalizedContractAddress(),
+                registration.signature,
+                journalBlock.blockNumber()
+            );
+            log.error(
+                "Contract event reorg detected for '{}' at block {} (hash={}); cursor rewound",
+                registration.eventName,
+                journalBlock.blockNumber(),
+                journalBlock.blockHash()
+            );
+        }
+    }
+
+    private String normalizedContractAddress() {
+        return contractAddress.trim().toLowerCase(Locale.ROOT);
     }
 
     private void cleanupDeduplicationCache() {
@@ -744,6 +956,12 @@ public class EventPollingFallbackService {
         }
     }
 
+    private enum CanonicalState {
+        CANONICAL,
+        ORPHANED,
+        UNKNOWN
+    }
+
     private enum DurableClaimState {
         CLAIMED,
         ALREADY_COMPLETED,
@@ -770,16 +988,24 @@ public class EventPollingFallbackService {
     }
 
     private record EventKey(
+        BigInteger chainId,
         String contractAddress,
         String eventSignature,
         String transactionHash,
         BigInteger logIndex,
-        BigInteger blockNumber
+        BigInteger blockNumber,
+        String blockHash,
+        BigInteger confirmations
     ) {
         private String dedupKey() {
-            return contractAddress + ":" + eventSignature + ":" + transactionHash + ":" + logIndex;
+            return chainId + ":" + contractAddress + ":" + eventSignature + ":" + transactionHash
+                + ":" + blockHash + ":" + logIndex;
         }
     }
+
+    private record EventObservation(boolean canonical, BigInteger confirmations) { }
+
+    private record JournalBlock(BigInteger chainId, BigInteger blockNumber, String blockHash) { }
 
     private record EventRegistration(
         String eventName,

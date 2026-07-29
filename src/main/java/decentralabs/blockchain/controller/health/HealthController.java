@@ -91,12 +91,16 @@ public class HealthController {
             HealthCount sessionStartedUnknown = databaseUp ? countUnknownSessionStartedTransactions() : unavailable;
             HealthCount sessionStartedFailed = databaseUp ? countFailedSessionStartedTransactions() : unavailable;
             HealthCount institutionalTransactionsStuck = databaseUp ? countInstitutionalTransactionBlockers() : unavailable;
+            HealthCount contractEventsDeadLetter = databaseUp ? countContractEvents("status = 'DEAD_LETTER'") : unavailable;
+            HealthCount contractEventsOrphaned = databaseUp ? countContractEvents("canonical_status = 'ORPHANED'") : unavailable;
             Map<String, String> queueHealthErrors = new LinkedHashMap<>();
             putHealthCount(healthStatus, queueHealthErrors, "nonce_backlog", nonceBacklog);
             putHealthCount(healthStatus, queueHealthErrors, "access_deliveries_stuck", accessDeliveriesStuck);
             putHealthCount(healthStatus, queueHealthErrors, "session_started_unknown", sessionStartedUnknown);
             putHealthCount(healthStatus, queueHealthErrors, "session_started_failed", sessionStartedFailed);
             putHealthCount(healthStatus, queueHealthErrors, "institutional_transactions_stuck", institutionalTransactionsStuck);
+            putHealthCount(healthStatus, queueHealthErrors, "contract_events_dead_letter", contractEventsDeadLetter);
+            putHealthCount(healthStatus, queueHealthErrors, "contract_events_orphaned", contractEventsOrphaned);
             healthStatus.put("queue_health_errors", queueHealthErrors);
             healthStatus.put("wallet_configured", institutionalWalletService.isConfigured());
             healthStatus.put("treasury_configured", isTreasuryConfigured());
@@ -140,7 +144,9 @@ public class HealthController {
             && zeroCount(status.get("access_deliveries_stuck"))
             && zeroCount(status.get("session_started_unknown"))
             && zeroCount(status.get("session_started_failed"))
-            && zeroCount(status.get("institutional_transactions_stuck"));
+            && zeroCount(status.get("institutional_transactions_stuck"))
+            && zeroCount(status.get("contract_events_dead_letter"))
+            && zeroCount(status.get("contract_events_orphaned"));
 
         if (!rpcUp || !authSigningReady || !marketplaceReady || !dbUp || !walletConfigured
                 || !treasuryConfigured || !providerReady || !durableQueuesReady) {
@@ -279,6 +285,13 @@ public class HealthController {
                 + "AND updated_at < DATE_SUB(CURRENT_TIMESTAMP, INTERVAL "
                 + threshold + " SECOND))",
             "28"
+        );
+    }
+
+    private HealthCount countContractEvents(String predicate) {
+        return countHealthRows(
+            "SELECT COUNT(*) FROM contract_event_journal WHERE " + predicate,
+            "45"
         );
     }
 

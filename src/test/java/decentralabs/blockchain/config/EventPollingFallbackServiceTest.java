@@ -44,6 +44,8 @@ class EventPollingFallbackServiceTest {
         ReflectionTestUtils.setField(service, "maxBlockRange", 1000);
         ReflectionTestUtils.setField(service, "lookbackBlocks", 5);
         ReflectionTestUtils.setField(service, "durableJournalRequired", false);
+        ReflectionTestUtils.setField(service, "requiredConfirmations", 0);
+        ReflectionTestUtils.setField(service, "canonicalityVerificationEnabled", false);
     }
 
     @Test
@@ -104,6 +106,7 @@ class EventPollingFallbackServiceTest {
         logObject.setTransactionHash("0xtx1");
         logObject.setLogIndex("0x1");
         logObject.setBlockNumber("0xf");
+        logObject.setBlockHash("0xblock1");
         stubLogs(web3j, logObject);
 
         ReflectionTestUtils.invokeMethod(service, "pollForMissedEvents");
@@ -284,6 +287,7 @@ class EventPollingFallbackServiceTest {
         logObject.setTransactionHash("0xfailed-handler");
         logObject.setLogIndex("0x1");
         logObject.setBlockNumber("0x10");
+        logObject.setBlockHash("0xblock-failed");
         stubLogs(web3j, logObject);
 
         ReflectionTestUtils.invokeMethod(service, "pollEventsForRegistration", registration, BigInteger.valueOf(16));
@@ -343,6 +347,7 @@ class EventPollingFallbackServiceTest {
         log.setTransactionHash(txHash);
         log.setLogIndex("0x" + logIndex.toString(16));
         log.setBlockNumber("0x" + blockNumber.toString(16));
+        log.setBlockHash("0xblock-" + blockNumber.toString(16));
         return log;
     }
 }
