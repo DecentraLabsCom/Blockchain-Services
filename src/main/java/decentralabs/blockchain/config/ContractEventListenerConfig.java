@@ -77,6 +77,7 @@ public class ContractEventListenerConfig {
     private static final BigInteger PROVIDER_UNAVAILABLE_REASON = BigInteger.valueOf(7);
 
     private final ConcurrentHashMap<String, ReservationProcessingState> reservationProcessingGuard = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<BigInteger, Object> reservationAvailabilityLocks = new ConcurrentHashMap<>();
 
     private final EventPollingFallbackService eventPollingFallbackService;
     private final InstitutionalTxManagerProvider txManagerProvider;
@@ -174,7 +175,6 @@ public class ContractEventListenerConfig {
         )
     );
 
-    private static final int DEFAULT_RESERVATION_USER_COUNT = 1;
     private static final String ACTION_REQUESTED = "requested";
 
     private static final Map<String, Event> SUPPORTED_EVENTS = Map.of(
@@ -840,8 +840,24 @@ public class ContractEventListenerConfig {
             Instant end = toInstant(payload.endEpoch())
                 .orElseThrow(() -> new IllegalStateException("Missing reservation end time"));
 
-            labMetadataService.validateAvailability(metadata, start, end, DEFAULT_RESERVATION_USER_COUNT);
-            confirmInstitutionalReservationOnChain(payload);
+            Object availabilityLock = reservationAvailabilityLocks.computeIfAbsent(
+                payload.labId(),
+                ignored -> new Object()
+            );
+            synchronized (availabilityLock) {
+                int requestedUserCount = 1;
+                if (metadata.getMaxConcurrentUsers() != null) {
+                    BigInteger overlappingReservations = fetchOverlappingReservationCount(
+                        payload.labId(), startBigInteger(start), startBigInteger(end)
+                    );
+                    if (overlappingReservations.compareTo(BigInteger.valueOf(Integer.MAX_VALUE - 1L)) > 0) {
+                        throw new IllegalStateException("Too many overlapping reservations to validate");
+                    }
+                    requestedUserCount = overlappingReservations.intValueExact() + 1;
+                }
+                labMetadataService.validateAvailability(metadata, start, end, requestedUserCount);
+                confirmInstitutionalReservationOnChain(payload);
+            }
             log.info(
                 "Institutional reservation {} confirmed by provider for lab {} by {} role",
                 payload.reservationKey(),
@@ -1060,6 +1076,31 @@ public class ContractEventListenerConfig {
         } catch (Exception ex) {
             log.warn("Unable to load metadata for lab {}: {}", labId, ex.getMessage());
             return Optional.empty();
+        }
+    }
+
+    private BigInteger startBigInteger(Instant instant) {
+        return BigInteger.valueOf(instant.getEpochSecond());
+    }
+
+    private BigInteger fetchOverlappingReservationCount(
+        BigInteger labId,
+        BigInteger start,
+        BigInteger end
+    ) {
+        try {
+            var call = getDiamondContract().getConcurrentReservationCount(labId, start, end);
+            if (call == null) {
+                throw new IllegalStateException("Unable to read overlapping reservations");
+            }
+            return call.send();
+        } catch (Exception ex) {
+            // maxConcurrentUsers is provider-side policy. If its reservation
+            // occupancy read is unavailable, fail closed instead of approving
+            // a request with an unknown occupancy.
+            throw new IllegalStateException(
+                "Unable to read overlapping reservations for lab " + labId, ex
+            );
         }
     }
 

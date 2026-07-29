@@ -13,6 +13,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import decentralabs.blockchain.contract.Diamond;
 import decentralabs.blockchain.dto.health.LabMetadata;
 import decentralabs.blockchain.dto.labadmin.LabAdminReservation;
+import decentralabs.blockchain.dto.labadmin.LabAdminPublishRequest;
 import decentralabs.blockchain.service.BackendUrlResolver;
 import decentralabs.blockchain.service.guacamole.GuacamoleProvisioningService;
 import decentralabs.blockchain.service.health.LabMetadataService;
@@ -210,6 +211,61 @@ class LabAdminServiceTest {
             "BouncingBall.fmu",
             BigInteger.ONE
         )).isFalse();
+    }
+
+    @Test
+    void updatingOnlyMetadataConcurrencyDoesNotSubmitOnChainTransaction() throws Exception {
+        String wallet = "0x1111111111111111111111111111111111111111";
+        BigInteger labId = BigInteger.valueOf(7);
+        String metadataUri = "https://lab.example.edu/lab-content/content/lab-concurrent/metadata.json";
+        Diamond readonly = mock(Diamond.class);
+        RemoteFunctionCall<Diamond.Lab> labCall = mockRemoteFunctionCall();
+        Diamond.Lab current = new Diamond.Lab(
+            labId,
+            new Diamond.LabBase(
+                metadataUri,
+                BigInteger.valueOf(8),
+                "https://lab.example.edu/fmu",
+                "BouncingBall.fmu",
+                BigInteger.ZERO,
+                BigInteger.ONE
+            )
+        );
+        when(institutionalWalletService.isConfigured()).thenReturn(true);
+        when(institutionalWalletService.getInstitutionalWalletAddress()).thenReturn(wallet);
+        when(walletService.isLabProvider(wallet)).thenReturn(true);
+        when(walletService.isLabOwnedByProvider(wallet, labId)).thenReturn(true);
+        when(readonly.getLab(labId)).thenReturn(labCall);
+        when(labCall.send()).thenReturn(current);
+        doReturn(readonly).when(service).loadReadonlyDiamond();
+
+        LabAdminPublishRequest request = new LabAdminPublishRequest(
+            "full",
+            true,
+            null,
+            Map.of(
+                "contentId", "lab-concurrent",
+                "name", "Concurrent FMU",
+                "description", "FMU concurrency metadata",
+                "attributes", List.of(Map.of(
+                    "trait_type", "maxConcurrentUsers",
+                    "value", 7
+                ))
+            ),
+            BigInteger.valueOf(8),
+            "https://lab.example.edu/fmu",
+            "BouncingBall.fmu",
+            1,
+            null,
+            null
+        );
+
+        var response = service.update(labId, request, "metadata-only-command");
+
+        assertThat(response.action()).isEqualTo("metadataOnly");
+        assertThat(response.transactionHash()).isNull();
+        assertThat(response.status()).isEqualTo("offchain_updated");
+        verify(service, org.mockito.Mockito.never()).loadWritableDiamond(org.mockito.ArgumentMatchers.anyString());
     }
 
     @Test

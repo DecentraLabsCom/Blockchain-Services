@@ -310,6 +310,25 @@ class LabMetadataServiceTest {
         }
 
         @Test
+        @DisplayName("Should reject an FMU reservation when metadata concurrency is exhausted")
+        void shouldRejectWhenMetadataConcurrencyIsExhausted() {
+            LabMetadata metadata = LabMetadata.builder()
+                .name("Concurrent FMU")
+                .timezone("UTC")
+                .maxConcurrentUsers(2)
+                .build();
+
+            assertThatThrownBy(() -> metadataService.validateAvailability(
+                metadata,
+                Instant.parse("2026-03-02T10:00:00Z"),
+                Instant.parse("2026-03-02T11:00:00Z"),
+                3
+            ))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("Too many concurrent users");
+        }
+
+        @Test
         @DisplayName("Should reject unavailable windows for physical labs and FMUs")
         void shouldRejectUnavailableWindowsForPhysicalAndFmuLabs() {
             Instant start = Instant.parse("2026-03-02T10:00:00Z");

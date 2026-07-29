@@ -732,9 +732,16 @@ class ContractEventListenerConfigTest {
 
         LabMetadata metadata = new LabMetadata();
         metadata.setName("Institutional Test Lab");
+        metadata.setMaxConcurrentUsers(2);
         when(labMetadataService.getLabMetadataForLab(eq(BigInteger.valueOf(16))))
             .thenReturn(metadata);
-        doNothing().when(labMetadataService).validateAvailability(any(), any(), any(), anyInt());
+        @SuppressWarnings("unchecked")
+        var overlapCall = (org.web3j.protocol.core.RemoteFunctionCall<BigInteger>) mock(
+            org.web3j.protocol.core.RemoteFunctionCall.class
+        );
+        when(overlapCall.send()).thenReturn(BigInteger.ONE);
+        when(diamond.getConcurrentReservationCount(eq(BigInteger.valueOf(16)), any(), any())).thenReturn(overlapCall);
+        doNothing().when(labMetadataService).validateAvailability(any(), any(), any(), eq(2));
 
         Map<String, Event> supported = getSupportedEvents();
         Event eventDefinition = supported.get("ReservationRequested");
@@ -761,6 +768,11 @@ class ContractEventListenerConfigTest {
             eq("0x00000000000000000000000000000000000000cc"),
             any(byte[].class),
             eq(storedPucHash)
+        );
+        verify(diamond).getConcurrentReservationCount(
+            eq(BigInteger.valueOf(16)),
+            eq(BigInteger.valueOf(1000)),
+            eq(BigInteger.valueOf(2000))
         );
         verify(writableDiamond, never()).denyReservationRequest(any(byte[].class));
     }

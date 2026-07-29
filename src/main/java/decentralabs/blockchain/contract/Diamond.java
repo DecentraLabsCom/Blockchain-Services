@@ -526,6 +526,22 @@ public class Diamond extends Contract {
                 });
     }
 
+    /** Returns the number of active reservations overlapping a window. */
+    @SuppressWarnings("rawtypes")
+    public RemoteFunctionCall<BigInteger> getConcurrentReservationCount(
+        BigInteger labId, BigInteger start, BigInteger end
+    ) {
+        final Function function = new Function(
+            "getConcurrentReservationCount",
+            Arrays.asList(new Uint256(labId), new Uint32(start), new Uint32(end)),
+            Arrays.asList(new TypeReference<Uint256>() {})
+        );
+        return new RemoteFunctionCall<>(function, () -> {
+            Type result = executeCallSingleValueReturn(function);
+            return (BigInteger) result.getValue();
+        });
+    }
+
     /**
      * Get active reservation key for an institutional user (provider + PUC hash)
      */
