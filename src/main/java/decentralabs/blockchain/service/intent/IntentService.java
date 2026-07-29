@@ -525,8 +525,11 @@ public class IntentService {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Missing reservation price");
         }
 
-        if (action == IntentAction.DIRECT_BOOKING
-            && walletService.isLabOwnedByProviderOrAuthorizedBackend(payload.getExecutor(), payload.getLabId())) {
+        boolean executorHasLabAuthority = walletService.isLabOwnedByProviderOrAuthorizedBackend(
+            payload.getExecutor(),
+            payload.getLabId()
+        );
+        if (action == IntentAction.DIRECT_BOOKING && executorHasLabAuthority) {
             if (payload.getPrice().signum() != 0) {
                 throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "reservation_price_mismatch");
             }

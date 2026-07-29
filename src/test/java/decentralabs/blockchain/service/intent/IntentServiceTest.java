@@ -509,6 +509,17 @@ class IntentServiceTest {
         }
 
         @Test
+        @DisplayName("Should resolve lab authority before selecting the reservation price policy")
+        void shouldResolveLabAuthorityBeforeSelectingReservationPricePolicy() {
+            ReservationIntentPayload payload = createValidReservationPayload();
+            when(walletService.isLabOwnedByProviderOrAuthorizedBackend(payload.getExecutor(), payload.getLabId())).thenReturn(true);
+
+            assertDoesNotThrow(() -> service.validateReservationPrice(IntentAction.RESERVATION_REQUEST, payload));
+
+            verify(walletService).isLabOwnedByProviderOrAuthorizedBackend(payload.getExecutor(), payload.getLabId());
+        }
+
+        @Test
         @DisplayName("Should reject reservation with missing labId")
         void shouldRejectMissingLabId() {
             IntentMeta meta = createValidMeta();
