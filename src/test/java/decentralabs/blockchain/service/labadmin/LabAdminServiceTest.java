@@ -17,6 +17,7 @@ import decentralabs.blockchain.dto.labadmin.LabAdminPublishRequest;
 import decentralabs.blockchain.service.BackendUrlResolver;
 import decentralabs.blockchain.service.guacamole.GuacamoleProvisioningService;
 import decentralabs.blockchain.service.health.LabMetadataService;
+import decentralabs.blockchain.service.provider.StationCapacityService;
 import decentralabs.blockchain.service.wallet.InstitutionalTxManagerProvider;
 import decentralabs.blockchain.service.wallet.InstitutionalWalletService;
 import decentralabs.blockchain.service.wallet.WalletService;
@@ -67,7 +68,8 @@ class LabAdminServiceTest {
             new ObjectMapper(),
             mock(GuacamoleProvisioningService.class),
             contentRetentionService,
-            labMetadataService
+            labMetadataService,
+            mock(StationCapacityService.class)
         );
         ReflectionTestUtils.setField(service, "contentBasePath", tempDir.resolve("lab-content").toString());
         ReflectionTestUtils.setField(service, "fmuDataPath", tempDir.resolve("fmu-data").toString());

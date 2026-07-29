@@ -4,6 +4,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -23,21 +26,25 @@ import java.math.BigInteger;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.Base64;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
-import org.mockito.InjectMocks;
 import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoSettings;
+import org.mockito.quality.Strictness;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.http.HttpStatus;
 import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.web.server.ResponseStatusException;
 
 @ExtendWith(MockitoExtension.class)
+@MockitoSettings(strictness = Strictness.LENIENT)
 class IntentAuthorizationServiceTest {
 
     @Mock
@@ -55,15 +62,78 @@ class IntentAuthorizationServiceTest {
     @Mock
     private BackendUrlResolver backendUrlResolver;
 
-    @InjectMocks
     private IntentAuthorizationService service;
+
+    @Mock
+    private IntentAuthorizationSessionPersistenceService sessionPersistence;
+
+    private final Map<String, IntentAuthorizationSessionPersistenceService.StoredSession> storedSessions =
+        new HashMap<>();
 
     @BeforeEach
     void setUp() throws Exception {
+        service = new IntentAuthorizationService(
+            intentService,
+            intentExecutionService,
+            webauthnCredentialService,
+            samlValidationService,
+            backendUrlResolver,
+            sessionPersistence
+        );
         ReflectionTestUtils.setField(service, "rpId", "example.com");
         ReflectionTestUtils.setField(service, "baseUrl", "https://backend.example/");
         ReflectionTestUtils.setField(service, "sessionTtlSeconds", 300L);
         ReflectionTestUtils.setField(service, "cleanupIntervalSeconds", 60L);
+        ReflectionTestUtils.setField(service, "processingLeaseSeconds", 60L);
+        storedSessions.clear();
+        org.mockito.Mockito.doAnswer(invocation -> {
+            IntentAuthorizationService.AuthorizationSession session = invocation.getArgument(0);
+            storedSessions.put(session.getSessionId(), stored(session, "PENDING", null, null, null));
+            return null;
+        }).when(sessionPersistence).create(any(IntentAuthorizationService.AuthorizationSession.class));
+        when(sessionPersistence.find(anyString())).thenAnswer(invocation ->
+            Optional.ofNullable(storedSessions.get(invocation.getArgument(0)))
+        );
+        when(sessionPersistence.claim(anyString(), anyLong())).thenAnswer(invocation -> {
+            String sessionId = invocation.getArgument(0);
+            IntentAuthorizationSessionPersistenceService.StoredSession current = storedSessions.get(sessionId);
+            if (current == null || current.isTerminal() || "PROCESSING".equals(current.status())) {
+                return Optional.empty();
+            }
+            IntentAuthorizationSessionPersistenceService.StoredSession claimed = stored(
+                current.session(), "PROCESSING", null, null, null
+            );
+            storedSessions.put(sessionId, claimed);
+            return Optional.of(new IntentAuthorizationSessionPersistenceService.ClaimedSession(
+                claimed, "claim-1", "worker-1", 1L
+            ));
+        });
+        when(sessionPersistence.complete(any(), anyString(), any(), any(), anyInt(), any(Instant.class), anyLong()))
+            .thenAnswer(invocation -> {
+                IntentAuthorizationSessionPersistenceService.ClaimedSession claim = invocation.getArgument(0);
+                String status = invocation.getArgument(1);
+                IntentAckResponse ack = invocation.getArgument(2);
+                String error = invocation.getArgument(3);
+                int httpStatus = invocation.getArgument(4);
+                Instant completedAt = invocation.getArgument(5);
+                storedSessions.put(
+                    claim.stored().session().getSessionId(),
+                    stored(claim.stored().session(), status, error, ack, completedAt, httpStatus)
+                );
+                return true;
+            });
+        when(sessionPersistence.expireIfNeeded(anyString(), anyLong())).thenAnswer(invocation -> {
+            String sessionId = invocation.getArgument(0);
+            IntentAuthorizationSessionPersistenceService.StoredSession current = storedSessions.get(sessionId);
+            if (current == null || current.isTerminal()) {
+                return false;
+            }
+            storedSessions.put(
+                sessionId,
+                stored(current.session(), "FAILED_TERMINAL", "Session expired", null, Instant.now(), 410)
+            );
+            return true;
+        });
         lenient().when(samlValidationService.validateSamlAssertionWithSignature(any())).thenReturn(Map.of("puc", "user@example.edu"));
         lenient().when(samlValidationService.resolveStableUserId(any(), any(), any())).thenCallRealMethod();
     }
@@ -151,7 +221,7 @@ class IntentAuthorizationServiceTest {
     }
 
     @Test
-    void getSession_rejectsExpiredSessionAndRemovesIt() {
+    void getSession_rejectsExpiredSessionButKeepsDurableTerminalResult() {
         when(webauthnCredentialService.getCredentials("user@example.edu"))
             .thenReturn(List.of(credential("cred-1", true, 100L)));
         ReflectionTestUtils.setField(service, "sessionTtlSeconds", -1L);
@@ -162,16 +232,16 @@ class IntentAuthorizationServiceTest {
             .isInstanceOf(ResponseStatusException.class)
             .hasMessageContaining("Session expired");
 
-        assertThatThrownBy(() -> service.getStatus(session.getSessionId()))
-            .isInstanceOf(ResponseStatusException.class)
-            .hasMessageContaining("Session not found");
+        IntentAuthorizationStatusResponse status = service.getStatus(session.getSessionId());
+        assertThat(status.getStatus()).isEqualTo("FAILED_TERMINAL");
+        assertThat(status.getError()).isEqualTo("Session expired");
     }
 
     @Test
     void completeAuthorization_rejectsUnknownSession() {
         assertThatThrownBy(() -> service.completeAuthorization(validCompleteRequest("missing", "cred-1")))
             .isInstanceOf(ResponseStatusException.class)
-            .hasMessageContaining("Invalid or expired session");
+            .hasMessageContaining("Session not found");
     }
 
     @Test
@@ -183,6 +253,8 @@ class IntentAuthorizationServiceTest {
         assertThatThrownBy(() -> service.completeAuthorization(validCompleteRequest(session.getSessionId(), "other-cred")))
             .isInstanceOf(ResponseStatusException.class)
             .hasMessageContaining("webauthn_credential_not_allowed");
+
+        assertThat(service.getStatus(session.getSessionId()).getStatus()).isEqualTo("FAILED_RETRYABLE");
     }
 
     @Test
@@ -215,6 +287,23 @@ class IntentAuthorizationServiceTest {
     }
 
     @Test
+    void completeAuthorization_replaysDurableSuccessWithoutReprocessingIntent() {
+        when(webauthnCredentialService.getCredentials("user@example.edu"))
+            .thenReturn(List.of(credential("cred-1", true, 100L)));
+        IntentAckResponse ack = new IntentAckResponse();
+        ack.setRequestId("request-123");
+        ack.setStatus("accepted");
+        when(intentService.processIntent(any(IntentSubmission.class))).thenReturn(ack);
+
+        IntentAuthorizationService.AuthorizationSession session = service.createSession(validAuthorizationRequest());
+        IntentAuthorizationCompleteRequest request = validCompleteRequest(session.getSessionId(), "cred-1");
+
+        assertThat(service.completeAuthorization(request)).isSameAs(ack);
+        assertThat(service.completeAuthorization(request).getStatus()).isEqualTo("accepted");
+        verify(intentService).processIntent(any(IntentSubmission.class));
+    }
+
+    @Test
     void completeAuthorization_storesFailedStatusWhenIntentProcessingThrows() {
         when(webauthnCredentialService.getCredentials("user@example.edu"))
             .thenReturn(List.of(credential("cred-1", true, 100L)));
@@ -228,7 +317,7 @@ class IntentAuthorizationServiceTest {
             .hasMessageContaining("invalid_intent");
 
         IntentAuthorizationStatusResponse status = service.getStatus(session.getSessionId());
-        assertThat(status.getStatus()).isEqualTo("FAILED");
+        assertThat(status.getStatus()).isEqualTo("FAILED_TERMINAL");
         assertThat(status.getError()).isEqualTo("invalid_intent");
     }
 
@@ -248,46 +337,44 @@ class IntentAuthorizationServiceTest {
     }
 
     @Test
-    void cleanupExpiredSessions_removesExpiredPendingAndCompletedEntries() {
-        when(webauthnCredentialService.getCredentials("user@example.edu"))
-            .thenReturn(List.of(credential("cred-1", true, 100L)));
-        IntentAckResponse ack = new IntentAckResponse();
-        ack.setRequestId("request-123");
-        ack.setStatus("accepted");
-        when(intentService.processIntent(any(IntentSubmission.class))).thenReturn(ack);
-
-        IntentAuthorizationService.AuthorizationSession pending = new IntentAuthorizationService.AuthorizationSession(
-            "expired-pending",
-            buildSubmission(),
-            List.of(new IntentAuthorizationService.AllowedCredential("cred-1", List.of())),
-            "challenge",
-            null,
-            Instant.now().minusSeconds(5)
-        );
-        @SuppressWarnings("unchecked")
-        java.util.concurrent.ConcurrentHashMap<String, IntentAuthorizationService.AuthorizationSession> pendingSessions =
-            (java.util.concurrent.ConcurrentHashMap<String, IntentAuthorizationService.AuthorizationSession>)
-                ReflectionTestUtils.getField(service, "pendingSessions");
-        pendingSessions.put("expired-pending", pending);
-
-        IntentAuthorizationService.AuthorizationSession completed = service.createSession(validAuthorizationRequest());
-        service.completeAuthorization(validCompleteRequest(completed.getSessionId(), "cred-1"));
-
-        @SuppressWarnings("unchecked")
-        java.util.concurrent.ConcurrentHashMap<String, Object> completedSessions =
-            (java.util.concurrent.ConcurrentHashMap<String, Object>) ReflectionTestUtils.getField(service, "completedSessions");
+    void cleanupExpiredSessions_delegatesToDurableStore() {
         ReflectionTestUtils.setField(service, "sessionTtlSeconds", 0L);
-        try {
-            Thread.sleep(10L);
-        } catch (InterruptedException ex) {
-            Thread.currentThread().interrupt();
-            throw new AssertionError(ex);
-        }
 
         assertThatCode(() -> ReflectionTestUtils.invokeMethod(service, "cleanupExpiredSessions")).doesNotThrowAnyException();
+        verify(sessionPersistence).cleanupExpiredSessions(0L);
+    }
 
-        assertThat(pendingSessions).doesNotContainKey("expired-pending");
-        assertThat(completedSessions).doesNotContainKey(completed.getSessionId());
+    private IntentAuthorizationSessionPersistenceService.StoredSession stored(
+        IntentAuthorizationService.AuthorizationSession session,
+        String status,
+        String error,
+        IntentAckResponse ack,
+        Instant completedAt
+    ) {
+        return stored(session, status, error, ack, completedAt, 400);
+    }
+
+    private IntentAuthorizationSessionPersistenceService.StoredSession stored(
+        IntentAuthorizationService.AuthorizationSession session,
+        String status,
+        String error,
+        IntentAckResponse ack,
+        Instant completedAt,
+        int httpStatus
+    ) {
+        return new IntentAuthorizationSessionPersistenceService.StoredSession(
+            session,
+            status,
+            error,
+            httpStatus,
+            ack,
+            completedAt,
+            1L,
+            null,
+            null,
+            0L,
+            null
+        );
     }
 
     private IntentAuthorizationRequest validAuthorizationRequest() {
@@ -298,15 +385,6 @@ class IntentAuthorizationServiceTest {
         request.setSamlAssertion("assertion");
         request.setReturnUrl("https://app.example/callback");
         return request;
-    }
-
-    private IntentSubmission buildSubmission() {
-        IntentSubmission submission = new IntentSubmission();
-        submission.setMeta(validMeta());
-        submission.setActionPayload(validActionPayload());
-        submission.setSignature("0xsig");
-        submission.setSamlAssertion("assertion");
-        return submission;
     }
 
     private IntentMeta validMeta() {

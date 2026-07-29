@@ -9,6 +9,7 @@ import decentralabs.blockchain.service.persistence.ReservationPersistenceService
 import decentralabs.blockchain.service.wallet.InstitutionalTxManagerProvider;
 import decentralabs.blockchain.service.wallet.InstitutionalWalletService;
 import decentralabs.blockchain.service.wallet.WalletService;
+import decentralabs.blockchain.service.provider.DistributedReservationAvailabilityLockService;
 import java.math.BigInteger;
 import java.util.List;
 import java.util.Map;
@@ -27,6 +28,8 @@ import org.web3j.abi.datatypes.Event;
 import org.web3j.abi.datatypes.generated.Uint8;
 import org.web3j.abi.datatypes.generated.Uint96;
 import org.web3j.protocol.Web3j;
+import org.web3j.protocol.core.Request;
+import org.web3j.protocol.core.methods.response.EthChainId;
 import org.web3j.protocol.core.methods.response.Log;
 import org.web3j.utils.Numeric;
 
@@ -58,6 +61,9 @@ class ContractEventListenerConfigTest {
     private InstitutionalWalletService institutionalWalletService;
 
     @Mock
+    private DistributedReservationAvailabilityLockService reservationAvailabilityLockService;
+
+    @Mock
     private InstitutionalTxManagerProvider txManagerProvider;
 
     @Mock
@@ -78,11 +84,12 @@ class ContractEventListenerConfigTest {
     private ContractEventListenerConfig config;
 
     @BeforeEach
-    void setUp() {
+    void setUp() throws Exception {
         config = new ContractEventListenerConfig(
             eventPollingFallbackService,
             txManagerProvider,
             institutionalWalletService,
+            reservationAvailabilityLockService,
             walletService,
             labMetadataService,
             reservationNotificationService,
@@ -92,6 +99,23 @@ class ContractEventListenerConfigTest {
         );
         ReflectionTestUtils.setField(config, "diamondContractAddress", "0x1234567890abcdef");
         ReflectionTestUtils.setField(config, "startBlock", "latest");
+        when(walletService.getWeb3jInstance()).thenReturn(web3j);
+        @SuppressWarnings("unchecked")
+        Request<?, EthChainId> chainIdRequest = (Request<?, EthChainId>) mock(Request.class);
+        EthChainId chainIdResponse = mock(EthChainId.class);
+        org.mockito.Mockito.doReturn(chainIdRequest).when(web3j).ethChainId();
+        when(chainIdRequest.send()).thenReturn(chainIdResponse);
+        when(chainIdResponse.getChainId()).thenReturn(BigInteger.valueOf(11155111));
+
+        org.mockito.Mockito.doAnswer(invocation -> {
+            DistributedReservationAvailabilityLockService.LockAction<?> action = invocation.getArgument(1);
+            try {
+                action.run();
+            } catch (Exception ex) {
+                throw new RuntimeException(ex);
+            }
+            return null;
+        }).when(reservationAvailabilityLockService).withLock(any(), any());
     }
 
     @Test
@@ -151,8 +175,43 @@ class ContractEventListenerConfigTest {
         assertThat((BigInteger) ReflectionTestUtils.invokeMethod(
             config,
             "classifyAutomaticDenialReason",
-            new RuntimeException("RPC response could not be decoded")
+                new RuntimeException("RPC response could not be decoded")
         )).isEqualTo(BigInteger.valueOf(6));
+    }
+
+    @Test
+    void separatesPolicyRejectionsFromInfrastructureAndRpcFailures() {
+        var policy = ReflectionTestUtils.invokeMethod(
+            config,
+            "classifyReservationProcessingFailure",
+            new IllegalArgumentException("Reservation time outside available hours")
+        );
+        var infrastructure = ReflectionTestUtils.invokeMethod(
+            config,
+            "classifyReservationProcessingFailure",
+            new IllegalStateException("Unable to load lab metadata")
+        );
+
+        assertThat(((ReservationProcessingFailure) policy).type())
+            .isEqualTo(ReservationProcessingFailure.Type.POLICY_REJECTION);
+        assertThat(((ReservationProcessingFailure) infrastructure).type())
+            .isEqualTo(ReservationProcessingFailure.Type.INFRASTRUCTURE_UNAVAILABLE);
+
+        var rpc = ReflectionTestUtils.invokeMethod(
+            config,
+            "classifyReservationProcessingFailure",
+            new IllegalStateException("Unable to read overlapping reservations for lab 16")
+        );
+        assertThat(((ReservationProcessingFailure) rpc).type())
+            .isEqualTo(ReservationProcessingFailure.Type.TRANSIENT_RPC_FAILURE);
+
+        var wrappedPolicy = ReflectionTestUtils.invokeMethod(
+            config,
+            "classifyReservationProcessingFailure",
+            new RuntimeException(new IllegalArgumentException("Reservation time outside available hours"))
+        );
+        assertThat(((ReservationProcessingFailure) wrappedPolicy).type())
+            .isEqualTo(ReservationProcessingFailure.Type.POLICY_REJECTION);
     }
 
     @Test
@@ -693,6 +752,13 @@ class ContractEventListenerConfigTest {
         ReflectionTestUtils.setField(config, "providerFeaturesEnabled", true);
         when(institutionalWalletService.getInstitutionalWalletAddress())
             .thenReturn("0x00000000000000000000000000000000000000dd");
+        when(walletService.getWeb3jInstance()).thenReturn(web3j);
+        @SuppressWarnings("unchecked")
+        Request<?, EthChainId> chainIdRequest = (Request<?, EthChainId>) mock(Request.class);
+        EthChainId chainIdResponse = mock(EthChainId.class);
+        org.mockito.Mockito.doReturn(chainIdRequest).when(web3j).ethChainId();
+        when(chainIdRequest.send()).thenReturn(chainIdResponse);
+        when(chainIdResponse.getChainId()).thenReturn(BigInteger.valueOf(11155111));
 
         var diamond = mock(decentralabs.blockchain.contract.Diamond.class);
         @SuppressWarnings("unchecked")

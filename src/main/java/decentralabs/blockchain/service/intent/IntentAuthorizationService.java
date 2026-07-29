@@ -9,7 +9,6 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Set;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
@@ -18,6 +17,7 @@ import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
 import lombok.AllArgsConstructor;
 import lombok.Data;
+import lombok.NoArgsConstructor;
 import lombok.ToString;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -68,8 +68,10 @@ public class IntentAuthorizationService {
     @Value("${intent.authorization.session.cleanup.interval.seconds:60}")
     private long cleanupIntervalSeconds;
 
-    private final ConcurrentHashMap<String, AuthorizationSession> pendingSessions = new ConcurrentHashMap<>();
-    private final ConcurrentHashMap<String, AuthorizationResult> completedSessions = new ConcurrentHashMap<>();
+    @Value("${intent.authorization.session.processing-lease.seconds:60}")
+    private long processingLeaseSeconds;
+
+    private final IntentAuthorizationSessionPersistenceService sessionPersistence;
     private ScheduledExecutorService cleanupScheduler;
 
     public IntentAuthorizationService(
@@ -77,13 +79,15 @@ public class IntentAuthorizationService {
         IntentExecutionService intentExecutionService,
         WebauthnCredentialService webauthnCredentialService,
         SamlValidationService samlValidationService,
-        BackendUrlResolver backendUrlResolver
+        BackendUrlResolver backendUrlResolver,
+        IntentAuthorizationSessionPersistenceService sessionPersistence
     ) {
         this.intentService = intentService;
         this.intentExecutionService = intentExecutionService;
         this.webauthnCredentialService = webauthnCredentialService;
         this.samlValidationService = samlValidationService;
         this.backendUrlResolver = backendUrlResolver;
+        this.sessionPersistence = sessionPersistence;
     }
 
     @PostConstruct
@@ -151,7 +155,15 @@ public class IntentAuthorizationService {
             request.getReturnUrl(),
             expiresAt
         );
-        pendingSessions.put(sessionId, session);
+        try {
+            sessionPersistence.create(session);
+        } catch (IntentAuthorizationSessionPersistenceException ex) {
+            throw new ResponseStatusException(
+                HttpStatus.SERVICE_UNAVAILABLE,
+                "intent_authorization_persistence_unavailable",
+                ex
+            );
+        }
 
         // Session metadata is control-character sanitized or hashed before logging.
         // codeql[java/log-injection]
@@ -169,47 +181,55 @@ public class IntentAuthorizationService {
     }
 
     public AuthorizationSession getSession(String sessionId) {
-        AuthorizationSession session = pendingSessions.get(sessionId);
-        if (session == null) {
-            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Session not found");
+        IntentAuthorizationSessionPersistenceService.StoredSession stored = loadSession(sessionId);
+        if (stored.isTerminal()) {
+            if ("Session expired".equals(stored.resultError())) {
+                throw new ResponseStatusException(HttpStatus.GONE, "Session expired");
+            }
+            throw new ResponseStatusException(HttpStatus.GONE, "Session is no longer available");
         }
-        if (session.isExpired()) {
-            pendingSessions.remove(sessionId);
-            throw new ResponseStatusException(HttpStatus.GONE, "Session expired");
+        if ("PROCESSING".equals(stored.status())) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "Authorization is already processing");
         }
-        return session;
+        return stored.session();
     }
 
     public IntentAuthorizationStatusResponse getStatus(String sessionId) {
-        AuthorizationSession pending = pendingSessions.get(sessionId);
-        if (pending != null) {
-            return IntentAuthorizationStatusResponse.builder()
-                .sessionId(sessionId)
-                .requestId(pending.getSubmission().getMeta().getRequestId())
-                .status("PENDING")
-                .build();
-        }
-
-        AuthorizationResult completed = completedSessions.get(sessionId);
-        if (completed != null) {
-            return IntentAuthorizationStatusResponse.builder()
-                .sessionId(sessionId)
-                .requestId(completed.requestId())
-                .status(completed.status())
-                .error(completed.error())
-                .completedAt(completed.completedAt())
-                .build();
-        }
-
-        throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Session not found");
+        IntentAuthorizationSessionPersistenceService.StoredSession stored = loadSession(sessionId);
+        return IntentAuthorizationStatusResponse.builder()
+            .sessionId(sessionId)
+            .requestId(stored.session().getSubmission().getMeta().getRequestId())
+            .status(stored.status())
+            .error(stored.resultError())
+            .completedAt(stored.completedAt())
+            .build();
     }
 
     public IntentAckResponse completeAuthorization(IntentAuthorizationCompleteRequest request) {
-        AuthorizationSession session = pendingSessions.remove(request.getSessionId());
-        if (session == null) {
-            log.warn("Intent authorization completion rejected: invalid or expired session");
+        if (request == null || request.getSessionId() == null || request.getSessionId().isBlank()) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Invalid or expired session");
         }
+        IntentAuthorizationSessionPersistenceService.StoredSession current = loadSession(request.getSessionId());
+        if (current.isTerminal()) {
+            return replayTerminalResult(current);
+        }
+
+        IntentAuthorizationSessionPersistenceService.ClaimedSession claim;
+        try {
+            claim = sessionPersistence.claim(request.getSessionId(), processingLeaseSeconds).orElse(null);
+        } catch (IntentAuthorizationSessionPersistenceException ex) {
+            throw persistenceUnavailable(ex);
+        }
+        if (claim == null) {
+            current = loadSession(request.getSessionId());
+            if (current.isTerminal()) {
+                return replayTerminalResult(current);
+            }
+            log.warn("Intent authorization completion rejected: session is already processing");
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "Authorization is already processing");
+        }
+
+        AuthorizationSession session = claim.stored().session();
         log.info(
             "Intent authorization completion received. credentialAllowed={} credentialIdPresent={}",
             session.getAllowedCredentials() != null && session.getAllowedCredentials().stream()
@@ -218,51 +238,58 @@ public class IntentAuthorizationService {
         );
         if (session.isExpired()) {
             log.warn("Intent authorization completion rejected: session expired");
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Session expired");
+            completeClaimOrThrow(claim, "FAILED_TERMINAL", null, "Session expired", HttpStatus.GONE.value());
+            throw new ResponseStatusException(HttpStatus.GONE, "Session expired");
         }
-        if (request.getCredentialId() == null || request.getCredentialId().isBlank()) {
-            log.warn("Intent authorization completion rejected: missing WebAuthn credential");
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "missing_webauthn_credential");
-        }
-        if (session.getAllowedCredentials() == null || session.getAllowedCredentials().isEmpty()) {
-            log.warn("Intent authorization completion rejected: WebAuthn credential not registered");
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "webauthn_credential_not_registered");
-        }
-        if (session.getAllowedCredentials().stream()
-            .noneMatch(credential -> credential.getId().equals(request.getCredentialId()))) {
-            log.warn("Intent authorization completion rejected: WebAuthn credential not allowed (allowedCredentials={})",
-                session.getAllowedCredentials().size());
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "webauthn_credential_not_allowed");
-        }
-
-        IntentSubmission submission = session.getSubmission();
-        submission.setWebauthnCredentialId(request.getCredentialId());
-        submission.setWebauthnClientDataJSON(request.getClientDataJSON());
-        submission.setWebauthnAuthenticatorData(request.getAuthenticatorData());
-        submission.setWebauthnSignature(request.getSignature());
-
-        IntentAckResponse ack;
         try {
-            ack = intentService.processIntent(submission);
-        } catch (ResponseStatusException ex) {
-            storeResult(session, "FAILED", ex.getReason());
-            log.warn("Intent authorization completion failed");
-            throw ex;
-        }
+            validateCompletionRequest(session, request);
 
-        if ("accepted".equalsIgnoreCase(ack.getStatus())) {
-            storeResult(session, "SUCCESS", null);
-            log.info("Intent authorization completion accepted");
-            try {
-                intentExecutionService.processQueuedIntent(ack.getRequestId());
-            } catch (Exception ex) {
-                log.warn("Immediate intent execution failed");
+            IntentSubmission submission = session.getSubmission();
+            submission.setWebauthnCredentialId(request.getCredentialId());
+            submission.setWebauthnClientDataJSON(request.getClientDataJSON());
+            submission.setWebauthnAuthenticatorData(request.getAuthenticatorData());
+            submission.setWebauthnSignature(request.getSignature());
+
+            IntentAckResponse ack = intentService.processIntent(submission);
+            if ("accepted".equalsIgnoreCase(ack.getStatus())) {
+                completeClaimOrThrow(claim, "SUCCESS", ack, null, HttpStatus.OK.value());
+                log.info("Intent authorization completion accepted");
+                try {
+                    intentExecutionService.processQueuedIntent(ack.getRequestId());
+                } catch (Exception ex) {
+                    log.warn("Immediate intent execution failed");
+                }
+            } else {
+                completeClaimOrThrow(claim, "FAILED_TERMINAL", ack, ack.getReason(), HttpStatus.BAD_REQUEST.value());
+                log.warn("Intent authorization completion rejected by intent service");
             }
-        } else {
-            storeResult(session, "FAILED", ack.getReason());
-            log.warn("Intent authorization completion rejected by intent service");
+            return ack;
+        } catch (ResponseStatusException ex) {
+            boolean retryable = isRetryable(ex);
+            completeClaimOrThrow(
+                claim,
+                retryable ? "FAILED_RETRYABLE" : "FAILED_TERMINAL",
+                null,
+                resultReason(ex),
+                ex.getStatusCode().value()
+            );
+            log.warn("Intent authorization completion failed. retryable={}", retryable);
+            throw ex;
+        } catch (Exception ex) {
+            completeClaimOrThrow(
+                claim,
+                "FAILED_RETRYABLE",
+                null,
+                "intent_authorization_processing_unavailable",
+                HttpStatus.SERVICE_UNAVAILABLE.value()
+            );
+            log.warn("Intent authorization completion failed with a retryable processing error", ex);
+            throw new ResponseStatusException(
+                HttpStatus.SERVICE_UNAVAILABLE,
+                "intent_authorization_processing_unavailable",
+                ex
+            );
         }
-        return ack;
     }
 
     public String getRelyingPartyId() {
@@ -458,19 +485,117 @@ public class IntentAuthorizationService {
         return java.util.HexFormat.of().formatHex(bytes);
     }
 
-    private void storeResult(AuthorizationSession session, String status, String error) {
-        completedSessions.put(session.getSessionId(), new AuthorizationResult(
-            status,
-            session.getSubmission().getMeta().getRequestId(),
-            error,
-            Instant.now()
-        ));
+    private IntentAuthorizationSessionPersistenceService.StoredSession loadSession(String sessionId) {
+        IntentAuthorizationSessionPersistenceService.StoredSession stored;
+        try {
+            stored = sessionPersistence.find(sessionId).orElse(null);
+        } catch (IntentAuthorizationSessionPersistenceException ex) {
+            throw persistenceUnavailable(ex);
+        }
+        if (stored == null) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Session not found");
+        }
+        if (!stored.isTerminal() && stored.session().isExpired()) {
+            try {
+                sessionPersistence.expireIfNeeded(sessionId, sessionTtlSeconds);
+                stored = sessionPersistence.find(sessionId).orElse(stored);
+            } catch (IntentAuthorizationSessionPersistenceException ex) {
+                throw persistenceUnavailable(ex);
+            }
+        }
+        return stored;
     }
 
     private void cleanupExpiredSessions() {
-        Instant now = Instant.now();
-        pendingSessions.entrySet().removeIf(entry -> entry.getValue().getExpiresAt().isBefore(now));
-        completedSessions.entrySet().removeIf(entry -> entry.getValue().completedAt().isBefore(now.minusSeconds(sessionTtlSeconds)));
+        try {
+            sessionPersistence.cleanupExpiredSessions(sessionTtlSeconds);
+        } catch (IntentAuthorizationSessionPersistenceException ex) {
+            log.warn("Intent authorization session cleanup failed", ex);
+        }
+    }
+
+    private void validateCompletionRequest(AuthorizationSession session, IntentAuthorizationCompleteRequest request) {
+        if (request.getCredentialId() == null || request.getCredentialId().isBlank()) {
+            log.warn("Intent authorization completion rejected: missing WebAuthn credential");
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "missing_webauthn_credential");
+        }
+        if (session.getAllowedCredentials() == null || session.getAllowedCredentials().isEmpty()) {
+            log.warn("Intent authorization completion rejected: WebAuthn credential not registered");
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "webauthn_credential_not_registered");
+        }
+        if (session.getAllowedCredentials().stream()
+            .noneMatch(credential -> credential.getId().equals(request.getCredentialId()))) {
+            log.warn("Intent authorization completion rejected: WebAuthn credential not allowed (allowedCredentials={})",
+                session.getAllowedCredentials().size());
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "webauthn_credential_not_allowed");
+        }
+    }
+
+    private void completeClaimOrThrow(
+        IntentAuthorizationSessionPersistenceService.ClaimedSession claim,
+        String status,
+        IntentAckResponse ack,
+        String error,
+        int httpStatus
+    ) {
+        try {
+            boolean completed = sessionPersistence.complete(
+                claim,
+                status,
+                ack,
+                error,
+                httpStatus,
+                Instant.now(),
+                sessionTtlSeconds
+            );
+            if (!completed) {
+                throw new ResponseStatusException(
+                    HttpStatus.SERVICE_UNAVAILABLE,
+                    "intent_authorization_lease_lost"
+                );
+            }
+        } catch (IntentAuthorizationSessionPersistenceException ex) {
+            throw persistenceUnavailable(ex);
+        }
+    }
+
+    private IntentAckResponse replayTerminalResult(
+        IntentAuthorizationSessionPersistenceService.StoredSession stored
+    ) {
+        if (stored.resultAck() != null) {
+            return stored.resultAck();
+        }
+        int status = stored.resultHttpStatus() == null ? HttpStatus.BAD_REQUEST.value() : stored.resultHttpStatus();
+        HttpStatus responseStatus = HttpStatus.resolve(status);
+        throw new ResponseStatusException(
+            responseStatus == null ? HttpStatus.BAD_REQUEST : responseStatus,
+            stored.resultError() == null ? "Authorization already completed" : stored.resultError()
+        );
+    }
+
+    private boolean isRetryable(ResponseStatusException ex) {
+        if (ex.getStatusCode().is5xxServerError()) {
+            return true;
+        }
+        return Set.of(
+            "missing_webauthn_credential",
+            "webauthn_credential_not_registered",
+            "webauthn_credential_not_allowed"
+        ).contains(ex.getReason());
+    }
+
+    private String resultReason(ResponseStatusException ex) {
+        return ex.getReason() == null || ex.getReason().isBlank()
+            ? "intent_authorization_failed"
+            : ex.getReason();
+    }
+
+    private ResponseStatusException persistenceUnavailable(IntentAuthorizationSessionPersistenceException ex) {
+        return new ResponseStatusException(
+            HttpStatus.SERVICE_UNAVAILABLE,
+            "intent_authorization_persistence_unavailable",
+            ex
+        );
     }
 
     @Data
@@ -485,21 +610,16 @@ public class IntentAuthorizationService {
         private Instant expiresAt;
 
         public boolean isExpired() {
-            return Instant.now().isAfter(expiresAt);
+            return expiresAt == null || !Instant.now().isBefore(expiresAt);
         }
     }
 
     @Data
     @AllArgsConstructor
+    @NoArgsConstructor
     public static class AllowedCredential {
         private String id;
         private List<String> transports;
     }
 
-    private record AuthorizationResult(
-        String status,
-        String requestId,
-        String error,
-        Instant completedAt
-    ) {}
 }

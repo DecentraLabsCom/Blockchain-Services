@@ -210,6 +210,25 @@ class InstitutionRegistrationServiceTest {
         verify(configPersistenceService).markAsRegistered(InstitutionRole.CONSUMER);
     }
 
+    @Test
+    @DisplayName("Should not mark consumer as registered when Marketplace returns partial success")
+    void shouldNotMarkConsumerAsRegisteredOnPartialMarketplaceResponse() throws IOException {
+        InstitutionRegistrationRequest request = InstitutionRegistrationRequest.builder()
+                .role(InstitutionRole.CONSUMER)
+                .marketplaceUrl("https://marketplace.example.com")
+                .provisioningToken("token456")
+                .provisioningClaims(consumerClaims())
+                .organization("consumer.edu")
+                .build();
+
+        when(walletService.getInstitutionalWalletAddress()).thenReturn("0xDEF456");
+        when(restTemplate.postForEntity(anyString(), any(HttpEntity.class), eq(String.class)))
+                .thenReturn(ResponseEntity.status(HttpStatus.PARTIAL_CONTENT).body("{\"registered\":false}"));
+
+        assertFalse(service.register(request));
+        verify(configPersistenceService, never()).markAsRegistered(InstitutionRole.CONSUMER);
+    }
+
 
     @Test
     @DisplayName("Should throw exception when provider name is missing")

@@ -402,6 +402,24 @@
     "defaultValue": 1000
   },
   {
+    "name": "intent.authorization.session.ttl.seconds",
+    "type": "java.lang.Long",
+    "description": "Lifetime of a durable WebAuthn intent authorization session before it becomes terminal.",
+    "defaultValue": 300
+  },
+  {
+    "name": "intent.authorization.session.cleanup.interval.seconds",
+    "type": "java.lang.Long",
+    "description": "Interval for expiring and deleting retained WebAuthn intent authorization sessions.",
+    "defaultValue": 60
+  },
+  {
+    "name": "intent.authorization.session.processing-lease.seconds",
+    "type": "java.lang.Long",
+    "description": "Database lease fencing a WebAuthn intent authorization completion worker.",
+    "defaultValue": 60
+  },
+  {
     "name": "webauthn.credentials.table",
     "type": "java.lang.String",
     "description": "Database table name for WebAuthn credentials.",

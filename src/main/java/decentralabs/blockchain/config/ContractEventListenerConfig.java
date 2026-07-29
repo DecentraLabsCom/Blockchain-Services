@@ -9,6 +9,9 @@ import decentralabs.blockchain.service.health.LabMetadataService;
 import decentralabs.blockchain.service.persistence.ReservationPersistenceService;
 import decentralabs.blockchain.service.intent.IntentPersistenceService;
 import decentralabs.blockchain.service.intent.IntentService;
+import decentralabs.blockchain.service.provider.DistributedReservationAvailabilityLockService;
+import decentralabs.blockchain.service.provider.ReservationAvailabilityLockKey;
+import decentralabs.blockchain.service.provider.StationCapacityService;
 import decentralabs.blockchain.service.wallet.InstitutionalTxManagerProvider;
 import decentralabs.blockchain.service.wallet.InstitutionalWalletService;
 import decentralabs.blockchain.service.wallet.WalletService;
@@ -43,6 +46,7 @@ import org.web3j.abi.datatypes.generated.Uint256;
 import org.web3j.abi.datatypes.generated.Uint8;
 import org.web3j.abi.datatypes.Utf8String;
 import org.web3j.protocol.Web3j;
+import org.web3j.protocol.core.methods.response.EthChainId;
 import org.web3j.protocol.core.methods.response.Log;
 import org.web3j.protocol.core.methods.response.TransactionReceipt;
 import org.web3j.tx.Contract;
@@ -70,18 +74,19 @@ public class ContractEventListenerConfig {
     private static final String LAB_INTENT_PROCESSED = "LabIntentProcessed";
     private static final String RESERVATION_INTENT_PROCESSED = "ReservationIntentProcessed";
     private static final String MISSING_PUC_PREFIX = "Missing PUC for reservation ";
-    private static final int MAX_RESERVATION_PROCESSING_ATTEMPTS = 3;
     private static final long RESERVATION_RETRY_BACKOFF_MS = 120_000L;
     private static final BigInteger PROVIDER_NOT_ELIGIBLE_REASON = BigInteger.valueOf(2);
     private static final BigInteger PROVIDER_TECHNICAL_FAILURE_REASON = BigInteger.valueOf(6);
     private static final BigInteger PROVIDER_UNAVAILABLE_REASON = BigInteger.valueOf(7);
 
     private final ConcurrentHashMap<String, ReservationProcessingState> reservationProcessingGuard = new ConcurrentHashMap<>();
-    private final ConcurrentHashMap<BigInteger, Object> reservationAvailabilityLocks = new ConcurrentHashMap<>();
 
     private final EventPollingFallbackService eventPollingFallbackService;
     private final InstitutionalTxManagerProvider txManagerProvider;
     private final InstitutionalWalletService institutionalWalletService;
+    private final DistributedReservationAvailabilityLockService reservationAvailabilityLockService;
+
+    private final StationCapacityService stationCapacityService;
 
     private static final Event RESERVATION_REQUESTED_EVENT = new Event(
         RESERVATION_REQUESTED,
@@ -168,7 +173,7 @@ public class ContractEventListenerConfig {
             new TypeReference<Bytes32>(true) {},
             new TypeReference<Bytes32>() {},
             new TypeReference<Utf8String>() {},
-            new TypeReference<Utf8String>() {},
+            new TypeReference<Bytes32>() {},
             new TypeReference<Address>() {},
             new TypeReference<org.web3j.abi.datatypes.Bool>() {},
             new TypeReference<Utf8String>() {}
@@ -236,6 +241,10 @@ public class ContractEventListenerConfig {
 
     @Value("${contract.reservation.reconcile.batch-size:50}")
     private int reservationReconcileBatchSize;
+
+    ContractEventListenerConfig(StationCapacityService stationCapacityService) {
+        this.stationCapacityService = stationCapacityService;
+    }
 
     /**
      * Configure event listeners for Diamond contract on application startup.
@@ -833,31 +842,36 @@ public class ContractEventListenerConfig {
 
         try {
             LabMetadata metadata = loadLabMetadata(payload.labId())
-                .orElseThrow(() -> new IllegalStateException("Missing metadata for lab " + payload.labId()));
+                .orElseThrow(() -> new ReservationProcessingFailure(
+                    ReservationProcessingFailure.Type.INFRASTRUCTURE_UNAVAILABLE,
+                    "Missing metadata for lab " + payload.labId()
+                ));
 
             Instant start = toInstant(payload.startEpoch())
                 .orElseThrow(() -> new IllegalStateException("Missing reservation start time"));
             Instant end = toInstant(payload.endEpoch())
                 .orElseThrow(() -> new IllegalStateException("Missing reservation end time"));
 
-            Object availabilityLock = reservationAvailabilityLocks.computeIfAbsent(
-                payload.labId(),
-                ignored -> new Object()
-            );
-            synchronized (availabilityLock) {
+            ReservationAvailabilityLockKey availabilityLockKey = resolveReservationAvailabilityLockKey(payload.labId());
+            reservationAvailabilityLockService.<Void>withLock(availabilityLockKey, () -> {
                 int requestedUserCount = 1;
                 if (metadata.getMaxConcurrentUsers() != null) {
                     BigInteger overlappingReservations = fetchOverlappingReservationCount(
                         payload.labId(), startBigInteger(start), startBigInteger(end)
                     );
                     if (overlappingReservations.compareTo(BigInteger.valueOf(Integer.MAX_VALUE - 1L)) > 0) {
-                        throw new IllegalStateException("Too many overlapping reservations to validate");
+                        throw new ReservationProcessingFailure(
+                            ReservationProcessingFailure.Type.INFRASTRUCTURE_UNAVAILABLE,
+                            "Unable to validate overlapping reservation count for lab " + payload.labId()
+                        );
                     }
                     requestedUserCount = overlappingReservations.intValueExact() + 1;
                 }
-                labMetadataService.validateAvailability(metadata, start, end, requestedUserCount);
+                validateStationCapacity(metadata, requestedUserCount);
+                validateReservationAvailability(metadata, start, end, requestedUserCount);
                 confirmInstitutionalReservationOnChain(payload);
-            }
+                return null;
+            });
             log.info(
                 "Institutional reservation {} confirmed by provider for lab {} by {} role",
                 payload.reservationKey(),
@@ -872,17 +886,20 @@ public class ContractEventListenerConfig {
                 payload.labId(),
                 ex.getMessage()
             );
-            recordReservationFailure(payload.reservationKey(), ex.getMessage());
-            if (isRetryablePucFailure(ex)) {
+            ReservationProcessingFailure failure = classifyReservationProcessingFailure(ex);
+            recordReservationFailure(payload.reservationKey(), failure.getMessage());
+            if (failure.type() != ReservationProcessingFailure.Type.POLICY_REJECTION) {
                 log.info(
-                    "Leaving reservation {} pending for retry because the PUC is not available locally yet.",
-                    payload.reservationKey()
+                    "Leaving reservation {} pending because provider processing failed as {}: {}",
+                    payload.reservationKey(), failure.type(), failure.getMessage()
                 );
                 throw new IllegalStateException(
-                    "Provider approval remains retryable for reservation " + payload.reservationKey(), ex
+                    "Provider approval remains retryable for reservation " + payload.reservationKey()
+                        + " (" + failure.type() + ")",
+                    failure
                 );
             }
-            autoDenyReservation(payload, ex.getMessage(), classifyAutomaticDenialReason(ex));
+            autoDenyReservation(payload, failure.getMessage(), classifyAutomaticDenialReason(failure));
         }
     }
 
@@ -952,8 +969,150 @@ public class ContractEventListenerConfig {
         return payload.status().map(status -> status.intValue() == 0).orElse(true);
     }
 
-    private boolean isRetryablePucFailure(Exception ex) {
+    private boolean isRetryablePucFailure(Throwable ex) {
         return ex != null && ex.getMessage() != null && ex.getMessage().startsWith(MISSING_PUC_PREFIX);
+    }
+
+    private void validateStationCapacity(LabMetadata metadata, int requestedUserCount) {
+        if (stationCapacityService == null || metadata == null || metadata.getMaxConcurrentUsers() == null) {
+            return;
+        }
+        String resourceType = metadata.getResourceType();
+        if ((resourceType == null || resourceType.isBlank()) && metadata.getMaxConcurrentUsers() <= 1) {
+            return;
+        }
+        if (resourceType != null && !resourceType.isBlank()
+            && !"fmu".equalsIgnoreCase(resourceType.trim())) {
+            return;
+        }
+
+        int stationCapacity = stationCapacityService.requireCapacity();
+        if (metadata.getMaxConcurrentUsers() > stationCapacity) {
+            throw new ReservationProcessingFailure(
+                ReservationProcessingFailure.Type.POLICY_REJECTION,
+                "maxConcurrentUsers " + metadata.getMaxConcurrentUsers()
+                    + " exceeds effective Station capacity " + stationCapacity
+            );
+        }
+        if (requestedUserCount > stationCapacity) {
+            throw new ReservationProcessingFailure(
+                ReservationProcessingFailure.Type.POLICY_REJECTION,
+                "Too many concurrent users for effective Station capacity " + stationCapacity
+            );
+        }
+    }
+
+    private void validateReservationAvailability(
+        LabMetadata metadata,
+        Instant start,
+        Instant end,
+        int requestedUserCount
+    ) {
+        try {
+            labMetadataService.validateAvailability(metadata, start, end, requestedUserCount);
+        } catch (IllegalArgumentException ex) {
+            if (isDemonstratedPolicyViolation(ex)) {
+                throw new ReservationProcessingFailure(
+                    ReservationProcessingFailure.Type.POLICY_REJECTION,
+                    ex.getMessage(),
+                    ex
+                );
+            }
+            throw new ReservationProcessingFailure(
+                ReservationProcessingFailure.Type.INFRASTRUCTURE_UNAVAILABLE,
+                "Unable to validate reservation availability",
+                ex
+            );
+        } catch (RuntimeException ex) {
+            throw new ReservationProcessingFailure(
+                ReservationProcessingFailure.Type.INFRASTRUCTURE_UNAVAILABLE,
+                "Unable to validate reservation availability",
+                ex
+            );
+        }
+    }
+
+    private boolean isDemonstratedPolicyViolation(Exception ex) {
+        return isDemonstratedPolicyViolation(ex == null ? "" : ex.getMessage());
+    }
+
+    private boolean isDemonstratedPolicyViolation(String rawMessage) {
+        String message = rawMessage == null ? "" : rawMessage.toLowerCase(Locale.ROOT);
+        return message.contains("lab not available on")
+            || message.contains("outside available hours")
+            || message.contains("starts before lab opens")
+            || message.contains("ends after lab closes")
+            || message.contains("end time must be after")
+            || message.contains("duration")
+            || message.contains("shorter than minimum period")
+            || message.contains("longer than maximum period")
+            || message.contains("too many concurrent users")
+            || message.contains("maintenance");
+    }
+
+    private ReservationProcessingFailure classifyReservationProcessingFailure(Exception ex) {
+        for (Throwable current = ex; current != null; current = current.getCause()) {
+            if (current instanceof ReservationProcessingFailure failure) {
+                return failure;
+            }
+        }
+
+        String message = failureMessages(ex);
+        if (containsMissingPucFailure(ex)) {
+            return new ReservationProcessingFailure(
+                ReservationProcessingFailure.Type.INFRASTRUCTURE_UNAVAILABLE,
+                ex == null ? "PUC is not available yet" : ex.getMessage(),
+                ex
+            );
+        }
+        if (message.contains("rpc")
+            || message.contains("web3")
+            || message.contains("abi")
+            || message.contains("contract")
+            || message.contains("node")
+            || message.contains("network")
+            || message.contains("overlapping reservations")
+            || message.contains("timeout")) {
+            return new ReservationProcessingFailure(
+                ReservationProcessingFailure.Type.TRANSIENT_RPC_FAILURE,
+                ex == null ? "Transient RPC failure" : ex.getMessage(),
+                ex
+            );
+        }
+        if (isDemonstratedPolicyViolation(message)) {
+            return new ReservationProcessingFailure(
+                ReservationProcessingFailure.Type.POLICY_REJECTION,
+                ex.getMessage(),
+                ex
+            );
+        }
+        return new ReservationProcessingFailure(
+            ReservationProcessingFailure.Type.INFRASTRUCTURE_UNAVAILABLE,
+            ex == null ? "Reservation infrastructure unavailable" : ex.getMessage(),
+            ex
+        );
+    }
+
+    private String failureMessages(Throwable ex) {
+        StringBuilder messages = new StringBuilder();
+        for (Throwable current = ex; current != null; current = current.getCause()) {
+            if (current.getMessage() != null && !current.getMessage().isBlank()) {
+                if (messages.length() > 0) {
+                    messages.append(" | ");
+                }
+                messages.append(current.getMessage().toLowerCase(Locale.ROOT));
+            }
+        }
+        return messages.toString();
+    }
+
+    private boolean containsMissingPucFailure(Throwable ex) {
+        for (Throwable current = ex; current != null; current = current.getCause()) {
+            if (isRetryablePucFailure(current)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private BigInteger classifyAutomaticDenialReason(Exception ex) {
@@ -999,15 +1158,21 @@ public class ContractEventListenerConfig {
     }
 
     private boolean isStillPendingOnChain(String reservationKey) {
-        Optional<ReservationDetails> latest = fetchReservationDetails(reservationKey);
-        if (latest.isEmpty()) {
-            log.warn("Unable to revalidate reservation {} before auto-denial; treating as pending", reservationKey);
-            return true;
+        try {
+            Diamond contract = getDiamondContract();
+            byte[] keyBytes = reservationKeyToBytes(reservationKey);
+            Diamond.Reservation reservation = contract.getReservation(keyBytes).send();
+            if (reservation == null || reservation.status == null) {
+                throw new IllegalStateException("Reservation state is unavailable");
+            }
+            return reservation.status.intValue() == 0;
+        } catch (Exception ex) {
+            throw new ReservationProcessingFailure(
+                ReservationProcessingFailure.Type.TRANSIENT_RPC_FAILURE,
+                "Unable to revalidate reservation " + reservationKey + " before auto-denial",
+                ex
+            );
         }
-        return latest
-            .flatMap(details -> Optional.ofNullable(details.status()))
-            .map(status -> status.intValue() == 0)
-            .orElse(true);
     }
 
     private void sendReservationApprovedNotification(ReservationEventPayload payload) {
@@ -1091,15 +1256,38 @@ public class ContractEventListenerConfig {
         try {
             var call = getDiamondContract().getConcurrentReservationCount(labId, start, end);
             if (call == null) {
-                throw new IllegalStateException("Unable to read overlapping reservations");
+                throw new IllegalStateException("RPC returned no overlapping reservation call");
             }
-            return call.send();
+            BigInteger count = call.send();
+            if (count == null || count.signum() < 0) {
+                throw new IllegalStateException("RPC returned an invalid overlapping reservation count");
+            }
+            return count;
+        } catch (ReservationProcessingFailure ex) {
+            throw ex;
         } catch (Exception ex) {
-            // maxConcurrentUsers is provider-side policy. If its reservation
-            // occupancy read is unavailable, fail closed instead of approving
-            // a request with an unknown occupancy.
-            throw new IllegalStateException(
-                "Unable to read overlapping reservations for lab " + labId, ex
+            throw new ReservationProcessingFailure(
+                ReservationProcessingFailure.Type.TRANSIENT_RPC_FAILURE,
+                "Unable to read overlapping reservations for lab " + labId,
+                ex
+            );
+        }
+    }
+
+    private ReservationAvailabilityLockKey resolveReservationAvailabilityLockKey(BigInteger labId) {
+        try {
+            Web3j web3j = walletService.getWeb3jInstance();
+            if (web3j == null) {
+                throw new IllegalStateException("Web3j instance is unavailable");
+            }
+            EthChainId response = web3j.ethChainId().send();
+            if (response == null || response.getChainId() == null || response.getChainId().signum() <= 0) {
+                throw new IllegalStateException("RPC returned no valid chainId");
+            }
+            return new ReservationAvailabilityLockKey(response.getChainId(), diamondContractAddress, labId);
+        } catch (Exception ex) {
+            throw new DistributedReservationAvailabilityLockService.DistributedLockException(
+                "Unable to resolve distributed reservation availability lock key for lab " + labId, ex
             );
         }
     }
@@ -1208,17 +1396,7 @@ public class ContractEventListenerConfig {
             state.inProgress.set(false);
             return false;
         }
-        int attempt = state.attempts.incrementAndGet();
-        if (attempt > MAX_RESERVATION_PROCESSING_ATTEMPTS) {
-            state.completed = true;
-            state.inProgress.set(false);
-            log.warn(
-                "Reservation {} reached max auto-processing attempts ({}). Skipping further retries.",
-                reservationKey,
-                MAX_RESERVATION_PROCESSING_ATTEMPTS
-            );
-            return false;
-        }
+        state.attempts.incrementAndGet();
         return true;
     }
 

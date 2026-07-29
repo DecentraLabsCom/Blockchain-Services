@@ -70,6 +70,19 @@ session as their context. Completion does not require a second Marketplace
 bearer. Treat `sessionId` as a secret with the same care as a short-lived
 authorization URL.
 
+Authorization sessions are stored in MySQL in encrypted form using the same
+AES-256-GCM payload key as durable intent execution material. Their durable
+state is `PENDING`, `PROCESSING`, `SUCCESS`, `FAILED_RETRYABLE` or
+`FAILED_TERMINAL`. Completion claims the row with a compare-and-set update and
+a lease, so a second replica cannot process the same session concurrently; an
+expired lease can be recovered after a process crash. The row and its result
+remain available for the configured TTL, and a repeated completion after
+`SUCCESS` returns the stored ACK without submitting the intent again.
+
+`INTENT_AUTHORIZATION_SESSION_PROCESSING_LEASE_SECONDS` controls the processing
+lease (default `60`). It must be shorter than the session TTL and long enough
+for the normal WebAuthn assertion verification and intent persistence path.
+
 ## Direct submission payload
 
 `IntentSubmission` requires:
@@ -213,6 +226,10 @@ The old editable `save-and-register` surface is retired so form values cannot
 select institutional identity. A `2xx` response with `registered=false` or
 HTTP `206` means Marketplace registration still needs an explicit new pairing;
 it is not proof of on-chain registration.
+Marketplace returns `registered=true` only after confirming that the institution
+has a non-zero authorized backend address. The backend therefore marks its
+local registration flag only for HTTP 200/201; partial responses remain a
+failed pairing and must not be treated as registered.
 
 The token application body is:
 

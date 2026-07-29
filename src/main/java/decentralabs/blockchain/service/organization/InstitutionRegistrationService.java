@@ -1,5 +1,6 @@
 package decentralabs.blockchain.service.organization;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import decentralabs.blockchain.service.BackendUrlResolver;
 import decentralabs.blockchain.service.billing.InstitutionalAdminService;
 import decentralabs.blockchain.service.wallet.InstitutionalWalletService;
@@ -32,6 +33,8 @@ import java.util.Properties;
 @RequiredArgsConstructor
 @Slf4j
 public class InstitutionRegistrationService {
+
+    private static final ObjectMapper RESPONSE_MAPPER = new ObjectMapper();
 
     private final InstitutionalAdminService institutionalAdminService;
     private final InstitutionalWalletService institutionalWalletService;
@@ -340,10 +343,13 @@ public class InstitutionRegistrationService {
                 String.class
             );
 
-            if (response.getStatusCode() == HttpStatus.CREATED || response.getStatusCode() == HttpStatus.OK) {
+            if ((response.getStatusCode() == HttpStatus.CREATED || response.getStatusCode() == HttpStatus.OK)
+                && confirmsRegistration(response.getBody())) {
                 log.info("Institution registration successful");
             } else {
-                log.warn("Institution registration returned unexpected status");
+                throw new IllegalStateException(
+                    "Marketplace did not confirm institutional registration: " + response.getStatusCode()
+                );
             }
         } catch (HttpClientErrorException e) {
             if (e.getStatusCode() == HttpStatus.UNAUTHORIZED) {
@@ -356,6 +362,24 @@ public class InstitutionRegistrationService {
         } catch (Exception e) {
             log.error("Institution registration request failed");
             throw new RuntimeException("Failed to communicate with marketplace", e);
+        }
+    }
+
+    private boolean confirmsRegistration(String responseBody) {
+        if (responseBody == null || responseBody.isBlank()) {
+            return true;
+        }
+
+        try {
+            Map<?, ?> payload = RESPONSE_MAPPER.readValue(responseBody, Map.class);
+            if (payload.containsKey("registered") && !Boolean.TRUE.equals(payload.get("registered"))) {
+                return false;
+            }
+            return !payload.containsKey("success") || Boolean.TRUE.equals(payload.get("success"));
+        } catch (Exception ignored) {
+            // The registration endpoint's status code remains the compatibility
+            // boundary for non-JSON responses from older deployments.
+            return true;
         }
     }
 

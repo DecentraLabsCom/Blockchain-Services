@@ -7,9 +7,11 @@ import decentralabs.blockchain.dto.labadmin.LabAdminAssetResponse;
 import decentralabs.blockchain.dto.labadmin.LabAdminPublishRequest;
 import decentralabs.blockchain.dto.labadmin.LabAdminReservation;
 import decentralabs.blockchain.dto.labadmin.LabAdminTransactionResponse;
+import decentralabs.blockchain.dto.health.LabMetadata;
 import decentralabs.blockchain.service.BackendUrlResolver;
 import decentralabs.blockchain.service.guacamole.GuacamoleProvisioningService;
 import decentralabs.blockchain.service.health.LabMetadataService;
+import decentralabs.blockchain.service.provider.StationCapacityService;
 import decentralabs.blockchain.service.wallet.InstitutionalTxManagerProvider;
 import decentralabs.blockchain.service.wallet.InstitutionalWalletService;
 import decentralabs.blockchain.service.wallet.WalletService;
@@ -76,6 +78,7 @@ public class LabAdminService {
     private final GuacamoleProvisioningService guacamoleProvisioningService;
     private final LabContentRetentionService contentRetentionService;
     private final LabMetadataService labMetadataService;
+    private final StationCapacityService stationCapacityService;
 
     @Value("${contract.address}")
     private String contractAddress;
@@ -487,17 +490,17 @@ public class LabAdminService {
         String commandKey = requirePublishIdempotencyKey(idempotencyKey);
         String wallet = requireProviderWallet();
         String creatorPucHash = resolveCreatorPucHash(request);
-        String uri = resolveMetadataUri(request);
+        BigInteger resourceType = normalizeResourceType(request.resourceType());
+        String uri = resolveMetadataUri(request, resourceType);
         BigInteger price = requireNonNegative(request.price(), "price");
         String accessURI = requireText(request.accessURI(), "accessURI", 500);
         String accessKey = requireText(request.accessKey(), "accessKey", 200);
-        BigInteger resourceType = normalizeResourceType(request.resourceType());
         validatePhysicalAccessKey(accessKey, resourceType);
         boolean listImmediately = request.listImmediately() == null || request.listImmediately();
         boolean allowDuplicate = Boolean.TRUE.equals(request.allowDuplicate());
 
         if (listImmediately) {
-            preflightMetadataUri(uri, wallet);
+            preflightMetadataUri(uri, wallet, resourceType);
         }
 
         List<BigInteger> before = walletService.getLabsOwnedByProvider(wallet);
@@ -557,11 +560,11 @@ public class LabAdminService {
         BigInteger labId, LabAdminPublishRequest request, String idempotencyKey
     ) throws Exception {
         requireOwnedLab(labId);
-        String uri = resolveMetadataUri(request);
+        BigInteger resourceType = normalizeResourceType(request.resourceType());
+        String uri = resolveMetadataUri(request, resourceType);
         BigInteger price = requireNonNegative(request.price(), "price");
         String accessURI = requireText(request.accessURI(), "accessURI", 500);
         String accessKey = requireText(request.accessKey(), "accessKey", 200);
-        BigInteger resourceType = normalizeResourceType(request.resourceType());
         validatePhysicalAccessKey(accessKey, resourceType);
 
         try {
@@ -651,6 +654,14 @@ public class LabAdminService {
     }
 
     private void preflightMetadataUri(String metadataUri, String providerAddress) throws IOException {
+        preflightMetadataUri(metadataUri, providerAddress, null);
+    }
+
+    private void preflightMetadataUri(
+        String metadataUri,
+        String providerAddress,
+        BigInteger resourceType
+    ) throws IOException {
         String uri = requireText(metadataUri, "metadataUri", 1000);
         String gatewayPrefix = publicBaseUrl().replaceAll("/+$", "") + "/lab-content/";
         if (uri.startsWith(gatewayPrefix)) {
@@ -666,6 +677,7 @@ public class LabAdminService {
                 );
                 normalizeGeneratedMetadata(metadata);
                 validateGeneratedMetadata(metadata);
+                validateGeneratedMetadataCapacity(metadata, resourceType);
             } catch (IllegalArgumentException ex) {
                 throw ex;
             } catch (Exception ex) {
@@ -675,7 +687,10 @@ public class LabAdminService {
         }
 
         try {
-            labMetadataService.getLabMetadataForProvider(providerAddress, uri);
+            LabMetadata metadata = labMetadataService.getLabMetadataForProvider(providerAddress, uri);
+            if (resourceType != null && BigInteger.ONE.equals(resourceType)) {
+                stationCapacityService.validateDeclaredCapacity(metadata.getMaxConcurrentUsers());
+            }
         } catch (RuntimeException ex) {
             throw new IllegalArgumentException("Metadata preflight failed: URI is not accessible", ex);
         }
@@ -703,7 +718,7 @@ public class LabAdminService {
         }
     }
 
-    private String resolveMetadataUri(LabAdminPublishRequest request) throws IOException {
+    private String resolveMetadataUri(LabAdminPublishRequest request, BigInteger resourceType) throws IOException {
         String setupMode = Optional.ofNullable(request.setupMode()).orElse("full").trim().toLowerCase(Locale.ROOT);
         if ("quick".equals(setupMode)) {
             return requireHttpsUrl(request.metadataUrl(), "metadataUrl");
@@ -714,6 +729,7 @@ public class LabAdminService {
             : new LinkedHashMap<>(request.metadata());
         normalizeGeneratedMetadata(metadata);
         validateGeneratedMetadata(metadata);
+        validateGeneratedMetadataCapacity(metadata, resourceType);
         String contentId = normalizeContentId(objectsToString(metadata.get("contentId")));
         metadata.remove("contentId");
         Path targetDir = contentRoot().resolve("content").resolve(contentId).normalize();
@@ -738,6 +754,35 @@ public class LabAdminService {
         for (String url : stringList(metadata.get("docs"))) {
             requireHttpsOrGatewayUrl(url, "docs");
         }
+    }
+
+    private void validateGeneratedMetadataCapacity(Map<String, Object> metadata, BigInteger resourceType) {
+        if (!BigInteger.ONE.equals(resourceType)) {
+            return;
+        }
+        stationCapacityService.validateDeclaredCapacity(extractMaxConcurrentUsers(metadata));
+    }
+
+    private Integer extractMaxConcurrentUsers(Map<String, Object> metadata) {
+        Object direct = metadata.get("maxConcurrentUsers");
+        if (direct instanceof Number number) {
+            return number.intValue();
+        }
+        for (Map<String, Object> attribute : metadataAttributes(metadata.get("attributes"))) {
+            if (!"maxConcurrentUsers".equalsIgnoreCase(objectsToString(attribute.get("trait_type")))) {
+                continue;
+            }
+            Object value = attribute.get("value");
+            if (value instanceof Number number) {
+                return number.intValue();
+            }
+            try {
+                return Integer.valueOf(objectsToString(value));
+            } catch (NumberFormatException ignored) {
+                return null;
+            }
+        }
+        return null;
     }
 
     private void requireMetadataText(Map<String, Object> metadata, String field, int max) {
