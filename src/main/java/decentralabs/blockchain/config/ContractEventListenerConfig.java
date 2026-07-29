@@ -1057,7 +1057,7 @@ public class ContractEventListenerConfig {
         if (containsMissingPucFailure(ex)) {
             return new ReservationProcessingFailure(
                 ReservationProcessingFailure.Type.INFRASTRUCTURE_UNAVAILABLE,
-                ex == null ? "PUC is not available yet" : ex.getMessage(),
+                directFailureMessage(ex, "PUC is not available yet"),
                 ex
             );
         }
@@ -1071,22 +1071,30 @@ public class ContractEventListenerConfig {
             || message.contains("timeout")) {
             return new ReservationProcessingFailure(
                 ReservationProcessingFailure.Type.TRANSIENT_RPC_FAILURE,
-                ex == null ? "Transient RPC failure" : ex.getMessage(),
+                directFailureMessage(ex, "Transient RPC failure"),
                 ex
             );
         }
         if (isDemonstratedPolicyViolation(message)) {
             return new ReservationProcessingFailure(
                 ReservationProcessingFailure.Type.POLICY_REJECTION,
-                ex.getMessage(),
+                directFailureMessage(ex, "Reservation policy rejected"),
                 ex
             );
         }
         return new ReservationProcessingFailure(
             ReservationProcessingFailure.Type.INFRASTRUCTURE_UNAVAILABLE,
-            ex == null ? "Reservation infrastructure unavailable" : ex.getMessage(),
+            directFailureMessage(ex, "Reservation infrastructure unavailable"),
             ex
         );
+    }
+
+    private String directFailureMessage(Throwable ex, String fallback) {
+        if (ex == null) {
+            return fallback;
+        }
+        String message = ex.getMessage();
+        return message == null || message.isBlank() ? fallback : message;
     }
 
     private String failureMessages(Throwable ex) {

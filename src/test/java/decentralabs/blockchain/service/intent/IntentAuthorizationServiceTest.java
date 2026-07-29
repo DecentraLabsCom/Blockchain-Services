@@ -8,6 +8,7 @@ import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.lenient;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -221,7 +222,7 @@ class IntentAuthorizationServiceTest {
     }
 
     @Test
-    void getSession_rejectsExpiredSessionButKeepsDurableTerminalResult() {
+    void readOnlySessionReadsRejectExpiredSessionWithoutPersistingExpiration() {
         when(webauthnCredentialService.getCredentials("user@example.edu"))
             .thenReturn(List.of(credential("cred-1", true, 100L)));
         ReflectionTestUtils.setField(service, "sessionTtlSeconds", -1L);
@@ -235,6 +236,7 @@ class IntentAuthorizationServiceTest {
         IntentAuthorizationStatusResponse status = service.getStatus(session.getSessionId());
         assertThat(status.getStatus()).isEqualTo("FAILED_TERMINAL");
         assertThat(status.getError()).isEqualTo("Session expired");
+        verify(sessionPersistence, never()).expireIfNeeded(anyString(), anyLong());
     }
 
     @Test

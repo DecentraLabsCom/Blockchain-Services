@@ -181,7 +181,10 @@ public class IntentAuthorizationService {
     }
 
     public AuthorizationSession getSession(String sessionId) {
-        IntentAuthorizationSessionPersistenceService.StoredSession stored = loadSession(sessionId);
+        IntentAuthorizationSessionPersistenceService.StoredSession stored = loadSessionReadOnly(sessionId);
+        if (!stored.isTerminal() && stored.session().isExpired()) {
+            throw new ResponseStatusException(HttpStatus.GONE, "Session expired");
+        }
         if (stored.isTerminal()) {
             if ("Session expired".equals(stored.resultError())) {
                 throw new ResponseStatusException(HttpStatus.GONE, "Session expired");
@@ -195,13 +198,14 @@ public class IntentAuthorizationService {
     }
 
     public IntentAuthorizationStatusResponse getStatus(String sessionId) {
-        IntentAuthorizationSessionPersistenceService.StoredSession stored = loadSession(sessionId);
+        IntentAuthorizationSessionPersistenceService.StoredSession stored = loadSessionReadOnly(sessionId);
+        boolean expired = !stored.isTerminal() && stored.session().isExpired();
         return IntentAuthorizationStatusResponse.builder()
             .sessionId(sessionId)
             .requestId(stored.session().getSubmission().getMeta().getRequestId())
-            .status(stored.status())
-            .error(stored.resultError())
-            .completedAt(stored.completedAt())
+            .status(expired ? "FAILED_TERMINAL" : stored.status())
+            .error(expired ? "Session expired" : stored.resultError())
+            .completedAt(expired ? null : stored.completedAt())
             .build();
     }
 
@@ -486,6 +490,19 @@ public class IntentAuthorizationService {
     }
 
     private IntentAuthorizationSessionPersistenceService.StoredSession loadSession(String sessionId) {
+        IntentAuthorizationSessionPersistenceService.StoredSession stored = loadSessionReadOnly(sessionId);
+        if (!stored.isTerminal() && stored.session().isExpired()) {
+            try {
+                sessionPersistence.expireIfNeeded(sessionId, sessionTtlSeconds);
+                stored = sessionPersistence.find(sessionId).orElse(stored);
+            } catch (IntentAuthorizationSessionPersistenceException ex) {
+                throw persistenceUnavailable(ex);
+            }
+        }
+        return stored;
+    }
+
+    private IntentAuthorizationSessionPersistenceService.StoredSession loadSessionReadOnly(String sessionId) {
         IntentAuthorizationSessionPersistenceService.StoredSession stored;
         try {
             stored = sessionPersistence.find(sessionId).orElse(null);
@@ -494,14 +511,6 @@ public class IntentAuthorizationService {
         }
         if (stored == null) {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Session not found");
-        }
-        if (!stored.isTerminal() && stored.session().isExpired()) {
-            try {
-                sessionPersistence.expireIfNeeded(sessionId, sessionTtlSeconds);
-                stored = sessionPersistence.find(sessionId).orElse(stored);
-            } catch (IntentAuthorizationSessionPersistenceException ex) {
-                throw persistenceUnavailable(ex);
-            }
         }
         return stored;
     }

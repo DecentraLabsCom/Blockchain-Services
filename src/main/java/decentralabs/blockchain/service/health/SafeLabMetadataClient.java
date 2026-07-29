@@ -268,7 +268,7 @@ public class SafeLabMetadataClient {
         } catch (Exception ex) {
             throw new IOException("Unable to resolve metadata host", ex);
         }
-        if (addresses.isEmpty() || addresses.size() > MAX_DNS_ADDRESSES) {
+        if (addresses.size() > MAX_DNS_ADDRESSES) {
             throw new IOException("Metadata host returned an invalid number of addresses");
         }
         for (InetAddress address : addresses) {
