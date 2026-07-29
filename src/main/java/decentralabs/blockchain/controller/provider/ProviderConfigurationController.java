@@ -258,9 +258,6 @@ public class ProviderConfigurationController {
                 snapshot.publicBaseUrl()
             );
 
-            // Persist configuration from token (source=token)
-            persistenceService.saveConfigurationFromToken(payload);
-
             InstitutionRegistrationRequest registrationRequest = InstitutionRegistrationRequest.builder()
                 .role(InstitutionRole.PROVIDER)
                 .marketplaceUrl(payload.getMarketplaceBaseUrl())
@@ -276,6 +273,8 @@ public class ProviderConfigurationController {
             boolean registered = registrationService.register(registrationRequest);
 
             if (registered) {
+                // Persist only after the remote registration has completed.
+                persistenceService.saveConfigurationFromToken(payload);
                 // Mark as registered in config file
                 registrationService.markAsRegistered(InstitutionRole.PROVIDER);
             }
@@ -333,9 +332,6 @@ public class ProviderConfigurationController {
                 snapshot.publicBaseUrl()
             );
 
-            // Persist minimal consumer configuration from token (source=consumer-token)
-            persistenceService.saveConfigurationFromConsumerToken(payload);
-
             InstitutionRegistrationRequest registrationRequest = InstitutionRegistrationRequest.builder()
                 .role(InstitutionRole.CONSUMER)
                 .marketplaceUrl(payload.getMarketplaceBaseUrl())
@@ -349,6 +345,8 @@ public class ProviderConfigurationController {
 
             // Mark as registered in config file if successful
             if (registered) {
+                // Persist only after the remote registration has completed.
+                persistenceService.saveConfigurationFromConsumerToken(payload);
                 registrationService.markAsRegistered(InstitutionRole.CONSUMER);
             }
 

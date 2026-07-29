@@ -334,18 +334,6 @@ public class Diamond extends Contract {
     }
 
     /**
-     * Admin helper to grant institution role and register an organization (InstitutionFacet)
-     */
-    public RemoteFunctionCall<TransactionReceipt> grantInstitutionRole(String institution, String organization) {
-        final Function function = new Function(
-            "grantInstitutionRole",
-            Arrays.asList(new Address(institution), new Utf8String(organization)),
-            List.of()
-        );
-        return executeRemoteCallTransaction(function);
-    }
-    
-    /**
      * Get reservation by key (ReservationFacet)
      * Returns Reservation struct (6 fields)
      */

@@ -14,6 +14,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
+import org.mockito.InOrder;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.http.HttpStatus;
@@ -173,6 +174,10 @@ class ProviderConfigurationControllerTest {
         // Verify marked as registered
         verify(persistenceService).saveConfigurationFromToken(payload);
         verify(registrationService).markAsRegistered(any());
+        InOrder inOrder = inOrder(registrationService, persistenceService);
+        inOrder.verify(registrationService).register(any());
+        inOrder.verify(persistenceService).saveConfigurationFromToken(payload);
+        inOrder.verify(registrationService).markAsRegistered(InstitutionRole.PROVIDER);
     }
 
     @Test
@@ -205,7 +210,7 @@ class ProviderConfigurationControllerTest {
         assertEquals(true, response.getBody().get("success"));
         assertEquals(false, response.getBody().get("registered"));
 
-        verify(persistenceService).saveConfigurationFromToken(payload);
+        verify(persistenceService, never()).saveConfigurationFromToken(any());
         verify(registrationService, never()).markAsRegistered(any());
     }
 
@@ -340,6 +345,10 @@ class ProviderConfigurationControllerTest {
         assertEquals("CONSUMER", response.getBody().get("registrationRole"));
         verify(persistenceService).saveConfigurationFromConsumerToken(payload);
         verify(registrationService).markAsRegistered(InstitutionRole.CONSUMER);
+        InOrder inOrder = inOrder(registrationService, persistenceService);
+        inOrder.verify(registrationService).register(any());
+        inOrder.verify(persistenceService).saveConfigurationFromConsumerToken(payload);
+        inOrder.verify(registrationService).markAsRegistered(InstitutionRole.CONSUMER);
     }
 
     @Test
@@ -359,7 +368,7 @@ class ProviderConfigurationControllerTest {
         assertNotNull(response.getBody());
         assertEquals(true, response.getBody().get("success"));
         assertEquals(false, response.getBody().get("registered"));
-        verify(persistenceService).saveConfigurationFromConsumerToken(payload);
+        verify(persistenceService, never()).saveConfigurationFromConsumerToken(any());
         verify(registrationService, never()).markAsRegistered(any());
     }
 

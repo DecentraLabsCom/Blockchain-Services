@@ -129,7 +129,7 @@ class ProviderConfigurationControllerIntegrationTest {
             .andExpect(jsonPath("$.lockedFields[0]").value("institutionId"))
             .andExpect(jsonPath("$.config.providerOrganization").value("token.edu"));
 
-        verify(persistenceService).saveConfigurationFromToken(any(ProvisioningTokenPayload.class));
+        verify(persistenceService, never()).saveConfigurationFromToken(any(ProvisioningTokenPayload.class));
         verify(registrationService, never()).markAsRegistered(any());
     }
 
