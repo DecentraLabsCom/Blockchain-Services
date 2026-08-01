@@ -34,7 +34,6 @@ import org.web3j.abi.datatypes.Address;
 import org.web3j.abi.datatypes.Bool;
 import org.web3j.abi.datatypes.DynamicArray;
 import org.web3j.abi.datatypes.Function;
-import org.web3j.abi.datatypes.Type;
 import org.web3j.abi.datatypes.generated.Bytes32;
 import org.web3j.abi.datatypes.generated.Bytes4;
 import org.web3j.crypto.Hash;
@@ -165,7 +164,7 @@ public class ContractDeploymentVerifier implements ApplicationRunner {
         Map<String, Set<String>> facetSelectors = new LinkedHashMap<>();
         for (String facetAddress : facetAddresses) {
             String normalized = normalizeAddress(facetAddress);
-            List<Type> decoded = call(new Function(
+            List<?> decoded = call(new Function(
                 "facetFunctionSelectors",
                 List.of(new Address(normalized)),
                 List.of(new TypeReference<DynamicArray<Bytes4>>() {})
@@ -204,7 +203,7 @@ public class ContractDeploymentVerifier implements ApplicationRunner {
         return Numeric.toHexString(Hash.sha3(Numeric.hexStringToByteArray(code))).toLowerCase(Locale.ROOT);
     }
 
-    private List<Type> call(Function function) throws IOException {
+    private List<?> call(Function function) throws IOException {
         EthCall response = web3j.ethCall(
             Transaction.createEthCallTransaction(null, normalizeAddress(configuredAddress), FunctionEncoder.encode(function)),
             DefaultBlockParameterName.LATEST
@@ -219,22 +218,22 @@ public class ContractDeploymentVerifier implements ApplicationRunner {
         return FunctionReturnDecoder.decode(value, function.getOutputParameters());
     }
 
-    private static String decodeAddress(List<Type> decoded) {
+    private static String decodeAddress(List<?> decoded) {
         return normalizeAddress(((Address) decoded.get(0)).getValue());
     }
 
-    private static String decodeBytes32(List<Type> decoded) {
+    private static String decodeBytes32(List<?> decoded) {
         return Numeric.toHexString(((Bytes32) decoded.get(0)).getValue()).toLowerCase(Locale.ROOT);
     }
 
-    private static boolean decodeBool(List<Type> decoded) {
+    private static boolean decodeBool(List<?> decoded) {
         return ((Bool) decoded.get(0)).getValue();
     }
 
     @SuppressWarnings("unchecked")
-    private static List<String> decodeAddressArray(List<Type> decoded) {
+    private static List<String> decodeAddressArray(List<?> decoded) {
         DynamicArray<Address> addresses = (DynamicArray<Address>) decoded.get(0);
-        return addresses.getValue().stream().map(Address::getValue).toList();
+        return addresses.getValue().stream().map(address -> address.getValue()).toList();
     }
 
     private static String sha256(Resource resource) throws IOException {
@@ -328,7 +327,7 @@ public class ContractDeploymentVerifier implements ApplicationRunner {
         }
 
         Set<String> expectedFacetAddresses = manifest.facets().stream()
-            .map(FacetExpectation::address)
+            .map(facet -> facet.address())
             .map(ContractDeploymentVerifier::normalizeAddress)
             .collect(Collectors.toCollection(TreeSet::new));
         Set<String> actualFacetAddresses = snapshot.facetAddresses().stream()
@@ -347,7 +346,7 @@ public class ContractDeploymentVerifier implements ApplicationRunner {
                 fail("selector manifest contains duplicate facet " + facet.name());
             }
         }
-        Set<String> manifestFacetNames = manifest.facets().stream().map(FacetExpectation::name).collect(Collectors.toSet());
+        Set<String> manifestFacetNames = manifest.facets().stream().map(facet -> facet.name()).collect(Collectors.toSet());
         if (!manifestFacetNames.equals(expectedSelectorsByFacet.keySet())) {
             fail("selector manifest facets do not match the deployment manifest");
         }
