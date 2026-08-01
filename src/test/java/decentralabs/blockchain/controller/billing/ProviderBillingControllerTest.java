@@ -1,11 +1,13 @@
 package decentralabs.blockchain.controller.billing;
 
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import decentralabs.blockchain.domain.ProviderApproval;
 import decentralabs.blockchain.domain.ProviderInvoiceRecord;
 import decentralabs.blockchain.domain.ProviderNetworkMembership;
 import decentralabs.blockchain.exception.GlobalExceptionHandler;
@@ -126,5 +128,33 @@ class ProviderBillingControllerTest {
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.id").value(9))
             .andExpect(jsonPath("$.invoiceRef").value("INV-1"));
+    }
+
+    @Test
+    void approveProviderInvoice_doesNotAcceptActorFromBody() throws Exception {
+        ProviderApproval approval = ProviderApproval.builder()
+            .id(10L)
+            .invoiceRecordId(12L)
+            .approvedBy("0x2222222222222222222222222222222222222222")
+            .approvalRef("APPROVAL-1")
+            .eurAmount(new BigDecimal("25.00"))
+            .build();
+        when(providerSettlementService.approveInvoice(
+            eq(12L), eq("APPROVAL-1"), eq(new BigDecimal("25.00"))
+        )).thenReturn(approval);
+
+        mockMvc.perform(post("/billing/provider-receivables/invoices/12/approve")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {
+                      "approvedBy":"0x9999999999999999999999999999999999999999",
+                      "approvalRef":"APPROVAL-1",
+                      "eurAmount":"25.00"
+                    }
+                    """))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.approvedBy").value("0x2222222222222222222222222222222222222222"));
+
+        verify(providerSettlementService).approveInvoice(12L, "APPROVAL-1", new BigDecimal("25.00"));
     }
 }

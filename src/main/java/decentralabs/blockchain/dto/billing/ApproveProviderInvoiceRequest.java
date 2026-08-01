@@ -10,11 +10,7 @@ import lombok.Data;
 @Data
 public class ApproveProviderInvoiceRequest {
     @NotBlank
-    @Size(max = 42)
-    private String approvedBy;
-
-    @NotBlank
-    @Size(max = 64)
+    @Size(max = 256)
     private String approvalRef;
 
     @NotNull

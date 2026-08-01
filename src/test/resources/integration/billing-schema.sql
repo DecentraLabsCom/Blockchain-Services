@@ -145,6 +145,40 @@ CREATE TABLE IF NOT EXISTS provider_payouts (
     FOREIGN KEY (invoice_record_id) REFERENCES provider_invoice_records(id)
 );
 
+CREATE TABLE IF NOT EXISTS provider_settlement_operations (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    operation_key VARCHAR(255) NOT NULL UNIQUE,
+    action VARCHAR(16) NOT NULL,
+    status VARCHAR(16) NOT NULL DEFAULT 'PREPARED',
+    claim_id VARCHAR(128) NOT NULL,
+    claim_id_hash CHAR(66) NOT NULL,
+    invoice_record_id BIGINT NULL,
+    lab_id VARCHAR(128) NOT NULL,
+    provider_address VARCHAR(42) NOT NULL,
+    reservation_hash CHAR(66) NULL,
+    invoice_ref VARCHAR(256) NULL,
+    invoice_reference_hash CHAR(66) NULL,
+    approval_ref VARCHAR(256) NULL,
+    approval_reference_hash CHAR(66) NULL,
+    payment_ref VARCHAR(256) NULL,
+    payment_reference_hash CHAR(66) NULL,
+    payment_attestation VARCHAR(256) NULL,
+    payment_attestation_hash CHAR(66) NULL,
+    eur_amount DECIMAL(18,2) NULL,
+    credit_amount DECIMAL(24,7) NULL,
+    bank_ref VARCHAR(256) NULL,
+    eurc_tx_hash VARCHAR(80) NULL,
+    usdc_tx_hash VARCHAR(80) NULL,
+    requested_by_principal VARCHAR(255) NULL,
+    transaction_hash VARCHAR(80) NULL,
+    block_number DECIMAL(65,0) NULL,
+    block_hash VARCHAR(80) NULL,
+    chain_actor VARCHAR(42) NULL,
+    last_error VARCHAR(1000) NULL,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
 -- ============================================================================
 -- E. MiCA compliance monitoring
 -- ============================================================================

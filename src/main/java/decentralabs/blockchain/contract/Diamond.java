@@ -36,6 +36,53 @@ import org.web3j.utils.Numeric;
 public class Diamond extends Contract {
     
     public static final String BINARY = "";  // Not needed for already deployed contracts
+
+    /** Read-only audit projection of a provider settlement claim. */
+    public static class ProviderSettlementClaim {
+        public BigInteger labId;
+        public BigInteger amount;
+        public BigInteger status;
+        public byte[] reservationsHash;
+        public byte[] invoiceReferenceHash;
+        public byte[] paymentReferenceHash;
+        public byte[] paymentAttestationHash;
+        public String submittedBy;
+        public String approvedBy;
+        public String paidBy;
+        public BigInteger submittedAt;
+        public BigInteger approvedAt;
+        public BigInteger paidAt;
+
+        public ProviderSettlementClaim(
+            BigInteger labId,
+            BigInteger amount,
+            BigInteger status,
+            byte[] reservationsHash,
+            byte[] invoiceReferenceHash,
+            byte[] paymentReferenceHash,
+            byte[] paymentAttestationHash,
+            String submittedBy,
+            String approvedBy,
+            String paidBy,
+            BigInteger submittedAt,
+            BigInteger approvedAt,
+            BigInteger paidAt
+        ) {
+            this.labId = labId;
+            this.amount = amount;
+            this.status = status;
+            this.reservationsHash = reservationsHash;
+            this.invoiceReferenceHash = invoiceReferenceHash;
+            this.paymentReferenceHash = paymentReferenceHash;
+            this.paymentAttestationHash = paymentAttestationHash;
+            this.submittedBy = submittedBy;
+            this.approvedBy = approvedBy;
+            this.paidBy = paidBy;
+            this.submittedAt = submittedAt;
+            this.approvedAt = approvedAt;
+            this.paidAt = paidAt;
+        }
+    }
     
     protected Diamond(String contractAddress, Web3j web3j, Credentials credentials,
                      ContractGasProvider contractGasProvider) {
@@ -1108,6 +1155,84 @@ public class Diamond extends Contract {
             Arrays.asList(new Uint256(labId), new Uint256(maxBatch)),
             List.of()
         );
+    }
+
+    public RemoteFunctionCall<TransactionReceipt> submitProviderSettlementClaim(
+        byte[] claimId,
+        BigInteger labId,
+        BigInteger amount,
+        byte[] reservationsHash,
+        byte[] invoiceReferenceHash
+    ) {
+        return executeRemoteCallTransaction(
+            submitProviderSettlementClaimFunction(claimId, labId, amount, reservationsHash, invoiceReferenceHash)
+        );
+    }
+
+    public RemoteFunctionCall<TransactionReceipt> approveProviderSettlementClaim(
+        byte[] claimId,
+        byte[] approvalReferenceHash
+    ) {
+        return executeRemoteCallTransaction(approveProviderSettlementClaimFunction(claimId, approvalReferenceHash));
+    }
+
+    public RemoteFunctionCall<TransactionReceipt> recordProviderSettlementClaimPayment(
+        byte[] claimId,
+        byte[] paymentReferenceHash,
+        byte[] paymentAttestationHash
+    ) {
+        return executeRemoteCallTransaction(
+            recordProviderSettlementClaimPaymentFunction(claimId, paymentReferenceHash, paymentAttestationHash)
+        );
+    }
+
+    public RemoteFunctionCall<ProviderSettlementClaim> getProviderSettlementClaim(byte[] claimId) {
+        final Function function = new Function(
+            "getProviderSettlementClaim",
+            Arrays.asList(new Bytes32(claimId)),
+            Arrays.asList(
+                new TypeReference<Uint256>() {},
+                new TypeReference<Uint256>() {},
+                new TypeReference<Uint8>() {},
+                new TypeReference<Bytes32>() {},
+                new TypeReference<Bytes32>() {},
+                new TypeReference<Bytes32>() {},
+                new TypeReference<Bytes32>() {},
+                new TypeReference<Address>() {},
+                new TypeReference<Address>() {},
+                new TypeReference<Address>() {},
+                new TypeReference<Uint64>() {},
+                new TypeReference<Uint64>() {},
+                new TypeReference<Uint64>() {}
+            )
+        );
+        return new RemoteFunctionCall<>(function, () -> {
+            List<?> results = executeCallMultipleValueReturn(function);
+            return new ProviderSettlementClaim(
+                ((Uint256) results.get(0)).getValue(),
+                ((Uint256) results.get(1)).getValue(),
+                ((Uint8) results.get(2)).getValue(),
+                ((Bytes32) results.get(3)).getValue(),
+                ((Bytes32) results.get(4)).getValue(),
+                ((Bytes32) results.get(5)).getValue(),
+                ((Bytes32) results.get(6)).getValue(),
+                ((Address) results.get(7)).getValue(),
+                ((Address) results.get(8)).getValue(),
+                ((Address) results.get(9)).getValue(),
+                ((Uint64) results.get(10)).getValue(),
+                ((Uint64) results.get(11)).getValue(),
+                ((Uint64) results.get(12)).getValue()
+            );
+        });
+    }
+
+    public RemoteFunctionCall<byte[]> getProviderSettlementClaimApprovalReferenceHash(byte[] claimId) {
+        final Function function = new Function(
+            "getProviderSettlementClaimApprovalReferenceHash",
+            Arrays.asList(new Bytes32(claimId)),
+            Arrays.asList(new TypeReference<Bytes32>() {})
+        );
+        return new RemoteFunctionCall<>(function, () -> ((Bytes32) executeCallSingleValueReturn(function)).getValue());
     }
 
     public static Function submitProviderSettlementClaimFunction(

@@ -9,14 +9,6 @@ import lombok.Data;
 
 @Data
 public class RecordProviderPayoutRequest {
-    @NotBlank
-    @Size(max = 42)
-    private String providerAddress;
-
-    @NotBlank
-    @Size(max = 42)
-    private String paidBy;
-
     @NotNull
     @DecimalMin(value = "0.0", inclusive = false)
     private BigDecimal eurAmount;

@@ -41,6 +41,7 @@ import static org.assertj.core.api.Assertions.*;
 @ExtendWith(SpringExtension.class)
 @ContextConfiguration(classes = BillingDomainIntegrationTest.TestConfig.class)
 @Sql("/integration/billing-schema.sql")
+@SuppressWarnings("deprecation")
 @DisplayName("Billing domain – integration tests")
 class BillingDomainIntegrationTest {
 
@@ -110,6 +111,8 @@ class BillingDomainIntegrationTest {
 
     private final ProviderSettlementService providerSettlementService;
 
+    private final ProviderSettlementPersistenceService providerSettlementPersistenceService;
+
     private final CreditProjectionService creditProjectionService;
 
     private final JdbcTemplate jdbcTemplate;
@@ -117,10 +120,12 @@ class BillingDomainIntegrationTest {
     @Autowired
     BillingDomainIntegrationTest(FundingOrderService fundingOrderService,
                                  ProviderSettlementService providerSettlementService,
+                                 ProviderSettlementPersistenceService providerSettlementPersistenceService,
                                  CreditProjectionService creditProjectionService,
                                  JdbcTemplate jdbcTemplate) {
         this.fundingOrderService = fundingOrderService;
         this.providerSettlementService = providerSettlementService;
+        this.providerSettlementPersistenceService = providerSettlementPersistenceService;
         this.creditProjectionService = creditProjectionService;
         this.jdbcTemplate = jdbcTemplate;
     }
@@ -128,6 +133,7 @@ class BillingDomainIntegrationTest {
     @BeforeEach
     void cleanTables() {
         // Truncate in reverse FK order
+        jdbcTemplate.execute("DELETE FROM provider_settlement_operations");
         jdbcTemplate.execute("DELETE FROM provider_approvals");
         jdbcTemplate.execute("DELETE FROM provider_payouts");
         jdbcTemplate.execute("DELETE FROM provider_invoice_records");
@@ -249,6 +255,48 @@ class BillingDomainIntegrationTest {
                 new BigDecimal("200.00"));
 
         assertThat(approval.getApprovalRef()).isEqualTo("APPR-XYZ-9999");
+    }
+
+    @Test
+    @DisplayName("settlement domain outbox is idempotent on the shared operation key")
+    void settlementOperationOutboxIsIdempotent() {
+        ProviderSettlementOperation requested = ProviderSettlementOperation.builder()
+            .operationKey("provider-settlement:submit:0x" + "aa".repeat(32))
+            .action(ProviderSettlementOperation.Action.SUBMIT)
+            .status(ProviderSettlementOperation.Status.PREPARED)
+            .claimId("CLAIM-OUTBOX-1")
+            .claimIdHash("0x" + "aa".repeat(32))
+            .labId("1")
+            .providerAddress("0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb0001")
+            .reservationHash("0x" + "11".repeat(32))
+            .invoiceRef("INV-OUTBOX-1")
+            .invoiceReferenceHash("0x" + "bb".repeat(32))
+            .eurAmount(new BigDecimal("10.00"))
+            .creditAmount(new BigDecimal("100.0000000"))
+            .requestedByPrincipal("internal")
+            .build();
+
+        ProviderSettlementOperation first = providerSettlementPersistenceService.createOrLoadSettlementOperation(requested);
+        ProviderSettlementOperation retry = providerSettlementPersistenceService.createOrLoadSettlementOperation(
+            ProviderSettlementOperation.builder()
+                .operationKey(requested.getOperationKey())
+                .action(requested.getAction())
+                .status(requested.getStatus())
+                .claimId(requested.getClaimId())
+                .claimIdHash(requested.getClaimIdHash())
+                .labId(requested.getLabId())
+                .providerAddress(requested.getProviderAddress())
+                .reservationHash(requested.getReservationHash())
+                .invoiceRef(requested.getInvoiceRef())
+                .invoiceReferenceHash(requested.getInvoiceReferenceHash())
+                .eurAmount(requested.getEurAmount())
+                .creditAmount(requested.getCreditAmount())
+                .requestedByPrincipal("different-http-retry-principal")
+                .build()
+        );
+
+        assertThat(retry.getId()).isEqualTo(first.getId());
+        assertThat(retry.getStatus()).isEqualTo(ProviderSettlementOperation.Status.PREPARED);
     }
 
     @Test

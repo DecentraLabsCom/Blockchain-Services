@@ -114,10 +114,8 @@ public class ProviderBillingController {
         @PathVariable long invoiceId,
         @Valid @RequestBody ApproveProviderInvoiceRequest request
         ) {
-            EthereumAddressValidator.validate(request.getApprovedBy(), "approvedBy");
         ProviderApproval approval = providerSettlementService.approveInvoice(
             invoiceId,
-            request.getApprovedBy(),
             request.getApprovalRef(),
             request.getEurAmount()
         );
@@ -129,13 +127,9 @@ public class ProviderBillingController {
         @PathVariable long invoiceId,
         @Valid @RequestBody RecordProviderPayoutRequest request
     ) {
-        EthereumAddressValidator.validate(request.getProviderAddress(), "providerAddress");
-        EthereumAddressValidator.validate(request.getPaidBy(), "paidBy");
-        BigDecimal creditAmount = request.getCreditAmount() != null ? request.getCreditAmount() : BigDecimal.ZERO;
+        BigDecimal creditAmount = request.getCreditAmount();
         ProviderPayout payout = providerSettlementService.recordPayout(
             invoiceId,
-            request.getProviderAddress(),
-            request.getPaidBy(),
             request.getEurAmount(),
             creditAmount,
             request.getPaymentRef(),

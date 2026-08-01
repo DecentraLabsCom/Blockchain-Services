@@ -177,14 +177,14 @@ preview total; grace-pending reservations are reported separately.
 ### Provider settlement claims
 
 Provider network and receivable operations are under `/billing/provider-network`
-and `/billing/provider-receivables`. Provider settlement is a local, auditable
-claim lifecycle rather than an implicit status switch:
+and `/billing/provider-receivables`. The Diamond is the canonical settlement
+ledger; SQL is a receipt-backed projection and durable reconciliation outbox:
 
 ```mermaid
 stateDiagram-v2
-    [*] --> SUBMITTED: invoice with claimId + reservationHash + invoiceRef
-    SUBMITTED --> APPROVED: matching EUR approval + approvalRef
-    APPROVED --> PAID: matching EUR payment + paymentRef + attestation
+    [*] --> SUBMITTED: submitProviderSettlementClaim + receipt
+    SUBMITTED --> APPROVED: approveProviderSettlementClaim + receipt
+    APPROVED --> PAID: recordProviderSettlementClaimPayment + receipt
 ```
 
 An invoice requires a unique `claimId`, non-zero `reservationHash`, unique
@@ -193,7 +193,11 @@ only from `SUBMITTED`; its EUR amount must exactly match the invoice and its
 `approvalRef` must be unique. Payment is allowed only from `APPROVED`; its
 provider and EUR amount must match the claim and it requires unique
 `paymentRef` plus a non-empty `paymentAttestation`. `bankRef`, `eurcTxHash` and
-`usdcTxHash` are optional supplementary evidence.
+`usdcTxHash` are optional supplementary evidence. `approvedBy` and `paidBy`
+are derived from the transaction sender and are never accepted from the HTTP
+body. Human references are hashed with the shared UTF-8/keccak encoding before
+being sent on-chain. Retries reuse the same operation key and transaction
+outbox row; they must not create a second claim.
 
 Use the controller DTOs or dashboard for JSON field names. A client must not
 retry a new claim/payment reference after a lost response; first query the

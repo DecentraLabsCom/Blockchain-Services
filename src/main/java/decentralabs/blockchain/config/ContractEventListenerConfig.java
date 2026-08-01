@@ -7,6 +7,8 @@ import decentralabs.blockchain.notification.ReservationNotificationData;
 import decentralabs.blockchain.notification.ReservationNotificationService;
 import decentralabs.blockchain.service.health.LabMetadataService;
 import decentralabs.blockchain.service.persistence.ReservationPersistenceService;
+import decentralabs.blockchain.domain.ProviderSettlementOperation;
+import decentralabs.blockchain.service.persistence.ProviderSettlementPersistenceService;
 import decentralabs.blockchain.service.intent.IntentPersistenceService;
 import decentralabs.blockchain.service.intent.IntentService;
 import decentralabs.blockchain.service.provider.DistributedReservationAvailabilityLockService;
@@ -73,6 +75,9 @@ public class ContractEventListenerConfig {
     private static final String PROVIDER_ADDED = "ProviderAdded";
     private static final String LAB_INTENT_PROCESSED = "LabIntentProcessed";
     private static final String RESERVATION_INTENT_PROCESSED = "ReservationIntentProcessed";
+    private static final String PROVIDER_SETTLEMENT_CLAIM_SUBMITTED = "ProviderSettlementClaimSubmitted";
+    private static final String PROVIDER_SETTLEMENT_CLAIM_APPROVED = "ProviderSettlementClaimApproved";
+    private static final String PROVIDER_SETTLEMENT_CLAIM_PAID = "ProviderSettlementClaimPaid";
     private static final String MISSING_PUC_PREFIX = "Missing PUC for reservation ";
     private static final long RESERVATION_RETRY_BACKOFF_MS = 120_000L;
     private static final BigInteger PROVIDER_NOT_ELIGIBLE_REASON = BigInteger.valueOf(2);
@@ -180,18 +185,52 @@ public class ContractEventListenerConfig {
         )
     );
 
+    private static final Event PROVIDER_SETTLEMENT_CLAIM_SUBMITTED_EVENT = new Event(
+        PROVIDER_SETTLEMENT_CLAIM_SUBMITTED,
+        Arrays.<TypeReference<?>>asList(
+            new TypeReference<Bytes32>(true) {},
+            new TypeReference<Uint256>(true) {},
+            new TypeReference<Uint256>() {},
+            new TypeReference<Bytes32>() {},
+            new TypeReference<Bytes32>() {},
+            new TypeReference<Address>(true) {}
+        )
+    );
+
+    private static final Event PROVIDER_SETTLEMENT_CLAIM_APPROVED_EVENT = new Event(
+        PROVIDER_SETTLEMENT_CLAIM_APPROVED,
+        Arrays.<TypeReference<?>>asList(
+            new TypeReference<Bytes32>(true) {},
+            new TypeReference<Bytes32>() {},
+            new TypeReference<Address>(true) {}
+        )
+    );
+
+    private static final Event PROVIDER_SETTLEMENT_CLAIM_PAID_EVENT = new Event(
+        PROVIDER_SETTLEMENT_CLAIM_PAID,
+        Arrays.<TypeReference<?>>asList(
+            new TypeReference<Bytes32>(true) {},
+            new TypeReference<Bytes32>(true) {},
+            new TypeReference<Bytes32>() {},
+            new TypeReference<Address>(true) {}
+        )
+    );
+
     private static final String ACTION_REQUESTED = "requested";
 
-    private static final Map<String, Event> SUPPORTED_EVENTS = Map.of(
-        RESERVATION_REQUESTED, RESERVATION_REQUESTED_EVENT,
-        RESERVATION_CONFIRMED, RESERVATION_CONFIRMED_EVENT,
-        RESERVATION_DENIED, RESERVATION_DENIED_EVENT,
-        RESERVATION_CANCELED, RESERVATION_CANCELED_EVENT,
-        BOOKING_CANCELED, BOOKING_CANCELED_EVENT,
-        PROVIDER_BOOKING_CANCELED, PROVIDER_BOOKING_CANCELED_EVENT,
-        PROVIDER_ADDED, PROVIDER_ADDED_EVENT,
-        LAB_INTENT_PROCESSED, LAB_INTENT_PROCESSED_EVENT,
-        RESERVATION_INTENT_PROCESSED, RESERVATION_INTENT_PROCESSED_EVENT
+    private static final Map<String, Event> SUPPORTED_EVENTS = Map.ofEntries(
+        Map.entry(RESERVATION_REQUESTED, RESERVATION_REQUESTED_EVENT),
+        Map.entry(RESERVATION_CONFIRMED, RESERVATION_CONFIRMED_EVENT),
+        Map.entry(RESERVATION_DENIED, RESERVATION_DENIED_EVENT),
+        Map.entry(RESERVATION_CANCELED, RESERVATION_CANCELED_EVENT),
+        Map.entry(BOOKING_CANCELED, BOOKING_CANCELED_EVENT),
+        Map.entry(PROVIDER_BOOKING_CANCELED, PROVIDER_BOOKING_CANCELED_EVENT),
+        Map.entry(PROVIDER_ADDED, PROVIDER_ADDED_EVENT),
+        Map.entry(LAB_INTENT_PROCESSED, LAB_INTENT_PROCESSED_EVENT),
+        Map.entry(RESERVATION_INTENT_PROCESSED, RESERVATION_INTENT_PROCESSED_EVENT),
+        Map.entry(PROVIDER_SETTLEMENT_CLAIM_SUBMITTED, PROVIDER_SETTLEMENT_CLAIM_SUBMITTED_EVENT),
+        Map.entry(PROVIDER_SETTLEMENT_CLAIM_APPROVED, PROVIDER_SETTLEMENT_CLAIM_APPROVED_EVENT),
+        Map.entry(PROVIDER_SETTLEMENT_CLAIM_PAID, PROVIDER_SETTLEMENT_CLAIM_PAID_EVENT)
     );
 
     private final WalletService walletService;
@@ -200,6 +239,7 @@ public class ContractEventListenerConfig {
     private final ReservationPersistenceService reservationPersistenceService;
     private final IntentPersistenceService intentPersistenceService;
     private final IntentService intentService;
+    private final ProviderSettlementPersistenceService providerSettlementPersistenceService;
 
     @Value("${contract.address}")
     private String diamondContractAddress;
@@ -471,8 +511,56 @@ public class ContractEventListenerConfig {
             case PROVIDER_ADDED -> handleProviderAdded(eventValues, eventLog);
             case LAB_INTENT_PROCESSED -> handleLabIntentProcessed(eventValues, eventLog);
             case RESERVATION_INTENT_PROCESSED -> handleReservationIntentProcessed(eventValues, eventLog);
+            case PROVIDER_SETTLEMENT_CLAIM_SUBMITTED -> handleProviderSettlementClaimSubmitted(eventValues, eventLog);
+            case PROVIDER_SETTLEMENT_CLAIM_APPROVED -> handleProviderSettlementClaimApproved(eventValues, eventLog);
+            case PROVIDER_SETTLEMENT_CLAIM_PAID -> handleProviderSettlementClaimPaid(eventValues, eventLog);
             default -> throw new IllegalArgumentException("Unhandled event type: " + eventName);
         }
+    }
+
+    private void handleProviderSettlementClaimSubmitted(EventValues values, Log eventLog) {
+        String claimId = toHex((Bytes32) values.getIndexedValues().get(0));
+        String actor = ((Address) values.getIndexedValues().get(2)).getValue();
+        String invoiceHash = toHex((Bytes32) values.getNonIndexedValues().get(2));
+        providerSettlementPersistenceService.markSettlementEvent(
+            ProviderSettlementOperation.Action.SUBMIT,
+            claimId,
+            invoiceHash,
+            eventLog.getTransactionHash(),
+            eventLog.getBlockNumber(),
+            eventLog.getBlockHash(),
+            actor
+        );
+    }
+
+    private void handleProviderSettlementClaimApproved(EventValues values, Log eventLog) {
+        String claimId = toHex((Bytes32) values.getIndexedValues().get(0));
+        String approvalHash = toHex((Bytes32) values.getNonIndexedValues().get(0));
+        String actor = ((Address) values.getIndexedValues().get(1)).getValue();
+        providerSettlementPersistenceService.markSettlementEvent(
+            ProviderSettlementOperation.Action.APPROVE,
+            claimId,
+            approvalHash,
+            eventLog.getTransactionHash(),
+            eventLog.getBlockNumber(),
+            eventLog.getBlockHash(),
+            actor
+        );
+    }
+
+    private void handleProviderSettlementClaimPaid(EventValues values, Log eventLog) {
+        String claimId = toHex((Bytes32) values.getIndexedValues().get(0));
+        String paymentHash = toHex((Bytes32) values.getIndexedValues().get(1));
+        String actor = ((Address) values.getIndexedValues().get(2)).getValue();
+        providerSettlementPersistenceService.markSettlementEvent(
+            ProviderSettlementOperation.Action.PAY,
+            claimId,
+            paymentHash,
+            eventLog.getTransactionHash(),
+            eventLog.getBlockNumber(),
+            eventLog.getBlockHash(),
+            actor
+        );
     }
 
     private void handleReservationRequested(EventValues eventValues, Log eventLog) {
