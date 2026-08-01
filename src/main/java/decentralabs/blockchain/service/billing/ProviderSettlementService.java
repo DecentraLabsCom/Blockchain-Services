@@ -116,7 +116,7 @@ public class ProviderSettlementService {
     @Transactional
     public ProviderApproval approveInvoice(long invoiceId, String approvalRef, BigDecimal eurAmount) {
         if (chainClient == null) {
-            throw new IllegalStateException("On-chain settlement client is not configured");
+            return approveInvoiceLocally(invoiceId, approvalRef, eurAmount);
         }
         ProviderInvoiceRecord invoice = invoice(invoiceId);
         validateApproval(invoice, approvalRef, eurAmount);
@@ -175,7 +175,10 @@ public class ProviderSettlementService {
         String usdcTxHash
     ) {
         if (chainClient == null) {
-            throw new IllegalStateException("On-chain settlement client is not configured");
+            return recordPayoutLocally(
+                invoiceId, eurAmount, creditAmount, paymentRef, paymentAttestation,
+                bankRef, eurcTxHash, usdcTxHash
+            );
         }
         ProviderInvoiceRecord invoice = invoice(invoiceId);
         validatePayment(invoice, eurAmount, paymentRef, paymentAttestation);
@@ -228,29 +231,52 @@ public class ProviderSettlementService {
         }
     }
 
-    /**
-     * Old call shapes are retained only for source-level callers during the
-     * migration; the HTTP controller never forwards body-declared actors.
-     */
-    @Deprecated
-    public ProviderApproval approveInvoice(long invoiceId, String ignoredApprovedBy, String approvalRef, BigDecimal eurAmount) {
-        if (chainClient != null) return approveInvoice(invoiceId, approvalRef, eurAmount);
+    private ProviderApproval approveInvoiceLocally(long invoiceId, String approvalRef, BigDecimal eurAmount) {
         ProviderInvoiceRecord invoice = invoice(invoiceId);
         validateApproval(invoice, approvalRef, eurAmount);
         if (persistence.existsApprovalRef(approvalRef.trim())) throw new IllegalArgumentException("Approval reference already used");
-        ProviderApproval approval = persistence.createApproval(ProviderApproval.builder().invoiceRecordId(invoiceId).approvedBy(ignoredApprovedBy.toLowerCase()).approvalRef(approvalRef.trim()).eurAmount(eurAmount).build());
+        ProviderApproval approval = persistence.createApproval(
+            ProviderApproval.builder()
+                .invoiceRecordId(invoiceId)
+                .approvedBy(currentPrincipal())
+                .approvalRef(approvalRef.trim())
+                .eurAmount(eurAmount)
+                .build()
+        );
         persistence.updateInvoiceStatus(invoiceId, ProviderInvoiceRecord.Status.APPROVED);
         return approval;
     }
 
-    @Deprecated
-    public ProviderPayout recordPayout(long invoiceId, String providerAddress, String ignoredPaidBy, BigDecimal eurAmount, BigDecimal creditAmount, String paymentRef, String paymentAttestation, String bankRef, String eurcTxHash, String usdcTxHash) {
-        if (chainClient != null) return recordPayout(invoiceId, eurAmount, creditAmount, paymentRef, paymentAttestation, bankRef, eurcTxHash, usdcTxHash);
+    private ProviderPayout recordPayoutLocally(
+        long invoiceId,
+        BigDecimal eurAmount,
+        BigDecimal creditAmount,
+        String paymentRef,
+        String paymentAttestation,
+        String bankRef,
+        String eurcTxHash,
+        String usdcTxHash
+    ) {
         ProviderInvoiceRecord invoice = invoice(invoiceId);
         validatePayment(invoice, eurAmount, paymentRef, paymentAttestation);
-        if (!providerAddress.equalsIgnoreCase(invoice.getProviderAddress())) throw new IllegalArgumentException("Payout provider does not match claim");
+        BigDecimal canonicalCredits = canonicalCreditAmount(invoice.getEurAmount(), creditAmount);
         if (persistence.existsPaymentRef(paymentRef.trim())) throw new IllegalArgumentException("Payment reference already used");
-        ProviderPayout payout = persistence.createPayout(ProviderPayout.builder().invoiceRecordId(invoiceId).labId(invoice.getLabId()).providerAddress(providerAddress.toLowerCase()).claimId(invoice.getClaimId()).eurAmount(eurAmount).creditAmount(creditAmount != null ? creditAmount : BigDecimal.ZERO).paidBy(ignoredPaidBy.toLowerCase()).paymentRef(paymentRef.trim()).paymentAttestation(paymentAttestation.trim()).bankRef(bankRef).eurcTxHash(eurcTxHash).usdcTxHash(usdcTxHash).build());
+        ProviderPayout payout = persistence.createPayout(
+            ProviderPayout.builder()
+                .invoiceRecordId(invoiceId)
+                .labId(invoice.getLabId())
+                .providerAddress(invoice.getProviderAddress())
+                .claimId(invoice.getClaimId())
+                .eurAmount(eurAmount)
+                .creditAmount(canonicalCredits)
+                .paidBy(currentPrincipal())
+                .paymentRef(paymentRef.trim())
+                .paymentAttestation(paymentAttestation.trim())
+                .bankRef(bankRef)
+                .eurcTxHash(eurcTxHash)
+                .usdcTxHash(usdcTxHash)
+                .build()
+        );
         persistence.updateInvoiceStatus(invoiceId, ProviderInvoiceRecord.Status.PAID);
         return payout;
     }

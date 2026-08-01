@@ -41,7 +41,6 @@ import static org.assertj.core.api.Assertions.*;
 @ExtendWith(SpringExtension.class)
 @ContextConfiguration(classes = BillingDomainIntegrationTest.TestConfig.class)
 @Sql("/integration/billing-schema.sql")
-@SuppressWarnings("deprecation")
 @DisplayName("Billing domain – integration tests")
 class BillingDomainIntegrationTest {
 
@@ -223,12 +222,11 @@ class BillingDomainIntegrationTest {
 
         ProviderApproval approval = providerSettlementService.approveInvoice(
                 record.getId(),
-                "0xcccccccccccccccccccccccccccccccccccc0001",
                 "APPROVAL-2026-0042",
                 new BigDecimal("800.00"));
 
         assertThat(approval.getApprovalRef()).isEqualTo("APPROVAL-2026-0042");
-        assertThat(approval.getApprovedBy()).isEqualTo("0xcccccccccccccccccccccccccccccccccccc0001");
+        assertThat(approval.getApprovedBy()).isEqualTo("local-internal");
 
         ProviderInvoiceRecord reloaded = providerSettlementService
                 .findInvoicesByProvider("0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb0001")
@@ -250,7 +248,6 @@ class BillingDomainIntegrationTest {
 
         ProviderApproval approval = providerSettlementService.approveInvoice(
                 record.getId(),
-                "0xcccccccccccccccccccccccccccccccccccc0002",
                 "APPR-XYZ-9999",
                 new BigDecimal("200.00"));
 
@@ -324,7 +321,6 @@ class BillingDomainIntegrationTest {
 
         providerSettlementService.approveInvoice(
             record.getId(),
-            "0xcccccccccccccccccccccccccccccccccccc0007",
             "APPR-UNIQUE-REF",
             new BigDecimal("30.00"));
 
@@ -338,7 +334,6 @@ class BillingDomainIntegrationTest {
             null);
         assertThatThrownBy(() -> providerSettlementService.approveInvoice(
             other.getId(),
-            "0xcccccccccccccccccccccccccccccccccccc0009",
             "APPR-UNIQUE-REF",
             new BigDecimal("30.00")))
             .isInstanceOf(IllegalArgumentException.class)
@@ -359,7 +354,6 @@ class BillingDomainIntegrationTest {
 
         assertThatThrownBy(() -> providerSettlementService.approveInvoice(
                 record.getId(),
-                "0xcccccccccccccccccccccccccccccccccccc0003",
                 null,
                 new BigDecimal("50.00")))
                 .isInstanceOf(IllegalArgumentException.class)
@@ -380,13 +374,11 @@ class BillingDomainIntegrationTest {
 
         providerSettlementService.approveInvoice(
                 record.getId(),
-                "0xcccccccccccccccccccccccccccccccccccc0004",
                 "APPR-001",
                 new BigDecimal("100.00"));
 
         assertThatThrownBy(() -> providerSettlementService.approveInvoice(
                 record.getId(),
-                "0xcccccccccccccccccccccccccccccccccccc0004",
                 "APPR-002",
                 new BigDecimal("100.00")))
                 .isInstanceOf(IllegalStateException.class)
@@ -432,16 +424,13 @@ class BillingDomainIntegrationTest {
                 null);
         providerSettlementService.approveInvoice(
                 record.getId(),
-                "0xcccccccccccccccccccccccccccccccccccc0006",
                 "APPR-PAYMENT-PROOF",
                 new BigDecimal("10.00"));
 
         assertThatThrownBy(() -> providerSettlementService.recordPayout(
                 record.getId(),
-                "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb0006",
-                "0xcccccccccccccccccccccccccccccccccccc0006",
                 new BigDecimal("10.00"),
-                BigDecimal.ZERO,
+                new BigDecimal("100.0"),
                 "PAY-MISSING-ATTESTATION",
                 "",
                 "BANK-1",
@@ -452,10 +441,8 @@ class BillingDomainIntegrationTest {
 
         providerSettlementService.recordPayout(
                 record.getId(),
-                "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb0006",
-                "0xcccccccccccccccccccccccccccccccccccc0006",
                 new BigDecimal("10.00"),
-                BigDecimal.ZERO,
+                new BigDecimal("100.0"),
                 "PAY-UNIQUE-001",
                 "attestation:PAY-UNIQUE-001",
                 "BANK-1",
@@ -477,16 +464,13 @@ class BillingDomainIntegrationTest {
                 null);
         providerSettlementService.approveInvoice(
                 other.getId(),
-                "0xcccccccccccccccccccccccccccccccccccc0007",
                 "APPR-PAYMENT-DUPLICATE",
                 new BigDecimal("10.00"));
 
         assertThatThrownBy(() -> providerSettlementService.recordPayout(
                 other.getId(),
-                "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb0007",
-                "0xcccccccccccccccccccccccccccccccccccc0007",
                 new BigDecimal("10.00"),
-                BigDecimal.ZERO,
+                new BigDecimal("100.0"),
                 "PAY-UNIQUE-001",
                 "attestation:PAY-UNIQUE-001",
                 "BANK-2",
@@ -578,12 +562,12 @@ class BillingDomainIntegrationTest {
 
             // 8. Approve payout
             ProviderApproval approval = providerSettlementService.approveInvoice(
-                    provInvoice.getId(), ADMIN, "APPR-E2E-001", new BigDecimal("20.00"));
+                    provInvoice.getId(), "APPR-E2E-001", new BigDecimal("20.00"));
             assertThat(approval.getApprovalRef()).isEqualTo("APPR-E2E-001");
 
             // 9. Execute payout
             providerSettlementService.recordPayout(
-                    provInvoice.getId(), PROVIDER, ADMIN, new BigDecimal("20.00"), new BigDecimal("200.0"),
+                    provInvoice.getId(), new BigDecimal("20.00"), new BigDecimal("200.0"),
                     "PAY-E2E-001", "attestation:E2E-001", "BANK-E2E-001", null, null);
 
             // Verify full audit trail — 3 movements: MINT, LOCK, CAPTURE

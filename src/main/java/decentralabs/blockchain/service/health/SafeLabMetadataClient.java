@@ -118,7 +118,8 @@ public class SafeLabMetadataClient {
             }
 
             URI current = initialUri;
-            for (int redirect = 0; redirect <= MAX_REDIRECTS; redirect++) {
+            int redirectCount = 0;
+            while (true) {
                 URI requestUri = current;
                 exactAllowedOrigin(requestUri, List.of(expectedOrigin));
                 List<InetAddress> addresses = resolveAndValidate(requestUri.getHost());
@@ -147,7 +148,7 @@ public class SafeLabMetadataClient {
 
                 try (Response response = client.newCall(request).execute()) {
                     if (response.isRedirect()) {
-                        if (redirect == MAX_REDIRECTS) {
+                        if (redirectCount >= MAX_REDIRECTS) {
                             throw new IOException("Metadata request exceeded the redirect limit");
                         }
                         String location = response.header("Location");
@@ -156,6 +157,7 @@ public class SafeLabMetadataClient {
                         }
                         URI redirected = parseUri(current.resolve(location).toString());
                         exactAllowedOrigin(redirected, List.of(expectedOrigin));
+                        redirectCount++;
                         current = redirected;
                         continue;
                     }
@@ -166,7 +168,6 @@ public class SafeLabMetadataClient {
                     return readBounded(response.body());
                 }
             }
-            throw new IOException("Metadata request exceeded the redirect limit");
         } catch (InterruptedException ex) {
             Thread.currentThread().interrupt();
             throw new IOException("Metadata fetch was interrupted", ex);
