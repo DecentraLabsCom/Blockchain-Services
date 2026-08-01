@@ -159,8 +159,7 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(HttpMessageNotReadableException.class)
     @ResponseStatus(HttpStatus.BAD_REQUEST)
-    public ResponseEntity<Map<String, Object>> handleUnreadableRequestBody(
-            HttpMessageNotReadableException ex) {
+    public ResponseEntity<Map<String, Object>> handleUnreadableRequestBody() {
         Map<String, Object> response = new HashMap<>();
         response.put("success", false);
         response.put("message", "Request body is invalid");
