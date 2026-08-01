@@ -268,7 +268,7 @@ class BillingDomainIntegrationTest {
             .claimIdHash("0x" + "aa".repeat(32))
             .labId("1")
             .providerAddress("0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb0001")
-            .reservationHash("0x" + "11".repeat(32))
+            .batchId("0x" + "11".repeat(32))
             .invoiceRef("INV-OUTBOX-1")
             .invoiceReferenceHash("0x" + "bb".repeat(32))
             .eurAmount(new BigDecimal("10.00"))
@@ -286,7 +286,7 @@ class BillingDomainIntegrationTest {
                 .claimIdHash(requested.getClaimIdHash())
                 .labId(requested.getLabId())
                 .providerAddress(requested.getProviderAddress())
-                .reservationHash(requested.getReservationHash())
+                .batchId(requested.getBatchId())
                 .invoiceRef(requested.getInvoiceRef())
                 .invoiceReferenceHash(requested.getInvoiceReferenceHash())
                 .eurAmount(requested.getEurAmount())
@@ -394,7 +394,7 @@ class BillingDomainIntegrationTest {
     }
 
     @Test
-    @DisplayName("claims require a stable claim id and reservation-set hash")
+    @DisplayName("claims require a stable claim id and settlement batch id")
     void claimReferencesAreMandatory() {
         assertThatThrownBy(() -> providerSettlementService.submitInvoice(
                 "5",
@@ -416,7 +416,7 @@ class BillingDomainIntegrationTest {
                 new BigDecimal("10.00"),
                 null))
                 .isInstanceOf(IllegalArgumentException.class)
-                .hasMessageContaining("Reservation hash required");
+                .hasMessageContaining("Settlement batch ID required");
     }
 
     @Test

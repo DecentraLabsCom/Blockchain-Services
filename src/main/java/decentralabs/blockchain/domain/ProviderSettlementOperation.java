@@ -27,7 +27,7 @@ public class ProviderSettlementOperation {
     private Long invoiceRecordId;
     private String labId;
     private String providerAddress;
-    private String reservationHash;
+    private String batchId;
     private String invoiceRef;
     private String invoiceReferenceHash;
     private String approvalRef;

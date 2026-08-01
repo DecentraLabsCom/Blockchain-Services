@@ -53,7 +53,7 @@ class ProviderSettlementOnChainServiceTest {
 
     @Test
     void approvalStoresTheReceiptActorInsteadOfARequestActor() throws Exception {
-        ProviderInvoiceRecord invoice = ProviderInvoiceRecord.builder().id(7L).claimId("CLAIM-1").labId("1").providerAddress("0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb0001").reservationHash("0x" + "11".repeat(32)).invoiceRef("INV-1").eurAmount(new BigDecimal("25.00")).creditAmount(new BigDecimal("250.0000000")).status(ProviderInvoiceRecord.Status.SUBMITTED).build();
+        ProviderInvoiceRecord invoice = ProviderInvoiceRecord.builder().id(7L).claimId("CLAIM-1").labId("1").providerAddress("0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb0001").batchId("0x" + "11".repeat(32)).invoiceRef("INV-1").eurAmount(new BigDecimal("25.00")).creditAmount(new BigDecimal("250.0000000")).status(ProviderInvoiceRecord.Status.SUBMITTED).build();
         ProviderSettlementOperation operation = operation(ProviderSettlementOperation.Action.APPROVE);
         ProviderApproval approval = ProviderApproval.builder().id(8L).invoiceRecordId(7L).approvedBy("0x2222222222222222222222222222222222222222").approvalRef("APPROVAL-1").eurAmount(new BigDecimal("25.00")).build();
         ProviderSettlementChainClient.ChainReceipt receipt = new ProviderSettlementChainClient.ChainReceipt("0xtx", BigInteger.TEN, "0xblock", "0x2222222222222222222222222222222222222222");
@@ -78,7 +78,7 @@ class ProviderSettlementOnChainServiceTest {
             .invoiceRecordId(action == ProviderSettlementOperation.Action.SUBMIT ? null : 7L)
             .labId("1")
             .providerAddress("0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb0001")
-            .reservationHash("0x" + "11".repeat(32))
+            .batchId("0x" + "11".repeat(32))
             .invoiceRef("INV-1")
             .eurAmount(new BigDecimal("25.00"))
             .creditAmount(new BigDecimal("250.0000000"))

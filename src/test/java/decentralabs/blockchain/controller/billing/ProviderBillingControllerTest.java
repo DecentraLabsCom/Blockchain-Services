@@ -119,7 +119,7 @@ class ProviderBillingControllerTest {
                     {
                       "providerAddress":"0x1111111111111111111111111111111111111111",
                       "claimId":"CLAIM-1",
-                      "reservationHash":"0x1111111111111111111111111111111111111111111111111111111111111111",
+                      "batchId":"0x1111111111111111111111111111111111111111111111111111111111111111",
                       "invoiceRef":"INV-1",
                       "eurAmount":"25.00",
                       "creditAmount":"20.00"

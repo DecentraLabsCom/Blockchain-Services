@@ -42,7 +42,7 @@ public class Diamond extends Contract {
         public BigInteger labId;
         public BigInteger amount;
         public BigInteger status;
-        public byte[] reservationsHash;
+        public byte[] batchId;
         public byte[] invoiceReferenceHash;
         public byte[] paymentReferenceHash;
         public byte[] paymentAttestationHash;
@@ -57,7 +57,7 @@ public class Diamond extends Contract {
             BigInteger labId,
             BigInteger amount,
             BigInteger status,
-            byte[] reservationsHash,
+            byte[] batchId,
             byte[] invoiceReferenceHash,
             byte[] paymentReferenceHash,
             byte[] paymentAttestationHash,
@@ -71,7 +71,7 @@ public class Diamond extends Contract {
             this.labId = labId;
             this.amount = amount;
             this.status = status;
-            this.reservationsHash = reservationsHash;
+            this.batchId = batchId;
             this.invoiceReferenceHash = invoiceReferenceHash;
             this.paymentReferenceHash = paymentReferenceHash;
             this.paymentAttestationHash = paymentAttestationHash;
@@ -81,6 +81,35 @@ public class Diamond extends Contract {
             this.submittedAt = submittedAt;
             this.approvedAt = approvedAt;
             this.paidAt = paidAt;
+        }
+    }
+
+    /** Canonical provider settlement batch and its remaining claimable amount. */
+    public static class ProviderSettlementBatch {
+        public BigInteger labId;
+        public BigInteger totalAmount;
+        public BigInteger remainingAmount;
+        public byte[] scopeRoot;
+        public BigInteger createdAt;
+        public BigInteger claimedAt;
+        public BigInteger status;
+
+        public ProviderSettlementBatch(
+            BigInteger labId,
+            BigInteger totalAmount,
+            BigInteger remainingAmount,
+            byte[] scopeRoot,
+            BigInteger createdAt,
+            BigInteger claimedAt,
+            BigInteger status
+        ) {
+            this.labId = labId;
+            this.totalAmount = totalAmount;
+            this.remainingAmount = remainingAmount;
+            this.scopeRoot = scopeRoot;
+            this.createdAt = createdAt;
+            this.claimedAt = claimedAt;
+            this.status = status;
         }
     }
     
@@ -1161,11 +1190,11 @@ public class Diamond extends Contract {
         byte[] claimId,
         BigInteger labId,
         BigInteger amount,
-        byte[] reservationsHash,
+        byte[] batchId,
         byte[] invoiceReferenceHash
     ) {
         return executeRemoteCallTransaction(
-            submitProviderSettlementClaimFunction(claimId, labId, amount, reservationsHash, invoiceReferenceHash)
+            submitProviderSettlementClaimFunction(claimId, labId, amount, batchId, invoiceReferenceHash)
         );
     }
 
@@ -1235,11 +1264,48 @@ public class Diamond extends Contract {
         return new RemoteFunctionCall<>(function, () -> ((Bytes32) executeCallSingleValueReturn(function)).getValue());
     }
 
+    public RemoteFunctionCall<byte[]> getLatestProviderSettlementBatch(BigInteger labId) {
+        final Function function = new Function(
+            "getLatestProviderSettlementBatch",
+            Arrays.asList(new Uint256(labId)),
+            Arrays.asList(new TypeReference<Bytes32>() {})
+        );
+        return new RemoteFunctionCall<>(function, () -> ((Bytes32) executeCallSingleValueReturn(function)).getValue());
+    }
+
+    public RemoteFunctionCall<ProviderSettlementBatch> getProviderSettlementBatch(byte[] batchId) {
+        final Function function = new Function(
+            "getProviderSettlementBatch",
+            Arrays.asList(new Bytes32(batchId)),
+            Arrays.asList(
+                new TypeReference<Uint256>() {},
+                new TypeReference<Uint256>() {},
+                new TypeReference<Uint256>() {},
+                new TypeReference<Bytes32>() {},
+                new TypeReference<Uint64>() {},
+                new TypeReference<Uint64>() {},
+                new TypeReference<Uint8>() {}
+            )
+        );
+        return new RemoteFunctionCall<>(function, () -> {
+            List<?> results = executeCallMultipleValueReturn(function);
+            return new ProviderSettlementBatch(
+                ((Uint256) results.get(0)).getValue(),
+                ((Uint256) results.get(1)).getValue(),
+                ((Uint256) results.get(2)).getValue(),
+                ((Bytes32) results.get(3)).getValue(),
+                ((Uint64) results.get(4)).getValue(),
+                ((Uint64) results.get(5)).getValue(),
+                ((Uint8) results.get(6)).getValue()
+            );
+        });
+    }
+
     public static Function submitProviderSettlementClaimFunction(
         byte[] claimId,
         BigInteger labId,
         BigInteger amount,
-        byte[] reservationsHash,
+        byte[] batchId,
         byte[] invoiceReferenceHash
     ) {
         return new Function(
@@ -1248,7 +1314,7 @@ public class Diamond extends Contract {
                 new Bytes32(claimId),
                 new Uint256(labId),
                 new Uint256(amount),
-                new Bytes32(reservationsHash),
+                new Bytes32(batchId),
                 new Bytes32(invoiceReferenceHash)
             ),
             List.of()

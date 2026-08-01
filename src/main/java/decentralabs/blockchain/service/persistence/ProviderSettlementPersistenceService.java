@@ -44,7 +44,7 @@ public class ProviderSettlementPersistenceService {
             .labId(rs.getString("lab_id"))
             .providerAddress(rs.getString("provider_address"))
             .claimId(rs.getString("claim_id"))
-            .reservationHash(rs.getString("reservation_hash"))
+            .batchId(rs.getString("reservation_hash"))
             .invoiceRef(rs.getString("invoice_ref"))
             .eurAmount(rs.getBigDecimal("eur_amount"))
             .creditAmount(rs.getBigDecimal("credit_amount"))
@@ -70,7 +70,7 @@ public class ProviderSettlementPersistenceService {
                 ps.setString(1, record.getLabId());
                 ps.setString(2, record.getProviderAddress());
                 ps.setString(3, record.getClaimId());
-                ps.setString(4, record.getReservationHash());
+                ps.setString(4, record.getBatchId());
                 ps.setString(5, record.getInvoiceRef());
                 ps.setBigDecimal(6, record.getEurAmount());
                 ps.setBigDecimal(7, record.getCreditAmount());
@@ -353,7 +353,7 @@ public class ProviderSettlementPersistenceService {
             if (operation.getInvoiceRecordId() == null) ps.setNull(i++, Types.BIGINT); else ps.setLong(i++, operation.getInvoiceRecordId());
             ps.setString(i++, operation.getLabId());
             ps.setString(i++, operation.getProviderAddress());
-            ps.setString(i++, operation.getReservationHash());
+                ps.setString(i++, operation.getBatchId());
             ps.setString(i++, operation.getInvoiceRef());
             ps.setString(i++, operation.getInvoiceReferenceHash());
             ps.setString(i++, operation.getApprovalRef());
@@ -472,7 +472,7 @@ public class ProviderSettlementPersistenceService {
                 .labId(operation.getLabId())
                 .providerAddress(operation.getProviderAddress())
                 .claimId(operation.getClaimId())
-                .reservationHash(operation.getReservationHash())
+                .batchId(operation.getBatchId())
                 .invoiceRef(operation.getInvoiceRef())
                 .eurAmount(operation.getEurAmount())
                 .creditAmount(operation.getCreditAmount())
@@ -561,7 +561,7 @@ public class ProviderSettlementPersistenceService {
             .invoiceRecordId((Long) rs.getObject("invoice_record_id"))
             .labId(rs.getString("lab_id"))
             .providerAddress(rs.getString("provider_address"))
-            .reservationHash(rs.getString("reservation_hash"))
+            .batchId(rs.getString("reservation_hash"))
             .invoiceRef(rs.getString("invoice_ref"))
             .invoiceReferenceHash(rs.getString("invoice_reference_hash"))
             .approvalRef(rs.getString("approval_ref"))

@@ -20,7 +20,7 @@ public class SubmitProviderInvoiceRequest {
 
     @NotBlank
     @Pattern(regexp = "0x[0-9a-fA-F]{64}")
-    private String reservationHash;
+    private String batchId;
 
     @NotBlank
     @Size(max = 256)

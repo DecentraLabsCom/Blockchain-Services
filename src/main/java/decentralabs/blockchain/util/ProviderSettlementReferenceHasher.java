@@ -8,8 +8,8 @@ import org.web3j.utils.Numeric;
 
 /**
  * Canonical encoding shared by the SQL settlement outbox and the Diamond.
- * Human-facing references are hashed as UTF-8; existing bytes32 references
- * (reservation sets and explicit claim ids) are retained as-is.
+ * Human-facing references are hashed as UTF-8; the on-chain batch ID and
+ * explicit claim IDs are retained as bytes32 values.
  */
 public final class ProviderSettlementReferenceHasher {
 
@@ -23,10 +23,10 @@ public final class ProviderSettlementReferenceHasher {
         return bytes32OrKeccak(value, "claimId");
     }
 
-    public static byte[] reservationHash(String value) {
-        String normalized = requireText(value, "reservationHash");
+    public static byte[] batchId(String value) {
+        String normalized = requireText(value, "batchId");
         if (!BYTES32.matcher(normalized).matches() || ZERO_BYTES32.equalsIgnoreCase(normalized)) {
-            throw new IllegalArgumentException("reservationHash must be a non-zero bytes32 value");
+            throw new IllegalArgumentException("batchId must be a non-zero bytes32 value");
         }
         return Numeric.hexStringToByteArray(normalized);
     }

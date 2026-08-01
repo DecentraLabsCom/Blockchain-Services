@@ -57,20 +57,20 @@ public class ProviderSettlementService {
         String labId,
         String providerAddress,
         String claimId,
-        String reservationHash,
+        String batchId,
         String invoiceRef,
         BigDecimal eurAmount,
         BigDecimal creditAmount
     ) {
-        validateInvoiceInput(labId, providerAddress, claimId, reservationHash, invoiceRef, eurAmount);
+        validateInvoiceInput(labId, providerAddress, claimId, batchId, invoiceRef, eurAmount);
         BigDecimal canonicalCredits = canonicalCreditAmount(eurAmount, creditAmount);
 
         if (chainClient == null) {
-            return submitLegacy(labId, providerAddress, claimId, reservationHash, invoiceRef, eurAmount, canonicalCredits);
+            return submitLegacy(labId, providerAddress, claimId, batchId, invoiceRef, eurAmount, canonicalCredits);
         }
 
         byte[] claimIdBytes = ProviderSettlementReferenceHasher.claimId(claimId);
-        byte[] reservationHashBytes = ProviderSettlementReferenceHasher.reservationHash(reservationHash);
+        byte[] batchIdBytes = ProviderSettlementReferenceHasher.batchId(batchId);
         byte[] invoiceReferenceHash = ProviderSettlementReferenceHasher.reference(invoiceRef, "invoiceRef");
         String operationKey = operationKey("submit", ProviderSettlementReferenceHasher.hex(claimIdBytes));
 
@@ -83,7 +83,7 @@ public class ProviderSettlementService {
                 .claimIdHash(ProviderSettlementReferenceHasher.hex(claimIdBytes))
                 .labId(labId.trim())
                 .providerAddress(providerAddress.trim().toLowerCase())
-                .reservationHash(reservationHash.trim().toLowerCase())
+                .batchId(batchId.trim().toLowerCase())
                 .invoiceRef(invoiceRef.trim())
                 .invoiceReferenceHash(ProviderSettlementReferenceHasher.hex(invoiceReferenceHash))
                 .eurAmount(eurAmount)
@@ -100,7 +100,7 @@ public class ProviderSettlementService {
                 claimIdBytes,
                 new BigInteger(labId.trim()),
                 rawCredits(canonicalCredits),
-                reservationHashBytes,
+                batchIdBytes,
                 invoiceReferenceHash,
                 operationKey
             );
@@ -134,7 +134,7 @@ public class ProviderSettlementService {
                 .invoiceRecordId(invoiceId)
                 .labId(invoice.getLabId())
                 .providerAddress(invoice.getProviderAddress())
-                .reservationHash(invoice.getReservationHash())
+                .batchId(invoice.getBatchId())
                 .invoiceRef(invoice.getInvoiceRef())
                 .invoiceReferenceHash(ProviderSettlementReferenceHasher.reference(invoice.getInvoiceRef(), "invoiceRef") == null ? null : ProviderSettlementReferenceHasher.hex(ProviderSettlementReferenceHasher.reference(invoice.getInvoiceRef(), "invoiceRef")))
                 .approvalRef(approvalRef.trim())
@@ -195,7 +195,7 @@ public class ProviderSettlementService {
                 .invoiceRecordId(invoiceId)
                 .labId(invoice.getLabId())
                 .providerAddress(invoice.getProviderAddress())
-                .reservationHash(invoice.getReservationHash())
+                .batchId(invoice.getBatchId())
                 .invoiceRef(invoice.getInvoiceRef())
                 .invoiceReferenceHash(ProviderSettlementReferenceHasher.hex(ProviderSettlementReferenceHasher.reference(invoice.getInvoiceRef(), "invoiceRef")))
                 .paymentRef(paymentRef.trim())
@@ -312,28 +312,28 @@ public class ProviderSettlementService {
     private record DiamondClaimStatus(int status, String actor, decentralabs.blockchain.contract.Diamond.ProviderSettlementClaim claim) { }
 
     private boolean claimMatches(ProviderSettlementOperation operation, decentralabs.blockchain.contract.Diamond.ProviderSettlementClaim claim) throws Exception {
-        if (!Arrays.equals(ProviderSettlementReferenceHasher.reservationHash(operation.getReservationHash()), claim.reservationsHash)
+        if (!Arrays.equals(ProviderSettlementReferenceHasher.batchId(operation.getBatchId()), claim.batchId)
             || !Arrays.equals(ProviderSettlementReferenceHasher.reference(operation.getInvoiceRef(), "invoiceRef"), claim.invoiceReferenceHash)) return false;
         if (operation.getAction() == ProviderSettlementOperation.Action.APPROVE) return Arrays.equals(ProviderSettlementReferenceHasher.reference(operation.getApprovalRef(), "approvalRef"), chainClient.readApprovalReferenceHash(ProviderSettlementReferenceHasher.claimId(operation.getClaimId())));
         if (operation.getAction() == ProviderSettlementOperation.Action.PAY) return Arrays.equals(ProviderSettlementReferenceHasher.reference(operation.getPaymentRef(), "paymentRef"), claim.paymentReferenceHash) && Arrays.equals(ProviderSettlementReferenceHasher.reference(operation.getPaymentAttestation(), "paymentAttestation"), claim.paymentAttestationHash);
         return true;
     }
 
-    private ProviderInvoiceRecord submitLegacy(String labId, String providerAddress, String claimId, String reservationHash, String invoiceRef, BigDecimal eurAmount, BigDecimal creditAmount) {
+    private ProviderInvoiceRecord submitLegacy(String labId, String providerAddress, String claimId, String batchId, String invoiceRef, BigDecimal eurAmount, BigDecimal creditAmount) {
         if (persistence.existsClaimId(claimId.trim())) throw new IllegalArgumentException("Claim ID already used");
         if (persistence.existsInvoiceRef(invoiceRef.trim())) throw new IllegalArgumentException("Invoice reference already used");
-        return persistence.createInvoiceRecord(ProviderInvoiceRecord.builder().labId(labId).providerAddress(providerAddress.toLowerCase()).claimId(claimId.trim()).reservationHash(reservationHash.trim().toLowerCase()).invoiceRef(invoiceRef.trim()).eurAmount(eurAmount).creditAmount(creditAmount).status(ProviderInvoiceRecord.Status.SUBMITTED).build());
+        return persistence.createInvoiceRecord(ProviderInvoiceRecord.builder().labId(labId).providerAddress(providerAddress.toLowerCase()).claimId(claimId.trim()).batchId(batchId.trim().toLowerCase()).invoiceRef(invoiceRef.trim()).eurAmount(eurAmount).creditAmount(creditAmount).status(ProviderInvoiceRecord.Status.SUBMITTED).build());
     }
 
     private ProviderInvoiceRecord invoice(long invoiceId) {
         return persistence.findInvoiceById(invoiceId).orElseThrow(() -> new IllegalArgumentException("Invoice record not found: " + invoiceId));
     }
 
-    private void validateInvoiceInput(String labId, String providerAddress, String claimId, String reservationHash, String invoiceRef, BigDecimal eurAmount) {
+    private void validateInvoiceInput(String labId, String providerAddress, String claimId, String batchId, String invoiceRef, BigDecimal eurAmount) {
         if (labId == null || labId.isBlank() || (chainClient != null && new BigInteger(labId.trim()).signum() <= 0)) throw new IllegalArgumentException("Lab ID must be a positive integer");
         if (providerAddress == null || providerAddress.isBlank()) throw new IllegalArgumentException("Provider address required");
         if (claimId == null || claimId.isBlank() || claimId.trim().length() > 128) throw new IllegalArgumentException("Claim ID required");
-        if (reservationHash == null || !BYTES32_PATTERN.matcher(reservationHash.trim()).matches()) throw new IllegalArgumentException("Reservation hash required and must be bytes32");
+        if (batchId == null || !BYTES32_PATTERN.matcher(batchId.trim()).matches() || batchId.matches("0x0{64}")) throw new IllegalArgumentException("Settlement batch ID required and must be a non-zero bytes32");
         if (invoiceRef == null || invoiceRef.isBlank() || invoiceRef.trim().length() > 256) throw new IllegalArgumentException("Invoice reference required");
         if (eurAmount == null || eurAmount.compareTo(BigDecimal.ZERO) <= 0) throw new IllegalArgumentException("EUR amount must be positive");
     }

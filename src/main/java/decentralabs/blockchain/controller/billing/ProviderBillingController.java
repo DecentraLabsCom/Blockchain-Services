@@ -101,7 +101,7 @@ public class ProviderBillingController {
             labId,
             request.getProviderAddress(),
             request.getClaimId(),
-            request.getReservationHash(),
+            request.getBatchId(),
             request.getInvoiceRef(),
             request.getEurAmount(),
             request.getCreditAmount()

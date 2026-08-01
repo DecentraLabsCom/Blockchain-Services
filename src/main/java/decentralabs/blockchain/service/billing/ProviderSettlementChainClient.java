@@ -60,13 +60,13 @@ public class ProviderSettlementChainClient {
         byte[] claimId,
         BigInteger labId,
         BigInteger amount,
-        byte[] reservationsHash,
+        byte[] batchId,
         byte[] invoiceReferenceHash,
         String operationKey
     ) throws Exception {
         Diamond diamond = loadWritableDiamond(operationKey);
         return toReceipt(diamond.submitProviderSettlementClaim(
-            claimId, labId, amount, reservationsHash, invoiceReferenceHash
+            claimId, labId, amount, batchId, invoiceReferenceHash
         ).send());
     }
 

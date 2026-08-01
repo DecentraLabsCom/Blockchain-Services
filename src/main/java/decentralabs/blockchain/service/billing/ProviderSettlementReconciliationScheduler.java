@@ -64,8 +64,8 @@ public class ProviderSettlementReconciliationScheduler {
 
     private boolean matches(ProviderSettlementOperation operation, Diamond.ProviderSettlementClaim claim) throws Exception {
         if (!Arrays.equals(
-            ProviderSettlementReferenceHasher.reservationHash(operation.getReservationHash()),
-            claim.reservationsHash
+            ProviderSettlementReferenceHasher.batchId(operation.getBatchId()),
+            claim.batchId
         )) return false;
         if (!Arrays.equals(
             ProviderSettlementReferenceHasher.reference(operation.getInvoiceRef(), "invoiceRef"),
