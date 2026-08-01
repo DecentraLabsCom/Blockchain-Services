@@ -91,7 +91,7 @@ ceremony above.
 | GET/POST | `/billing/provider-network` | Admin boundary; list or activate provider network membership. |
 | POST | `/billing/provider-network/{id}/suspend`, `/billing/provider-network/{id}/terminate` | Admin boundary; lifecycle changes. |
 | GET | `/billing/provider-receivables` | Admin boundary; filterable provider invoice list. |
-| POST | `/billing/provider-receivables/{labId}/invoice` | Admin boundary; submit the on-chain claim, then project its receipt. |
+| POST | `/billing/provider-receivables/{labId}/invoice` | Admin boundary; submit the on-chain claim, then project its receipt. The provider is derived from `ownerOf(labId)`; `providerAddress` is not a request field. |
 | POST | `/billing/provider-receivables/invoices/{invoiceId}/approve`, `/pay` | Admin boundary; execute the on-chain transition and project only after a successful receipt. Actor fields are not accepted in the body. |
 
 ## Compliance, labs and health

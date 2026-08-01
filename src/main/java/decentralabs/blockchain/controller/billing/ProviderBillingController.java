@@ -96,10 +96,8 @@ public class ProviderBillingController {
         @PathVariable String labId,
         @Valid @RequestBody SubmitProviderInvoiceRequest request
     ) {
-        EthereumAddressValidator.validate(request.getProviderAddress(), "providerAddress");
         ProviderInvoiceRecord record = providerSettlementService.submitInvoice(
             labId,
-            request.getProviderAddress(),
             request.getClaimId(),
             request.getBatchId(),
             request.getInvoiceRef(),

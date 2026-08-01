@@ -91,7 +91,11 @@ class BillingDomainIntegrationTest {
             ProviderSettlementPersistenceService psp,
             PlatformTransactionManager transactionManager
         ) {
-            return new ProviderSettlementService(psp, transactionManager);
+            return new ProviderSettlementService(
+                psp,
+                transactionManager,
+                BillingDomainIntegrationTest::authoritativeProviderForTest
+            );
         }
 
         @Bean
@@ -118,6 +122,22 @@ class BillingDomainIntegrationTest {
     private final CreditProjectionService creditProjectionService;
 
     private final JdbcTemplate jdbcTemplate;
+
+    private static String authoritativeProviderForTest(String labId) {
+        return switch (labId) {
+            case "1" -> "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb0001";
+            case "2" -> "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb0002";
+            case "3" -> "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb0003";
+            case "4" -> "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb0004";
+            case "5" -> "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb0005";
+            case "6" -> "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb0006";
+            case "7" -> "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb0007";
+            case "8" -> "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb0008";
+            case "9" -> "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb0009";
+            case "LAB-001" -> "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb1001";
+            default -> "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb0000";
+        };
+    }
 
     @Autowired
     BillingDomainIntegrationTest(FundingOrderService fundingOrderService,
@@ -213,7 +233,6 @@ class BillingDomainIntegrationTest {
     void providerSettlementLifecycle() {
         ProviderInvoiceRecord record = providerSettlementService.submitInvoice(
                 "1",
-                "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb0001",
                 "CLAIM-2026-001",
                 "0x" + "11".repeat(32),
                 "PINV-2026-001",
@@ -242,7 +261,6 @@ class BillingDomainIntegrationTest {
     void approvalRefPersistedAndRoundTrips() {
         ProviderInvoiceRecord record = providerSettlementService.submitInvoice(
                 "2",
-                "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb0002",
                 "CLAIM-REF-TEST",
                 "0x" + "22".repeat(32),
                 "PINV-REF-TEST",
@@ -304,7 +322,6 @@ class BillingDomainIntegrationTest {
     void settlementReferencesAreUnique() {
         ProviderInvoiceRecord record = providerSettlementService.submitInvoice(
             "7",
-            "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb0007",
             "CLAIM-UNIQUE-REF-1",
             "0x" + "88".repeat(32),
             "PINV-UNIQUE-REF",
@@ -313,7 +330,6 @@ class BillingDomainIntegrationTest {
 
         assertThatThrownBy(() -> providerSettlementService.submitInvoice(
             "8",
-            "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb0008",
             "CLAIM-UNIQUE-REF-2",
             "0x" + "99".repeat(32),
             "PINV-UNIQUE-REF",
@@ -329,7 +345,6 @@ class BillingDomainIntegrationTest {
 
         ProviderInvoiceRecord other = providerSettlementService.submitInvoice(
             "9",
-            "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb0009",
             "CLAIM-UNIQUE-REF-3",
             "0x" + "aa".repeat(32),
             "PINV-UNIQUE-REF-2",
@@ -348,7 +363,6 @@ class BillingDomainIntegrationTest {
     void approvalRefOptional() {
         ProviderInvoiceRecord record = providerSettlementService.submitInvoice(
                 "3",
-                "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb0003",
                 "CLAIM-NO-APPROVAL-REF",
                 "0x" + "33".repeat(32),
                 "PINV-NO-REF",
@@ -368,7 +382,6 @@ class BillingDomainIntegrationTest {
     void approveNonSubmittedThrows() {
         ProviderInvoiceRecord record = providerSettlementService.submitInvoice(
                 "4",
-                "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb0004",
                 "CLAIM-DOUBLE-APPROVE",
                 "0x" + "44".repeat(32),
                 "PINV-DOUBLE-APPROVE",
@@ -393,7 +406,6 @@ class BillingDomainIntegrationTest {
     void claimReferencesAreMandatory() {
         assertThatThrownBy(() -> providerSettlementService.submitInvoice(
                 "5",
-                "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb0005",
                 "",
                 "0x" + "66".repeat(32),
                 "PINV-MISSING-CLAIM",
@@ -404,7 +416,6 @@ class BillingDomainIntegrationTest {
 
         assertThatThrownBy(() -> providerSettlementService.submitInvoice(
                 "5",
-                "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb0005",
                 "CLAIM-MISSING-RESERVATIONS",
                 "",
                 "PINV-MISSING-RESERVATIONS",
@@ -419,7 +430,6 @@ class BillingDomainIntegrationTest {
     void paymentProofIsMandatoryAndUnique() {
         ProviderInvoiceRecord record = providerSettlementService.submitInvoice(
                 "6",
-                "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb0006",
                 "CLAIM-PAYMENT-PROOF",
                 "0x" + "77".repeat(32),
                 "PINV-PAYMENT-PROOF",
@@ -459,7 +469,6 @@ class BillingDomainIntegrationTest {
 
         ProviderInvoiceRecord other = providerSettlementService.submitInvoice(
                 "7",
-                "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb0007",
                 "CLAIM-PAYMENT-DUPLICATE",
                 "0x" + "88".repeat(32),
                 "PINV-PAYMENT-DUPLICATE",
@@ -490,7 +499,6 @@ class BillingDomainIntegrationTest {
     class CanonicalLifecycleTests {
 
         private static final String INSTITUTION = "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa1001";
-        private static final String PROVIDER    = "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb1001";
 
         @Test
         @DisplayName("full canonical flow: fund → mint → lock → capture → accrue → approve → payout")
@@ -558,7 +566,7 @@ class BillingDomainIntegrationTest {
 
             // 7. Accrue provider receivable — submit invoice
             ProviderInvoiceRecord provInvoice = providerSettlementService.submitInvoice(
-                    "LAB-001", PROVIDER, "CLAIM-E2E-001", "0x" + "55".repeat(32), "PINV-E2E-001",
+                    "LAB-001", "CLAIM-E2E-001", "0x" + "55".repeat(32), "PINV-E2E-001",
                     new BigDecimal("20.00"), new BigDecimal("200.0"));
             assertThat(provInvoice.getStatus()).isEqualTo(ProviderInvoiceRecord.Status.SUBMITTED);
 

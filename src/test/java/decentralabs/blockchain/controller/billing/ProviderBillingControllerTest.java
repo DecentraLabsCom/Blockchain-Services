@@ -105,7 +105,6 @@ class ProviderBillingControllerTest {
             .build();
         when(providerSettlementService.submitInvoice(
             eq("12"),
-            eq("0x1111111111111111111111111111111111111111"),
             eq("CLAIM-1"),
             eq("0x" + "11".repeat(32)),
             eq("INV-1"),
@@ -117,7 +116,6 @@ class ProviderBillingControllerTest {
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("""
                     {
-                      "providerAddress":"0x1111111111111111111111111111111111111111",
                       "claimId":"CLAIM-1",
                       "batchId":"0x1111111111111111111111111111111111111111111111111111111111111111",
                       "invoiceRef":"INV-1",
@@ -128,6 +126,23 @@ class ProviderBillingControllerTest {
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.id").value(9))
             .andExpect(jsonPath("$.invoiceRef").value("INV-1"));
+    }
+
+    @Test
+    void submitProviderInvoice_rejectsProviderAddressFromBody() throws Exception {
+        mockMvc.perform(post("/billing/provider-receivables/12/invoice")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {
+                      "providerAddress":"0x9999999999999999999999999999999999999999",
+                      "claimId":"CLAIM-1",
+                      "batchId":"0x1111111111111111111111111111111111111111111111111111111111111111",
+                      "invoiceRef":"INV-1",
+                      "eurAmount":"25.00",
+                      "creditAmount":"20.00"
+                    }
+                    """))
+            .andExpect(status().isBadRequest());
     }
 
     @Test

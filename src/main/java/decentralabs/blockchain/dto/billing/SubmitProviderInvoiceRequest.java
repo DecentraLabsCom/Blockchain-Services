@@ -1,5 +1,7 @@
 package decentralabs.blockchain.dto.billing;
 
+import com.fasterxml.jackson.annotation.JsonAnySetter;
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import jakarta.validation.constraints.DecimalMin;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
@@ -9,11 +11,8 @@ import java.math.BigDecimal;
 import lombok.Data;
 
 @Data
+@JsonIgnoreProperties(ignoreUnknown = false)
 public class SubmitProviderInvoiceRequest {
-    @NotBlank
-    @Size(max = 42)
-    private String providerAddress;
-
     @NotBlank
     @Size(max = 128)
     private String claimId;
@@ -32,4 +31,9 @@ public class SubmitProviderInvoiceRequest {
 
     @DecimalMin(value = "0.0", inclusive = false)
     private BigDecimal creditAmount;
+
+    @JsonAnySetter
+    private void rejectUnknownField(String fieldName, Object value) {
+        throw new IllegalArgumentException("Unknown invoice request field: " + fieldName);
+    }
 }

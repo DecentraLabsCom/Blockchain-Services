@@ -196,8 +196,11 @@ stateDiagram-v2
 ```
 
 An invoice requires a unique `claimId`, non-zero `reservationHash`, unique
-`invoiceRef`, provider address and positive EUR amount. Approval is allowed
-only from `SUBMITTED`; its EUR amount must exactly match the invoice and its
+`invoiceRef` and positive EUR amount. The provider is derived from the
+authoritative on-chain `ownerOf(labId)` value; `providerAddress` is not
+accepted in the invoice request body. SQL stores that address as a
+receipt-backed projection snapshot. Approval is allowed only from
+`SUBMITTED`; its EUR amount must exactly match the invoice and its
 `approvalRef` must be unique. Payment is allowed only from `APPROVED`; its
 provider and EUR amount must match the claim and it requires unique
 `paymentRef` plus a non-empty `paymentAttestation`. `bankRef`, `eurcTxHash` and

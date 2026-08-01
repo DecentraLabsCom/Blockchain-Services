@@ -76,6 +76,9 @@ class ProviderSettlementDurabilityIntegrationTest {
                 assertThat(TransactionSynchronizationManager.isActualTransactionActive()).isFalse();
                 throw new IllegalStateException("simulated failure after broadcast acceptance");
             });
+            when(chainClient.readLabOwner(any(BigInteger.class))).thenReturn(
+                "0x1111111111111111111111111111111111111111"
+            );
             return chainClient;
         }
 
@@ -116,7 +119,6 @@ class ProviderSettlementDurabilityIntegrationTest {
     void keepsSettlementOperationDurableWhenBroadcastPhaseFails() {
         assertThatThrownBy(() -> providerSettlementService.submitInvoice(
             "1",
-            "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb0001",
             "CLAIM-DURABILITY-1",
             "0x" + "11".repeat(32),
             "INV-DURABILITY-1",

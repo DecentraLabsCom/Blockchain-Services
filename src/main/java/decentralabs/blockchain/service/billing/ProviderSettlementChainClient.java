@@ -56,6 +56,10 @@ public class ProviderSettlementChainClient {
         return institutionalWalletService.getInstitutionalWalletAddress().toLowerCase(Locale.ROOT);
     }
 
+    public String readLabOwner(BigInteger labId) throws Exception {
+        return loadReadonlyDiamond().ownerOf(labId).send();
+    }
+
     public ChainReceipt submit(
         byte[] claimId,
         BigInteger labId,

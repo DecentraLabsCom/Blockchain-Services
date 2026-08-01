@@ -6,13 +6,16 @@ import decentralabs.blockchain.domain.ProviderPayout;
 import decentralabs.blockchain.domain.ProviderSettlementOperation;
 import decentralabs.blockchain.service.persistence.ProviderSettlementPersistenceService;
 import decentralabs.blockchain.util.CreditUnitConverter;
+import decentralabs.blockchain.util.EthereumAddressValidator;
 import decentralabs.blockchain.util.LogSanitizer;
 import decentralabs.blockchain.util.ProviderSettlementReferenceHasher;
 import java.math.BigDecimal;
 import java.math.BigInteger;
 import java.util.List;
 import java.util.Arrays;
+import java.util.Locale;
 import java.util.Optional;
+import java.util.function.Function;
 import java.util.function.Supplier;
 import java.util.regex.Pattern;
 import lombok.extern.slf4j.Slf4j;
@@ -43,6 +46,7 @@ public class ProviderSettlementService {
     private final ProviderSettlementPersistenceService persistence;
     private final ProviderSettlementChainClient chainClient;
     private final TransactionTemplate localTransactionTemplate;
+    private final Function<String, String> localProviderResolver;
 
     @Autowired
     public ProviderSettlementService(
@@ -50,14 +54,24 @@ public class ProviderSettlementService {
         ProviderSettlementChainClient chainClient,
         PlatformTransactionManager transactionManager
     ) {
+        this(persistence, chainClient, transactionManager, null);
+    }
+
+    private ProviderSettlementService(
+        ProviderSettlementPersistenceService persistence,
+        ProviderSettlementChainClient chainClient,
+        PlatformTransactionManager transactionManager,
+        Function<String, String> localProviderResolver
+    ) {
         this.persistence = persistence;
         this.chainClient = chainClient;
         this.localTransactionTemplate = transactionManager == null ? null : new TransactionTemplate(transactionManager);
+        this.localProviderResolver = localProviderResolver;
     }
 
     /** Test-only/local SQL constructor retained for the billing persistence slice. */
     public ProviderSettlementService(ProviderSettlementPersistenceService persistence) {
-        this(persistence, null, null);
+        this(persistence, (ProviderSettlementChainClient) null, (PlatformTransactionManager) null);
     }
 
     /** Test-only constructor for the on-chain service with a mocked chain client. */
@@ -65,7 +79,7 @@ public class ProviderSettlementService {
         ProviderSettlementPersistenceService persistence,
         ProviderSettlementChainClient chainClient
     ) {
-        this(persistence, chainClient, null);
+        this(persistence, chainClient, (PlatformTransactionManager) null);
     }
 
     /** Test-only/local SQL constructor with an explicit transaction manager. */
@@ -73,7 +87,16 @@ public class ProviderSettlementService {
         ProviderSettlementPersistenceService persistence,
         PlatformTransactionManager transactionManager
     ) {
-        this(persistence, null, transactionManager);
+        this(persistence, (ProviderSettlementChainClient) null, transactionManager);
+    }
+
+    /** Test-only/local SQL constructor with an explicit authoritative provider resolver. */
+    public ProviderSettlementService(
+        ProviderSettlementPersistenceService persistence,
+        PlatformTransactionManager transactionManager,
+        Function<String, String> localProviderResolver
+    ) {
+        this(persistence, null, transactionManager, localProviderResolver);
     }
 
     /**
@@ -83,15 +106,15 @@ public class ProviderSettlementService {
     @Transactional(propagation = Propagation.NOT_SUPPORTED)
     public ProviderInvoiceRecord submitInvoice(
         String labId,
-        String providerAddress,
         String claimId,
         String batchId,
         String invoiceRef,
         BigDecimal eurAmount,
         BigDecimal creditAmount
     ) {
-        validateInvoiceInput(labId, providerAddress, claimId, batchId, invoiceRef, eurAmount);
+        validateInvoiceInput(labId, claimId, batchId, invoiceRef, eurAmount);
         BigDecimal canonicalCredits = canonicalCreditAmount(eurAmount, creditAmount);
+        String providerAddress = resolveAuthoritativeProvider(labId);
 
         if (chainClient == null) {
             return inLocalTransaction(() -> submitLegacy(
@@ -112,7 +135,7 @@ public class ProviderSettlementService {
                 .claimId(claimId.trim())
                 .claimIdHash(ProviderSettlementReferenceHasher.hex(claimIdBytes))
                 .labId(labId.trim())
-                .providerAddress(providerAddress.trim().toLowerCase())
+                .providerAddress(providerAddress.trim().toLowerCase(Locale.ROOT))
                 .batchId(batchId.trim().toLowerCase())
                 .invoiceRef(invoiceRef.trim())
                 .invoiceReferenceHash(ProviderSettlementReferenceHasher.hex(invoiceReferenceHash))
@@ -403,20 +426,42 @@ public class ProviderSettlementService {
     private ProviderInvoiceRecord submitLegacy(String labId, String providerAddress, String claimId, String batchId, String invoiceRef, BigDecimal eurAmount, BigDecimal creditAmount) {
         if (persistence.existsClaimId(claimId.trim())) throw new IllegalArgumentException("Claim ID already used");
         if (persistence.existsInvoiceRef(invoiceRef.trim())) throw new IllegalArgumentException("Invoice reference already used");
-        return persistence.createInvoiceRecord(ProviderInvoiceRecord.builder().labId(labId).providerAddress(providerAddress.toLowerCase()).claimId(claimId.trim()).batchId(batchId.trim().toLowerCase()).invoiceRef(invoiceRef.trim()).eurAmount(eurAmount).creditAmount(creditAmount).status(ProviderInvoiceRecord.Status.SUBMITTED).build());
+        return persistence.createInvoiceRecord(ProviderInvoiceRecord.builder().labId(labId).providerAddress(providerAddress.toLowerCase(Locale.ROOT)).claimId(claimId.trim()).batchId(batchId.trim().toLowerCase(Locale.ROOT)).invoiceRef(invoiceRef.trim()).eurAmount(eurAmount).creditAmount(creditAmount).status(ProviderInvoiceRecord.Status.SUBMITTED).build());
     }
 
     private ProviderInvoiceRecord invoice(long invoiceId) {
         return persistence.findInvoiceById(invoiceId).orElseThrow(() -> new IllegalArgumentException("Invoice record not found: " + invoiceId));
     }
 
-    private void validateInvoiceInput(String labId, String providerAddress, String claimId, String batchId, String invoiceRef, BigDecimal eurAmount) {
+    private void validateInvoiceInput(String labId, String claimId, String batchId, String invoiceRef, BigDecimal eurAmount) {
         if (labId == null || labId.isBlank() || (chainClient != null && new BigInteger(labId.trim()).signum() <= 0)) throw new IllegalArgumentException("Lab ID must be a positive integer");
-        if (providerAddress == null || providerAddress.isBlank()) throw new IllegalArgumentException("Provider address required");
         if (claimId == null || claimId.isBlank() || claimId.trim().length() > 128) throw new IllegalArgumentException("Claim ID required");
         if (batchId == null || !BYTES32_PATTERN.matcher(batchId.trim()).matches() || batchId.matches("0x0{64}")) throw new IllegalArgumentException("Settlement batch ID required and must be a non-zero bytes32");
         if (invoiceRef == null || invoiceRef.isBlank() || invoiceRef.trim().length() > 256) throw new IllegalArgumentException("Invoice reference required");
         if (eurAmount == null || eurAmount.compareTo(BigDecimal.ZERO) <= 0) throw new IllegalArgumentException("EUR amount must be positive");
+    }
+
+    private String resolveAuthoritativeProvider(String labId) {
+        String provider;
+        try {
+            if (chainClient != null) {
+                provider = chainClient.readLabOwner(new BigInteger(labId.trim()));
+                EthereumAddressValidator.validate(provider, "authoritative provider");
+            } else if (localProviderResolver != null) {
+                provider = localProviderResolver.apply(labId.trim());
+            } else {
+                throw new IllegalStateException("Authoritative provider resolver is not configured");
+            }
+        } catch (IllegalArgumentException ex) {
+            throw ex;
+        } catch (Exception ex) {
+            throw new IllegalStateException("Unable to resolve authoritative provider for lab", ex);
+        }
+
+        if (provider == null || provider.isBlank()) {
+            throw new IllegalStateException("Authoritative provider not found for lab");
+        }
+        return provider.trim().toLowerCase(Locale.ROOT);
     }
 
     private BigDecimal canonicalCreditAmount(BigDecimal eurAmount, BigDecimal creditAmount) {

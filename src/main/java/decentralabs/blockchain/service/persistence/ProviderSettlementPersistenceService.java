@@ -579,11 +579,20 @@ public class ProviderSettlementPersistenceService {
     private void assertSameOperation(ProviderSettlementOperation existing, ProviderSettlementOperation requested) {
         if (existing.getAction() != requested.getAction()
             || !java.util.Objects.equals(existing.getClaimIdHash(), requested.getClaimIdHash())
+            || !java.util.Objects.equals(existing.getLabId(), requested.getLabId())
+            || !java.util.Objects.equals(existing.getProviderAddress(), requested.getProviderAddress())
+            || !java.util.Objects.equals(existing.getBatchId(), requested.getBatchId())
             || !java.util.Objects.equals(existing.getInvoiceReferenceHash(), requested.getInvoiceReferenceHash())
             || !java.util.Objects.equals(existing.getApprovalReferenceHash(), requested.getApprovalReferenceHash())
-            || !java.util.Objects.equals(existing.getPaymentReferenceHash(), requested.getPaymentReferenceHash())) {
+            || !java.util.Objects.equals(existing.getPaymentReferenceHash(), requested.getPaymentReferenceHash())
+            || !sameAmount(existing.getEurAmount(), requested.getEurAmount())
+            || !sameAmount(existing.getCreditAmount(), requested.getCreditAmount())) {
             throw new IllegalArgumentException("Settlement idempotency key was reused with a different payload");
         }
+    }
+
+    private boolean sameAmount(java.math.BigDecimal existing, java.math.BigDecimal requested) {
+        return existing == null ? requested == null : requested != null && existing.compareTo(requested) == 0;
     }
 
     private static final RowMapper<ProviderSettlementOperation> SETTLEMENT_OPERATION_MAPPER = (rs, rowNum) ->
