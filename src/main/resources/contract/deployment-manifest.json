@@ -4,7 +4,7 @@
   "chainId": 11155111,
   "abiVersion": "credit-ledger-v1",
   "abiSha256": "7998f2f0b445f9ac536ef5cec25f180db5b5993c42595250be1d5b0a45b79ff3",
-  "selectorManifestSha256": "94b6cea96e8d97bfe89db46ffec011f4cba5838a7cb0a626859cc50466348f0d",
+  "selectorManifestSha256": "42494c8b7a36609ecabcd188c679eda983d5e7ad126c873c3c181ad2b7c4ec65",
   "diamondAddress": "0x1170d2D322Ff2cCeb20e6E79D2b3D2dfABFe6372",
   "expectedOwner": "0x183f062b6a8c39b9a9e71898741acf8f25e11561",
   "expectedDefaultAdminRole": "0x0000000000000000000000000000000000000000000000000000000000000000",
