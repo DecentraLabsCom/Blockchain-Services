@@ -75,6 +75,10 @@ sequenceDiagram
 - Generated metadata must include `name` (maximum 160 characters) and
   `description` (maximum 4,000 characters). `image`, `images` and `docs`
   must be HTTPS or gateway content URLs.
+- For on-chain `resourceType == 1` (FMU), the off-chain metadata must declare
+  `maxConcurrentUsers` as a positive integer. The backend validates it during
+  publication, update, listing preflight and provider confirmation; the
+  contract stores only `resourceType`.
 - `price` is non-negative; `accessURI` and `accessKey` are required. Physical
   access configuration is validated against its resource type.
 - Listing performs a metadata preflight. For gateway-hosted metadata, that

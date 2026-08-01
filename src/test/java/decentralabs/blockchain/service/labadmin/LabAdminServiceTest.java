@@ -49,6 +49,7 @@ class LabAdminServiceTest {
     private InstitutionalWalletService institutionalWalletService;
     private LabMetadataService labMetadataService;
     private LabContentRetentionService contentRetentionService;
+    private StationCapacityService stationCapacityService;
 
     @BeforeEach
     void setUp() {
@@ -58,6 +59,7 @@ class LabAdminServiceTest {
         walletService = mock(WalletService.class);
         institutionalWalletService = mock(InstitutionalWalletService.class);
         labMetadataService = mock(LabMetadataService.class);
+        stationCapacityService = new StationCapacityService(new ObjectMapper(), "", "", 100, false);
         contentRetentionService = new LabContentRetentionService();
         ReflectionTestUtils.setField(contentRetentionService, "contentBasePath", tempDir.resolve("lab-content").toString());
         service = new LabAdminService(
@@ -69,7 +71,7 @@ class LabAdminServiceTest {
             mock(GuacamoleProvisioningService.class),
             contentRetentionService,
             labMetadataService,
-            mock(StationCapacityService.class)
+            stationCapacityService
         );
         ReflectionTestUtils.setField(service, "contentBasePath", tempDir.resolve("lab-content").toString());
         ReflectionTestUtils.setField(service, "fmuDataPath", tempDir.resolve("fmu-data").toString());
@@ -368,6 +370,40 @@ class LabAdminServiceTest {
             "0xprovider"
         )).isInstanceOf(IllegalArgumentException.class)
             .hasMessageContaining("Metadata preflight failed");
+    }
+
+    @Test
+    void metadataPreflightRejectsFmuWithoutDeclaredCapacity() {
+        when(labMetadataService.getLabMetadataForProvider(
+            eq("0xprovider"),
+            eq("https://metadata.example/fmu.json"),
+            eq(BigInteger.ONE)
+        )).thenReturn(LabMetadata.builder().name("Incomplete FMU").build());
+
+        assertThatThrownBy(() -> ReflectionTestUtils.invokeMethod(
+            service,
+            "preflightMetadataUri",
+            "https://metadata.example/fmu.json",
+            "0xprovider",
+            BigInteger.ONE
+        )).isInstanceOf(IllegalArgumentException.class)
+            .hasMessageContaining("Metadata preflight failed");
+    }
+
+    @Test
+    void generatedFmuMetadataRequiresDeclaredCapacity() {
+        Map<String, Object> metadata = Map.of(
+            "name", "Incomplete FMU",
+            "description", "Missing capacity"
+        );
+
+        assertThatThrownBy(() -> ReflectionTestUtils.invokeMethod(
+            service,
+            "validateGeneratedMetadataCapacity",
+            metadata,
+            BigInteger.ONE
+        )).isInstanceOf(IllegalArgumentException.class)
+            .hasMessage("maxConcurrentUsers is required for FMU resources");
     }
 
     @Test

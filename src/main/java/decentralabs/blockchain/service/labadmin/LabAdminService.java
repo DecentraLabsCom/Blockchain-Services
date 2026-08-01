@@ -499,7 +499,7 @@ public class LabAdminService {
         boolean listImmediately = request.listImmediately() == null || request.listImmediately();
         boolean allowDuplicate = Boolean.TRUE.equals(request.allowDuplicate());
 
-        if (listImmediately) {
+        if (listImmediately || isQuickSetup(request)) {
             preflightMetadataUri(uri, wallet, resourceType);
         }
 
@@ -566,6 +566,9 @@ public class LabAdminService {
         String accessURI = requireText(request.accessURI(), "accessURI", 500);
         String accessKey = requireText(request.accessKey(), "accessKey", 200);
         validatePhysicalAccessKey(accessKey, resourceType);
+        if (isQuickSetup(request)) {
+            preflightMetadataUri(uri, requireProviderWallet(), resourceType);
+        }
 
         try {
             Diamond.Lab current = loadReadonlyDiamond().getLab(labId).send();
@@ -638,7 +641,7 @@ public class LabAdminService {
         requireOwnedLab(labId);
         String uri = walletService.getLabTokenUri(labId).orElse(null);
         if (listed) {
-            preflightMetadataUri(uri, requireProviderWallet());
+            preflightMetadataUri(uri, requireProviderWallet(), resolveOnChainResourceType(labId));
         }
         TransactionReceipt receipt = listed
             ? loadWritableDiamond(operationKey("list", labId, idempotencyKey)).listLab(labId).send()
@@ -651,10 +654,6 @@ public class LabAdminService {
             labId,
             uri
         );
-    }
-
-    private void preflightMetadataUri(String metadataUri, String providerAddress) throws IOException {
-        preflightMetadataUri(metadataUri, providerAddress, null);
     }
 
     private void preflightMetadataUri(
@@ -687,13 +686,23 @@ public class LabAdminService {
         }
 
         try {
-            LabMetadata metadata = labMetadataService.getLabMetadataForProvider(providerAddress, uri);
-            if (resourceType != null && BigInteger.ONE.equals(resourceType)) {
+            LabMetadata metadata = resourceType == null
+                ? labMetadataService.getLabMetadataForProvider(providerAddress, uri)
+                : labMetadataService.getLabMetadataForProvider(providerAddress, uri, resourceType);
+            if (BigInteger.ONE.equals(resourceType)) {
                 stationCapacityService.validateDeclaredCapacity(metadata.getMaxConcurrentUsers());
             }
         } catch (RuntimeException ex) {
             throw new IllegalArgumentException("Metadata preflight failed: URI is not accessible", ex);
         }
+    }
+
+    private BigInteger resolveOnChainResourceType(BigInteger labId) throws Exception {
+        Diamond.Lab lab = loadReadonlyDiamond().getLab(labId).send();
+        if (lab == null || lab.base == null || lab.base.resourceType == null) {
+            throw new IllegalStateException("On-chain resource type is unavailable for lab " + labId);
+        }
+        return lab.base.resourceType;
     }
 
     public org.springframework.core.io.Resource loadContentResource(String relativePath) throws IOException {
@@ -719,7 +728,7 @@ public class LabAdminService {
     }
 
     private String resolveMetadataUri(LabAdminPublishRequest request, BigInteger resourceType) throws IOException {
-        String setupMode = Optional.ofNullable(request.setupMode()).orElse("full").trim().toLowerCase(Locale.ROOT);
+        String setupMode = setupMode(request);
         if ("quick".equals(setupMode)) {
             return requireHttpsUrl(request.metadataUrl(), "metadataUrl");
         }
@@ -739,6 +748,14 @@ public class LabAdminService {
         ensureWithinContentRoot(metadataFile);
         objectMapper.writerWithDefaultPrettyPrinter().writeValue(metadataFile.toFile(), metadata);
         return publicBaseUrl() + "/lab-content/content/" + contentId + "/metadata.json";
+    }
+
+    private boolean isQuickSetup(LabAdminPublishRequest request) {
+        return "quick".equals(setupMode(request));
+    }
+
+    private String setupMode(LabAdminPublishRequest request) {
+        return Optional.ofNullable(request.setupMode()).orElse("full").trim().toLowerCase(Locale.ROOT);
     }
 
     private void validateGeneratedMetadata(Map<String, Object> metadata) {

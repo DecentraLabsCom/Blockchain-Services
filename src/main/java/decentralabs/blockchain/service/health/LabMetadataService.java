@@ -17,6 +17,7 @@ import org.springframework.cache.annotation.Cacheable;
 import org.springframework.stereotype.Service;
 
 import java.io.IOException;
+import java.math.BigInteger;
 import java.util.Collection;
 import java.time.DayOfWeek;
 import java.time.Duration;
@@ -71,21 +72,24 @@ public class LabMetadataService {
      */
     @Cacheable(value = "labMetadata", key = "'local:' + #metadataUri", condition = "#root.target.cacheEnabled")
     public LabMetadata getLabMetadata(String metadataUri) {
-        return loadMetadata(metadataUri, List.of());
+        LabMetadata metadata = loadMetadata(metadataUri, List.of());
+        validateCapacityForMetadataResourceType(metadata);
+        return metadata;
     }
 
     /**
      * Fetches the canonical metadata for a lab after resolving its current
      * owner/provider/backend association on-chain.
      */
-    @Cacheable(value = "labMetadata", key = "'lab:' + #labId", condition = "#root.target.cacheEnabled")
     public LabMetadata getLabMetadataForLab(java.math.BigInteger labId) {
         if (labId == null || labId.signum() < 0) {
             throw new IllegalArgumentException("labId is invalid");
         }
         String metadataUri = walletService.getLabTokenUri(labId)
             .orElseThrow(() -> new IllegalArgumentException("Lab metadata URI is missing"));
-        return loadMetadata(metadataUri, walletService.getLabMetadataOrigins(labId));
+        LabMetadata metadata = loadMetadata(metadataUri, walletService.getLabMetadataOrigins(labId));
+        validateCapacityForResourceType(metadata, walletService.getLabResourceType(labId));
+        return metadata;
     }
 
     /**
@@ -95,7 +99,42 @@ public class LabMetadataService {
      */
     @Cacheable(value = "labMetadata", key = "'uri:' + #metadataUri", condition = "#root.target.cacheEnabled")
     public LabMetadata getLabMetadataForProvider(String providerAddress, String metadataUri) {
-        return loadMetadata(metadataUri, walletService.getMetadataOriginsForProvider(providerAddress));
+        LabMetadata metadata = loadMetadata(metadataUri, walletService.getMetadataOriginsForProvider(providerAddress));
+        validateCapacityForMetadataResourceType(metadata);
+        return metadata;
+    }
+
+    /**
+     * Fetches provider metadata and applies the on-chain resource-type policy
+     * during publication/listing preflight.
+     */
+    public LabMetadata getLabMetadataForProvider(
+        String providerAddress,
+        String metadataUri,
+        BigInteger resourceType
+    ) {
+        LabMetadata metadata = loadMetadata(metadataUri, walletService.getMetadataOriginsForProvider(providerAddress));
+        validateCapacityForResourceType(metadata, resourceType);
+        return metadata;
+    }
+
+    /**
+     * Enforces the off-chain FMU capacity declaration against the authoritative
+     * on-chain resource type. The contract stores only resourceType; the
+     * concurrency limit remains metadata owned by the provider.
+     */
+    public void validateCapacityForResourceType(LabMetadata metadata, BigInteger resourceType) {
+        Objects.requireNonNull(metadata, "Lab metadata is required");
+        if (!BigInteger.ONE.equals(resourceType)) {
+            return;
+        }
+        Integer declaredCapacity = metadata.getMaxConcurrentUsers();
+        if (declaredCapacity == null) {
+            throw new IllegalArgumentException("maxConcurrentUsers is required for FMU resources");
+        }
+        if (declaredCapacity <= 0) {
+            throw new IllegalArgumentException("maxConcurrentUsers must be a positive integer");
+        }
     }
 
     private LabMetadata loadMetadata(String metadataUri, Collection<String> allowedOrigins) {
@@ -130,6 +169,9 @@ public class LabMetadataService {
         }
         if (rootNode.hasNonNull("resourceType")) {
             builder.resourceType(parseString(rootNode.get("resourceType")));
+        }
+        if (rootNode.hasNonNull("maxConcurrentUsers")) {
+            builder.maxConcurrentUsers(rootNode.get("maxConcurrentUsers").asInt());
         }
         if (rootNode.hasNonNull("allowedDurations")) {
             builder.allowedDurations(parseAllowedDurations(rootNode.get("allowedDurations")));
@@ -356,6 +398,7 @@ public class LabMetadataService {
         int userCount
     ) {
         Objects.requireNonNull(metadata, "Lab metadata is required");
+        validateCapacityForMetadataResourceType(metadata);
         if (startInstantUtc == null || endInstantUtc == null) {
             throw new IllegalArgumentException("Reservation start/end time is missing");
         }
@@ -450,6 +493,16 @@ public class LabMetadataService {
                 || "calendar_period".equalsIgnoreCase(mode)
                 || "period".equalsIgnoreCase(mode)
         );
+    }
+
+    private void validateCapacityForMetadataResourceType(LabMetadata metadata) {
+        String resourceType = metadata.getResourceType();
+        if (resourceType == null || resourceType.isBlank()) {
+            return;
+        }
+        if ("fmu".equalsIgnoreCase(resourceType.trim()) || "1".equals(resourceType.trim())) {
+            validateCapacityForResourceType(metadata, BigInteger.ONE);
+        }
     }
 
     private void validateCalendarPeriodDuration(LabMetadata metadata, Duration duration) {

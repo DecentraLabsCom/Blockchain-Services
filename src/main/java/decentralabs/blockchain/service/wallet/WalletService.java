@@ -639,6 +639,29 @@ public class WalletService {
         }
     }
 
+    /** Returns the resource type stored in the on-chain LabBase. */
+    public BigInteger getLabResourceType(BigInteger labId) {
+        if (labId == null || labId.signum() <= 0) {
+            throw new IllegalArgumentException("labId is invalid");
+        }
+        try {
+            Web3j web3j = getWeb3jInstance();
+            Diamond diamond = Diamond.load(
+                contractAddress,
+                web3j,
+                new ReadonlyTransactionManager(web3j, contractAddress),
+                new StaticGasProvider(BigInteger.ZERO, BigInteger.ZERO)
+            );
+            Diamond.Lab lab = diamond.getLab(labId).send();
+            if (lab == null || lab.base == null || lab.base.resourceType == null) {
+                throw new IllegalStateException("On-chain resource type is unavailable");
+            }
+            return lab.base.resourceType;
+        } catch (Exception ex) {
+            throw new IllegalStateException("Unable to read on-chain resource type for lab " + labId, ex);
+        }
+    }
+
     /**
      * Resolves the exact HTTPS origins allowed to serve metadata for a lab.
      *

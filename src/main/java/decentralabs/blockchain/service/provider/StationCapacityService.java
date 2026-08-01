@@ -93,7 +93,7 @@ public class StationCapacityService {
 
     public void validateDeclaredCapacity(Integer declaredCapacity) {
         if (declaredCapacity == null) {
-            return;
+            throw new IllegalArgumentException("maxConcurrentUsers is required for FMU resources");
         }
         if (declaredCapacity <= 0) {
             throw new IllegalArgumentException("maxConcurrentUsers must be a positive integer");

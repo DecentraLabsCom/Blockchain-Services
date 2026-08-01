@@ -222,6 +222,20 @@ class ContractEventListenerConfigTest {
     }
 
     @Test
+    void listenerRejectsMissingCapacityForOnChainFmu() {
+        LabMetadata metadata = new LabMetadata();
+
+        assertThatThrownBy(() -> ReflectionTestUtils.invokeMethod(
+            config,
+            "requireFmuCapacityDeclaration",
+            metadata,
+            BigInteger.ONE
+        ))
+            .isInstanceOf(ReservationProcessingFailure.class)
+            .hasMessage("maxConcurrentUsers is required for FMU resources");
+    }
+
+    @Test
     void shouldPersistRequestedReservationUsingIndexedKey() throws Exception {
         ReflectionTestUtils.setField(config, "eventListeningEnabled", true);
 
@@ -790,6 +804,23 @@ class ContractEventListenerConfigTest {
         stubReservationPucHash(diamond, storedPucHash);
 
         @SuppressWarnings("unchecked")
+        var labCall = (org.web3j.protocol.core.RemoteFunctionCall<decentralabs.blockchain.contract.Diamond.Lab>) mock(
+            org.web3j.protocol.core.RemoteFunctionCall.class
+        );
+        when(labCall.send()).thenReturn(new decentralabs.blockchain.contract.Diamond.Lab(
+            BigInteger.valueOf(16),
+            new decentralabs.blockchain.contract.Diamond.LabBase(
+                "https://lab.example.edu/metadata.json",
+                BigInteger.ZERO,
+                "https://lab.example.edu/fmu",
+                "BouncingBall.fmu",
+                BigInteger.ZERO,
+                BigInteger.ONE
+            )
+        ));
+        when(diamond.getLab(eq(BigInteger.valueOf(16)))).thenReturn(labCall);
+
+        @SuppressWarnings("unchecked")
         var ownerCall = (org.web3j.protocol.core.RemoteFunctionCall<String>) mock(org.web3j.protocol.core.RemoteFunctionCall.class);
         when(ownerCall.send()).thenReturn("0x00000000000000000000000000000000000000dd");
         when(diamond.ownerOf(any(BigInteger.class))).thenReturn(ownerCall);
@@ -847,6 +878,7 @@ class ContractEventListenerConfigTest {
             eq(BigInteger.valueOf(1000)),
             eq(BigInteger.valueOf(2000))
         );
+        verify(diamond).getLab(eq(BigInteger.valueOf(16)));
         verify(writableDiamond, never()).denyReservationRequest(any(byte[].class));
     }
 
@@ -1051,6 +1083,23 @@ class ContractEventListenerConfigTest {
         when(reservationCall.send()).thenReturn(reservation);
         when(diamond.getReservation(any(byte[].class))).thenReturn(reservationCall);
         stubReservationPucHash(diamond, "0x" + "56".repeat(32));
+
+        @SuppressWarnings("unchecked")
+        var labCall = (org.web3j.protocol.core.RemoteFunctionCall<decentralabs.blockchain.contract.Diamond.Lab>) mock(
+            org.web3j.protocol.core.RemoteFunctionCall.class
+        );
+        when(labCall.send()).thenReturn(new decentralabs.blockchain.contract.Diamond.Lab(
+            BigInteger.valueOf(20),
+            new decentralabs.blockchain.contract.Diamond.LabBase(
+                "https://lab.example.edu/metadata.json",
+                BigInteger.ZERO,
+                "https://lab.example.edu/guacamole",
+                "connection",
+                BigInteger.ZERO,
+                BigInteger.ZERO
+            )
+        ));
+        when(diamond.getLab(eq(BigInteger.valueOf(20)))).thenReturn(labCall);
 
         @SuppressWarnings("unchecked")
         var ownerCall = (org.web3j.protocol.core.RemoteFunctionCall<String>) mock(org.web3j.protocol.core.RemoteFunctionCall.class);

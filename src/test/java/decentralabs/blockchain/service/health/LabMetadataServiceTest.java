@@ -9,6 +9,7 @@ import static org.mockito.Mockito.when;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.charset.StandardCharsets;
+import java.math.BigInteger;
 import java.time.DayOfWeek;
 import java.time.Instant;
 import java.time.LocalTime;
@@ -260,6 +261,7 @@ class LabMetadataServiceTest {
                     "image": "https://image.url",
                     "attributes": [
                         { "trait_type": "resourceType", "value": "fmu" },
+                        { "trait_type": "maxConcurrentUsers", "value": "2" },
                         { "trait_type": "bookingMode", "value": "calendar-period" }
                     ]
                 }
@@ -288,6 +290,75 @@ class LabMetadataServiceTest {
     @Nested
     @DisplayName("Availability Enforcement Regression Tests")
     class AvailabilityEnforcementTests {
+
+        @Test
+        @DisplayName("Should require maxConcurrentUsers for an on-chain FMU")
+        void shouldRequireConcurrencyForOnChainFmu() {
+            LabMetadata metadata = LabMetadata.builder()
+                .name("FMU without capacity")
+                .build();
+
+            assertThatThrownBy(() -> metadataService.validateCapacityForResourceType(
+                metadata,
+                BigInteger.ONE
+            ))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("maxConcurrentUsers is required for FMU resources");
+        }
+
+        @Test
+        @DisplayName("Should allow missing maxConcurrentUsers for a physical lab")
+        void shouldAllowMissingConcurrencyForPhysicalLab() {
+            LabMetadata metadata = LabMetadata.builder()
+                .name("Physical lab")
+                .build();
+
+            metadataService.validateCapacityForResourceType(metadata, BigInteger.ZERO);
+        }
+
+        @Test
+        @DisplayName("Should reject availability validation for FMU metadata without capacity")
+        void shouldRejectAvailabilityForIncompleteFmuMetadata() {
+            LabMetadata metadata = LabMetadata.builder()
+                .name("Incomplete FMU")
+                .resourceType("fmu")
+                .build();
+
+            assertThatThrownBy(() -> metadataService.validateAvailability(
+                metadata,
+                Instant.parse("2026-03-02T10:00:00Z"),
+                Instant.parse("2026-03-02T11:00:00Z"),
+                1
+            ))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("maxConcurrentUsers is required for FMU resources");
+        }
+
+        @Test
+        @DisplayName("Should validate capacity while loading on-chain FMU metadata")
+        void shouldValidateCapacityWhileLoadingOnChainFmuMetadata() {
+            String json = """
+                {
+                    "name": "Incomplete FMU",
+                    "description": "Missing capacity",
+                    "image": "https://example.com/fmu.png",
+                    "resourceType": "fmu",
+                    "attributes": []
+                }
+                """;
+            when(walletService.getLabTokenUri(BigInteger.valueOf(7)))
+                .thenReturn(java.util.Optional.of("https://example.com/fmu.json"));
+            when(walletService.getLabMetadataOrigins(BigInteger.valueOf(7)))
+                .thenReturn(List.of("https://example.com"));
+            when(walletService.getLabResourceType(BigInteger.valueOf(7)))
+                .thenReturn(BigInteger.ONE);
+            when(metadataClient.fetch(anyString(), any()))
+                .thenReturn(json.getBytes(StandardCharsets.UTF_8));
+
+            assertThatThrownBy(() -> metadataService.getLabMetadataForLab(BigInteger.valueOf(7)))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("maxConcurrentUsers is required for FMU resources");
+        }
 
         @Test
         @DisplayName("Should apply identical availability rules for physical labs and FMU labs")

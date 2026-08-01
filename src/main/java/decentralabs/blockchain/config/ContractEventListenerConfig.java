@@ -850,8 +850,12 @@ public class ContractEventListenerConfig {
 
             ReservationAvailabilityLockKey availabilityLockKey = resolveReservationAvailabilityLockKey(payload.labId());
             reservationAvailabilityLockService.<Void>withLock(availabilityLockKey, () -> {
+                BigInteger resourceType = fetchOnChainResourceType(payload.labId());
+                requireFmuCapacityDeclaration(metadata, resourceType);
+                labMetadataService.validateCapacityForResourceType(metadata, resourceType);
+
                 int requestedUserCount = 1;
-                if (metadata.getMaxConcurrentUsers() != null) {
+                if (BigInteger.ONE.equals(resourceType)) {
                     BigInteger overlappingReservations = fetchOverlappingReservationCount(
                         payload.labId(), startBigInteger(start), startBigInteger(end)
                     );
@@ -863,7 +867,7 @@ public class ContractEventListenerConfig {
                     }
                     requestedUserCount = overlappingReservations.intValueExact() + 1;
                 }
-                validateStationCapacity(metadata, requestedUserCount);
+                validateStationCapacity(metadata, resourceType, requestedUserCount);
                 validateReservationAvailability(metadata, start, end, requestedUserCount);
                 confirmInstitutionalReservationOnChain(payload);
                 return null;
@@ -969,17 +973,29 @@ public class ContractEventListenerConfig {
         return ex != null && ex.getMessage() != null && ex.getMessage().startsWith(MISSING_PUC_PREFIX);
     }
 
-    private void validateStationCapacity(LabMetadata metadata, int requestedUserCount) {
-        if (stationCapacityService == null || metadata == null || metadata.getMaxConcurrentUsers() == null) {
+    private void validateStationCapacity(
+        LabMetadata metadata,
+        BigInteger resourceType,
+        int requestedUserCount
+    ) {
+        if (!BigInteger.ONE.equals(resourceType)) {
             return;
         }
-        String resourceType = metadata.getResourceType();
-        if ((resourceType == null || resourceType.isBlank()) && metadata.getMaxConcurrentUsers() <= 1) {
-            return;
+        if (stationCapacityService == null || metadata == null) {
+            throw new ReservationProcessingFailure(
+                ReservationProcessingFailure.Type.INFRASTRUCTURE_UNAVAILABLE,
+                "Station capacity authority is unavailable"
+            );
         }
-        if (resourceType != null && !resourceType.isBlank()
-            && !"fmu".equalsIgnoreCase(resourceType.trim())) {
-            return;
+
+        try {
+            stationCapacityService.validateDeclaredCapacity(metadata.getMaxConcurrentUsers());
+        } catch (IllegalArgumentException ex) {
+            throw new ReservationProcessingFailure(
+                ReservationProcessingFailure.Type.POLICY_REJECTION,
+                ex.getMessage(),
+                ex
+            );
         }
 
         int stationCapacity = stationCapacityService.requireCapacity();
@@ -1042,6 +1058,7 @@ public class ContractEventListenerConfig {
             || message.contains("duration")
             || message.contains("shorter than minimum period")
             || message.contains("longer than maximum period")
+            || message.contains("maxconcurrentusers")
             || message.contains("too many concurrent users")
             || message.contains("maintenance");
     }
@@ -1242,6 +1259,8 @@ public class ContractEventListenerConfig {
     private Optional<LabMetadata> loadLabMetadata(BigInteger labId) {
         try {
             return Optional.ofNullable(labMetadataService.getLabMetadataForLab(labId));
+        } catch (IllegalArgumentException ex) {
+            throw ex;
         } catch (Exception ex) {
             log.warn("Unable to load metadata for lab {}: {}", labId, ex.getMessage());
             return Optional.empty();
@@ -1273,6 +1292,42 @@ public class ContractEventListenerConfig {
             throw new ReservationProcessingFailure(
                 ReservationProcessingFailure.Type.TRANSIENT_RPC_FAILURE,
                 "Unable to read overlapping reservations for lab " + labId,
+                ex
+            );
+        }
+    }
+
+    private void requireFmuCapacityDeclaration(LabMetadata metadata, BigInteger resourceType) {
+        if (!BigInteger.ONE.equals(resourceType)) {
+            return;
+        }
+        if (metadata == null || metadata.getMaxConcurrentUsers() == null) {
+            throw new ReservationProcessingFailure(
+                ReservationProcessingFailure.Type.POLICY_REJECTION,
+                "maxConcurrentUsers is required for FMU resources"
+            );
+        }
+        if (metadata.getMaxConcurrentUsers() <= 0) {
+            throw new ReservationProcessingFailure(
+                ReservationProcessingFailure.Type.POLICY_REJECTION,
+                "maxConcurrentUsers must be a positive integer"
+            );
+        }
+    }
+
+    private BigInteger fetchOnChainResourceType(BigInteger labId) {
+        try {
+            Diamond.Lab lab = getDiamondContract().getLab(labId).send();
+            if (lab == null || lab.base == null || lab.base.resourceType == null) {
+                throw new IllegalStateException("On-chain resource type is unavailable for lab " + labId);
+            }
+            return lab.base.resourceType;
+        } catch (ReservationProcessingFailure ex) {
+            throw ex;
+        } catch (Exception ex) {
+            throw new ReservationProcessingFailure(
+                ReservationProcessingFailure.Type.TRANSIENT_RPC_FAILURE,
+                "Unable to read on-chain resource type for lab " + labId,
                 ex
             );
         }
