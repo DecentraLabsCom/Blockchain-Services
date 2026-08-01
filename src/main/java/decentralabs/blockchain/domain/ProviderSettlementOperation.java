@@ -16,7 +16,7 @@ import lombok.NoArgsConstructor;
 public class ProviderSettlementOperation {
 
     public enum Action { SUBMIT, APPROVE, PAY }
-    public enum Status { PREPARED, MINED, PROJECTED, RETRYABLE }
+    public enum Status { PREPARED, MINED, PROJECTED, RETRYABLE, REJECTED }
 
     private Long id;
     private String operationKey;

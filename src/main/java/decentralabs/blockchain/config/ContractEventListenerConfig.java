@@ -1,6 +1,7 @@
 package decentralabs.blockchain.config;
 
 import decentralabs.blockchain.contract.Diamond;
+import decentralabs.blockchain.domain.ProviderInvoiceRecord;
 import decentralabs.blockchain.dto.health.LabMetadata;
 import decentralabs.blockchain.event.NetworkSwitchEvent;
 import decentralabs.blockchain.notification.ReservationNotificationData;
@@ -45,6 +46,7 @@ import org.web3j.abi.datatypes.Address;
 import org.web3j.abi.datatypes.Event;
 import org.web3j.abi.datatypes.generated.Bytes32;
 import org.web3j.abi.datatypes.generated.Uint256;
+import org.web3j.abi.datatypes.generated.Uint64;
 import org.web3j.abi.datatypes.generated.Uint8;
 import org.web3j.abi.datatypes.Utf8String;
 import org.web3j.protocol.Web3j;
@@ -78,6 +80,8 @@ public class ContractEventListenerConfig {
     private static final String PROVIDER_SETTLEMENT_CLAIM_SUBMITTED = "ProviderSettlementClaimSubmitted";
     private static final String PROVIDER_SETTLEMENT_CLAIM_APPROVED = "ProviderSettlementClaimApproved";
     private static final String PROVIDER_SETTLEMENT_CLAIM_PAID = "ProviderSettlementClaimPaid";
+    private static final String PROVIDER_SETTLEMENT_BATCH_INVALIDATED = "ProviderSettlementBatchInvalidated";
+    private static final String PROVIDER_SETTLEMENT_CLAIM_INVALIDATED = "ProviderSettlementClaimInvalidated";
     private static final String MISSING_PUC_PREFIX = "Missing PUC for reservation ";
     private static final long RESERVATION_RETRY_BACKOFF_MS = 120_000L;
     private static final BigInteger PROVIDER_NOT_ELIGIBLE_REASON = BigInteger.valueOf(2);
@@ -216,6 +220,35 @@ public class ContractEventListenerConfig {
         )
     );
 
+    private static final Event PROVIDER_SETTLEMENT_BATCH_INVALIDATED_EVENT = new Event(
+        PROVIDER_SETTLEMENT_BATCH_INVALIDATED,
+        Arrays.<TypeReference<?>>asList(
+            new TypeReference<Bytes32>(true) {},
+            new TypeReference<Uint256>(true) {},
+            new TypeReference<Uint256>() {},
+            new TypeReference<Uint8>() {},
+            new TypeReference<Uint8>() {},
+            new TypeReference<Bytes32>() {},
+            new TypeReference<Address>(true) {},
+            new TypeReference<Uint64>() {}
+        )
+    );
+
+    private static final Event PROVIDER_SETTLEMENT_CLAIM_INVALIDATED_EVENT = new Event(
+        PROVIDER_SETTLEMENT_CLAIM_INVALIDATED,
+        Arrays.<TypeReference<?>>asList(
+            new TypeReference<Bytes32>(true) {},
+            new TypeReference<Bytes32>(true) {},
+            new TypeReference<Uint256>(true) {},
+            new TypeReference<Uint256>() {},
+            new TypeReference<Uint8>() {},
+            new TypeReference<Uint8>() {},
+            new TypeReference<Bytes32>() {},
+            new TypeReference<Address>() {},
+            new TypeReference<Uint64>() {}
+        )
+    );
+
     private static final String ACTION_REQUESTED = "requested";
 
     private static final Map<String, Event> SUPPORTED_EVENTS = Map.ofEntries(
@@ -230,7 +263,9 @@ public class ContractEventListenerConfig {
         Map.entry(RESERVATION_INTENT_PROCESSED, RESERVATION_INTENT_PROCESSED_EVENT),
         Map.entry(PROVIDER_SETTLEMENT_CLAIM_SUBMITTED, PROVIDER_SETTLEMENT_CLAIM_SUBMITTED_EVENT),
         Map.entry(PROVIDER_SETTLEMENT_CLAIM_APPROVED, PROVIDER_SETTLEMENT_CLAIM_APPROVED_EVENT),
-        Map.entry(PROVIDER_SETTLEMENT_CLAIM_PAID, PROVIDER_SETTLEMENT_CLAIM_PAID_EVENT)
+        Map.entry(PROVIDER_SETTLEMENT_CLAIM_PAID, PROVIDER_SETTLEMENT_CLAIM_PAID_EVENT),
+        Map.entry(PROVIDER_SETTLEMENT_BATCH_INVALIDATED, PROVIDER_SETTLEMENT_BATCH_INVALIDATED_EVENT),
+        Map.entry(PROVIDER_SETTLEMENT_CLAIM_INVALIDATED, PROVIDER_SETTLEMENT_CLAIM_INVALIDATED_EVENT)
     );
 
     private final WalletService walletService;
@@ -514,6 +549,8 @@ public class ContractEventListenerConfig {
             case PROVIDER_SETTLEMENT_CLAIM_SUBMITTED -> handleProviderSettlementClaimSubmitted(eventValues, eventLog);
             case PROVIDER_SETTLEMENT_CLAIM_APPROVED -> handleProviderSettlementClaimApproved(eventValues, eventLog);
             case PROVIDER_SETTLEMENT_CLAIM_PAID -> handleProviderSettlementClaimPaid(eventValues, eventLog);
+            case PROVIDER_SETTLEMENT_BATCH_INVALIDATED -> handleProviderSettlementBatchInvalidated(eventValues);
+            case PROVIDER_SETTLEMENT_CLAIM_INVALIDATED -> handleProviderSettlementClaimInvalidated(eventValues);
             default -> throw new IllegalArgumentException("Unhandled event type: " + eventName);
         }
     }
@@ -561,6 +598,20 @@ public class ContractEventListenerConfig {
             eventLog.getBlockHash(),
             actor
         );
+    }
+
+    private void handleProviderSettlementBatchInvalidated(EventValues values) {
+        String batchId = toHex((Bytes32) values.getIndexedValues().get(0));
+        providerSettlementPersistenceService.markSettlementBatchInvalidated(batchId);
+    }
+
+    private void handleProviderSettlementClaimInvalidated(EventValues values) {
+        String claimIdHash = toHex((Bytes32) values.getIndexedValues().get(0));
+        BigInteger targetStatus = ((Uint8) values.getNonIndexedValues().get(2)).getValue();
+        ProviderInvoiceRecord.Status status = targetStatus.intValue() == 4
+            ? ProviderInvoiceRecord.Status.DISPUTED
+            : ProviderInvoiceRecord.Status.REVERSED;
+        providerSettlementPersistenceService.markSettlementClaimInvalidated(claimIdHash, status);
     }
 
     private void handleReservationRequested(EventValues eventValues, Log eventLog) {

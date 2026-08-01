@@ -41,12 +41,7 @@ public class ProviderSettlementReconciliationScheduler {
             ProviderSettlementReferenceHasher.claimId(operation.getClaimId())
         );
         int status = claim.status.intValue();
-        int required = switch (operation.getAction()) {
-            case SUBMIT -> 1;
-            case APPROVE -> 2;
-            case PAY -> 3;
-        };
-        if (status < required || !matches(operation, claim)) return;
+        if (!claimCanSatisfy(operation.getAction(), status) || !matches(operation, claim)) return;
 
         String actor = switch (operation.getAction()) {
             case SUBMIT -> claim.submittedBy;
@@ -63,6 +58,9 @@ public class ProviderSettlementReconciliationScheduler {
     }
 
     private boolean matches(ProviderSettlementOperation operation, Diamond.ProviderSettlementClaim claim) throws Exception {
+        if (claim == null || claim.status == null || claim.status.intValue() < 1 || claim.status.intValue() > 3) return false;
+        if (!new java.math.BigInteger(operation.getLabId()).equals(claim.labId)
+            || !operation.getCreditAmount().multiply(decentralabs.blockchain.util.CreditUnitConverter.RAW_PER_CREDIT).toBigIntegerExact().equals(claim.amount)) return false;
         if (!Arrays.equals(
             ProviderSettlementReferenceHasher.batchId(operation.getBatchId()),
             claim.batchId
@@ -87,5 +85,13 @@ public class ProviderSettlementReconciliationScheduler {
             );
         }
         return true;
+    }
+
+    private boolean claimCanSatisfy(ProviderSettlementOperation.Action action, int status) {
+        return switch (action) {
+            case SUBMIT -> status >= 1 && status <= 3;
+            case APPROVE -> status >= 2 && status <= 3;
+            case PAY -> status == 3;
+        };
     }
 }

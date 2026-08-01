@@ -185,6 +185,25 @@ class Eip712BillingAdminVerifierTest {
             .isNotEqualTo(verifier.buildDigest(approvedToPaid));
     }
 
+    @Test
+    void buildDigest_changesWhenSettlementObjectChanges() {
+        InstitutionalAdminRequest first = request(
+            credentials.getAddress(),
+            AdminOperation.DISPUTE_PROVIDER_SETTLEMENT_BATCH
+        );
+        first.setBatchId("0x" + "11".repeat(32));
+        first.setReference("dispute-1");
+
+        InstitutionalAdminRequest second = request(
+            credentials.getAddress(),
+            AdminOperation.DISPUTE_PROVIDER_SETTLEMENT_BATCH
+        );
+        second.setBatchId("0x" + "22".repeat(32));
+        second.setReference("dispute-1");
+
+        assertThat(verifier.buildDigest(first)).isNotEqualTo(verifier.buildDigest(second));
+    }
+
     private InstitutionalAdminRequest request(String signer, AdminOperation operation) {
         InstitutionalAdminRequest request = new InstitutionalAdminRequest();
         request.setAdminWalletAddress(signer);

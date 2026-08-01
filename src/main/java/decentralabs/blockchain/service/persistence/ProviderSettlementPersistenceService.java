@@ -386,9 +386,44 @@ public class ProviderSettlementPersistenceService {
     public List<ProviderSettlementOperation> findPendingSettlementOperations(int limit) {
         if (jdbcTemplate == null) return List.of();
         return jdbcTemplate.query(
-            "SELECT * FROM provider_settlement_operations WHERE status <> 'PROJECTED' ORDER BY updated_at ASC LIMIT ?",
+            "SELECT * FROM provider_settlement_operations WHERE status NOT IN ('PROJECTED', 'REJECTED') ORDER BY updated_at ASC LIMIT ?",
             SETTLEMENT_OPERATION_MAPPER,
             Math.max(1, limit)
+        );
+    }
+
+    @Transactional
+    public void markSettlementClaimInvalidated(String claimIdHash, ProviderInvoiceRecord.Status status) {
+        if (jdbcTemplate == null) return;
+        jdbcTemplate.update(
+            """
+            UPDATE provider_invoice_records invoice
+            JOIN provider_settlement_operations operation ON operation.invoice_record_id = invoice.id
+            SET invoice.status = ?, invoice.updated_at = CURRENT_TIMESTAMP
+            WHERE operation.claim_id_hash = ?
+            """,
+            status.name(), claimIdHash
+        );
+        jdbcTemplate.update(
+            """
+            UPDATE provider_settlement_operations
+            SET status='REJECTED', last_error='Claim was disputed or reversed'
+            WHERE claim_id_hash=? AND status <> 'PROJECTED'
+            """,
+            claimIdHash
+        );
+    }
+
+    @Transactional
+    public void markSettlementBatchInvalidated(String batchId) {
+        if (jdbcTemplate == null) return;
+        jdbcTemplate.update(
+            """
+            UPDATE provider_settlement_operations
+            SET status='REJECTED', last_error='Settlement batch was disputed or reversed'
+            WHERE reservation_hash=? AND status <> 'PROJECTED'
+            """,
+            batchId
         );
     }
 

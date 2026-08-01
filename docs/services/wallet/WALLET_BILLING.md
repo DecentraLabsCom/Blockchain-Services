@@ -90,7 +90,15 @@ the supported operations:
 - `AUTHORIZE_BACKEND`, `REVOKE_BACKEND`, `ADMIN_RESET_BACKEND`;
 - `SET_USER_LIMIT`, `SET_SPENDING_PERIOD`, `RESET_SPENDING_PERIOD`;
 - `ISSUE_SERVICE_CREDITS`, `ADJUST_SERVICE_CREDITS`;
-- `TRANSITION_PROVIDER_RECEIVABLE_STATE`, `COLLECT_LAB_PAYOUT`.
+- `TRANSITION_PROVIDER_RECEIVABLE_STATE` (deprecated and fail-closed),
+  `DISPUTE_PROVIDER_SETTLEMENT_BATCH`,
+  `REVERSE_PROVIDER_SETTLEMENT_BATCH`,
+  `DISPUTE_PROVIDER_SETTLEMENT_CLAIM`,
+  `REVERSE_PROVIDER_SETTLEMENT_CLAIM`, `COLLECT_LAB_PAYOUT`.
+
+Settlement disputes and reversals require the canonical non-zero `batchId` or
+`claimId` plus a non-empty external `reference`. Those identifiers are part of
+the signed EIP-712 payload and are sent through object-bound Diamond selectors.
 
 The signed request includes the configured `adminWalletAddress`, operation,
 operation-specific fields, a millisecond `timestamp` and the EIP-712

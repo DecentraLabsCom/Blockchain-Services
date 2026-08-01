@@ -1215,6 +1215,34 @@ public class Diamond extends Contract {
         );
     }
 
+    public RemoteFunctionCall<TransactionReceipt> disputeSettlementBatch(
+        byte[] batchId,
+        byte[] referenceHash
+    ) {
+        return executeRemoteCallTransaction(disputeSettlementBatchFunction(batchId, referenceHash));
+    }
+
+    public RemoteFunctionCall<TransactionReceipt> reverseSettlementBatch(
+        byte[] batchId,
+        byte[] referenceHash
+    ) {
+        return executeRemoteCallTransaction(reverseSettlementBatchFunction(batchId, referenceHash));
+    }
+
+    public RemoteFunctionCall<TransactionReceipt> disputeSettlementClaim(
+        byte[] claimId,
+        byte[] referenceHash
+    ) {
+        return executeRemoteCallTransaction(disputeSettlementClaimFunction(claimId, referenceHash));
+    }
+
+    public RemoteFunctionCall<TransactionReceipt> reverseSettlementClaim(
+        byte[] claimId,
+        byte[] referenceHash
+    ) {
+        return executeRemoteCallTransaction(reverseSettlementClaimFunction(claimId, referenceHash));
+    }
+
     public RemoteFunctionCall<ProviderSettlementClaim> getProviderSettlementClaim(byte[] claimId) {
         final Function function = new Function(
             "getProviderSettlementClaim",
@@ -1344,6 +1372,38 @@ public class Diamond extends Contract {
                 new Bytes32(paymentReferenceHash),
                 new Bytes32(paymentAttestationHash)
             ),
+            List.of()
+        );
+    }
+
+    public static Function disputeSettlementBatchFunction(byte[] batchId, byte[] referenceHash) {
+        return new Function(
+            "disputeSettlementBatch",
+            Arrays.asList(new Bytes32(batchId), new Bytes32(referenceHash)),
+            List.of()
+        );
+    }
+
+    public static Function reverseSettlementBatchFunction(byte[] batchId, byte[] referenceHash) {
+        return new Function(
+            "reverseSettlementBatch",
+            Arrays.asList(new Bytes32(batchId), new Bytes32(referenceHash)),
+            List.of()
+        );
+    }
+
+    public static Function disputeSettlementClaimFunction(byte[] claimId, byte[] referenceHash) {
+        return new Function(
+            "disputeSettlementClaim",
+            Arrays.asList(new Bytes32(claimId), new Bytes32(referenceHash)),
+            List.of()
+        );
+    }
+
+    public static Function reverseSettlementClaimFunction(byte[] claimId, byte[] referenceHash) {
+        return new Function(
+            "reverseSettlementClaim",
+            Arrays.asList(new Bytes32(claimId), new Bytes32(referenceHash)),
             List.of()
         );
     }

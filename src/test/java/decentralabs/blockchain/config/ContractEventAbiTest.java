@@ -60,6 +60,14 @@ class ContractEventAbiTest {
             "ReservationIntentProcessed",
             "ReservationIntentProcessed(bytes32,bytes32,string,bytes32,address,bool,string)"
         );
+        expectedSignatures.put(
+            "ProviderSettlementBatchInvalidated",
+            "ProviderSettlementBatchInvalidated(bytes32,uint256,uint256,uint8,uint8,bytes32,address,uint64)"
+        );
+        expectedSignatures.put(
+            "ProviderSettlementClaimInvalidated",
+            "ProviderSettlementClaimInvalidated(bytes32,bytes32,uint256,uint256,uint8,uint8,bytes32,address,uint64)"
+        );
 
         @SuppressWarnings("unchecked")
         Map<String, Event> definitions = (Map<String, Event>) ReflectionTestUtils.getField(

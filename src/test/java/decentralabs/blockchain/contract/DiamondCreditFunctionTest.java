@@ -58,6 +58,21 @@ class DiamondCreditFunctionTest {
         ));
     }
 
+    @Test
+    void settlementInvalidationUsesObjectBoundSelectors() {
+        var batchId = new byte[32];
+        var claimId = new byte[32];
+
+        assertThat(FunctionEncoder.encode(Diamond.disputeSettlementBatchFunction(batchId, REFERENCE)).substring(0, 10))
+            .isEqualTo(selector("disputeSettlementBatch(bytes32,bytes32)"));
+        assertThat(FunctionEncoder.encode(Diamond.reverseSettlementBatchFunction(batchId, REFERENCE)).substring(0, 10))
+            .isEqualTo(selector("reverseSettlementBatch(bytes32,bytes32)"));
+        assertThat(FunctionEncoder.encode(Diamond.disputeSettlementClaimFunction(claimId, REFERENCE)).substring(0, 10))
+            .isEqualTo(selector("disputeSettlementClaim(bytes32,bytes32)"));
+        assertThat(FunctionEncoder.encode(Diamond.reverseSettlementClaimFunction(claimId, REFERENCE)).substring(0, 10))
+            .isEqualTo(selector("reverseSettlementClaim(bytes32,bytes32)"));
+    }
+
     private String selector(String signature) {
         return org.web3j.crypto.Hash.sha3String(signature).substring(0, 10);
     }

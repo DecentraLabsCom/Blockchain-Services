@@ -670,6 +670,62 @@ class InstitutionalAdminServiceTest {
         }
 
         @Test
+        @DisplayName("Should use the object-bound selector for settlement batch disputes")
+        void disputeSettlementBatchUsesObjectBoundOperation() throws Exception {
+            Credentials credentials = Credentials.create("0x1");
+            when(httpServletRequest.getRemoteAddr()).thenReturn("127.0.0.1");
+            when(institutionalWalletService.getInstitutionalWalletAddress()).thenReturn(credentials.getAddress());
+            when(institutionalWalletService.getInstitutionalCredentials()).thenReturn(credentials);
+            when(rateLimitService.allowTransaction(credentials.getAddress())).thenReturn(true);
+            mockSuccessfulTransaction(credentials, "0xdispute-batch");
+
+            InstitutionalAdminRequest request = buildRequest(
+                credentials.getAddress(),
+                AdminOperation.DISPUTE_PROVIDER_SETTLEMENT_BATCH,
+                null,
+                null,
+                null,
+                null,
+                null
+            );
+            request.setBatchId("0x" + "11".repeat(32));
+            request.setReference("dispute-batch-001");
+
+            InstitutionalAdminResponse response = adminService.executeAdminOperation(request);
+
+            assertThat(response.isSuccess()).isTrue();
+            assertThat(response.getOperationType()).isEqualTo("DISPUTE_PROVIDER_SETTLEMENT_BATCH");
+        }
+
+        @Test
+        @DisplayName("Should use the object-bound selector for settlement claim reversals")
+        void reverseSettlementClaimUsesObjectBoundOperation() throws Exception {
+            Credentials credentials = Credentials.create("0x1");
+            when(httpServletRequest.getRemoteAddr()).thenReturn("127.0.0.1");
+            when(institutionalWalletService.getInstitutionalWalletAddress()).thenReturn(credentials.getAddress());
+            when(institutionalWalletService.getInstitutionalCredentials()).thenReturn(credentials);
+            when(rateLimitService.allowTransaction(credentials.getAddress())).thenReturn(true);
+            mockSuccessfulTransaction(credentials, "0xreverse-claim");
+
+            InstitutionalAdminRequest request = buildRequest(
+                credentials.getAddress(),
+                AdminOperation.REVERSE_PROVIDER_SETTLEMENT_CLAIM,
+                null,
+                null,
+                null,
+                null,
+                null
+            );
+            request.setClaimId("0x" + "22".repeat(32));
+            request.setReference("reverse-claim-001");
+
+            InstitutionalAdminResponse response = adminService.executeAdminOperation(request);
+
+            assertThat(response.isSuccess()).isTrue();
+            assertThat(response.getOperationType()).isEqualTo("REVERSE_PROVIDER_SETTLEMENT_CLAIM");
+        }
+
+        @Test
         @DisplayName("Should reject TRANSITION_PROVIDER_RECEIVABLE_STATE when lifecycle state is invalid")
         void transitionProviderReceivableStateRejectsInvalidState() {
             Credentials credentials = Credentials.create("0x1");

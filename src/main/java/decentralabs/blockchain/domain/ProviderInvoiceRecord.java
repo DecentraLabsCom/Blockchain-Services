@@ -17,7 +17,7 @@ import java.time.Instant;
 @AllArgsConstructor
 public class ProviderInvoiceRecord {
 
-    public enum Status { SUBMITTED, APPROVED, DISPUTED, PAID, CANCELLED }
+    public enum Status { SUBMITTED, APPROVED, DISPUTED, PAID, CANCELLED, REVERSED }
 
     private Long id;
     private String labId;

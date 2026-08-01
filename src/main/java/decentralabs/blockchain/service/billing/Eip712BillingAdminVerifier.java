@@ -27,7 +27,7 @@ public class Eip712BillingAdminVerifier {
     private static final String EIP712_DOMAIN_TYPE =
         "EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)";
     private static final String TREASURY_ADMIN_TYPE =
-        "TreasuryAdminOperation(address signer,string operation,address providerAddress,address backendAddress,uint256 spendingLimit,uint256 spendingPeriod,uint256 amount,uint256 labId,uint256 maxBatch,address creditAccount,int256 creditDelta,uint256 fromReceivableState,uint256 toReceivableState,string reference,uint64 timestamp)";
+        "TreasuryAdminOperation(address signer,string operation,address providerAddress,address backendAddress,uint256 spendingLimit,uint256 spendingPeriod,uint256 amount,uint256 labId,uint256 maxBatch,address creditAccount,int256 creditDelta,uint256 fromReceivableState,uint256 toReceivableState,string batchId,string claimId,string reference,uint64 timestamp)";
 
     private static final byte[] EIP712_DOMAIN_TYPEHASH = keccak256(EIP712_DOMAIN_TYPE);
     private static final byte[] TREASURY_ADMIN_TYPEHASH = keccak256(TREASURY_ADMIN_TYPE);
@@ -41,7 +41,7 @@ public class Eip712BillingAdminVerifier {
         @Value("${billing.admin.domain.name:DecentraLabsTreasuryAdmin}") String domainName,
         @Value("${billing.admin.domain.version:1}") String domainVersion,
         @Value("${billing.admin.domain.chain-id:${intent.domain.chain-id:11155111}}") long domainChainId,
-        @Value("${billing.admin.domain.verifying-contract:${contract.address:0x0000000000000000000000000000000000000000}}")
+        @Value("${billing.admin.domain.verifying-contract}")
             String verifyingContract
     ) {
         this.domainName = domainName;
@@ -115,6 +115,8 @@ public class Eip712BillingAdminVerifier {
             new Int256(parseOptionalSignedBigInteger(request.getCreditDelta())),
             new Uint256(parseOptionalBigInteger(request.getFromReceivableState())),
             new Uint256(parseOptionalBigInteger(request.getToReceivableState())),
+            new Bytes32(keccakString(request.getBatchId())),
+            new Bytes32(keccakString(request.getClaimId())),
             new Bytes32(keccakString(request.getReference())),
             new Uint64(BigInteger.valueOf(request.getTimestamp()))
         );

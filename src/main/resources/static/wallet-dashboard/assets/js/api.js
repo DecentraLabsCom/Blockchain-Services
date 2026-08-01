@@ -87,6 +87,8 @@ const API = {
             creditDelta: payload.creditDelta || '0',
             fromReceivableState: payload.fromReceivableState || '0',
             toReceivableState: payload.toReceivableState || '0',
+            batchId: payload.batchId || '',
+            claimId: payload.claimId || '',
             reference: payload.reference || '',
             timestamp: payload.timestamp
         };
@@ -113,6 +115,8 @@ const API = {
                     { name: 'creditDelta', type: 'int256' },
                     { name: 'fromReceivableState', type: 'uint256' },
                     { name: 'toReceivableState', type: 'uint256' },
+                    { name: 'batchId', type: 'string' },
+                    { name: 'claimId', type: 'string' },
                     { name: 'reference', type: 'string' },
                     { name: 'timestamp', type: 'uint64' }
                 ]
@@ -303,6 +307,42 @@ const API = {
             fromReceivableState: String(fromReceivableState),
             toReceivableState: String(toReceivableState),
             amount: String(amountRaw),
+            reference
+        });
+    },
+
+    /**
+     * Dispute one canonical settlement batch.
+     * @param {string} batchId - Non-zero bytes32 batch identifier
+     * @param {string} reference - Mandatory external dispute reference
+     */
+    async disputeSettlementBatch(batchId, reference) {
+        return await this.executeAdminOperation('DISPUTE_PROVIDER_SETTLEMENT_BATCH', {
+            batchId,
+            reference
+        });
+    },
+
+    /** Reverse one canonical settlement batch, including a previously disputed batch. */
+    async reverseSettlementBatch(batchId, reference) {
+        return await this.executeAdminOperation('REVERSE_PROVIDER_SETTLEMENT_BATCH', {
+            batchId,
+            reference
+        });
+    },
+
+    /** Dispute one canonical settlement claim. */
+    async disputeSettlementClaim(claimId, reference) {
+        return await this.executeAdminOperation('DISPUTE_PROVIDER_SETTLEMENT_CLAIM', {
+            claimId,
+            reference
+        });
+    },
+
+    /** Reverse one canonical settlement claim, including a previously disputed claim. */
+    async reverseSettlementClaim(claimId, reference) {
+        return await this.executeAdminOperation('REVERSE_PROVIDER_SETTLEMENT_CLAIM', {
+            claimId,
             reference
         });
     },

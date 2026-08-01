@@ -296,7 +296,9 @@ public class ProviderSettlementService {
     private Optional<ProviderInvoiceRecord> projectIfChainAlreadyAdvanced(ProviderSettlementOperation operation, byte[] claimId) {
         try {
             DiamondClaimStatus status = claimStatus(claimId);
-            if (status.status() >= 1 && operation.getStatus() != ProviderSettlementOperation.Status.PROJECTED && claimMatches(operation, status.claim())) {
+            if (claimCanSatisfy(operation.getAction(), status.status())
+                && operation.getStatus() != ProviderSettlementOperation.Status.PROJECTED
+                && claimMatches(operation, status.claim())) {
                 persistence.projectSettlementOperation(operation.getOperationKey(), status.actor(), operation.getTransactionHash(), operation.getBlockNumber(), operation.getBlockHash());
                 return persistence.findInvoiceByClaimId(operation.getClaimId());
             }
@@ -310,7 +312,7 @@ public class ProviderSettlementService {
     private Optional<ProviderApproval> projectIfChainAlreadyAdvancedApproval(ProviderSettlementOperation operation, byte[] claimId, long invoiceId) {
         try {
             DiamondClaimStatus status = claimStatus(claimId);
-            if (status.status() >= 2 && claimMatches(operation, status.claim())) {
+            if (claimCanSatisfy(operation.getAction(), status.status()) && claimMatches(operation, status.claim())) {
                 persistence.projectSettlementOperation(operation.getOperationKey(), status.actor(), operation.getTransactionHash(), operation.getBlockNumber(), operation.getBlockHash());
                 return persistence.findApprovalByInvoiceId(invoiceId);
             }
@@ -321,7 +323,7 @@ public class ProviderSettlementService {
     private Optional<ProviderPayout> projectIfChainAlreadyAdvancedPayment(ProviderSettlementOperation operation, byte[] claimId, long invoiceId) {
         try {
             DiamondClaimStatus status = claimStatus(claimId);
-            if (status.status() >= 3 && claimMatches(operation, status.claim())) {
+            if (claimCanSatisfy(operation.getAction(), status.status()) && claimMatches(operation, status.claim())) {
                 persistence.projectSettlementOperation(operation.getOperationKey(), status.actor(), operation.getTransactionHash(), operation.getBlockNumber(), operation.getBlockHash());
                 return persistence.findPayoutByInvoiceId(invoiceId);
             }
@@ -331,18 +333,34 @@ public class ProviderSettlementService {
 
     private DiamondClaimStatus claimStatus(byte[] claimId) throws Exception {
         var claim = chainClient.readClaim(claimId);
-        String actor = claim.status.intValue() >= 3 ? claim.paidBy : claim.status.intValue() >= 2 ? claim.approvedBy : claim.submittedBy;
+        String actor = switch (claim.status.intValue()) {
+            case 1 -> claim.submittedBy;
+            case 2 -> claim.approvedBy;
+            case 3 -> claim.paidBy;
+            default -> null;
+        };
         return new DiamondClaimStatus(claim.status.intValue(), actor, claim);
     }
 
     private record DiamondClaimStatus(int status, String actor, decentralabs.blockchain.contract.Diamond.ProviderSettlementClaim claim) { }
 
     private boolean claimMatches(ProviderSettlementOperation operation, decentralabs.blockchain.contract.Diamond.ProviderSettlementClaim claim) throws Exception {
+        if (claim == null || claim.status == null || claim.status.intValue() < 1 || claim.status.intValue() > 3) return false;
+        if (!new BigInteger(operation.getLabId()).equals(claim.labId)
+            || !rawCredits(operation.getCreditAmount()).equals(claim.amount)) return false;
         if (!Arrays.equals(ProviderSettlementReferenceHasher.batchId(operation.getBatchId()), claim.batchId)
             || !Arrays.equals(ProviderSettlementReferenceHasher.reference(operation.getInvoiceRef(), "invoiceRef"), claim.invoiceReferenceHash)) return false;
         if (operation.getAction() == ProviderSettlementOperation.Action.APPROVE) return Arrays.equals(ProviderSettlementReferenceHasher.reference(operation.getApprovalRef(), "approvalRef"), chainClient.readApprovalReferenceHash(ProviderSettlementReferenceHasher.claimId(operation.getClaimId())));
         if (operation.getAction() == ProviderSettlementOperation.Action.PAY) return Arrays.equals(ProviderSettlementReferenceHasher.reference(operation.getPaymentRef(), "paymentRef"), claim.paymentReferenceHash) && Arrays.equals(ProviderSettlementReferenceHasher.reference(operation.getPaymentAttestation(), "paymentAttestation"), claim.paymentAttestationHash);
         return true;
+    }
+
+    private boolean claimCanSatisfy(ProviderSettlementOperation.Action action, int status) {
+        return switch (action) {
+            case SUBMIT -> status >= 1 && status <= 3;
+            case APPROVE -> status >= 2 && status <= 3;
+            case PAY -> status == 3;
+        };
     }
 
     private ProviderInvoiceRecord submitLegacy(String labId, String providerAddress, String claimId, String batchId, String invoiceRef, BigDecimal eurAmount, BigDecimal creditAmount) {

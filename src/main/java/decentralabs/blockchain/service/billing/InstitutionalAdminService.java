@@ -373,7 +373,11 @@ public class InstitutionalAdminService {
             case ADMIN_RESET_BACKEND,
                  ISSUE_SERVICE_CREDITS,
                  ADJUST_SERVICE_CREDITS,
-                 TRANSITION_PROVIDER_RECEIVABLE_STATE -> isOperator
+                 TRANSITION_PROVIDER_RECEIVABLE_STATE,
+                 DISPUTE_PROVIDER_SETTLEMENT_BATCH,
+                 REVERSE_PROVIDER_SETTLEMENT_BATCH,
+                 DISPUTE_PROVIDER_SETTLEMENT_CLAIM,
+                 REVERSE_PROVIDER_SETTLEMENT_CLAIM -> isOperator
                     ? null
                     : "Operator privileges required: this action is only available to wallets with DEFAULT_ADMIN_ROLE";
         };
@@ -435,6 +439,18 @@ public class InstitutionalAdminService {
 
             case TRANSITION_PROVIDER_RECEIVABLE_STATE:
                 return transitionProviderReceivableState(credentials, request);
+
+            case DISPUTE_PROVIDER_SETTLEMENT_BATCH:
+                return invalidateSettlementBatch(credentials, request, false);
+
+            case REVERSE_PROVIDER_SETTLEMENT_BATCH:
+                return invalidateSettlementBatch(credentials, request, true);
+
+            case DISPUTE_PROVIDER_SETTLEMENT_CLAIM:
+                return invalidateSettlementClaim(credentials, request, false);
+
+            case REVERSE_PROVIDER_SETTLEMENT_CLAIM:
+                return invalidateSettlementClaim(credentials, request, true);
 
             case COLLECT_LAB_PAYOUT:
                 return requestProviderPayout(credentials, request);
@@ -741,6 +757,62 @@ public class InstitutionalAdminService {
             "Provider booking cancellation submitted; the full reservation price is refunded as service credits",
             txHash,
             "CANCEL_CONFIRMED_BOOKING_BY_PROVIDER"
+        );
+    }
+
+    private InstitutionalAdminResponse invalidateSettlementBatch(
+        Credentials credentials,
+        InstitutionalAdminRequest request,
+        boolean reverse
+    ) throws Exception {
+        byte[] batchId = settlementIdentifierBytes32(request.getBatchId(), "batchId");
+        byte[] resolutionReference = settlementReferenceBytes32(request.getReference());
+        Function function = reverse
+            ? Diamond.reverseSettlementBatchFunction(batchId, resolutionReference)
+            : Diamond.disputeSettlementBatchFunction(batchId, resolutionReference);
+        String operationType = request.getOperation().name();
+        String action = reverse ? "reverse" : "dispute";
+
+        String txHash = sendTransaction(credentials, function, operationKey(request));
+        recordAdminTransaction(
+            credentials.getAddress(),
+            txHash,
+            operationType,
+            action + " provider settlement batch " + request.getBatchId(),
+            null
+        );
+        return InstitutionalAdminResponse.success(
+            "Provider settlement batch " + action + " submitted successfully",
+            txHash,
+            operationType
+        );
+    }
+
+    private InstitutionalAdminResponse invalidateSettlementClaim(
+        Credentials credentials,
+        InstitutionalAdminRequest request,
+        boolean reverse
+    ) throws Exception {
+        byte[] claimId = settlementIdentifierBytes32(request.getClaimId(), "claimId");
+        byte[] resolutionReference = settlementReferenceBytes32(request.getReference());
+        Function function = reverse
+            ? Diamond.reverseSettlementClaimFunction(claimId, resolutionReference)
+            : Diamond.disputeSettlementClaimFunction(claimId, resolutionReference);
+        String operationType = request.getOperation().name();
+        String action = reverse ? "reverse" : "dispute";
+
+        String txHash = sendTransaction(credentials, function, operationKey(request));
+        recordAdminTransaction(
+            credentials.getAddress(),
+            txHash,
+            operationType,
+            action + " provider settlement claim " + request.getClaimId(),
+            null
+        );
+        return InstitutionalAdminResponse.success(
+            "Provider settlement claim " + action + " submitted successfully",
+            txHash,
+            operationType
         );
     }
 
@@ -1121,6 +1193,21 @@ public class InstitutionalAdminService {
             throw new IllegalArgumentException("Invalid " + fieldName + ": " + value);
         }
         return "0x" + Numeric.cleanHexPrefix(normalized).toLowerCase(Locale.ROOT);
+    }
+
+    private byte[] settlementIdentifierBytes32(String value, String fieldName) {
+        if (value == null || !value.trim().matches("^0x[a-fA-F0-9]{64}$")
+            || value.trim().matches("(?i)^0x0{64}$")) {
+            throw new IllegalArgumentException(fieldName + " must be a non-zero bytes32 value");
+        }
+        return Numeric.hexStringToByteArray(value.trim());
+    }
+
+    private byte[] settlementReferenceBytes32(String value) {
+        if (value == null || value.isBlank()) {
+            throw new IllegalArgumentException("reference is required for settlement resolution");
+        }
+        return referenceToBytes32(value.trim());
     }
 
     private byte[] referenceToBytes32(String reference) {

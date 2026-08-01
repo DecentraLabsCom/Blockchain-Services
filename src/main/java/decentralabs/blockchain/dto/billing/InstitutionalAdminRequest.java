@@ -33,6 +33,8 @@ public class InstitutionalAdminRequest {
     private String creditAccount;   // Target account for service credit operations
     private String creditDelta;     // Signed delta for service credit adjustment operations
     private String reference;       // External reference for funding/adjustment traceability
+    private String batchId;         // Canonical bytes32 settlement batch identifier
+    private String claimId;         // Canonical bytes32 settlement claim identifier
     private String fromReceivableState; // Provider receivable lifecycle source state
     private String toReceivableState;   // Provider receivable lifecycle target state
     private String reservationKey;      // Reservation key for provider-side cancellation
@@ -48,6 +50,10 @@ public class InstitutionalAdminRequest {
         ISSUE_SERVICE_CREDITS,
         ADJUST_SERVICE_CREDITS,
         TRANSITION_PROVIDER_RECEIVABLE_STATE,
+        DISPUTE_PROVIDER_SETTLEMENT_BATCH,
+        REVERSE_PROVIDER_SETTLEMENT_BATCH,
+        DISPUTE_PROVIDER_SETTLEMENT_CLAIM,
+        REVERSE_PROVIDER_SETTLEMENT_CLAIM,
         COLLECT_LAB_PAYOUT,
         CANCEL_CONFIRMED_BOOKING_BY_PROVIDER
     }
