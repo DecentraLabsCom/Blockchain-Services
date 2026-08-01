@@ -13,20 +13,26 @@ import java.math.BigInteger;
 import java.util.List;
 import java.util.Arrays;
 import java.util.Optional;
+import java.util.function.Supplier;
 import java.util.regex.Pattern;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 
 /**
  * Provider settlement application service.
  *
  * The Diamond transition is executed first. SQL contains only the projection
  * created from a successful receipt and the durable domain outbox needed to
- * recover a projection after a process/database failure.
+ * recover a projection after a process/database failure. On-chain methods
+ * suspend ambient SQL transactions so durable preparation is committed before
+ * the RPC broadcast and projection can commit independently afterward.
  */
 @Service
 @Slf4j
@@ -36,23 +42,45 @@ public class ProviderSettlementService {
 
     private final ProviderSettlementPersistenceService persistence;
     private final ProviderSettlementChainClient chainClient;
+    private final TransactionTemplate localTransactionTemplate;
 
     @Autowired
     public ProviderSettlementService(
         ProviderSettlementPersistenceService persistence,
-        ProviderSettlementChainClient chainClient
+        ProviderSettlementChainClient chainClient,
+        PlatformTransactionManager transactionManager
     ) {
         this.persistence = persistence;
         this.chainClient = chainClient;
+        this.localTransactionTemplate = transactionManager == null ? null : new TransactionTemplate(transactionManager);
     }
 
     /** Test-only/local SQL constructor retained for the billing persistence slice. */
     public ProviderSettlementService(ProviderSettlementPersistenceService persistence) {
-        this.persistence = persistence;
-        this.chainClient = null;
+        this(persistence, null, null);
     }
 
-    @Transactional
+    /** Test-only constructor for the on-chain service with a mocked chain client. */
+    public ProviderSettlementService(
+        ProviderSettlementPersistenceService persistence,
+        ProviderSettlementChainClient chainClient
+    ) {
+        this(persistence, chainClient, null);
+    }
+
+    /** Test-only/local SQL constructor with an explicit transaction manager. */
+    public ProviderSettlementService(
+        ProviderSettlementPersistenceService persistence,
+        PlatformTransactionManager transactionManager
+    ) {
+        this(persistence, null, transactionManager);
+    }
+
+    /**
+     * On-chain settlement must not hold an ambient SQL transaction across the
+     * RPC call. Local-only persistence uses an explicit transaction below.
+     */
+    @Transactional(propagation = Propagation.NOT_SUPPORTED)
     public ProviderInvoiceRecord submitInvoice(
         String labId,
         String providerAddress,
@@ -66,7 +94,9 @@ public class ProviderSettlementService {
         BigDecimal canonicalCredits = canonicalCreditAmount(eurAmount, creditAmount);
 
         if (chainClient == null) {
-            return submitLegacy(labId, providerAddress, claimId, batchId, invoiceRef, eurAmount, canonicalCredits);
+            return inLocalTransaction(() -> submitLegacy(
+                labId, providerAddress, claimId, batchId, invoiceRef, eurAmount, canonicalCredits
+            ));
         }
 
         byte[] claimIdBytes = ProviderSettlementReferenceHasher.claimId(claimId);
@@ -113,10 +143,10 @@ public class ProviderSettlementService {
     }
 
     /** Approves only after the Diamond confirms the claim is SUBMITTED. */
-    @Transactional
+    @Transactional(propagation = Propagation.NOT_SUPPORTED)
     public ProviderApproval approveInvoice(long invoiceId, String approvalRef, BigDecimal eurAmount) {
         if (chainClient == null) {
-            return approveInvoiceLocally(invoiceId, approvalRef, eurAmount);
+            return inLocalTransaction(() -> approveInvoiceLocally(invoiceId, approvalRef, eurAmount));
         }
         ProviderInvoiceRecord invoice = invoice(invoiceId);
         validateApproval(invoice, approvalRef, eurAmount);
@@ -163,7 +193,7 @@ public class ProviderSettlementService {
     }
 
     /** Records payment proof only after the Diamond confirms APPROVED -> PAID. */
-    @Transactional
+    @Transactional(propagation = Propagation.NOT_SUPPORTED)
     public ProviderPayout recordPayout(
         long invoiceId,
         BigDecimal eurAmount,
@@ -175,10 +205,10 @@ public class ProviderSettlementService {
         String usdcTxHash
     ) {
         if (chainClient == null) {
-            return recordPayoutLocally(
+            return inLocalTransaction(() -> recordPayoutLocally(
                 invoiceId, eurAmount, creditAmount, paymentRef, paymentAttestation,
                 bankRef, eurcTxHash, usdcTxHash
-            );
+            ));
         }
         ProviderInvoiceRecord invoice = invoice(invoiceId);
         validatePayment(invoice, eurAmount, paymentRef, paymentAttestation);
@@ -291,6 +321,13 @@ public class ProviderSettlementService {
 
     public List<ProviderPayout> findPayoutsByProvider(String providerAddress) {
         return persistence.findPayoutsByProvider(providerAddress.toLowerCase());
+    }
+
+    private <T> T inLocalTransaction(Supplier<T> action) {
+        if (localTransactionTemplate == null) {
+            return action.get();
+        }
+        return localTransactionTemplate.execute(status -> action.get());
     }
 
     private Optional<ProviderInvoiceRecord> projectIfChainAlreadyAdvanced(ProviderSettlementOperation operation, byte[] claimId) {

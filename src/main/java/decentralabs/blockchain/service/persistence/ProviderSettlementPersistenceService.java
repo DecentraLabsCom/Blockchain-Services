@@ -12,6 +12,7 @@ import org.springframework.jdbc.core.RowMapper;
 import org.springframework.jdbc.support.GeneratedKeyHolder;
 import org.springframework.jdbc.support.KeyHolder;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigInteger;
@@ -321,7 +322,7 @@ public class ProviderSettlementPersistenceService {
      * unique operation key is the shared idempotency boundary for SQL and the
      * institutional transaction outbox.
      */
-    @Transactional
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
     public ProviderSettlementOperation createOrLoadSettlementOperation(ProviderSettlementOperation operation) {
         if (jdbcTemplate == null) {
             return operation;
@@ -427,7 +428,7 @@ public class ProviderSettlementPersistenceService {
         );
     }
 
-    @Transactional
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void markSettlementMined(
         String operationKey,
         String transactionHash,
@@ -447,7 +448,7 @@ public class ProviderSettlementPersistenceService {
     }
 
     /** Projects a mined on-chain operation into the SQL read model idempotently. */
-    @Transactional
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void projectSettlementOperation(
         String operationKey,
         String chainActor,

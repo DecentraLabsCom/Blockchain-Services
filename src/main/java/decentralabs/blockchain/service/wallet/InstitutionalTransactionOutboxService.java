@@ -13,6 +13,7 @@ import java.util.Objects;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
@@ -159,7 +160,7 @@ public class InstitutionalTransactionOutboxService {
         }
     }
 
-    @Transactional
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
     public Attempt reserveOrLoad(
         String walletAddress,
         BigInteger chainId,
@@ -230,10 +231,12 @@ public class InstitutionalTransactionOutboxService {
         return findBlockingInternal(walletAddress, chainId);
     }
 
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void markSigned(Attempt attempt, String signedRawTransaction, String expectedTxHash) {
         markSigned(attempt, signedRawTransaction, expectedTxHash, attempt == null ? null : attempt.gasPrice());
     }
 
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void markSigned(
         Attempt attempt,
         String signedRawTransaction,

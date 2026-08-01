@@ -87,8 +87,11 @@ class BillingDomainIntegrationTest {
         }
 
         @Bean
-        ProviderSettlementService providerSettlementService(ProviderSettlementPersistenceService psp) {
-            return new ProviderSettlementService(psp);
+        ProviderSettlementService providerSettlementService(
+            ProviderSettlementPersistenceService psp,
+            PlatformTransactionManager transactionManager
+        ) {
+            return new ProviderSettlementService(psp, transactionManager);
         }
 
         @Bean
