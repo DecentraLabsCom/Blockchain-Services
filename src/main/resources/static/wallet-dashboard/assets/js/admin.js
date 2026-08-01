@@ -39,14 +39,9 @@ const DashboardState = {
 
 const COLLECT_LABS_RETRY_DELAYS_MS = [1500, 3500, 7000];
 const RECEIVABLE_TRANSITION_PRESETS = {
-    '2:3': { from: 2, to: 3, label: 'Queue to invoiced' },
-    '3:4': { from: 3, to: 4, label: 'Invoice approved' },
-    '4:5': { from: 4, to: 5, label: 'Approval to paid' },
     '2:7': { from: 2, to: 7, label: 'Queue disputed' },
     '3:7': { from: 3, to: 7, label: 'Invoice disputed' },
     '4:7': { from: 4, to: 7, label: 'Approval disputed' },
-    '7:3': { from: 7, to: 3, label: 'Dispute back to invoiced' },
-    '7:4': { from: 7, to: 4, label: 'Dispute resolved as approved' },
     '2:6': { from: 2, to: 6, label: 'Queue reversed' },
     '3:6': { from: 3, to: 6, label: 'Invoice reversed' },
     '4:6': { from: 4, to: 6, label: 'Approval reversed' },

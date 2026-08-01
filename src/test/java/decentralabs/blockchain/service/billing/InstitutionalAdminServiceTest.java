@@ -659,8 +659,8 @@ class InstitutionalAdminServiceTest {
             );
             request.setLabId("7");
             request.setFromReceivableState("2");
-            request.setToReceivableState("3");
-            request.setReference("invoice-2026-03-21");
+            request.setToReceivableState("7");
+            request.setReference("dispute-2026-03-21");
 
             InstitutionalAdminResponse response = adminService.executeAdminOperation(request);
 
@@ -1053,17 +1053,15 @@ class InstitutionalAdminServiceTest {
 
         // ---- QUEUED (2) valid transitions ----
         @Test
-        @DisplayName("QUEUED → INVOICED is valid")
-        void queuedToInvoicedIsValid() throws Exception {
-            mockForSuccess();
-            assertThat(transitionState("2", "3").isSuccess()).isTrue();
+        @DisplayName("QUEUED → INVOICED is forbidden without a claim")
+        void queuedToInvoicedIsForbidden() {
+            assertThat(transitionState("2", "3").isSuccess()).isFalse();
         }
 
         @Test
-        @DisplayName("QUEUED → APPROVED is valid (fast-track)")
-        void queuedToApprovedIsValid() throws Exception {
-            mockForSuccess();
-            assertThat(transitionState("2", "4").isSuccess()).isTrue();
+        @DisplayName("QUEUED → APPROVED is forbidden without a claim")
+        void queuedToApprovedIsForbidden() {
+            assertThat(transitionState("2", "4").isSuccess()).isFalse();
         }
 
         @Test
@@ -1088,10 +1086,9 @@ class InstitutionalAdminServiceTest {
 
         // ---- INVOICED (3) valid transitions ----
         @Test
-        @DisplayName("INVOICED → APPROVED is valid")
-        void invoicedToApprovedIsValid() throws Exception {
-            mockForSuccess();
-            assertThat(transitionState("3", "4").isSuccess()).isTrue();
+        @DisplayName("INVOICED → APPROVED is forbidden without a claim")
+        void invoicedToApprovedIsForbidden() {
+            assertThat(transitionState("3", "4").isSuccess()).isFalse();
         }
 
         @Test
@@ -1116,10 +1113,9 @@ class InstitutionalAdminServiceTest {
 
         // ---- APPROVED (4) valid transitions ----
         @Test
-        @DisplayName("APPROVED → PAID is valid")
-        void approvedToPaidIsValid() throws Exception {
-            mockForSuccess();
-            assertThat(transitionState("4", "5").isSuccess()).isTrue();
+        @DisplayName("APPROVED → PAID is forbidden without a claim")
+        void approvedToPaidIsForbidden() {
+            assertThat(transitionState("4", "5").isSuccess()).isFalse();
         }
 
         @Test
@@ -1138,17 +1134,15 @@ class InstitutionalAdminServiceTest {
 
         // ---- DISPUTED (7) valid transitions ----
         @Test
-        @DisplayName("DISPUTED → INVOICED is valid (re-invoice)")
-        void disputedToInvoicedIsValid() throws Exception {
-            mockForSuccess();
-            assertThat(transitionState("7", "3").isSuccess()).isTrue();
+        @DisplayName("DISPUTED → INVOICED is forbidden without a claim")
+        void disputedToInvoicedIsForbidden() {
+            assertThat(transitionState("7", "3").isSuccess()).isFalse();
         }
 
         @Test
-        @DisplayName("DISPUTED → APPROVED is valid (resolve)")
-        void disputedToApprovedIsValid() throws Exception {
-            mockForSuccess();
-            assertThat(transitionState("7", "4").isSuccess()).isTrue();
+        @DisplayName("DISPUTED → APPROVED is forbidden without a claim")
+        void disputedToApprovedIsForbidden() {
+            assertThat(transitionState("7", "4").isSuccess()).isFalse();
         }
 
         @Test

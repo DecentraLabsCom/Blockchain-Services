@@ -825,25 +825,19 @@ public class InstitutionalAdminService {
                 || toState.equals(RECEIVABLE_REVERSED);
         }
         if (fromState.equals(RECEIVABLE_QUEUED)) {
-            return toState.equals(RECEIVABLE_INVOICED)
-                || toState.equals(RECEIVABLE_APPROVED)
-                || toState.equals(RECEIVABLE_DISPUTED)
+            return toState.equals(RECEIVABLE_DISPUTED)
                 || toState.equals(RECEIVABLE_REVERSED);
         }
         if (fromState.equals(RECEIVABLE_INVOICED)) {
-            return toState.equals(RECEIVABLE_APPROVED)
-                || toState.equals(RECEIVABLE_DISPUTED)
+            return toState.equals(RECEIVABLE_DISPUTED)
                 || toState.equals(RECEIVABLE_REVERSED);
         }
         if (fromState.equals(RECEIVABLE_APPROVED)) {
-            return toState.equals(RECEIVABLE_PAID)
-                || toState.equals(RECEIVABLE_DISPUTED)
+            return toState.equals(RECEIVABLE_DISPUTED)
                 || toState.equals(RECEIVABLE_REVERSED);
         }
         if (fromState.equals(RECEIVABLE_DISPUTED)) {
-            return toState.equals(RECEIVABLE_INVOICED)
-                || toState.equals(RECEIVABLE_APPROVED)
-                || toState.equals(RECEIVABLE_REVERSED);
+            return toState.equals(RECEIVABLE_REVERSED);
         }
         return false;
     }
