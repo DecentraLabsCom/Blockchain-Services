@@ -9108,5 +9108,98 @@
       }
     ],
     "anonymous": false
+  },
+  {
+    "type": "function",
+    "name": "disputeSettlementBatch",
+    "inputs": [
+      { "name": "batchId", "type": "bytes32", "internalType": "bytes32" },
+      { "name": "referenceHash", "type": "bytes32", "internalType": "bytes32" }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "reverseSettlementBatch",
+    "inputs": [
+      { "name": "batchId", "type": "bytes32", "internalType": "bytes32" },
+      { "name": "referenceHash", "type": "bytes32", "internalType": "bytes32" }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "disputeSettlementClaim",
+    "inputs": [
+      { "name": "claimId", "type": "bytes32", "internalType": "bytes32" },
+      { "name": "referenceHash", "type": "bytes32", "internalType": "bytes32" }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "reverseSettlementClaim",
+    "inputs": [
+      { "name": "claimId", "type": "bytes32", "internalType": "bytes32" },
+      { "name": "referenceHash", "type": "bytes32", "internalType": "bytes32" }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "getProviderSettlementBatchResolution",
+    "inputs": [{ "name": "batchId", "type": "bytes32", "internalType": "bytes32" }],
+    "outputs": [
+      { "name": "referenceHash", "type": "bytes32", "internalType": "bytes32" },
+      { "name": "actor", "type": "address", "internalType": "address" },
+      { "name": "timestamp", "type": "uint64", "internalType": "uint64" }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "getProviderSettlementClaimResolution",
+    "inputs": [{ "name": "claimId", "type": "bytes32", "internalType": "bytes32" }],
+    "outputs": [
+      { "name": "referenceHash", "type": "bytes32", "internalType": "bytes32" },
+      { "name": "actor", "type": "address", "internalType": "address" },
+      { "name": "timestamp", "type": "uint64", "internalType": "uint64" }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "event",
+    "name": "ProviderSettlementBatchInvalidated",
+    "inputs": [
+      { "name": "batchId", "type": "bytes32", "indexed": true, "internalType": "bytes32" },
+      { "name": "labId", "type": "uint256", "indexed": true, "internalType": "uint256" },
+      { "name": "amount", "type": "uint256", "indexed": false, "internalType": "uint256" },
+      { "name": "fromStatus", "type": "uint8", "indexed": false, "internalType": "uint8" },
+      { "name": "toStatus", "type": "uint8", "indexed": false, "internalType": "uint8" },
+      { "name": "referenceHash", "type": "bytes32", "indexed": false, "internalType": "bytes32" },
+      { "name": "actor", "type": "address", "indexed": true, "internalType": "address" },
+      { "name": "timestamp", "type": "uint64", "indexed": false, "internalType": "uint64" }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "ProviderSettlementClaimInvalidated",
+    "inputs": [
+      { "name": "claimId", "type": "bytes32", "indexed": true, "internalType": "bytes32" },
+      { "name": "batchId", "type": "bytes32", "indexed": true, "internalType": "bytes32" },
+      { "name": "labId", "type": "uint256", "indexed": true, "internalType": "uint256" },
+      { "name": "amount", "type": "uint256", "indexed": false, "internalType": "uint256" },
+      { "name": "fromStatus", "type": "uint8", "indexed": false, "internalType": "uint8" },
+      { "name": "toStatus", "type": "uint8", "indexed": false, "internalType": "uint8" },
+      { "name": "referenceHash", "type": "bytes32", "indexed": false, "internalType": "bytes32" },
+      { "name": "actor", "type": "address", "indexed": false, "internalType": "address" },
+      { "name": "timestamp", "type": "uint64", "indexed": false, "internalType": "uint64" }
+    ],
+    "anonymous": false
   }
 ]

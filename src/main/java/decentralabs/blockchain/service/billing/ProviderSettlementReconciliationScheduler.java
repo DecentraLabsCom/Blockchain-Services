@@ -3,7 +3,9 @@ package decentralabs.blockchain.service.billing;
 import decentralabs.blockchain.contract.Diamond;
 import decentralabs.blockchain.domain.ProviderSettlementOperation;
 import decentralabs.blockchain.service.persistence.ProviderSettlementPersistenceService;
+import decentralabs.blockchain.util.CreditUnitConverter;
 import decentralabs.blockchain.util.ProviderSettlementReferenceHasher;
+import java.math.BigInteger;
 import java.util.Arrays;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
@@ -40,6 +42,7 @@ public class ProviderSettlementReconciliationScheduler {
         Diamond.ProviderSettlementClaim claim = chainClient.readClaim(
             ProviderSettlementReferenceHasher.claimId(operation.getClaimId())
         );
+        if (claim == null || claim.status == null) return;
         int status = claim.status.intValue();
         if (!claimCanSatisfy(operation.getAction(), status) || !matches(operation, claim)) return;
 
@@ -59,8 +62,8 @@ public class ProviderSettlementReconciliationScheduler {
 
     private boolean matches(ProviderSettlementOperation operation, Diamond.ProviderSettlementClaim claim) throws Exception {
         if (claim == null || claim.status == null || claim.status.intValue() < 1 || claim.status.intValue() > 3) return false;
-        if (!new java.math.BigInteger(operation.getLabId()).equals(claim.labId)
-            || !operation.getCreditAmount().multiply(decentralabs.blockchain.util.CreditUnitConverter.RAW_PER_CREDIT).toBigIntegerExact().equals(claim.amount)) return false;
+        if (!new BigInteger(operation.getLabId()).equals(claim.labId)
+            || !operation.getCreditAmount().multiply(CreditUnitConverter.RAW_PER_CREDIT).toBigIntegerExact().equals(claim.amount)) return false;
         if (!Arrays.equals(
             ProviderSettlementReferenceHasher.batchId(operation.getBatchId()),
             claim.batchId
