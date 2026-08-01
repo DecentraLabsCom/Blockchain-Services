@@ -488,7 +488,6 @@ class BillingDomainIntegrationTest {
 
         private static final String INSTITUTION = "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa1001";
         private static final String PROVIDER    = "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb1001";
-        private static final String ADMIN       = "0xcccccccccccccccccccccccccccccccccccc1001";
 
         @Test
         @DisplayName("full canonical flow: fund → mint → lock → capture → accrue → approve → payout")
