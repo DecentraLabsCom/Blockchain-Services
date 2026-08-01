@@ -294,6 +294,45 @@ class WebauthnCredentialServiceTest {
             assertThat(webauthnCredentialService.advanceSignCount(TEST_PUC, TEST_CREDENTIAL_ID, 5L)).isFalse();
             verify(jdbcTemplate, never()).update(anyString(), any(), any(), any(), any(), any());
         }
+
+        @Test
+        @DisplayName("Should accept an authenticator that reports a zero counter without writing")
+        void shouldAcceptZeroCounterWithoutDurableWrite() {
+            WebauthnCredential credential = new WebauthnCredential(
+                TEST_CREDENTIAL_ID, TEST_PUBLIC_KEY, TEST_AAGUID, 0L, true, 0L, 0L, null, null, null, null
+            );
+            @SuppressWarnings("unchecked")
+            var inMemory = (java.util.Map<String, WebauthnCredential>) ReflectionTestUtils
+                .getField(webauthnCredentialService, "inMemoryCredentials");
+            inMemory.put(TEST_PUC + ":" + TEST_CREDENTIAL_ID, credential);
+            when(jdbcTemplate.query(
+                anyString(), any(PreparedStatementSetter.class),
+                org.mockito.ArgumentMatchers.<ResultSetExtractor<Object>>any()
+            )).thenReturn(Optional.of(credential));
+
+            assertThat(webauthnCredentialService.advanceSignCount(TEST_PUC, TEST_CREDENTIAL_ID, 0L)).isTrue();
+            verify(jdbcTemplate, never()).update(anyString(), any(), any(), any(), any(), any());
+        }
+
+        @Test
+        @DisplayName("Should reject a concurrent counter update that loses the durable compare-and-set")
+        void shouldRejectLostCounterCompareAndSet() {
+            WebauthnCredential credential = new WebauthnCredential(
+                TEST_CREDENTIAL_ID, TEST_PUBLIC_KEY, TEST_AAGUID, 7L, true, 0L, 0L, null, null, null, null
+            );
+            @SuppressWarnings("unchecked")
+            var inMemory = (java.util.Map<String, WebauthnCredential>) ReflectionTestUtils
+                .getField(webauthnCredentialService, "inMemoryCredentials");
+            inMemory.put(TEST_PUC + ":" + TEST_CREDENTIAL_ID, credential);
+            when(jdbcTemplate.query(
+                anyString(), any(PreparedStatementSetter.class),
+                org.mockito.ArgumentMatchers.<ResultSetExtractor<Object>>any()
+            )).thenReturn(Optional.of(credential));
+            when(jdbcTemplate.update(anyString(), any(), any(), any(), any(), any())).thenReturn(0);
+
+            assertThat(webauthnCredentialService.advanceSignCount(TEST_PUC, TEST_CREDENTIAL_ID, 8L)).isFalse();
+            assertThat(credential.getSignCount()).isEqualTo(7L);
+        }
     }
 
     @Nested
