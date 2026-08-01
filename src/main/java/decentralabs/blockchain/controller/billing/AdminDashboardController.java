@@ -62,7 +62,7 @@ public class AdminDashboardController {
     @Value("${billing.admin.domain.chain-id:${intent.domain.chain-id:11155111}}")
     private long billingAdminDomainChainId;
 
-    @Value("${billing.admin.domain.verifying-contract:${contract.address:0x0000000000000000000000000000000000000000}}")
+    @Value("${billing.admin.domain.verifying-contract}")
     private String billingAdminDomainVerifyingContract;
 
     @Value("${billing.collect.max-batch:50}")

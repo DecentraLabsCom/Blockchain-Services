@@ -53,7 +53,7 @@ public class HealthController {
     @Value("${contract.event.listening.enabled:true}")
     private boolean eventListeningEnabled;
 
-    @Value("${contract.address:}")
+    @Value("${contract.address}")
     private String contractAddress;
 
     @Value("${organization.invite.hmac-secret:}")

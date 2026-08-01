@@ -36,7 +36,7 @@ public class Eip712CheckInVerifier {
         @Value("${intent.domain.name:DecentraLabsIntent}") String domainName,
         @Value("${intent.domain.version:1}") String domainVersion,
         @Value("${intent.domain.chain-id:11155111}") long domainChainId,
-        @Value("${intent.domain.verifying-contract:${contract.address:0x0000000000000000000000000000000000000000}}") String verifyingContract
+        @Value("${intent.domain.verifying-contract}") String verifyingContract
     ) {
         this.domainName = domainName;
         this.domainVersion = domainVersion;

@@ -28,7 +28,7 @@ public class ProviderConfigurationPersistenceService {
     @Value("${provider.config.path:}")
     private String configLocation;
 
-    @Value("${contract.address:}")
+    @Value("${contract.address}")
     private String currentContractAddress;
 
     /**

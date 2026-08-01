@@ -57,7 +57,7 @@ public class ProvisioningTokenService {
     @Value("${intent.domain.chain-id:11155111}")
     private long expectedChainId;
 
-    @Value("${contract.address:0x0000000000000000000000000000000000000000}")
+    @Value("${contract.address}")
     private String expectedRegistryContract;
 
     @PostConstruct

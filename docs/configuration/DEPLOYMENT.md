@@ -61,6 +61,21 @@ and units.
 | Lab metadata fetches | `LAB_METADATA_MAX_BYTES`, `LAB_METADATA_HTTP_*`, `LAB_METADATA_MAX_CONCURRENT_FETCHES`, `LAB_METADATA_LOCAL_*` | Remote metadata is HTTPS-only and bound to the provider origin registered on-chain. Keep local fixtures disabled in production. |
 | Durable workers | `INSTITUTIONAL_*_OUTBOX_*`, `CONTRACT_EVENT_*`, `HEALTH_QUEUE_STUCK_THRESHOLD_SECONDS` | Tune only with an operator who owns reconciliation. |
 
+`CONTRACT_ADDRESS` has no packaged fallback and is mandatory. The service
+does not become ready until it has queried the configured RPC and verified the
+current deployment against the versioned manifests in
+`src/main/resources/contract/`: expected chain ID, Diamond bytecode, Diamond
+loupe interface, exact facet set and selector routing, ABI/selector manifest
+hashes, expected owner/admin role, the critical `DiamondInit` address, and the
+bytecode hash of every facet. A mismatch or an unavailable RPC fails startup;
+it is not reported as a recoverable application health degradation.
+
+The Sepolia manifest is pinned to
+`0x1170d2D322Ff2cCeb20e6E79D2b3D2dfABFe6372`. Deploying a new Diamond requires
+regenerating the ABI/selector manifest and updating the deployment manifest
+and hashes in the same release. Do not disable
+`CONTRACT_VERIFICATION_ENABLED` in a production deployment.
+
 `INTENT_PAYLOAD_ENCRYPTION_KEY` must be a base64/base64url-encoded 32-byte
 AES key. The Full Gateway setup prompts for it and generates one when the
 answer is empty. A direct Docker start also generates it once when the

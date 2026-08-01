@@ -1,0 +1,49 @@
+{
+  "schemaVersion": 1,
+  "network": "sepolia",
+  "chainId": 11155111,
+  "abiVersion": "credit-ledger-v1",
+  "abiSha256": "caaf14c9353a5b1b06562a3f1ada3c839b16a605be3df4bac542571c9eef21cb",
+  "selectorManifestSha256": "9aa83a19e91df5a1b777f4b542215eec46e3049a12d0a92f615de7ed80863f69",
+  "diamondAddress": "0x1170d2D322Ff2cCeb20e6E79D2b3D2dfABFe6372",
+  "expectedOwner": "0x183f062b6a8c39b9a9e71898741acf8f25e11561",
+  "expectedDefaultAdminRole": "0x0000000000000000000000000000000000000000000000000000000000000000",
+  "criticalAddresses": {
+    "DiamondInit": "0xcb862aD921960c0c656E5ED68Fb20bA113cf5025"
+  },
+  "criticalCodeHashes": {
+    "0x1170d2D322Ff2cCeb20e6E79D2b3D2dfABFe6372": "0x9322f62a5c436158bf13da6c8a33b472234a8c63f93386864b1776a242f8f8cf",
+    "0xcb862aD921960c0c656E5ED68Fb20bA113cf5025": "0x7352bb6ef0b79db113c7968d30f403fcf171e5bc29690e87e4790e638b17851b"
+  },
+  "facets": [
+    { "name": "DiamondCutFacet", "address": "0x0292dbF67Fb9D7B6d853c7e9d1F8BE73a50463c2", "codeHash": "0x65fcc22b72b8913916c18d3dd7739f97ffead8a56296018a28c4dd758850c92f" },
+    { "name": "DiamondLoupeFacet", "address": "0x6C1457c6Cf48B389Bc10f59B069779d672aa9a71", "codeHash": "0xa47ab090f70f869164facf1ba65cab4936a8ea176fb304bb137d3d6456e81f04" },
+    { "name": "OwnershipFacet", "address": "0xB143255718cfF3C3E33e11E77CdC7CA37a8c8EA8", "codeHash": "0x36f837eaf88d0a348d37651014336c1163a0c0cba88bb21846ae8fd7ec3b0a63" },
+    { "name": "InitFacet", "address": "0x8B00fcAFCab7cba0E030Ebe1fc769682fBC6D5A5", "codeHash": "0x7f56563cdb583b539a4cfb4191581ff3bb28f0f51ec650819dbc8364f0e83cb5" },
+    { "name": "ProviderFacet", "address": "0x33040FD667601AE0D66432614fcd1Cba0a2Dc776", "codeHash": "0x971e7ec53acc3e6819b71a901e7eb93b54ce6b791e949caf6289c1c33994c5d7" },
+    { "name": "ServiceCreditFacet", "address": "0xE95e790f0425802E539E8449F47f401c1D45111b", "codeHash": "0x05fdec9940851b81272854d5bd6676bc1e3e50d92fed4234e3ec974f13a16210" },
+    { "name": "IntentRegistryFacet", "address": "0xd4355fF5d9bFd4B8D0100128465dA5f4Fdc7ABcf", "codeHash": "0xdf18433eb78cf8ae1ee52d6efd2ce42043ecefd1218ef4a9a72dbc5d0e8aa350" },
+    { "name": "InstitutionFacet", "address": "0x76Ed5B8069FFFB49Ad25d621C1cF15BA9e0DB9E8", "codeHash": "0x2ae93b7d17a0709ff4d1a0eacae4e5821aef6128924490ac6c03a6a02fb20727" },
+    { "name": "InstitutionalOrgRegistryFacet", "address": "0x461Ee020C3007Dff92Cb05a75F10A06D13fc551A", "codeHash": "0x8ca059f3fd7301fcea4f7a808bd01e761a11a8f411b1bac044fc0a1d00b28261" },
+    { "name": "InstitutionalTreasuryFacet", "address": "0xCa486150F95fa7844878d48774A949F1Cd30110b", "codeHash": "0xe50336954a6ac604520d4f893500b5bc3b52fbb0a6192f5186a597c0ffa29d18" },
+    { "name": "LabFacet", "address": "0xCC8648B4Cb2eE16A9967eFeBaEc0d9Bd3281e17E", "codeHash": "0x6c6c507d2c312cdf44b11cbc1b04f5a4f3106891e4e376b99c7e37614cfb215f" },
+    { "name": "LabAdminFacet", "address": "0x57bF7A61982f76E3Cdb5eA2a4Ad21E057553042e", "codeHash": "0xa042b13b166ca6a305e4b58295f6c5a04609450df15dd14c0a0d75e0755504b3" },
+    { "name": "LabIntentFacet", "address": "0x2Eb927eBAe78ab4ce15aEbE69f435b2A77B514c5", "codeHash": "0xeb1ef2788735efd71bc7d08f5546ba27595a730e698dc2d6019d547bda63d05d" },
+    { "name": "LabQueryFacet", "address": "0x61311Be0496e82A3f330D0F527fb78a7A0D2aA5A", "codeHash": "0xae84f03549f917036f806eb30fe5324ca1a671b227b41428511da63816ca870d" },
+    { "name": "LabReputationFacet", "address": "0xe0684F4a63f41cFb8E81B3fC574b8931b937015f", "codeHash": "0x13f01c385eb38473763ab409045e931ff70a1d9d2ffb09fd10b9811eb0edf7ad" },
+    { "name": "ProviderSettlementFacet", "address": "0x21D0b9f6f0684fe8cF12eab7C0f4c55897d7de34", "codeHash": "0xf941b958e09a3213f5abbfcffd167307a77afb5a6a454d36a18eb3370ec64e17" },
+    { "name": "InstitutionalReservationRequestValidationFacet", "address": "0x3ccB30c8Dce752Cf37Afc0f68eE395CD0707Ea82", "codeHash": "0x1e3cd7e065a49e42b51d8c0907128b8099d491eb7db08b8cf391e2d057fb1af2" },
+    { "name": "InstitutionalReservationRequestCreationFacet", "address": "0xd28935dF9463d66Bf150ad7E39F979FcfB59aB54", "codeHash": "0x717a3119e1eb32b0646df86f3c5b667186940678c14b21ee7b4943977cac2127" },
+    { "name": "InstitutionalReservationRequestFacet", "address": "0x8323b211cD41E56707dE8E6454b3C45feAA824bC", "codeHash": "0xbfaf7010c8cf1e5596e28c7faabc4beb9ddc6d4d66a5990b1dfcdfb447cf9627" },
+    { "name": "InstitutionalReservationConfirmationFacet", "address": "0x40038B6042f1df3Feb544bc11Efc28CDb6Ea88E9", "codeHash": "0x72c069307e84ed754c5a369cac308f85b53b6d6861d26400424c7c113e91784b" },
+    { "name": "InstitutionalReservationCancellationFacet", "address": "0xe4F4d68bC86546fB02BcAf4cc1b4Aac177498007", "codeHash": "0x6b0d4f10fbe3296b2e6e348b7df677f13fc0c1861841ec4c8af02fc91e26ef3f" },
+    { "name": "InstitutionalReservationQueryFacet", "address": "0x9f0331ABC5A2D005499C78A28062a912Dd1267aa", "codeHash": "0xa7e2304f77938762d89b8429ec1fff54bee67db384cac19273af2122a97917a2" },
+    { "name": "InstitutionalReservationFacet", "address": "0x23bEf0FE40a1831C1d168a67974061CF46CE6e30", "codeHash": "0x6c57092feb6c5ae8fc6ad69a6aff3d04a4c2790cfc241f66533e68c5352e8a56" },
+    { "name": "ReservationCheckInFacet", "address": "0xb1fCE045343886016e769A0555C5641c4b8dC7E1", "codeHash": "0xdcccd28301a4f56b29c1cdb904260687663a4a21897984f422bacd188149f285" },
+    { "name": "ReservationSessionFacet", "address": "0x2CC5223C9a5ba96a83E9b84081F07Cd102AF022C", "codeHash": "0xb26d6e70b5e3f355ab39aea70f829a5b1b5506d241e487816c62bd4425b36b98" },
+    { "name": "ReservationStatsFacet", "address": "0x1EaC0c2898705685Fe90022A6A6b394831f66C19", "codeHash": "0x50c94703c43b6fab0c44957134ed04f1d0e69d1496442d126869fa9ff9e94c7a" },
+    { "name": "ReservationDenialFacet", "address": "0xbe6ca030561B994810A985E47f4Fa6Cfe0C55E14", "codeHash": "0x33ba888ca6ac24ea43c325a08a075785fd1584bf6ecd062e56d8b294398c6f23" },
+    { "name": "ReservationIntentFacet", "address": "0x630e8684131b35388F004BB6100A1A7383E97d9E", "codeHash": "0xfde499d17e72112349751896b205bd0b67f41fdd8b890c86200ac509dbcbcc9d" },
+    { "name": "ReservationIntentCancellationFacet", "address": "0xFA5716AaD963EF490BE491F98bE350A37998B5e2", "codeHash": "0xee6d6c4e0089eaff4d7e583b6ee321f52bf22c909916c6cf741900a87547ea39" }
+  ]
+}

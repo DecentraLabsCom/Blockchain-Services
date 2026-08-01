@@ -36,7 +36,7 @@ public class SessionStartedAttestationSigner {
         @Value("${session.attestation.domain.name:DecentraLabsSession}") String domainName,
         @Value("${session.attestation.domain.version:1}") String domainVersion,
         @Value("${session.attestation.domain.chain-id:${intent.domain.chain-id:11155111}}") long domainChainId,
-        @Value("${session.attestation.domain.verifying-contract:${contract.address:0x0000000000000000000000000000000000000000}}") String verifyingContract
+        @Value("${session.attestation.domain.verifying-contract}") String verifyingContract
     ) {
         this.domainName = domainName;
         this.domainVersion = domainVersion;
