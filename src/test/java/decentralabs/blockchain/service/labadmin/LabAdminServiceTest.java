@@ -351,7 +351,8 @@ class LabAdminServiceTest {
             service,
             "preflightMetadataUri",
             "https://lab.example.edu/lab-content/content/lab-demo/metadata.json",
-            "0xprovider"
+            "0xprovider",
+            null
         );
     }
 
@@ -367,7 +368,8 @@ class LabAdminServiceTest {
             service,
             "preflightMetadataUri",
             "https://metadata.example/lab.json",
-            "0xprovider"
+            "0xprovider",
+            null
         )).isInstanceOf(IllegalArgumentException.class)
             .hasMessageContaining("Metadata preflight failed");
     }
