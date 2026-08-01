@@ -622,29 +622,6 @@ public class Diamond extends Contract {
     }
 
     /**
-     * Submit an institutional reservation request.
-     */
-    public RemoteFunctionCall<TransactionReceipt> institutionalReservationRequest(
-        String institutionalProvider,
-        String pucHash,
-        BigInteger labId,
-        BigInteger start,
-        BigInteger end
-    ) {
-        final Function function = new Function("institutionalReservationRequest",
-            Arrays.asList(
-                new Address(institutionalProvider),
-                new Bytes32(toBytes32(pucHash)),
-                new Uint256(labId),
-                new Uint32(start),
-                new Uint32(end)
-            ),
-            List.of()
-        );
-        return executeRemoteCallTransaction(function);
-    }
-
-    /**
      * Confirm an institutional reservation request with PUC hash.
      */
     public RemoteFunctionCall<TransactionReceipt> confirmInstitutionalReservationRequestWithPucHash(

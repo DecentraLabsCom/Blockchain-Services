@@ -40,12 +40,10 @@ contract selector that its wallet is authorized to call.
 
 In particular, `DIRECT_BOOKING` is action `11` and the executor builds
 `institutionalDirectBookingWithIntent`, which requires a registered pending
-intent and is restricted to an own-lab booking. It is not the same as the
-separate `institutionalReservationRequest` selector. That selector is a direct
-institution/backend request path without intent or WebAuthn verification. It
-has no caller in the current Marketplace or canonical backend implementation,
-but remains in the current Diamond selector allowlist and must be treated as
-an administrative surface until a reviewed selector upgrade removes it.
+intent and is restricted to an own-lab booking. The former direct
+institution/backend reservation selector had no active caller and has been
+removed from the production selector manifest and ABI. Existing Diamond
+instances still require the reviewed selector-removal upgrade.
 
 Marketplace may send the signed intent package to `/intents/authorize` and
 register the intent while the WebAuthn session is being created; the browser
