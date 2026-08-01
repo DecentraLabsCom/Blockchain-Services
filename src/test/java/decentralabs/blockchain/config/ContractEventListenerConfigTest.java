@@ -6,6 +6,7 @@ import decentralabs.blockchain.service.health.LabMetadataService;
 import decentralabs.blockchain.service.intent.IntentPersistenceService;
 import decentralabs.blockchain.service.intent.IntentService;
 import decentralabs.blockchain.service.persistence.ReservationPersistenceService;
+import decentralabs.blockchain.service.persistence.ProviderSettlementPersistenceService;
 import decentralabs.blockchain.service.provider.StationCapacityService;
 import decentralabs.blockchain.service.wallet.InstitutionalTxManagerProvider;
 import decentralabs.blockchain.service.wallet.InstitutionalWalletService;
@@ -84,6 +85,9 @@ class ContractEventListenerConfigTest {
     private IntentService intentService;
 
     @Mock
+    private ProviderSettlementPersistenceService providerSettlementPersistenceService;
+
+    @Mock
     private Web3j web3j;
 
     private ContractEventListenerConfig config;
@@ -101,7 +105,8 @@ class ContractEventListenerConfigTest {
             reservationNotificationService,
             reservationPersistenceService,
             intentPersistenceService,
-            intentService
+            intentService,
+            providerSettlementPersistenceService
         );
         ReflectionTestUtils.setField(config, "diamondContractAddress", "0x1234567890abcdef");
         ReflectionTestUtils.setField(config, "startBlock", "latest");
