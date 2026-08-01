@@ -203,8 +203,20 @@
                             </div>
                             <div id="collectStatusMetrics" class="collect-status-metrics hidden">
                                 <div class="collect-metric">
-                                    <span class="collect-metric-label">Attested Closures</span>
-                                    <span class="collect-metric-value" id="collectPendingClosures">--</span>
+                                    <span class="collect-metric-label">Attested session payout</span>
+                                    <span class="collect-metric-value" id="collectAttestedSessionPayout">--</span>
+                                </div>
+                                <div class="collect-metric">
+                                    <span class="collect-metric-label">Potential no-show fee</span>
+                                    <span class="collect-metric-value" id="collectPotentialNoShowFee">--</span>
+                                </div>
+                                <div class="collect-metric">
+                                    <span class="collect-metric-label">Pending grace reservations</span>
+                                    <span class="collect-metric-value" id="collectPendingGraceReservations">--</span>
+                                </div>
+                                <div class="collect-metric">
+                                    <span class="collect-metric-label">Already accrued</span>
+                                    <span class="collect-metric-value" id="collectExistingAccrued">--</span>
                                 </div>
                                 <div class="collect-metric">
                                     <span class="collect-metric-label">Pending Provider Payout</span>
@@ -255,7 +267,7 @@
                                             <th>Pending</th>
                                             <th>Claimed</th>
                                             <th>Received</th>
-                                            <th>Attested closures</th>
+                                            <th>Grace pending</th>
                                             <th>Status</th>
                                         </tr>
                                     </thead>

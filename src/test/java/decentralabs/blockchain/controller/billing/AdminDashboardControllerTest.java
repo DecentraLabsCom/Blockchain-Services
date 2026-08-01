@@ -350,7 +350,7 @@ class AdminDashboardControllerTest {
                 .andExpect(jsonPath("$.labs[0].label").value("Quantum Lab"))
                 .andExpect(jsonPath("$.labs[0].eligibleReservationCount").value("2"))
                 .andExpect(jsonPath("$.labs[0].doubleAttestedReservationCount").value("2"))
-                .andExpect(jsonPath("$.labs[0].settlementEligibilityRule").value("ACCESS_AUTHORIZED_AND_SESSION_STARTED"))
+                .andExpect(jsonPath("$.labs[0].settlementEligibilityRule").value("SESSION_STARTED_OR_FINALIZABLE_NO_SHOW"))
                 .andExpect(jsonPath("$.labs[0].totalReceivableLab").value("10"))
                 .andExpect(jsonPath("$.labs[0].accruedReceivableLab").value("2.5"))
                 .andExpect(jsonPath("$.labs[0].settlementQueuedLab").value("3"))
@@ -412,13 +412,49 @@ class AdminDashboardControllerTest {
                 .andExpect(jsonPath("$.canRequestPayout").value(true))
                 .andExpect(jsonPath("$.eligibleReservationCount").value("0"))
                 .andExpect(jsonPath("$.doubleAttestedReservationCount").value("0"))
-                .andExpect(jsonPath("$.settlementEligibilityRule").value("ACCESS_AUTHORIZED_AND_SESSION_STARTED"))
+                .andExpect(jsonPath("$.settlementEligibilityRule").value("SESSION_STARTED_OR_FINALIZABLE_NO_SHOW"))
                 .andExpect(jsonPath("$.totalReceivableLab").value("20"))
                 .andExpect(jsonPath("$.accruedReceivableLab").value("5"))
                 .andExpect(jsonPath("$.settlementQueuedLab").value("7.5"))
                 .andExpect(jsonPath("$.invoicedReceivableLab").value("2.5"))
                 .andExpect(jsonPath("$.approvedReceivableLab").value("5"))
                 .andExpect(jsonPath("$.lastAccruedAt").value("1700000000"));
+        }
+
+        @Test
+        @DisplayName("Should expose the payout preview breakdown")
+        void shouldExposePayoutPreviewBreakdown() throws Exception {
+            when(institutionalWalletService.getInstitutionalWalletAddress()).thenReturn(VALID_ADDRESS);
+            when(walletService.isLabOwnedByProvider(VALID_ADDRESS, BigInteger.valueOf(3))).thenReturn(true);
+            when(walletService.getProviderReceivableStatus(BigInteger.valueOf(3))).thenReturn(
+                Optional.of(new ProviderReceivableStatus(
+                    BigInteger.valueOf(112_500_000),
+                    BigInteger.valueOf(112_500_000),
+                    BigInteger.ZERO,
+                    BigInteger.valueOf(50_000_000),
+                    BigInteger.valueOf(7_500_000),
+                    BigInteger.ONE,
+                    BigInteger.valueOf(55_000_000),
+                    BigInteger.valueOf(5_000_000),
+                    BigInteger.valueOf(10_000_000),
+                    BigInteger.ZERO,
+                    BigInteger.ZERO,
+                    BigInteger.ZERO,
+                    BigInteger.ZERO,
+                    BigInteger.ZERO,
+                    BigInteger.ZERO
+                ))
+            );
+            when(walletService.simulateProviderPayoutRequest(VALID_ADDRESS, BigInteger.valueOf(3), BigInteger.valueOf(50)))
+                .thenReturn(new PayoutRequestSimulationResult(true, null));
+
+            mockMvc.perform(get("/billing/admin/provider-receivable-status").param("labId", "3"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.attestedSessionPayoutRaw").value("50000000"))
+                .andExpect(jsonPath("$.potentialNoShowFeeRaw").value("7500000"))
+                .andExpect(jsonPath("$.pendingGraceReservationCount").value("1"))
+                .andExpect(jsonPath("$.existingAccruedReceivableRaw").value("55000000"))
+                .andExpect(jsonPath("$.totalReceivableRaw").value("112500000"));
         }
 
         @Test
@@ -478,7 +514,7 @@ class AdminDashboardControllerTest {
                 .andExpect(jsonPath("$.summary.pendingLab").value("1"))
                 .andExpect(jsonPath("$.summary.claimedLab").value("2"))
                 .andExpect(jsonPath("$.summary.doubleAttestedReservationCount").value("1"))
-                .andExpect(jsonPath("$.summary.settlementEligibilityRule").value("ACCESS_AUTHORIZED_AND_SESSION_STARTED"))
+                .andExpect(jsonPath("$.summary.settlementEligibilityRule").value("SESSION_STARTED_OR_FINALIZABLE_NO_SHOW"))
                 .andExpect(jsonPath("$.summary.labCount").value(2));
         }
     }

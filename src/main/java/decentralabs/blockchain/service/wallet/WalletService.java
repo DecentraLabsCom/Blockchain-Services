@@ -887,6 +887,7 @@ public class WalletService {
                 Arrays.asList(
                     new TypeReference<Uint256>() {},
                     new TypeReference<Uint256>() {},
+                    new TypeReference<Uint256>() {},
                     new TypeReference<Uint256>() {}
                 )
             );
@@ -904,9 +905,17 @@ public class WalletService {
 
             @SuppressWarnings("rawtypes")
             List<Type> decoded = FunctionReturnDecoder.decode(response.getValue(), summaryFunction.getOutputParameters());
-            if (decoded.size() < 3) {
+            if (decoded.size() < 4) {
                 return Optional.empty();
             }
+
+            BigInteger attestedSessionPayout = (BigInteger) decoded.get(0).getValue();
+            BigInteger potentialNoShowFee = (BigInteger) decoded.get(1).getValue();
+            BigInteger pendingGraceReservationCount = (BigInteger) decoded.get(2).getValue();
+            BigInteger existingAccruedReceivable = (BigInteger) decoded.get(3).getValue();
+            BigInteger previewReceivable = existingAccruedReceivable
+                .add(attestedSessionPayout)
+                .add(potentialNoShowFee);
 
             BigInteger accruedReceivable = BigInteger.ZERO;
             BigInteger settlementQueued = BigInteger.ZERO;
@@ -959,9 +968,13 @@ public class WalletService {
             }
 
             return Optional.of(new ProviderReceivableStatus(
-                (BigInteger) decoded.get(0).getValue(),
-                (BigInteger) decoded.get(1).getValue(),
-                (BigInteger) decoded.get(2).getValue(),
+                previewReceivable,
+                previewReceivable,
+                BigInteger.ZERO,
+                attestedSessionPayout,
+                potentialNoShowFee,
+                pendingGraceReservationCount,
+                existingAccruedReceivable,
                 accruedReceivable,
                 settlementQueued,
                 invoicedReceivable,

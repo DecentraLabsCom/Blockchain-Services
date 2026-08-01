@@ -1405,9 +1405,29 @@ function scheduleNextCollectLabsRetry(statusMessage = null) {
 }
 
 function setCollectPendingClosuresText(value) {
-    const closuresEl = document.getElementById('collectPendingClosures');
+    const closuresEl = document.getElementById('collectPendingGraceReservations');
     if (!closuresEl) return;
     closuresEl.textContent = value ?? '--';
+}
+
+function setCollectPreviewMetrics(data) {
+    const amountMetrics = [
+        ['collectAttestedSessionPayout', data?.attestedSessionPayoutRaw, data?.attestedSessionPayoutLab],
+        ['collectPotentialNoShowFee', data?.potentialNoShowFeeRaw, data?.potentialNoShowFeeLab],
+        ['collectExistingAccrued', data?.existingAccruedReceivableRaw, data?.existingAccruedReceivableLab]
+    ];
+
+    amountMetrics.forEach(([id, rawValue, formattedValue]) => {
+        const element = document.getElementById(id);
+        if (!element) return;
+        if (rawValue === undefined || rawValue === null || rawValue === '') {
+            element.textContent = '--';
+            return;
+        }
+        element.textContent = `${formattedValue || formatLabTokenRaw(rawValue)} credits`;
+    });
+
+    setCollectPendingClosuresText(data?.pendingGraceReservationCount ?? '--');
 }
 
 function setCollectLifecycleSummaryText(value) {
@@ -1433,6 +1453,9 @@ function formatLifecycleBucket(label, rawValue, formattedValue) {
 
 function buildCollectLifecycleSummary(data) {
     const items = [
+        formatLifecycleBucket('Attested session payout', data.attestedSessionPayoutRaw, data.attestedSessionPayoutLab),
+        formatLifecycleBucket('Potential no-show fee', data.potentialNoShowFeeRaw, data.potentialNoShowFeeLab),
+        formatLifecycleBucket('Already accrued', data.existingAccruedReceivableRaw, data.existingAccruedReceivableLab),
         formatLifecycleBucket('Accrued', data.accruedReceivableRaw, data.accruedReceivableLab),
         formatLifecycleBucket('Queued', data.settlementQueuedRaw, data.settlementQueuedLab),
         formatLifecycleBucket('Invoiced', data.invoicedReceivableRaw, data.invoicedReceivableLab),
@@ -1447,17 +1470,6 @@ function buildCollectLifecycleSummary(data) {
 
 function getReceivableTransitionPreset(value) {
     return RECEIVABLE_TRANSITION_PRESETS[value] || null;
-}
-
-function formatPendingClosures(rawValue) {
-    if (rawValue === null || rawValue === undefined || rawValue === '') {
-        return '0';
-    }
-    try {
-        return BigInt(rawValue.toString()).toString();
-    } catch (error) {
-        return String(rawValue);
-    }
 }
 
 function setCollectPanelCompact(isCompact) {
@@ -1505,18 +1517,22 @@ function updateCollectButtonState() {
     }
 
     let buttonLabel = 'Request Payout';
-    const pendingClosuresEl = document.getElementById('collectPendingClosures');
     const pendingTotalEl = document.getElementById('collectPendingTotal');
 
     try {
-        const pendingClosures = BigInt(pendingClosuresEl?.textContent?.trim() || '0');
+        const attestedPayoutText = document.getElementById('collectAttestedSessionPayout')?.textContent || '0';
+        const noShowFeeText = document.getElementById('collectPotentialNoShowFee')?.textContent || '0';
+        const attestedPayout = BigInt(decimalToRawUnits(attestedPayoutText.replace(/\s*credits\s*$/i, '').trim() || '0', CREDIT_DECIMALS));
+        const noShowFee = BigInt(decimalToRawUnits(noShowFeeText.replace(/\s*credits\s*$/i, '').trim() || '0', CREDIT_DECIMALS));
         const pendingTotalText = (pendingTotalEl?.textContent || '0').replace(/\s*credits\s*$/i, '').trim();
         const pendingTotal = BigInt(decimalToRawUnits(pendingTotalText || '0', CREDIT_DECIMALS));
 
-        if (pendingClosures > 0n && pendingTotal > 0n) {
+        if (attestedPayout > 0n && noShowFee > 0n) {
+            buttonLabel = 'Claim Sessions + No-show Fees';
+        } else if (attestedPayout > 0n) {
             buttonLabel = 'Claim Attested Sessions';
-        } else if (pendingClosures > 0n) {
-            buttonLabel = 'Close Attested Sessions';
+        } else if (noShowFee > 0n) {
+            buttonLabel = 'Claim No-show Fees';
         }
     } catch (error) {
         buttonLabel = 'Request Payout';
@@ -1540,6 +1556,9 @@ function getSelectedCollectLab() {
 
 function getLabSettlementBuckets(lab) {
     const pending = rawToBigInt(lab?.accruedReceivableRaw);
+    const attestedSessionPayout = rawToBigInt(lab?.attestedSessionPayoutRaw);
+    const potentialNoShowFee = rawToBigInt(lab?.potentialNoShowFeeRaw);
+    const existingAccruedReceivable = rawToBigInt(lab?.existingAccruedReceivableRaw);
     const queued = rawToBigInt(lab?.settlementQueuedRaw);
     const invoiced = rawToBigInt(lab?.invoicedReceivableRaw);
     const approved = rawToBigInt(lab?.approvedReceivableRaw);
@@ -1549,17 +1568,25 @@ function getLabSettlementBuckets(lab) {
 
     return {
         pending,
+        previewPending: pending + attestedSessionPayout + potentialNoShowFee,
+        attestedSessionPayout,
+        potentialNoShowFee,
+        existingAccruedReceivable,
         claimed: queued + invoiced + approved,
         received,
         disputed,
         reversed,
-        pendingClosures: rawToBigInt(lab?.doubleAttestedReservationCount ?? lab?.eligibleReservationCount)
+        pendingClosures: rawToBigInt(lab?.pendingGraceReservationCount)
     };
 }
 
 function computeCollectAggregates(labs) {
     const totals = {
         pending: 0n,
+        previewPending: 0n,
+        attestedSessionPayout: 0n,
+        potentialNoShowFee: 0n,
+        existingAccruedReceivable: 0n,
         claimed: 0n,
         received: 0n,
         disputed: 0n,
@@ -1570,6 +1597,10 @@ function computeCollectAggregates(labs) {
     (Array.isArray(labs) ? labs : []).forEach(lab => {
         const buckets = getLabSettlementBuckets(lab);
         totals.pending += buckets.pending;
+        totals.previewPending += buckets.previewPending;
+        totals.attestedSessionPayout += buckets.attestedSessionPayout;
+        totals.potentialNoShowFee += buckets.potentialNoShowFee;
+        totals.existingAccruedReceivable += buckets.existingAccruedReceivable;
         totals.claimed += buckets.claimed;
         totals.received += buckets.received;
         totals.disputed += buckets.disputed;
@@ -1586,11 +1617,17 @@ function parseCollectSummary(summary) {
     }
     return {
         pending: rawToBigInt(summary.pendingRaw),
+        previewPending: rawToBigInt(summary.attestedSessionPayoutRaw)
+            + rawToBigInt(summary.potentialNoShowFeeRaw)
+            + rawToBigInt(summary.pendingRaw),
+        attestedSessionPayout: rawToBigInt(summary.attestedSessionPayoutRaw),
+        potentialNoShowFee: rawToBigInt(summary.potentialNoShowFeeRaw),
+        existingAccruedReceivable: rawToBigInt(summary.existingAccruedReceivableRaw),
         claimed: rawToBigInt(summary.claimedRaw),
         received: rawToBigInt(summary.receivedRaw),
         disputed: rawToBigInt(summary.disputedRaw),
         reversed: rawToBigInt(summary.reversedRaw),
-        pendingClosures: rawToBigInt(summary.pendingClosures)
+        pendingClosures: rawToBigInt(summary.pendingGraceReservationCount ?? summary.pendingClosures)
     };
 }
 
@@ -1602,7 +1639,7 @@ function formatSettlementRiskValue(disputedRaw, reversedRaw) {
 
 function getSettlementRowStatus(lab) {
     const buckets = getLabSettlementBuckets(lab);
-    if (buckets.pending > 0n) {
+    if (buckets.previewPending > 0n) {
         return { label: 'Pending claim', tone: 'ready' };
     }
     if (buckets.claimed > 0n) {
@@ -1649,7 +1686,7 @@ function renderCollectSettlementOverview() {
 
     const totals = DashboardState.collectAggregates || computeCollectAggregates(labs);
     DashboardState.collectAggregates = totals;
-    pendingEl.textContent = `${formatLabTokenRaw(totals.pending)} credits`;
+    pendingEl.textContent = `${formatLabTokenRaw(totals.previewPending)} credits`;
     claimedEl.textContent = `${formatLabTokenRaw(totals.claimed)} credits`;
     receivedEl.textContent = `${formatLabTokenRaw(totals.received)} credits`;
     riskEl.textContent = formatSettlementRiskValue(totals.disputed, totals.reversed);
@@ -1658,7 +1695,7 @@ function renderCollectSettlementOverview() {
         const scope = DashboardState.collectTotalLabs > labs.length
             ? 'Summary is cached across all visible labs.'
             : 'Summary loaded from the current lab list.';
-        noteEl.textContent = `${scope} Detailed status is fetched only for the selected lab. Attested closures: ${totals.pendingClosures.toString()}.`;
+        noteEl.textContent = `${scope} Detailed status is fetched only for the selected lab. Potential no-show fees: ${formatLabTokenRaw(totals.potentialNoShowFee)} credits; grace pending: ${totals.pendingClosures.toString()}.`;
     }
     if (loadedCountEl) {
         const total = Number.isFinite(Number(DashboardState.collectTotalLabs)) && DashboardState.collectTotalLabs > 0
@@ -1676,7 +1713,7 @@ function renderCollectSettlementOverview() {
         const status = getSettlementRowStatus(lab);
         const labId = String(lab.labId || '');
         const isSelected = String(DashboardState.selectedCollectLabId || '') === labId;
-        const pending = `${formatLabTokenRaw(buckets.pending)} credits`;
+        const pending = `${formatLabTokenRaw(buckets.previewPending)} credits`;
         const claimed = `${formatLabTokenRaw(buckets.claimed)} credits`;
         const received = `${formatLabTokenRaw(buckets.received)} credits`;
         const name = lab.name || lab.label || `Lab #${labId}`;
@@ -1722,7 +1759,7 @@ async function loadCollectLabs() {
     setCollectStatusText('Loading labs...');
     setCollectPanelCompact(false);
     pendingEl.textContent = '--';
-    setCollectPendingClosuresText('--');
+    setCollectPreviewMetrics(null);
     selectEl.disabled = true;
     selectEl.innerHTML = '<option value="">Loading labs...</option>';
 
@@ -1770,7 +1807,7 @@ async function loadCollectLabs() {
                 ? '<option value="">Checking labs...</option>'
                 : '<option value="">No labs available</option>';
             pendingEl.textContent = '0 credits';
-            setCollectPendingClosuresText('0');
+            setCollectPreviewMetrics(null);
             if (!retryScheduled) {
                 setCollectStatusText('Not available', 'warning');
             }
@@ -1830,7 +1867,7 @@ async function loadCollectLabs() {
         DashboardState.collectCanExecute = false;
         selectEl.innerHTML = '<option value="">Failed to load labs</option>';
         pendingEl.textContent = '--';
-        setCollectPendingClosuresText('--');
+        setCollectPreviewMetrics(null);
         setCollectStatusText('Unavailable', 'error');
         setCollectPanelCompact(true);
         updateCollectDetailVisibility();
@@ -1905,7 +1942,7 @@ async function loadCollectStatusForSelectedLab() {
     if (!selectedLabId) {
         DashboardState.collectCanExecute = false;
         pendingEl.textContent = '0 credits';
-        setCollectPendingClosuresText('0');
+        setCollectPreviewMetrics(null);
         setCollectStatusText('Select a lab', 'warning');
         setCollectLifecycleSummaryText('');
         updateCollectButtonState();
@@ -1916,7 +1953,7 @@ async function loadCollectStatusForSelectedLab() {
     DashboardState.collectCanExecute = false;
     updateCollectDetailVisibility();
     pendingEl.textContent = '--';
-    setCollectPendingClosuresText('--');
+    setCollectPreviewMetrics(null);
     setCollectStatusText('Checking...');
     setCollectLifecycleSummaryText('');
     updateCollectButtonState();
@@ -1936,15 +1973,16 @@ async function loadCollectStatusForSelectedLab() {
 
         const totalLab = data.totalReceivableLab || formatLabTokenRaw(data.totalReceivableRaw);
         pendingEl.textContent = `${totalLab} credits`;
-        const pendingClosuresRaw = data.doubleAttestedReservationCount ?? data.eligibleReservationCount ?? '0';
-        const pendingClosures = formatPendingClosures(pendingClosuresRaw);
-        setCollectPendingClosuresText(pendingClosures);
+        setCollectPreviewMetrics(data);
+        const pendingClosuresRaw = data.pendingGraceReservationCount ?? '0';
 
         // Keep the selected lab row in sync after a payout request so the table reflects
         // the latest pending closures count immediately.
         if (selectedLab) {
-            selectedLab.eligibleReservationCount = pendingClosuresRaw;
-            selectedLab.doubleAttestedReservationCount = pendingClosuresRaw;
+            selectedLab.pendingGraceReservationCount = pendingClosuresRaw;
+            selectedLab.attestedSessionPayoutRaw = data.attestedSessionPayoutRaw;
+            selectedLab.potentialNoShowFeeRaw = data.potentialNoShowFeeRaw;
+            selectedLab.existingAccruedReceivableRaw = data.existingAccruedReceivableRaw;
             DashboardState.collectAggregates = null;
         }
 
@@ -1967,13 +2005,13 @@ async function loadCollectStatusForSelectedLab() {
         updateCollectDetailVisibility();
 
         if (DashboardState.collectCanExecute) {
-            if (hasPendingClosures && hasPendingPayout) {
-                setCollectStatusText('Ready for closure & payout', 'success');
-            } else if (hasPendingClosures) {
-                setCollectStatusText('Ready for closure', 'success');
-            } else {
+            if (hasPendingPayout) {
                 setCollectStatusText('Ready for payout request', 'success');
+            } else {
+                setCollectStatusText('Payout request available', 'success');
             }
+        } else if (hasPendingClosures) {
+            setCollectStatusText('Waiting for session attestation grace period', 'info');
         } else if (DashboardState.isProvider && !payoutEnabledForSelectedLab) {
             setCollectStatusText('Payout requests are limited to this provider wallet\'s labs', 'warning');
         } else if (!DashboardState.isProvider && DashboardState.isOperator && operatorReviewOnly) {
@@ -1989,7 +2027,7 @@ async function loadCollectStatusForSelectedLab() {
     } catch (error) {
         DashboardState.collectCanExecute = false;
         pendingEl.textContent = '--';
-        setCollectPendingClosuresText('--');
+        setCollectPreviewMetrics(null);
         setCollectStatusText('Status unavailable', 'error');
         setCollectLifecycleSummaryText('');
         renderCollectSettlementOverview();

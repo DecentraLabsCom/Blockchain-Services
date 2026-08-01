@@ -420,7 +420,8 @@ class WalletServiceTest {
                 encodeValues(
                     new org.web3j.abi.datatypes.generated.Uint256(BigInteger.ONE),
                     new org.web3j.abi.datatypes.generated.Uint256(BigInteger.TWO),
-                    new org.web3j.abi.datatypes.generated.Uint256(BigInteger.valueOf(3))
+                    new org.web3j.abi.datatypes.generated.Uint256(BigInteger.valueOf(3)),
+                    new org.web3j.abi.datatypes.generated.Uint256(BigInteger.valueOf(4))
                 )
             ),
             ethCallResponse(
@@ -462,7 +463,11 @@ class WalletServiceTest {
         );
 
         assertThat(receivableStatus).isPresent();
-        assertThat(receivableStatus.get().providerReceivable()).isEqualTo(BigInteger.ONE);
+        assertThat(receivableStatus.get().providerReceivable()).isEqualTo(BigInteger.valueOf(7));
+        assertThat(receivableStatus.get().attestedSessionPayout()).isEqualTo(BigInteger.ONE);
+        assertThat(receivableStatus.get().potentialNoShowFee()).isEqualTo(BigInteger.TWO);
+        assertThat(receivableStatus.get().pendingGraceReservationCount()).isEqualTo(BigInteger.valueOf(3));
+        assertThat(receivableStatus.get().existingAccruedReceivable()).isEqualTo(BigInteger.valueOf(4));
         assertThat(receivableStatus.get().accruedReceivable()).isEqualTo(BigInteger.valueOf(21));
         assertThat(receivableStatus.get().settlementQueued()).isEqualTo(BigInteger.valueOf(22));
         assertThat(receivableStatus.get().invoicedReceivable()).isEqualTo(BigInteger.valueOf(23));

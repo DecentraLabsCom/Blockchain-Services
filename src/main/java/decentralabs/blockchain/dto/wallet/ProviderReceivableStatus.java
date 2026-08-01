@@ -7,6 +7,10 @@ public final class ProviderReceivableStatus {
     private final BigInteger providerReceivable;
     private final BigInteger totalReceivable;
     private final BigInteger eligibleReservationCount;
+    private final BigInteger attestedSessionPayout;
+    private final BigInteger potentialNoShowFee;
+    private final BigInteger pendingGraceReservationCount;
+    private final BigInteger existingAccruedReceivable;
     private final BigInteger accruedReceivable;
     private final BigInteger settlementQueued;
     private final BigInteger invoicedReceivable;
@@ -25,6 +29,10 @@ public final class ProviderReceivableStatus {
             providerReceivable,
             totalReceivable,
             eligibleReservationCount,
+            BigInteger.ZERO,
+            BigInteger.ZERO,
+            BigInteger.ZERO,
+            providerReceivable,
             BigInteger.ZERO,
             BigInteger.ZERO,
             BigInteger.ZERO,
@@ -49,9 +57,49 @@ public final class ProviderReceivableStatus {
         BigInteger disputedReceivable,
         BigInteger lastAccruedAt
     ) {
+        this(
+            providerReceivable,
+            totalReceivable,
+            eligibleReservationCount,
+            BigInteger.ZERO,
+            BigInteger.ZERO,
+            BigInteger.ZERO,
+            providerReceivable,
+            accruedReceivable,
+            settlementQueued,
+            invoicedReceivable,
+            approvedReceivable,
+            paidReceivable,
+            reversedReceivable,
+            disputedReceivable,
+            lastAccruedAt
+        );
+    }
+
+    public ProviderReceivableStatus(
+        BigInteger providerReceivable,
+        BigInteger totalReceivable,
+        BigInteger eligibleReservationCount,
+        BigInteger attestedSessionPayout,
+        BigInteger potentialNoShowFee,
+        BigInteger pendingGraceReservationCount,
+        BigInteger existingAccruedReceivable,
+        BigInteger accruedReceivable,
+        BigInteger settlementQueued,
+        BigInteger invoicedReceivable,
+        BigInteger approvedReceivable,
+        BigInteger paidReceivable,
+        BigInteger reversedReceivable,
+        BigInteger disputedReceivable,
+        BigInteger lastAccruedAt
+    ) {
         this.providerReceivable = providerReceivable;
         this.totalReceivable = totalReceivable;
         this.eligibleReservationCount = eligibleReservationCount;
+        this.attestedSessionPayout = attestedSessionPayout;
+        this.potentialNoShowFee = potentialNoShowFee;
+        this.pendingGraceReservationCount = pendingGraceReservationCount;
+        this.existingAccruedReceivable = existingAccruedReceivable;
         this.accruedReceivable = accruedReceivable;
         this.settlementQueued = settlementQueued;
         this.invoicedReceivable = invoicedReceivable;
@@ -72,6 +120,22 @@ public final class ProviderReceivableStatus {
 
     public BigInteger eligibleReservationCount() {
         return eligibleReservationCount;
+    }
+
+    public BigInteger attestedSessionPayout() {
+        return attestedSessionPayout;
+    }
+
+    public BigInteger potentialNoShowFee() {
+        return potentialNoShowFee;
+    }
+
+    public BigInteger pendingGraceReservationCount() {
+        return pendingGraceReservationCount;
+    }
+
+    public BigInteger existingAccruedReceivable() {
+        return existingAccruedReceivable;
     }
 
     public BigInteger accruedReceivable() {

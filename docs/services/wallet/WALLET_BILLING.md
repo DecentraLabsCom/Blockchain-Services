@@ -168,6 +168,12 @@ retransmitted indefinitely.
 - `POST /billing/admin/notifications/send`
 - `POST /billing/admin/notifications/test`
 
+The provider receivable status includes a payout preview breakdown: the
+attested-session payout, potential physical-lab no-show fee, reservations
+still pending the attestation grace period, and already outstanding accrued
+receivable. Only the three monetary values contribute to the actionable
+preview total; grace-pending reservations are reported separately.
+
 ### Provider settlement claims
 
 Provider network and receivable operations are under `/billing/provider-network`
