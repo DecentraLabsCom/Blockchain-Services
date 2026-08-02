@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.io.IOException;
+import java.io.InputStream;
 import java.math.BigInteger;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -13,6 +14,7 @@ import java.util.Map;
 import java.util.Properties;
 import java.util.Set;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
 
 class ContractDeploymentVerifierTest {
@@ -117,6 +119,22 @@ class ContractDeploymentVerifierTest {
             .isEqualTo("${contract.address}");
     }
 
+    @Test
+    void selectorManifestDeserializesFacetTargets() throws IOException {
+        ObjectMapper objectMapper = new ObjectMapper();
+        try (InputStream input = getClass().getResourceAsStream("/contract/selector-manifest.json")) {
+            assertThat(input).isNotNull();
+            ContractDeploymentVerifier.SelectorManifest manifest = objectMapper.readValue(
+                input, ContractDeploymentVerifier.SelectorManifest.class
+            );
+
+            assertThat(manifest.facets()).isNotEmpty();
+            assertThat(manifest.facets()).allSatisfy(facet -> assertThat(facet.target()).isNotBlank());
+            assertThat(manifest.internalRoutingFunctions()).isNotEmpty();
+            assertThat(manifest.forbiddenFunctions()).isNotEmpty();
+        }
+    }
+
     private static ContractDeploymentVerifier.DeploymentManifest manifest() {
         return new ContractDeploymentVerifier.DeploymentManifest(
             1, "sepolia", BigInteger.valueOf(11155111), "credit-ledger-v1", "abi-sha", "selector-sha",
@@ -129,7 +147,11 @@ class ContractDeploymentVerifierTest {
     private static ContractDeploymentVerifier.SelectorManifest selectorManifest() {
         return new ContractDeploymentVerifier.SelectorManifest(
             1, "credit-ledger",
-            List.of(new ContractDeploymentVerifier.SelectorFacet("CoreFacet", List.of("foo()")))
+            List.of(new ContractDeploymentVerifier.SelectorFacet(
+                "CoreFacet", "contracts/facets/CoreFacet.sol:CoreFacet", List.of("foo()")
+            )),
+            List.of("foo()"),
+            List.of("bar()")
         );
     }
 

@@ -407,10 +407,12 @@ public class ContractDeploymentVerifier implements ApplicationRunner {
     public record SelectorManifest(
         int schemaVersion,
         String deploymentModel,
-        List<SelectorFacet> facets
+        List<SelectorFacet> facets,
+        List<String> internalRoutingFunctions,
+        List<String> forbiddenFunctions
     ) { }
 
-    public record SelectorFacet(String name, List<String> functions) { }
+    public record SelectorFacet(String name, String target, List<String> functions) { }
 
     public record ContractSnapshot(
         BigInteger chainId,
