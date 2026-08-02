@@ -56,6 +56,52 @@ class ConfigurationMetadataTest {
         );
     }
 
+    @Test
+    void documentsSessionStartedAttestationDomainProperties() throws Exception {
+        Map<String, JsonNode> properties = readProperties();
+
+        assertThat(properties).containsKeys(
+            "session.attestation.domain.name",
+            "session.attestation.domain.version",
+            "session.attestation.domain.chain-id",
+            "session.attestation.domain.verifying-contract"
+        );
+        assertThat(properties.get("session.attestation.domain.name").path("defaultValue").asText())
+            .isEqualTo("DecentraLabsSession");
+        assertThat(properties.get("session.attestation.domain.version").path("defaultValue").asText())
+            .isEqualTo("1");
+        assertThat(properties.get("session.attestation.domain.chain-id").path("defaultValue").asLong())
+            .isEqualTo(11155111L);
+        assertThat(properties.get("session.attestation.domain.verifying-contract").path("description").asText())
+            .contains("contract.address");
+    }
+
+    @Test
+    void documentsDeploymentAndStationProperties() throws Exception {
+        Map<String, JsonNode> properties = readProperties();
+
+        assertThat(properties).containsKeys(
+            "contract.verification.enabled",
+            "contract.verification.abi-version",
+            "contract.verification.deployment-manifest",
+            "contract.verification.selector-manifest",
+            "contract.verification.abi-resource",
+            "fmu.station.base-url",
+            "fmu.station.internal-token",
+            "fmu.station.request-timeout-ms",
+            "fmu.capacity.required",
+            "provider.reservation.availability.lock-timeout.seconds"
+        );
+        assertThat(properties.get("contract.verification.enabled").path("defaultValue").asBoolean())
+            .isTrue();
+        assertThat(properties.get("fmu.station.request-timeout-ms").path("defaultValue").asLong())
+            .isEqualTo(5000L);
+        assertThat(properties.get("fmu.capacity.required").path("defaultValue").asBoolean())
+            .isFalse();
+        assertThat(properties.get("provider.reservation.availability.lock-timeout.seconds")
+            .path("defaultValue").asInt()).isEqualTo(60);
+    }
+
     private Map<String, JsonNode> readProperties() throws Exception {
         try (InputStream input = getClass().getClassLoader()
             .getResourceAsStream("META-INF/additional-spring-configuration-metadata.json")) {

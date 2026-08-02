@@ -1258,6 +1258,87 @@
     "defaultValue": "intents:registration-mined"
   },
   {
+    "name": "contract.verification.enabled",
+    "type": "java.lang.Boolean",
+    "description": "Verify the configured Diamond deployment before starting the backend.",
+    "defaultValue": true
+  },
+  {
+    "name": "contract.verification.abi-version",
+    "type": "java.lang.String",
+    "description": "Expected ABI/deployment manifest version for the configured Diamond.",
+    "defaultValue": "credit-ledger-v1"
+  },
+  {
+    "name": "contract.verification.deployment-manifest",
+    "type": "java.lang.String",
+    "description": "Resource containing the expected Diamond deployment manifest.",
+    "defaultValue": "classpath:contract/deployment-manifest.json"
+  },
+  {
+    "name": "contract.verification.selector-manifest",
+    "type": "java.lang.String",
+    "description": "Resource containing the expected Diamond selector manifest.",
+    "defaultValue": "classpath:contract/selector-manifest.json"
+  },
+  {
+    "name": "contract.verification.abi-resource",
+    "type": "java.lang.String",
+    "description": "Resource containing the Diamond ABI used for deployment verification.",
+    "defaultValue": "classpath:abi/Diamond.json"
+  },
+  {
+    "name": "fmu.station.base-url",
+    "type": "java.lang.String",
+    "description": "Base URL of the Lab Station FMU capacity endpoint."
+  },
+  {
+    "name": "fmu.station.internal-token",
+    "type": "java.lang.String",
+    "description": "Internal credential for the Lab Station FMU capacity endpoint."
+  },
+  {
+    "name": "fmu.station.request-timeout-ms",
+    "type": "java.lang.Long",
+    "description": "Timeout for Lab Station FMU capacity requests in milliseconds.",
+    "defaultValue": 5000
+  },
+  {
+    "name": "fmu.capacity.required",
+    "type": "java.lang.Boolean",
+    "description": "Require a positive Lab Station FMU capacity declaration for provider flows.",
+    "defaultValue": false
+  },
+  {
+    "name": "provider.reservation.availability.lock-timeout.seconds",
+    "type": "java.lang.Integer",
+    "description": "Timeout for the shared MySQL advisory lock used by provider reservation capacity checks.",
+    "defaultValue": 60
+  },
+  {
+    "name": "session.attestation.domain.name",
+    "type": "java.lang.String",
+    "description": "Fixed EIP-712 domain name used by ReservationSessionFacet.",
+    "defaultValue": "DecentraLabsSession"
+  },
+  {
+    "name": "session.attestation.domain.version",
+    "type": "java.lang.String",
+    "description": "Fixed EIP-712 domain version used by ReservationSessionFacet.",
+    "defaultValue": "1"
+  },
+  {
+    "name": "session.attestation.domain.chain-id",
+    "type": "java.lang.Long",
+    "description": "Chain ID used by the SessionStarted EIP-712 domain; must match the connected chain.",
+    "defaultValue": 11155111
+  },
+  {
+    "name": "session.attestation.domain.verifying-contract",
+    "type": "java.lang.String",
+    "description": "Verifying contract for the SessionStarted EIP-712 domain; derived from contract.address."
+  },
+  {
     "name": "session.attestation.publisher.stuck-transaction-ms",
     "type": "java.lang.Long",
     "description": "Age after which a pending SessionStarted transaction is replaced.",

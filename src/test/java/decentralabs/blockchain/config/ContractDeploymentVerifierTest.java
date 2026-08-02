@@ -100,6 +100,23 @@ class ContractDeploymentVerifierTest {
         assertThat(properties.getProperty("contract.address")).isEqualTo("${CONTRACT_ADDRESS}");
     }
 
+    @Test
+    void sessionStartedAttestationDomainUsesTheCanonicalContractConfiguration() throws IOException {
+        Properties properties = new Properties();
+        try (var input = Files.newInputStream(Path.of("src/main/resources/application.properties"))) {
+            properties.load(input);
+        }
+
+        assertThat(properties.getProperty("session.attestation.domain.name"))
+            .isEqualTo("DecentraLabsSession");
+        assertThat(properties.getProperty("session.attestation.domain.version"))
+            .isEqualTo("1");
+        assertThat(properties.getProperty("session.attestation.domain.chain-id"))
+            .isEqualTo("${INTENT_DOMAIN_CHAIN_ID:11155111}");
+        assertThat(properties.getProperty("session.attestation.domain.verifying-contract"))
+            .isEqualTo("${contract.address}");
+    }
+
     private static ContractDeploymentVerifier.DeploymentManifest manifest() {
         return new ContractDeploymentVerifier.DeploymentManifest(
             1, "sepolia", BigInteger.valueOf(11155111), "credit-ledger-v1", "abi-sha", "selector-sha",
