@@ -3,7 +3,7 @@
   "network": "sepolia",
   "chainId": 11155111,
   "abiVersion": "credit-ledger-v1",
-  "abiSha256": "7998f2f0b445f9ac536ef5cec25f180db5b5993c42595250be1d5b0a45b79ff3",
+  "abiSha256": "f4ad999626136d201637ce881476f1fe180dcf918f96431aba1ed513ef419f71",
   "selectorManifestSha256": "5e9f247583c5419c76083de8b1bb166f34179b9d237cadf679abfd85cb0ff3be",
   "diamondAddress": "0x1170d2D322Ff2cCeb20e6E79D2b3D2dfABFe6372",
   "expectedOwner": "0x183f062b6a8c39b9a9e71898741acf8f25e11561",

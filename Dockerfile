@@ -8,6 +8,7 @@ COPY pom.xml .
 RUN mvn dependency:go-offline -B
 
 # Copy source code and build
+COPY abi ./abi
 COPY src ./src
 RUN mvn clean package -DskipTests -B
 

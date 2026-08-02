@@ -9,10 +9,12 @@ import java.io.InputStream;
 import java.math.BigInteger;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.security.MessageDigest;
 import java.util.List;
 import java.util.Map;
 import java.util.Properties;
 import java.util.Set;
+import java.util.HexFormat;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
@@ -132,6 +134,26 @@ class ContractDeploymentVerifierTest {
             assertThat(manifest.facets()).allSatisfy(facet -> assertThat(facet.target()).isNotBlank());
             assertThat(manifest.internalRoutingFunctions()).isNotEmpty();
             assertThat(manifest.forbiddenFunctions()).isNotEmpty();
+        }
+    }
+
+    @Test
+    void packagesTheCanonicalDiamondAbiForStartupVerification() throws Exception {
+        ObjectMapper objectMapper = new ObjectMapper();
+        ContractDeploymentVerifier.DeploymentManifest deploymentManifest;
+        try (InputStream input = getClass().getResourceAsStream("/contract/deployment-manifest.json")) {
+            assertThat(input).isNotNull();
+            deploymentManifest = objectMapper.readValue(
+                input, ContractDeploymentVerifier.DeploymentManifest.class
+            );
+        }
+
+        try (InputStream input = getClass().getResourceAsStream("/abi/Diamond.json")) {
+            assertThat(input).isNotNull();
+            String actualHash = HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(
+                input.readAllBytes()
+            ));
+            assertThat(actualHash).isEqualTo(deploymentManifest.abiSha256());
         }
     }
 

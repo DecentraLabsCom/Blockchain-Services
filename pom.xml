@@ -262,6 +262,18 @@
     </dependencyManagement>
 
     <build>
+        <resources>
+            <resource>
+                <directory>src/main/resources</directory>
+            </resource>
+            <resource>
+                <directory>abi</directory>
+                <targetPath>abi</targetPath>
+                <includes>
+                    <include>Diamond.json</include>
+                </includes>
+            </resource>
+        </resources>
         <plugins>
             <!-- Spring Boot plugin to package the project into a WAR -->
             <plugin>
