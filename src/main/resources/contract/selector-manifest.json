@@ -381,6 +381,7 @@
     "grantInstitutionRole(address,string)",
     "getLabProviders()",
     "setLabOwnerPucHash(uint256,bytes32)",
+    "institutionalReservationRequest(address,bytes32,uint256,uint32,uint32)",
     "checkInReservation(bytes32)"
   ]
 }
