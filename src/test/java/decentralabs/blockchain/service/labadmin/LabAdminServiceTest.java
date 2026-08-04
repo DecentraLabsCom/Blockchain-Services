@@ -562,7 +562,7 @@ class LabAdminServiceTest {
         assertThat(listed.institutionName()).isEqualTo("UNED");
         assertThat(listed.institutionAddress()).isEqualTo(institution);
         assertThat(listed.cancellable()).isTrue();
-        assertThat(listed.cancellationOptions()).extracting(LabAdminCancellationOption::reasonCode)
+        assertThat(listed.cancellationOptions()).extracting(option -> option.reasonCode())
             .containsExactly(1, 6, 7, 8);
 
         Map<String, Object> actionable = service.listActionableReservations();
@@ -588,7 +588,6 @@ class LabAdminServiceTest {
             BigInteger.valueOf(20_000_000)
         );
 
-        @SuppressWarnings("unchecked")
         List<LabAdminCancellationOption> options = ReflectionTestUtils.invokeMethod(
             service, "providerCancellationOptions", reservation, now, Boolean.FALSE
         );
@@ -618,11 +617,9 @@ class LabAdminServiceTest {
             BigInteger.valueOf(20_000_000)
         );
 
-        @SuppressWarnings("unchecked")
         List<LabAdminCancellationOption> recordedOptions = ReflectionTestUtils.invokeMethod(
             service, "providerCancellationOptions", reservation, now, Boolean.TRUE
         );
-        @SuppressWarnings("unchecked")
         List<LabAdminCancellationOption> expiredOptions = ReflectionTestUtils.invokeMethod(
             service, "providerCancellationOptions", reservation, now, Boolean.FALSE
         );
@@ -649,14 +646,13 @@ class LabAdminServiceTest {
             BigInteger.ZERO
         );
 
-        @SuppressWarnings("unchecked")
         List<LabAdminCancellationOption> options = ReflectionTestUtils.invokeMethod(
             service, "providerCancellationOptions", reservation, now, Boolean.FALSE
         );
 
-        assertThat(options).extracting(LabAdminCancellationOption::reasonCode)
+        assertThat(options).extracting(option -> option.reasonCode())
             .containsExactly(1, 2, 6, 7);
-        assertThat(options).extracting(LabAdminCancellationOption::reputationPenalty)
+        assertThat(options).extracting(option -> option.reputationPenalty())
             .containsExactly(-1, 0, 0, 0);
     }
 
