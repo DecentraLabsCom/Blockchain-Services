@@ -10,8 +10,10 @@ import static org.mockito.Mockito.when;
 
 import decentralabs.blockchain.domain.ProviderApproval;
 import decentralabs.blockchain.domain.ProviderInvoiceRecord;
+import decentralabs.blockchain.domain.ProviderPayout;
 import decentralabs.blockchain.domain.ProviderSettlementOperation;
 import decentralabs.blockchain.service.persistence.ProviderSettlementPersistenceService;
+import decentralabs.blockchain.util.ProviderSettlementReferenceHasher;
 import java.math.BigDecimal;
 import java.math.BigInteger;
 import java.util.Optional;
@@ -73,6 +75,52 @@ class ProviderSettlementOnChainServiceTest {
         verify(persistence).projectSettlementOperation(anyString(), eq(receipt.actor()), eq("0xtx"), eq(BigInteger.TEN), eq("0xblock"));
     }
 
+    @Test
+    void paymentRetryBuildsEthereumCallFromDurableOperation() throws Exception {
+        ProviderInvoiceRecord invoice = ProviderInvoiceRecord.builder()
+            .id(7L)
+            .claimId("CLAIM-1")
+            .labId("1")
+            .providerAddress("0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb0001")
+            .batchId("0x" + "11".repeat(32))
+            .invoiceRef("INV-1")
+            .eurAmount(new BigDecimal("25.00"))
+            .creditAmount(new BigDecimal("250.0000000"))
+            .status(ProviderInvoiceRecord.Status.APPROVED)
+            .build();
+        ProviderSettlementOperation durableOperation = paymentOperation("PAY-A", "ATTEST-A");
+        ProviderPayout payout = ProviderPayout.builder().id(9L).invoiceRecordId(7L).build();
+        ProviderSettlementChainClient.ChainReceipt receipt =
+            new ProviderSettlementChainClient.ChainReceipt("0xtx", BigInteger.TEN, "0xblock", "0xactor");
+
+        when(persistence.findInvoiceById(7L)).thenReturn(Optional.of(invoice));
+        when(persistence.createOrLoadSettlementOperation(any())).thenReturn(durableOperation);
+        when(persistence.findPayoutByInvoiceId(7L)).thenReturn(Optional.empty()).thenReturn(Optional.of(payout));
+        when(chainClient.pay(any(), any(), any(), anyString())).thenReturn(receipt);
+
+        ProviderPayout result = new ProviderSettlementService(persistence, chainClient).recordPayout(
+            7L,
+            new BigDecimal("25.00"),
+            new BigDecimal("250.0000000"),
+            "PAY-B",
+            "ATTEST-B",
+            "BANK-B",
+            "EURC-B",
+            "USDC-B"
+        );
+
+        assertThat(result).isSameAs(payout);
+        var paymentReferenceCaptor = org.mockito.ArgumentCaptor.forClass(byte[].class);
+        var paymentAttestationCaptor = org.mockito.ArgumentCaptor.forClass(byte[].class);
+        verify(chainClient).pay(any(), paymentReferenceCaptor.capture(), paymentAttestationCaptor.capture(), anyString());
+        assertThat(paymentReferenceCaptor.getValue()).containsExactly(
+            ProviderSettlementReferenceHasher.reference("PAY-A", "paymentRef")
+        );
+        assertThat(paymentAttestationCaptor.getValue()).containsExactly(
+            ProviderSettlementReferenceHasher.reference("ATTEST-A", "paymentAttestation")
+        );
+    }
+
     private ProviderSettlementOperation operation(ProviderSettlementOperation.Action action) {
         return ProviderSettlementOperation.builder()
             .operationKey("provider-settlement:" + action.name().toLowerCase() + ":0x" + "aa".repeat(32))
@@ -89,5 +137,25 @@ class ProviderSettlementOnChainServiceTest {
             .creditAmount(new BigDecimal("250.0000000"))
             .approvalRef(action == ProviderSettlementOperation.Action.APPROVE ? "APPROVAL-1" : null)
             .build();
+    }
+
+    private ProviderSettlementOperation paymentOperation(String paymentRef, String paymentAttestation) {
+        ProviderSettlementOperation operation = operation(ProviderSettlementOperation.Action.PAY);
+        operation.setPaymentRef(paymentRef);
+        operation.setPaymentReferenceHash(
+            ProviderSettlementReferenceHasher.hex(
+                ProviderSettlementReferenceHasher.reference(paymentRef, "paymentRef")
+            )
+        );
+        operation.setPaymentAttestation(paymentAttestation);
+        operation.setPaymentAttestationHash(
+            ProviderSettlementReferenceHasher.hex(
+                ProviderSettlementReferenceHasher.reference(paymentAttestation, "paymentAttestation")
+            )
+        );
+        operation.setBankRef("BANK-A");
+        operation.setEurcTxHash("EURC-A");
+        operation.setUsdcTxHash("USDC-A");
+        return operation;
     }
 }

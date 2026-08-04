@@ -27,6 +27,7 @@ import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionTemplate;
+import org.web3j.utils.Numeric;
 
 /**
  * Provider settlement application service.
@@ -274,7 +275,10 @@ public class ProviderSettlementService {
 
         try {
             ProviderSettlementChainClient.ChainReceipt receipt = chainClient.pay(
-                claimIdBytes, paymentReferenceHash, paymentAttestationHash, operationKey
+                ProviderSettlementReferenceHasher.claimId(operation.getClaimId()),
+                persistedBytes32(operation.getPaymentReferenceHash(), "paymentReferenceHash"),
+                persistedBytes32(operation.getPaymentAttestationHash(), "paymentAttestationHash"),
+                operation.getOperationKey()
             );
             persistence.markSettlementMined(operationKey, receipt.transactionHash(), receipt.blockNumber(), receipt.blockHash(), receipt.actor());
             persistence.projectSettlementOperation(operationKey, receipt.actor(), receipt.transactionHash(), receipt.blockNumber(), receipt.blockHash());
@@ -472,6 +476,13 @@ public class ProviderSettlementService {
 
     private BigInteger rawCredits(BigDecimal creditAmount) {
         return creditAmount.multiply(CreditUnitConverter.RAW_PER_CREDIT).toBigIntegerExact();
+    }
+
+    private byte[] persistedBytes32(String value, String fieldName) {
+        if (value == null || !BYTES32_PATTERN.matcher(value.trim()).matches()) {
+            throw new IllegalStateException("Persisted settlement operation has an invalid " + fieldName);
+        }
+        return Numeric.hexStringToByteArray(value.trim());
     }
 
     private void validateApproval(ProviderInvoiceRecord invoice, String approvalRef, BigDecimal eurAmount) {

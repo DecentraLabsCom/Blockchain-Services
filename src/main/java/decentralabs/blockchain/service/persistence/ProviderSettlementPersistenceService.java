@@ -579,16 +579,27 @@ public class ProviderSettlementPersistenceService {
     private void assertSameOperation(ProviderSettlementOperation existing, ProviderSettlementOperation requested) {
         if (existing.getAction() != requested.getAction()
             || !java.util.Objects.equals(existing.getClaimIdHash(), requested.getClaimIdHash())
+            || requiresInvoiceBinding(existing.getAction())
+                && !java.util.Objects.equals(existing.getInvoiceRecordId(), requested.getInvoiceRecordId())
             || !java.util.Objects.equals(existing.getLabId(), requested.getLabId())
             || !java.util.Objects.equals(existing.getProviderAddress(), requested.getProviderAddress())
             || !java.util.Objects.equals(existing.getBatchId(), requested.getBatchId())
             || !java.util.Objects.equals(existing.getInvoiceReferenceHash(), requested.getInvoiceReferenceHash())
             || !java.util.Objects.equals(existing.getApprovalReferenceHash(), requested.getApprovalReferenceHash())
             || !java.util.Objects.equals(existing.getPaymentReferenceHash(), requested.getPaymentReferenceHash())
+            || !java.util.Objects.equals(existing.getPaymentAttestationHash(), requested.getPaymentAttestationHash())
+            || !java.util.Objects.equals(existing.getBankRef(), requested.getBankRef())
+            || !java.util.Objects.equals(existing.getEurcTxHash(), requested.getEurcTxHash())
+            || !java.util.Objects.equals(existing.getUsdcTxHash(), requested.getUsdcTxHash())
             || !sameAmount(existing.getEurAmount(), requested.getEurAmount())
             || !sameAmount(existing.getCreditAmount(), requested.getCreditAmount())) {
             throw new IllegalArgumentException("Settlement idempotency key was reused with a different payload");
         }
+    }
+
+    private boolean requiresInvoiceBinding(ProviderSettlementOperation.Action action) {
+        return action == ProviderSettlementOperation.Action.APPROVE
+            || action == ProviderSettlementOperation.Action.PAY;
     }
 
     private boolean sameAmount(java.math.BigDecimal existing, java.math.BigDecimal requested) {

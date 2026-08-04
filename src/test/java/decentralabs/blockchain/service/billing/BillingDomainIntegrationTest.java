@@ -4,6 +4,7 @@ import decentralabs.blockchain.domain.*;
 import decentralabs.blockchain.service.persistence.CreditAccountPersistenceService;
 import decentralabs.blockchain.service.persistence.FundingOrderPersistenceService;
 import decentralabs.blockchain.service.persistence.ProviderSettlementPersistenceService;
+import decentralabs.blockchain.util.ProviderSettlementReferenceHasher;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -318,6 +319,20 @@ class BillingDomainIntegrationTest {
     }
 
     @Test
+    @DisplayName("settlement payment idempotency covers all payment evidence")
+    void settlementPaymentOperationRejectsChangedEvidence() {
+        ProviderSettlementOperation first = paymentOperation(
+            "ATTEST-A", "BANK-A", "EURC-A", "USDC-A"
+        );
+        providerSettlementPersistenceService.createOrLoadSettlementOperation(first);
+
+        assertPayloadMismatch(paymentOperation("ATTEST-B", "BANK-A", "EURC-A", "USDC-A"));
+        assertPayloadMismatch(paymentOperation("ATTEST-A", "BANK-B", "EURC-A", "USDC-A"));
+        assertPayloadMismatch(paymentOperation("ATTEST-A", "BANK-A", "EURC-B", "USDC-A"));
+        assertPayloadMismatch(paymentOperation("ATTEST-A", "BANK-A", "EURC-A", "USDC-B"));
+    }
+
+    @Test
     @DisplayName("invoice and approval references are unique")
     void settlementReferencesAreUnique() {
         ProviderInvoiceRecord record = providerSettlementService.submitInvoice(
@@ -356,6 +371,48 @@ class BillingDomainIntegrationTest {
             new BigDecimal("30.00")))
             .isInstanceOf(IllegalArgumentException.class)
             .hasMessageContaining("Approval reference already used");
+    }
+
+    private void assertPayloadMismatch(ProviderSettlementOperation retry) {
+        assertThatThrownBy(() -> providerSettlementPersistenceService.createOrLoadSettlementOperation(retry))
+            .isInstanceOf(IllegalArgumentException.class)
+            .hasMessageContaining("Settlement idempotency key was reused with a different payload");
+    }
+
+    private ProviderSettlementOperation paymentOperation(
+        String paymentAttestation,
+        String bankRef,
+        String eurcTxHash,
+        String usdcTxHash
+    ) {
+        String paymentRef = "PAY-IDEMPOTENT-1";
+        return ProviderSettlementOperation.builder()
+            .operationKey("provider-settlement:pay:0x" + "cc".repeat(32))
+            .action(ProviderSettlementOperation.Action.PAY)
+            .status(ProviderSettlementOperation.Status.PREPARED)
+            .claimId("CLAIM-PAY-IDEMPOTENT-1")
+            .claimIdHash("0x" + "cc".repeat(32))
+            .invoiceRecordId(1L)
+            .labId("1")
+            .providerAddress("0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb0001")
+            .batchId("0x" + "11".repeat(32))
+            .invoiceRef("INV-PAY-IDEMPOTENT-1")
+            .invoiceReferenceHash("0x" + "dd".repeat(32))
+            .paymentRef(paymentRef)
+            .paymentReferenceHash(ProviderSettlementReferenceHasher.hex(
+                ProviderSettlementReferenceHasher.reference(paymentRef, "paymentRef")
+            ))
+            .paymentAttestation(paymentAttestation)
+            .paymentAttestationHash(ProviderSettlementReferenceHasher.hex(
+                ProviderSettlementReferenceHasher.reference(paymentAttestation, "paymentAttestation")
+            ))
+            .eurAmount(new BigDecimal("10.00"))
+            .creditAmount(new BigDecimal("100.0000000"))
+            .bankRef(bankRef)
+            .eurcTxHash(eurcTxHash)
+            .usdcTxHash(usdcTxHash)
+            .requestedByPrincipal("internal")
+            .build();
     }
 
     @Test
