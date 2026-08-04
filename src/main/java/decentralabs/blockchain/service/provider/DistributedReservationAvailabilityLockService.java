@@ -6,6 +6,10 @@ import java.security.NoSuchAlgorithmException;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
+import java.util.Map;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
+import java.util.concurrent.atomic.LongAdder;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Value;
@@ -28,9 +32,17 @@ public class DistributedReservationAvailabilityLockService {
 
     private static final String ACQUIRE_LOCK_SQL = "SELECT GET_LOCK(?, ?)";
     private static final String RELEASE_LOCK_SQL = "SELECT RELEASE_LOCK(?)";
+    private static final String HEALTH_PROBE_LOCK_NAME =
+        "decentralabs:provider-reservation-availability:health-probe";
     private static final int MYSQL_LOCK_NAME_LENGTH = 64;
 
     private final ObjectProvider<JdbcTemplate> jdbcTemplateProvider;
+    private final LongAdder waitNanos = new LongAdder();
+    private final LongAdder waitSamples = new LongAdder();
+    private final LongAdder timeoutCount = new LongAdder();
+    private final LongAdder retryCount = new LongAdder();
+    private final AtomicInteger locksHeld = new AtomicInteger();
+    private final AtomicReference<Boolean> getLockAvailable = new AtomicReference<>(false);
 
     /** A blocked provider worker is retried; it must not deny the reservation. */
     @Value("${provider.reservation.availability.lock-timeout.seconds:60}")
@@ -50,6 +62,7 @@ public class DistributedReservationAvailabilityLockService {
 
         JdbcTemplate jdbcTemplate = jdbcTemplateProvider.getIfAvailable();
         if (jdbcTemplate == null) {
+            getLockAvailable.set(false);
             throw new DistributedLockException(
                 "Provider reservation availability requires a configured JdbcTemplate"
             );
@@ -91,18 +104,30 @@ public class DistributedReservationAvailabilityLockService {
         ReservationAvailabilityLockKey key,
         LockAction<T> action
     ) throws java.sql.SQLException {
-        Integer result = executeLockQuery(connection, ACQUIRE_LOCK_SQL, lockName, lockTimeoutSeconds());
+        long waitStarted = System.nanoTime();
+        Integer result;
+        try {
+            result = executeLockQuery(connection, ACQUIRE_LOCK_SQL, lockName, lockTimeoutSeconds());
+            recordWait(waitStarted);
+            getLockAvailable.set(result != null);
+        } catch (java.sql.SQLException ex) {
+            recordWait(waitStarted);
+            getLockAvailable.set(false);
+            throw ex;
+        }
         if (result == null) {
             throw new DistributedLockException(
                 "MySQL GET_LOCK returned NULL for provider reservation lab " + key.labId()
             );
         }
         if (result != 1) {
+            timeoutCount.increment();
             throw new DistributedLockException(
                 "Provider reservation availability lock timeout for lab " + key.labId()
             );
         }
 
+        locksHeld.incrementAndGet();
         try {
             try {
                 return action.run();
@@ -110,8 +135,60 @@ public class DistributedReservationAvailabilityLockService {
                 throw new ActionFailureException(failure);
             }
         } finally {
-            releaseLock(connection, lockName, key);
+            try {
+                releaseLock(connection, lockName, key);
+            } finally {
+                locksHeld.decrementAndGet();
+            }
         }
+    }
+
+    /**
+     * Probes the MySQL advisory-lock function on a disposable named lock and
+     * returns the current lock telemetry for the detailed health endpoint.
+     * A result of {@code 0} still proves that GET_LOCK is available; it only
+     * means another session owns the probe name at that instant.
+     */
+    public LockHealthSnapshot healthSnapshot() {
+        JdbcTemplate jdbcTemplate = jdbcTemplateProvider.getIfAvailable();
+        if (jdbcTemplate == null) {
+            getLockAvailable.set(false);
+            return currentHealthSnapshot();
+        }
+
+        try {
+            Boolean available = jdbcTemplate.execute((ConnectionCallback<Boolean>) connection -> {
+                Integer result = executeLockQuery(connection, ACQUIRE_LOCK_SQL, HEALTH_PROBE_LOCK_NAME, 0);
+                if (result == null) {
+                    return false;
+                }
+                if (result == 1) {
+                    releaseHealthProbeLock(connection);
+                }
+                return result == 0 || result == 1;
+            });
+            getLockAvailable.set(Boolean.TRUE.equals(available));
+        } catch (Exception ex) {
+            getLockAvailable.set(false);
+            log.warn("MySQL GET_LOCK health probe failed: {}", ex.getMessage());
+        }
+        return currentHealthSnapshot();
+    }
+
+    /** Records a provider reservation attempt scheduled after a previous failure. */
+    public void recordReservationRetry() {
+        retryCount.increment();
+    }
+
+    /** Exposed package-wide for deterministic tests and operational diagnostics. */
+    LockHealthSnapshot currentHealthSnapshot() {
+        return new LockHealthSnapshot(
+            Boolean.TRUE.equals(getLockAvailable.get()),
+            averageWaitMillis(),
+            timeoutCount.sum(),
+            locksHeld.get(),
+            retryCount.sum()
+        );
     }
 
     private Integer executeLockQuery(
@@ -140,12 +217,20 @@ public class DistributedReservationAvailabilityLockService {
         String lockName,
         ReservationAvailabilityLockKey key
     ) throws java.sql.SQLException {
+        releaseLock(connection, lockName, key.labId().toString());
+    }
+
+    private void releaseLock(
+        Connection connection,
+        String lockName,
+        String labId
+    ) throws java.sql.SQLException {
         try {
             Integer result = executeLockQuery(connection, RELEASE_LOCK_SQL, lockName, 0);
             if (result == null || result != 1) {
                 log.warn(
                     "MySQL RELEASE_LOCK did not confirm release for provider reservation lab {}",
-                    key.labId()
+                    labId
                 );
             }
         } catch (java.sql.SQLException ex) {
@@ -154,10 +239,32 @@ public class DistributedReservationAvailabilityLockService {
             // could not run on a broken connection.
             log.warn(
                 "Unable to explicitly release provider reservation availability lock for lab {}: {}",
-                key.labId(),
+                labId,
                 ex.getMessage()
             );
         }
+    }
+
+    private void releaseHealthProbeLock(Connection connection) {
+        try {
+            releaseLock(connection, HEALTH_PROBE_LOCK_NAME, "health-probe");
+        } catch (java.sql.SQLException ex) {
+            // The connection will release the named lock if it is terminated.
+            log.warn("Unable to release MySQL GET_LOCK health probe: {}", ex.getMessage());
+        }
+    }
+
+    private void recordWait(long waitStarted) {
+        waitNanos.add(Math.max(0, System.nanoTime() - waitStarted));
+        waitSamples.increment();
+    }
+
+    private double averageWaitMillis() {
+        long samples = waitSamples.sum();
+        if (samples == 0) {
+            return 0.0;
+        }
+        return waitNanos.sum() / (double) samples / 1_000_000.0;
     }
 
     private int lockTimeoutSeconds() {
@@ -192,6 +299,24 @@ public class DistributedReservationAvailabilityLockService {
     private static final class ActionFailureException extends RuntimeException {
         private ActionFailureException(Throwable cause) {
             super(cause);
+        }
+    }
+
+    public record LockHealthSnapshot(
+        boolean getLockAvailable,
+        double averageWaitMs,
+        long timeouts,
+        int locksHeld,
+        long retries
+    ) {
+        public Map<String, Object> asMap() {
+            return Map.of(
+                "get_lock_available", getLockAvailable,
+                "average_wait_ms", averageWaitMs,
+                "timeouts", timeouts,
+                "locks_held", locksHeld,
+                "retries", retries
+            );
         }
     }
 }

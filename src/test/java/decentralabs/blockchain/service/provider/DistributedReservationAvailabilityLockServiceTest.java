@@ -63,6 +63,7 @@ class DistributedReservationAvailabilityLockServiceTest {
 
         service.withLock(key, () -> {
             verify(acquireStatement).executeQuery();
+            assertThat(service.currentHealthSnapshot().locksHeld()).isEqualTo(1);
             return null;
         });
 
@@ -71,6 +72,8 @@ class DistributedReservationAvailabilityLockServiceTest {
         verify(releaseStatement).setString(eq(1), lockName.capture());
         assertThat(lockName.getValue()).hasSize(64);
         verify(releaseStatement).executeQuery();
+        assertThat(service.currentHealthSnapshot().locksHeld()).isZero();
+        assertThat(service.currentHealthSnapshot().getLockAvailable()).isTrue();
     }
 
     @Test
@@ -84,6 +87,8 @@ class DistributedReservationAvailabilityLockServiceTest {
 
         verify(action, never()).run();
         verify(releaseStatement, never()).executeQuery();
+        assertThat(service.currentHealthSnapshot().timeouts()).isEqualTo(1);
+        assertThat(service.currentHealthSnapshot().locksHeld()).isZero();
     }
 
     @Test
@@ -93,6 +98,28 @@ class DistributedReservationAvailabilityLockServiceTest {
         assertThatThrownBy(() -> service.withLock(key(16), () -> null))
             .isInstanceOf(DistributedReservationAvailabilityLockService.DistributedLockException.class)
             .hasMessageContaining("JdbcTemplate");
+
+        assertThat(service.currentHealthSnapshot().getLockAvailable()).isFalse();
+    }
+
+    @Test
+    void healthProbeConfirmsThatGetLockIsAvailable() {
+        assertThat(service.healthSnapshot().getLockAvailable()).isTrue();
+    }
+
+    @Test
+    void healthProbeFailsClosedWhenGetLockCannotBeExecuted() throws Exception {
+        when(acquireStatement.executeQuery()).thenThrow(new java.sql.SQLException("MySQL unavailable"));
+
+        assertThat(service.healthSnapshot().getLockAvailable()).isFalse();
+    }
+
+    @Test
+    void recordsReservationRetries() {
+        service.recordReservationRetry();
+        service.recordReservationRetry();
+
+        assertThat(service.currentHealthSnapshot().retries()).isEqualTo(2);
     }
 
     @Test

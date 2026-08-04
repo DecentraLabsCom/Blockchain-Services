@@ -4,6 +4,7 @@ import decentralabs.blockchain.service.auth.MarketplaceKeyService;
 import decentralabs.blockchain.service.auth.SamlValidationService;
 import decentralabs.blockchain.service.organization.InstitutionRegistrationService;
 import decentralabs.blockchain.service.organization.InstitutionRole;
+import decentralabs.blockchain.service.provider.DistributedReservationAvailabilityLockService;
 import decentralabs.blockchain.service.wallet.InstitutionalWalletService;
 import decentralabs.blockchain.service.wallet.WalletService;
 import java.nio.file.Files;
@@ -40,6 +41,7 @@ public class HealthController {
     private final InstitutionalWalletService institutionalWalletService;
     private final InstitutionRegistrationService institutionRegistrationService;
     private final ObjectProvider<JdbcTemplate> jdbcTemplateProvider;
+    private final DistributedReservationAvailabilityLockService reservationAvailabilityLockService;
 
     @Value("${marketplace.public-key-url}")
     private String marketplacePublicKeyUrl;
@@ -83,6 +85,10 @@ public class HealthController {
             healthStatus.put("private_key_present", isPrivateKeyPresent());
             healthStatus.put("saml_validation_ready", samlValidationService.isConfigured());
             healthStatus.put("event_listener_enabled", eventListeningEnabled);
+            healthStatus.put(
+                "reservation_capacity_lock",
+                reservationAvailabilityLockService.healthSnapshot().asMap()
+            );
             boolean databaseUp = isDatabaseUp();
             healthStatus.put("database_up", databaseUp);
             HealthCount unavailable = HealthCount.failure(DATABASE_UNAVAILABLE);
@@ -93,6 +99,9 @@ public class HealthController {
             HealthCount institutionalTransactionsStuck = databaseUp ? countInstitutionalTransactionBlockers() : unavailable;
             HealthCount contractEventsDeadLetter = databaseUp ? countContractEvents("status = 'DEAD_LETTER'") : unavailable;
             HealthCount contractEventsOrphaned = databaseUp ? countContractEvents("canonical_status = 'ORPHANED'") : unavailable;
+            HealthCount reservationConfirmationsPending = databaseUp
+                ? countPendingReservationConfirmations()
+                : unavailable;
             Map<String, String> queueHealthErrors = new LinkedHashMap<>();
             putHealthCount(healthStatus, queueHealthErrors, "nonce_backlog", nonceBacklog);
             putHealthCount(healthStatus, queueHealthErrors, "access_deliveries_stuck", accessDeliveriesStuck);
@@ -101,6 +110,12 @@ public class HealthController {
             putHealthCount(healthStatus, queueHealthErrors, "institutional_transactions_stuck", institutionalTransactionsStuck);
             putHealthCount(healthStatus, queueHealthErrors, "contract_events_dead_letter", contractEventsDeadLetter);
             putHealthCount(healthStatus, queueHealthErrors, "contract_events_orphaned", contractEventsOrphaned);
+            putHealthCount(
+                healthStatus,
+                queueHealthErrors,
+                "reservation_confirmations_pending",
+                reservationConfirmationsPending
+            );
             healthStatus.put("queue_health_errors", queueHealthErrors);
             healthStatus.put("wallet_configured", institutionalWalletService.isConfigured());
             healthStatus.put("treasury_configured", isTreasuryConfigured());
@@ -139,6 +154,7 @@ public class HealthController {
         boolean providerRegistered = Boolean.TRUE.equals(status.get("provider_registered"));
         boolean consumerRegistered = Boolean.TRUE.equals(status.get("consumer_registered"));
         boolean providerReady = providersEnabled ? providerRegistered : consumerRegistered;
+        boolean reservationCapacityLockReady = !providersEnabled || reservationCapacityLockAvailable(status);
         boolean authSigningReady = !providersEnabled || keyPresent;
         boolean durableQueuesReady = zeroCount(status.get("nonce_backlog"))
             && zeroCount(status.get("access_deliveries_stuck"))
@@ -146,10 +162,12 @@ public class HealthController {
             && zeroCount(status.get("session_started_failed"))
             && zeroCount(status.get("institutional_transactions_stuck"))
             && zeroCount(status.get("contract_events_dead_letter"))
-            && zeroCount(status.get("contract_events_orphaned"));
+            && zeroCount(status.get("contract_events_orphaned"))
+            && knownCount(status.get("reservation_confirmations_pending"));
 
         if (!rpcUp || !authSigningReady || !marketplaceReady || !dbUp || !walletConfigured
-                || !treasuryConfigured || !providerReady || !durableQueuesReady) {
+                || !treasuryConfigured || !providerReady || !reservationCapacityLockReady
+                || !durableQueuesReady) {
             status.put("status", "DEGRADED");
             return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).body(status);
         }
@@ -295,6 +313,13 @@ public class HealthController {
         );
     }
 
+    private HealthCount countPendingReservationConfirmations() {
+        return countHealthRows(
+            "SELECT COUNT(*) FROM lab_reservations WHERE status = 'PENDING'",
+            "1"
+        );
+    }
+
     private HealthCount countHealthRows(String sql, String requiredMigration) {
         JdbcTemplate jdbcTemplate = jdbcTemplateProvider.getIfAvailable();
         if (jdbcTemplate == null) {
@@ -384,6 +409,18 @@ public class HealthController {
 
     private boolean zeroCount(Object value) {
         return value instanceof Number number && number.intValue() == 0;
+    }
+
+    private boolean knownCount(Object value) {
+        return value instanceof Number;
+    }
+
+    private boolean reservationCapacityLockAvailable(Map<String, Object> status) {
+        Object rawLockHealth = status.get("reservation_capacity_lock");
+        if (!(rawLockHealth instanceof Map<?, ?> lockHealth)) {
+            return false;
+        }
+        return Boolean.TRUE.equals(lockHealth.get("get_lock_available"));
     }
 
     private boolean isTreasuryConfigured() {

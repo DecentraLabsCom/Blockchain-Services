@@ -40,6 +40,7 @@ import decentralabs.blockchain.service.organization.InstitutionRegistrationServi
 import decentralabs.blockchain.service.organization.InstitutionRole;
 import decentralabs.blockchain.service.wallet.InstitutionalWalletService;
 import decentralabs.blockchain.service.wallet.WalletService;
+import decentralabs.blockchain.service.provider.DistributedReservationAvailabilityLockService;
 
 @ExtendWith(MockitoExtension.class)
 class HealthControllerTest {
@@ -63,6 +64,9 @@ class HealthControllerTest {
     private ObjectProvider<JdbcTemplate> jdbcTemplateProvider;
 
     @Mock
+    private DistributedReservationAvailabilityLockService reservationAvailabilityLockService;
+
+    @Mock
     private JdbcTemplate jdbcTemplate;
 
     @Mock
@@ -82,7 +86,8 @@ class HealthControllerTest {
             samlValidationService,
             institutionalWalletService,
             institutionRegistrationService,
-            jdbcTemplateProvider
+            jdbcTemplateProvider,
+            reservationAvailabilityLockService
         );
 
         // Create a temporary private key file so isPrivateKeyPresent() returns true
@@ -216,6 +221,67 @@ class HealthControllerTest {
             mockMvc.perform(get("/health"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.database_up").value(true));
+        }
+
+        @Test
+        @DisplayName("Should expose reservation capacity lock health")
+        void shouldExposeReservationCapacityLockHealth() throws Exception {
+            setupHealthyEnvironment();
+
+            mockMvc.perform(get("/health"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.reservation_capacity_lock.get_lock_available").value(true))
+                .andExpect(jsonPath("$.reservation_capacity_lock.average_wait_ms").value(1.25))
+                .andExpect(jsonPath("$.reservation_capacity_lock.timeouts").value(0))
+                .andExpect(jsonPath("$.reservation_capacity_lock.locks_held").value(0))
+                .andExpect(jsonPath("$.reservation_capacity_lock.retries").value(0));
+        }
+
+        @Test
+        @DisplayName("Should degrade provider health when GET_LOCK is unavailable")
+        void shouldDegradeWhenGetLockIsUnavailable() throws Exception {
+            setupHealthyEnvironment();
+            when(reservationAvailabilityLockService.healthSnapshot()).thenReturn(
+                new DistributedReservationAvailabilityLockService.LockHealthSnapshot(
+                    false, 0.0, 0, 0, 0
+                )
+            );
+
+            mockMvc.perform(get("/health"))
+                .andExpect(status().isServiceUnavailable())
+                .andExpect(jsonPath("$.status").value("DEGRADED"))
+                .andExpect(jsonPath("$.reservation_capacity_lock.get_lock_available").value(false));
+        }
+
+        @Test
+        @DisplayName("Should expose pending reservation confirmations without treating them as a query failure")
+        void shouldExposePendingReservationConfirmations() throws Exception {
+            setupHealthyEnvironment();
+            when(jdbcTemplate.queryForObject(
+                org.mockito.ArgumentMatchers.contains("FROM lab_reservations WHERE status = 'PENDING'"),
+                eq(Integer.class)
+            )).thenReturn(3);
+
+            mockMvc.perform(get("/health"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.reservation_confirmations_pending").value(3))
+                .andExpect(jsonPath("$.queue_health_errors").isEmpty());
+        }
+
+        @Test
+        @DisplayName("Should degrade when pending reservation confirmations cannot be counted")
+        void shouldDegradeWhenPendingReservationConfirmationsCannotBeCounted() throws Exception {
+            setupHealthyEnvironment();
+            when(jdbcTemplate.queryForObject(
+                org.mockito.ArgumentMatchers.contains("FROM lab_reservations WHERE status = 'PENDING'"),
+                eq(Integer.class)
+            )).thenThrow(new RuntimeException("reservation table unavailable"));
+
+            mockMvc.perform(get("/health"))
+                .andExpect(status().isServiceUnavailable())
+                .andExpect(jsonPath("$.reservation_confirmations_pending").doesNotExist())
+                .andExpect(jsonPath("$.queue_health_errors.reservation_confirmations_pending")
+                    .value("QUERY_FAILED"));
         }
 
         @Test
@@ -615,6 +681,11 @@ class HealthControllerTest {
         lenient().when(jdbcTemplateProvider.getIfAvailable()).thenReturn(jdbcTemplate);
         lenient().when(jdbcTemplate.queryForObject(anyString(), eq(Integer.class))).thenReturn(0);
         lenient().when(jdbcTemplate.queryForObject("SELECT 1", Integer.class)).thenReturn(1);
+        lenient().when(reservationAvailabilityLockService.healthSnapshot()).thenReturn(
+            new DistributedReservationAvailabilityLockService.LockHealthSnapshot(
+                true, 1.25, 0, 0, 0
+            )
+        );
 
         // Setup Web3j mock chain using doReturn to avoid generic type issues
         lenient().when(walletService.getWeb3jInstance()).thenReturn(web3j);

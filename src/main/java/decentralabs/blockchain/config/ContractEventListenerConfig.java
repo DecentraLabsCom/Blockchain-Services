@@ -1594,6 +1594,9 @@ public class ContractEventListenerConfig {
             state.inProgress.set(false);
             return false;
         }
+        if (state.attempts.get() > 0) {
+            reservationAvailabilityLockService.recordReservationRetry();
+        }
         state.attempts.incrementAndGet();
         return true;
     }

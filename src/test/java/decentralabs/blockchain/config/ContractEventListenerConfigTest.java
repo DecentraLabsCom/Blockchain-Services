@@ -241,6 +241,34 @@ class ContractEventListenerConfigTest {
     }
 
     @Test
+    void recordsReservationRetryAfterARecoverableProcessingFailure() {
+        String reservationKey = "0x" + "11".repeat(32);
+
+        assertThat((Boolean) ReflectionTestUtils.invokeMethod(
+            config,
+            "shouldAttemptReservationProcessing",
+            reservationKey
+        )).isTrue();
+
+        ReflectionTestUtils.invokeMethod(
+            config,
+            "recordReservationFailure",
+            reservationKey,
+            "MySQL unavailable"
+        );
+        Object state = ((Map<?, ?>) ReflectionTestUtils.getField(config, "reservationProcessingGuard"))
+            .get(reservationKey);
+        ReflectionTestUtils.setField(state, "nextAllowedAtMs", 0L);
+
+        assertThat((Boolean) ReflectionTestUtils.invokeMethod(
+            config,
+            "shouldAttemptReservationProcessing",
+            reservationKey
+        )).isTrue();
+        verify(reservationAvailabilityLockService).recordReservationRetry();
+    }
+
+    @Test
     void shouldPersistRequestedReservationUsingIndexedKey() throws Exception {
         ReflectionTestUtils.setField(config, "eventListeningEnabled", true);
 
