@@ -5,6 +5,7 @@ import decentralabs.blockchain.notification.ReservationNotificationService;
 import decentralabs.blockchain.service.health.LabMetadataService;
 import decentralabs.blockchain.service.intent.IntentPersistenceService;
 import decentralabs.blockchain.service.intent.IntentService;
+import decentralabs.blockchain.service.labadmin.LabContentRetentionService;
 import decentralabs.blockchain.service.persistence.ReservationPersistenceService;
 import decentralabs.blockchain.service.persistence.ProviderSettlementPersistenceService;
 import decentralabs.blockchain.service.provider.StationCapacityService;
@@ -88,6 +89,9 @@ class ContractEventListenerConfigTest {
     private ProviderSettlementPersistenceService providerSettlementPersistenceService;
 
     @Mock
+    private LabContentRetentionService contentRetentionService;
+
+    @Mock
     private Web3j web3j;
 
     private ContractEventListenerConfig config;
@@ -106,7 +110,8 @@ class ContractEventListenerConfigTest {
             reservationPersistenceService,
             intentPersistenceService,
             intentService,
-            providerSettlementPersistenceService
+            providerSettlementPersistenceService,
+            contentRetentionService
         );
         ReflectionTestUtils.setField(config, "diamondContractAddress", "0x1234567890abcdef");
         ReflectionTestUtils.setField(config, "startBlock", "latest");
@@ -128,6 +133,22 @@ class ContractEventListenerConfigTest {
             }
             return null;
         }).when(reservationAvailabilityLockService).withLock(any(), any());
+    }
+
+    @Test
+    void labDeletedEventRepairsDurableContentDeletionHandoff() throws Exception {
+        BigInteger labId = BigInteger.valueOf(42);
+        Event event = getSupportedEvents().get("LabDeleted");
+        String signature = EventEncoder.encode(event);
+        Log eventLog = new Log();
+        eventLog.setTopics(List.of(signature, encodeUintTopic(labId)));
+        eventLog.setData("0x");
+        eventLog.setTransactionHash("0xlab-deleted");
+        eventLog.setBlockNumber("0x2a");
+
+        ReflectionTestUtils.invokeMethod(config, "handleContractEvent", "LabDeleted", event, eventLog);
+
+        verify(contentRetentionService).reconcileLabDeleted(labId, "0xlab-deleted");
     }
 
     @Test
@@ -160,7 +181,7 @@ class ContractEventListenerConfigTest {
 
         List<String> events = ReflectionTestUtils.invokeMethod(config, "parseConfiguredEvents");
 
-        assertThat(events).containsExactly("ReservationRequested", "ReservationConfirmed");
+        assertThat(events).containsExactly("ReservationRequested", "ReservationConfirmed", "LabDeleted");
     }
 
     @Test

@@ -153,27 +153,32 @@ in addition to `LAB_CONTENT_MAX_FILE_SIZE` and
 `LAB_CONTENT_MAX_REQUEST_SIZE` at the servlet layer. Uploads accept only the
 listed content types and filenames are normalised before storage.
 
-Deleting a lab first succeeds on-chain. The backend then writes a tombstone for
-the matching local metadata/content directory. Tombstoned content returns 404
-immediately, but remains on disk for `LAB_CONTENT_RETENTION` (default `7d`) so
-operators can recover it. The scheduled collector removes expired tombstones
-and their content every `LAB_CONTENT_GC_INTERVAL_MS` (default one hour).
+Deleting a lab first reserves a durable MySQL deletion hand-off, then submits
+the on-chain transaction. The row stores the lab ID, metadata URI, transaction
+hash, state, retry count and last error. Content is denied while the row is
+pending, even before the filesystem tombstone exists. A worker retries the
+local tombstone and the durable `LabDeleted` event listener repairs the row if
+the request process crashes. Tombstoned content returns 404 immediately, but
+remains on disk for `LAB_CONTENT_RETENTION` (default `7d`) so operators can
+recover it. The scheduled collector removes expired tombstones and their
+content every `LAB_CONTENT_GC_INTERVAL_MS` (default one hour), recording the
+`PURGED` state.
 
 ```mermaid
 stateDiagram-v2
     [*] --> Published
     Published --> Unlisted: unlistLab
     Unlisted --> Published: listLab + metadata preflight
-    Published --> ChainDeleted: deleteLab receipt succeeds
-    Unlisted --> ChainDeleted: deleteLab receipt succeeds
-    ChainDeleted --> Tombstoned: local hand-off
+    Published --> PendingTombstone: durable hand-off + deleteLab receipt
+    Unlisted --> PendingTombstone: durable hand-off + deleteLab receipt
+    PendingTombstone --> Tombstoned: retryable local hand-off
     Tombstoned --> Hidden: public content returns 404
     Hidden --> Purged: retention deadline + collector
 ```
 
-If the chain deletion succeeds but writing the tombstone fails, the chain is
-still authoritative. Restore write access and create/reconcile the tombstone;
-do not recreate the lab merely to repair the local hand-off.
+If the chain deletion succeeds but writing the tombstone fails, content remains
+blocked and the outbox worker retries it. The chain remains authoritative; do
+not recreate the lab merely to repair the local hand-off.
 
 ## FMU describe token
 

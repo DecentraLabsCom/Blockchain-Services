@@ -163,12 +163,21 @@ public class IntentOnChainExecutor {
                     payload.getLabId(), ex.getMessage());
             }
         }
-        ExecutionResult result = send(buildSimple(FunctionName.DELETE_LAB, record), credentials, record, action);
+        Optional<Function> deleteFunction = buildSimple(FunctionName.DELETE_LAB, record);
+        if (payload == null || payload.getLabId() == null || deleteFunction.isEmpty()) {
+            return send(deleteFunction, credentials, record, action);
+        }
+
+        contentRetentionService.prepareDeletion(payload.getLabId(), metadataUri);
+        ExecutionResult result = send(deleteFunction, credentials, record, action);
+        if (!result.success() && (result.txHash() == null || result.reason() != null && result.reason().startsWith("tx_reverted"))) {
+            contentRetentionService.cancelPreparedDeletion(payload.getLabId());
+        }
         if (result.success() && payload != null && payload.getLabId() != null) {
             try {
-                contentRetentionService.markDeleted(payload.getLabId(), metadataUri, result.txHash());
+                contentRetentionService.completeDeletion(payload.getLabId(), metadataUri, result.txHash());
             } catch (java.io.IOException ex) {
-                log.error("Lab {} deleted through intent but content tombstone could not be written: {}",
+                log.error("Lab {} deleted through intent but content tombstone hand-off could not be completed: {}",
                     payload.getLabId(), ex.getMessage(), ex);
             }
         }

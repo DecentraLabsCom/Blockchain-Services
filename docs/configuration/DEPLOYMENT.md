@@ -25,7 +25,7 @@ The following data must survive a container restart:
 
 | State | Location / setting | Why it is durable |
 | --- | --- | --- |
-| MySQL | `SPRING_DATASOURCE_*` | Flyway schema, WebAuthn credentials, access delivery, audit records, nonce/outbox state, intents and contract-event journal. |
+| MySQL | `SPRING_DATASOURCE_*` | Flyway schema, WebAuthn credentials, access delivery, audit records, nonce/outbox state, intents, contract-event journal and lab-content deletion hand-off. |
 | Backend data | `/app/data` | Wallet store, generated wallet configuration and JWT key material when those defaults are used. |
 | Lab content | `LAB_CONTENT_BASE_PATH` | Uploaded metadata, images and documents; deletions are retained by tombstone before garbage collection. |
 | Wallet encryption key | `WALLET_CONFIG_ENCRYPTION_KEY` or `WALLET_CONFIG_KEY_FILE` | Required to recover encrypted wallet material. |
@@ -59,7 +59,7 @@ and units.
 | Gateway integration | `ACCESS_CODE_REDEEMER_CREDENTIALS_JSON`, `SESSION_OBSERVER_CREDENTIALS_JSON`, `LAB_MANAGER_TOKEN*` | Credentials are per gateway; never reuse the admin token as an observer credential. |
 | Lab content | `LAB_CONTENT_BASE_PATH`, `LAB_CONTENT_RETENTION`, `LAB_CONTENT_GC_INTERVAL_MS`, `LAB_CONTENT_MAX_*` | The public content route serves only safe uploaded assets and generated metadata. |
 | Lab metadata fetches | `LAB_METADATA_MAX_BYTES`, `LAB_METADATA_HTTP_*`, `LAB_METADATA_MAX_CONCURRENT_FETCHES`, `LAB_METADATA_LOCAL_*` | Remote metadata is HTTPS-only and bound to the provider origin registered on-chain. Keep local fixtures disabled in production. |
-| Durable workers | `INSTITUTIONAL_*_OUTBOX_*`, `CONTRACT_EVENT_*`, `HEALTH_QUEUE_STUCK_THRESHOLD_SECONDS` | Tune only with an operator who owns reconciliation. |
+| Durable workers | `INSTITUTIONAL_*_OUTBOX_*`, `CONTRACT_EVENT_*`, `LAB_CONTENT_DELETION_OUTBOX_*`, `HEALTH_QUEUE_STUCK_THRESHOLD_SECONDS` | Tune only with an operator who owns reconciliation. |
 
 `CONTRACT_ADDRESS` has no packaged fallback and is mandatory. The service
 does not become ready until it has queried the configured RPC and verified the

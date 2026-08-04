@@ -1,6 +1,11 @@
 package decentralabs.blockchain.service.labadmin;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 import java.math.BigInteger;
 import java.nio.file.Files;
@@ -10,6 +15,8 @@ import java.time.Instant;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.util.ReflectionTestUtils;
 
 class LabContentRetentionServiceTest {
@@ -78,5 +85,31 @@ class LabContentRetentionServiceTest {
 
         assertThat(Files.exists(contentDir)).isFalse();
         assertThat(Files.exists(tempDir.resolve("tombstones/lab-43.json"))).isFalse();
+    }
+
+    @Test
+    void pendingDurableDeletionBlocksContentBeforeFilesystemTombstoneExists() throws Exception {
+        @SuppressWarnings("unchecked")
+        ObjectProvider<JdbcTemplate> provider = mock(ObjectProvider.class);
+        JdbcTemplate jdbcTemplate = mock(JdbcTemplate.class);
+        when(provider.getIfAvailable()).thenReturn(jdbcTemplate);
+        service = new LabContentRetentionService(provider);
+        ReflectionTestUtils.setField(service, "contentBasePath", tempDir.toString());
+        when(jdbcTemplate.queryForObject(
+            anyString(), eq(Integer.class), eq("content/lab-45"), eq("CANCELLED")
+        )).thenReturn(1);
+
+        Files.createDirectories(tempDir.resolve("content/lab-45"));
+        Files.writeString(tempDir.resolve("content/lab-45/metadata.json"), "{\"name\":\"pending\"}");
+
+        assertThatThrownBy(() -> service.assertAvailable("content/lab-45/metadata.json"))
+            .isInstanceOf(java.io.FileNotFoundException.class);
+    }
+
+    @Test
+    void refusesToPrepareDeletionWithoutMetadataUri() {
+        assertThatThrownBy(() -> service.prepareDeletion(BigInteger.valueOf(46), null))
+            .isInstanceOf(IllegalStateException.class)
+            .hasMessageContaining("Metadata URI is unavailable");
     }
 }

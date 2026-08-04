@@ -7,6 +7,7 @@ import decentralabs.blockchain.event.NetworkSwitchEvent;
 import decentralabs.blockchain.notification.ReservationNotificationData;
 import decentralabs.blockchain.notification.ReservationNotificationService;
 import decentralabs.blockchain.service.health.LabMetadataService;
+import decentralabs.blockchain.service.labadmin.LabContentRetentionService;
 import decentralabs.blockchain.service.persistence.ReservationPersistenceService;
 import decentralabs.blockchain.domain.ProviderSettlementOperation;
 import decentralabs.blockchain.service.persistence.ProviderSettlementPersistenceService;
@@ -82,6 +83,7 @@ public class ContractEventListenerConfig {
     private static final String PROVIDER_SETTLEMENT_CLAIM_PAID = "ProviderSettlementClaimPaid";
     private static final String PROVIDER_SETTLEMENT_BATCH_INVALIDATED = "ProviderSettlementBatchInvalidated";
     private static final String PROVIDER_SETTLEMENT_CLAIM_INVALIDATED = "ProviderSettlementClaimInvalidated";
+    private static final String LAB_DELETED = "LabDeleted";
     private static final String MISSING_PUC_PREFIX = "Missing PUC for reservation ";
     private static final long RESERVATION_RETRY_BACKOFF_MS = 120_000L;
     private static final BigInteger PROVIDER_NOT_ELIGIBLE_REASON = BigInteger.valueOf(2);
@@ -249,6 +251,13 @@ public class ContractEventListenerConfig {
         )
     );
 
+    private static final Event LAB_DELETED_EVENT = new Event(
+        LAB_DELETED,
+        Arrays.<TypeReference<?>>asList(
+            new TypeReference<Uint256>(true) {}
+        )
+    );
+
     private static final String ACTION_REQUESTED = "requested";
 
     private static final Map<String, Event> SUPPORTED_EVENTS = Map.ofEntries(
@@ -265,7 +274,8 @@ public class ContractEventListenerConfig {
         Map.entry(PROVIDER_SETTLEMENT_CLAIM_APPROVED, PROVIDER_SETTLEMENT_CLAIM_APPROVED_EVENT),
         Map.entry(PROVIDER_SETTLEMENT_CLAIM_PAID, PROVIDER_SETTLEMENT_CLAIM_PAID_EVENT),
         Map.entry(PROVIDER_SETTLEMENT_BATCH_INVALIDATED, PROVIDER_SETTLEMENT_BATCH_INVALIDATED_EVENT),
-        Map.entry(PROVIDER_SETTLEMENT_CLAIM_INVALIDATED, PROVIDER_SETTLEMENT_CLAIM_INVALIDATED_EVENT)
+        Map.entry(PROVIDER_SETTLEMENT_CLAIM_INVALIDATED, PROVIDER_SETTLEMENT_CLAIM_INVALIDATED_EVENT),
+        Map.entry(LAB_DELETED, LAB_DELETED_EVENT)
     );
 
     private final WalletService walletService;
@@ -275,6 +285,7 @@ public class ContractEventListenerConfig {
     private final IntentPersistenceService intentPersistenceService;
     private final IntentService intentService;
     private final ProviderSettlementPersistenceService providerSettlementPersistenceService;
+    private final LabContentRetentionService contentRetentionService;
 
     @Value("${contract.address}")
     private String diamondContractAddress;
@@ -481,15 +492,20 @@ public class ContractEventListenerConfig {
     }
 
     private List<String> parseConfiguredEvents() {
-        if (eventsToListen == null) {
-            return List.of();
-        }
+        List<String> parsed = eventsToListen == null
+            ? new java.util.ArrayList<>()
+            : Arrays.stream(eventsToListen.split(","))
+                .map(event -> event == null ? "" : event.trim())
+                .filter(event -> !event.isEmpty())
+                .distinct()
+                .collect(Collectors.toList());
 
-        List<String> parsed = Arrays.stream(eventsToListen.split(","))
-            .map(event -> event == null ? "" : event.trim())
-            .filter(event -> !event.isEmpty())
-            .distinct()
-            .collect(Collectors.toList());
+        // LabDeleted is the recovery signal for the content hand-off. It is
+        // mandatory even when an operator omits it from the optional list.
+        if (!parsed.contains(LAB_DELETED)) {
+            parsed = new java.util.ArrayList<>(parsed);
+            parsed.add(LAB_DELETED);
+        }
 
         if (parsed.isEmpty()) {
             return List.of();
@@ -551,8 +567,14 @@ public class ContractEventListenerConfig {
             case PROVIDER_SETTLEMENT_CLAIM_PAID -> handleProviderSettlementClaimPaid(eventValues, eventLog);
             case PROVIDER_SETTLEMENT_BATCH_INVALIDATED -> handleProviderSettlementBatchInvalidated(eventValues);
             case PROVIDER_SETTLEMENT_CLAIM_INVALIDATED -> handleProviderSettlementClaimInvalidated(eventValues);
+            case LAB_DELETED -> handleLabDeleted(eventValues, eventLog);
             default -> throw new IllegalArgumentException("Unhandled event type: " + eventName);
         }
+    }
+
+    private void handleLabDeleted(EventValues values, Log eventLog) {
+        BigInteger labId = ((Uint256) values.getIndexedValues().get(0)).getValue();
+        contentRetentionService.reconcileLabDeleted(labId, eventLog.getTransactionHash());
     }
 
     private void handleProviderSettlementClaimSubmitted(EventValues values, Log eventLog) {

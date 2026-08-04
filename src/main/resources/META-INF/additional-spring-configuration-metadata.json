@@ -721,6 +721,30 @@
     "defaultValue": 3600000
   },
   {
+    "name": "lab.content.deletion.outbox.interval-ms",
+    "type": "java.lang.Long",
+    "description": "Interval in milliseconds for retrying durable lab-content deletion hand-offs.",
+    "defaultValue": 30000
+  },
+  {
+    "name": "lab.content.deletion.outbox.batch-size",
+    "type": "java.lang.Integer",
+    "description": "Maximum number of lab-content deletion hand-offs processed per worker cycle.",
+    "defaultValue": 25
+  },
+  {
+    "name": "lab.content.deletion.outbox.retry-base-delay-ms",
+    "type": "java.lang.Long",
+    "description": "Base retry delay in milliseconds for failed lab-content tombstone writes.",
+    "defaultValue": 30000
+  },
+  {
+    "name": "lab.content.deletion.outbox.retry-max-delay-ms",
+    "type": "java.lang.Long",
+    "description": "Maximum retry delay in milliseconds for failed lab-content tombstone writes.",
+    "defaultValue": 900000
+  },
+  {
     "name": "lab.metadata.max-bytes",
     "type": "java.lang.Long",
     "description": "Maximum response size for an on-chain lab metadata document.",

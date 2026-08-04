@@ -726,19 +726,24 @@ public class LabAdminService {
     public LabAdminTransactionResponse deleteLab(BigInteger labId, String idempotencyKey) throws Exception {
         requireOwnedLab(labId);
         String uri = walletService.getLabTokenUri(labId).orElse(null);
+        // Reserve the content hand-off before broadcasting. If this durable
+        // write is unavailable, do not create an on-chain deletion that the
+        // content service cannot safely reconcile after a crash.
+        contentRetentionService.prepareDeletion(labId, uri);
         TransactionReceipt receipt = loadWritableDiamond(operationKey("delete", labId, idempotencyKey))
             .deleteLab(labId).send();
         if (receipt == null) {
             throw new IllegalStateException("Lab deletion transaction returned no receipt");
         }
         if (!receipt.isStatusOK()) {
+            contentRetentionService.cancelPreparedDeletion(labId);
             throw new IllegalStateException("Lab deletion transaction was reverted");
         }
         try {
-            contentRetentionService.markDeleted(labId, uri, receipt.getTransactionHash());
+            contentRetentionService.completeDeletion(labId, uri, receipt.getTransactionHash());
         } catch (IOException ex) {
-            // The chain is authoritative; retain the successful result and
-            // let the scheduled reconciler retry the off-chain hand-off.
+            // The durable reservation and LabDeleted event handler keep the
+            // content unavailable while the worker retries this hand-off.
             log.error("Lab {} deleted on-chain but content tombstone could not be written: {}", labId, ex.getMessage(), ex);
         }
         return new LabAdminTransactionResponse(

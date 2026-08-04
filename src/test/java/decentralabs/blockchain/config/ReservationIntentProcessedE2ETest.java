@@ -8,6 +8,7 @@ import decentralabs.blockchain.service.intent.IntentPersistenceService;
 import decentralabs.blockchain.service.intent.IntentRecord;
 import decentralabs.blockchain.service.intent.IntentService;
 import decentralabs.blockchain.service.intent.IntentWebhookService;
+import decentralabs.blockchain.service.labadmin.LabContentRetentionService;
 import decentralabs.blockchain.service.persistence.ProviderSettlementPersistenceService;
 import decentralabs.blockchain.service.provider.DistributedReservationAvailabilityLockService;
 import decentralabs.blockchain.service.provider.StationCapacityService;
@@ -72,6 +73,9 @@ class ReservationIntentProcessedE2ETest {
     private ProviderSettlementPersistenceService providerSettlementPersistenceService;
 
     @Mock
+    private LabContentRetentionService contentRetentionService;
+
+    @Mock
     private IntentPersistenceService intentPersistenceService;
 
     @Mock
@@ -119,7 +123,8 @@ class ReservationIntentProcessedE2ETest {
             reservationPersistenceService,
             intentPersistenceService,
             intentService,
-            providerSettlementPersistenceService
+            providerSettlementPersistenceService,
+            contentRetentionService
         );
     }
 

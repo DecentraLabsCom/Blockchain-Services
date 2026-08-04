@@ -4,6 +4,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.doReturn;
+import static org.mockito.Mockito.doNothing;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.spy;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -61,7 +63,7 @@ class LabAdminServiceTest {
         institutionalWalletService = mock(InstitutionalWalletService.class);
         labMetadataService = mock(LabMetadataService.class);
         stationCapacityService = new StationCapacityService(new ObjectMapper(), "", "", 100, false);
-        contentRetentionService = new LabContentRetentionService();
+        contentRetentionService = spy(new LabContentRetentionService());
         ReflectionTestUtils.setField(contentRetentionService, "contentBasePath", tempDir.resolve("lab-content").toString());
         service = new LabAdminService(
             institutionalWalletService,
@@ -433,6 +435,57 @@ class LabAdminServiceTest {
         assertThatThrownBy(() -> service.cancelReservation(reservationKey, 7, null))
             .isInstanceOf(IllegalArgumentException.class)
             .hasMessageContaining("Idempotency-Key is required");
+    }
+
+    @Test
+    void deletionPreparesDurableHandoffBeforeSendingOnChainTransaction() throws Exception {
+        BigInteger labId = BigInteger.valueOf(7);
+        String wallet = "0x1111111111111111111111111111111111111111";
+        String metadataUri = "https://lab.example.edu/lab-content/content/lab-demo/metadata.json";
+        Diamond writable = mock(Diamond.class);
+        RemoteFunctionCall<TransactionReceipt> deleteCall = mockRemoteFunctionCall();
+        TransactionReceipt receipt = new TransactionReceipt();
+        receipt.setStatus("0x1");
+        receipt.setTransactionHash("0xdelete");
+
+        when(institutionalWalletService.isConfigured()).thenReturn(true);
+        when(institutionalWalletService.getInstitutionalWalletAddress()).thenReturn(wallet);
+        when(walletService.isLabProvider(wallet)).thenReturn(true);
+        when(walletService.isLabOwnedByProvider(wallet, labId)).thenReturn(true);
+        when(walletService.getLabTokenUri(labId)).thenReturn(Optional.of(metadataUri));
+        when(writable.deleteLab(labId)).thenReturn(deleteCall);
+        when(deleteCall.send()).thenReturn(receipt);
+        doReturn(writable).when(service).loadWritableDiamond(org.mockito.ArgumentMatchers.anyString());
+        doNothing().when(contentRetentionService).prepareDeletion(labId, metadataUri);
+        doNothing().when(contentRetentionService).completeDeletion(labId, metadataUri, "0xdelete");
+
+        service.deleteLab(labId, "delete-command-1");
+
+        var order = org.mockito.Mockito.inOrder(contentRetentionService, writable);
+        order.verify(contentRetentionService).prepareDeletion(labId, metadataUri);
+        order.verify(writable).deleteLab(labId);
+        order.verify(contentRetentionService).completeDeletion(labId, metadataUri, "0xdelete");
+    }
+
+    @Test
+    void deletionDoesNotReachChainWhenDurableHandoffCannotBePrepared() throws Exception {
+        BigInteger labId = BigInteger.valueOf(7);
+        String wallet = "0x1111111111111111111111111111111111111111";
+        String metadataUri = "https://lab.example.edu/lab-content/content/lab-demo/metadata.json";
+
+        when(institutionalWalletService.isConfigured()).thenReturn(true);
+        when(institutionalWalletService.getInstitutionalWalletAddress()).thenReturn(wallet);
+        when(walletService.isLabProvider(wallet)).thenReturn(true);
+        when(walletService.isLabOwnedByProvider(wallet, labId)).thenReturn(true);
+        when(walletService.getLabTokenUri(labId)).thenReturn(Optional.of(metadataUri));
+        doThrow(new IllegalStateException("deletion outbox unavailable"))
+            .when(contentRetentionService).prepareDeletion(labId, metadataUri);
+
+        assertThatThrownBy(() -> service.deleteLab(labId, "delete-command-1"))
+            .isInstanceOf(IllegalStateException.class)
+            .hasMessage("deletion outbox unavailable");
+
+        verify(service, org.mockito.Mockito.never()).loadWritableDiamond(org.mockito.ArgumentMatchers.anyString());
     }
 
     @Test
