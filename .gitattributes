@@ -13,6 +13,10 @@
 *.txt text
 *.gradle text
 
+# Keep contract verification artifacts byte-stable across platforms.
+abi/Diamond.json text eol=lf
+src/main/resources/contract/*.json text eol=lf
+
 # Force shell scripts to have LF line endings (essential for Docker/Linux)
 *.sh text eol=lf
 
