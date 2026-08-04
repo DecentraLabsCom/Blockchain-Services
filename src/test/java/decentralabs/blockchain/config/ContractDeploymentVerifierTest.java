@@ -173,6 +173,7 @@ class ContractDeploymentVerifierTest {
                 "CoreFacet", "contracts/facets/CoreFacet.sol:CoreFacet", List.of("foo()")
             )),
             List.of("foo()"),
+            List.of("legacy()"),
             List.of("bar()")
         );
     }

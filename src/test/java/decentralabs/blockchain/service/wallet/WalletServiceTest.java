@@ -22,6 +22,7 @@ import decentralabs.blockchain.service.persistence.WalletPersistenceService;
 import ch.qos.logback.classic.Logger;
 import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.read.ListAppender;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.math.BigInteger;
 import java.util.Arrays;
 import java.util.List;
@@ -421,7 +422,9 @@ class WalletServiceTest {
                     new org.web3j.abi.datatypes.generated.Uint256(BigInteger.ONE),
                     new org.web3j.abi.datatypes.generated.Uint256(BigInteger.TWO),
                     new org.web3j.abi.datatypes.generated.Uint256(BigInteger.valueOf(3)),
-                    new org.web3j.abi.datatypes.generated.Uint256(BigInteger.valueOf(4))
+                    new org.web3j.abi.datatypes.generated.Uint256(BigInteger.valueOf(4)),
+                    new org.web3j.abi.datatypes.generated.Uint256(BigInteger.valueOf(5)),
+                    new Bool(false)
                 )
             ),
             ethCallResponse(
@@ -482,6 +485,81 @@ class WalletServiceTest {
         assertThat(financialStats).isPresent();
         assertThat(financialStats.get().getRemainingAllowance()).isEqualTo(BigInteger.valueOf(14));
         assertThat(spyService.simulateProviderPayoutRequest(" ", BigInteger.ONE, BigInteger.TEN).canRequestPayout()).isFalse();
+    }
+
+    @Test
+    void getProviderReceivableStatus_aggregatesBoundedPages() throws Exception {
+        WalletService spyService = spy(service);
+        org.mockito.Mockito.doReturn(web3j).when(spyService).getWeb3jInstance();
+        SimpleMeterRegistry meterRegistry = new SimpleMeterRegistry();
+        spyService.setMeterRegistry(meterRegistry);
+        stubEthCalls(
+            web3j,
+            ethCallResponse(
+                encodeValues(
+                    new org.web3j.abi.datatypes.generated.Uint256(BigInteger.ONE),
+                    new org.web3j.abi.datatypes.generated.Uint256(BigInteger.TWO),
+                    new org.web3j.abi.datatypes.generated.Uint256(BigInteger.valueOf(3)),
+                    new org.web3j.abi.datatypes.generated.Uint256(BigInteger.valueOf(4)),
+                    new org.web3j.abi.datatypes.generated.Uint256(BigInteger.valueOf(1000)),
+                    new Bool(true)
+                )
+            ),
+            ethCallResponse(
+                encodeValues(
+                    new org.web3j.abi.datatypes.generated.Uint256(BigInteger.TEN),
+                    new org.web3j.abi.datatypes.generated.Uint256(BigInteger.valueOf(20)),
+                    new org.web3j.abi.datatypes.generated.Uint256(BigInteger.valueOf(30)),
+                    new org.web3j.abi.datatypes.generated.Uint256(BigInteger.ZERO),
+                    new org.web3j.abi.datatypes.generated.Uint256(BigInteger.valueOf(1001)),
+                    new Bool(false)
+                )
+            ),
+            ethCallResponse(
+                encodeValues(
+                    new org.web3j.abi.datatypes.generated.Uint256(BigInteger.valueOf(21)),
+                    new org.web3j.abi.datatypes.generated.Uint256(BigInteger.valueOf(22)),
+                    new org.web3j.abi.datatypes.generated.Uint256(BigInteger.valueOf(23)),
+                    new org.web3j.abi.datatypes.generated.Uint256(BigInteger.valueOf(24)),
+                    new org.web3j.abi.datatypes.generated.Uint256(BigInteger.valueOf(25)),
+                    new org.web3j.abi.datatypes.generated.Uint256(BigInteger.valueOf(26)),
+                    new org.web3j.abi.datatypes.generated.Uint256(BigInteger.valueOf(27)),
+                    new org.web3j.abi.datatypes.generated.Uint256(BigInteger.valueOf(28))
+                )
+            )
+        );
+
+        var status = spyService.getProviderReceivableStatus(BigInteger.ONE);
+
+        assertThat(status).isPresent();
+        assertThat(status.get().providerReceivable()).isEqualTo(BigInteger.valueOf(37));
+        assertThat(status.get().attestedSessionPayout()).isEqualTo(BigInteger.valueOf(11));
+        assertThat(status.get().potentialNoShowFee()).isEqualTo(BigInteger.valueOf(22));
+        assertThat(status.get().pendingGraceReservationCount()).isEqualTo(BigInteger.valueOf(33));
+        assertThat(status.get().existingAccruedReceivable()).isEqualTo(BigInteger.valueOf(4));
+        assertThat(meterRegistry.get("provider_receivable.paginated_reads").counter().count()).isEqualTo(1.0);
+        assertThat(meterRegistry.get("provider_receivable.paginated_pages").counter().count()).isEqualTo(2.0);
+    }
+
+    @Test
+    void getProviderReceivableStatus_rejectsNonAdvancingPages() throws Exception {
+        WalletService spyService = spy(service);
+        org.mockito.Mockito.doReturn(web3j).when(spyService).getWeb3jInstance();
+        stubEthCalls(
+            web3j,
+            ethCallResponse(
+                encodeValues(
+                    new org.web3j.abi.datatypes.generated.Uint256(BigInteger.ZERO),
+                    new org.web3j.abi.datatypes.generated.Uint256(BigInteger.ZERO),
+                    new org.web3j.abi.datatypes.generated.Uint256(BigInteger.ZERO),
+                    new org.web3j.abi.datatypes.generated.Uint256(BigInteger.ZERO),
+                    new org.web3j.abi.datatypes.generated.Uint256(BigInteger.ZERO),
+                    new Bool(true)
+                )
+            )
+        );
+
+        assertThat(spyService.getProviderReceivableStatus(BigInteger.ONE)).isEmpty();
     }
 
     @Test

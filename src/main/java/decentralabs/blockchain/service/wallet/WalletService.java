@@ -45,6 +45,9 @@ import decentralabs.blockchain.util.CreditUnitConverter;
 import decentralabs.blockchain.service.persistence.WalletPersistenceService;
 import decentralabs.blockchain.util.LogSanitizer;
 
+import io.micrometer.core.instrument.MeterRegistry;
+import org.springframework.beans.factory.annotation.Autowired;
+
 import java.math.BigDecimal;
 import java.math.BigInteger;
 import java.net.URI;
@@ -75,10 +78,17 @@ import java.util.concurrent.TimeUnit;
 public class WalletService {
 
     private static final BigInteger CREDIT_LEDGER_PAGE_SIZE = BigInteger.valueOf(50);
+    private static final BigInteger PROVIDER_RECEIVABLE_PAGE_SIZE = BigInteger.valueOf(1000);
     private static final int MAX_CREDIT_LEDGER_ITEMS = 1000;
 
     private final WalletPersistenceService walletPersistenceService;
     private final ApplicationEventPublisher eventPublisher;
+    private MeterRegistry meterRegistry;
+
+    @Autowired(required = false)
+    void setMeterRegistry(MeterRegistry meterRegistry) {
+        this.meterRegistry = meterRegistry;
+    }
 
     @Value("${contract.address}")
     private String contractAddress;
@@ -897,6 +907,11 @@ public class WalletService {
 
     /**
      * Returns the provider receivable currently accrued or settleable for a specific lab.
+     *
+     * The payout preview is read through the bounded contract getter page by
+     * page. This keeps a single RPC call bounded even when a lab has a large
+     * payout heap; the off-chain aggregation remains backward-compatible with
+     * the existing status DTO.
      */
     public Optional<ProviderReceivableStatus> getProviderReceivableStatus(BigInteger labId) {
         if (labId == null || labId.compareTo(BigInteger.ZERO) <= 0) {
@@ -904,38 +919,16 @@ public class WalletService {
         }
         try {
             Web3j web3j = getWeb3jInstance();
-            Function summaryFunction = new Function(
-                "getLabProviderReceivable",
-                Collections.singletonList(new Uint256(labId)),
-                Arrays.asList(
-                    new TypeReference<Uint256>() {},
-                    new TypeReference<Uint256>() {},
-                    new TypeReference<Uint256>() {},
-                    new TypeReference<Uint256>() {}
-                )
-            );
-
-            String encodedFunction = FunctionEncoder.encode(summaryFunction);
-            EthCall response = web3j.ethCall(
-                Transaction.createEthCallTransaction(null, contractAddress, encodedFunction),
-                DefaultBlockParameterName.LATEST
-            ).send();
-
-            if (response.hasError()) {
-                log.warn("Error calling getLabProviderReceivable() for lab {}", labId);
+            Optional<ProviderReceivablePreview> maybePreview = readProviderReceivablePreview(web3j, labId);
+            if (maybePreview.isEmpty()) {
                 return Optional.empty();
             }
 
-            @SuppressWarnings("rawtypes")
-            List<Type> decoded = FunctionReturnDecoder.decode(response.getValue(), summaryFunction.getOutputParameters());
-            if (decoded.size() < 4) {
-                return Optional.empty();
-            }
-
-            BigInteger attestedSessionPayout = (BigInteger) decoded.get(0).getValue();
-            BigInteger potentialNoShowFee = (BigInteger) decoded.get(1).getValue();
-            BigInteger pendingGraceReservationCount = (BigInteger) decoded.get(2).getValue();
-            BigInteger existingAccruedReceivable = (BigInteger) decoded.get(3).getValue();
+            ProviderReceivablePreview preview = maybePreview.get();
+            BigInteger attestedSessionPayout = preview.attestedSessionPayout();
+            BigInteger potentialNoShowFee = preview.potentialNoShowFee();
+            BigInteger pendingGraceReservationCount = preview.pendingGraceReservationCount();
+            BigInteger existingAccruedReceivable = preview.existingAccruedReceivable();
             BigInteger previewReceivable = existingAccruedReceivable
                 .add(attestedSessionPayout)
                 .add(potentialNoShowFee);
@@ -1012,6 +1005,99 @@ public class WalletService {
             return Optional.empty();
         }
     }
+
+    private Optional<ProviderReceivablePreview> readProviderReceivablePreview(
+        Web3j web3j,
+        BigInteger labId
+    ) throws Exception {
+        BigInteger offset = BigInteger.ZERO;
+        BigInteger attestedSessionPayout = BigInteger.ZERO;
+        BigInteger potentialNoShowFee = BigInteger.ZERO;
+        BigInteger pendingGraceReservationCount = BigInteger.ZERO;
+        BigInteger existingAccruedReceivable = BigInteger.ZERO;
+        int pages = 0;
+
+        while (true) {
+            Function pageFunction = new Function(
+                "getLabProviderReceivablePaginated",
+                Arrays.asList(new Uint256(labId), new Uint256(offset), new Uint256(PROVIDER_RECEIVABLE_PAGE_SIZE)),
+                Arrays.asList(
+                    new TypeReference<Uint256>() {},
+                    new TypeReference<Uint256>() {},
+                    new TypeReference<Uint256>() {},
+                    new TypeReference<Uint256>() {},
+                    new TypeReference<Uint256>() {},
+                    new TypeReference<Bool>() {}
+                )
+            );
+
+            String encodedFunction = FunctionEncoder.encode(pageFunction);
+            EthCall response = web3j.ethCall(
+                Transaction.createEthCallTransaction(null, contractAddress, encodedFunction),
+                DefaultBlockParameterName.LATEST
+            ).send();
+
+            if (response.hasError()) {
+                recordProviderReceivableMetric("provider_receivable.paginated_read_errors");
+                log.warn("Error calling getLabProviderReceivablePaginated() for lab {} at offset {}", labId, offset);
+                return Optional.empty();
+            }
+
+            @SuppressWarnings("rawtypes")
+            List<Type> decoded = FunctionReturnDecoder.decode(response.getValue(), pageFunction.getOutputParameters());
+            if (decoded.size() < 6) {
+                recordProviderReceivableMetric("provider_receivable.paginated_read_errors");
+                log.warn("Invalid paginated provider receivable response for lab {} at offset {}", labId, offset);
+                return Optional.empty();
+            }
+
+            attestedSessionPayout = attestedSessionPayout.add((BigInteger) decoded.get(0).getValue());
+            potentialNoShowFee = potentialNoShowFee.add((BigInteger) decoded.get(1).getValue());
+            pendingGraceReservationCount = pendingGraceReservationCount.add((BigInteger) decoded.get(2).getValue());
+            if (offset.signum() == 0) {
+                existingAccruedReceivable = existingAccruedReceivable.add((BigInteger) decoded.get(3).getValue());
+            }
+
+            BigInteger nextOffset = (BigInteger) decoded.get(4).getValue();
+            boolean hasMore = (Boolean) decoded.get(5).getValue();
+            pages++;
+
+            if (!hasMore) {
+                recordProviderReceivableMetric("provider_receivable.paginated_reads");
+                recordProviderReceivableMetric("provider_receivable.paginated_pages", pages);
+                return Optional.of(new ProviderReceivablePreview(
+                    attestedSessionPayout,
+                    potentialNoShowFee,
+                    pendingGraceReservationCount,
+                    existingAccruedReceivable
+                ));
+            }
+
+            if (nextOffset.compareTo(offset) <= 0) {
+                recordProviderReceivableMetric("provider_receivable.paginated_read_errors");
+                log.warn("Non-advancing paginated provider receivable response for lab {} at offset {}", labId, offset);
+                return Optional.empty();
+            }
+            offset = nextOffset;
+        }
+    }
+
+    private void recordProviderReceivableMetric(String metricName) {
+        recordProviderReceivableMetric(metricName, 1);
+    }
+
+    private void recordProviderReceivableMetric(String metricName, int amount) {
+        if (meterRegistry != null) {
+            meterRegistry.counter(metricName).increment(amount);
+        }
+    }
+
+    private record ProviderReceivablePreview(
+        BigInteger attestedSessionPayout,
+        BigInteger potentialNoShowFee,
+        BigInteger pendingGraceReservationCount,
+        BigInteger existingAccruedReceivable
+    ) { }
 
     /**
      * Simulates requestProviderPayout() via eth_call to determine if payout can be requested now.

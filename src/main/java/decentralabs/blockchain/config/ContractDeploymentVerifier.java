@@ -409,6 +409,7 @@ public class ContractDeploymentVerifier implements ApplicationRunner {
         String deploymentModel,
         List<SelectorFacet> facets,
         List<String> internalRoutingFunctions,
+        List<String> unroutedFunctions,
         List<String> forbiddenFunctions
     ) { }
 

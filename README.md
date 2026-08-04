@@ -132,6 +132,14 @@ mode, key and registration checks, nonce/outbox backlog counters and queue
 errors. A database or migration query failure is represented by a `null` count
 and an error code; it must not be mistaken for an empty queue.
 
+Provider receivable status reads use the bounded paginated contract getter.
+Monitor `provider_receivable.paginated_reads`,
+`provider_receivable.paginated_pages` and
+`provider_receivable.paginated_read_errors` through Actuator/Prometheus.
+RPC infrastructure should separately alert on legacy selector `0x10b6ba8f`
+(`getLabProviderReceivable(uint256)`); the application cannot observe
+third-party clients that call the RPC node directly.
+
 ## Reservation notifications
 
 Email/ICS notifications are optional and disabled by the `noop` driver unless
