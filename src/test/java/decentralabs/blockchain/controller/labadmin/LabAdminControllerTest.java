@@ -75,6 +75,23 @@ class LabAdminControllerTest {
     }
 
     @Test
+    void actionableReservationsDelegatesToService() throws Exception {
+        when(labAdminService.listActionableReservations()).thenReturn(Map.of(
+            "success", true,
+            "count", 1,
+            "reservations", java.util.List.of(Map.of("reservationKey", "0x" + "cd".repeat(32)))
+        ));
+
+        mockMvc.perform(get("/lab-admin/reservations/actionable"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.success").value(true))
+            .andExpect(jsonPath("$.count").value(1))
+            .andExpect(jsonPath("$.reservations[0].reservationKey").value("0x" + "cd".repeat(32)));
+
+        verify(labAdminService).listActionableReservations();
+    }
+
+    @Test
     void cancelReservationForwardsKeyReasonAndIdempotencyKey() throws Exception {
         when(labAdminService.cancelReservation(
             "0x" + "ab".repeat(32), 7, "cancel-command-1"

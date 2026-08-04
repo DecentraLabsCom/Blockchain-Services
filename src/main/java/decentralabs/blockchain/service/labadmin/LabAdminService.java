@@ -4,6 +4,7 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import decentralabs.blockchain.contract.Diamond;
 import decentralabs.blockchain.dto.labadmin.LabAdminAssetResponse;
+import decentralabs.blockchain.dto.labadmin.LabAdminCancellationOption;
 import decentralabs.blockchain.dto.labadmin.LabAdminPublishRequest;
 import decentralabs.blockchain.dto.labadmin.LabAdminReservation;
 import decentralabs.blockchain.dto.labadmin.LabAdminTransactionResponse;
@@ -66,6 +67,8 @@ public class LabAdminService {
     private static final BigInteger STATUS_CONFIRMED = BigInteger.ONE;
     private static final BigInteger STATUS_ACCESS_AUTHORIZED = BigInteger.valueOf(2);
     private static final BigInteger PROVIDER_SERVICE_FAILURE_REASON = BigInteger.valueOf(8);
+    private static final long SESSION_ATTESTATION_GRACE_SECONDS = 86_400L;
+    private static final long FULL_DAY_SECONDS = 86_400L;
     private static final int MAX_UPCOMING_RESERVATIONS = 500;
 
     public record LabAdminDeleteAssetResponse(boolean success, boolean deleted, String path) {}
@@ -151,6 +154,14 @@ public class LabAdminService {
     }
 
     public Map<String, Object> listUpcomingReservations() throws Exception {
+        return listReservations(false);
+    }
+
+    public Map<String, Object> listActionableReservations() throws Exception {
+        return listReservations(true);
+    }
+
+    private Map<String, Object> listReservations(boolean actionableOnly) throws Exception {
         String wallet = requireProviderWallet();
         Diamond diamond = loadReadonlyDiamond();
         long now = Instant.now().getEpochSecond();
@@ -182,8 +193,17 @@ public class LabAdminService {
                 try {
                     byte[] key = diamond.getReservationOfTokenByIndex(labId, index).send();
                     Diamond.Reservation reservation = diamond.getReservation(key).send();
-                    if (!isUpcomingReservation(reservation, now)
-                        || !wallet.equalsIgnoreCase(reservation.labProvider)) {
+                    if (!actionableOnly && !isUpcomingReservation(reservation, now)) {
+                        continue;
+                    }
+                    if (!hasReservation(reservation) || !wallet.equalsIgnoreCase(reservation.labProvider)) {
+                        continue;
+                    }
+                    Boolean sessionStarted = readSessionStartedStatus(diamond, key, reservation);
+                    List<LabAdminCancellationOption> cancellationOptions = providerCancellationOptions(
+                        reservation, now, sessionStarted
+                    );
+                    if (actionableOnly && cancellationOptions.isEmpty()) {
                         continue;
                     }
                     String labName = labNames.get(reservation.labId);
@@ -199,7 +219,7 @@ public class LabAdminService {
                         institutionNames.put(institutionKey, institutionName);
                     }
                     reservations.add(toLabAdminReservation(
-                        key, reservation, labName, institutionName, now
+                        key, reservation, labName, institutionName, cancellationOptions
                     ));
                 } catch (Exception ex) {
                     log.debug("Unable to load reservation {} for lab {}", index, labId, ex);
@@ -221,6 +241,7 @@ public class LabAdminService {
             "success", true,
             "providerAddress", wallet,
             "asOf", now,
+            "view", actionableOnly ? "actionable" : "upcoming",
             "count", reservations.size(),
             "truncated", truncated,
             "reservations", reservations
@@ -237,7 +258,8 @@ public class LabAdminService {
         String commandKey = requireReservationIdempotencyKey(idempotencyKey);
         String wallet = requireProviderWallet();
         byte[] key = Numeric.hexStringToByteArray(normalizedKey);
-        Diamond.Reservation reservation = loadReadonlyDiamond().getReservation(key).send();
+        Diamond diamond = loadReadonlyDiamond();
+        Diamond.Reservation reservation = diamond.getReservation(key).send();
         if (!hasReservation(reservation)) {
             throw new IllegalArgumentException("Reservation was not found");
         }
@@ -249,6 +271,18 @@ public class LabAdminService {
         boolean serviceFailure = PROVIDER_SERVICE_FAILURE_REASON.equals(normalizedReason);
         if (!serviceFailure && (reservation.start == null || reservation.start.longValueExact() <= now)) {
             throw new IllegalStateException("Reservation has already started or is no longer cancellable");
+        }
+
+        if (serviceFailure
+            && (STATUS_CONFIRMED.equals(reservation.status) || STATUS_ACCESS_AUTHORIZED.equals(reservation.status))) {
+            Boolean sessionStarted = readSessionStartedStatus(diamond, key, reservation);
+            boolean eligible = providerCancellationOptions(reservation, now, sessionStarted).stream()
+                .anyMatch(option -> option.reasonCode() == PROVIDER_SERVICE_FAILURE_REASON.intValue());
+            if (!eligible) {
+                throw new IllegalStateException(
+                    "Provider service-failure cancellation is not currently eligible"
+                );
+            }
         }
 
         String action;
@@ -303,7 +337,7 @@ public class LabAdminService {
         Diamond.Reservation reservation,
         String labName,
         String institutionName,
-        long now
+        List<LabAdminCancellationOption> cancellationOptions
     ) {
         int status = reservation.status.intValueExact();
         long start = reservation.start.longValueExact();
@@ -323,8 +357,94 @@ public class LabAdminService {
             CreditUnitConverter.formatRawCredits(reservation.price),
             reservation.providerShare.toString(),
             CreditUnitConverter.formatRawCredits(reservation.providerShare),
-            start > now && (STATUS_PENDING.equals(reservation.status) || STATUS_CONFIRMED.equals(reservation.status))
+            !cancellationOptions.isEmpty(),
+            cancellationOptions
         );
+    }
+
+    private Boolean readSessionStartedStatus(
+        Diamond diamond,
+        byte[] reservationKey,
+        Diamond.Reservation reservation
+    ) {
+        if (!STATUS_CONFIRMED.equals(reservation.status) && !STATUS_ACCESS_AUTHORIZED.equals(reservation.status)) {
+            return Boolean.FALSE;
+        }
+        try {
+            var call = diamond.hasReservationSessionStarted(reservationKey);
+            return call == null ? null : call.send();
+        } catch (Exception ex) {
+            log.debug("Unable to determine SessionStarted status for provider reservation", ex);
+            return null;
+        }
+    }
+
+    private List<LabAdminCancellationOption> providerCancellationOptions(
+        Diamond.Reservation reservation,
+        long now,
+        Boolean sessionStarted
+    ) {
+        if (!hasReservation(reservation) || reservation.start == null || reservation.status == null) {
+            return List.of();
+        }
+
+        long start = reservation.start.longValueExact();
+        int status = reservation.status.intValueExact();
+        if (status == STATUS_PENDING.intValue()) {
+            if (start <= now) {
+                return List.of();
+            }
+            long deadline = pendingCancellationDeadline(reservation, start);
+            return List.of(
+                new LabAdminCancellationOption(1, "Manual cancellation", deadline, -1),
+                new LabAdminCancellationOption(2, "Not eligible", deadline, 0),
+                new LabAdminCancellationOption(6, "Technical issue", deadline, 0),
+                new LabAdminCancellationOption(7, "Provider unavailable", deadline, 0)
+            );
+        }
+
+        List<LabAdminCancellationOption> options = new ArrayList<>();
+        if (status == STATUS_CONFIRMED.intValue() && start > now) {
+            int penalty = start - now >= FULL_DAY_SECONDS ? -1 : -2;
+            options.add(new LabAdminCancellationOption(1, "Manual cancellation", start, penalty));
+            options.add(new LabAdminCancellationOption(6, "Technical issue", start, penalty));
+            options.add(new LabAdminCancellationOption(7, "Provider unavailable", start, penalty));
+        }
+
+        if ((status == STATUS_CONFIRMED.intValue() || status == STATUS_ACCESS_AUTHORIZED.intValue())
+            && Boolean.FALSE.equals(sessionStarted)
+            && reservation.end != null) {
+            long deadline = sessionAttestationDeadline(reservation.end);
+            if (now <= deadline) {
+                options.add(new LabAdminCancellationOption(8, "Service failure", deadline, -3));
+            }
+        }
+        return List.copyOf(options);
+    }
+
+    private long pendingCancellationDeadline(Diamond.Reservation reservation, long start) {
+        if (reservation.requestPeriodStart == null
+            || reservation.requestPeriodDuration == null
+            || reservation.requestPeriodStart.signum() == 0
+            || reservation.requestPeriodDuration.signum() == 0) {
+            return start;
+        }
+        try {
+            long requestDeadline = reservation.requestPeriodStart
+                .add(reservation.requestPeriodDuration)
+                .longValueExact();
+            return Math.min(start, requestDeadline);
+        } catch (ArithmeticException ex) {
+            return start;
+        }
+    }
+
+    private long sessionAttestationDeadline(BigInteger reservationEnd) {
+        try {
+            return Math.addExact(reservationEnd.longValueExact(), SESSION_ATTESTATION_GRACE_SECONDS);
+        } catch (ArithmeticException ex) {
+            return Long.MAX_VALUE;
+        }
     }
 
     private String resolveLabName(Diamond diamond, BigInteger labId) {

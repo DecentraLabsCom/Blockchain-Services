@@ -100,7 +100,7 @@ ceremony above.
 | --- | --- | --- |
 | GET | `/billing/compliance/mica-volume` | Admin boundary; current rolling volume. |
 | GET | `/billing/compliance/exports/prepaid-balances`, `/consumed`, `/expired`, `/receivable-accruals`, `/completed-payouts`, `/provider-network` | Admin boundary; evidence exports. |
-| GET | `/lab-admin/status`, `/lab-admin/labs`, `/lab-admin/reservations/upcoming`, `/lab-admin/guacamole/connections` | Admin boundary or allowed Lab Manager. |
+| GET | `/lab-admin/status`, `/lab-admin/labs`, `/lab-admin/reservations/upcoming`, `/lab-admin/reservations/actionable`, `/lab-admin/guacamole/connections` | Admin boundary or allowed Lab Manager. |
 | POST | `/lab-admin/assets`, `/lab-admin/labs`, `/lab-admin/fmu/provider-describe-token`, `/lab-admin/labs/{labId}/creator-binding`, `/lab-admin/labs/{labId}/list`, `/lab-admin/labs/{labId}/unlist`, `/lab-admin/reservations/{reservationKey}/cancel` | Admin boundary or allowed Lab Manager; mutations require an idempotency key where documented. |
 | PUT | `/lab-admin/labs/{labId}` | Admin boundary or allowed Lab Manager. |
 | DELETE | `/lab-admin/assets`, `/lab-admin/labs/{labId}` | Admin boundary or allowed Lab Manager. |

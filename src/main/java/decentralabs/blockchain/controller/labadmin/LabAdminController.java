@@ -69,6 +69,17 @@ public class LabAdminController {
         }
     }
 
+    @GetMapping("/lab-admin/reservations/actionable")
+    public ResponseEntity<?> actionableReservations() {
+        try {
+            return ok(labAdminService.listActionableReservations());
+        } catch (IllegalArgumentException | IllegalStateException ex) {
+            return badRequest(ex);
+        } catch (Exception ex) {
+            return internal("Failed to list actionable reservations", ex);
+        }
+    }
+
     @PostMapping("/lab-admin/reservations/{reservationKey}/cancel")
     public ResponseEntity<?> cancelReservation(
         @PathVariable String reservationKey,

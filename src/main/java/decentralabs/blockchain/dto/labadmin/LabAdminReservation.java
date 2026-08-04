@@ -1,5 +1,7 @@
 package decentralabs.blockchain.dto.labadmin;
 
+import java.util.List;
+
 public record LabAdminReservation(
     String reservationKey,
     String labId,
@@ -15,6 +17,7 @@ public record LabAdminReservation(
     String priceCredits,
     String providerShareRaw,
     String providerShareCredits,
-    boolean cancellable
+    boolean cancellable,
+    List<LabAdminCancellationOption> cancellationOptions
 ) {
 }

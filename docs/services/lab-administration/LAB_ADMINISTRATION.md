@@ -23,7 +23,8 @@ connection strings and internal runbooks out of the uploaded content tree.
 | `GET /lab-admin/status` | Provider wallet, configured creator PUC hash, content URLs, FMU inventory and Guacamole availability. |
 | `GET /lab-admin/labs` | Labs owned by the institutional provider wallet. |
 | `GET /lab-admin/reservations/upcoming` | Upcoming pending, confirmed or access-authorized reservations for provider-owned labs. |
-| `POST /lab-admin/reservations/{reservationKey}/cancel` | Deny a pending request or cancel a confirmed booking before it starts. |
+| `GET /lab-admin/reservations/actionable` | Provider-cancellable reservations, including post-start service-failure cases still inside attestation grace. |
+| `POST /lab-admin/reservations/{reservationKey}/cancel` | Deny a pending request or cancel a confirmed/access-authorized booking when its selected provider reason is eligible. |
 | `GET /lab-admin/guacamole/connections` | Safe Guacamole connection catalogue for administration. |
 | `POST /lab-admin/assets` | Upload a JPEG/PNG/WebP/GIF image or PDF document. |
 | `DELETE /lab-admin/assets` | Delete an uploaded image or document by its returned path. |
@@ -100,6 +101,15 @@ each lab owned by the configured institutional provider wallet. It returns
 reservations whose status is `PENDING`, `CONFIRMED` or `ACCESS_AUTHORIZED` and
 whose start time has not passed. Prices are returned both as raw on-chain
 units and as service credits; service credits use seven decimal places.
+
+`GET /lab-admin/reservations/actionable` is the provider cancellation view. It
+returns future pending/confirmed reservations and confirmed or
+access-authorized reservations whose `SessionStarted` evidence is absent and
+whose `end + 1 day` attestation deadline has not passed. Each reservation
+contains `cancellationOptions`; the backend calculates every option's reason
+code, deadline and expected reputation penalty from the same on-chain state
+used by the cancellation transaction. Reason code `8` is omitted unless the
+backend can verify the contract's service-failure conditions.
 
 `POST /lab-admin/reservations/{reservationKey}/cancel` requires a unique
 `Idempotency-Key` and a JSON body with a `reasonCode` from `1` to `255`:

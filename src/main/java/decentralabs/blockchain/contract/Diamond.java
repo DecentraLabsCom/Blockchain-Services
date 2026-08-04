@@ -479,6 +479,16 @@ public class Diamond extends Contract {
                 });
     }
 
+    /** Returns whether the provider has recorded SessionStarted evidence for a reservation. */
+    public RemoteFunctionCall<Boolean> hasReservationSessionStarted(byte[] reservationKey) {
+        final Function function = new Function(
+            "hasReservationSessionStarted",
+            Arrays.asList(new Bytes32(reservationKey)),
+            Arrays.asList(new TypeReference<Bool>() {})
+        );
+        return executeRemoteCallSingleValueReturn(function, Boolean.class);
+    }
+
     /**
      * Get creator PUC hash by lab id (bytes32).
      */

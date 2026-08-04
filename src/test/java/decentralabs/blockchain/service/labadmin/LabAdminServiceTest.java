@@ -13,6 +13,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import decentralabs.blockchain.contract.Diamond;
 import decentralabs.blockchain.dto.health.LabMetadata;
 import decentralabs.blockchain.dto.labadmin.LabAdminReservation;
+import decentralabs.blockchain.dto.labadmin.LabAdminCancellationOption;
 import decentralabs.blockchain.dto.labadmin.LabAdminPublishRequest;
 import decentralabs.blockchain.service.BackendUrlResolver;
 import decentralabs.blockchain.service.guacamole.GuacamoleProvisioningService;
@@ -472,6 +473,7 @@ class LabAdminServiceTest {
         RemoteFunctionCall<byte[]> keyCall = mockRemoteFunctionCall();
         RemoteFunctionCall<Diamond.Reservation> reservationCall = mockRemoteFunctionCall();
         RemoteFunctionCall<Diamond.Lab> labCall = mockRemoteFunctionCall();
+        RemoteFunctionCall<Boolean> sessionStartedCall = mockRemoteFunctionCall();
         RemoteFunctionCall<String[]> institutionCall = mockRemoteFunctionCall();
         when(institutionalWalletService.isConfigured()).thenReturn(true);
         when(institutionalWalletService.getInstitutionalWalletAddress()).thenReturn(wallet);
@@ -483,6 +485,9 @@ class LabAdminServiceTest {
         when(keyCall.send()).thenReturn(key);
         when(diamond.getReservation(key)).thenReturn(reservationCall);
         when(reservationCall.send()).thenReturn(reservation);
+        when(diamond.hasReservationSessionStarted(org.mockito.ArgumentMatchers.any(byte[].class)))
+            .thenReturn(sessionStartedCall);
+        when(sessionStartedCall.send()).thenReturn(false);
         when(diamond.getLab(labId)).thenReturn(labCall);
         when(labCall.send()).thenReturn(lab);
         when(labMetadataService.getLabMetadataForLab(eq(labId))).thenReturn(
@@ -504,6 +509,102 @@ class LabAdminServiceTest {
         assertThat(listed.institutionName()).isEqualTo("UNED");
         assertThat(listed.institutionAddress()).isEqualTo(institution);
         assertThat(listed.cancellable()).isTrue();
+        assertThat(listed.cancellationOptions()).extracting(LabAdminCancellationOption::reasonCode)
+            .containsExactly(1, 6, 7, 8);
+
+        Map<String, Object> actionable = service.listActionableReservations();
+        assertThat(actionable.get("view")).isEqualTo("actionable");
+        assertThat(actionable.get("count")).isEqualTo(1);
+    }
+
+    @Test
+    void providerServiceFailureOptionIsExposedForStartedReservationWithinGrace() {
+        long now = System.currentTimeMillis() / 1000;
+        Diamond.Reservation reservation = new Diamond.Reservation(
+            BigInteger.valueOf(7),
+            "0x2222222222222222222222222222222222222222",
+            BigInteger.valueOf(25_000_000),
+            "0x1111111111111111111111111111111111111111",
+            BigInteger.valueOf(2),
+            BigInteger.valueOf(now - 600),
+            BigInteger.valueOf(now + 3_000),
+            BigInteger.ZERO,
+            BigInteger.ZERO,
+            "0x3333333333333333333333333333333333333333",
+            "0x3333333333333333333333333333333333333333",
+            BigInteger.valueOf(20_000_000)
+        );
+
+        @SuppressWarnings("unchecked")
+        List<LabAdminCancellationOption> options = ReflectionTestUtils.invokeMethod(
+            service, "providerCancellationOptions", reservation, now, Boolean.FALSE
+        );
+
+        assertThat(options).singleElement().satisfies(option -> {
+            assertThat(option.reasonCode()).isEqualTo(8);
+            assertThat(option.deadline()).isEqualTo(now + 3_000 + 86_400);
+            assertThat(option.reputationPenalty()).isEqualTo(-3);
+        });
+    }
+
+    @Test
+    void providerServiceFailureOptionIsNotExposedWhenSessionStartedOrGraceExpired() {
+        long now = System.currentTimeMillis() / 1000;
+        Diamond.Reservation reservation = new Diamond.Reservation(
+            BigInteger.valueOf(7),
+            "0x2222222222222222222222222222222222222222",
+            BigInteger.valueOf(25_000_000),
+            "0x1111111111111111111111111111111111111111",
+            BigInteger.valueOf(2),
+            BigInteger.valueOf(now - 7_200),
+            BigInteger.valueOf(now - 86_401),
+            BigInteger.ZERO,
+            BigInteger.ZERO,
+            "0x3333333333333333333333333333333333333333",
+            "0x3333333333333333333333333333333333333333",
+            BigInteger.valueOf(20_000_000)
+        );
+
+        @SuppressWarnings("unchecked")
+        List<LabAdminCancellationOption> recordedOptions = ReflectionTestUtils.invokeMethod(
+            service, "providerCancellationOptions", reservation, now, Boolean.TRUE
+        );
+        @SuppressWarnings("unchecked")
+        List<LabAdminCancellationOption> expiredOptions = ReflectionTestUtils.invokeMethod(
+            service, "providerCancellationOptions", reservation, now, Boolean.FALSE
+        );
+
+        assertThat(recordedOptions).isEmpty();
+        assertThat(expiredOptions).isEmpty();
+    }
+
+    @Test
+    void pendingProviderOptionsExposeManualDenialPenalty() {
+        long now = System.currentTimeMillis() / 1000;
+        Diamond.Reservation reservation = new Diamond.Reservation(
+            BigInteger.valueOf(7),
+            "0x2222222222222222222222222222222222222222",
+            BigInteger.valueOf(25_000_000),
+            "0x1111111111111111111111111111111111111111",
+            BigInteger.ZERO,
+            BigInteger.valueOf(now + 3_600),
+            BigInteger.valueOf(now + 7_200),
+            BigInteger.valueOf(now),
+            BigInteger.valueOf(300),
+            "0x3333333333333333333333333333333333333333",
+            "0x3333333333333333333333333333333333333333",
+            BigInteger.ZERO
+        );
+
+        @SuppressWarnings("unchecked")
+        List<LabAdminCancellationOption> options = ReflectionTestUtils.invokeMethod(
+            service, "providerCancellationOptions", reservation, now, Boolean.FALSE
+        );
+
+        assertThat(options).extracting(LabAdminCancellationOption::reasonCode)
+            .containsExactly(1, 2, 6, 7);
+        assertThat(options).extracting(LabAdminCancellationOption::reputationPenalty)
+            .containsExactly(-1, 0, 0, 0);
     }
 
     @Test
@@ -578,6 +679,7 @@ class LabAdminServiceTest {
         Diamond readonly = mock(Diamond.class);
         Diamond writable = mock(Diamond.class);
         RemoteFunctionCall<Diamond.Reservation> reservationCall = mockRemoteFunctionCall();
+        RemoteFunctionCall<Boolean> sessionStartedCall = mockRemoteFunctionCall();
         RemoteFunctionCall<TransactionReceipt> transactionCall = mockRemoteFunctionCall();
         TransactionReceipt receipt = new TransactionReceipt();
         receipt.setStatus("0x1");
@@ -588,6 +690,9 @@ class LabAdminServiceTest {
         when(walletService.isLabOwnedByProvider(wallet, labId)).thenReturn(true);
         when(readonly.getReservation(org.mockito.ArgumentMatchers.any(byte[].class))).thenReturn(reservationCall);
         when(reservationCall.send()).thenReturn(reservation);
+        when(readonly.hasReservationSessionStarted(org.mockito.ArgumentMatchers.any(byte[].class)))
+            .thenReturn(sessionStartedCall);
+        when(sessionStartedCall.send()).thenReturn(false);
         when(writable.cancelConfirmedBookingByProvider(
             org.mockito.ArgumentMatchers.any(byte[].class), eq(BigInteger.valueOf(8))
         )).thenReturn(transactionCall);
