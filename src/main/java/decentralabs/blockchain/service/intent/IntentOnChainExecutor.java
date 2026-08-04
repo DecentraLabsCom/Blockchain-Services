@@ -173,7 +173,7 @@ public class IntentOnChainExecutor {
         if (!result.success() && (result.txHash() == null || result.reason() != null && result.reason().startsWith("tx_reverted"))) {
             contentRetentionService.cancelPreparedDeletion(payload.getLabId());
         }
-        if (result.success() && payload != null && payload.getLabId() != null) {
+        if (result.success() && payload.getLabId() != null) {
             try {
                 contentRetentionService.completeDeletion(payload.getLabId(), metadataUri, result.txHash());
             } catch (java.io.IOException ex) {
