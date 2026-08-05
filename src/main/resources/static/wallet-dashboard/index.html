@@ -287,33 +287,88 @@
                         </div>
                         <div class="info-text hidden" id="collectLifecycleSummary"></div>
                         <form id="providerSettlementTransitionForm" class="operation-form hidden operation-form-spaced">
+                            <p class="operation-description">
+                                Settlement uses the canonical batch/claim lifecycle. Select the object-bound action;
+                                the deprecated aggregate state selector is no longer available.
+                            </p>
                             <div class="form-group">
-                                <label for="providerSettlementTransitionSelect">Settlement Transition</label>
-                                <select id="providerSettlementTransitionSelect" class="settlement-transition-select">
-                                    <option value="2:3">Queue to invoiced</option>
-                                    <option value="3:4">Invoice approved</option>
-                                    <option value="4:5">Approval to paid</option>
-                                    <option value="2:7">Queue disputed</option>
-                                    <option value="3:7">Invoice disputed</option>
-                                    <option value="4:7">Approval disputed</option>
-                                    <option value="7:3">Dispute back to invoiced</option>
-                                    <option value="7:4">Dispute resolved as approved</option>
-                                    <option value="2:6">Queue reversed</option>
-                                    <option value="3:6">Invoice reversed</option>
-                                    <option value="4:6">Approval reversed</option>
-                                    <option value="7:6">Dispute reversed</option>
+                                <label for="providerSettlementOperationSelect">Settlement action</label>
+                                <select id="providerSettlementOperationSelect" class="settlement-transition-select">
+                                    <option value="submit">Submit queued batch as invoice claim</option>
+                                    <option value="approve">Approve submitted claim</option>
+                                    <option value="pay">Record payment proof</option>
+                                    <option value="dispute-batch">Dispute settlement batch</option>
+                                    <option value="reverse-batch">Reverse settlement batch</option>
+                                    <option value="dispute-claim">Dispute settlement claim</option>
+                                    <option value="reverse-claim">Reverse settlement claim</option>
                                 </select>
                             </div>
-                            <div class="form-group">
-                                <label for="providerSettlementAmountInput">Amount (credits)</label>
-                                <input type="text" id="providerSettlementAmountInput" placeholder="e.g., 125.5">
+
+                            <div id="providerSettlementSubmitFields">
+                                <div class="form-group">
+                                    <label for="providerSettlementBatchIdInput">Settlement batch ID (bytes32)</label>
+                                    <input type="text" id="providerSettlementBatchIdInput" placeholder="0x..." autocomplete="off">
+                                </div>
+                                <div class="form-group">
+                                    <label for="providerSettlementClaimIdInput">Claim ID</label>
+                                    <input type="text" id="providerSettlementClaimIdInput" placeholder="ERP claim or invoice UUID" autocomplete="off">
+                                </div>
+                                <div class="form-group">
+                                    <label for="providerSettlementInvoiceRefInput">Invoice reference</label>
+                                    <input type="text" id="providerSettlementInvoiceRefInput" placeholder="Invoice number" autocomplete="off">
+                                </div>
+                                <div class="form-group">
+                                    <label for="providerSettlementAmountInput">Credit amount</label>
+                                    <input type="text" id="providerSettlementAmountInput" placeholder="e.g., 125.5">
+                                </div>
                             </div>
-                            <div class="form-group">
-                                <label for="providerSettlementReferenceInput">Reference</label>
-                                <input type="text" id="providerSettlementReferenceInput" placeholder="invoice ID, approval ID, dispute ref...">
+
+                            <div class="form-group" id="providerSettlementEurAmountField">
+                                <label for="providerSettlementEurAmountInput">Invoice/payment amount (EUR)</label>
+                                <input type="text" id="providerSettlementEurAmountInput" placeholder="e.g., 125.50">
                             </div>
+
+                            <div id="providerSettlementInvoiceFields" class="hidden">
+                                <div class="form-group">
+                                    <label for="providerSettlementInvoiceIdInput">Invoice record ID</label>
+                                    <input type="text" id="providerSettlementInvoiceIdInput" list="providerSettlementInvoiceOptions" placeholder="Database invoice ID" inputmode="numeric">
+                                    <datalist id="providerSettlementInvoiceOptions"></datalist>
+                                </div>
+                                <div class="form-group" id="providerSettlementApprovalRefField">
+                                    <label for="providerSettlementApprovalRefInput">Approval reference</label>
+                                    <input type="text" id="providerSettlementApprovalRefInput" placeholder="Approval or ERP reference" autocomplete="off">
+                                </div>
+                                <div class="form-group" id="providerSettlementPaymentFields">
+                                    <label for="providerSettlementPaymentRefInput">Payment reference</label>
+                                    <input type="text" id="providerSettlementPaymentRefInput" placeholder="Bank/payment reference" autocomplete="off">
+                                    <label for="providerSettlementPaymentAttestationInput">Payment attestation</label>
+                                    <input type="text" id="providerSettlementPaymentAttestationInput" placeholder="Attestation reference or hash" autocomplete="off">
+                                    <label for="providerSettlementBankRefInput">Bank reference (optional)</label>
+                                    <input type="text" id="providerSettlementBankRefInput" placeholder="Bank settlement ID" autocomplete="off">
+                                    <label for="providerSettlementEurcTxHashInput">EURC transaction hash (optional)</label>
+                                    <input type="text" id="providerSettlementEurcTxHashInput" placeholder="0x..." autocomplete="off">
+                                    <label for="providerSettlementUsdcTxHashInput">USDC transaction hash (optional)</label>
+                                    <input type="text" id="providerSettlementUsdcTxHashInput" placeholder="0x..." autocomplete="off">
+                                </div>
+                                <div class="form-group" id="providerSettlementPaymentAmountFields">
+                                    <label for="providerSettlementPaymentCreditAmountInput">Paid credit amount (optional)</label>
+                                    <input type="text" id="providerSettlementPaymentCreditAmountInput" placeholder="Uses invoice amount when blank">
+                                </div>
+                            </div>
+
+                            <div id="providerSettlementObjectFields" class="hidden">
+                                <div class="form-group">
+                                    <label for="providerSettlementObjectIdInput">Batch or claim ID</label>
+                                    <input type="text" id="providerSettlementObjectIdInput" placeholder="Non-zero bytes32 batch or claim ID" autocomplete="off">
+                                </div>
+                                <div class="form-group">
+                                    <label for="providerSettlementReferenceInput">Resolution reference</label>
+                                    <input type="text" id="providerSettlementReferenceInput" placeholder="Dispute/reversal case reference" autocomplete="off">
+                                </div>
+                            </div>
+
                             <button type="submit" class="btn btn-secondary">
-                                <i class="fas fa-arrow-right-arrow-left"></i> Submit Settlement Transition
+                                <i class="fas fa-file-invoice-dollar"></i> Submit canonical settlement action
                             </button>
                         </form>
                     </div>

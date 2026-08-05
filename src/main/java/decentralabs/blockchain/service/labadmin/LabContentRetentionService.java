@@ -251,6 +251,8 @@ public class LabContentRetentionService {
         if (jdbcTemplate == null || deletionOutboxBatchSize <= 0) {
             return;
         }
+        // PROCESSING rows with an expired lease are deliberately included so a
+        // worker crash after claim cannot leave local content blocked forever.
         for (OutboxRow row : findDueOutboxRows(Math.max(1, deletionOutboxBatchSize))) {
             if (!claimOutbox(row.id())) {
                 continue;
@@ -404,7 +406,9 @@ public class LabContentRetentionService {
             return jdbcTemplate.query(
                 "SELECT id, lab_id, metadata_uri, content_relative_path, transaction_hash, status, attempts, "
                     + "deleted_at FROM lab_content_deletion_outbox "
-                    + "WHERE status=? AND transaction_hash IS NOT NULL AND next_attempt_at <= CURRENT_TIMESTAMP "
+                    + "WHERE transaction_hash IS NOT NULL "
+                    + "AND ((status=? AND next_attempt_at <= CURRENT_TIMESTAMP) "
+                    + "OR (status=? AND (lease_expires_at IS NULL OR lease_expires_at < CURRENT_TIMESTAMP))) "
                     + "ORDER BY next_attempt_at, id LIMIT ?",
                 (rs, rowNum) -> new OutboxRow(
                     rs.getLong("id"),
@@ -418,6 +422,7 @@ public class LabContentRetentionService {
                         : rs.getTimestamp("deleted_at").toInstant()
                 ),
                 PENDING_TOMBSTONE,
+                PROCESSING,
                 limit
             );
         } catch (DataAccessException ex) {
@@ -431,12 +436,14 @@ public class LabContentRetentionService {
         int updated = jdbcTemplate.update(
             "UPDATE lab_content_deletion_outbox SET status=?, lease_id=?, lease_expires_at=?, "
                 + "attempts=attempts+1, updated_at=CURRENT_TIMESTAMP "
-                + "WHERE id=? AND status=? AND (lease_expires_at IS NULL OR lease_expires_at < CURRENT_TIMESTAMP)",
+                + "WHERE id=? AND (status=? OR (status=? AND "
+                + "(lease_expires_at IS NULL OR lease_expires_at < CURRENT_TIMESTAMP)))",
             PROCESSING,
             leaseId,
             java.sql.Timestamp.from(Instant.now().plusSeconds(PROCESSING_LEASE_SECONDS)),
             id,
-            PENDING_TOMBSTONE
+            PENDING_TOMBSTONE,
+            PROCESSING
         );
         return updated == 1;
     }

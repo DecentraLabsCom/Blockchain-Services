@@ -288,30 +288,6 @@ const API = {
     },
 
     /**
-     * Transition provider receivable lifecycle for a lab.
-     * @param {string|number} labId - Lab token ID
-     * @param {string|number} fromReceivableState - Source lifecycle bucket
-     * @param {string|number} toReceivableState - Target lifecycle bucket
-     * @param {string|number} amountRaw - Raw credit-denominated amount with 7 decimals
-     * @param {string} reference - Optional business reference
-     */
-    async transitionProviderReceivableState(
-        labId,
-        fromReceivableState,
-        toReceivableState,
-        amountRaw,
-        reference = ''
-    ) {
-        return await this.executeAdminOperation('TRANSITION_PROVIDER_RECEIVABLE_STATE', {
-            labId: String(labId),
-            fromReceivableState: String(fromReceivableState),
-            toReceivableState: String(toReceivableState),
-            amount: String(amountRaw),
-            reference
-        });
-    },
-
-    /**
      * Dispute one canonical settlement batch.
      * @param {string} batchId - Non-zero bytes32 batch identifier
      * @param {string} reference - Mandatory external dispute reference
@@ -442,6 +418,36 @@ const API = {
             params.set('maxBatch', String(maxBatch));
         }
         return await this.request(`/billing/admin/provider-receivable-status?${params.toString()}`);
+    },
+
+    /** List provider invoices projected from canonical settlement claims. */
+    async listProviderReceivables(status = null) {
+        const query = status ? `?status=${encodeURIComponent(String(status))}` : '';
+        return await this.request(`/billing/provider-receivables${query}`);
+    },
+
+    /** Submit a canonical queued settlement batch as a provider invoice claim. */
+    async submitProviderInvoice(labId, payload) {
+        return await this.request(`/billing/provider-receivables/${encodeURIComponent(String(labId))}/invoice`, {
+            method: 'POST',
+            body: JSON.stringify(payload)
+        });
+    },
+
+    /** Approve a previously submitted canonical settlement claim. */
+    async approveProviderInvoice(invoiceId, payload) {
+        return await this.request(`/billing/provider-receivables/invoices/${encodeURIComponent(String(invoiceId))}/approve`, {
+            method: 'POST',
+            body: JSON.stringify(payload)
+        });
+    },
+
+    /** Record payment proof for an approved canonical settlement claim. */
+    async recordProviderPayout(invoiceId, payload) {
+        return await this.request(`/billing/provider-receivables/invoices/${encodeURIComponent(String(invoiceId))}/pay`, {
+            method: 'POST',
+            body: JSON.stringify(payload)
+        });
     },
 
 };

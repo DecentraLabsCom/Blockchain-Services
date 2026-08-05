@@ -26,7 +26,9 @@ import org.web3j.abi.datatypes.Function;
 import org.web3j.abi.datatypes.Type;
 import org.web3j.abi.datatypes.Utf8String;
 import org.web3j.abi.datatypes.generated.Bytes32;
+import org.web3j.abi.datatypes.generated.Uint8;
 import org.web3j.abi.datatypes.generated.Uint256;
+import org.web3j.abi.datatypes.generated.Uint64;
 import org.web3j.crypto.*;
 import org.web3j.protocol.Web3j;
 import org.web3j.protocol.core.DefaultBlockParameterName;
@@ -1002,6 +1004,83 @@ public class WalletService {
             ));
         } catch (Exception e) {
             log.error("Error getting provider receivable status for lab {}", labId, e);
+            return Optional.empty();
+        }
+    }
+
+    /**
+     * Returns the latest non-zero canonical settlement batch for a lab.
+     *
+     * The batch identifier is required by submitProviderSettlementClaim and
+     * cannot be reconstructed safely from the receivable totals exposed by the
+     * lifecycle getter.
+     */
+    public Optional<String> getLatestProviderSettlementBatch(BigInteger labId) {
+        if (labId == null || labId.compareTo(BigInteger.ZERO) <= 0) {
+            return Optional.empty();
+        }
+        try {
+            Web3j web3j = getWeb3jInstance();
+            Function function = new Function(
+                "getLatestProviderSettlementBatch",
+                Collections.singletonList(new Uint256(labId)),
+                Collections.singletonList(new TypeReference<Bytes32>() {})
+            );
+            EthCall response = web3j.ethCall(
+                Transaction.createEthCallTransaction(null, contractAddress, FunctionEncoder.encode(function)),
+                DefaultBlockParameterName.LATEST
+            ).send();
+            if (response == null || response.hasError()) {
+                return Optional.empty();
+            }
+            List<Type> decoded = FunctionReturnDecoder.decode(response.getValue(), function.getOutputParameters());
+            if (decoded.isEmpty()) {
+                return Optional.empty();
+            }
+            String batchId = Numeric.toHexString(((Bytes32) decoded.get(0)).getValue());
+            return batchId.matches("0x0{64}") ? Optional.empty() : Optional.of(batchId);
+        } catch (Exception e) {
+            log.warn("Unable to read latest provider settlement batch for lab {}: {}", labId, e.getMessage());
+            return Optional.empty();
+        }
+    }
+
+    /** Returns the exact unclaimed amount of the latest canonical batch. */
+    public Optional<BigInteger> getLatestProviderSettlementBatchRemainingAmount(BigInteger labId) {
+        return getLatestProviderSettlementBatch(labId)
+            .flatMap(this::getProviderSettlementBatchRemainingAmount);
+    }
+
+    /** Returns the exact unclaimed amount for a known canonical batch ID. */
+    public Optional<BigInteger> getProviderSettlementBatchRemainingAmount(String batchId) {
+        if (batchId == null || !batchId.matches("0x[0-9a-fA-F]{64}") || batchId.matches("0x0{64}")) {
+            return Optional.empty();
+        }
+        try {
+            Function function = new Function(
+                "getProviderSettlementBatch",
+                Collections.singletonList(new Bytes32(Numeric.hexStringToByteArray(batchId))),
+                Arrays.asList(
+                    new TypeReference<Uint256>() {},
+                    new TypeReference<Uint256>() {},
+                    new TypeReference<Uint256>() {},
+                    new TypeReference<Bytes32>() {},
+                    new TypeReference<Uint64>() {},
+                    new TypeReference<Uint64>() {},
+                    new TypeReference<Uint8>() {}
+                )
+            );
+            EthCall response = getWeb3jInstance().ethCall(
+                Transaction.createEthCallTransaction(null, contractAddress, FunctionEncoder.encode(function)),
+                DefaultBlockParameterName.LATEST
+            ).send();
+            if (response == null || response.hasError()) return Optional.empty();
+            List<Type> decoded = FunctionReturnDecoder.decode(response.getValue(), function.getOutputParameters());
+            return decoded.size() >= 3
+                ? Optional.of((BigInteger) decoded.get(2).getValue())
+                : Optional.empty();
+        } catch (Exception e) {
+            log.warn("Unable to read remaining amount for provider settlement batch {}: {}", batchId, e.getMessage());
             return Optional.empty();
         }
     }

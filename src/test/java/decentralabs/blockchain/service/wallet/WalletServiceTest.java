@@ -563,6 +563,44 @@ class WalletServiceTest {
     }
 
     @Test
+    void getLatestProviderSettlementBatch_returnsNonZeroBytes32() throws Exception {
+        WalletService spyService = spy(service);
+        org.mockito.Mockito.doReturn(web3j).when(spyService).getWeb3jInstance();
+        byte[] batch = new byte[32];
+        batch[31] = 1;
+        stubEthCalls(web3j, ethCallResponse(
+            encodeValues(new org.web3j.abi.datatypes.generated.Bytes32(batch))
+        ));
+
+        assertThat(spyService.getLatestProviderSettlementBatch(BigInteger.ONE))
+            .contains("0x" + "0".repeat(62) + "01");
+    }
+
+    @Test
+    void getLatestProviderSettlementBatchRemainingAmount_readsBatchStruct() throws Exception {
+        WalletService spyService = spy(service);
+        org.mockito.Mockito.doReturn(web3j).when(spyService).getWeb3jInstance();
+        byte[] batch = new byte[32];
+        batch[31] = 2;
+        stubEthCalls(
+            web3j,
+            ethCallResponse(encodeValues(new org.web3j.abi.datatypes.generated.Bytes32(batch))),
+            ethCallResponse(encodeValues(
+                new org.web3j.abi.datatypes.generated.Uint256(BigInteger.ONE),
+                new org.web3j.abi.datatypes.generated.Uint256(BigInteger.valueOf(500)),
+                new org.web3j.abi.datatypes.generated.Uint256(BigInteger.valueOf(275)),
+                new org.web3j.abi.datatypes.generated.Bytes32(new byte[32]),
+                new org.web3j.abi.datatypes.generated.Uint64(BigInteger.ONE),
+                new org.web3j.abi.datatypes.generated.Uint64(BigInteger.ZERO),
+                new org.web3j.abi.datatypes.generated.Uint8(BigInteger.ONE)
+            ))
+        );
+
+        assertThat(spyService.getLatestProviderSettlementBatchRemainingAmount(BigInteger.ONE))
+            .contains(BigInteger.valueOf(275));
+    }
+
+    @Test
     void internalHelpers_coverSanitizationAndErrorFallbacks() throws Exception {
         WalletService spyService = spy(service);
         org.mockito.Mockito.doReturn(web3j).when(spyService).getWeb3jInstance();

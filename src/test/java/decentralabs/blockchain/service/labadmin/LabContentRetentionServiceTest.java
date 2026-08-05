@@ -2,9 +2,11 @@ package decentralabs.blockchain.service.labadmin;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import java.math.BigInteger;
@@ -12,10 +14,13 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.Arrays;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.mockito.ArgumentCaptor;
 import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.jdbc.core.RowMapper;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.util.ReflectionTestUtils;
 
@@ -111,5 +116,48 @@ class LabContentRetentionServiceTest {
         assertThatThrownBy(() -> service.prepareDeletion(BigInteger.valueOf(46), null))
             .isInstanceOf(IllegalStateException.class)
             .hasMessageContaining("Metadata URI is unavailable");
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void dueLookupReclaimsExpiredProcessingDeletionLeases() {
+        ObjectProvider<JdbcTemplate> provider = mock(ObjectProvider.class);
+        JdbcTemplate jdbcTemplate = mock(JdbcTemplate.class);
+        when(provider.getIfAvailable()).thenReturn(jdbcTemplate);
+        when(jdbcTemplate.query(any(String.class), any(RowMapper.class), any(Object[].class)))
+            .thenReturn(java.util.List.of());
+        service = new LabContentRetentionService(provider);
+
+        service.processDeletionOutbox();
+
+        ArgumentCaptor<String> sql = ArgumentCaptor.forClass(String.class);
+        ArgumentCaptor<Object[]> parameters = ArgumentCaptor.forClass(Object[].class);
+        verify(jdbcTemplate).query(sql.capture(), any(RowMapper.class), parameters.capture());
+        assertThat(sql.getValue())
+            .contains("status=? AND next_attempt_at <= CURRENT_TIMESTAMP")
+            .contains("status=? AND (lease_expires_at IS NULL OR lease_expires_at < CURRENT_TIMESTAMP)");
+        assertThat(Arrays.asList(parameters.getValue()))
+            .containsExactly("PENDING_TOMBSTONE", "PROCESSING", 25);
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void claimCanReacquireAnExpiredProcessingDeletionLease() {
+        ObjectProvider<JdbcTemplate> provider = mock(ObjectProvider.class);
+        JdbcTemplate jdbcTemplate = mock(JdbcTemplate.class);
+        when(provider.getIfAvailable()).thenReturn(jdbcTemplate);
+        when(jdbcTemplate.update(any(String.class), any(Object[].class))).thenReturn(1);
+        service = new LabContentRetentionService(provider);
+
+        boolean claimed = ReflectionTestUtils.invokeMethod(service, "claimOutbox", 7L);
+
+        assertThat(claimed).isTrue();
+        ArgumentCaptor<String> sql = ArgumentCaptor.forClass(String.class);
+        ArgumentCaptor<Object[]> parameters = ArgumentCaptor.forClass(Object[].class);
+        verify(jdbcTemplate).update(sql.capture(), parameters.capture());
+        assertThat(sql.getValue())
+            .contains("status=? OR (status=? AND (lease_expires_at IS NULL OR lease_expires_at < CURRENT_TIMESTAMP))");
+        assertThat(Arrays.asList(parameters.getValue()))
+            .contains("PENDING_TOMBSTONE", "PROCESSING");
     }
 }

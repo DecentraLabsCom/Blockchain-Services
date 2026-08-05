@@ -180,7 +180,12 @@ The provider receivable status includes a payout preview breakdown: the
 attested-session payout, potential physical-lab no-show fee, reservations
 still pending the attestation grace period, and already outstanding accrued
 receivable. Only the three monetary values contribute to the actionable
-preview total; grace-pending reservations are reported separately.
+preview total; grace-pending reservations are reported separately. When a
+canonical settlement batch exists, the response also exposes its
+`latestSettlementBatchId`; the wallet dashboard uses that bytes32 value when
+submitting a claim. `latestSettlementBatchRemainingRaw` and its formatted
+counterpart expose the exact amount that can be claimed from that batch; this
+is distinct from the aggregate `settlementQueuedRaw` lifecycle bucket.
 
 ### Provider settlement claims
 
@@ -195,7 +200,7 @@ stateDiagram-v2
     APPROVED --> PAID: recordProviderSettlementClaimPayment + receipt
 ```
 
-An invoice requires a unique `claimId`, non-zero `reservationHash`, unique
+An invoice requires a unique `claimId`, non-zero `batchId`, unique
 `invoiceRef` and positive EUR amount. The provider is derived from the
 authoritative on-chain `ownerOf(labId)` value; `providerAddress` is not
 accepted in the invoice request body. SQL stores that address as a
@@ -209,6 +214,14 @@ are derived from the transaction sender and are never accepted from the HTTP
 body. Human references are hashed with the shared UTF-8/keccak encoding before
 being sent on-chain. Retries reuse the same operation key and transaction
 outbox row; they must not create a second claim.
+
+The dashboard settlement form calls the object-bound endpoints directly:
+`POST /billing/provider-receivables/{labId}/invoice` for submit,
+`POST /billing/provider-receivables/invoices/{invoiceId}/approve` for approval,
+and `POST /billing/provider-receivables/invoices/{invoiceId}/pay` for payment.
+Disputes and reversals continue to use the signed admin operations with an
+explicit batch or claim identifier. The deprecated aggregate transition
+endpoint is not a valid settlement path and remains fail-closed.
 
 Use the controller DTOs or dashboard for JSON field names. A client must not
 retry a new claim/payment reference after a lost response; first query the

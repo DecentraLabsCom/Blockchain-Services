@@ -69,7 +69,8 @@ public class LabAdminService {
     private static final BigInteger PROVIDER_SERVICE_FAILURE_REASON = BigInteger.valueOf(8);
     private static final long SESSION_ATTESTATION_GRACE_SECONDS = 86_400L;
     private static final long FULL_DAY_SECONDS = 86_400L;
-    private static final int MAX_UPCOMING_RESERVATIONS = 500;
+    private static final int DEFAULT_RESERVATION_PAGE_SIZE = 100;
+    private static final int MAX_RESERVATION_PAGE_SIZE = 500;
 
     public record LabAdminDeleteAssetResponse(boolean success, boolean deleted, String path) {}
 
@@ -154,27 +155,32 @@ public class LabAdminService {
     }
 
     public Map<String, Object> listUpcomingReservations() throws Exception {
-        return listReservations(false);
+        return listUpcomingReservations(0, null);
+    }
+
+    public Map<String, Object> listUpcomingReservations(Integer offset, Integer limit) throws Exception {
+        return listReservations(false, offset, limit);
     }
 
     public Map<String, Object> listActionableReservations() throws Exception {
-        return listReservations(true);
+        return listActionableReservations(0, null);
     }
 
-    private Map<String, Object> listReservations(boolean actionableOnly) throws Exception {
+    public Map<String, Object> listActionableReservations(Integer offset, Integer limit) throws Exception {
+        return listReservations(true, offset, limit);
+    }
+
+    private Map<String, Object> listReservations(boolean actionableOnly, Integer offset, Integer limit) throws Exception {
         String wallet = requireProviderWallet();
         Diamond diamond = loadReadonlyDiamond();
         long now = Instant.now().getEpochSecond();
         List<LabAdminReservation> reservations = new ArrayList<>();
         Map<BigInteger, String> labNames = new HashMap<>();
         Map<String, String> institutionNames = new HashMap<>();
-        boolean truncated = false;
+        int safeOffset = normalizeReservationOffset(offset);
+        int safeLimit = normalizeReservationPageSize(limit);
 
         for (BigInteger labId : walletService.getLabsOwnedByProvider(wallet)) {
-            if (reservations.size() >= MAX_UPCOMING_RESERVATIONS) {
-                truncated = true;
-                break;
-            }
             BigInteger reservationCount;
             try {
                 reservationCount = diamond.getReservationsOfToken(labId).send();
@@ -186,9 +192,8 @@ public class LabAdminService {
                 continue;
             }
 
-            BigInteger limit = reservationCount.min(BigInteger.valueOf(MAX_UPCOMING_RESERVATIONS));
             for (BigInteger index = BigInteger.ZERO;
-                 index.compareTo(limit) < 0 && reservations.size() < MAX_UPCOMING_RESERVATIONS;
+                 index.compareTo(reservationCount) < 0;
                  index = index.add(BigInteger.ONE)) {
                 try {
                     byte[] key = diamond.getReservationOfTokenByIndex(labId, index).send();
@@ -225,9 +230,6 @@ public class LabAdminService {
                     log.debug("Unable to load reservation {} for lab {}", index, labId, ex);
                 }
             }
-            if (reservationCount.compareTo(limit) > 0) {
-                truncated = true;
-            }
         }
 
         reservations.sort((left, right) -> {
@@ -237,15 +239,47 @@ public class LabAdminService {
             if (comparison != 0) return comparison;
             return left.reservationKey().compareTo(right.reservationKey());
         });
-        return Map.of(
-            "success", true,
-            "providerAddress", wallet,
-            "asOf", now,
-            "view", actionableOnly ? "actionable" : "upcoming",
-            "count", reservations.size(),
-            "truncated", truncated,
-            "reservations", reservations
+        int total = reservations.size();
+        int fromIndex = Math.min(safeOffset, total);
+        int toIndex = Math.min(total, fromIndex + safeLimit);
+        List<LabAdminReservation> page = List.copyOf(reservations.subList(fromIndex, toIndex));
+        boolean hasMore = toIndex < total;
+        Map<String, Object> pagination = Map.of(
+            "offset", fromIndex,
+            "limit", safeLimit,
+            "returned", page.size(),
+            "total", total,
+            "nextOffset", toIndex,
+            "hasMore", hasMore
         );
+
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("success", true);
+        result.put("providerAddress", wallet);
+        result.put("asOf", now);
+        result.put("view", actionableOnly ? "actionable" : "upcoming");
+        result.put("count", page.size());
+        result.put("totalCount", total);
+        result.put("offset", fromIndex);
+        result.put("limit", safeLimit);
+        result.put("nextOffset", toIndex);
+        result.put("hasMore", hasMore);
+        result.put("truncated", hasMore);
+        result.put("pagination", pagination);
+        result.put("reservations", page);
+        return result;
+    }
+
+    private int normalizeReservationOffset(Integer offset) {
+        if (offset == null) return 0;
+        if (offset < 0) throw new IllegalArgumentException("Reservation offset must be non-negative");
+        return offset;
+    }
+
+    private int normalizeReservationPageSize(Integer limit) {
+        if (limit == null) return DEFAULT_RESERVATION_PAGE_SIZE;
+        if (limit <= 0) throw new IllegalArgumentException("Reservation limit must be positive");
+        return Math.min(limit, MAX_RESERVATION_PAGE_SIZE);
     }
 
     public LabAdminTransactionResponse cancelReservation(
@@ -662,6 +696,7 @@ public class LabAdminService {
         TransactionReceipt receipt = loadWritableDiamond(operationKey("bind-creator", labId, idempotencyKey))
             .bindLabCreatorPucHash(labId, normalizedPucHash)
             .send();
+        requireSuccessfulReceipt(receipt, "Creator binding");
         return new LabAdminTransactionResponse(
             true,
             "bindLabCreatorPucHash",
@@ -709,6 +744,7 @@ public class LabAdminService {
         TransactionReceipt receipt = loadWritableDiamond(operationKey("update", labId, idempotencyKey))
             .updateLab(labId, uri, price, accessURI, accessKey, resourceType)
             .send();
+        requireSuccessfulReceipt(receipt, "Lab update");
         return new LabAdminTransactionResponse(
             true,
             "updateLab",
@@ -771,6 +807,7 @@ public class LabAdminService {
         TransactionReceipt receipt = listed
             ? loadWritableDiamond(operationKey("list", labId, idempotencyKey)).listLab(labId).send()
             : loadWritableDiamond(operationKey("unlist", labId, idempotencyKey)).unlistLab(labId).send();
+        requireSuccessfulReceipt(receipt, listed ? "Lab list" : "Lab unlist");
         return new LabAdminTransactionResponse(
             true,
             listed ? "listLab" : "unlistLab",
@@ -820,6 +857,13 @@ public class LabAdminService {
         } catch (RuntimeException ex) {
             throw new IllegalArgumentException("Metadata preflight failed: URI is not accessible", ex);
         }
+    }
+
+    private TransactionReceipt requireSuccessfulReceipt(TransactionReceipt receipt, String operation) {
+        if (receipt == null || !receipt.isStatusOK()) {
+            throw new IllegalStateException(operation + " transaction was reverted");
+        }
+        return receipt;
     }
 
     private BigInteger resolveOnChainResourceType(BigInteger labId) throws Exception {

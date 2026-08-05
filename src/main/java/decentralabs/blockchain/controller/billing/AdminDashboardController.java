@@ -455,6 +455,15 @@ public class AdminDashboardController {
             result.put("accruedReceivableLab", formatLabTokens(receivable.accruedReceivable()));
             result.put("settlementQueuedRaw", receivable.settlementQueued().toString());
             result.put("settlementQueuedLab", formatLabTokens(receivable.settlementQueued()));
+            walletService.getLatestProviderSettlementBatch(parsedLabId)
+                .ifPresent(batchId -> {
+                    result.put("latestSettlementBatchId", batchId);
+                    walletService.getProviderSettlementBatchRemainingAmount(batchId)
+                        .ifPresent(amount -> {
+                            result.put("latestSettlementBatchRemainingRaw", amount.toString());
+                            result.put("latestSettlementBatchRemainingLab", formatLabTokens(amount));
+                        });
+                });
             result.put("invoicedReceivableRaw", receivable.invoicedReceivable().toString());
             result.put("invoicedReceivableLab", formatLabTokens(receivable.invoicedReceivable()));
             result.put("approvedReceivableRaw", receivable.approvedReceivable().toString());

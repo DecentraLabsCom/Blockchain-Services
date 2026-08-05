@@ -402,6 +402,10 @@ class AdminDashboardControllerTest {
                     BigInteger.valueOf(1_700_000_000L)
                 ))
             );
+            when(walletService.getLatestProviderSettlementBatch(BigInteger.valueOf(3)))
+                .thenReturn(Optional.of("0x" + "0".repeat(63) + "1"));
+            when(walletService.getProviderSettlementBatchRemainingAmount("0x" + "0".repeat(63) + "1"))
+                .thenReturn(Optional.of(BigInteger.valueOf(75_000_000)));
             when(walletService.simulateProviderPayoutRequest(VALID_ADDRESS, BigInteger.valueOf(3), BigInteger.valueOf(50)))
                 .thenReturn(new PayoutRequestSimulationResult(true, null));
 
@@ -418,6 +422,8 @@ class AdminDashboardControllerTest {
                 .andExpect(jsonPath("$.settlementQueuedLab").value("7.5"))
                 .andExpect(jsonPath("$.invoicedReceivableLab").value("2.5"))
                 .andExpect(jsonPath("$.approvedReceivableLab").value("5"))
+                .andExpect(jsonPath("$.latestSettlementBatchId").value("0x" + "0".repeat(63) + "1"))
+                .andExpect(jsonPath("$.latestSettlementBatchRemainingLab").value("7.5"))
                 .andExpect(jsonPath("$.lastAccruedAt").value("1700000000"));
         }
 
@@ -445,6 +451,8 @@ class AdminDashboardControllerTest {
                     BigInteger.ZERO
                 ))
             );
+            when(walletService.getLatestProviderSettlementBatch(BigInteger.valueOf(3)))
+                .thenReturn(Optional.of("0x" + "0".repeat(63) + "1"));
             when(walletService.simulateProviderPayoutRequest(VALID_ADDRESS, BigInteger.valueOf(3), BigInteger.valueOf(50)))
                 .thenReturn(new PayoutRequestSimulationResult(true, null));
 

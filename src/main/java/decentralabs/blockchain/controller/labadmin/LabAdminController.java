@@ -59,9 +59,14 @@ public class LabAdminController {
     }
 
     @GetMapping("/lab-admin/reservations/upcoming")
-    public ResponseEntity<?> upcomingReservations() {
+    public ResponseEntity<?> upcomingReservations(
+        @RequestParam(required = false) Integer offset,
+        @RequestParam(required = false) Integer limit
+    ) {
         try {
-            return ok(labAdminService.listUpcomingReservations());
+            return ok(offset == null && limit == null
+                ? labAdminService.listUpcomingReservations()
+                : labAdminService.listUpcomingReservations(offset, limit));
         } catch (IllegalArgumentException | IllegalStateException ex) {
             return badRequest(ex);
         } catch (Exception ex) {
@@ -70,9 +75,14 @@ public class LabAdminController {
     }
 
     @GetMapping("/lab-admin/reservations/actionable")
-    public ResponseEntity<?> actionableReservations() {
+    public ResponseEntity<?> actionableReservations(
+        @RequestParam(required = false) Integer offset,
+        @RequestParam(required = false) Integer limit
+    ) {
         try {
-            return ok(labAdminService.listActionableReservations());
+            return ok(offset == null && limit == null
+                ? labAdminService.listActionableReservations()
+                : labAdminService.listActionableReservations(offset, limit));
         } catch (IllegalArgumentException | IllegalStateException ex) {
             return badRequest(ex);
         } catch (Exception ex) {

@@ -9,6 +9,7 @@ import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.spy;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -273,6 +274,95 @@ class LabAdminServiceTest {
         assertThat(response.transactionHash()).isNull();
         assertThat(response.status()).isEqualTo("offchain_updated");
         verify(service, org.mockito.Mockito.never()).loadWritableDiamond(org.mockito.ArgumentMatchers.anyString());
+    }
+
+    @Test
+    void updateRejectsRevertedOnChainReceiptInsteadOfReportingSuccess() throws Exception {
+        String wallet = "0x1111111111111111111111111111111111111111";
+        BigInteger labId = BigInteger.valueOf(7);
+        Diamond readonly = mock(Diamond.class);
+        Diamond writable = mock(Diamond.class);
+        RemoteFunctionCall<Diamond.Lab> labCall = mockRemoteFunctionCall();
+        RemoteFunctionCall<TransactionReceipt> updateCall = mockRemoteFunctionCall();
+        Diamond.Lab current = new Diamond.Lab(
+            labId,
+            new Diamond.LabBase(
+                "https://lab.example.edu/lab-content/content/lab-demo/metadata.json",
+                BigInteger.valueOf(8),
+                "https://lab.example.edu/guacamole",
+                "guac:id:1",
+                BigInteger.ZERO,
+                BigInteger.ZERO
+            )
+        );
+        TransactionReceipt reverted = new TransactionReceipt();
+        reverted.setStatus("0x0");
+        reverted.setTransactionHash("0xreverted-update");
+
+        when(institutionalWalletService.isConfigured()).thenReturn(true);
+        when(institutionalWalletService.getInstitutionalWalletAddress()).thenReturn(wallet);
+        when(walletService.isLabProvider(wallet)).thenReturn(true);
+        when(walletService.isLabOwnedByProvider(wallet, labId)).thenReturn(true);
+        when(readonly.getLab(labId)).thenReturn(labCall);
+        when(labCall.send()).thenReturn(current);
+        when(writable.updateLab(
+            eq(labId),
+            org.mockito.ArgumentMatchers.anyString(),
+            eq(BigInteger.valueOf(9)),
+            eq("https://lab.example.edu/guacamole"),
+            eq("guac:id:2"),
+            eq(BigInteger.ZERO)
+        )).thenReturn(updateCall);
+        when(updateCall.send()).thenReturn(reverted);
+        doReturn(readonly).when(service).loadReadonlyDiamond();
+        doReturn(writable).when(service).loadWritableDiamond(org.mockito.ArgumentMatchers.anyString());
+
+        LabAdminPublishRequest request = new LabAdminPublishRequest(
+            "full",
+            false,
+            null,
+            Map.of(
+                "contentId", "lab-update-reverted",
+                "name", "Updated lab",
+                "description", "Updated metadata"
+            ),
+            BigInteger.valueOf(9),
+            "https://lab.example.edu/guacamole",
+            "guac:id:2",
+            0,
+            null,
+            null
+        );
+
+        assertThatThrownBy(() -> service.update(labId, request, "update-reverted-command"))
+            .isInstanceOf(IllegalStateException.class)
+            .hasMessage("Lab update transaction was reverted");
+    }
+
+    @Test
+    void unlistRejectsRevertedOnChainReceiptInsteadOfReportingSuccess() throws Exception {
+        String wallet = "0x1111111111111111111111111111111111111111";
+        BigInteger labId = BigInteger.valueOf(7);
+        Diamond writable = mock(Diamond.class);
+        RemoteFunctionCall<TransactionReceipt> unlistCall = mockRemoteFunctionCall();
+        TransactionReceipt reverted = new TransactionReceipt();
+        reverted.setStatus("0x0");
+        reverted.setTransactionHash("0xreverted-unlist");
+
+        when(institutionalWalletService.isConfigured()).thenReturn(true);
+        when(institutionalWalletService.getInstitutionalWalletAddress()).thenReturn(wallet);
+        when(walletService.isLabProvider(wallet)).thenReturn(true);
+        when(walletService.isLabOwnedByProvider(wallet, labId)).thenReturn(true);
+        when(walletService.getLabTokenUri(labId)).thenReturn(Optional.of(
+            "https://lab.example.edu/lab-content/content/lab-demo/metadata.json"
+        ));
+        when(writable.unlistLab(labId)).thenReturn(unlistCall);
+        when(unlistCall.send()).thenReturn(reverted);
+        doReturn(writable).when(service).loadWritableDiamond(org.mockito.ArgumentMatchers.anyString());
+
+        assertThatThrownBy(() -> service.listLab(labId, false, "unlist-reverted-command"))
+            .isInstanceOf(IllegalStateException.class)
+            .hasMessage("Lab unlist transaction was reverted");
     }
 
     @Test
@@ -568,6 +658,76 @@ class LabAdminServiceTest {
         Map<String, Object> actionable = service.listActionableReservations();
         assertThat(actionable.get("view")).isEqualTo("actionable");
         assertThat(actionable.get("count")).isEqualTo(1);
+    }
+
+    @Test
+    void paginatesAllActionableReservationsBeyondLegacyFiveHundredCap() throws Exception {
+        String wallet = "0x1111111111111111111111111111111111111111";
+        String institution = "0x3333333333333333333333333333333333333333";
+        BigInteger labId = BigInteger.valueOf(7);
+        byte[] key = Numeric.hexStringToByteArray("0x" + "ab".repeat(32));
+        long now = System.currentTimeMillis() / 1000;
+        Diamond.Reservation reservation = new Diamond.Reservation(
+            labId,
+            "0x2222222222222222222222222222222222222222",
+            BigInteger.valueOf(25_000_000),
+            wallet,
+            BigInteger.ONE,
+            BigInteger.valueOf(now + 3600),
+            BigInteger.valueOf(now + 7200),
+            BigInteger.ZERO,
+            BigInteger.ZERO,
+            institution,
+            institution,
+            BigInteger.valueOf(20_000_000)
+        );
+        Diamond diamond = mock(Diamond.class);
+        RemoteFunctionCall<BigInteger> count = mockRemoteFunctionCall();
+        RemoteFunctionCall<byte[]> keyCall = mockRemoteFunctionCall();
+        RemoteFunctionCall<Diamond.Reservation> reservationCall = mockRemoteFunctionCall();
+        RemoteFunctionCall<Diamond.Lab> labCall = mockRemoteFunctionCall();
+        RemoteFunctionCall<Boolean> sessionStartedCall = mockRemoteFunctionCall();
+        RemoteFunctionCall<String[]> institutionCall = mockRemoteFunctionCall();
+        Diamond.Lab lab = new Diamond.Lab(labId, new Diamond.LabBase(
+            "https://lab.example.edu/metadata.json",
+            BigInteger.valueOf(25_000_000),
+            "https://lab.example.edu/access",
+            "resource",
+            BigInteger.ZERO,
+            BigInteger.ZERO
+        ));
+
+        when(institutionalWalletService.isConfigured()).thenReturn(true);
+        when(institutionalWalletService.getInstitutionalWalletAddress()).thenReturn(wallet);
+        when(walletService.isLabProvider(wallet)).thenReturn(true);
+        when(walletService.getLabsOwnedByProvider(wallet)).thenReturn(List.of(labId));
+        when(diamond.getReservationsOfToken(labId)).thenReturn(count);
+        when(count.send()).thenReturn(BigInteger.valueOf(501));
+        when(diamond.getReservationOfTokenByIndex(eq(labId), any(BigInteger.class))).thenReturn(keyCall);
+        when(keyCall.send()).thenReturn(key);
+        when(diamond.getReservation(key)).thenReturn(reservationCall);
+        when(reservationCall.send()).thenReturn(reservation);
+        when(diamond.hasReservationSessionStarted(any(byte[].class))).thenReturn(sessionStartedCall);
+        when(sessionStartedCall.send()).thenReturn(false);
+        when(diamond.getLab(labId)).thenReturn(labCall);
+        when(labCall.send()).thenReturn(lab);
+        when(labMetadataService.getLabMetadataForLab(eq(labId))).thenReturn(
+            LabMetadata.builder().name("Circuit Lab").build()
+        );
+        when(diamond.getRegisteredSchacHomeOrganizations(institution)).thenReturn(institutionCall);
+        when(institutionCall.send()).thenReturn(new String[] {"UNED"});
+        doReturn(diamond).when(service).loadReadonlyDiamond();
+
+        Map<String, Object> firstPage = service.listActionableReservations(0, 100);
+        assertThat(firstPage.get("totalCount")).isEqualTo(501);
+        assertThat(firstPage.get("count")).isEqualTo(100);
+        assertThat(firstPage.get("hasMore")).isEqualTo(true);
+        assertThat(firstPage.get("nextOffset")).isEqualTo(100);
+
+        Map<String, Object> lastPage = service.listActionableReservations(500, 100);
+        assertThat(lastPage.get("totalCount")).isEqualTo(501);
+        assertThat(lastPage.get("count")).isEqualTo(1);
+        assertThat(lastPage.get("hasMore")).isEqualTo(false);
     }
 
     @Test

@@ -92,6 +92,27 @@ class LabAdminControllerTest {
     }
 
     @Test
+    void actionableReservationsForwardsPaginationParameters() throws Exception {
+        when(labAdminService.listActionableReservations(500, 100)).thenReturn(Map.of(
+            "success", true,
+            "count", 1,
+            "totalCount", 501,
+            "hasMore", false,
+            "reservations", java.util.List.of(Map.of("reservationKey", "0x" + "ef".repeat(32)))
+        ));
+
+        mockMvc.perform(get("/lab-admin/reservations/actionable")
+                .param("offset", "500")
+                .param("limit", "100"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.count").value(1))
+            .andExpect(jsonPath("$.totalCount").value(501))
+            .andExpect(jsonPath("$.hasMore").value(false));
+
+        verify(labAdminService).listActionableReservations(500, 100);
+    }
+
+    @Test
     void cancelReservationForwardsKeyReasonAndIdempotencyKey() throws Exception {
         when(labAdminService.cancelReservation(
             "0x" + "ab".repeat(32), 7, "cancel-command-1"

@@ -31,6 +31,8 @@ const DashboardState = {
     collectLabsRetryTimeout: null,
     collectLabsRetryAttempts: 0,
     collectAggregates: null,
+    settlementLatestBatchId: null,
+    settlementInvoices: [],
     transactionsLimit: 10,
     operatingMode: 'unknown',
     providerRegistrationEnabled: false,
@@ -38,15 +40,6 @@ const DashboardState = {
 };
 
 const COLLECT_LABS_RETRY_DELAYS_MS = [1500, 3500, 7000];
-const RECEIVABLE_TRANSITION_PRESETS = {
-    '2:7': { from: 2, to: 7, label: 'Queue disputed' },
-    '3:7': { from: 3, to: 7, label: 'Invoice disputed' },
-    '4:7': { from: 4, to: 7, label: 'Approval disputed' },
-    '2:6': { from: 2, to: 6, label: 'Queue reversed' },
-    '3:6': { from: 3, to: 6, label: 'Invoice reversed' },
-    '4:6': { from: 4, to: 6, label: 'Approval reversed' },
-    '7:6': { from: 7, to: 6, label: 'Dispute reversed' }
-};
 
 function updateRoleBasedSections() {
     const hasWallet = Boolean(DashboardState.walletAddress);
@@ -70,6 +63,7 @@ function updateRoleBasedSections() {
     const operatorAdjustCreditsCard = document.getElementById('operatorAdjustCreditsCard');
     const collectLifecycleSummary = document.getElementById('collectLifecycleSummary');
     const collectLabSelectLabel = document.getElementById('collectLabSelectLabel');
+    const providerSettlementOperationSelect = document.getElementById('providerSettlementOperationSelect');
 
     if (settlementSection) {
         settlementSection.classList.toggle('hidden', !showProviderControls && !showOperatorControls);
@@ -84,7 +78,16 @@ function updateRoleBasedSections() {
         );
     }
     if (providerSettlementTransitionForm) {
-        providerSettlementTransitionForm.classList.toggle('hidden', !showOperatorControls);
+        providerSettlementTransitionForm.classList.toggle('hidden', !showProviderControls && !showOperatorControls);
+    }
+    if (providerSettlementOperationSelect) {
+        [...providerSettlementOperationSelect.options].forEach((option) => {
+            option.disabled = !showOperatorControls && option.value !== 'submit';
+        });
+        if (!showOperatorControls && providerSettlementOperationSelect.value !== 'submit') {
+            providerSettlementOperationSelect.value = 'submit';
+        }
+        updateProviderSettlementOperationFields();
     }
     if (operatorCreditPolicySection) {
         operatorCreditPolicySection.classList.toggle('hidden', !showInstitutionControls && !showOperatorControls);
@@ -268,6 +271,19 @@ function formatLabTokenRaw(rawValue) {
             return '0';
         }
         return (fallback / Number(CREDIT_RAW_BASE)).toFixed(CREDIT_DECIMALS).replace(/\.?0+$/, '');
+    }
+}
+
+function formatSettlementEurFromCreditRaw(rawValue) {
+    try {
+        const value = BigInt(rawValue?.toString() || '0');
+        const scale = 10n ** 8n; // 7 credit decimals at the canonical 10 credits/EUR rate
+        const whole = value / scale;
+        const fraction = value % scale;
+        if (fraction === 0n) return whole.toString();
+        return `${whole}.${fraction.toString().padStart(8, '0').replace(/0+$/, '')}`;
+    } catch (error) {
+        return '';
     }
 }
 
@@ -1463,10 +1479,6 @@ function buildCollectLifecycleSummary(data) {
     return items.length ? items.join(' | ') : '';
 }
 
-function getReceivableTransitionPreset(value) {
-    return RECEIVABLE_TRANSITION_PRESETS[value] || null;
-}
-
 function setCollectPanelCompact(isCompact) {
     const panel = document.getElementById('collectPanel');
     if (!panel) return;
@@ -1966,6 +1978,23 @@ async function loadCollectStatusForSelectedLab() {
         const operatorReviewOnly = data.operatorReviewOnly === true
             || selectedLab?.operatorReviewOnly === true;
 
+        DashboardState.settlementLatestBatchId = data.latestSettlementBatchId || null;
+        const batchInput = document.getElementById('providerSettlementBatchIdInput');
+        if (batchInput && data.latestSettlementBatchId && !batchInput.value.trim()) {
+            batchInput.value = data.latestSettlementBatchId;
+        }
+        const latestBatchAmountRaw = data.latestSettlementBatchRemainingRaw;
+        const latestBatchAmountLab = data.latestSettlementBatchRemainingLab;
+        const creditAmountInput = document.getElementById('providerSettlementAmountInput');
+        if (creditAmountInput && latestBatchAmountLab && !creditAmountInput.value.trim()) {
+            creditAmountInput.value = latestBatchAmountLab;
+        }
+        const eurAmountInput = document.getElementById('providerSettlementEurAmountInput');
+        if (eurAmountInput && latestBatchAmountRaw && !eurAmountInput.value.trim()) {
+            eurAmountInput.value = formatSettlementEurFromCreditRaw(latestBatchAmountRaw);
+        }
+        await loadProviderSettlementInvoices();
+
         const totalLab = data.totalReceivableLab || formatLabTokenRaw(data.totalReceivableRaw);
         pendingEl.textContent = `${totalLab} credits`;
         setCollectPreviewMetrics(data);
@@ -2030,6 +2059,34 @@ async function loadCollectStatusForSelectedLab() {
     } finally {
         DashboardState.collectLoadingStatus = false;
         updateCollectButtonState();
+    }
+}
+
+async function loadProviderSettlementInvoices() {
+    if (!API.listProviderReceivables) return;
+    try {
+        const [submitted, approved] = await Promise.all([
+            API.listProviderReceivables('SUBMITTED'),
+            API.listProviderReceivables('APPROVED')
+        ]);
+        const records = [
+            ...(Array.isArray(submitted) ? submitted : []),
+            ...(Array.isArray(approved) ? approved : [])
+        ];
+        const selectedLabId = String(DashboardState.selectedCollectLabId || '');
+        DashboardState.settlementInvoices = records.filter((invoice) => (
+            !selectedLabId || String(invoice.labId) === selectedLabId
+        ));
+        const datalist = document.getElementById('providerSettlementInvoiceOptions');
+        if (datalist) {
+            datalist.innerHTML = DashboardState.settlementInvoices.map((invoice) => {
+                const label = `${invoice.id} · ${invoice.status || 'invoice'} · ${invoice.claimId || ''}`;
+                return `<option value="${escapeHtml(String(invoice.id))}">${escapeHtml(label)}</option>`;
+            }).join('');
+        }
+    } catch (error) {
+        console.warn('Unable to load provider settlement invoices:', error.message);
+        DashboardState.settlementInvoices = [];
     }
 }
 
@@ -2107,6 +2164,56 @@ async function handleCollectLabPayout() {
     }
 }
 
+function updateProviderSettlementOperationFields() {
+    const operation = document.getElementById('providerSettlementOperationSelect')?.value || 'submit';
+    const submitFields = document.getElementById('providerSettlementSubmitFields');
+    const invoiceFields = document.getElementById('providerSettlementInvoiceFields');
+    const objectFields = document.getElementById('providerSettlementObjectFields');
+    const eurAmountField = document.getElementById('providerSettlementEurAmountField');
+    const approvalRefField = document.getElementById('providerSettlementApprovalRefField');
+    const paymentFields = document.getElementById('providerSettlementPaymentFields');
+    const paymentAmountFields = document.getElementById('providerSettlementPaymentAmountFields');
+    const isSubmit = operation === 'submit';
+    const isApprove = operation === 'approve';
+    const isPay = operation === 'pay';
+    const isObjectAction = operation === 'dispute-batch'
+        || operation === 'reverse-batch'
+        || operation === 'dispute-claim'
+        || operation === 'reverse-claim';
+
+    submitFields?.classList.toggle('hidden', !isSubmit);
+    invoiceFields?.classList.toggle('hidden', !isApprove && !isPay);
+    objectFields?.classList.toggle('hidden', !isObjectAction);
+    eurAmountField?.classList.toggle('hidden', isObjectAction);
+    approvalRefField?.classList.toggle('hidden', !isApprove);
+    paymentFields?.classList.toggle('hidden', !isPay);
+    paymentAmountFields?.classList.toggle('hidden', !isPay);
+}
+
+function settlementInputValue(id) {
+    return document.getElementById(id)?.value?.trim() || '';
+}
+
+function requireSettlementInput(id, label) {
+    const value = settlementInputValue(id);
+    if (!value) {
+        throw new Error(`${label} is required`);
+    }
+    return value;
+}
+
+function describeSettlementOperation(operation) {
+    return {
+        submit: 'submit the queued batch as an invoice claim',
+        approve: 'approve the submitted settlement claim',
+        pay: 'record payment proof for the approved claim',
+        'dispute-batch': 'dispute the settlement batch',
+        'reverse-batch': 'reverse the settlement batch',
+        'dispute-claim': 'dispute the settlement claim',
+        'reverse-claim': 'reverse the settlement claim'
+    }[operation] || 'apply the settlement action';
+}
+
 async function handleProviderSettlementTransition(event) {
     event.preventDefault();
 
@@ -2116,67 +2223,90 @@ async function handleProviderSettlementTransition(event) {
         return;
     }
 
-    const transitionSelect = document.getElementById('providerSettlementTransitionSelect');
-    const amountInput = document.getElementById('providerSettlementAmountInput');
-    const referenceInput = document.getElementById('providerSettlementReferenceInput');
-    const selectedPreset = getReceivableTransitionPreset(transitionSelect?.value);
-
-    if (!selectedPreset) {
-        showToast('Select a settlement transition', 'error');
-        return;
-    }
-
-    let amountRaw;
+    const operation = document.getElementById('providerSettlementOperationSelect')?.value || 'submit';
+    let payload;
+    let action;
     try {
-        amountRaw = decimalToRawUnits(amountInput?.value ?? '', CREDIT_DECIMALS);
+        if (operation === 'submit') {
+            const creditAmount = requireSettlementInput('providerSettlementAmountInput', 'Credit amount');
+            decimalToRawUnits(creditAmount, CREDIT_DECIMALS);
+            payload = {
+                claimId: requireSettlementInput('providerSettlementClaimIdInput', 'Claim ID'),
+                batchId: requireSettlementInput('providerSettlementBatchIdInput', 'Settlement batch ID'),
+                invoiceRef: requireSettlementInput('providerSettlementInvoiceRefInput', 'Invoice reference'),
+                eurAmount: requireSettlementInput('providerSettlementEurAmountInput', 'Invoice amount (EUR)'),
+                creditAmount
+            };
+            action = () => API.submitProviderInvoice(labId, payload);
+        } else if (operation === 'approve') {
+            payload = {
+                approvalRef: requireSettlementInput('providerSettlementApprovalRefInput', 'Approval reference'),
+                eurAmount: requireSettlementInput('providerSettlementEurAmountInput', 'Invoice amount (EUR)')
+            };
+            action = () => API.approveProviderInvoice(
+                requireSettlementInput('providerSettlementInvoiceIdInput', 'Invoice record ID'),
+                payload
+            );
+        } else if (operation === 'pay') {
+            const creditAmount = settlementInputValue('providerSettlementPaymentCreditAmountInput');
+            if (creditAmount) decimalToRawUnits(creditAmount, CREDIT_DECIMALS);
+            payload = {
+                eurAmount: requireSettlementInput('providerSettlementEurAmountInput', 'Payment amount (EUR)'),
+                ...(creditAmount ? { creditAmount } : {}),
+                paymentRef: requireSettlementInput('providerSettlementPaymentRefInput', 'Payment reference'),
+                paymentAttestation: requireSettlementInput('providerSettlementPaymentAttestationInput', 'Payment attestation'),
+                bankRef: settlementInputValue('providerSettlementBankRefInput'),
+                eurcTxHash: settlementInputValue('providerSettlementEurcTxHashInput'),
+                usdcTxHash: settlementInputValue('providerSettlementUsdcTxHashInput')
+            };
+            action = () => API.recordProviderPayout(
+                requireSettlementInput('providerSettlementInvoiceIdInput', 'Invoice record ID'),
+                payload
+            );
+        } else {
+            const objectId = requireSettlementInput('providerSettlementObjectIdInput', 'Batch or claim ID');
+            const reference = requireSettlementInput('providerSettlementReferenceInput', 'Resolution reference');
+            action = () => {
+                if (operation === 'dispute-batch') return API.disputeSettlementBatch(objectId, reference);
+                if (operation === 'reverse-batch') return API.reverseSettlementBatch(objectId, reference);
+                if (operation === 'dispute-claim') return API.disputeSettlementClaim(objectId, reference);
+                return API.reverseSettlementClaim(objectId, reference);
+            };
+        }
     } catch (error) {
         showToast(error.message, 'error');
         return;
     }
 
-    if (amountRaw === '0') {
-        showToast('Transition amount must be greater than zero', 'error');
-        return;
-    }
-
     const collectTarget = getCollectTargetLabel();
-    const formattedAmount = amountInput?.value?.trim() || formatLabTokenRaw(amountRaw);
     const confirmed = await showConfirmModal(
-        'Submit Settlement Transition',
-        `Submit "${selectedPreset.label}" for ${collectTarget} with amount ${formattedAmount} credits?`,
+        'Confirm canonical settlement action',
+        `Confirm that you want to ${describeSettlementOperation(operation)} for ${collectTarget}?`,
         {
             icon: 'file-invoice-dollar',
-            confirmText: 'Submit transition',
+            confirmText: 'Submit action',
             confirmButtonClass: 'btn-secondary'
         }
     );
-    if (!confirmed) {
-        return;
-    }
+    if (!confirmed) return;
 
     try {
-        const result = await API.transitionProviderReceivableState(
-            labId,
-            selectedPreset.from,
-            selectedPreset.to,
-            amountRaw,
-            referenceInput?.value?.trim() || ''
-        );
-
-        if (result.success) {
-            showToast(`Settlement transition submitted. Tx: ${formatAddress(result.transactionHash)}`, 'success');
-            if (event.target && typeof event.target.reset === 'function') {
-                event.target.reset();
-            }
-            setTimeout(() => {
-                loadRecentTransactions();
-                loadCollectStatusForSelectedLab();
-            }, 5000);
-        } else {
-            showToast('Settlement transition failed: ' + (result.message || 'Unknown error'), 'error');
+        const result = await action();
+        if (result && result.success === false) {
+            throw new Error(result.message || result.error || 'Settlement action failed');
         }
+        const invoiceId = result?.id ?? result?.invoiceRecordId;
+        if (invoiceId) {
+            const invoiceInput = document.getElementById('providerSettlementInvoiceIdInput');
+            if (invoiceInput) invoiceInput.value = String(invoiceId);
+        }
+        showToast(`Canonical settlement action completed for ${collectTarget}.`, 'success');
+        await Promise.allSettled([
+            loadRecentTransactions(),
+            loadCollectStatusForSelectedLab()
+        ]);
     } catch (error) {
-        showToast('Settlement transition failed: ' + error.message, 'error');
+        showToast('Canonical settlement action failed: ' + error.message, 'error');
     }
 }
 
@@ -2514,6 +2644,11 @@ function setupFormHandlers() {
     const providerSettlementTransitionForm = document.getElementById('providerSettlementTransitionForm');
     if (providerSettlementTransitionForm) {
         providerSettlementTransitionForm.addEventListener('submit', handleProviderSettlementTransition);
+    }
+    const providerSettlementOperationSelect = document.getElementById('providerSettlementOperationSelect');
+    if (providerSettlementOperationSelect) {
+        providerSettlementOperationSelect.addEventListener('change', updateProviderSettlementOperationFields);
+        updateProviderSettlementOperationFields();
     }
 }
 
