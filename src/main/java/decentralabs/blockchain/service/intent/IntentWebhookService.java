@@ -74,6 +74,7 @@ public class IntentWebhookService {
         Long blockNumber,
         String labId,
         String reservationKey,
+        String reservationStatus,
         String reason
     ) {
         static WebhookPayload from(IntentRecord record) {
@@ -84,6 +85,7 @@ public class IntentWebhookService {
                 record.getBlockNumber(),
                 record.getLabId(),
                 record.getReservationKey(),
+                record.getReservationStatus(),
                 record.getError() != null ? record.getError() : record.getReason()
             );
         }

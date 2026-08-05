@@ -11,15 +11,17 @@ three ways:
 
 | Mode | Typical topology | Provider/auth surface | Consumer/wallet surface |
 | --- | --- | --- | --- |
-| Full gateway | Lab Gateway + embedded backend | Enabled when `FEATURES_PROVIDERS_ENABLED=true` | Enabled |
+| Full gateway | Lab Gateway + embedded backend | Enabled when backend mode is `provider-consumer` | Enabled |
 | Lite gateway edge | A Lite gateway trusts a remote Full gateway | Full remains the auth/provider authority; Lite validates remote issuer/JWKS | Present only when the Lite deployment explicitly needs this backend capability |
-| Standalone consumer | This repository without a provider gateway | Disabled by default | Enabled |
+| Standalone consumer | This repository without a provider gateway | Enabled only when backend mode is `provider-consumer` | Enabled |
 
-`FEATURES_PROVIDERS_ENABLED` is `false` by default in
-`src/main/resources/application.properties`. The parent `Lab Gateway` compose
-deployment supplies the values required for Full or Lite operation. Do not infer
-deployment mode from the repository name; inspect `ISSUER` in the gateway and
-the provider feature flags in this service.
+`BLOCKCHAIN_SERVICES_MODE` is the explicit backend role and accepts only
+`provider-consumer` or `consumer-only`. It is independent of the Full/Lite
+access-plane topology. `FEATURES_PROVIDERS_ENABLED` remains the packaged
+fallback for installations that have not added the role setting. Do not infer
+the backend role from `ISSUER`, the gateway topology, or the repository name.
+The parent `Lab Gateway` compose deployment supplies the values required for
+the selected topology, while the backend `.env` owns this role decision.
 The provider feature controls the conditional OIDC/JWKS and FMU controllers and
 the health operating mode. The SAML controller's `/auth` mappings are not
 conditional, so network exposure and the intended topology remain essential

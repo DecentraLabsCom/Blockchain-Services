@@ -1,6 +1,7 @@
 package decentralabs.blockchain.controller.auth;
 
 import decentralabs.blockchain.service.BackendUrlResolver;
+import decentralabs.blockchain.config.ProviderConsumerModeCondition;
 import decentralabs.blockchain.service.auth.JwtService;
 import decentralabs.blockchain.service.auth.MarketplaceEndpointAuthService;
 import java.math.BigInteger;
@@ -10,7 +11,7 @@ import java.util.Map;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.context.annotation.Conditional;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -32,7 +33,7 @@ import org.springframework.web.server.ResponseStatusException;
  */
 @RestController
 @RequestMapping("/auth/fmu/provider-describe-token")
-@ConditionalOnProperty(value = "features.providers.enabled", havingValue = "true", matchIfMissing = false)
+@Conditional(ProviderConsumerModeCondition.class)
 @RequiredArgsConstructor
 @Slf4j
 public class FmuProviderDescribeController {

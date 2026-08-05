@@ -1,5 +1,6 @@
 package decentralabs.blockchain.controller.health;
 
+import decentralabs.blockchain.config.BackendOperatingMode;
 import decentralabs.blockchain.service.auth.MarketplaceKeyService;
 import decentralabs.blockchain.service.auth.SamlValidationService;
 import decentralabs.blockchain.service.organization.InstitutionRegistrationService;
@@ -16,6 +17,7 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import jakarta.annotation.PostConstruct;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
@@ -52,6 +54,9 @@ public class HealthController {
     @Value("${features.providers.enabled:false}")
     private boolean providersEnabled;
 
+    @Value("${blockchain.services.mode:}")
+    private String configuredOperatingMode;
+
     @Value("${contract.event.listening.enabled:true}")
     private boolean eventListeningEnabled;
 
@@ -63,6 +68,11 @@ public class HealthController {
 
     @Value("${health.queue-stuck-threshold-seconds:120}")
     private int queueStuckThresholdSeconds;
+
+    @PostConstruct
+    void applyConfiguredOperatingMode() {
+        providersEnabled = BackendOperatingMode.providerConsumer(configuredOperatingMode, providersEnabled);
+    }
 
     @GetMapping
     public ResponseEntity<Map<String, Object>> health() {
@@ -124,6 +134,7 @@ public class HealthController {
                 || providerRegistered;
             boolean registrationReady = providersEnabled ? providerRegistered : consumerRegistered;
             healthStatus.put("operating_mode", providersEnabled ? "provider-consumer" : "consumer-only");
+            healthStatus.put("backend_role", providersEnabled ? "provider-consumer" : "consumer-only");
             healthStatus.put("provider_registered", providerRegistered);
             healthStatus.put("consumer_registered", consumerRegistered);
             // Treat invite token capability as ready when a secret is configured

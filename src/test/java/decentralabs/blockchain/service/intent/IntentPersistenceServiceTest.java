@@ -82,7 +82,7 @@ class IntentPersistenceServiceTest {
 
             ArgumentCaptor<Object[]> captor = ArgumentCaptor.forClass(Object[].class);
             verify(jdbcTemplate).update(anyString(), captor.capture());
-            String persistedPayload = (String) captor.getValue()[15];
+            String persistedPayload = (String) captor.getValue()[16];
             assertThat(persistedPayload).startsWith("{\"ciphertext\":\"v1.");
             assertThat(persistedPayload).doesNotContain("execution-material");
         }
@@ -109,6 +109,7 @@ class IntentPersistenceServiceTest {
                 eq("github"),
                 eq("lab-42"),
                 any(), // reservation key
+                any(), // reservation status
                 any(), // puc_hash
                 eq("0xabc123"),
                 eq(12345L),

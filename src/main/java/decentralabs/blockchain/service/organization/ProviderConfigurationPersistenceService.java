@@ -10,10 +10,15 @@ import org.springframework.stereotype.Service;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.IOException;
+import java.nio.channels.FileChannel;
+import java.nio.file.AtomicMoveNotSupportedException;
+import java.nio.file.FileAlreadyExistsException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.nio.file.StandardCopyOption;
 import java.util.Properties;
+import java.util.concurrent.locks.ReentrantLock;
 
 /**
  * Service to persist provider configuration to file
@@ -30,6 +35,13 @@ public class ProviderConfigurationPersistenceService {
 
     @Value("${contract.address}")
     private String currentContractAddress;
+
+    /**
+     * Serializes read/modify/replace cycles inside this backend instance. The
+     * temporary-file + rename commit below also guarantees readers never see a
+     * partially written provider.properties file.
+     */
+    private final ReentrantLock persistenceLock = new ReentrantLock();
 
     /**
      * Save provider configuration to persistent file
@@ -62,42 +74,78 @@ public class ProviderConfigurationPersistenceService {
     }
 
     /**
+     * Persists the provider configuration and its on-chain registration marker
+     * as one local snapshot. The remote chain transaction is completed by the
+     * caller before this method is invoked; retries are therefore safe because
+     * the operation is an idempotent replacement of the same file.
+     */
+    public void persistProviderRegistration(ProvisioningTokenPayload payload) throws IOException {
+        persistenceLock.lock();
+        try {
+            Path configPath = getConfigFilePath();
+            Properties properties = readPropertiesForUpdate(configPath);
+            applyProviderConfiguration(
+                properties,
+                payload.getMarketplaceBaseUrl(),
+                payload.getProviderName(),
+                payload.getProviderEmail(),
+                payload.getProviderCountry(),
+                payload.getInstitutionId(),
+                payload.getCanonicalBackendOrigin(),
+                "token"
+            );
+            markAsRegistered(properties, InstitutionRole.PROVIDER);
+            writePropertiesAtomically(
+                configPath,
+                properties,
+                "Provider Configuration - Atomically committed after registration"
+            );
+            log.info("Provider registration configuration committed to {}", configPath);
+        } finally {
+            persistenceLock.unlock();
+        }
+    }
+
+    /**
      * Save minimal configuration from consumer provisioning token (no provider fields)
      */
     public void saveConfigurationFromConsumerToken(ConsumerProvisioningTokenPayload payload) throws IOException {
-        Properties properties = new Properties();
-
-        // Load existing properties if file exists
-        Path configPath = getConfigFilePath();
-        if (Files.exists(configPath)) {
-            try (FileInputStream fis = new FileInputStream(configPath.toFile())) {
-                properties.load(fis);
-            }
-        } else {
-            // Create directory if it doesn't exist
-            Path parentDir = configPath.getParent();
-            if (parentDir != null) {
-                Files.createDirectories(parentDir);
-            }
+        persistenceLock.lock();
+        try {
+            Path configPath = getConfigFilePath();
+            Properties properties = readPropertiesForUpdate(configPath);
+            applyConsumerConfiguration(properties, payload);
+            writePropertiesAtomically(
+                configPath,
+                properties,
+                "Consumer Configuration - Auto-saved by DecentraLabs Blockchain Services"
+            );
+            log.info("Consumer configuration saved to {}", configPath);
+        } finally {
+            persistenceLock.unlock();
         }
+    }
 
-        // Consumer-only configuration (no provider publication fields)
-        properties.setProperty("marketplace.base-url", payload.getMarketplaceBaseUrl());
-        properties.setProperty("consumer.name", payload.getConsumerName());
-        // Consumer-only flow reuses provider.organization to persist schacHomeOrganization used on-chain.
-        properties.setProperty("provider.organization", payload.getInstitutionId());
-        properties.setProperty("public.base-url", payload.getCanonicalBackendOrigin());
-        properties.setProperty("provisioning.source", "consumer-token");
-
-        // Save to file
-        try (FileOutputStream fos = new FileOutputStream(configPath.toFile())) {
-            // This file contains deployment metadata (not credentials or tokens)
-            // and is the persisted format consumed by the configuration UI.
-            // codeql[java/cleartext-storage-in-properties]
-            properties.store(fos, "Consumer Configuration - Auto-saved by DecentraLabs Blockchain Services");
+    /**
+     * Persists consumer configuration and its on-chain registration marker as
+     * one local snapshot.
+     */
+    public void persistConsumerRegistration(ConsumerProvisioningTokenPayload payload) throws IOException {
+        persistenceLock.lock();
+        try {
+            Path configPath = getConfigFilePath();
+            Properties properties = readPropertiesForUpdate(configPath);
+            applyConsumerConfiguration(properties, payload);
+            markAsRegistered(properties, InstitutionRole.CONSUMER);
+            writePropertiesAtomically(
+                configPath,
+                properties,
+                "Consumer Configuration - Atomically committed after registration"
+            );
+            log.info("Consumer registration configuration committed to {}", configPath);
+        } finally {
+            persistenceLock.unlock();
         }
-
-        log.info("Consumer configuration saved to {}", configPath);
     }
 
     private void saveConfigurationInternal(
@@ -109,23 +157,79 @@ public class ProviderConfigurationPersistenceService {
         String publicBaseUrl,
         String source
     ) throws IOException {
-        Properties properties = new Properties();
+        persistenceLock.lock();
+        try {
+            Path configPath = getConfigFilePath();
+            Properties properties = readPropertiesForUpdate(configPath);
+            applyProviderConfiguration(
+                properties,
+                marketplaceBaseUrl,
+                providerName,
+                providerEmail,
+                providerCountry,
+                providerOrganization,
+                publicBaseUrl,
+                source
+            );
+            writePropertiesAtomically(
+                configPath,
+                properties,
+                "Provider Configuration - Auto-saved by DecentraLabs Blockchain Services"
+            );
+            log.info("Provider configuration saved to {}", configPath);
+        } finally {
+            persistenceLock.unlock();
+        }
+    }
 
-        // Load existing properties if file exists
-        Path configPath = getConfigFilePath();
+    /**
+     * Mark institution as registered for a specific role
+     *
+     * @param role Institution role (PROVIDER or CONSUMER)
+     * @throws IOException if unable to write to configuration file
+     */
+    public void markAsRegistered(InstitutionRole role) throws IOException {
+        persistenceLock.lock();
+        try {
+            Path configPath = getConfigFilePath();
+            Properties properties = readPropertiesForUpdate(configPath);
+            markAsRegistered(properties, role);
+            writePropertiesAtomically(
+                configPath,
+                properties,
+                "Institution Configuration - Auto-saved by DecentraLabs Blockchain Services"
+            );
+            log.info("{} marked as registered in configuration", role);
+        } finally {
+            persistenceLock.unlock();
+        }
+    }
+
+    private Properties readPropertiesForUpdate(Path configPath) throws IOException {
+        Properties properties = new Properties();
         if (Files.exists(configPath)) {
             try (FileInputStream fis = new FileInputStream(configPath.toFile())) {
                 properties.load(fis);
             }
         } else {
-            // Create directory if it doesn't exist
-            Path parentDir = configPath.getParent();
+            Path parentDir = configPath.toAbsolutePath().getParent();
             if (parentDir != null) {
                 Files.createDirectories(parentDir);
             }
         }
+        return properties;
+    }
 
-        // Update properties
+    private void applyProviderConfiguration(
+        Properties properties,
+        String marketplaceBaseUrl,
+        String providerName,
+        String providerEmail,
+        String providerCountry,
+        String providerOrganization,
+        String publicBaseUrl,
+        String source
+    ) {
         properties.setProperty("marketplace.base-url", marketplaceBaseUrl);
         properties.setProperty("provider.name", providerName);
         properties.setProperty("provider.email", providerEmail);
@@ -133,44 +237,77 @@ public class ProviderConfigurationPersistenceService {
         properties.setProperty("provider.organization", providerOrganization);
         properties.setProperty("public.base-url", publicBaseUrl);
         properties.setProperty("provisioning.source", source);
+    }
 
-        // Save to file
-        try (FileOutputStream fos = new FileOutputStream(configPath.toFile())) {
-            // This file contains deployment metadata (not credentials or tokens)
-            // and is the persisted format consumed by the configuration UI.
-            // codeql[java/cleartext-storage-in-properties]
-            properties.store(fos, "Provider Configuration - Auto-saved by DecentraLabs Blockchain Services");
+    private void applyConsumerConfiguration(
+        Properties properties,
+        ConsumerProvisioningTokenPayload payload
+    ) {
+        properties.setProperty("marketplace.base-url", payload.getMarketplaceBaseUrl());
+        properties.setProperty("consumer.name", payload.getConsumerName());
+        // Consumer-only flow reuses provider.organization to persist schacHomeOrganization used on-chain.
+        properties.setProperty("provider.organization", payload.getInstitutionId());
+        properties.setProperty("public.base-url", payload.getCanonicalBackendOrigin());
+        properties.setProperty("provisioning.source", "consumer-token");
+    }
+
+    private void markAsRegistered(Properties properties, InstitutionRole role) {
+        properties.setProperty(role.getRegisteredFlag(), "true");
+        if (currentContractAddress != null && !currentContractAddress.isBlank()) {
+            properties.setProperty(
+                role.getRegisteredFlag() + REGISTERED_CONTRACT_SUFFIX,
+                currentContractAddress.trim()
+            );
         }
-
-        log.info("Provider configuration saved to {}", configPath);
     }
 
     /**
-     * Mark institution as registered for a specific role
-     * 
-     * @param role Institution role (PROVIDER or CONSUMER)
-     * @throws IOException if unable to write to configuration file
+     * Writes a complete properties snapshot beside the target and commits it
+     * with a same-directory rename. A reader therefore observes either the old
+     * snapshot or the new one, never a truncated file.
      */
-    public void markAsRegistered(InstitutionRole role) throws IOException {
-        Properties properties = new Properties();
-        Path configPath = getConfigFilePath();
-        
-        if (Files.exists(configPath)) {
-            try (FileInputStream fis = new FileInputStream(configPath.toFile())) {
-                properties.load(fis);
+    private void writePropertiesAtomically(Path configPath, Properties properties, String comment) throws IOException {
+        Path target = configPath.toAbsolutePath();
+        Path parent = target.getParent();
+        if (parent != null) {
+            Files.createDirectories(parent);
+        }
+
+        Path temporary = Files.createTempFile(
+            parent,
+            target.getFileName().toString() + ".",
+            ".tmp"
+        );
+        boolean committed = false;
+        try {
+            try (FileOutputStream fos = new FileOutputStream(temporary.toFile());
+                 FileChannel channel = fos.getChannel()) {
+                // This file contains deployment metadata (not credentials or tokens)
+                // and is the persisted format consumed by the configuration UI.
+                // codeql[java/cleartext-storage-in-properties]
+                properties.store(fos, comment);
+                fos.flush();
+                channel.force(true);
+            }
+
+            try {
+                Files.move(
+                    temporary,
+                    target,
+                    StandardCopyOption.ATOMIC_MOVE,
+                    StandardCopyOption.REPLACE_EXISTING
+                );
+            } catch (AtomicMoveNotSupportedException | FileAlreadyExistsException unsupported) {
+                // The fallback still replaces only after the complete temporary
+                // snapshot has been closed and flushed.
+                Files.move(temporary, target, StandardCopyOption.REPLACE_EXISTING);
+            }
+            committed = true;
+        } finally {
+            if (!committed) {
+                Files.deleteIfExists(temporary);
             }
         }
-        
-        properties.setProperty(role.getRegisteredFlag(), "true");
-        if (currentContractAddress != null && !currentContractAddress.isBlank()) {
-            properties.setProperty(role.getRegisteredFlag() + REGISTERED_CONTRACT_SUFFIX, currentContractAddress.trim());
-        }
-        
-        try (FileOutputStream fos = new FileOutputStream(configPath.toFile())) {
-            properties.store(fos, "Institution Configuration - Auto-saved by DecentraLabs Blockchain Services");
-        }
-        
-        log.info("{} marked as registered in configuration", role);
     }
 
     /**
@@ -201,17 +338,22 @@ public class ProviderConfigurationPersistenceService {
      * Load configuration from file
      */
     public Properties loadConfiguration() throws IOException {
-        Properties properties = new Properties();
-        Path configPath = getConfigFilePath();
+        persistenceLock.lock();
+        try {
+            Properties properties = new Properties();
+            Path configPath = getConfigFilePath();
 
-        if (Files.exists(configPath)) {
-            try (FileInputStream fis = new FileInputStream(configPath.toFile())) {
-                properties.load(fis);
+            if (Files.exists(configPath)) {
+                try (FileInputStream fis = new FileInputStream(configPath.toFile())) {
+                    properties.load(fis);
+                }
+                invalidateRegistrationFlagsForContractChange(properties, configPath);
             }
-            invalidateRegistrationFlagsForContractChange(properties, configPath);
-        }
 
-        return properties;
+            return properties;
+        } finally {
+            persistenceLock.unlock();
+        }
     }
 
     /**
@@ -254,9 +396,11 @@ public class ProviderConfigurationPersistenceService {
         }
 
         if (changed) {
-            try (FileOutputStream fos = new FileOutputStream(configPath.toFile())) {
-                properties.store(fos, "Institution Configuration - Auto-saved by DecentraLabs Blockchain Services");
-            }
+            writePropertiesAtomically(
+                configPath,
+                properties,
+                "Institution Configuration - Auto-saved by DecentraLabs Blockchain Services"
+            );
         }
     }
 }

@@ -16,6 +16,11 @@ public class IntentRecord {
     private Long blockNumber;
     private String labId;
     private String reservationKey;
+    /**
+     * Reservation lifecycle state read from the chain. This is deliberately
+     * separate from {@link #status}, which only describes intent execution.
+     */
+    private String reservationStatus;
     private String error;
     private final String action;
     private final String provider;
@@ -88,6 +93,14 @@ public class IntentRecord {
 
     public void setReservationKey(String reservationKey) {
         this.reservationKey = reservationKey;
+    }
+
+    public String getReservationStatus() {
+        return reservationStatus;
+    }
+
+    public void setReservationStatus(String reservationStatus) {
+        this.reservationStatus = reservationStatus;
     }
 
     public String getError() {

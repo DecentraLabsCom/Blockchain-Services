@@ -1,6 +1,7 @@
 package decentralabs.blockchain.controller.auth;
 
 import decentralabs.blockchain.service.BackendUrlResolver;
+import decentralabs.blockchain.config.ProviderConsumerModeCondition;
 import decentralabs.blockchain.service.auth.JwtService;
 import decentralabs.blockchain.service.auth.KeyService;
 import java.math.BigInteger;
@@ -10,7 +11,7 @@ import java.util.HashMap;
 import java.util.Map;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.context.annotation.Conditional;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
 import org.springframework.web.bind.annotation.*;
@@ -22,7 +23,7 @@ import org.springframework.web.bind.annotation.*;
  * (institutional SAML-based authentication).
  */
 @RestController
-@ConditionalOnProperty(value = "features.providers.enabled", havingValue = "true", matchIfMissing = false)
+@Conditional(ProviderConsumerModeCondition.class)
 @Slf4j
 public class AuthController {
 

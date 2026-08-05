@@ -6,8 +6,8 @@ import decentralabs.blockchain.dto.provider.PairingChallengeRequest;
 import decentralabs.blockchain.dto.provider.ProvisioningTokenPayload;
 import decentralabs.blockchain.dto.provider.ProvisioningTokenRequest;
 import decentralabs.blockchain.service.organization.InstitutionRegistrationService;
-import decentralabs.blockchain.service.organization.InstitutionRole;
 import decentralabs.blockchain.service.organization.ProviderConfigurationPersistenceService;
+import decentralabs.blockchain.service.organization.ProvisioningPairingPreparation;
 import decentralabs.blockchain.service.organization.ProvisioningTokenService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -172,12 +172,11 @@ class ProviderConfigurationControllerTest {
         assertEquals(true, response.getBody().get("registered"));
 
         // Verify marked as registered
-        verify(persistenceService).saveConfigurationFromToken(payload);
-        verify(registrationService).markAsRegistered(any());
+        verify(persistenceService).persistProviderRegistration(payload);
+        verify(registrationService, never()).markAsRegistered(any());
         InOrder inOrder = inOrder(registrationService, persistenceService);
         inOrder.verify(registrationService).register(any());
-        inOrder.verify(persistenceService).saveConfigurationFromToken(payload);
-        inOrder.verify(registrationService).markAsRegistered(InstitutionRole.PROVIDER);
+        inOrder.verify(persistenceService).persistProviderRegistration(payload);
     }
 
     @Test
@@ -210,7 +209,7 @@ class ProviderConfigurationControllerTest {
         assertEquals(true, response.getBody().get("success"));
         assertEquals(false, response.getBody().get("registered"));
 
-        verify(persistenceService, never()).saveConfigurationFromToken(any());
+        verify(persistenceService, never()).persistProviderRegistration(any());
         verify(registrationService, never()).markAsRegistered(any());
     }
 
@@ -232,7 +231,7 @@ class ProviderConfigurationControllerTest {
         assertEquals(false, response.getBody().get("success"));
         assertEquals("Provisioning token expired", response.getBody().get("error"));
 
-        verify(persistenceService, never()).saveConfigurationFromToken(any());
+        verify(persistenceService, never()).persistProviderRegistration(any());
         verify(registrationService, never()).register(any());
     }
 
@@ -249,6 +248,50 @@ class ProviderConfigurationControllerTest {
         assertNotNull(response.getBody());
         assertEquals(false, response.getBody().get("success"));
         verifyNoInteractions(provisioningTokenService, registrationService, persistenceService);
+    }
+
+    @Test
+    @DisplayName("Should never enable provider registration from the registration flag in consumer-only mode")
+    void shouldKeepProviderRegistrationDisabledWhenConsumerOnly() {
+        ProvisioningTokenRequest tokenRequest = new ProvisioningTokenRequest();
+        tokenRequest.setToken("valid-jwt-token");
+        ReflectionTestUtils.setField(controller, "providersEnabled", true);
+        ReflectionTestUtils.setField(controller, "configuredOperatingMode", "consumer-only");
+        ReflectionTestUtils.invokeMethod(controller, "applyConfiguredOperatingMode");
+        ReflectionTestUtils.setField(controller, "providerRegistrationEnabled", true);
+
+        ResponseEntity<Map<String, Object>> response = controller.applyProvisioningToken(tokenRequest);
+
+        assertEquals(HttpStatus.FORBIDDEN, response.getStatusCode());
+        assertEquals(false, response.getBody().get("success"));
+        verifyNoInteractions(provisioningTokenService, registrationService, persistenceService);
+    }
+
+    @Test
+    @DisplayName("Should reject a provider pairing offer when provider registration is disabled")
+    void shouldRejectProviderPairingOfferWhenProviderRegistrationDisabled() {
+        String challenge = "0xcccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc";
+        PairingChallengeRequest request = new PairingChallengeRequest(challenge);
+        ReflectionTestUtils.setField(controller, "providerRegistrationEnabled", false);
+        when(registrationService.preparePairing(challenge, false)).thenReturn(
+            new ProvisioningPairingPreparation(
+                "pairing-1",
+                "AWAITING_APPROVAL",
+                "provider.edu",
+                "provider",
+                "0x1234567890123456789012345678901234567890",
+                "https://gateway.example.com",
+                2_000L
+            )
+        );
+
+        ResponseEntity<Map<String, Object>> response = controller.applyPairingChallenge(request);
+
+        assertEquals(HttpStatus.BAD_REQUEST, response.getStatusCode());
+        assertNotNull(response.getBody());
+        assertEquals(false, response.getBody().get("success"));
+        assertTrue(response.getBody().get("error").toString().contains("Provider registration is disabled"));
+        verify(registrationService).preparePairing(challenge, false);
     }
 
     @Test
@@ -274,8 +317,61 @@ class ProviderConfigurationControllerTest {
             eq(token), eq("https://marketplace.example.com"), eq("https://gateway.example.com")
         );
         verify(provisioningTokenService, never()).validateAndExtractConsumer(anyString(), anyString(), anyString());
-        verify(persistenceService).saveConfigurationFromToken(any(ProvisioningTokenPayload.class));
-        verify(registrationService).markAsRegistered(InstitutionRole.PROVIDER);
+        verify(persistenceService).persistProviderRegistration(any(ProvisioningTokenPayload.class));
+        verify(registrationService, never()).markAsRegistered(any());
+    }
+
+    @Test
+    @DisplayName("Should expose local snapshot failure as retryable after remote registration")
+    void shouldExposeLocalSnapshotFailureAsRetryable() throws Exception {
+        ProvisioningTokenRequest tokenRequest = new ProvisioningTokenRequest();
+        tokenRequest.setToken("valid-jwt-token");
+        var payload = decentralabs.blockchain.dto.provider.ProvisioningTokenPayload.builder()
+            .marketplaceBaseUrl("https://marketplace.example.com")
+            .providerName("Token University")
+            .providerEmail("token@university.edu")
+            .providerCountry("ES")
+            .institutionId("token.edu")
+            .walletAddress("0x1234567890123456789012345678901234567890")
+            .canonicalBackendOrigin("https://token.university.edu")
+            .jti("test-jti-persist-failure")
+            .build();
+
+        when(persistenceService.loadConfigurationSafe()).thenReturn(new Properties());
+        when(provisioningTokenService.validateAndExtract(anyString(), anyString(), anyString()))
+            .thenReturn(payload);
+        when(registrationService.register(any())).thenReturn(true);
+        doThrow(new java.io.IOException("disk full"))
+            .when(persistenceService).persistProviderRegistration(payload);
+
+        ResponseEntity<Map<String, Object>> response = controller.applyProvisioningToken(tokenRequest);
+
+        assertEquals(HttpStatus.SERVICE_UNAVAILABLE, response.getStatusCode());
+        assertNotNull(response.getBody());
+        assertEquals(false, response.getBody().get("success"));
+        assertEquals("LOCAL_REGISTRATION_PERSISTENCE_FAILED", response.getBody().get("code"));
+        verify(registrationService).register(any());
+        verify(persistenceService).persistProviderRegistration(payload);
+    }
+
+    @Test
+    @DisplayName("Should reject provider pairing completion when provider registration is disabled")
+    void shouldRejectProviderPairingCompletionWhenProviderRegistrationDisabled() throws Exception {
+        String token = pairingToken("provider");
+        PairingChallengeRequest request = new PairingChallengeRequest("provider-disabled-challenge");
+        ReflectionTestUtils.setField(controller, "providerRegistrationEnabled", false);
+        when(registrationService.retrieveProvisioningToken("provider-disabled-challenge")).thenReturn(token);
+        when(persistenceService.loadConfigurationSafe()).thenReturn(configurationProperties());
+
+        ResponseEntity<Map<String, Object>> response = controller.completePairing(request);
+
+        assertEquals(HttpStatus.FORBIDDEN, response.getStatusCode());
+        assertNotNull(response.getBody());
+        assertEquals(false, response.getBody().get("success"));
+        assertTrue(response.getBody().get("error").toString().contains("Provider registration is disabled"));
+        verify(provisioningTokenService, never()).validateAndExtract(anyString(), anyString(), anyString());
+        verify(registrationService, never()).register(any());
+        verify(persistenceService, never()).persistProviderRegistration(any());
     }
 
     @Test
@@ -301,8 +397,8 @@ class ProviderConfigurationControllerTest {
             eq(token), eq("https://marketplace.example.com"), eq("https://gateway.example.com")
         );
         verify(provisioningTokenService, never()).validateAndExtract(anyString(), anyString(), anyString());
-        verify(persistenceService).saveConfigurationFromConsumerToken(any(ConsumerProvisioningTokenPayload.class));
-        verify(registrationService).markAsRegistered(InstitutionRole.CONSUMER);
+        verify(persistenceService).persistConsumerRegistration(any(ConsumerProvisioningTokenPayload.class));
+        verify(registrationService, never()).markAsRegistered(any());
     }
 
     @Test
@@ -343,12 +439,11 @@ class ProviderConfigurationControllerTest {
         assertEquals(true, response.getBody().get("registered"));
         assertEquals(true, response.getBody().get("consumerMode"));
         assertEquals("CONSUMER", response.getBody().get("registrationRole"));
-        verify(persistenceService).saveConfigurationFromConsumerToken(payload);
-        verify(registrationService).markAsRegistered(InstitutionRole.CONSUMER);
+        verify(persistenceService).persistConsumerRegistration(payload);
+        verify(registrationService, never()).markAsRegistered(any());
         InOrder inOrder = inOrder(registrationService, persistenceService);
         inOrder.verify(registrationService).register(any());
-        inOrder.verify(persistenceService).saveConfigurationFromConsumerToken(payload);
-        inOrder.verify(registrationService).markAsRegistered(InstitutionRole.CONSUMER);
+        inOrder.verify(persistenceService).persistConsumerRegistration(payload);
     }
 
     @Test
@@ -368,7 +463,7 @@ class ProviderConfigurationControllerTest {
         assertNotNull(response.getBody());
         assertEquals(true, response.getBody().get("success"));
         assertEquals(false, response.getBody().get("registered"));
-        verify(persistenceService, never()).saveConfigurationFromConsumerToken(any());
+        verify(persistenceService, never()).persistConsumerRegistration(any());
         verify(registrationService, never()).markAsRegistered(any());
     }
 
@@ -387,7 +482,7 @@ class ProviderConfigurationControllerTest {
         assertNotNull(response.getBody());
         assertEquals(false, response.getBody().get("success"));
         assertEquals("Invalid consumer provisioning token", response.getBody().get("error"));
-        verify(persistenceService, never()).saveConfigurationFromConsumerToken(any());
+        verify(persistenceService, never()).persistConsumerRegistration(any());
         verify(registrationService, never()).register(any());
     }
 

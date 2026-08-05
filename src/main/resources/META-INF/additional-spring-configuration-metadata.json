@@ -504,6 +504,12 @@
     "defaultValue": "preferred"
   },
   {
+    "name": "blockchain.services.mode",
+    "type": "java.lang.String",
+    "description": "Explicit backend role: provider-consumer or consumer-only. Independent of the parent gateway topology.",
+    "defaultValue": ""
+  },
+  {
     "name": "features.providers.enabled",
     "type": "java.lang.Boolean",
     "description": "Enable provider features and provider-side reservation confirmation/denial automation.",

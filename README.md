@@ -27,11 +27,19 @@ documents are the [architecture guide](docs/architecture/ARCHITECTURE.md),
 
 | Mode | Enablement | Intended use | Provider/auth endpoints |
 | --- | --- | --- | --- |
-| Provider + consumer | `FEATURES_PROVIDERS_ENABLED=true` | Full Lab Gateway backend | Enabled |
-| Consumer-only | `FEATURES_PROVIDERS_ENABLED=false` (default) | Standalone institution funding its own reservations | Disabled |
+| Provider + consumer | `BLOCKCHAIN_SERVICES_MODE=provider-consumer` | Full or standalone control-plane backend | Enabled |
+| Consumer-only | `BLOCKCHAIN_SERVICES_MODE=consumer-only` (packaged default) | Standalone institution funding its own reservations | Disabled |
 
-`FEATURES_PROVIDERS_REGISTRATION_ENABLED` independently controls provider
-registration. `FEATURES_ORGANIZATIONS_ENABLED` controls organization features.
+`BLOCKCHAIN_SERVICES_MODE` is the explicit backend role and is independent of
+the parent gateway topology. Set it to `provider-consumer` or `consumer-only`.
+When it is left empty, the service keeps the historical
+`FEATURES_PROVIDERS_ENABLED` value as a fallback. An explicit role always wins,
+so changing `ISSUER` or placing the process behind a Lite gateway cannot
+silently enable provider operations.
+
+`FEATURES_PROVIDERS_REGISTRATION_ENABLED` controls provider registration within
+the `provider-consumer` role; it can never elevate a `consumer-only` backend.
+`FEATURES_ORGANIZATIONS_ENABLED` controls organization features.
 The parent Lab Gateway selects Full versus Lite at the gateway boundary; a Lite
 gateway does not become the primary identity authority merely because this
 backend is present.
@@ -105,6 +113,12 @@ browser ceremony and completion are intentionally session-bound; see the
   [wallet/billing guide](docs/services/wallet/WALLET_BILLING.md).
 - Provisioning: `GET /institution-config/status` plus the challenge/approval
   flow under `POST /institution-config/*`.
+- After Marketplace confirms the on-chain registration, the backend commits the
+  token-derived configuration and the role flag (`provider.registered` or
+  `consumer.registered`) as one atomic `provider.properties` replacement. A
+  failed local commit leaves the previous snapshot intact and must be retried
+  or reconciled against the chain; the filesystem write is not treated as a
+  rollback of an already-mined transaction.
 - Compliance exports: `/billing/compliance/**`.
 - Lab administration: `/lab-admin/**` and `/lab-content/**`; see
   [Lab administration and content](docs/services/lab-administration/LAB_ADMINISTRATION.md).

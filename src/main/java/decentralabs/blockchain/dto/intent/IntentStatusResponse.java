@@ -10,6 +10,7 @@ public class IntentStatusResponse {
     private Long blockNumber;
     private String labId;
     private String reservationKey;
+    private String reservationStatus;
     private String error;
     private String updatedAt;
 
@@ -59,6 +60,14 @@ public class IntentStatusResponse {
 
     public void setReservationKey(String reservationKey) {
         this.reservationKey = reservationKey;
+    }
+
+    public String getReservationStatus() {
+        return reservationStatus;
+    }
+
+    public void setReservationStatus(String reservationStatus) {
+        this.reservationStatus = reservationStatus;
     }
 
     public String getError() {

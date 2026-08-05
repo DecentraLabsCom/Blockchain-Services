@@ -6,8 +6,10 @@ Ops Worker.
 
 ## Runtime boundary
 
-`FEATURES_PROVIDERS_ENABLED=true` selects provider+consumer operation. The
-repository default is `false`, for a standalone consumer deployment. The
+`BLOCKCHAIN_SERVICES_MODE=provider-consumer` selects provider+consumer
+operation. `consumer-only` is the repository default for a standalone consumer
+deployment. `FEATURES_PROVIDERS_ENABLED` is retained only as a fallback when
+the explicit mode is absent. The
 feature condition applies to the OIDC/JWKS and FMU controller classes; it does
 not remove the `SamlAuthController` `/auth` mappings. Treat those mappings as a
 provider integration surface only in the intended Full topology, and retain the

@@ -307,6 +307,7 @@ public class IntentService {
         response.setBlockNumber(record.getBlockNumber());
         response.setLabId(record.getLabId());
         response.setReservationKey(record.getReservationKey());
+        response.setReservationStatus(resolveReservationStatus(record));
         response.setError(record.getError() != null ? record.getError() : record.getReason());
         response.setUpdatedAt(DateTimeFormatter.ISO_INSTANT.format(record.getUpdatedAt()));
         return response;
@@ -1277,6 +1278,36 @@ public class IntentService {
         return Optional.of(record.getPucHash());
     }
 
+    /**
+     * Updates the reservation lifecycle projection without changing the
+     * intent lifecycle. Provider confirmation is a separate on-chain event
+     * and must be observable by webhook consumers as such.
+     */
+    public void updateReservationStatusByReservationKey(String reservationKey, String reservationStatus) {
+        String normalized = normalizeBytes32(reservationKey);
+        if (normalized == null || reservationStatus == null || reservationStatus.isBlank()) {
+            return;
+        }
+
+        IntentRecord record = intents.values().stream()
+            .filter(intent -> normalized.equalsIgnoreCase(intent.getReservationKey()))
+            .findFirst()
+            .orElse(null);
+        if (record == null) {
+            record = persistenceService.findByReservationKey(normalized).orElse(null);
+            if (record != null && record.getRequestId() != null) {
+                intents.put(record.getRequestId(), record);
+            }
+        }
+        if (record == null || reservationStatus.equalsIgnoreCase(record.getReservationStatus())) {
+            return;
+        }
+
+        record.setReservationStatus(reservationStatus.toLowerCase(Locale.ROOT));
+        persistenceService.upsert(record);
+        webhookService.notify(record);
+    }
+
     public void markInProgress(IntentRecord record) {
         record.setStatus(IntentStatus.IN_PROGRESS);
         persistenceService.upsert(record);
@@ -1288,6 +1319,17 @@ public class IntentService {
     }
 
     public void markExecuted(IntentRecord record, String txHash, Long blockNumber, String labId, String reservationKey) {
+        markExecuted(record, txHash, blockNumber, labId, reservationKey, null);
+    }
+
+    public void markExecuted(
+        IntentRecord record,
+        String txHash,
+        Long blockNumber,
+        String labId,
+        String reservationKey,
+        String reservationStatus
+    ) {
         record.setStatus(IntentStatus.EXECUTED);
         record.setTxHash(txHash);
         record.setBlockNumber(blockNumber);
@@ -1296,6 +1338,9 @@ public class IntentService {
         }
         if (reservationKey != null) {
             record.setReservationKey(reservationKey);
+        }
+        if (reservationStatus != null && !reservationStatus.isBlank()) {
+            record.setReservationStatus(reservationStatus);
         }
         record.clearExecutionPayload();
         persistenceService.upsert(record);
@@ -1322,7 +1367,7 @@ public class IntentService {
     }
 
     public void updateFromOnChain(String requestId, String status, String txHash, Long blockNumber, String labId, String reservationKey, String reason) {
-        updateFromOnChain(requestId, status, txHash, blockNumber, labId, reservationKey, null, reason);
+        updateFromOnChain(requestId, status, txHash, blockNumber, labId, reservationKey, null, null, reason);
     }
 
     public void updateFromOnChain(
@@ -1333,6 +1378,20 @@ public class IntentService {
         String labId,
         String reservationKey,
         String pucHash,
+        String reason
+    ) {
+        updateFromOnChain(requestId, status, txHash, blockNumber, labId, reservationKey, pucHash, null, reason);
+    }
+
+    public void updateFromOnChain(
+        String requestId,
+        String status,
+        String txHash,
+        Long blockNumber,
+        String labId,
+        String reservationKey,
+        String pucHash,
+        String reservationStatus,
         String reason
     ) {
         IntentRecord record = intents.computeIfAbsent(requestId, key -> new IntentRecord(requestId, null, null));
@@ -1348,6 +1407,9 @@ public class IntentService {
         if (pucHash != null && pucHash.matches("0x[0-9a-fA-F]{64}")) {
             record.setPucHash(PucHashUtil.normalizeBytes32(pucHash));
         }
+        if (reservationStatus != null && !reservationStatus.isBlank()) {
+            record.setReservationStatus(reservationStatus);
+        }
         record.setReason(reason);
         record.setError(reason);
         if (record.getStatus() == IntentStatus.EXECUTED
@@ -1357,6 +1419,83 @@ public class IntentService {
         }
         persistenceService.upsert(record);
         webhookService.notify(record);
+    }
+
+    /**
+     * Reads the reservation lifecycle independently from the intent lifecycle.
+     * A successful intent transaction only proves that the registered operation
+     * was consumed; the reservation state remains authoritative on-chain.
+     */
+    String resolveReservationStatus(IntentRecord record) {
+        if (record == null) {
+            return null;
+        }
+        if (!isReservationAction(record.getAction())) {
+            // Event recovery can reconstruct a record before its action
+            // metadata is available. In that case an explicitly observed
+            // lifecycle state is still useful, but never invent one.
+            return record.getAction() == null ? record.getReservationStatus() : null;
+        }
+        if (record.getStatus() != IntentStatus.EXECUTED && record.getReservationStatus() == null) {
+            return null;
+        }
+
+        String reservationKey = normalizeBytes32(record.getReservationKey());
+        if (reservationKey == null) {
+            return "unknown";
+        }
+
+        try {
+            Web3j web3j = walletService.getWeb3jInstance();
+            Diamond diamond = Diamond.load(
+                contractAddress,
+                web3j,
+                new ReadonlyTransactionManager(web3j, contractAddress),
+                new StaticGasProvider(BigInteger.ZERO, BigInteger.ZERO)
+            );
+            Diamond.Reservation reservation = diamond.getReservation(Numeric.hexStringToByteArray(reservationKey)).send();
+            if (reservation == null || reservation.status == null) {
+                return "unknown";
+            }
+            return reservationStatusName(reservation.status);
+        } catch (Exception ex) {
+            log.debug(
+                "Unable to resolve reservation state for intent {}: {}",
+                LogSanitizer.maskIdentifier(record.getRequestId()),
+                LogSanitizer.sanitize(ex.getMessage())
+            );
+            // A persisted non-confirmed state is safe to retain during a
+            // transient read outage. Never retain CONFIRMED without a fresh
+            // chain read, because that would recreate the original bug.
+            String persisted = record.getReservationStatus();
+            return isConfirmedReservationStatus(persisted) ? "unknown" :
+                (persisted == null || persisted.isBlank() ? "unknown" : persisted);
+        }
+    }
+
+    private boolean isReservationAction(String action) {
+        IntentAction intentAction = IntentAction.fromWireValue(action).orElse(null);
+        return intentAction != null && intentAction.usesReservationPayload();
+    }
+
+    private String reservationStatusName(BigInteger status) {
+        if (status == null) return "unknown";
+        return switch (status.intValue()) {
+            case 0 -> "pending";
+            case 1 -> "confirmed";
+            case 2 -> "access_authorized";
+            case 3 -> "settled";
+            case 4 -> "cancelled";
+            default -> "unknown";
+        };
+    }
+
+    private boolean isConfirmedReservationStatus(String status) {
+        if (status == null) return false;
+        return switch (status.toLowerCase(Locale.ROOT)) {
+            case "confirmed", "access_authorized", "settled", "collected" -> true;
+            default -> false;
+        };
     }
 
     private IntentStatus mapWireStatus(String status) {

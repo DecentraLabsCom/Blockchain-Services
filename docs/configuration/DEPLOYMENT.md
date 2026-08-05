@@ -8,16 +8,24 @@ repository is not the default deployment target.
 
 | Topology | Backend role | Required choices |
 | --- | --- | --- |
-| Lab Gateway Full | Embedded provider and consumer backend | Enable provider features; configure the gateway as the local issuer and persist MySQL, `/app/data` and lab content. |
+| Lab Gateway Full | Embedded provider and consumer backend | Set `BLOCKCHAIN_SERVICES_MODE=provider-consumer`; configure the gateway as the local issuer and persist MySQL, `/app/data` and lab content. |
 | Lab Gateway Lite | Edge that trusts a remote Full gateway | The parent gateway's `ISSUER` points at Full. This backend does not make Lite an identity authority. Configure only the edge capabilities that the deployment needs. |
-| Standalone consumer | Institution wallet, funding and consumer operations | Leave provider features disabled unless a provider flow is intentionally enabled. |
+| Standalone consumer | Institution wallet, funding and consumer operations | Set `BLOCKCHAIN_SERVICES_MODE=consumer-only`; provider routes and automation remain disabled. |
 
-`FEATURES_PROVIDERS_ENABLED=false` is the packaged default. It controls the
-provider operating mode and the controllers that are explicitly conditional
-(OIDC/JWKS and FMU endpoints). It is not a substitute for network isolation:
-the SAML controller's `/auth` mappings are present in the application, so a
-consumer-only deployment must not expose provider access routes as a public
-integration surface.
+`BLOCKCHAIN_SERVICES_MODE` controls the backend role independently of the
+gateway topology and must be set explicitly for new deployments:
+
+```env
+BLOCKCHAIN_SERVICES_MODE=consumer-only     # or provider-consumer
+```
+
+`FEATURES_PROVIDERS_ENABLED=false` remains the packaged fallback for older
+configurations. An explicit mode wins over that flag. The parent gateway owns
+the Full/Lite topology; changing `ISSUER` or adding a Lite access plane must not
+change a backend from consumer-only to provider-consumer. It is not a
+substitute for network isolation: the SAML controller's `/auth` mappings are
+present in the application, so a consumer-only deployment must not expose
+provider access routes as a public integration surface.
 
 ## 2. Persistent state is required in production
 

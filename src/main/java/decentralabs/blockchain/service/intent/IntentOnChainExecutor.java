@@ -32,16 +32,21 @@ import org.web3j.protocol.core.methods.response.EthCall;
 import org.web3j.protocol.core.methods.response.EthSendTransaction;
 import org.web3j.protocol.core.methods.response.Log;
 import org.web3j.protocol.core.methods.response.TransactionReceipt;
+import org.web3j.tx.ReadonlyTransactionManager;
 import org.web3j.tx.TransactionManager;
+import org.web3j.tx.gas.StaticGasProvider;
 import org.web3j.utils.Numeric;
 
 import jakarta.annotation.PreDestroy;
 import decentralabs.blockchain.dto.intent.ActionIntentPayload;
+import decentralabs.blockchain.dto.intent.IntentAction;
 import decentralabs.blockchain.dto.intent.ReservationIntentPayload;
+import decentralabs.blockchain.contract.Diamond;
 import decentralabs.blockchain.service.wallet.InstitutionalWalletService;
 import decentralabs.blockchain.service.wallet.InstitutionalTxManagerProvider;
 import decentralabs.blockchain.service.wallet.WalletService;
 import decentralabs.blockchain.service.labadmin.LabContentRetentionService;
+import decentralabs.blockchain.util.LogSanitizer;
 import lombok.extern.slf4j.Slf4j;
 
 @Service
@@ -100,7 +105,26 @@ public class IntentOnChainExecutor {
         });
     }
 
-    public record ExecutionResult(boolean success, String txHash, Long blockNumber, String labId, String reservationKey, String reason) { }
+    public record ExecutionResult(
+        boolean success,
+        String txHash,
+        Long blockNumber,
+        String labId,
+        String reservationKey,
+        String reason,
+        String reservationStatus
+    ) {
+        public ExecutionResult(
+            boolean success,
+            String txHash,
+            Long blockNumber,
+            String labId,
+            String reservationKey,
+            String reason
+        ) {
+            this(success, txHash, blockNumber, labId, reservationKey, reason, null);
+        }
+    }
 
     public ExecutionResult execute(IntentRecord record) throws Exception {
         String action = record.getAction() == null ? "" : record.getAction().toUpperCase(Locale.ROOT);
@@ -225,8 +249,15 @@ public class IntentOnChainExecutor {
                     TransactionReceipt receipt = waitForReceipt(web3j, retryHash);
                     Long blockNumber = receipt.getBlockNumber() != null ? receipt.getBlockNumber().longValue() : null;
                     String labId = receipt.isStatusOK() ? extractMintedTokenId(action, receipt) : null;
-                    return new ExecutionResult(receipt.isStatusOK(), retryHash, blockNumber, labId, null,
-                        receipt.isStatusOK() ? null : inferRevertReason(receipt, gas));
+                    return new ExecutionResult(
+                        receipt.isStatusOK(),
+                        retryHash,
+                        blockNumber,
+                        labId,
+                        null,
+                        receipt.isStatusOK() ? null : inferRevertReason(receipt, gas),
+                        receipt.isStatusOK() ? resolveReservationStatus(record) : null
+                    );
                 }
             }
             return new ExecutionResult(false, null, null, null, null, error);
@@ -236,11 +267,65 @@ public class IntentOnChainExecutor {
             TransactionReceipt receipt = waitForReceipt(web3j, txHash);
             Long blockNumber = receipt.getBlockNumber() != null ? receipt.getBlockNumber().longValue() : null;
             String labId = receipt.isStatusOK() ? extractMintedTokenId(action, receipt) : null;
-            return new ExecutionResult(receipt.isStatusOK(), txHash, blockNumber, labId, null,
-                receipt.isStatusOK() ? null : inferRevertReason(receipt, gas));
+            return new ExecutionResult(
+                receipt.isStatusOK(),
+                txHash,
+                blockNumber,
+                labId,
+                null,
+                receipt.isStatusOK() ? null : inferRevertReason(receipt, gas),
+                receipt.isStatusOK() ? resolveReservationStatus(record) : null
+            );
         } catch (Exception ex) {
             log.warn("Failed to get tx receipt for {}: {}", txHash, ex.getMessage());
             return new ExecutionResult(false, txHash, null, null, null, "receipt_error: " + ex.getMessage());
+        }
+    }
+
+    /**
+     * Resolves the reservation lifecycle after a mined transaction. Receipt
+     * success is intentionally not used as a confirmation signal: external
+     * requests remain PENDING until the provider confirms them, while direct
+     * bookings must read CONFIRMED (or a later lifecycle state) from the chain.
+     */
+    protected String resolveReservationStatus(IntentRecord record) {
+        if (record == null || !IntentAction.fromWireValue(record.getAction())
+            .map(action -> action != null && action.usesReservationPayload()).orElse(false)) {
+            return null;
+        }
+        String reservationKey = record.getReservationKey();
+        if (reservationKey == null || !reservationKey.matches("0x[0-9a-fA-F]{64}")) {
+            return "unknown";
+        }
+        try {
+            Web3j web3j = resolveWeb3j();
+            Diamond diamond = Diamond.load(
+                contractAddress,
+                web3j,
+                new ReadonlyTransactionManager(web3j, contractAddress),
+                new StaticGasProvider(BigInteger.ZERO, BigInteger.ZERO)
+            );
+            Diamond.Reservation reservation = diamond
+                .getReservation(Numeric.hexStringToByteArray(reservationKey))
+                .send();
+            if (reservation == null || reservation.status == null) {
+                return "unknown";
+            }
+            return switch (reservation.status.intValue()) {
+                case 0 -> "pending";
+                case 1 -> "confirmed";
+                case 2 -> "access_authorized";
+                case 3 -> "settled";
+                case 4 -> "cancelled";
+                default -> "unknown";
+            };
+        } catch (Exception ex) {
+            log.warn(
+                "Unable to resolve reservation state after intent {} execution: {}",
+                LogSanitizer.maskIdentifier(record.getRequestId()),
+                LogSanitizer.sanitize(ex.getMessage())
+            );
+            return "unknown";
         }
     }
 

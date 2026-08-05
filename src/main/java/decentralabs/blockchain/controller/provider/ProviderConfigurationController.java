@@ -1,5 +1,6 @@
 package decentralabs.blockchain.controller.provider;
 
+import decentralabs.blockchain.config.BackendOperatingMode;
 import decentralabs.blockchain.dto.provider.ConsumerProvisioningTokenPayload;
 import decentralabs.blockchain.dto.provider.ProviderConfigurationResponse;
 import decentralabs.blockchain.dto.provider.ProvisioningTokenPayload;
@@ -12,6 +13,7 @@ import decentralabs.blockchain.service.organization.ProvisioningPairingPreparati
 import decentralabs.blockchain.service.organization.ProviderConfigurationPersistenceService;
 import decentralabs.blockchain.service.organization.ProvisioningTokenService;
 import jakarta.validation.Valid;
+import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -62,6 +64,9 @@ public class ProviderConfigurationController {
     @Value("${features.providers.enabled:false}")
     private boolean providersEnabled;
 
+    @Value("${blockchain.services.mode:}")
+    private String configuredOperatingMode;
+
     @Value("${features.providers.registration.enabled:false}")
     private boolean providerRegistrationEnabled;
 
@@ -82,6 +87,11 @@ public class ProviderConfigurationController {
 
     // Note: GET /institution-config and /institution-config/ are handled by WebConfig
     // to serve static HTML without controller interference
+
+    @PostConstruct
+    void applyConfiguredOperatingMode() {
+        providersEnabled = BackendOperatingMode.providerConsumer(configuredOperatingMode, providersEnabled);
+    }
 
     /**
      * Get current provider configuration status
@@ -109,7 +119,7 @@ public class ProviderConfigurationController {
             .isRegistered(registered)
             .providerRegistered(snapshot.providerRegistered())
             .consumerRegistered(snapshot.consumerRegistered())
-            .providerRegistrationEnabled(providerRegistrationEnabled)
+            .providerRegistrationEnabled(providersEnabled && providerRegistrationEnabled)
             .operatingMode(providersEnabled ? "provider-consumer" : "consumer-only")
             .registrationRole(registrationRole)
             .fromProvisioningToken(fromToken || fromConsumerToken)
@@ -156,8 +166,11 @@ public class ProviderConfigurationController {
     ) {
         Map<String, Object> response = new HashMap<>();
         try {
-            ProvisioningPairingPreparation preparation = registrationService.preparePairing(request.getChallenge());
-            if (InstitutionRole.PROVIDER.name().equals(preparation.registrationType())) {
+            ProvisioningPairingPreparation preparation = registrationService.preparePairing(
+                request.getChallenge(),
+                providersEnabled && providerRegistrationEnabled
+            );
+            if (InstitutionRole.PROVIDER.name().equalsIgnoreCase(preparation.registrationType())) {
                 ensureProviderRegistrationEnabled();
             }
             response.put("success", true);
@@ -198,13 +211,13 @@ public class ProviderConfigurationController {
             String registrationType = readRegistrationType(token);
             boolean registered;
             if (InstitutionRole.PROVIDER.name().equals(registrationType)) {
+                ensureProviderRegistrationEnabled();
                 ProvisioningTokenPayload payload = provisioningTokenService.validateAndExtract(
                     token, snapshot.marketplaceBaseUrl(), snapshot.publicBaseUrl()
                 );
                 registered = registrationService.register(buildProviderRegistrationRequest(token, payload));
                 if (registered) {
-                    persistenceService.saveConfigurationFromToken(payload);
-                    registrationService.markAsRegistered(InstitutionRole.PROVIDER);
+                    persistenceService.persistProviderRegistration(payload);
                 }
             } else {
                 ConsumerProvisioningTokenPayload payload = provisioningTokenService.validateAndExtractConsumer(
@@ -212,8 +225,7 @@ public class ProviderConfigurationController {
                 );
                 registered = registrationService.register(buildConsumerRegistrationRequest(token, payload));
                 if (registered) {
-                    persistenceService.saveConfigurationFromConsumerToken(payload);
-                    registrationService.markAsRegistered(InstitutionRole.CONSUMER);
+                    persistenceService.persistConsumerRegistration(payload);
                 }
             }
             response.put("success", true);
@@ -226,10 +238,21 @@ public class ProviderConfigurationController {
             response.put("success", false);
             response.put("error", "Pairing has not been approved yet");
             return ResponseEntity.status(e.getStatusCode()).body(response);
+        } catch (IllegalStateException e) {
+            response.put("success", false);
+            response.put("error", e.getMessage());
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).body(response);
         } catch (IllegalArgumentException e) {
             response.put("success", false);
             response.put("error", e.getMessage());
             return ResponseEntity.badRequest().body(response);
+        } catch (java.io.IOException e) {
+            log.error("Remote registration completed but local snapshot could not be committed", e);
+            response.put("success", false);
+            response.put("registered", false);
+            response.put("code", "LOCAL_REGISTRATION_PERSISTENCE_FAILED");
+            response.put("error", "Remote registration completed, but local registration state could not be saved. Retry the operation.");
+            return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).body(response);
         } catch (Exception e) {
             log.error("Failed to complete institutional backend pairing", e);
             response.put("success", false);
@@ -273,10 +296,9 @@ public class ProviderConfigurationController {
             boolean registered = registrationService.register(registrationRequest);
 
             if (registered) {
-                // Persist only after the remote registration has completed.
-                persistenceService.saveConfigurationFromToken(payload);
-                // Mark as registered in config file
-                registrationService.markAsRegistered(InstitutionRole.PROVIDER);
+                // Commit configuration and registration marker as one local snapshot
+                // only after the remote registration has completed.
+                persistenceService.persistProviderRegistration(payload);
             }
 
             response.put("success", true);
@@ -304,6 +326,13 @@ public class ProviderConfigurationController {
             response.put("success", false);
             response.put("error", e.getMessage());
             return ResponseEntity.badRequest().body(response);
+        } catch (java.io.IOException e) {
+            log.error("Remote registration completed but local provider snapshot could not be committed", e);
+            response.put("success", false);
+            response.put("registered", false);
+            response.put("code", "LOCAL_REGISTRATION_PERSISTENCE_FAILED");
+            response.put("error", "Remote registration completed, but local registration state could not be saved. Retry the operation.");
+            return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).body(response);
         } catch (Exception e) {
             log.error("Failed to apply provisioning token", e);
             response.put("success", false);
@@ -343,11 +372,10 @@ public class ProviderConfigurationController {
 
             boolean registered = registrationService.register(registrationRequest);
 
-            // Mark as registered in config file if successful
             if (registered) {
-                // Persist only after the remote registration has completed.
-                persistenceService.saveConfigurationFromConsumerToken(payload);
-                registrationService.markAsRegistered(InstitutionRole.CONSUMER);
+                // Commit configuration and registration marker as one local snapshot
+                // only after the remote registration has completed.
+                persistenceService.persistConsumerRegistration(payload);
             }
 
             response.put("success", true);
@@ -369,6 +397,13 @@ public class ProviderConfigurationController {
             response.put("success", false);
             response.put("error", e.getMessage());
             return ResponseEntity.badRequest().body(response);
+        } catch (java.io.IOException e) {
+            log.error("Remote consumer registration completed but local snapshot could not be committed", e);
+            response.put("success", false);
+            response.put("registered", false);
+            response.put("code", "LOCAL_REGISTRATION_PERSISTENCE_FAILED");
+            response.put("error", "Remote registration completed, but local registration state could not be saved. Retry the operation.");
+            return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).body(response);
         } catch (Exception e) {
             log.error("Failed to apply consumer provisioning token", e);
             response.put("success", false);
@@ -489,7 +524,7 @@ public class ProviderConfigurationController {
     ) {}
 
     private void ensureProviderRegistrationEnabled() {
-        if (!providerRegistrationEnabled) {
+        if (!providersEnabled || !providerRegistrationEnabled) {
             throw new IllegalStateException(
                 "Provider registration is disabled in this deployment. Use the consumer provisioning flow from /wallet-dashboard instead."
             );

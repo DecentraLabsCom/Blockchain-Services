@@ -32,6 +32,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
+import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -305,6 +306,17 @@ public class ContractEventListenerConfig {
     /** Provider-side confirmation and denial automation is opt-in. */
     @Value("${features.providers.enabled:false}")
     private boolean providerFeaturesEnabled;
+
+    @Value("${blockchain.services.mode:}")
+    private String configuredOperatingMode;
+
+    @PostConstruct
+    void applyConfiguredOperatingMode() {
+        providerFeaturesEnabled = BackendOperatingMode.providerConsumer(
+            configuredOperatingMode,
+            providerFeaturesEnabled
+        );
+    }
 
     @Value("${contract.event.start.block:latest}")
     private String startBlock;
@@ -671,6 +683,7 @@ public class ContractEventListenerConfig {
 
         dispatchReservationLifecycleEvent("confirmed", payload);
         persistLifecycle(payload, "CONFIRMED");
+        intentService.updateReservationStatusByReservationKey(reservationKey, "confirmed");
     }
 
     private void handleReservationDenied(EventValues eventValues, Log eventLog) {
@@ -810,6 +823,11 @@ public class ContractEventListenerConfig {
         String reason = ((Utf8String) eventValues.getNonIndexedValues().get(5)).getValue();
 
         log.info("ReservationIntentProcessed requestId={} action={} reservationKey={} pucHash={} success={} tx={}", requestId, action, reservationKey, pucHash, success, eventLog.getTransactionHash());
+        String reservationStatus = buildPayloadFromChain(reservationKey)
+            .flatMap(payload -> payload.status())
+            .map(this::describeStatus)
+            .map(status -> status.toLowerCase(Locale.ROOT))
+            .orElse(null);
         intentService.updateFromOnChain(
             requestId,
             success ? "executed" : "failed",
@@ -818,6 +836,7 @@ public class ContractEventListenerConfig {
             null,
             reservationKey,
             pucHash,
+            reservationStatus,
             success ? null : reason
         );
     }
@@ -1525,6 +1544,12 @@ public class ContractEventListenerConfig {
             "event:confirm-institutional-reservation:" + reservationKey,
             contract -> contract.confirmInstitutionalReservationRequestWithPucHash(payerInstitution, keyBytes, onchainHash).send()
         );
+        if (receipt == null || (receipt.getStatus() != null && !receipt.isStatusOK())) {
+            String status = receipt == null ? "missing" : String.valueOf(receipt.getStatus());
+            throw new IllegalStateException(
+                "Provider confirmation transaction did not succeed for " + reservationKey + " (status=" + status + ")"
+            );
+        }
         log.info("Institutional reservation {} confirmed on-chain (tx={})", reservationKey, receipt.getTransactionHash());
     }
 

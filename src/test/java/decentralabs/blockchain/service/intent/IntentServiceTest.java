@@ -772,6 +772,26 @@ class IntentServiceTest {
         }
 
         @Test
+        @DisplayName("Should expose reservation state separately from executed intent status")
+        void shouldExposeReservationStateSeparatelyFromExecutedIntentStatus() {
+            String requestId = "reservation-req-789";
+            IntentRecord record = new IntentRecord(
+                requestId,
+                IntentAction.RESERVATION_REQUEST.getWireValue(),
+                "0xexecutor"
+            );
+            record.setStatus(IntentStatus.EXECUTED);
+            record.setReservationKey("0x" + "12".repeat(32));
+            record.setReservationStatus("pending");
+            when(persistenceService.findByRequestId(requestId)).thenReturn(Optional.of(record));
+
+            IntentStatusResponse response = service.getStatus(requestId);
+
+            assertEquals("executed", response.getStatus());
+            assertEquals("pending", response.getReservationStatus());
+        }
+
+        @Test
         @DisplayName("Should throw NOT_FOUND when request doesn't exist")
         void shouldThrowNotFoundForUnknownRequest() {
             when(persistenceService.findByRequestId(anyString())).thenReturn(Optional.empty());
@@ -785,6 +805,23 @@ class IntentServiceTest {
     @Nested
     @DisplayName("Status Update Tests")
     class StatusUpdateTests {
+
+        @Test
+        @DisplayName("Should publish provider confirmation separately from intent execution")
+        void shouldPublishProviderConfirmationSeparatelyFromIntentExecution() {
+            String reservationKey = "0x" + "45".repeat(32);
+            IntentRecord record = new IntentRecord("req-provider-confirmed", "RESERVATION_REQUEST", "0xexecutor");
+            record.setReservationKey(reservationKey);
+            record.setStatus(IntentStatus.EXECUTED);
+            record.setReservationStatus("pending");
+            when(persistenceService.findByReservationKey(reservationKey)).thenReturn(Optional.of(record));
+
+            service.updateReservationStatusByReservationKey(reservationKey, "confirmed");
+
+            assertEquals("confirmed", record.getReservationStatus());
+            verify(persistenceService).upsert(record);
+            verify(webhookService).notify(record);
+        }
 
         @Test
         @DisplayName("Should mark intent as in progress")

@@ -181,6 +181,7 @@ Marketplace deployment configuration.
 | `POST /institution-config/retry-registration` | Retired | Tokens are single-use; issue a new pairing |
 
 Provider registration endpoints additionally require
+`BLOCKCHAIN_SERVICES_MODE=provider-consumer` and
 `FEATURES_PROVIDERS_REGISTRATION_ENABLED=true`. Consumer token application does
 not require provider mode.
 

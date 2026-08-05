@@ -129,7 +129,8 @@ filter plus the configured access token.
 
 ## Pre-deployment checklist
 
-- [ ] Provider/consumer mode and Full/Lite topology are explicit.
+- [ ] `BLOCKCHAIN_SERVICES_MODE` (backend role) and Full/Lite topology are
+      configured independently and reviewed together.
 - [ ] JWT key pair, wallet encryption key and database storage are persistent.
 - [ ] `INTENT_PAYLOAD_ENCRYPTION_KEY` is a managed 32-byte key before any
       intent execution payload is persisted.

@@ -109,7 +109,18 @@ public class IntentExecutionService {
             intentService.markInProgress(record);
             IntentOnChainExecutor.ExecutionResult result = onChainExecutor.execute(record);
             if (result.success()) {
-                intentService.markExecuted(record, result.txHash(), result.blockNumber(), result.labId(), result.reservationKey());
+                if (result.reservationStatus() == null) {
+                    intentService.markExecuted(record, result.txHash(), result.blockNumber(), result.labId(), result.reservationKey());
+                } else {
+                    intentService.markExecuted(
+                        record,
+                        result.txHash(),
+                        result.blockNumber(),
+                        result.labId(),
+                        result.reservationKey(),
+                        result.reservationStatus()
+                    );
+                }
             } else {
                 log.warn("Intent {} failed on-chain: reason={} txHash={} blockNumber={}",
                     record.getRequestId(), result.reason(), result.txHash(), result.blockNumber());

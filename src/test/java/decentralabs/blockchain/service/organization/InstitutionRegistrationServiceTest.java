@@ -103,7 +103,8 @@ class InstitutionRegistrationServiceTest {
         ReflectionTestUtils.setField(service, "configuredPublicBaseUrl", "");
 
         ProvisioningPairingPreparation result = service.preparePairing(
-            "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+            "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            true
         );
 
         assertEquals("https://gateway.full.example", result.canonicalBackendOrigin());
@@ -140,11 +141,50 @@ class InstitutionRegistrationServiceTest {
         ReflectionTestUtils.setField(service, "configuredPublicBaseUrl", "https://override.example");
 
         ProvisioningPairingPreparation result = service.preparePairing(
-            "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+            "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            true
         );
 
         assertEquals("https://override.example", result.canonicalBackendOrigin());
         verify(backendUrlResolver, never()).resolveBaseDomain();
+    }
+
+    @Test
+    @DisplayName("Should reject disabled provider pairing before offering identity")
+    void shouldRejectDisabledProviderPairingBeforeOfferingIdentity() {
+        when(restTemplate.exchange(
+            anyString(),
+            eq(org.springframework.http.HttpMethod.POST),
+            any(HttpEntity.class),
+            ArgumentMatchers.<org.springframework.core.ParameterizedTypeReference<Map<String, Object>>>any()
+        )).thenReturn(ResponseEntity.ok(Map.of(
+            "institutionId", "institution-1",
+            "registrationType", "provider",
+            "chainId", 11_155_111L,
+            "registryContract", "0xregistry",
+            "issuedAt", 100L,
+            "expiresAt", 200L
+        )));
+
+        IllegalStateException exception = assertThrows(
+            IllegalStateException.class,
+            () -> service.preparePairing(
+                "0xcccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+                false
+            )
+        );
+
+        assertEquals(
+            "Provider registration is disabled in this deployment. Use the consumer provisioning flow from /wallet-dashboard instead.",
+            exception.getMessage()
+        );
+        verify(restTemplate).exchange(
+            anyString(),
+            eq(org.springframework.http.HttpMethod.POST),
+            any(HttpEntity.class),
+            ArgumentMatchers.<org.springframework.core.ParameterizedTypeReference<Map<String, Object>>>any()
+        );
+        verifyNoInteractions(walletService, walletProofService, backendUrlResolver);
     }
 
     @Test
@@ -178,7 +218,7 @@ class InstitutionRegistrationServiceTest {
         verify(restTemplate).postForEntity(urlCaptor.capture(), entityCaptor.capture(), eq(String.class));
         
         assertTrue(urlCaptor.getValue().contains("/api/institutions/registerProvider"));
-        verify(configPersistenceService).markAsRegistered(InstitutionRole.PROVIDER);
+        verify(configPersistenceService, never()).markAsRegistered(any());
     }
 
     @Test
@@ -207,7 +247,7 @@ class InstitutionRegistrationServiceTest {
         verify(restTemplate).postForEntity(urlCaptor.capture(), any(HttpEntity.class), eq(String.class));
         
         assertTrue(urlCaptor.getValue().contains("/api/institutions/registerConsumer"));
-        verify(configPersistenceService).markAsRegistered(InstitutionRole.CONSUMER);
+        verify(configPersistenceService, never()).markAsRegistered(any());
     }
 
     @Test

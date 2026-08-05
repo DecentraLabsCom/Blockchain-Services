@@ -6,10 +6,11 @@ import decentralabs.blockchain.dto.auth.FmuSessionTicketRedeemRequest;
 import decentralabs.blockchain.dto.auth.FmuSessionTicketRedeemResponse;
 import decentralabs.blockchain.service.auth.FmuSessionTicketService;
 import decentralabs.blockchain.service.auth.SessionTicketException;
+import decentralabs.blockchain.config.ProviderConsumerModeCondition;
 import java.util.Map;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.context.annotation.Conditional;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -20,7 +21,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 @RestController
 @RequestMapping("/auth/fmu/session-ticket")
-@ConditionalOnProperty(value = "features.providers.enabled", havingValue = "true", matchIfMissing = false)
+@Conditional(ProviderConsumerModeCondition.class)
 @RequiredArgsConstructor
 @Slf4j
 public class FmuSessionTicketController {

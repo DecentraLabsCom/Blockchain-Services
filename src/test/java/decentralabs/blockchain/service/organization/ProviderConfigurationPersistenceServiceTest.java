@@ -223,6 +223,59 @@ class ProviderConfigurationPersistenceServiceTest {
     }
 
     @Test
+    @DisplayName("Should persist provider registration configuration and flag in one committed snapshot")
+    void shouldPersistProviderRegistrationAtomically() throws IOException {
+        var payload = decentralabs.blockchain.dto.provider.ProvisioningTokenPayload.builder()
+            .marketplaceBaseUrl("https://marketplace.example.com")
+            .providerName("Token University")
+            .providerEmail("token@university.edu")
+            .providerCountry("ES")
+            .institutionId("token.edu")
+            .walletAddress("0x1234567890123456789012345678901234567890")
+            .canonicalBackendOrigin("https://token.university.edu")
+            .jti("test-jti-atomic")
+            .build();
+
+        service.persistProviderRegistration(payload);
+
+        Properties props = service.loadConfigurationSafe();
+        assertEquals("https://marketplace.example.com", props.getProperty("marketplace.base-url"));
+        assertEquals("Token University", props.getProperty("provider.name"));
+        assertEquals("token.edu", props.getProperty("provider.organization"));
+        assertEquals("token", props.getProperty("provisioning.source"));
+        assertEquals("true", props.getProperty("provider.registered"));
+        assertEquals(
+            "0x1111111111111111111111111111111111111111",
+            props.getProperty("provider.registered.contract.address")
+        );
+    }
+
+    @Test
+    @DisplayName("Should persist consumer registration configuration and flag in one committed snapshot")
+    void shouldPersistConsumerRegistrationAtomically() throws IOException {
+        var payload = decentralabs.blockchain.dto.provider.ConsumerProvisioningTokenPayload.builder()
+            .marketplaceBaseUrl("https://marketplace.example.com")
+            .consumerName("Consumer University")
+            .institutionId("consumer.edu")
+            .walletAddress("0x1234567890123456789012345678901234567890")
+            .canonicalBackendOrigin("https://consumer.university.edu")
+            .jti("test-jti-consumer-atomic")
+            .build();
+
+        service.persistConsumerRegistration(payload);
+
+        Properties props = service.loadConfigurationSafe();
+        assertEquals("https://marketplace.example.com", props.getProperty("marketplace.base-url"));
+        assertEquals("Consumer University", props.getProperty("consumer.name"));
+        assertEquals("consumer.edu", props.getProperty("provider.organization"));
+        assertEquals("true", props.getProperty("consumer.registered"));
+        assertEquals(
+            "0x1111111111111111111111111111111111111111",
+            props.getProperty("consumer.registered.contract.address")
+        );
+    }
+
+    @Test
     @DisplayName("Should handle registered flag correctly across save and mark operations")
     void shouldHandleRegisteredFlagCorrectly() throws IOException {
         // Initial save

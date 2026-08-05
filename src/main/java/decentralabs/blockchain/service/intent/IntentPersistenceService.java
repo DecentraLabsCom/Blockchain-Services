@@ -44,11 +44,11 @@ public class IntentPersistenceService {
             requireJdbcTemplate().update(
                 """
                 INSERT INTO intents (
-                    request_id, status, action, provider, lab_id, reservation_key,
+                    request_id, status, action, provider, lab_id, reservation_key, reservation_status,
                     puc_hash,
                     tx_hash, block_number, error, reason, updated_at, created_at,
                     nonce, expires_at, payload_json
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON DUPLICATE KEY UPDATE
                     status = VALUES(status),
                     tx_hash = VALUES(tx_hash),
@@ -58,6 +58,7 @@ public class IntentPersistenceService {
                     updated_at = VALUES(updated_at),
                     lab_id = VALUES(lab_id),
                     reservation_key = VALUES(reservation_key),
+                    reservation_status = VALUES(reservation_status),
                     puc_hash = VALUES(puc_hash),
                     nonce = VALUES(nonce),
                     expires_at = VALUES(expires_at),
@@ -69,6 +70,7 @@ public class IntentPersistenceService {
                 record.getProvider(),
                 record.getLabId(),
                 record.getReservationKey(),
+                record.getReservationStatus(),
                 record.getPucHash(),
                 record.getTxHash(),
                 record.getBlockNumber(),
@@ -186,6 +188,7 @@ public class IntentPersistenceService {
         record.setStatus(IntentStatus.valueOf(rs.getString("status").toUpperCase().replace('-', '_')));
         record.setLabId(rs.getString("lab_id"));
         record.setReservationKey(rs.getString("reservation_key"));
+        record.setReservationStatus(rs.getString("reservation_status"));
         record.setPucHash(rs.getString("puc_hash"));
         record.setTxHash(rs.getString("tx_hash"));
         record.setBlockNumber(rs.getObject("block_number", Long.class));

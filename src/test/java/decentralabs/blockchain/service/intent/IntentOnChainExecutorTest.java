@@ -705,7 +705,8 @@ class IntentOnChainExecutorTest {
                 12345L,
                 "lab-1",
                 "0xreservationkey",
-                null
+                null,
+                "pending"
             );
 
             assertThat(result.success()).isTrue();
@@ -714,6 +715,7 @@ class IntentOnChainExecutorTest {
             assertThat(result.labId()).isEqualTo("lab-1");
             assertThat(result.reservationKey()).isEqualTo("0xreservationkey");
             assertThat(result.reason()).isNull();
+            assertThat(result.reservationStatus()).isEqualTo("pending");
         }
 
         @Test

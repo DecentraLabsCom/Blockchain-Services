@@ -320,6 +320,35 @@ class IntentExecutionServiceTest {
         }
 
         @Test
+        @DisplayName("Should propagate reservation state separately from successful transaction")
+        void shouldPropagateReservationStateSeparatelyFromSuccessfulTransaction() throws Exception {
+            IntentRecord intent = createIntentRecord("req-reservation-state", "RESERVATION_REQUEST", IntentStatus.QUEUED);
+            intent.setReservationKey("0x" + "78".repeat(32));
+            when(intentService.findByRequestId("req-reservation-state")).thenReturn(Optional.of(intent));
+            when(onChainExecutor.execute(intent))
+                .thenReturn(new ExecutionResult(
+                    true,
+                    "0xreservation",
+                    104L,
+                    null,
+                    "0x" + "78".repeat(32),
+                    null,
+                    "pending"
+                ));
+
+            executionService.processQueuedIntent("req-reservation-state");
+
+            verify(intentService).markExecuted(
+                intent,
+                "0xreservation",
+                104L,
+                null,
+                "0x" + "78".repeat(32),
+                "pending"
+            );
+        }
+
+        @Test
         @DisplayName("Should not auto-approve direct bookings after execution")
         void shouldNotAutoApproveDirectBookingsAfterExecution() throws Exception {
             // Given

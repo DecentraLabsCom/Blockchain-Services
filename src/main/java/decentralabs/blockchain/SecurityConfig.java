@@ -1,5 +1,6 @@
 package decentralabs.blockchain;
 
+import decentralabs.blockchain.config.BackendOperatingMode;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.LinkedHashSet;
@@ -16,6 +17,7 @@ import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 import jakarta.annotation.Nonnull;
+import jakarta.annotation.PostConstruct;
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 import org.springframework.web.cors.CorsConfigurationSource;
@@ -75,6 +77,9 @@ public class SecurityConfig {
     @Value("${features.providers.enabled:false}")
     private boolean providersEnabled;
 
+    @Value("${blockchain.services.mode:}")
+    private String configuredOperatingMode;
+
     private final AccessTokenAuthenticationFilter accessTokenAuthenticationFilter;
     private final PreAuthenticationRateLimitFilter preAuthenticationRateLimitFilter;
     private final PublicEndpointRateLimitFilter publicEndpointRateLimitFilter;
@@ -93,6 +98,11 @@ public class SecurityConfig {
         this.publicEndpointRateLimitFilter = publicEndpointRateLimitFilter;
         this.sessionObserverAuthenticationFilter = sessionObserverAuthenticationFilter;
         this.backendUrlResolver = backendUrlResolver;
+    }
+
+    @PostConstruct
+    void applyConfiguredOperatingMode() {
+        providersEnabled = BackendOperatingMode.providerConsumer(configuredOperatingMode, providersEnabled);
     }
 
     @Bean
