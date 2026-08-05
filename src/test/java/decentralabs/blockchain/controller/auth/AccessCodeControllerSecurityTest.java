@@ -45,12 +45,32 @@ class AccessCodeControllerSecurityTest {
         ReflectionTestUtils.setField(controller, "accessCodeRedeemerCredentialsJson", "{\"gateway.example\":\"redeemer-secret\"}");
         AccessCodeRedeemRequest request = new AccessCodeRedeemRequest();
         request.setAccessCode("opaque-code");
-        when(accessCodeService.redeem("opaque-code", "gateway.example"))
+        when(accessCodeService.prepareRedeem("opaque-code", "gateway.example"))
             .thenReturn(new AuthResponse("jwt", "https://lab.example/guacamole/"));
 
         var response = controller.redeemAccessCode("redeemer-secret", "gateway.example", request);
 
         assertThat(response.getStatusCode().value()).isEqualTo(200);
-        verify(accessCodeService).redeem("opaque-code", "gateway.example");
+        verify(accessCodeService).prepareRedeem("opaque-code", "gateway.example");
+    }
+
+    @Test
+    void protectsCommitAndReleaseWithTheSameGatewaySecret() {
+        AccessCodeService accessCodeService = mock(AccessCodeService.class);
+        SamlAuthController controller = new SamlAuthController(
+            mock(SamlAuthService.class),
+            mock(InstitutionalCheckInService.class),
+            accessCodeService
+        );
+        ReflectionTestUtils.setField(controller, "accessCodeRedeemerCredentialsJson", "{\"gateway.example\":\"redeemer-secret\"}");
+        AccessCodeRedeemRequest request = new AccessCodeRedeemRequest();
+        request.setAccessCode("opaque-code");
+        request.setRedemptionHandle("opaque-handle");
+
+        assertThat(controller.commitAccessCode(null, "gateway.example", request).getStatusCode().value())
+            .isEqualTo(403);
+        assertThat(controller.releaseAccessCode("wrong-secret", "gateway.example", request).getStatusCode().value())
+            .isEqualTo(403);
+        verifyNoInteractions(accessCodeService);
     }
 }

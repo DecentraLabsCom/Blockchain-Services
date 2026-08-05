@@ -86,7 +86,6 @@ public class ContractEventListenerConfig {
     private static final String PROVIDER_SETTLEMENT_CLAIM_INVALIDATED = "ProviderSettlementClaimInvalidated";
     private static final String LAB_DELETED = "LabDeleted";
     private static final String MISSING_PUC_PREFIX = "Missing PUC for reservation ";
-    private static final long RESERVATION_RETRY_BACKOFF_MS = 120_000L;
     private static final BigInteger PROVIDER_NOT_ELIGIBLE_REASON = BigInteger.valueOf(2);
     private static final BigInteger PROVIDER_TECHNICAL_FAILURE_REASON = BigInteger.valueOf(6);
     private static final BigInteger PROVIDER_UNAVAILABLE_REASON = BigInteger.valueOf(7);
@@ -334,11 +333,14 @@ public class ContractEventListenerConfig {
     @Value("${contract.reservation.reconcile.enabled:true}")
     private boolean reservationReconcileEnabled;
 
-    @Value("${contract.reservation.reconcile.min-age.seconds:120}")
+    @Value("${contract.reservation.reconcile.min-age.seconds:30}")
     private int reservationReconcileMinAgeSeconds;
 
     @Value("${contract.reservation.reconcile.batch-size:50}")
     private int reservationReconcileBatchSize;
+
+    @Value("${contract.reservation.processing.retry-backoff.ms:15000}")
+    private long reservationProcessingRetryBackoffMs = 15_000L;
 
     /**
      * Configure event listeners for Diamond contract on application startup.
@@ -407,7 +409,7 @@ public class ContractEventListenerConfig {
         log.info("Contract event listeners reconfigured for network: {}", event.getNewNetwork());
     }
 
-    @Scheduled(fixedDelayString = "${contract.reservation.reconcile.interval.ms:120000}")
+    @Scheduled(fixedDelayString = "${contract.reservation.reconcile.interval.ms:30000}")
     public void reconcilePendingReservations() {
         if (!reservationReconcileEnabled) {
             return;
@@ -1657,7 +1659,8 @@ public class ContractEventListenerConfig {
             key -> new ReservationProcessingState()
         );
         state.lastError = reason;
-        state.nextAllowedAtMs = System.currentTimeMillis() + RESERVATION_RETRY_BACKOFF_MS;
+        state.nextAllowedAtMs = System.currentTimeMillis()
+            + Math.max(1_000L, reservationProcessingRetryBackoffMs);
         state.inProgress.set(false);
     }
 

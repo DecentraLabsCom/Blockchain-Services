@@ -54,11 +54,44 @@ public class SamlAuthController {
         @RequestHeader(value = "X-Gateway-ID", required = false) String gatewayId,
         @RequestBody AccessCodeRedeemRequest request
     ) {
-        String expected = redeemerCredential(gatewayId);
-        if (!constantTimeEquals(expected, redeemerToken)) {
+        if (!authorizedRedeemer(redeemerToken, gatewayId)) {
             return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
         }
-        return ResponseEntity.ok(accessCodeService.redeem(request.getAccessCode(), gatewayId.trim().toLowerCase()));
+        return ResponseEntity.ok(accessCodeService.prepareRedeem(request.getAccessCode(), gatewayId.trim().toLowerCase()));
+    }
+
+    @PostMapping("/access-code/redeem/commit")
+    public ResponseEntity<Void> commitAccessCode(
+        @RequestHeader(value = "X-Access-Code-Redeemer-Token", required = false) String redeemerToken,
+        @RequestHeader(value = "X-Gateway-ID", required = false) String gatewayId,
+        @RequestBody AccessCodeRedeemRequest request
+    ) {
+        if (!authorizedRedeemer(redeemerToken, gatewayId)) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
+        }
+        accessCodeService.commitRedeem(
+            request.getAccessCode(), gatewayId.trim().toLowerCase(), request.getRedemptionHandle()
+        );
+        return ResponseEntity.noContent().build();
+    }
+
+    @PostMapping("/access-code/redeem/release")
+    public ResponseEntity<Void> releaseAccessCode(
+        @RequestHeader(value = "X-Access-Code-Redeemer-Token", required = false) String redeemerToken,
+        @RequestHeader(value = "X-Gateway-ID", required = false) String gatewayId,
+        @RequestBody AccessCodeRedeemRequest request
+    ) {
+        if (!authorizedRedeemer(redeemerToken, gatewayId)) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
+        }
+        accessCodeService.releaseRedeem(
+            request.getAccessCode(), gatewayId.trim().toLowerCase(), request.getRedemptionHandle()
+        );
+        return ResponseEntity.noContent().build();
+    }
+
+    private boolean authorizedRedeemer(String redeemerToken, String gatewayId) {
+        return constantTimeEquals(redeemerCredential(gatewayId), redeemerToken);
     }
 
     private String redeemerCredential(String gatewayId) {

@@ -1,6 +1,7 @@
 package decentralabs.blockchain.service.auth;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
@@ -242,6 +243,54 @@ class InstitutionalConcurrencyMySqlIntegrationTest {
         assertThat(jdbcTemplate.queryForObject(
             "SELECT COUNT(*) FROM lab_access_codes WHERE code_hash IS NOT NULL AND consumed_at IS NULL",
             Integer.class
+        )).isZero();
+    }
+
+    @Test
+    void preparedRedemptionCanBeReleasedAndOnlyCommitConsumesTheCode() {
+        JwtService jwtService = mock(JwtService.class);
+        when(jwtService.extractAllClaims("signed-jwt")).thenReturn(Map.of(
+            "resourceType", "lab",
+            "labURL", "https://lab.example/guacamole/",
+            "aud", "https://lab.example/guacamole/",
+            "targetGatewayId", "lab.example",
+            "exp", Instant.now().plusSeconds(600).getEpochSecond()
+        ));
+        AccessCodeTokenCipher cipher = new AccessCodeTokenCipher(
+            "MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY"
+        );
+        AccessCodeService service = new AccessCodeService(provider(new JdbcTemplate(dataSource)), jwtService, cipher);
+        String code = service.issue("signed-jwt").getAccessCode();
+
+        AuthResponse first = inTransaction(() -> service.prepareRedeem(code, "lab.example"));
+        assertThat(jdbcTemplate.queryForObject(
+            "SELECT consumed_at FROM lab_access_codes WHERE code_hash = SHA2(?, 256)",
+            java.sql.Timestamp.class,
+            code
+        )).isNull();
+        assertThatThrownBy(() -> inTransaction(() -> service.prepareRedeem(code, "lab.example")))
+            .isInstanceOf(ResponseStatusException.class)
+            .hasMessageContaining("already in progress");
+
+        inTransaction(() -> {
+            service.releaseRedeem(code, "lab.example", first.getRedemptionHandle());
+            return null;
+        });
+        assertThat(jdbcTemplate.queryForObject(
+            "SELECT redemption_handle_hash FROM lab_access_codes WHERE code_hash = SHA2(?, 256)",
+            String.class,
+            code
+        )).isNull();
+
+        AuthResponse second = inTransaction(() -> service.prepareRedeem(code, "lab.example"));
+        inTransaction(() -> {
+            service.commitRedeem(code, "lab.example", second.getRedemptionHandle());
+            return null;
+        });
+        assertThat(jdbcTemplate.queryForObject(
+            "SELECT COUNT(*) FROM lab_access_codes WHERE code_hash = SHA2(?, 256)",
+            Integer.class,
+            code
         )).isZero();
     }
 

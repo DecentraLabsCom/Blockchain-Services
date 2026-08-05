@@ -22,7 +22,6 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.test.util.ReflectionTestUtils;
 
 import decentralabs.blockchain.dto.auth.AuthResponse;
 import decentralabs.blockchain.dto.auth.CheckInResponse;
@@ -314,8 +313,8 @@ class SamlAuthServiceTest {
         }
 
         @Test
-        @DisplayName("Should remove a prepared Guacamole user when access authorization times out")
-        void shouldRemovePreparedGuacamoleUserWhenAccessAuthorizationTimesOut() throws Exception {
+        @DisplayName("Should return pending without provisioning while access authorization is unmined")
+        void shouldReturnPendingWithoutProvisioningWhileAccessAuthorizationIsUnmined() throws Exception {
             ProviderAccessCredentialRequest request = new ProviderAccessCredentialRequest();
             request.setMarketplaceToken("provider-token-timeout");
             request.setReservationKey("0xreservation");
@@ -335,29 +334,20 @@ class SamlAuthServiceTest {
                 .thenReturn(bookingInfo);
             when(blockchainService.getAccessAuthorizationState("0xwallet", "0xreservation", "42", TEST_PUC))
                 .thenReturn(Map.of("reservationStatus", java.math.BigInteger.ONE));
-            var lease = new AccessAuthorizationProvisioningService.ProvisioningLease(
-                "0xreservation", "fence-token", 1L
-            );
-            when(accessAuthorizationProvisioningService.tryStart("0xreservation")).thenReturn(lease);
-            when(accessAuthorizationProvisioningService.isCurrent(lease)).thenReturn(true);
-            when(accessAuthorizationProvisioningService.markWaiting(lease)).thenReturn(true);
-            when(accessAuthorizationProvisioningService.heartbeat(lease)).thenReturn(true);
-            when(accessAuthorizationProvisioningService.beginRollback(lease)).thenReturn(true);
-            ReflectionTestUtils.setField(samlAuthService, "accessAuthorizationWaitTimeoutMs", 0L);
-
             assertThatThrownBy(() -> samlAuthService.issueAccessCredential(request))
                 .isInstanceOf(decentralabs.blockchain.exception.AccessAuthorizationPendingException.class);
 
-            verify(blockchainService).provisionGuacamoleAccess(bookingInfo, false, "fence-token");
-            verify(blockchainService).deletePreparedGuacamoleAccess(bookingInfo);
-            verify(accessAuthorizationProvisioningService).markRolledBack(lease);
+            verify(blockchainService).getAccessAuthorizationState("0xwallet", "0xreservation", "42", TEST_PUC);
+            verify(accessAuthorizationProvisioningService, never()).tryStart(anyString());
+            verify(blockchainService, never()).provisionGuacamoleAccess(any(), anyBoolean(), anyString());
+            verify(blockchainService, never()).deletePreparedGuacamoleAccess(any());
             verify(jwtService, never()).generateIssuedToken(eq(null), any());
             verify(accessCredentialDeliveryService, never()).deliver(any(), any(), any(), any());
         }
 
         @Test
-        @DisplayName("Should not activate a prepared Guacamole user after its provisioning lease is fenced out")
-        void shouldNotActivateWhenProvisioningLeaseIsSuperseded() throws Exception {
+        @DisplayName("Should not provision when the chain reports a non-authorized status")
+        void shouldNotProvisionWhenChainReportsNonAuthorizedStatus() throws Exception {
             ProviderAccessCredentialRequest request = new ProviderAccessCredentialRequest();
             request.setMarketplaceToken("provider-token-fenced");
             request.setReservationKey("0xreservation");
@@ -373,25 +363,17 @@ class SamlAuthServiceTest {
                 "labURL", "https://lab.example.com", "reservationKey", "0xreservation",
                 "reservationStatus", java.math.BigInteger.ONE, "resourceType", "lab"
             ));
-            var lease = new AccessAuthorizationProvisioningService.ProvisioningLease(
-                "0xreservation", "fence-token", 1L
-            );
             when(blockchainService.getBookingInfoForCredentialPreparation("0xwallet", "0xreservation", "42", TEST_PUC))
                 .thenReturn(bookingInfo);
             when(blockchainService.getAccessAuthorizationState("0xwallet", "0xreservation", "42", TEST_PUC))
-                .thenReturn(Map.of("reservationStatus", java.math.BigInteger.valueOf(2)));
-            when(accessAuthorizationProvisioningService.tryStart("0xreservation")).thenReturn(lease);
-            when(accessAuthorizationProvisioningService.isCurrent(lease)).thenReturn(true, false);
-            when(accessAuthorizationProvisioningService.markWaiting(lease)).thenReturn(true);
-            when(accessAuthorizationProvisioningService.heartbeat(lease)).thenReturn(true);
-            when(accessAuthorizationProvisioningService.beginRollback(lease)).thenReturn(true);
+                .thenReturn(Map.of("reservationStatus", java.math.BigInteger.ONE));
 
             assertThatThrownBy(() -> samlAuthService.issueAccessCredential(request))
                 .isInstanceOf(decentralabs.blockchain.exception.AccessAuthorizationPendingException.class);
 
-            verify(blockchainService).provisionGuacamoleAccess(bookingInfo, false, "fence-token");
-            verify(blockchainService, never()).activatePreparedGuacamoleAccess(bookingInfo, "fence-token");
-            verify(blockchainService).deletePreparedGuacamoleAccess(bookingInfo);
+            verify(accessAuthorizationProvisioningService, never()).tryStart(anyString());
+            verify(blockchainService, never()).provisionGuacamoleAccess(any(), anyBoolean(), anyString());
+            verify(blockchainService, never()).activatePreparedGuacamoleAccess(any(), anyString());
         }
 
         @Test
@@ -477,6 +459,47 @@ class SamlAuthServiceTest {
         var order = org.mockito.Mockito.inOrder(accessCheckInCoordinator, blockchainService);
         order.verify(accessCheckInCoordinator).recordAccessGranted(request, claims, bookingInfo);
         order.verify(blockchainService).provisionGuacamoleAccess(bookingInfo, false, "fence-token");
+    }
+
+    @Test
+    void combinedFlowReturnsPendingWithoutProvisioningUntilAuthorizationIsMined() throws Exception {
+        SamlAuthRequest request = new SamlAuthRequest();
+        request.setMarketplaceToken("combined-pending-token");
+        request.setSamlAssertion("signed-saml");
+        request.setReservationKey("0xreservation");
+        request.setLabId("42");
+        Map<String, Object> claims = Map.of(
+            "puc", TEST_PUC,
+            "affiliation", TEST_AFFILIATION,
+            "bookingInfoAllowed", true,
+            "purpose", "lab_access",
+            "reservationKey", "0xreservation",
+            "labId", "42",
+            "payerInstitutionWallet", "0xwallet"
+        );
+        Map<String, Object> bookingInfo = new HashMap<>(Map.of(
+            "labURL", "https://lab.example.com/guacamole/",
+            "reservationKey", "0xreservation",
+            "reservationStatus", java.math.BigInteger.ONE,
+            "resourceType", "lab"
+        ));
+        when(marketplaceEndpointAuthService.enforceToken("combined-pending-token", null)).thenReturn(claims);
+        when(samlValidationService.validateSamlAssertionWithSignature("signed-saml"))
+            .thenReturn(Map.of("puc", TEST_PUC, "affiliation", TEST_AFFILIATION));
+        when(blockchainService.getBookingInfoForCredentialPreparation(
+            "0xwallet", "0xreservation", "42", TEST_PUC
+        )).thenReturn(bookingInfo);
+        when(accessCheckInCoordinator.recordAccessGranted(request, claims, bookingInfo))
+            .thenReturn(InstitutionalAccessCheckInCoordinator.AccessGrantedResult.QUEUED);
+        when(blockchainService.getAccessAuthorizationState("0xwallet", "0xreservation", "42", TEST_PUC))
+            .thenReturn(Map.of("reservationStatus", java.math.BigInteger.ONE));
+
+        assertThatThrownBy(() -> samlAuthService.authorizeAndIssue(request))
+            .isInstanceOf(decentralabs.blockchain.exception.AccessAuthorizationPendingException.class);
+
+        verify(accessAuthorizationProvisioningService, never()).tryStart(anyString());
+        verify(blockchainService, never()).provisionGuacamoleAccess(any(), anyBoolean(), anyString());
+        verify(accessCredentialDeliveryService, never()).deliver(any(), any(), any(), any());
     }
 
     @Test

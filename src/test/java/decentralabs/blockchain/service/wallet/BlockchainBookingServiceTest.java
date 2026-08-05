@@ -94,7 +94,7 @@ class BlockchainBookingServiceTest {
 
         // Setup mock lab
         Diamond.Lab lab = createMockLab(
-                "https://lab.url",
+                "https://lab.url:8443/guacamole",
                 "guac:id:123",
                 "https://metadata.url",
                 BigInteger.valueOf(1000)
@@ -118,13 +118,14 @@ class BlockchainBookingServiceTest {
             assertThat(result.get("reservationKey")).isEqualTo(TEST_RESERVATION_KEY);
             assertThat(result.get("reservationStatus")).isEqualTo(BigInteger.ONE);
             assertThat(result.get("price")).isEqualTo(BigInteger.valueOf(1000));
-            assertThat(result.get("aud")).isEqualTo("https://lab.url");
+            assertThat(result.get("aud")).isEqualTo("https://lab.url:8443/guacamole");
+            assertThat(result.get("targetGatewayId")).isEqualTo("lab.url:8443");
             String expectedSessionId = TEST_RESERVATION_KEY.substring(2);
             assertThat(result.get("sub")).isEqualTo("dlabs-res-" + expectedSessionId);
             assertThat(result.get("accessKey")).isEqualTo("guac:id:123");
             assertThat(result.get("guacSessionId")).isEqualTo(expectedSessionId);
             assertThat(result.get("guacamoleConnectionId")).isEqualTo(BigInteger.valueOf(123));
-            verify(guacamoleProvisioningService).provisionTemporaryUser(eq("guac:id:123"), eq(expectedSessionId), any(), eq("https://lab.url"));
+            verify(guacamoleProvisioningService).provisionTemporaryUser(eq("guac:id:123"), eq(expectedSessionId), any(), eq("https://lab.url:8443/guacamole"));
         }
     }
 
@@ -190,6 +191,7 @@ class BlockchainBookingServiceTest {
             Map<String, Object> result = service.getBookingInfo(TEST_WALLET, TEST_RESERVATION_KEY, null);
 
             assertThat(result.get("exp")).isEqualTo(end);
+            assertThat(result.get("targetGatewayId")).isEqualTo("lab.url");
         }
     }
 

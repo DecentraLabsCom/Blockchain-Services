@@ -7,4 +7,5 @@ import lombok.Setter;
 @Setter
 public class AccessCodeRedeemRequest {
     private String accessCode;
+    private String redemptionHandle;
 }

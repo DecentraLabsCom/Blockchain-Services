@@ -100,7 +100,7 @@ public class AccessAuthorizationProvisioningService {
         return updateStatus(lease, "FAILED", "PREPARED", "WAITING_AUTHORIZATION", "ACTIVATED", "ROLLING_BACK");
     }
 
-    /** Extends the active lease while the request is still polling on-chain. */
+    /** Extends an active lease for a bounded activation or delivery operation. */
     public boolean heartbeat(ProvisioningLease lease) {
         if (jdbcTemplate == null || lease == null) {
             return false;

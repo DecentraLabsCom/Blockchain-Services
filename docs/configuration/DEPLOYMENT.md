@@ -22,10 +22,10 @@ BLOCKCHAIN_SERVICES_MODE=consumer-only     # or provider-consumer
 `FEATURES_PROVIDERS_ENABLED=false` remains the packaged fallback for older
 configurations. An explicit mode wins over that flag. The parent gateway owns
 the Full/Lite topology; changing `ISSUER` or adding a Lite access plane must not
-change a backend from consumer-only to provider-consumer. It is not a
-substitute for network isolation: the SAML controller's `/auth` mappings are
-present in the application, so a consumer-only deployment must not expose
-provider access routes as a public integration surface.
+change a backend from consumer-only to provider-consumer. Spring Security
+rejects provider access routes in `consumer-only` at the application boundary;
+network isolation remains required as defense in depth for administrative and
+future surfaces.
 
 ## 2. Persistent state is required in production
 
@@ -83,6 +83,16 @@ The Sepolia manifest is pinned to
 regenerating the ABI/selector manifest and updating the deployment manifest
 and hashes in the same release. Do not disable
 `CONTRACT_VERIFICATION_ENABLED` in a production deployment.
+
+### External reservation timing
+
+The coordinated reservation contract uses a five-minute pending-request TTL
+and a ten-minute minimum lead before the laboratory start. Provider listeners
+keep twelve block confirmations and use 15-second event polling, retry delay,
+and a 30-second reconciliation cadence by default. If finality or provider
+processing misses the on-chain deadline, the request remains unconfirmed and
+expires without capturing credits; do not weaken the confirmation or
+canonicality checks to compensate for the shorter window.
 
 `INTENT_PAYLOAD_ENCRYPTION_KEY` must be a base64/base64url-encoded 32-byte
 AES key. The Full Gateway setup prompts for it and generates one when the

@@ -23,9 +23,10 @@ the backend role from `ISSUER`, the gateway topology, or the repository name.
 The parent `Lab Gateway` compose deployment supplies the values required for
 the selected topology, while the backend `.env` owns this role decision.
 The provider feature controls the conditional OIDC/JWKS and FMU controllers and
-the health operating mode. The SAML controller's `/auth` mappings are not
-conditional, so network exposure and the intended topology remain essential
-controls.
+the health operating mode. The SAML controller still contains both provider and
+consumer mappings, so the application security chain denies provider-side SAML/
+access routes in `consumer-only`; network exposure and the intended topology
+remain defense-in-depth controls.
 
 ## System context
 
@@ -65,7 +66,8 @@ flowchart LR
 
 The browser never receives a signed lab-access JWT in a URL. The backend first
 validates identity and booking state, then returns an opaque access code. The
-gateway redeems that code once and creates the runtime session.
+gateway reserves a short-lived redemption handle, validates the JWT and local
+destination/state, and commits the code only after those checks pass.
 
 ```mermaid
 sequenceDiagram
@@ -81,8 +83,10 @@ sequenceDiagram
     B->>B: Durable check-in / access delivery
     B-->>M: accessCode + reservation context
     M->>G: Access request with opaque code
-    G->>B: POST /auth/access-code/redeem
-    B-->>G: Validated claims for this gateway
+    G->>B: POST /auth/access-code/redeem (prepare)
+    B-->>G: Validated claims + redemptionHandle
+    G->>G: Validate JWT and local destination/state
+    G->>B: POST /auth/access-code/redeem/commit
     G->>R: Create the runtime access
     R-->>G: Runtime connection / job state
     G->>B: Durable session observation (when applicable)
@@ -107,6 +111,14 @@ cursor moves only when an event range is safe; retryable failures replay the sam
 range, and exhausted rows become `DEAD_LETTER` for operator review. Recent rows
 are rechecked for reorgs and become `ORPHANED`, which rewinds the cursor so the
 replacement canonical range can be reconciled.
+
+The source configuration for external institutional reservation requests uses a
+five-minute on-chain pending TTL and requires a ten-minute creation lead. The
+default 12-confirmation depth and 15-second polling/retry fallback are bounded
+inside that decision window; if finality misses the deadline, the request
+expires without confirmation or credit capture. Increasing either
+event-processing budget requires an accompanying reviewed Diamond timing
+upgrade.
 
 ## Durable transaction flow
 
@@ -136,6 +148,13 @@ monitor. The outbox keeps `original_gas_price` separate from
 `current_gas_price`; replacement gas is bounded by the configured absolute
 price, original-price multiple, and estimated fee-cost ceilings. A missing
 hash is never treated as proof that a transaction was not broadcast.
+
+Access authorization is deliberately a two-stage saga: the institutional
+check-in outbox submits and observes the payer transaction, while the provider
+credential endpoint is a fast, retryable read of the reservation state. The
+HTTP request never polls for mining and never stages Guacamole before
+`ACCESS_AUTHORIZED`; only a later retry that observes the authorized state may
+acquire the provisioning lease and activate the lab resource.
 
 `SessionStarted` pre-broadcast contention is retryable independently of the
 broadcast-attempt limit: it returns to `RETRY`, keeps the reservation guard and

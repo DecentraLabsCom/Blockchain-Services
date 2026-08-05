@@ -68,8 +68,9 @@ filter plus the configured access token.
 
 ## Access-code and observer credentials
 
-- Browser access uses an opaque one-time code. Signed lab-access JWTs never go
-  in URLs; OpenResty redeems by POST and sets a Secure/HttpOnly cookie.
+- Browser access uses a short-lived opaque access code. Signed lab-access JWTs
+  never go in URLs; OpenResty prepares redemption, validates locally, commits
+  only after validation, and then sets a Secure/HttpOnly cookie.
 - `ACCESS_CODE_REDEEMER_CREDENTIALS_JSON` is gateway-specific. Rotate a gateway
   credential independently and verify `X-Gateway-ID` against signed claims.
 - FMU ticket redemption and session observation use short-lived,

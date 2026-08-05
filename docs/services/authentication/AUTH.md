@@ -9,20 +9,23 @@ Ops Worker.
 `BLOCKCHAIN_SERVICES_MODE=provider-consumer` selects provider+consumer
 operation. `consumer-only` is the repository default for a standalone consumer
 deployment. `FEATURES_PROVIDERS_ENABLED` is retained only as a fallback when
-the explicit mode is absent. The
-feature condition applies to the OIDC/JWKS and FMU controller classes; it does
-not remove the `SamlAuthController` `/auth` mappings. Treat those mappings as a
-provider integration surface only in the intended Full topology, and retain the
-gateway/network boundary in consumer-only deployments.
+the explicit mode is absent. The feature condition applies to the OIDC/JWKS
+and FMU controller classes. Spring Security additionally denies the
+provider-side SAML/access routes in `consumer-only`, even when a shared
+controller mapping is present. Institutional check-in and status remain
+available to the consumer role. Gateway/network isolation remains useful as
+defense in depth, but is no longer the sole boundary for these routes.
 
 | Endpoint | Purpose | Primary proof |
 | --- | --- | --- |
 | `GET /auth/jwks` | Provider signing key set (conditional) | Public read; provider controller enabled |
-| `POST /auth/authorize-and-issue` | Validate a booking and deliver access | Marketplace JWT + SAML + on-chain state |
-| `POST /auth/access-credential` | Provider-side access credential flow | Provider request + booking checks |
+| `POST /auth/authorize-and-issue` | Provider-side combined check-in and access delivery (`provider-consumer` only) | Marketplace JWT + SAML + on-chain state |
+| `POST /auth/access-credential` | Provider-side access credential flow (`provider-consumer` only) | Provider request + booking checks |
 | `POST /auth/checkin-institutional` | Institutional wallet check-in | Institutional request and configured delegation policy |
 | `POST /auth/checkin-institutional/status` | Query a delegated consumer check-in | Marketplace JWT + reservation binding |
-| `POST /auth/access-code/redeem` | One-time browser/gateway delivery | Gateway ID + per-gateway redeemer credential |
+| `POST /auth/access-code/redeem` | Prepare a browser/gateway redemption and return a short-lived handle (`provider-consumer` only) | Gateway ID + per-gateway redeemer credential |
+| `POST /auth/access-code/redeem/commit` | Commit a prepared redemption after gateway-local validation (`provider-consumer` only) | Same gateway credential + redemption handle |
+| `POST /auth/access-code/redeem/release` | Release a prepared redemption after local validation fails (`provider-consumer` only) | Same gateway credential + redemption handle |
 | `POST /auth/fmu/session-ticket/issue` | Issue reusable FMU ticket (conditional) | Booking bearer and reservation window |
 | `POST /auth/fmu/session-ticket/redeem` | Exchange FMU ticket for claims (conditional) | Per-gateway session-observer JWT |
 | `POST /access-audit/internal/session-observed` | Receive durable runtime observation | Per-gateway session-observer JWT |
@@ -38,8 +41,9 @@ is the supported key endpoint when provider mode is enabled.
 ## Browser access flow
 
 The signed lab-access JWT remains server-side. Marketplace receives an opaque
-single-use `accessCode`; OpenResty redeems it by POST, sets the secure JTI
-cookie and redirects to a clean URL.
+`accessCode`; OpenResty prepares its redemption by POST, validates the JWT and
+local destination/state, then commits the handle before setting the secure JTI
+cookie and redirecting to a clean URL.
 
 ```mermaid
 sequenceDiagram
@@ -53,12 +57,19 @@ sequenceDiagram
     B->>B: Verify Marketplace JWT
     B->>B: Verify SAML assertion and identity binding
     B->>C: Check reservation, payer and time window
-    B->>B: Durable check-in / authorization gate
+    B->>B: Queue institutional check-in (durable outbox)
+    B-->>M: 202/503 pending + Retry-After (fast response)
+    M->>B: Retry credential issuance
+    B->>C: Read ACCESS_AUTHORIZED
+    B->>Q: Provision/activate only after authorization
     B->>B: Persist encrypted credential + opaque access code
     B-->>M: accessCode + labURL + reservationKey
     M->>G: Access request with opaque code
     G->>B: POST /auth/access-code/redeem
-    B-->>G: Claims bound to the target gateway
+    B-->>G: Claims + redemptionHandle (30-second lease)
+    G->>G: Verify JWT, destination, issuer, audience and local state
+    G->>B: POST /auth/access-code/redeem/commit
+    B-->>G: 204 consumed; or /release on local rejection
     G->>Q: Provision or open the runtime session
     Q-->>G: Connection / simulation response
 ```
@@ -80,9 +91,11 @@ substituted with the lab provider wallet.
 
 ## Authorization and check-in
 
-`/auth/authorize-and-issue` may wait up to
-`auth.access-authorization.wait-timeout-ms` (27 seconds by default) for the
-authorization state to become visible. A timeout is retryable and returns:
+The authorization endpoints do not poll the chain inside the HTTP request and
+do not provision a Guacamole user while check-in is still pending. The
+consumer-side check-in is persisted to a durable outbox; its submission and
+receipt monitors run independently. A provider request that observes a
+non-terminal, non-authorized reservation returns quickly as retryable:
 
 ```http
 503 Service Unavailable
@@ -98,9 +111,22 @@ Retry-After: 1
 }
 ```
 
-If the authorization transaction is mined and reverted, the endpoint returns
-`409 ACCESS_AUTHORIZATION_REJECTED`. No signed access JWT is issued before the
-authorization gate succeeds.
+The caller retries `/auth/authorize-and-issue` or `/auth/access-credential`
+after `Retry-After` (or its own backoff). Each retry performs one bounded chain
+read. Once `ACCESS_AUTHORIZED` is visible, the provider acquires its fenced
+provisioning lease, performs the bounded Guacamole/FMU activation, and persists
+the encrypted credential and opaque access code. If the authorization
+transaction is mined and reverted, the endpoint returns
+`409 ACCESS_AUTHORIZATION_REJECTED`; no signed access JWT is issued before the
+authorization gate succeeds. The final Guacamole/FMU activation remains a
+bounded synchronous step so the returned code always references a live
+resource; it is no longer coupled to transaction-mining latency.
+
+For external reservation creation, the contract allows a five-minute pending
+decision window and requires ten minutes of lead before `reservation.start`.
+The provider listener uses 12-confirmation canonicality plus short polling and
+retry delays; if that deadline passes, it leaves the request pending for expiry
+and never confirms or captures it late.
 
 When provider and consumer are separate backends, the provider can delegate the
 institutional check-in to the payer institution's registered backend. When they
@@ -154,7 +180,11 @@ stateDiagram-v2
     PREPARED --> ACTIVATED: provider resource staged
     ACTIVATED --> CODE_PERSISTED: encrypted bearer/code in one transaction
     CODE_PERSISTED --> DELIVERED: response can be returned
-    DELIVERED --> CONSUMED: gateway redeems code once
+    DELIVERED --> REDEMPTION_PREPARED: gateway reserves 30-second handle
+    REDEMPTION_PREPARED --> LOCAL_VALIDATED: JWT and local state checks pass
+    LOCAL_VALIDATED --> CONSUMED: gateway commits handle
+    REDEMPTION_PREPARED --> RELEASED: local check fails / explicit release
+    REDEMPTION_PREPARED --> RELEASED: lease expires
     PREPARED --> ROLLING_BACK: failure
     ACTIVATED --> ROLLING_BACK: failure
     ROLLING_BACK --> ROLLED_BACK
@@ -164,12 +194,15 @@ stateDiagram-v2
 
 The code expiry is the earlier of the requested code TTL and the underlying
 credential expiry. A retry after a lost response reuses the current unconsumed
-generation; it does not create another Guacamole user or bearer. After
-redemption, encrypted bearer and code material are cleared.
+generation; it does not create another Guacamole user or bearer. A pending
+redemption lease is released explicitly or by expiry; only commit clears the
+encrypted bearer and code material.
 
 OpenResty uses `ACCESS_CODE_REDEEMER_CREDENTIALS_JSON` and `X-Gateway-ID` for
-the code redemption route. The target gateway is read from signed claims; an
-arbitrary caller-supplied gateway ID cannot retarget a code.
+the code redemption route. `X-Gateway-ID` is the canonical lower-case public
+host plus a non-default HTTPS port (for example, `lab.example:8443`); the
+target gateway is then read from signed claims. An arbitrary caller-supplied
+gateway ID cannot retarget a code.
 
 ## Guacamole and `SessionStarted`
 

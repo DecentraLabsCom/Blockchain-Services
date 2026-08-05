@@ -187,4 +187,48 @@ class AccessCodeServiceTest {
         assertThat(service.redeem(issued.getAccessCode(), "lab.example").getToken())
             .isEqualTo("signed-jwt");
     }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void preparationDoesNotConsumeUntilTheGatewayCommits() {
+        ObjectProvider<JdbcTemplate> provider = mock(ObjectProvider.class);
+        when(provider.getIfAvailable()).thenReturn(null);
+        JwtService jwtService = mock(JwtService.class);
+        when(jwtService.extractAllClaims("signed-jwt")).thenReturn(labClaims());
+        AccessCodeService service = new AccessCodeService(provider, jwtService, new AccessCodeTokenCipher(""));
+
+        AccessCodeResponse issued = service.issue("signed-jwt");
+        AuthResponse prepared = service.prepareRedeem(issued.getAccessCode(), "lab.example");
+
+        assertThat(prepared.getRedemptionHandle()).isNotBlank();
+        assertThatThrownBy(() -> service.prepareRedeem(issued.getAccessCode(), "lab.example"))
+            .isInstanceOf(ResponseStatusException.class)
+            .hasMessageContaining("already in progress");
+
+        service.releaseRedeem(issued.getAccessCode(), "lab.example", prepared.getRedemptionHandle());
+        AuthResponse retry = service.prepareRedeem(issued.getAccessCode(), "lab.example");
+        service.commitRedeem(issued.getAccessCode(), "lab.example", retry.getRedemptionHandle());
+
+        assertThatThrownBy(() -> service.prepareRedeem(issued.getAccessCode(), "lab.example"))
+            .isInstanceOf(ResponseStatusException.class)
+            .hasMessageContaining("Invalid or expired access code");
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void failedLocalValidationCanReleaseTheCodeForASecondAttempt() {
+        ObjectProvider<JdbcTemplate> provider = mock(ObjectProvider.class);
+        when(provider.getIfAvailable()).thenReturn(null);
+        JwtService jwtService = mock(JwtService.class);
+        when(jwtService.extractAllClaims("signed-jwt")).thenReturn(labClaims());
+        AccessCodeService service = new AccessCodeService(provider, jwtService, new AccessCodeTokenCipher(""));
+
+        AccessCodeResponse issued = service.issue("signed-jwt");
+        AuthResponse first = service.prepareRedeem(issued.getAccessCode(), "lab.example");
+        service.releaseRedeem(issued.getAccessCode(), "lab.example", first.getRedemptionHandle());
+
+        AuthResponse second = service.prepareRedeem(issued.getAccessCode(), "lab.example");
+        assertThat(second.getRedemptionHandle()).isNotEqualTo(first.getRedemptionHandle());
+        assertThat(second.getToken()).isEqualTo("signed-jwt");
+    }
 }

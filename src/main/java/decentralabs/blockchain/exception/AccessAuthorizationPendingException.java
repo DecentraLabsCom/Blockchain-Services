@@ -1,6 +1,6 @@
 package decentralabs.blockchain.exception;
 
-/** Raised when a submitted check-in has not reached ACCESS_AUTHORIZED in time. */
+/** Raised when a submitted check-in has not reached ACCESS_AUTHORIZED yet. */
 public class AccessAuthorizationPendingException extends RuntimeException {
     private final String reservationKey;
     private final String transactionHash;

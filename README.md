@@ -17,7 +17,8 @@ The service owns four areas:
 - signed intent intake, WebAuthn authorization and on-chain execution;
 - provider/consumer registration and gateway configuration.
 
-Start with the [documentation index](SUMMARY.md). The essential companion
+Start with the [documentation index](SUMMARY.md) and the parent
+[documentation contract](../docs/documentation-contract.md). The essential companion
 documents are the [architecture guide](docs/architecture/ARCHITECTURE.md),
 [deployment guide](docs/configuration/DEPLOYMENT.md),
 [security baseline](docs/security/SECURITY.md) and
@@ -58,6 +59,13 @@ flowchart LR
 The following is a navigation map, not a generated OpenAPI contract. Paths are
 implemented by the controllers in `src/main/java/decentralabs/blockchain/controller`.
 
+External institutional reservation requests use a five-minute pending TTL and
+require a ten-minute lead before the requested start. The provider listener
+retains 12-confirmation canonicality and uses 15-second polling/retry defaults;
+if finality misses the deadline, the request expires without confirmation or
+credit capture. Tune the timing and event configuration together with any
+reviewed Diamond upgrade.
+
 ### Identity and access
 
 - `GET /auth/jwks`
@@ -66,6 +74,8 @@ implemented by the controllers in `src/main/java/decentralabs/blockchain/control
 - `POST /auth/checkin-institutional`
 - `POST /auth/checkin-institutional/status`
 - `POST /auth/access-code/redeem`
+- `POST /auth/access-code/redeem/commit`
+- `POST /auth/access-code/redeem/release`
 - `POST /auth/fmu/session-ticket/issue`
 - `POST /auth/fmu/session-ticket/redeem`
 - `POST /auth/fmu/provider-describe-token`
@@ -76,11 +86,21 @@ implemented by the controllers in `src/main/java/decentralabs/blockchain/control
 - `GET /onboarding/webauthn/status/{sessionId}`
 - `GET /onboarding/webauthn/ceremony/{sessionId}`
 
-`/auth/jwks` and the FMU controllers are conditional on
-`FEATURES_PROVIDERS_ENABLED`. The SAML controller's `/auth` mappings are
-present in the application and must be treated as provider integration routes
-only in the intended Full topology. FMU ticket issuance validates a booking
-bearer; redemption requires a per-gateway session-observer credential.
+`/auth/jwks` and the FMU controllers are conditional on the resolved
+`provider-consumer` role. The provider-side SAML/access routes
+(`/auth/authorize-and-issue`, `/auth/access-credential` and
+`/auth/access-code/**`) are also denied by the Spring Security boundary when
+the backend runs in `consumer-only`; institutional check-in routes remain
+available to the consumer role. FMU ticket issuance validates a booking
+bearer; redemption requires a per-gateway session-observer credential and is
+denied in `consumer-only`.
+
+Access issuance is retryable rather than a long-polling HTTP operation:
+`/auth/authorize-and-issue` and `/auth/access-credential` return a fast pending
+response until the institutional check-in outbox has produced on-chain
+`ACCESS_AUTHORIZED`. Guacamole/FMU provisioning starts only on a later retry
+that observes that state; the check-in submission and receipt monitors run in
+the background.
 
 The controller maps OIDC discovery at `/.well-known/openid-configuration`, but
 the current security allow-list is `/auth/.well-known/*`; it is therefore not a

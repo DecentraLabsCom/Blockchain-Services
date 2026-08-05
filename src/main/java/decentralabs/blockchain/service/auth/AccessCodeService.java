@@ -8,6 +8,7 @@ import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.security.SecureRandom;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.Base64;
 import java.util.concurrent.ConcurrentHashMap;
@@ -36,6 +37,9 @@ public class AccessCodeService {
     private final SecureRandom random = new SecureRandom();
     private final ConcurrentMap<String, CodeRecord> memory = new ConcurrentHashMap<>();
     private final ConcurrentMap<String, String> memoryDeliveries = new ConcurrentHashMap<>();
+    private final ConcurrentMap<String, PendingRedemption> memoryRedemptions = new ConcurrentHashMap<>();
+
+    private static final Duration REDEMPTION_LEASE = Duration.ofSeconds(30);
 
     @Value("${auth.access-code.ttl-seconds:60}")
     private long ttlSeconds = 60;
@@ -117,6 +121,7 @@ public class AccessCodeService {
                 record.credentialExpiresAt(), reservationKey, provisioningGeneration
             );
             memory.remove(codeHash);
+            memoryRedemptions.remove(codeHash);
             String refreshedHash = hash(refreshed);
             memory.put(refreshedHash, refreshedRecord);
             memoryDeliveries.put(key, refreshedHash);
@@ -131,6 +136,7 @@ public class AccessCodeService {
         String codeHash = hash(code.trim());
         if (inMemoryMode()) {
             CodeRecord removed = memory.remove(codeHash);
+            memoryRedemptions.remove(codeHash);
             if (removed != null && removed.reservationKey() != null) {
                 memoryDeliveries.remove(deliveryKey(removed.reservationKey(), removed.provisioningGeneration()));
             }
@@ -147,7 +153,8 @@ public class AccessCodeService {
                     } else {
                         jdbcTemplate.update(
                             "UPDATE " + TABLE + " SET consumed_at = CURRENT_TIMESTAMP, recoverable_code = NULL, "
-                                + "recoverable_code_ciphertext = NULL, "
+                                + "recoverable_code_ciphertext = NULL, redemption_handle_hash = NULL, "
+                                + "redemption_expires_at = NULL, "
                                 + "access_token = NULL, access_token_ciphertext = NULL WHERE code_hash = ?",
                             codeHash
                         );
@@ -177,6 +184,13 @@ public class AccessCodeService {
             record = memory.get(codeHash);
             enforceTargetGateway(record, gatewayId);
             if (record != null) {
+                PendingRedemption pending = memoryRedemptions.get(codeHash);
+                if (pending != null && pending.expiresAt() > now) {
+                    throw redemptionInProgress();
+                }
+                if (pending != null) {
+                    memoryRedemptions.remove(codeHash, pending);
+                }
                 memory.remove(codeHash, record);
             }
         } else {
@@ -190,6 +204,224 @@ public class AccessCodeService {
             memoryDeliveries.remove(deliveryKey(record.reservationKey(), record.provisioningGeneration()));
         }
         return new AuthResponse(record.token(), record.labURL(), null, record.resourceType());
+    }
+
+    /**
+     * Reserves an access code for local gateway validation without consuming it.
+     * The caller must commit or release the returned handle within the short
+     * redemption lease.
+     */
+    @Transactional
+    public AuthResponse prepareRedeem(String code, String gatewayId) {
+        requireCodeAndGateway(code, gatewayId);
+        String normalized = code.trim();
+        String normalizedGatewayId = normalizeGatewayId(gatewayId);
+        long now = Instant.now().getEpochSecond();
+        String codeHash = hash(normalized);
+        String handle = generateCode();
+        String handleHash = hash(handle);
+        long leaseExpiresAt = now + REDEMPTION_LEASE.toSeconds();
+
+        if (inMemoryMode()) {
+            CodeRecord record = memory.get(codeHash);
+            enforceTargetGateway(record, normalizedGatewayId);
+            if (record == null || now >= record.expiresAt()) {
+                throw invalidAccessCode();
+            }
+            memoryRedemptions.compute(codeHash, (ignored, current) -> {
+                if (current != null && current.expiresAt() > now) {
+                    throw redemptionInProgress();
+                }
+                return new PendingRedemption(handleHash, normalizedGatewayId, leaseExpiresAt);
+            });
+            return AuthResponse.preparedRedeem(record.token(), record.labURL(), record.resourceType(), handle);
+        }
+
+        return preparePersisted(normalizedGatewayId, codeHash, handle, handleHash, now, leaseExpiresAt);
+    }
+
+    /** Commits a prepared redemption after the gateway has validated the JWT locally. */
+    @Transactional
+    public void commitRedeem(String code, String gatewayId, String redemptionHandle) {
+        requireCodeAndGateway(code, gatewayId);
+        if (redemptionHandle == null || redemptionHandle.isBlank()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "redemptionHandle is required");
+        }
+        String normalized = code.trim();
+        String normalizedGatewayId = normalizeGatewayId(gatewayId);
+        String codeHash = hash(normalized);
+        String handleHash = hash(redemptionHandle.trim());
+        long now = Instant.now().getEpochSecond();
+
+        if (inMemoryMode()) {
+            CodeRecord record = memory.get(codeHash);
+            enforceTargetGateway(record, normalizedGatewayId);
+            PendingRedemption pending = memoryRedemptions.get(codeHash);
+            if (record == null || now >= record.expiresAt() || pending == null
+                || pending.expiresAt() <= now
+                || !pending.handleHash().equals(handleHash)
+                || !pending.gatewayId().equals(normalizedGatewayId)) {
+                throw invalidRedemption();
+            }
+            memoryRedemptions.remove(codeHash, pending);
+            memory.remove(codeHash, record);
+            if (record.reservationKey() != null) {
+                memoryDeliveries.remove(deliveryKey(record.reservationKey(), record.provisioningGeneration()));
+            }
+            return;
+        }
+
+        commitPersisted(normalizedGatewayId, codeHash, handleHash, now);
+    }
+
+    /** Releases a prepared redemption after local validation fails. */
+    @Transactional
+    public void releaseRedeem(String code, String gatewayId, String redemptionHandle) {
+        requireCodeAndGateway(code, gatewayId);
+        if (redemptionHandle == null || redemptionHandle.isBlank()) return;
+        String codeHash = hash(code.trim());
+        String handleHash = hash(redemptionHandle.trim());
+        String normalizedGatewayId = normalizeGatewayId(gatewayId);
+        if (inMemoryMode()) {
+            PendingRedemption pending = memoryRedemptions.get(codeHash);
+            if (pending != null && pending.handleHash().equals(handleHash)
+                && pending.gatewayId().equals(normalizedGatewayId)) {
+                memoryRedemptions.remove(codeHash, pending);
+            }
+            return;
+        }
+        try {
+            jdbcTemplate.update(
+                "UPDATE " + TABLE + " SET redemption_handle_hash = NULL, redemption_expires_at = NULL "
+                    + "WHERE code_hash = ? AND target_gateway_id = ? AND consumed_at IS NULL "
+                    + "AND redemption_handle_hash = ?",
+                codeHash, normalizedGatewayId, handleHash
+            );
+        } catch (DataAccessException ex) {
+            throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "Access-code release unavailable", ex);
+        }
+    }
+
+    private AuthResponse preparePersisted(
+        String gatewayId,
+        String codeHash,
+        String handle,
+        String handleHash,
+        long now,
+        long leaseExpiresAt
+    ) {
+        try {
+            return jdbcTemplate.query(
+                "SELECT access_token_ciphertext, lab_url, resource_type, target_gateway_id, "
+                    + "UNIX_TIMESTAMP(expires_at), redemption_handle_hash, "
+                    + "UNIX_TIMESTAMP(redemption_expires_at) FROM " + TABLE
+                    + " WHERE code_hash = ? AND target_gateway_id = ? AND consumed_at IS NULL "
+                    + "AND expires_at > FROM_UNIXTIME(?) FOR UPDATE",
+                ps -> {
+                    ps.setString(1, codeHash);
+                    ps.setString(2, gatewayId);
+                    ps.setLong(3, now);
+                },
+                rs -> {
+                    if (!rs.next()) throw invalidAccessCode();
+                    String currentHandleHash = rs.getString(6);
+                    long currentLeaseExpiry = rs.getObject(7) == null ? 0L : rs.getLong(7);
+                    if (currentHandleHash != null && currentLeaseExpiry > now) {
+                        throw redemptionInProgress();
+                    }
+                    int updated = jdbcTemplate.update(
+                        "UPDATE " + TABLE + " SET redemption_handle_hash = ?, "
+                            + "redemption_expires_at = FROM_UNIXTIME(?) "
+                            + "WHERE code_hash = ? AND target_gateway_id = ? AND consumed_at IS NULL",
+                        handleHash, leaseExpiresAt, codeHash, gatewayId
+                    );
+                    if (updated != 1) throw invalidRedemption();
+                    return AuthResponse.preparedRedeem(
+                        tokenCipher.decrypt(rs.getString(1)), rs.getString(2), rs.getString(3), handle
+                    );
+                }
+            );
+        } catch (ResponseStatusException ex) {
+            throw ex;
+        } catch (DataAccessException | IllegalStateException ex) {
+            throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "Access-code preparation unavailable", ex);
+        }
+    }
+
+    private void commitPersisted(
+        String gatewayId,
+        String codeHash,
+        String handleHash,
+        long now
+    ) {
+        try {
+            jdbcTemplate.query(
+                "SELECT reservation_key, provisioning_generation "
+                    + "FROM " + TABLE + " WHERE code_hash = ? AND target_gateway_id = ? "
+                    + "AND redemption_handle_hash = ? AND consumed_at IS NULL "
+                    + "AND expires_at > FROM_UNIXTIME(?) AND redemption_expires_at > FROM_UNIXTIME(?) FOR UPDATE",
+                ps -> {
+                    ps.setString(1, codeHash);
+                    ps.setString(2, gatewayId);
+                    ps.setString(3, handleHash);
+                    ps.setLong(4, now);
+                    ps.setLong(5, now);
+                },
+                rs -> {
+                    if (!rs.next()) throw invalidRedemption();
+                    String reservationKey = rs.getString(1);
+                    Long generation = rs.getObject(2) == null ? null : rs.getLong(2);
+                    if (reservationKey == null) {
+                        jdbcTemplate.update("DELETE FROM " + TABLE + " WHERE code_hash = ?", codeHash);
+                    } else {
+                        int updated = jdbcTemplate.update(
+                            "UPDATE " + TABLE + " SET consumed_at = CURRENT_TIMESTAMP, "
+                                + "redemption_handle_hash = NULL, redemption_expires_at = NULL, "
+                                + "recoverable_code = NULL, recoverable_code_ciphertext = NULL, "
+                                + "access_token = NULL, access_token_ciphertext = NULL "
+                                + "WHERE code_hash = ? AND consumed_at IS NULL",
+                            codeHash
+                        );
+                        if (updated != 1) throw invalidRedemption();
+                        if (!markProvisioningState(
+                            reservationKey, generation, "CONSUMED", "DELIVERED", "CODE_PERSISTED"
+                        )) {
+                            throw new IllegalStateException("Access delivery generation is not consumable");
+                        }
+                    }
+                    return null;
+                }
+            );
+        } catch (ResponseStatusException ex) {
+            throw ex;
+        } catch (DataAccessException | IllegalStateException ex) {
+            throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "Access-code commit unavailable", ex);
+        }
+    }
+
+    private void requireCodeAndGateway(String code, String gatewayId) {
+        if (code == null || code.isBlank()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "accessCode is required");
+        }
+        if (gatewayId == null || gatewayId.isBlank()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "gateway ID is required");
+        }
+    }
+
+    private String normalizeGatewayId(String gatewayId) {
+        return gatewayId.trim().toLowerCase();
+    }
+
+    private ResponseStatusException invalidAccessCode() {
+        return new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Invalid or expired access code");
+    }
+
+    private ResponseStatusException redemptionInProgress() {
+        return new ResponseStatusException(HttpStatus.CONFLICT, "Access code redemption is already in progress");
+    }
+
+    private ResponseStatusException invalidRedemption() {
+        return new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Invalid or expired access-code redemption");
     }
 
     @Scheduled(fixedDelayString = "${auth.access-code.cleanup-interval-ms:30000}")
@@ -206,8 +438,17 @@ public class AccessCodeService {
                 }
                 return remove;
             });
+            memoryRedemptions.entrySet().removeIf(entry -> {
+                PendingRedemption pending = entry.getValue();
+                return now >= pending.expiresAt() || !memory.containsKey(entry.getKey());
+            });
         } else {
             try {
+                jdbcTemplate.update(
+                    "UPDATE " + TABLE + " SET redemption_handle_hash = NULL, redemption_expires_at = NULL "
+                        + "WHERE consumed_at IS NULL AND redemption_expires_at <= FROM_UNIXTIME(?)",
+                    now
+                );
                 jdbcTemplate.update(
                     "UPDATE access_authorization_provisioning p JOIN " + TABLE + " c "
                         + "ON c.reservation_key = p.reservation_key "
@@ -236,7 +477,8 @@ public class AccessCodeService {
             if (record.reservationKey() != null) {
                 jdbcTemplate.update(
                     "UPDATE " + TABLE + " SET consumed_at = CURRENT_TIMESTAMP, recoverable_code = NULL, "
-                        + "recoverable_code_ciphertext = NULL, "
+                        + "recoverable_code_ciphertext = NULL, redemption_handle_hash = NULL, "
+                        + "redemption_expires_at = NULL, "
                         + "access_token = NULL, access_token_ciphertext = NULL "
                         + "WHERE reservation_key = ? AND provisioning_generation <> ? AND consumed_at IS NULL",
                     record.reservationKey(), record.provisioningGeneration()
@@ -270,8 +512,14 @@ public class AccessCodeService {
                 "SELECT access_token_ciphertext, lab_url, resource_type, target_gateway_id, UNIX_TIMESTAMP(expires_at), "
                     + "reservation_key, provisioning_generation, UNIX_TIMESTAMP(credential_expires_at) FROM " + TABLE
                     + " WHERE code_hash = ? AND target_gateway_id = ? AND consumed_at IS NULL "
-                    + "AND expires_at > FROM_UNIXTIME(?) FOR UPDATE",
-                ps -> { ps.setString(1, hash); ps.setString(2, normalizedGatewayId); ps.setLong(3, now); },
+                    + "AND expires_at > FROM_UNIXTIME(?) "
+                    + "AND (redemption_handle_hash IS NULL OR redemption_expires_at <= FROM_UNIXTIME(?)) FOR UPDATE",
+                ps -> {
+                    ps.setString(1, hash);
+                    ps.setString(2, normalizedGatewayId);
+                    ps.setLong(3, now);
+                    ps.setLong(4, now);
+                },
                 rs -> {
                     if (!rs.next()) return null;
                     String reservationKey = rs.getString(6);
@@ -287,7 +535,8 @@ public class AccessCodeService {
                     } else {
                         jdbcTemplate.update(
                             "UPDATE " + TABLE + " SET consumed_at = CURRENT_TIMESTAMP, recoverable_code = NULL, "
-                                + "recoverable_code_ciphertext = NULL, "
+                                + "recoverable_code_ciphertext = NULL, redemption_handle_hash = NULL, "
+                                + "redemption_expires_at = NULL, "
                                 + "access_token = NULL, access_token_ciphertext = NULL "
                                 + "WHERE code_hash = ? AND consumed_at IS NULL",
                             hash
@@ -332,7 +581,8 @@ public class AccessCodeService {
                     long refreshedExpiry = boundedCodeExpiry(now, rs.getLong(7));
                     int updated = jdbcTemplate.update(
                         "UPDATE " + TABLE + " SET code_hash = ?, recoverable_code = NULL, "
-                            + "recoverable_code_ciphertext = ?, expires_at = FROM_UNIXTIME(?) "
+                            + "recoverable_code_ciphertext = ?, redemption_handle_hash = NULL, "
+                            + "redemption_expires_at = NULL, expires_at = FROM_UNIXTIME(?) "
                             + "WHERE code_hash = ? AND consumed_at IS NULL",
                         hash(refreshed), tokenCipher.encrypt(refreshed), refreshedExpiry, rs.getString(1)
                     );
@@ -483,6 +733,8 @@ public class AccessCodeService {
     }
 
     private record ValidatedCredential(String labURL, String resourceType, String targetGatewayId, long expiresAt) { }
+
+    private record PendingRedemption(String handleHash, String gatewayId, long expiresAt) { }
 
     private record CodeRecord(
         String code,

@@ -1,5 +1,10 @@
 # Documentation index
 
+The canonical cross-project documentation contract is
+[here](../docs/documentation-contract.md). This index owns backend-specific
+API, security and deployment details; Gateway topology and user-journey
+semantics remain in the parent workflow documents.
+
 ## Start here
 
 1. [README — scope, modes and local development](README.md)

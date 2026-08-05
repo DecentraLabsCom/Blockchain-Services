@@ -19,14 +19,16 @@ beside each controller, and route-specific validations remain authoritative.
 | Method | Path | Boundary / purpose |
 | --- | --- | --- |
 | GET | `/auth/jwks` | Conditional provider controller; public key set for verifying backend JWTs. |
-| POST | `/auth/authorize-and-issue` | Booking-aware SAML/Marketplace access delivery. |
-| POST | `/auth/access-credential` | Provider access-credential flow. |
+| POST | `/auth/authorize-and-issue` | Booking-aware provider SAML/Marketplace access delivery; denied in `consumer-only`. |
+| POST | `/auth/access-credential` | Provider access-credential flow; denied in `consumer-only`. |
 | POST | `/auth/checkin-institutional` | Institutional check-in; returns `202` while queued. |
 | POST | `/auth/checkin-institutional/status` | Check-in status for its bound reservation context. |
-| POST | `/auth/access-code/redeem` | Gateway credential and `X-Gateway-ID`; one-time opaque code redemption. |
-| POST | `/auth/fmu/session-ticket/issue` | Conditional provider controller; booking bearer and FMU claims. |
-| POST | `/auth/fmu/session-ticket/redeem` | Conditional provider controller; observer JWT (`ROLE_SESSION_OBSERVER`). |
-| POST | `/auth/fmu/provider-describe-token` | Conditional provider controller; Marketplace/service JWT. |
+| POST | `/auth/access-code/redeem` | Gateway credential and `X-Gateway-ID`; reserves an opaque code and returns `redemptionHandle` (30-second lease); denied in `consumer-only`. |
+| POST | `/auth/access-code/redeem/commit` | Same gateway credential plus `accessCode`/`redemptionHandle`; consumes the code after local gateway validation; denied in `consumer-only`. |
+| POST | `/auth/access-code/redeem/release` | Same gateway credential plus `accessCode`/`redemptionHandle`; releases a pending redemption without consuming the code; denied in `consumer-only`. |
+| POST | `/auth/fmu/session-ticket/issue` | Conditional provider controller; provider-consumer only; booking bearer and FMU claims. |
+| POST | `/auth/fmu/session-ticket/redeem` | Conditional provider controller; provider-consumer only; observer JWT (`ROLE_SESSION_OBSERVER`). |
+| POST | `/auth/fmu/provider-describe-token` | Conditional provider controller; provider-consumer only; Marketplace/service JWT. |
 | POST | `/access-audit/internal/session-observed` | Observer JWT; records durable runtime observation. |
 | GET | `/access-audit/internal/reservations/{reservationKey}` | Admin/internal boundary; audit and attestation summary. |
 
@@ -34,6 +36,22 @@ beside each controller, and route-specific validations remain authoritative.
 but the current security allow-list is `/auth/.well-known/*`. Consequently the
 discovery mapping is not a supported reachable integration endpoint until those
 two mappings are aligned. Use `/auth/jwks` only when provider mode is enabled.
+
+The access routes marked provider-only are rejected by the application security
+chain when `BLOCKCHAIN_SERVICES_MODE=consumer-only`; a network boundary should
+still be retained as defense in depth.
+
+Provider access issuance is intentionally retryable. While the reservation is
+not yet `ACCESS_AUTHORIZED`, `/auth/authorize-and-issue` and
+`/auth/access-credential` return `503 ACCESS_AUTHORIZATION_PENDING` with
+`Retry-After`; they do not hold the request open or provision Guacamole. The
+caller retries the provider endpoint after the institutional check-in outbox
+and receipt monitor advance the on-chain state.
+
+External reservation requests are governed by the on-chain five-minute pending
+request TTL and ten-minute creation lead. The provider event worker retains its
+12-confirmation canonicality gate and uses short polling/retry intervals; a
+request that misses the deadline fails closed rather than being confirmed late.
 
 ## WebAuthn
 

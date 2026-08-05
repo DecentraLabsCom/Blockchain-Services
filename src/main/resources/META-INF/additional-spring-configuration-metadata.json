@@ -119,18 +119,6 @@
     "defaultValue": "/intents"
   },
   {
-    "name": "auth.access-authorization.wait-timeout-ms",
-    "type": "java.lang.Long",
-    "description": "Maximum time the provider waits for on-chain ACCESS_AUTHORIZED before removing prepared Guacamole access.",
-    "defaultValue": 27000
-  },
-  {
-    "name": "auth.access-authorization.poll-interval-ms",
-    "type": "java.lang.Long",
-    "description": "Delay between provider checks of the on-chain reservation status.",
-    "defaultValue": 500
-  },
-  {
     "name": "institutional.checkin.delegation.enabled",
     "type": "java.lang.Boolean",
     "description": "Delegate institutional check-in to the payer institution backend when the local wallet is not an authorized check-in signer.",
@@ -942,8 +930,8 @@
   {
     "name": "contract.event.polling.interval.seconds",
     "type": "java.lang.Integer",
-    "description": "Polling interval in seconds.",
-    "defaultValue": 60
+    "description": "Polling interval in seconds; keep fallback detection and confirmation within the five-minute external reservation request TTL.",
+    "defaultValue": 15
   },
   {
     "name": "contract.event.polling.block.range",
@@ -972,19 +960,19 @@
   {
     "name": "contract.event.processing.retry-delay.seconds",
     "type": "java.lang.Integer",
-    "description": "Delay before retrying a failed contract event handler.",
-    "defaultValue": 60
+    "description": "Delay before retrying a failed contract event handler; retries consume the five-minute external reservation request TTL.",
+    "defaultValue": 15
   },
   {
     "name": "contract.event.processing.lease-timeout.seconds",
     "type": "java.lang.Integer",
     "description": "Time after which an abandoned event-processing lease can be reclaimed.",
-    "defaultValue": 300
+    "defaultValue": 120
   },
   {
     "name": "contract.event.confirmations.required",
     "type": "java.lang.Integer",
-    "description": "Required block confirmations before acknowledging a contract event.",
+    "description": "Required block confirmations before acknowledging a contract event; finality remains fail-closed inside the five-minute external reservation request TTL.",
     "defaultValue": 12
   },
   {
@@ -1009,19 +997,25 @@
     "name": "contract.reservation.reconcile.interval.ms",
     "type": "java.lang.Long",
     "description": "Interval for reservation reconciliation in milliseconds.",
-    "defaultValue": 120000
+    "defaultValue": 30000
   },
   {
     "name": "contract.reservation.reconcile.min-age.seconds",
     "type": "java.lang.Integer",
     "description": "Minimum age (seconds) before a pending reservation is reconciled.",
-    "defaultValue": 120
+    "defaultValue": 30
   },
   {
     "name": "contract.reservation.reconcile.batch-size",
     "type": "java.lang.Integer",
     "description": "Maximum number of reservations to reconcile per run.",
     "defaultValue": 50
+  },
+  {
+    "name": "contract.reservation.processing.retry-backoff.ms",
+    "type": "java.lang.Long",
+    "description": "Local provider reservation-processing backoff after a retryable failure.",
+    "defaultValue": 15000
   },
   {
     "name": "reservation.early-checkin-tolerance-seconds",

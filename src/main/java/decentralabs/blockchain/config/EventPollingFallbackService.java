@@ -51,7 +51,7 @@ public class EventPollingFallbackService {
     @Value("${contract.event.websocket.enabled:true}")
     private boolean websocketEnabled;
 
-    @Value("${contract.event.polling.interval.seconds:60}")
+    @Value("${contract.event.polling.interval.seconds:15}")
     private int pollingIntervalSeconds;
 
     @Value("${contract.event.polling.block.range:1000}")
@@ -66,11 +66,11 @@ public class EventPollingFallbackService {
     @Value("${contract.event.processing.max-attempts:10}")
     private int maxProcessingAttempts = 10;
 
-    @Value("${contract.event.processing.retry-delay.seconds:60}")
-    private int retryDelaySeconds = 60;
+    @Value("${contract.event.processing.retry-delay.seconds:15}")
+    private int retryDelaySeconds = 15;
 
-    @Value("${contract.event.processing.lease-timeout.seconds:300}")
-    private int processingLeaseTimeoutSeconds = 300;
+    @Value("${contract.event.processing.lease-timeout.seconds:120}")
+    private int processingLeaseTimeoutSeconds = 120;
 
     @Value("${contract.event.confirmations.required:12}")
     private int requiredConfirmations = 12;

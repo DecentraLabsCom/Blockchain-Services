@@ -115,6 +115,7 @@ public class SecurityConfig {
                     jwksEndpoint,
                     authorizeAndIssueEndpoint,
                     checkinInstitutionalEndpoint,
+                    checkinInstitutionalEndpoint + "/status",
                     accessCredentialEndpoint,
                     accessCodeEndpoint + "/**",
                     healthEndpoint,
@@ -136,20 +137,37 @@ public class SecurityConfig {
                 )
             )
             .authorizeHttpRequests(authorize -> {
+                if (providersEnabled) {
+                    authorize.requestMatchers(authorizeAndIssueEndpoint).permitAll();
+                    authorize.requestMatchers(accessCredentialEndpoint).permitAll();
+                    authorize.requestMatchers(accessCodeEndpoint + "/**").permitAll();
+                    authorize.requestMatchers(fmuProviderDescribeTokenEndpoint).permitAll();
+                    // Issue validates the booking JWT. Redeem is restricted to a least-privilege,
+                    // per-gateway observer credential so a downloaded ticket is not a public oracle.
+                    authorize.requestMatchers(HttpMethod.POST, fmuSessionTicketEndpoint + "/redeem")
+                        .hasRole("SESSION_OBSERVER");
+                    authorize.requestMatchers(HttpMethod.POST, fmuSessionTicketEndpoint + "/issue").permitAll();
+                } else {
+                    // These routes either issue provider access material or consume it at a
+                    // provider gateway.  A consumer-only backend must reject them at the
+                    // application security boundary even if a controller mapping is present.
+                    authorize.requestMatchers(
+                        authorizeAndIssueEndpoint,
+                        accessCredentialEndpoint,
+                        accessCodeEndpoint + "/**",
+                        fmuProviderDescribeTokenEndpoint,
+                        fmuSessionTicketEndpoint + "/**"
+                    ).denyAll();
+                }
+                // Provider-only routes are decided above this catch-all OPTIONS rule.
+                // Consumer-only also omits their CORS registrations, so a preflight
+                // receives no provider integration headers.
                 authorize.requestMatchers(HttpMethod.OPTIONS, "/**").permitAll();
                 authorize.requestMatchers("/").permitAll();
                 authorize.requestMatchers(authBasePath + "/.well-known/*").permitAll();
                 authorize.requestMatchers(jwksEndpoint).permitAll();
-                authorize.requestMatchers(authorizeAndIssueEndpoint).permitAll();
                 authorize.requestMatchers(checkinInstitutionalEndpoint).permitAll();
-                authorize.requestMatchers(accessCredentialEndpoint).permitAll();
-                authorize.requestMatchers(accessCodeEndpoint + "/**").permitAll();
-                authorize.requestMatchers(fmuProviderDescribeTokenEndpoint).permitAll();
-                // Issue validates the booking JWT. Redeem is restricted to a least-privilege,
-                // per-gateway observer credential so a downloaded ticket is not a public oracle.
-                authorize.requestMatchers(HttpMethod.POST, fmuSessionTicketEndpoint + "/redeem")
-                    .hasRole("SESSION_OBSERVER");
-                authorize.requestMatchers(HttpMethod.POST, fmuSessionTicketEndpoint + "/issue").permitAll();
+                authorize.requestMatchers(checkinInstitutionalEndpoint + "/status").permitAll();
                 authorize.requestMatchers(healthEndpoint).permitAll();
                 authorize.requestMatchers("/actuator/health/**").permitAll();
                 authorize.requestMatchers("/actuator/info").permitAll();
@@ -171,7 +189,8 @@ public class SecurityConfig {
                 // In provider+consumer deployments, require the INTERNAL-role barrier regardless
                 // of whether an access token is configured — this prevents any localhost-reachable
                 // caller from hitting admin billing endpoints without a valid token in provider mode.
-                // In consumer-only standalone mode, permit all and rely on LocalhostOnlyFilter.
+                // Consumer-only billing remains a local administrative surface, protected by
+                // LocalhostOnlyFilter and the configured access-token policy.
                 if (providersEnabled) {
                     authorize.requestMatchers(billingEndpoint + "/admin/**").hasRole("INTERNAL");
                 } else {
@@ -224,11 +243,15 @@ public class SecurityConfig {
         walletConfiguration.addAllowedHeader("*");
 
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
-        // Public endpoints
-        source.registerCorsConfiguration(authorizeAndIssueEndpoint, publicConfiguration);
+        // Consumer check-in remains public to Marketplace in both modes. Provider
+        // access endpoints are only exposed as CORS integrations in provider mode.
         source.registerCorsConfiguration(checkinInstitutionalEndpoint, publicConfiguration);
-        source.registerCorsConfiguration(accessCredentialEndpoint, publicConfiguration);
-        source.registerCorsConfiguration(fmuProviderDescribeTokenEndpoint, publicConfiguration);
+        source.registerCorsConfiguration(checkinInstitutionalEndpoint + "/status", publicConfiguration);
+        if (providersEnabled) {
+            source.registerCorsConfiguration(authorizeAndIssueEndpoint, publicConfiguration);
+            source.registerCorsConfiguration(accessCredentialEndpoint, publicConfiguration);
+            source.registerCorsConfiguration(fmuProviderDescribeTokenEndpoint, publicConfiguration);
+        }
         source.registerCorsConfiguration(healthEndpoint, publicConfiguration);
         source.registerCorsConfiguration(intentsEndpoint + "/**", publicConfiguration);
         source.registerCorsConfiguration("/webauthn/**", publicConfiguration);

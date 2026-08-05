@@ -18,6 +18,7 @@ import java.nio.charset.StandardCharsets;
 import java.net.URI;
 import java.util.Arrays;
 import java.util.HashMap;
+import java.util.Locale;
 import java.util.Map;
 
 /**
@@ -532,11 +533,23 @@ public class BlockchainBookingService {
 
     private String gatewayIdFromAccessUri(String accessUri) {
         try {
-            String host = URI.create(accessUri).getHost();
+            URI uri = URI.create(accessUri);
+            String host = uri.getHost();
             if (host == null || host.isBlank()) {
                 throw new IllegalArgumentException("accessURI does not identify a gateway host");
             }
-            return host.toLowerCase();
+            host = host.toLowerCase(Locale.ROOT);
+            if (host.contains(":")) {
+                host = "[" + host + "]";
+            }
+            int port = uri.getPort();
+            String scheme = uri.getScheme() == null
+                ? "https"
+                : uri.getScheme().toLowerCase(Locale.ROOT);
+            boolean defaultPort = port < 0
+                || ("https".equals(scheme) && port == 443)
+                || ("http".equals(scheme) && port == 80);
+            return defaultPort ? host : host + ":" + port;
         } catch (RuntimeException ex) {
             throw new IllegalArgumentException("Invalid gateway accessURI", ex);
         }

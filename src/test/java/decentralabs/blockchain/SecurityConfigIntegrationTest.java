@@ -421,6 +421,26 @@ class SecurityConfigIntegrationTest {
         String accessCredential() {
             return "access-credential-ok";
         }
+
+        @PostMapping("/auth/authorize-and-issue")
+        String authorizeAndIssue() {
+            return "authorize-and-issue-ok";
+        }
+
+        @PostMapping("/auth/access-code/redeem")
+        String accessCodeRedeem() {
+            return "access-code-redeem-ok";
+        }
+
+        @PostMapping("/auth/checkin-institutional")
+        String institutionalCheckIn() {
+            return "consumer-checkin-ok";
+        }
+
+        @PostMapping("/auth/checkin-institutional/status")
+        String institutionalCheckInStatus() {
+            return "consumer-checkin-status-ok";
+        }
     }
 
     @SpringBootConfiguration

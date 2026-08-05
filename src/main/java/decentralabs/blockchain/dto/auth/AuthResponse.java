@@ -21,30 +21,37 @@ public class AuthResponse {
     private final String accessCode;
     private final String resourceType;
     private final String reservationKey;
+    private final String redemptionHandle;
     
     /**
      * Constructor for authentication without booking info
      */
     public AuthResponse(String token) {
-        this(token, null, null, null, null);
+        this(token, null, null, null, null, null);
     }
 
     public AuthResponse(String token, String labURL) {
-        this(token, labURL, null, null, null);
+        this(token, labURL, null, null, null, null);
     }
 
     public AuthResponse(String token, String labURL, String accessCode) {
-        this(token, labURL, accessCode, null, null);
+        this(token, labURL, accessCode, null, null, null);
     }
 
     public AuthResponse(String token, String labURL, String accessCode, String resourceType) {
-        this(token, labURL, accessCode, resourceType, null);
+        this(token, labURL, accessCode, resourceType, null, null);
     }
 
     public static AuthResponse opaqueAccess(
         String accessCode, String labURL, String resourceType, String reservationKey
     ) {
-        return new AuthResponse(null, labURL, accessCode, resourceType, reservationKey);
+        return new AuthResponse(null, labURL, accessCode, resourceType, reservationKey, null);
+    }
+
+    public static AuthResponse preparedRedeem(
+        String token, String labURL, String resourceType, String redemptionHandle
+    ) {
+        return new AuthResponse(token, labURL, null, resourceType, null, redemptionHandle);
     }
     
     /**
