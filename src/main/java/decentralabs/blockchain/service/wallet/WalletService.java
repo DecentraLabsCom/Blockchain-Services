@@ -1033,7 +1033,7 @@ public class WalletService {
             if (response == null || response.hasError()) {
                 return Optional.empty();
             }
-            List<Type> decoded = FunctionReturnDecoder.decode(response.getValue(), function.getOutputParameters());
+            List<?> decoded = FunctionReturnDecoder.decode(response.getValue(), function.getOutputParameters());
             if (decoded.isEmpty()) {
                 return Optional.empty();
             }
@@ -1075,9 +1075,9 @@ public class WalletService {
                 DefaultBlockParameterName.LATEST
             ).send();
             if (response == null || response.hasError()) return Optional.empty();
-            List<Type> decoded = FunctionReturnDecoder.decode(response.getValue(), function.getOutputParameters());
+            List<?> decoded = FunctionReturnDecoder.decode(response.getValue(), function.getOutputParameters());
             return decoded.size() >= 3
-                ? Optional.of((BigInteger) decoded.get(2).getValue())
+                ? Optional.of((BigInteger) ((Type<?>) decoded.get(2)).getValue())
                 : Optional.empty();
         } catch (Exception e) {
             log.warn("Unable to read remaining amount for provider settlement batch {}: {}", batchId, e.getMessage());
