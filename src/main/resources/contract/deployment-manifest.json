@@ -32,7 +32,7 @@
     { "name": "LabQueryFacet", "address": "0x61311Be0496e82A3f330D0F527fb78a7A0D2aA5A", "codeHash": "0xae84f03549f917036f806eb30fe5324ca1a671b227b41428511da63816ca870d" },
     { "name": "LabReputationFacet", "address": "0xe0684F4a63f41cFb8E81B3fC574b8931b937015f", "codeHash": "0x13f01c385eb38473763ab409045e931ff70a1d9d2ffb09fd10b9811eb0edf7ad" },
     { "name": "ProviderSettlementFacet", "address": "0x714A9E758dF755430fB7E8d2a052382423c35E24", "codeHash": "0xd172f7dc2ede759136e7b68046c3db04e251f659ee249db5ade7850a2770663c" },
-    { "name": "InstitutionalReservationRequestValidationFacet", "address": "0xc1f15b517ab69237f5c74c8531bA40DFEF2BeE7D", "codeHash": "0xd4657305cc1854c1239df6698bf41ffe327a55c6648e1ef967a137dd19042fe5" },
+    { "name": "InstitutionalReservationRequestValidationFacet", "address": "0xe539Cf7B956078E1291496154c3f5879c6F59B30", "codeHash": "0x69e5fcff84aa3c629c3146ecc97ef56bd7d0245e2914fd3d42340c3e69ac6415" },
     { "name": "InstitutionalReservationRequestCreationFacet", "address": "0x5F7E91d68a791fC4B4b7A47120E197c10FB3E7B3", "codeHash": "0x434e79a4f2143e5eaaeceb34269e20384044ae4b52c68dc14b704430ae57ff16" },
     { "name": "InstitutionalReservationConfirmationFacet", "address": "0x52D9EA0a14C70c43815649D3a96d4C6CDE5306eE", "codeHash": "0xc0fc599a1bb579ff4736aece907f4aa4086f945c444648014cf9190638399944" },
     { "name": "InstitutionalReservationCancellationFacet", "address": "0x2c265a7987348D53064c3Fe777047f9E639bDf89", "codeHash": "0xfada9b2ad5f14231abbd35f4d8d67176b07cae416cb07475f9c18a6007418e7d" },
