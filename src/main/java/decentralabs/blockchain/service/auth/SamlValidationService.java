@@ -627,17 +627,6 @@ public class SamlValidationService {
         return domain;
     }
     
-    /**
-     * Extracts the IdP issuer from SAML assertion
-     */
-    private String extractIssuer(Document doc) {
-        NodeList assertions = doc.getElementsByTagNameNS(SAML_ASSERTION_NAMESPACE, "Assertion");
-        if (assertions.getLength() != 1) {
-            return null;
-        }
-        return extractIssuer((Element) assertions.item(0));
-    }
-
     private String extractIssuer(Element assertion) {
         Element issuer = firstDirectChild(assertion, SAML_ASSERTION_NAMESPACE, "Issuer");
         if (issuer != null) {

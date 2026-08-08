@@ -408,7 +408,8 @@ class SamlValidationServiceTest {
         String saml = createMinimalSamlAssertion("https://idp.test.com");
         Document doc = parseXML(saml);
 
-        String issuer = ReflectionTestUtils.invokeMethod(samlValidationService, "extractIssuer", doc);
+        String issuer = ReflectionTestUtils.invokeMethod(
+                samlValidationService, "extractIssuer", doc.getDocumentElement());
 
         assertThat(issuer).isEqualTo("https://idp.test.com");
     }
@@ -418,7 +419,8 @@ class SamlValidationServiceTest {
         String saml = "<saml:Assertion xmlns:saml=\"urn:oasis:names:tc:SAML:2.0:assertion\"></saml:Assertion>";
         Document doc = parseXML(saml);
 
-        String issuer = ReflectionTestUtils.invokeMethod(samlValidationService, "extractIssuer", doc);
+        String issuer = ReflectionTestUtils.invokeMethod(
+                samlValidationService, "extractIssuer", doc.getDocumentElement());
 
         assertThat(issuer).isNull();
     }
