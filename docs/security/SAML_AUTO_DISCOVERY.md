@@ -2,6 +2,26 @@
 
 `SamlValidationService` validates the XML signature before exposing identity attributes to the authentication, institutional check-in and intent flows. It discovers signing certificates from IdP metadata; it is not an IdP registry or a replacement for the gateway network boundary.
 
+## Assertion/signature binding
+
+The validator accepts one SAML 2.0 `Assertion` and, when present, exactly one
+XML-DSig `Signature` directly attached to that assertion. The signature must
+contain exactly one reference, and that reference must be `#<Assertion.ID>`.
+Duplicate XML IDs, multiple assertions, signatures outside the assertion and
+multiple signatures are rejected before identity attributes are exposed. The
+issuer, `NameID` and consumed attributes are then read only from that same
+assertion subtree; no document-wide fallback is used.
+
+This closes the XML Signature Wrapping / signed-node confusion class addressed
+by this boundary. The service is still a deliberately narrow assertion
+validator, not a complete SAML Web SSO profile implementation: the current
+backend API does not carry the original AuthnRequest context or configured SP
+profile needed to validate every `AudienceRestriction`, `Recipient`,
+`SubjectConfirmationData` and `InResponseTo` value. Public production
+deployments should use Spring Security SAML/OpenSAML (or add an equivalent
+profile validator with explicit audience, recipient and request correlation)
+before treating those controls as satisfied.
+
 ## Effective trust model
 
 The packaged `application.properties` sets `saml.idp.trust-mode=any` unless `SAML_IDP_TRUST_MODE` is supplied. That is convenient for development, but production deployments should use `whitelist` and configure `saml.trusted.idp`. In whitelist mode every permitted issuer must also have its own `saml.idp.metadata.override` entry; a global override or an assertion-provided URL does not satisfy this requirement. Startup validation rejects an incomplete map.

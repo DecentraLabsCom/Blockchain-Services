@@ -29,6 +29,7 @@ import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.StringWriter;
 import java.math.BigInteger;
+import java.nio.charset.StandardCharsets;
 import java.security.KeyFactory;
 import java.security.PrivateKey;
 import java.security.Security;
@@ -488,6 +489,66 @@ class SamlValidationServiceTest {
     }
 
     @Test
+    void shouldExtractIdentityOnlyFromTheAssertionWhoseSignatureWasValidated() throws Exception {
+        String wrappedAssertion = createSignedResponseWithDecoyAttributes();
+
+        Map<String, String> attributes = samlValidationService.validateSamlAssertionWithSignature(wrappedAssertion);
+
+        assertThat(attributes)
+                .containsEntry("issuer", TEST_ISSUER)
+                .containsEntry("puc", "user@university.edu|targeted-user-1")
+                .containsEntry("eduPersonPrincipalName", "user@university.edu")
+                .containsEntry("eduPersonTargetedID", "targeted-user-1")
+                .containsEntry("affiliation", "university.edu")
+                .doesNotContainKey("email");
+    }
+
+    @Test
+    void shouldRejectResponsesWithMoreThanOneAssertion() throws Exception {
+        String first = createMinimalSamlAssertion(TEST_ISSUER).replace("_test123", "_first");
+        String second = createMinimalSamlAssertion(TEST_ISSUER).replace("_test123", "_second");
+        String response = "<samlp:Response xmlns:samlp=\"urn:oasis:names:tc:SAML:2.0:protocol\">"
+                + first + second + "</samlp:Response>";
+
+        assertThatThrownBy(() -> samlValidationService.validateSamlAssertionWithSignature(
+                encodeXml(response)
+        ))
+                .isInstanceOf(SecurityException.class)
+                .hasMessageContaining("exactly one SAML Assertion");
+    }
+
+    @Test
+    void shouldRejectResponsesWithMoreThanOneSignature() throws Exception {
+        String signedAssertion = decodeXml(createSignedSamlAssertionWithAttributes(Map.of(
+                "eduPersonPrincipalName", "user@university.edu"
+        )));
+        String response = signedAssertion.replace(
+                "</saml:Assertion>",
+                "<ds:Signature xmlns:ds=\"http://www.w3.org/2000/09/xmldsig#\"/>"
+                        + "</saml:Assertion>"
+        );
+
+        assertThatThrownBy(() -> samlValidationService.validateSamlAssertionWithSignature(
+                encodeXml(response)
+        ))
+                .isInstanceOf(SecurityException.class)
+                .hasMessageContaining("exactly one XML Signature");
+    }
+
+    @Test
+    void shouldRequireTheSignatureReferenceToTargetTheAssertionId() throws Exception {
+        String signedAssertion = decodeXml(createSignedSamlAssertionWithAttributes(Map.of(
+                "eduPersonPrincipalName", "user@university.edu"
+        ))).replace("URI=\"#_signed123\"", "URI=\"#_other\"");
+
+        assertThatThrownBy(() -> samlValidationService.validateSamlAssertionWithSignature(
+                encodeXml(signedAssertion)
+        ))
+                .isInstanceOf(SecurityException.class)
+                .hasMessageContaining("does not target the signed Assertion");
+    }
+
+    @Test
     void shouldPreserveXmlSpecialCharactersInGeneratedSamlAttributes() throws Exception {
         String specialValue = "Campus <A> & <B>";
         String xml = createSamlAssertionWithAttributes(
@@ -725,6 +786,70 @@ class SamlValidationServiceTest {
         StringWriter writer = new StringWriter();
         transformer.transform(new DOMSource(doc), new StreamResult(writer));
         return Base64.getEncoder().encodeToString(writer.toString().getBytes());
+    }
+
+    private String createSignedResponseWithDecoyAttributes() throws Exception {
+        String unsignedAssertion = createSamlAssertionWithAttributes(
+                TEST_ISSUER,
+                Map.of(
+                        "eduPersonPrincipalName", "user@university.edu",
+                        "eduPersonTargetedID", "targeted-user-1",
+                        "schacHomeOrganization", "university.edu"
+                )
+        ).replace("ID=\"_test123\"", "ID=\"_wrapped123\"");
+        String responseXml = "<samlp:Response xmlns:samlp=\"urn:oasis:names:tc:SAML:2.0:protocol\""
+                + " xmlns:saml=\"urn:oasis:names:tc:SAML:2.0:assertion\">"
+                + "<saml:Subject><saml:NameID>attacker@example.net</saml:NameID></saml:Subject>"
+                + "<saml:AttributeStatement>"
+                + "<saml:Attribute Name=\"eduPersonPrincipalName\"><saml:AttributeValue>attacker@example.net"
+                + "</saml:AttributeValue></saml:Attribute>"
+                + "</saml:AttributeStatement>"
+                + unsignedAssertion
+                + "</samlp:Response>";
+
+        Document doc = parseXML(responseXml);
+        var assertion = (org.w3c.dom.Element) doc.getElementsByTagNameNS(
+                "urn:oasis:names:tc:SAML:2.0:assertion", "Assertion"
+        ).item(0);
+        assertion.setIdAttribute("ID", true);
+
+        XMLSignatureFactory signatureFactory = XMLSignatureFactory.getInstance("DOM");
+        Reference reference = signatureFactory.newReference(
+                "#_wrapped123",
+                signatureFactory.newDigestMethod(DigestMethod.SHA256, null),
+                List.of(signatureFactory.newTransform(Transform.ENVELOPED, (TransformParameterSpec) null)),
+                null,
+                null
+        );
+        SignedInfo signedInfo = signatureFactory.newSignedInfo(
+                signatureFactory.newCanonicalizationMethod(CanonicalizationMethod.INCLUSIVE, (C14NMethodParameterSpec) null),
+                signatureFactory.newSignatureMethod(SignatureMethod.RSA_SHA256, null),
+                List.of(reference)
+        );
+        List<X509Certificate> certificates = samlValidationService.parseCertificatesFromMetadataXml(testMetadataXml());
+        KeyInfoFactory keyInfoFactory = signatureFactory.getKeyInfoFactory();
+        KeyInfo keyInfo = keyInfoFactory.newKeyInfo(List.of(
+                keyInfoFactory.newX509Data(List.of(certificates.get(0)))
+        ));
+        DOMSignContext signContext = new DOMSignContext(testPrivateKey(), assertion);
+        signatureFactory.newXMLSignature(signedInfo, keyInfo).sign(signContext);
+
+        TransformerFactory transformerFactory = TransformerFactory.newInstance();
+        transformerFactory.setAttribute("http://javax.xml.XMLConstants/property/accessExternalDTD", "");
+        transformerFactory.setAttribute("http://javax.xml.XMLConstants/property/accessExternalStylesheet", "");
+        var transformer = transformerFactory.newTransformer();
+        transformer.setOutputProperty(OutputKeys.OMIT_XML_DECLARATION, "yes");
+        StringWriter writer = new StringWriter();
+        transformer.transform(new DOMSource(doc), new StreamResult(writer));
+        return Base64.getEncoder().encodeToString(writer.toString().getBytes(StandardCharsets.UTF_8));
+    }
+
+    private String encodeXml(String xml) {
+        return Base64.getEncoder().encodeToString(xml.getBytes(StandardCharsets.UTF_8));
+    }
+
+    private String decodeXml(String encoded) {
+        return new String(Base64.getMimeDecoder().decode(encoded), StandardCharsets.UTF_8);
     }
 
     private void seedTestMetadataCertificate() throws Exception {

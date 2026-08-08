@@ -20,6 +20,8 @@ import org.w3c.dom.Element;
 import org.w3c.dom.Node;
 import org.w3c.dom.NodeList;
 
+import javax.xml.XMLConstants;
+import javax.xml.crypto.dsig.Reference;
 import javax.xml.crypto.dsig.XMLSignature;
 import javax.xml.crypto.dsig.XMLSignatureFactory;
 import javax.xml.crypto.dsig.dom.DOMValidateContext;
@@ -31,6 +33,7 @@ import java.io.InputStream;
 import java.net.InetAddress;
 import java.net.URI;
 import java.net.Socket;
+import java.nio.charset.StandardCharsets;
 import java.security.GeneralSecurityException;
 import java.security.KeyStore;
 import java.security.MessageDigest;
@@ -40,12 +43,14 @@ import java.security.cert.X509Certificate;
 import java.util.ArrayList;
 import java.util.Base64;
 import java.util.Collections;
+import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Locale;
 import java.util.Optional;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
 import java.security.PublicKey;
@@ -73,6 +78,8 @@ import decentralabs.blockchain.util.PucNormalizer;
 public class SamlValidationService {
     
     private static final Logger logger = LoggerFactory.getLogger(SamlValidationService.class);
+    private static final String SAML_ASSERTION_NAMESPACE = "urn:oasis:names:tc:SAML:2.0:assertion";
+    private static final String XML_SIGNATURE_NAMESPACE = XMLSignature.XMLNS;
     private static final String TLS_PROFILE_MODERN = "modern";
     private static final String TLS_PROFILE_COMPATIBILITY = "compatibility";
     private static final String TLS_PROFILE_LEGACY_RSA = "legacy-rsa";
@@ -266,17 +273,21 @@ public class SamlValidationService {
         // Some IdPs send SAMLResponse with "+" not percent-encoded; URLSearchParams
         // in the Marketplace decodes those as spaces. getMimeDecoder() handles them.
         byte[] decodedBytes = Base64.getMimeDecoder().decode(samlAssertion);
-        String xmlContent = new String(decodedBytes);
+        String xmlContent = new String(decodedBytes, StandardCharsets.UTF_8);
         
         // Parse XML
         Document doc = parseXML(xmlContent);
-        markIdAttributes(doc);
-        
-        // Extract IdP issuer from assertion
-        String issuer = extractIssuer(doc);
+        Element assertion = requireSingleAssertion(doc);
+
+        // Extract IdP issuer only from the assertion that will be signature-validated.
+        String issuer = extractIssuer(assertion);
         if (issuer == null) {
             throw new SecurityException("No Issuer found in SAML assertion");
         }
+
+        rejectDuplicateXmlIds(doc);
+        markAssertionIdAttribute(assertion);
+        requireSingleAssertionSignature(doc, assertion);
         
         // Check if IdP is trusted (if in whitelist mode)
         if ("whitelist".equalsIgnoreCase(trustMode)) {
@@ -285,7 +296,7 @@ public class SamlValidationService {
             }
         }
         
-        String metadataUrl = resolveMetadataUrl(doc, issuer);
+        String metadataUrl = resolveMetadataUrl(assertion, issuer);
         if ("whitelist".equalsIgnoreCase(trustMode) && (metadataUrl == null || metadataUrl.isBlank())) {
             throw new SecurityException("Whitelisted IdP requires an issuer-specific metadata URL: " + issuer);
         }
@@ -298,14 +309,14 @@ public class SamlValidationService {
         }
         
         // Verify signature
-        boolean signatureValid = verifySignature(doc, certs);
+        boolean signatureValid = verifySignature(doc, assertion, certs);
         if (!signatureValid) {
             // IdPs commonly publish the replacement signing certificate before
             // they start using it.  Evict the issuer snapshot and perform one,
             // and only one, refresh for this assertion.
             evictCertificateCache(issuer);
             List<X509Certificate> refreshedCerts = getIdpCertificates(issuer, metadataUrl, true);
-            if (refreshedCerts.isEmpty() || !verifySignature(doc, refreshedCerts)) {
+            if (refreshedCerts.isEmpty() || !verifySignature(doc, assertion, refreshedCerts)) {
                 throw new SecurityException("SAML assertion signature is INVALID");
             }
         }
@@ -314,15 +325,15 @@ public class SamlValidationService {
         // Keep alignment with Marketplace PUC resolution:
         // if both ePPN and eduPersonTargetedID exist, use "ePPN|targetedID";
         // if only ePPN exists, use ePPN.
-        String eduPersonTargetedId = extractSamlAttributeValueByAliases(doc, EDU_PERSON_TARGETED_ID_ATTRIBUTE_ALIASES);
-        String eduPersonPrincipalName = extractSamlAttributeValueByAliases(doc, EDU_PERSON_PRINCIPAL_NAME_ATTRIBUTE_ALIASES);
-        String email = extractSamlAttributeValueByAliases(doc, EMAIL_ATTRIBUTE_ALIASES);
-        String displayName = extractSamlAttributeValueByAliases(doc, DISPLAY_NAME_ATTRIBUTE_ALIASES);
+        String eduPersonTargetedId = extractSamlAttributeValueByAliases(assertion, EDU_PERSON_TARGETED_ID_ATTRIBUTE_ALIASES);
+        String eduPersonPrincipalName = extractSamlAttributeValueByAliases(assertion, EDU_PERSON_PRINCIPAL_NAME_ATTRIBUTE_ALIASES);
+        String email = extractSamlAttributeValueByAliases(assertion, EMAIL_ATTRIBUTE_ALIASES);
+        String displayName = extractSamlAttributeValueByAliases(assertion, DISPLAY_NAME_ATTRIBUTE_ALIASES);
         List<String> schacHomeOrganizations = normalizeOrganizationDomains(
-            extractSamlAttributeValuesByAliases(doc, SCHAC_HOME_ORG_ATTRIBUTE_ALIASES)
+            extractSamlAttributeValuesByAliases(assertion, SCHAC_HOME_ORG_ATTRIBUTE_ALIASES)
         );
-        String scopedAffiliation = extractSamlAttributeValueByAliases(doc, SCOPED_AFFILIATION_ATTRIBUTE_ALIASES);
-        String nameId = extractNameId(doc);
+        String scopedAffiliation = extractSamlAttributeValueByAliases(assertion, SCOPED_AFFILIATION_ATTRIBUTE_ALIASES);
+        String nameId = extractNameId(assertion);
 
         if ((email == null || email.isBlank()) && looksLikeEmail(nameId)) {
             email = nameId;
@@ -369,10 +380,96 @@ public class SamlValidationService {
         );
     }
 
-    private String extractNameId(Document doc) {
-        NodeList nameIds = doc.getElementsByTagNameNS("*", "NameID");
-        if (nameIds.getLength() > 0) {
-            return nameIds.item(0).getTextContent().trim();
+    private Element requireSingleAssertion(Document doc) {
+        NodeList assertions = doc.getElementsByTagNameNS(SAML_ASSERTION_NAMESPACE, "Assertion");
+        if (assertions.getLength() != 1) {
+            throw new SecurityException(
+                "SAML response must contain exactly one SAML Assertion; found " + assertions.getLength()
+            );
+        }
+        return (Element) assertions.item(0);
+    }
+
+    private void requireSingleAssertionSignature(Document doc, Element assertion) {
+        NodeList signatures = doc.getElementsByTagNameNS(XML_SIGNATURE_NAMESPACE, "Signature");
+        if (signatures.getLength() > 1) {
+            throw new SecurityException(
+                "SAML response must contain exactly one XML Signature; found " + signatures.getLength()
+            );
+        }
+        if (signatures.getLength() == 1 && signatures.item(0).getParentNode() != assertion) {
+            throw new SecurityException("SAML XML Signature must be directly attached to the signed Assertion");
+        }
+    }
+
+    private void rejectDuplicateXmlIds(Document doc) {
+        Set<String> ids = new HashSet<>();
+        NodeList elements = doc.getElementsByTagName("*");
+        String[] idAttributes = {"ID", "Id", "id", "AssertionID"};
+        for (int i = 0; i < elements.getLength(); i++) {
+            Element element = (Element) elements.item(i);
+            for (String idAttribute : idAttributes) {
+                if (!element.hasAttribute(idAttribute)) {
+                    continue;
+                }
+                String value = element.getAttribute(idAttribute).trim();
+                if (!value.isEmpty() && !ids.add(value)) {
+                    throw new SecurityException("SAML response contains duplicate XML ID values");
+                }
+            }
+        }
+    }
+
+    private void markAssertionIdAttribute(Element assertion) {
+        String assertionId = assertion.getAttribute("ID");
+        if (assertionId == null || assertionId.isBlank() || !assertionId.equals(assertionId.trim())) {
+            throw new SecurityException("SAML Assertion must contain a valid ID attribute");
+        }
+        assertion.setIdAttribute("ID", true);
+    }
+
+    private Element firstDirectChild(Element parent, String namespace, String localName) {
+        if (parent == null) {
+            return null;
+        }
+        NodeList children = parent.getChildNodes();
+        for (int i = 0; i < children.getLength(); i++) {
+            Node child = children.item(i);
+            if (child instanceof Element element
+                    && namespace.equals(element.getNamespaceURI())
+                    && localName.equals(element.getLocalName())) {
+                return element;
+            }
+        }
+        return null;
+    }
+
+    private List<Element> directChildren(Element parent, String namespace, String localName) {
+        if (parent == null) {
+            return Collections.emptyList();
+        }
+        List<Element> matches = new ArrayList<>();
+        NodeList children = parent.getChildNodes();
+        for (int i = 0; i < children.getLength(); i++) {
+            Node child = children.item(i);
+            if (child instanceof Element element
+                    && namespace.equals(element.getNamespaceURI())
+                    && localName.equals(element.getLocalName())) {
+                matches.add(element);
+            }
+        }
+        return matches;
+    }
+
+    private String extractNameId(Element assertion) {
+        Element subject = firstDirectChild(assertion, SAML_ASSERTION_NAMESPACE, "Subject");
+        if (subject == null) {
+            return null;
+        }
+        Element nameId = firstDirectChild(subject, SAML_ASSERTION_NAMESPACE, "NameID");
+        if (nameId != null) {
+            String value = nameId.getTextContent();
+            return value == null ? null : value.trim();
         }
         return null;
     }
@@ -534,9 +631,18 @@ public class SamlValidationService {
      * Extracts the IdP issuer from SAML assertion
      */
     private String extractIssuer(Document doc) {
-        NodeList issuerNodes = doc.getElementsByTagNameNS("*", "Issuer");
-        if (issuerNodes.getLength() > 0) {
-            return issuerNodes.item(0).getTextContent().trim();
+        NodeList assertions = doc.getElementsByTagNameNS(SAML_ASSERTION_NAMESPACE, "Assertion");
+        if (assertions.getLength() != 1) {
+            return null;
+        }
+        return extractIssuer((Element) assertions.item(0));
+    }
+
+    private String extractIssuer(Element assertion) {
+        Element issuer = firstDirectChild(assertion, SAML_ASSERTION_NAMESPACE, "Issuer");
+        if (issuer != null) {
+            String value = issuer.getTextContent();
+            return value == null || value.isBlank() ? null : value.trim();
         }
         return null;
     }
@@ -545,15 +651,17 @@ public class SamlValidationService {
      * Extracts metadata URL from SAML assertion (if present)
      * SAML2 can include this in AuthnStatement or custom extensions
      */
-    private String extractMetadataUrl(Document doc) {
+    private String extractMetadataUrl(Element assertion) {
         // Check for standard SAML2 metadata location in AuthnStatement
-        NodeList authnStatements = doc.getElementsByTagNameNS("*", "AuthnStatement");
+        NodeList authnStatements = assertion.getElementsByTagNameNS(SAML_ASSERTION_NAMESPACE, "AuthnStatement");
         if (authnStatements.getLength() > 0) {
             Element authnStatement = (Element) authnStatements.item(0);
-            NodeList authnContexts = authnStatement.getElementsByTagNameNS("*", "AuthnContext");
+            NodeList authnContexts = authnStatement.getElementsByTagNameNS(SAML_ASSERTION_NAMESPACE, "AuthnContext");
             if (authnContexts.getLength() > 0) {
                 Element authnContext = (Element) authnContexts.item(0);
-                NodeList authenticatingAuthorities = authnContext.getElementsByTagNameNS("*", "AuthenticatingAuthority");
+                NodeList authenticatingAuthorities = authnContext.getElementsByTagNameNS(
+                    SAML_ASSERTION_NAMESPACE, "AuthenticatingAuthority"
+                );
                 if (authenticatingAuthorities.getLength() > 0) {
                     String authority = authenticatingAuthorities.item(0).getTextContent().trim();
                     // Authority URL often points to metadata endpoint
@@ -565,7 +673,7 @@ public class SamlValidationService {
         }
         
         // Check for custom extension with metadata URL
-        NodeList extensions = doc.getElementsByTagNameNS("*", "Extensions");
+        NodeList extensions = assertion.getElementsByTagNameNS(SAML_ASSERTION_NAMESPACE, "Extensions");
         if (extensions.getLength() > 0) {
             Element ext = (Element) extensions.item(0);
             NodeList metadataNodes = ext.getElementsByTagNameNS("*", "MetadataURL");
@@ -577,7 +685,7 @@ public class SamlValidationService {
         return null;
     }
 
-    private String resolveMetadataUrl(Document doc, String issuer) {
+    private String resolveMetadataUrl(Element assertion, String issuer) {
         String override = findIssuerValue(metadataOverrides, issuer);
         if (override != null && !override.isBlank()) {
             logger.info("Using metadata URL override for issuer {}", issuer);
@@ -590,7 +698,7 @@ public class SamlValidationService {
             logger.info("Using global metadata URL override for issuer {}", issuer);
             return metadataUrlOverride.trim();
         }
-        return extractMetadataUrl(doc);
+        return extractMetadataUrl(assertion);
     }
     
     /**
@@ -1007,7 +1115,7 @@ public class SamlValidationService {
     /**
      * Verifies XML signature using certificate
      */
-    private boolean verifySignature(Document doc, List<X509Certificate> certs) throws Exception {
+    private boolean verifySignature(Document doc, Element assertion, List<X509Certificate> certs) throws Exception {
         if (certs == null || certs.isEmpty()) {
             logger.warn("No certificates provided for SAML signature validation");
             return false;
@@ -1016,9 +1124,11 @@ public class SamlValidationService {
         Exception lastError = null;
         for (X509Certificate cert : certs) {
             try {
-                if (verifySignatureWithCert(doc, cert)) {
+                if (verifySignatureWithCert(doc, assertion, cert)) {
                     return true;
                 }
+            } catch (SecurityException ex) {
+                throw ex;
             } catch (Exception ex) {
                 lastError = ex;
                 logger.debug("SAML signature verification failed for cert {}: {}", describeCert(cert), ex.getMessage());
@@ -1031,21 +1141,24 @@ public class SamlValidationService {
         return false;
     }
 
-    private boolean verifySignatureWithCert(Document doc, X509Certificate cert) throws Exception {
-        NodeList signatureNodes = doc.getElementsByTagNameNS(XMLSignature.XMLNS, "Signature");
+    private boolean verifySignatureWithCert(Document doc, Element assertion, X509Certificate cert) throws Exception {
+        NodeList signatureNodes = doc.getElementsByTagNameNS(XML_SIGNATURE_NAMESPACE, "Signature");
         if (signatureNodes.getLength() == 0) {
             logger.warn("No signature found in SAML assertion");
             return false;
         }
-        
+
+        requireSingleAssertionSignature(doc, assertion);
         Element signatureElement = (Element) signatureNodes.item(0);
         
         // Create validation context with certificate
         DOMValidateContext valContext = new DOMValidateContext(cert.getPublicKey(), signatureElement);
+        valContext.setProperty("org.jcp.xml.dsig.secureValidation", Boolean.TRUE);
         
         // Validate signature
         XMLSignatureFactory factory = XMLSignatureFactory.getInstance("DOM");
         XMLSignature signature = factory.unmarshalXMLSignature(valContext);
+        validateSignatureReferences(signature, assertion.getAttribute("ID"));
         
         boolean valid = signature.validate(valContext);
         
@@ -1056,6 +1169,22 @@ public class SamlValidationService {
         }
         
         return valid;
+    }
+
+    private void validateSignatureReferences(XMLSignature signature, String assertionId) {
+        List<Reference> references = signature.getSignedInfo().getReferences();
+        if (references.size() != 1) {
+            throw new SecurityException(
+                "SAML Assertion signature must contain exactly one reference; found " + references.size()
+            );
+        }
+        String expectedUri = "#" + assertionId;
+        String referenceUri = references.get(0).getURI();
+        if (!expectedUri.equals(referenceUri)) {
+            throw new SecurityException(
+                "SAML Assertion signature reference does not target the signed Assertion"
+            );
+        }
     }
 
     private String describeCert(X509Certificate cert) {
@@ -1154,22 +1283,11 @@ public class SamlValidationService {
         factory.setFeature("http://apache.org/xml/features/nonvalidating/load-external-dtd", false);
         factory.setXIncludeAware(false);
         factory.setExpandEntityReferences(false);
+        factory.setAttribute(XMLConstants.ACCESS_EXTERNAL_DTD, "");
+        factory.setAttribute(XMLConstants.ACCESS_EXTERNAL_SCHEMA, "");
         
         DocumentBuilder builder = factory.newDocumentBuilder();
         return builder.parse(is);
-    }
-
-    private void markIdAttributes(Document doc) {
-        NodeList elements = doc.getElementsByTagName("*");
-        for (int i = 0; i < elements.getLength(); i++) {
-            Element element = (Element) elements.item(i);
-            if (element.hasAttribute("ID")) {
-                element.setIdAttribute("ID", true);
-            }
-            if (element.hasAttribute("AssertionID")) {
-                element.setIdAttribute("AssertionID", true);
-            }
-        }
     }
     
 
@@ -1185,15 +1303,15 @@ public class SamlValidationService {
 
 
 
-    private String extractSamlAttributeValueByAliases(Document doc, String... aliases) {
-        List<String> values = extractSamlAttributeValuesByAliases(doc, aliases);
+    private String extractSamlAttributeValueByAliases(Element assertion, String... aliases) {
+        List<String> values = extractSamlAttributeValuesByAliases(assertion, aliases);
         if (values.isEmpty()) {
             return null;
         }
         return values.get(0);
     }
 
-    private List<String> extractSamlAttributeValuesByAliases(Document doc, String... aliases) {
+    private List<String> extractSamlAttributeValuesByAliases(Element assertion, String... aliases) {
         if (aliases == null || aliases.length == 0) {
             return Collections.emptyList();
         }
@@ -1205,19 +1323,18 @@ public class SamlValidationService {
                 normalizedAliases.add(normalized);
             }
         }
-        NodeList attributes = doc.getElementsByTagNameNS("*", "Attribute");
-        for (int i = 0; i < attributes.getLength(); i++) {
-            Element attribute = (Element) attributes.item(i);
-            String name = normalizeAttributeName(attribute.getAttribute("Name"));
-            String friendly = normalizeAttributeName(attribute.getAttribute("FriendlyName"));
-            if (!matchesAlias(name, friendly, normalizedAliases)) {
-                continue;
-            }
-            NodeList items = attribute.getElementsByTagNameNS("*", "AttributeValue");
-            for (int j = 0; j < items.getLength(); j++) {
-                String value = items.item(j).getTextContent();
-                if (value != null && !value.isBlank()) {
-                    values.add(value.trim());
+        for (Element statement : directChildren(assertion, SAML_ASSERTION_NAMESPACE, "AttributeStatement")) {
+            for (Element attribute : directChildren(statement, SAML_ASSERTION_NAMESPACE, "Attribute")) {
+                String name = normalizeAttributeName(attribute.getAttribute("Name"));
+                String friendly = normalizeAttributeName(attribute.getAttribute("FriendlyName"));
+                if (!matchesAlias(name, friendly, normalizedAliases)) {
+                    continue;
+                }
+                for (Element item : directChildren(attribute, SAML_ASSERTION_NAMESPACE, "AttributeValue")) {
+                    String value = item.getTextContent();
+                    if (value != null && !value.isBlank()) {
+                        values.add(value.trim());
+                    }
                 }
             }
         }
