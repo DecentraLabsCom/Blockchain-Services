@@ -8,6 +8,7 @@ import org.web3j.abi.TypeReference;
 import org.web3j.abi.datatypes.Function;
 import org.web3j.abi.datatypes.StaticStruct;
 import org.web3j.abi.datatypes.DynamicArray;
+import org.web3j.abi.datatypes.DynamicBytes;
 import org.web3j.abi.datatypes.Type;
 import org.web3j.abi.datatypes.Address;
 import org.web3j.abi.datatypes.Bool;
@@ -117,6 +118,32 @@ public class Diamond extends Contract {
             this.createdAt = createdAt;
             this.claimedAt = claimedAt;
             this.status = status;
+        }
+    }
+
+    /** Governance state recorded for an emergency check-in generation. */
+    public static class EmergencyCheckInReview {
+        public boolean settlementExcluded;
+        public BigInteger reasonCode;
+        public String executor;
+        public BigInteger checkedInAt;
+        public String reviewer;
+        public BigInteger reviewedAt;
+
+        public EmergencyCheckInReview(
+            boolean settlementExcluded,
+            BigInteger reasonCode,
+            String executor,
+            BigInteger checkedInAt,
+            String reviewer,
+            BigInteger reviewedAt
+        ) {
+            this.settlementExcluded = settlementExcluded;
+            this.reasonCode = reasonCode;
+            this.executor = executor;
+            this.checkedInAt = checkedInAt;
+            this.reviewer = reviewer;
+            this.reviewedAt = reviewedAt;
         }
     }
     
@@ -1203,6 +1230,41 @@ public class Diamond extends Contract {
         return executeRemoteCallTransaction(reverseSettlementClaimFunction(claimId, referenceHash));
     }
 
+    public RemoteFunctionCall<TransactionReceipt> emergencyCheckIn(byte[] reservationKey, BigInteger reasonCode) {
+        return executeRemoteCallTransaction(emergencyCheckInFunction(reservationKey, reasonCode));
+    }
+
+    public RemoteFunctionCall<TransactionReceipt> reviewEmergencyCheckIn(byte[] reservationKey) {
+        return executeRemoteCallTransaction(reviewEmergencyCheckInFunction(reservationKey));
+    }
+
+    public RemoteFunctionCall<TransactionReceipt> checkInReservationWithSignature(
+        byte[] reservationKey,
+        String signer,
+        byte[] pucHash,
+        BigInteger timestamp,
+        byte[] signature
+    ) {
+        return executeRemoteCallTransaction(
+            checkInReservationWithSignatureFunction(reservationKey, signer, pucHash, timestamp, signature)
+        );
+    }
+
+    public RemoteFunctionCall<EmergencyCheckInReview> getEmergencyCheckInReview(byte[] reservationKey) {
+        final Function function = getEmergencyCheckInReviewFunction(reservationKey);
+        return new RemoteFunctionCall<>(function, () -> {
+            List<?> results = executeCallMultipleValueReturn(function);
+            return new EmergencyCheckInReview(
+                ((Bool) results.get(0)).getValue(),
+                ((Uint8) results.get(1)).getValue(),
+                ((Address) results.get(2)).getValue(),
+                ((Uint64) results.get(3)).getValue(),
+                ((Address) results.get(4)).getValue(),
+                ((Uint64) results.get(5)).getValue()
+            );
+        });
+    }
+
     public RemoteFunctionCall<ProviderSettlementClaim> getProviderSettlementClaim(byte[] claimId) {
         final Function function = new Function(
             "getProviderSettlementClaim",
@@ -1331,6 +1393,57 @@ public class Diamond extends Contract {
                 new Bytes32(claimId),
                 new Bytes32(paymentReferenceHash),
                 new Bytes32(paymentAttestationHash)
+            ),
+            List.of()
+        );
+    }
+
+    public static Function emergencyCheckInFunction(byte[] reservationKey, BigInteger reasonCode) {
+        return new Function(
+            "emergencyCheckIn",
+            Arrays.asList(new Bytes32(reservationKey), new Uint8(reasonCode)),
+            List.of()
+        );
+    }
+
+    public static Function reviewEmergencyCheckInFunction(byte[] reservationKey) {
+        return new Function(
+            "reviewEmergencyCheckIn",
+            List.of(new Bytes32(reservationKey)),
+            List.of()
+        );
+    }
+
+    public static Function getEmergencyCheckInReviewFunction(byte[] reservationKey) {
+        return new Function(
+            "getEmergencyCheckInReview",
+            List.of(new Bytes32(reservationKey)),
+            Arrays.asList(
+                new TypeReference<Bool>() {},
+                new TypeReference<Uint8>() {},
+                new TypeReference<Address>() {},
+                new TypeReference<Uint64>() {},
+                new TypeReference<Address>() {},
+                new TypeReference<Uint64>() {}
+            )
+        );
+    }
+
+    public static Function checkInReservationWithSignatureFunction(
+        byte[] reservationKey,
+        String signer,
+        byte[] pucHash,
+        BigInteger timestamp,
+        byte[] signature
+    ) {
+        return new Function(
+            "checkInReservationWithSignature",
+            Arrays.asList(
+                new Bytes32(reservationKey),
+                new Address(signer),
+                new Bytes32(pucHash),
+                new Uint64(timestamp),
+                new DynamicBytes(signature)
             ),
             List.of()
         );
