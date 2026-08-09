@@ -2,6 +2,7 @@ package decentralabs.blockchain.config;
 
 import decentralabs.blockchain.service.BackendUrlResolver;
 import decentralabs.blockchain.service.auth.SamlValidationService;
+import decentralabs.blockchain.service.auth.FmuSessionTicketService;
 import decentralabs.blockchain.service.auth.WebauthnCredentialService;
 import decentralabs.blockchain.service.intent.Eip712IntentVerifier;
 import decentralabs.blockchain.service.intent.IntentPersistenceService;
@@ -96,6 +97,9 @@ class ReservationIntentProcessedE2ETest {
     private IntentService intentService;
     private ContractEventListenerConfig listener;
 
+    @Mock
+    private FmuSessionTicketService fmuSessionTicketService;
+
     @BeforeEach
     void setUp() {
         intentService = new IntentService(
@@ -124,7 +128,8 @@ class ReservationIntentProcessedE2ETest {
             intentPersistenceService,
             intentService,
             providerSettlementPersistenceService,
-            contentRetentionService
+            contentRetentionService,
+            fmuSessionTicketService
         );
     }
 

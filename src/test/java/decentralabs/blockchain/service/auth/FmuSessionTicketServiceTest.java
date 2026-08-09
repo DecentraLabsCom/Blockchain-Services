@@ -5,11 +5,14 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
-import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.lenient;
 
 import decentralabs.blockchain.dto.auth.FmuSessionTicketIssueRequest;
 import decentralabs.blockchain.dto.auth.FmuSessionTicketRedeemRequest;
+import decentralabs.blockchain.service.wallet.BlockchainBookingService;
 import java.sql.ResultSet;
 import java.util.Base64;
 import java.util.HashMap;
@@ -41,6 +44,9 @@ class FmuSessionTicketServiceTest {
     @Mock
     private AccessCredentialAuditService accessCredentialAuditService;
 
+    @Mock
+    private BlockchainBookingService blockchainBookingService;
+
     private FmuSessionTicketService service;
     private AccessCodeTokenCipher ticketCipher;
 
@@ -50,6 +56,9 @@ class FmuSessionTicketServiceTest {
             Base64.getUrlEncoder().withoutPadding().encodeToString(new byte[32])
         );
         service = buildService(null);
+        lenient().when(blockchainBookingService.isFmuSessionReservationAuthorized(
+            anyString(), anyString(), anyString(), anyString(), anyLong()
+        )).thenReturn(true);
     }
 
     @Test
@@ -67,6 +76,7 @@ class FmuSessionTicketServiceTest {
         assertThat(issueResponse.getSessionTicket()).startsWith("st_");
         assertThat(issueResponse.getLabId()).isEqualTo("42");
         assertThat(issueResponse.isOneTimeUse()).isFalse();
+        assertThat(issueResponse.getExpiresAt()).isLessThan(((Number) claims.get("exp")).longValue());
         org.mockito.Mockito.verify(accessCredentialAuditService)
             .recordFmuTicketIssuedRequired(org.mockito.Mockito.eq(issueResponse.getSessionTicket()), org.mockito.Mockito.eq(claims), org.mockito.Mockito.anyLong());
 
@@ -129,7 +139,7 @@ class FmuSessionTicketServiceTest {
                 ResultSet resultSet = org.mockito.Mockito.mock(ResultSet.class);
                 when(resultSet.next()).thenReturn(true);
                 when(resultSet.getString(1)).thenReturn(ticketCipher.encrypt("""
-                    {"sub":"user-1","labId":42,"accessKey":"test.fmu","resourceType":"fmu","reservationKey":"0xabc","targetGatewayId":"lab.example","nbf":%d,"exp":%d}
+                    {"sub":"user-1","labId":42,"accessKey":"test.fmu","resourceType":"fmu","reservationKey":"0xabc","targetGatewayId":"lab.example","payerInstitutionWallet":"0x1234567890abcdef1234567890abcdef12345678","pucHash":"0x1111111111111111111111111111111111111111111111111111111111111111","nbf":%d,"exp":%d}
                     """.formatted(now - 30, now + 300).trim()));
                 when(resultSet.getLong(2)).thenReturn(now + 120);
                 return extractor.extractData(resultSet);
@@ -188,6 +198,40 @@ class FmuSessionTicketServiceTest {
     }
 
     @Test
+    void shouldRejectRedeemWhenReservationIsNoLongerAccessAuthorizedOnChain() {
+        long now = System.currentTimeMillis() / 1000;
+        Map<String, Object> claims = validClaims(now);
+        when(jwtService.validateToken("booking-token")).thenReturn(true);
+        when(jwtService.extractAllClaims("booking-token")).thenReturn(claims);
+
+        var issueResponse = service.issue("Bearer booking-token", new FmuSessionTicketIssueRequest());
+        when(blockchainBookingService.isFmuSessionReservationAuthorized(
+            anyString(), anyString(), anyString(), anyString(), anyLong()
+        )).thenReturn(false);
+
+        FmuSessionTicketRedeemRequest redeemRequest = new FmuSessionTicketRedeemRequest();
+        redeemRequest.setSessionTicket(issueResponse.getSessionTicket());
+
+        assertThatThrownBy(() -> service.redeem(redeemRequest, "lab.example"))
+            .isInstanceOf(SessionTicketException.class)
+            .extracting("code")
+            .isEqualTo("RESERVATION_NOT_ACTIVE");
+    }
+
+    @Test
+    void shouldRevokeAllTicketsForReservationKey() {
+        service = buildService(jdbcTemplate);
+
+        int revoked = service.revokeByReservationKey("0xabc");
+
+        assertThat(revoked).isZero();
+        verify(jdbcTemplate).update(
+            "DELETE FROM fmu_session_tickets WHERE reservation_key = ?",
+            "0xabc"
+        );
+    }
+
+    @Test
     void shouldRejectNonFmuToken() {
         long now = System.currentTimeMillis() / 1000;
         Map<String, Object> claims = validClaims(now);
@@ -228,7 +272,8 @@ class FmuSessionTicketServiceTest {
             jwtService,
             jdbcTemplateProvider,
             accessCredentialAuditService,
-            ticketCipher
+            ticketCipher,
+            blockchainBookingService
         );
         ReflectionTestUtils.setField(candidate, "maxTtlSeconds", 300L);
         ReflectionTestUtils.setField(candidate, "requirePersistence", false);
@@ -243,6 +288,8 @@ class FmuSessionTicketServiceTest {
         claims.put("resourceType", "fmu");
         claims.put("reservationKey", "0xabc");
         claims.put("targetGatewayId", "lab.example");
+        claims.put("payerInstitutionWallet", "0x1234567890abcdef1234567890abcdef12345678");
+        claims.put("pucHash", "0x" + "11".repeat(32));
         claims.put("nbf", now - 30);
         claims.put("exp", now + 300);
         return claims;

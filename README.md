@@ -93,7 +93,9 @@ reviewed Diamond upgrade.
 the backend runs in `consumer-only`; institutional check-in routes remain
 available to the consumer role. FMU ticket issuance validates a booking
 bearer; redemption requires a per-gateway session-observer credential and is
-denied in `consumer-only`.
+denied in `consumer-only`. Redemption also revalidates the reservation
+on-chain, including `ACCESS_AUTHORIZED`, lab, payer/PUC binding and the active
+window; cancellation events eagerly revoke matching tickets.
 
 Access issuance is retryable rather than a long-polling HTTP operation:
 `/auth/authorize-and-issue` and `/auth/access-credential` return a fast pending

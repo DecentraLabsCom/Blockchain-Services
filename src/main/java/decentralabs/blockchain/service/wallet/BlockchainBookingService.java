@@ -2,6 +2,7 @@ package decentralabs.blockchain.service.wallet;
 
 import decentralabs.blockchain.service.guacamole.GuacamoleProvisioningService;
 import decentralabs.blockchain.util.EthereumAddressValidator;
+import decentralabs.blockchain.util.PucHashUtil;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -10,6 +11,7 @@ import org.web3j.crypto.Hash;
 import org.web3j.protocol.Web3j;
 import org.web3j.tx.ReadonlyTransactionManager;
 import org.web3j.tx.gas.StaticGasProvider;
+import org.web3j.utils.Numeric;
 
 import decentralabs.blockchain.contract.Diamond;
 
@@ -118,6 +120,73 @@ public class BlockchainBookingService {
     public Map<String, Object> validateAccessAuthorizedReservation(
             String wallet, String reservationKey, String labId, String puc) {
         return getBookingInfo(wallet, reservationKey, labId, puc, true, false, false);
+    }
+
+    /**
+     * Revalidates the complete reservation binding immediately before an FMU
+     * session is created. This is deliberately a direct chain read rather than
+     * a lookup through the local reservation event projection.
+     */
+    public boolean isFmuSessionReservationAuthorized(
+            String payerInstitutionWallet,
+            String reservationKeyHex,
+            String expectedLabId,
+            String expectedPucHash,
+            long now) {
+        if (!EthereumAddressValidator.isValidAddress(payerInstitutionWallet)
+                || reservationKeyHex == null
+                || expectedLabId == null
+                || expectedPucHash == null
+                || expectedPucHash.isBlank()) {
+            return false;
+        }
+
+        final byte[] reservationKeyBytes;
+        final BigInteger labId;
+        final byte[] pucHash;
+        try {
+            reservationKeyBytes = hexStringToByteArray(reservationKeyHex);
+            labId = EthereumAddressValidator.parseBigInteger(expectedLabId, "labId");
+            String cleanPucHash = Numeric.cleanHexPrefix(expectedPucHash.trim());
+            if (cleanPucHash.length() != 64 || !cleanPucHash.matches("[0-9a-fA-F]{64}")) {
+                return false;
+            }
+            pucHash = Numeric.hexStringToByteArray(PucHashUtil.normalizeBytes32(expectedPucHash));
+        } catch (RuntimeException invalidBinding) {
+            return false;
+        }
+
+        if (reservationKeyBytes.length != 32 || pucHash.length != 32) {
+            return false;
+        }
+
+        try {
+            Diamond diamond = loadDiamondContract(payerInstitutionWallet);
+            Diamond.Reservation reservation = diamond.getReservation(reservationKeyBytes).send();
+            if (reservation == null
+                    || reservation.labId == null
+                    || reservation.status == null
+                    || reservation.start == null
+                    || reservation.end == null
+                    || reservation.renter == null
+                    || reservation.payerInstitution == null) {
+                return false;
+            }
+
+            if (!labId.equals(reservation.labId)
+                    || !STATUS_ACCESS_AUTHORIZED.equals(reservation.status)
+                    || !payerInstitutionWallet.equalsIgnoreCase(reservation.renter)
+                    || !payerInstitutionWallet.equalsIgnoreCase(reservation.payerInstitution)
+                    || now < reservation.start.longValue()
+                    || now >= reservation.end.longValue()) {
+                return false;
+            }
+
+            byte[] onChainPucHash = diamond.getReservationPucHash(reservationKeyBytes).send();
+            return onChainPucHash != null && Arrays.equals(pucHash, onChainPucHash);
+        } catch (Exception e) {
+            throw new IllegalStateException("Failed to read FMU reservation authorization state", e);
+        }
     }
 
     public void provisionGuacamoleAccess(Map<String, Object> bookingInfo) {

@@ -179,6 +179,18 @@
     "defaultValue": true
   },
   {
+    "name": "auth.fmu.session-ticket.default-ttl-seconds",
+    "type": "java.lang.Long",
+    "description": "Default lifetime of an FMU session ticket before the reservation JWT expiry.",
+    "defaultValue": 120
+  },
+  {
+    "name": "auth.fmu.session-ticket.max-ttl-seconds",
+    "type": "java.lang.Long",
+    "description": "Maximum caller-requested lifetime of an FMU session ticket.",
+    "defaultValue": 300
+  },
+  {
     "name": "rate.limit.fmu.session-ticket.requests.per.minute",
     "type": "java.lang.Integer",
     "description": "Independent rate limit for FMU session-ticket issue and redemption requests; issue requests use the validated booking targetGatewayId claim when available.",

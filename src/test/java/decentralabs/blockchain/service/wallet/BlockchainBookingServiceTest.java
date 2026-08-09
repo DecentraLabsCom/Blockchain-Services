@@ -387,6 +387,44 @@ class BlockchainBookingServiceTest {
         }
     }
 
+    @Test
+    void shouldRequireCurrentOnChainAuthorizationForFmuSession() throws Exception {
+        long now = System.currentTimeMillis() / 1000;
+        String pucHash = "0x" + "22".repeat(32);
+        Diamond.Reservation reservation = new Diamond.Reservation(
+                TEST_LAB_ID,
+                TEST_WALLET,
+                BigInteger.valueOf(1000),
+                "0x00000000000000000000000000000000000000aa",
+                BigInteger.valueOf(2),
+                BigInteger.valueOf(now - 60),
+                BigInteger.valueOf(now + 600),
+                BigInteger.ZERO,
+                BigInteger.ZERO,
+                TEST_WALLET,
+                "0x0000000000000000000000000000000000000000",
+                BigInteger.ZERO
+        );
+
+        try (MockedStatic<Diamond> diamondMock = mockStatic(Diamond.class)) {
+            diamondMock.when(() -> Diamond.load(
+                    anyString(), any(Web3j.class), any(ReadonlyTransactionManager.class), any(ContractGasProvider.class)))
+                    .thenReturn(diamond);
+            when(diamond.getReservation(any(byte[].class))).thenReturn(mockRemoteCall(reservation));
+            when(diamond.getReservationPucHash(any(byte[].class)))
+                    .thenReturn(mockRemoteCall(org.web3j.utils.Numeric.hexStringToByteArray(pucHash)));
+
+            assertThat(service.isFmuSessionReservationAuthorized(
+                    TEST_WALLET, TEST_RESERVATION_KEY, TEST_LAB_ID.toString(), pucHash, now
+            )).isTrue();
+
+            reservation.status = BigInteger.valueOf(4); // CANCELLED
+            assertThat(service.isFmuSessionReservationAuthorized(
+                    TEST_WALLET, TEST_RESERVATION_KEY, TEST_LAB_ID.toString(), pucHash, now
+            )).isFalse();
+        }
+    }
+
     // Helper methods
 
     private BigInteger getCurrentTimestamp() {

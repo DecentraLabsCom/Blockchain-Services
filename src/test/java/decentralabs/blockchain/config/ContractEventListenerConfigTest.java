@@ -3,6 +3,7 @@ package decentralabs.blockchain.config;
 import decentralabs.blockchain.dto.health.LabMetadata;
 import decentralabs.blockchain.notification.ReservationNotificationService;
 import decentralabs.blockchain.service.health.LabMetadataService;
+import decentralabs.blockchain.service.auth.FmuSessionTicketService;
 import decentralabs.blockchain.service.intent.IntentPersistenceService;
 import decentralabs.blockchain.service.intent.IntentService;
 import decentralabs.blockchain.service.labadmin.LabContentRetentionService;
@@ -92,6 +93,9 @@ class ContractEventListenerConfigTest {
     private LabContentRetentionService contentRetentionService;
 
     @Mock
+    private FmuSessionTicketService fmuSessionTicketService;
+
+    @Mock
     private Web3j web3j;
 
     private ContractEventListenerConfig config;
@@ -111,7 +115,8 @@ class ContractEventListenerConfigTest {
             intentPersistenceService,
             intentService,
             providerSettlementPersistenceService,
-            contentRetentionService
+            contentRetentionService,
+            fmuSessionTicketService
         );
         ReflectionTestUtils.setField(config, "diamondContractAddress", "0x1234567890abcdef");
         ReflectionTestUtils.setField(config, "startBlock", "latest");
@@ -492,6 +497,7 @@ class ContractEventListenerConfigTest {
             any(),
             eq("CANCELLED")
         );
+        verify(fmuSessionTicketService).revokeByReservationKey("0x" + reservationKeyTopic);
     }
 
     @Test
@@ -531,6 +537,7 @@ class ContractEventListenerConfigTest {
             any(),
             eq("CANCELLED")
         );
+        verify(fmuSessionTicketService).revokeByReservationKey("0x" + reservationKeyTopic);
     }
 
     @Test

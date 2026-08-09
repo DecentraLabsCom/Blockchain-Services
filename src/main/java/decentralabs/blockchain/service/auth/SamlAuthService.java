@@ -119,6 +119,7 @@ public class SamlAuthService {
             if (!accessAuthorizationProvisioningService.markActivated(provisionalLease)) {
                 throw provisioningLeaseLost(provisionalLease, txHash);
             }
+            bookingInfo.put("payerInstitutionWallet", payerInstitutionWallet);
             bindFmuIdentity(bookingInfo, puc);
             JwtService.IssuedToken issuedToken = jwtService.generateIssuedToken(null, bookingInfo);
             AuthResponse response = accessCredentialDeliveryService.deliver(
@@ -249,6 +250,7 @@ public class SamlAuthService {
             if (!accessAuthorizationProvisioningService.markActivated(provisionalLease)) {
                 throw provisioningLeaseLost(provisionalLease, null);
             }
+            bookingInfo.put("payerInstitutionWallet", wallet);
             bindFmuIdentity(bookingInfo, jwtPuc);
             JwtService.IssuedToken issuedToken = jwtService.generateIssuedToken(null, bookingInfo);
             AuthResponse response = accessCredentialDeliveryService.deliver(

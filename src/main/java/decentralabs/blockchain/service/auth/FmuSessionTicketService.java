@@ -7,6 +7,7 @@ import decentralabs.blockchain.dto.auth.FmuSessionTicketIssueRequest;
 import decentralabs.blockchain.dto.auth.FmuSessionTicketIssueResponse;
 import decentralabs.blockchain.dto.auth.FmuSessionTicketRedeemRequest;
 import decentralabs.blockchain.dto.auth.FmuSessionTicketRedeemResponse;
+import decentralabs.blockchain.service.wallet.BlockchainBookingService;
 import java.math.BigInteger;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
@@ -39,12 +40,16 @@ public class FmuSessionTicketService {
     private final JdbcTemplate jdbcTemplate;
     private final AccessCredentialAuditService accessCredentialAuditService;
     private final AccessCodeTokenCipher ticketCipher;
+    private final BlockchainBookingService blockchainBookingService;
     private final ObjectMapper objectMapper = new ObjectMapper();
     private final SecureRandom random = new SecureRandom();
     private final ConcurrentMap<String, TicketRecord> tickets = new ConcurrentHashMap<>();
 
     @Value("${auth.fmu.session-ticket.max-ttl-seconds:300}")
     private long maxTtlSeconds = 300;
+
+    @Value("${auth.fmu.session-ticket.default-ttl-seconds:120}")
+    private long defaultTtlSeconds = 120;
 
     @Value("${auth.fmu.session-ticket.require-persistence:true}")
     private boolean requirePersistence = true;
@@ -53,12 +58,14 @@ public class FmuSessionTicketService {
         JwtService jwtService,
         ObjectProvider<JdbcTemplate> jdbcTemplateProvider,
         AccessCredentialAuditService accessCredentialAuditService,
-        AccessCodeTokenCipher ticketCipher
+        AccessCodeTokenCipher ticketCipher,
+        BlockchainBookingService blockchainBookingService
     ) {
         this.jwtService = jwtService;
         this.jdbcTemplate = jdbcTemplateProvider.getIfAvailable();
         this.accessCredentialAuditService = accessCredentialAuditService;
         this.ticketCipher = ticketCipher;
+        this.blockchainBookingService = blockchainBookingService;
     }
 
     @Transactional
@@ -88,13 +95,13 @@ public class FmuSessionTicketService {
             throw new SessionTicketException(HttpStatus.FORBIDDEN, "FORBIDDEN", "Ticket request reservationKey does not match booking token");
         }
 
-        // Ticket is reusable within the reservation window — expire with the booking, not a short TTL.
-        // If caller explicitly requests a shorter TTL (e.g. for a one-off embed), honour it.
-        long ticketExpiry = exp;
-        if (request != null && request.getTtlSeconds() != null) {
-            long ttl = Math.max(1, Math.min(maxTtlSeconds, request.getTtlSeconds()));
-            ticketExpiry = Math.min(exp, now + ttl);
-        }
+        // Tickets remain reusable for reconnects, but the default lifetime is
+        // deliberately short and never exceeds the reservation JWT window.
+        long requestedTtl = request != null && request.getTtlSeconds() != null
+            ? request.getTtlSeconds()
+            : defaultTtlSeconds;
+        long ttl = Math.max(1, Math.min(maxTtlSeconds, requestedTtl));
+        long ticketExpiry = Math.min(exp, now + ttl);
         if (ticketExpiry <= now) {
             throw new SessionTicketException(HttpStatus.UNAUTHORIZED, "SESSION_EXPIRED", "Reservation window expired");
         }
@@ -174,6 +181,42 @@ public class FmuSessionTicketService {
             throw new SessionTicketException(HttpStatus.UNAUTHORIZED, "SESSION_EXPIRED", "Reservation window expired");
         }
 
+        String payerInstitutionWallet = normalize(claims.get("payerInstitutionWallet"));
+        String pucHash = normalize(claims.get("pucHash"));
+        if (payerInstitutionWallet == null || pucHash == null) {
+            removeTicket(ticket);
+            throw new SessionTicketException(
+                HttpStatus.FORBIDDEN,
+                "FORBIDDEN",
+                "Session ticket is missing the reservation identity binding"
+            );
+        }
+        boolean reservationAuthorized;
+        try {
+            reservationAuthorized = blockchainBookingService.isFmuSessionReservationAuthorized(
+                payerInstitutionWallet,
+                claimReservationKey,
+                claimLabId,
+                pucHash,
+                now
+            );
+        } catch (RuntimeException stateReadFailure) {
+            throw new SessionTicketException(
+                HttpStatus.SERVICE_UNAVAILABLE,
+                "SESSION_TICKET_RESERVATION_STATE_UNAVAILABLE",
+                "Unable to verify the current reservation state",
+                stateReadFailure
+            );
+        }
+        if (!reservationAuthorized) {
+            removeTicket(ticket);
+            throw new SessionTicketException(
+                HttpStatus.FORBIDDEN,
+                "RESERVATION_NOT_ACTIVE",
+                "Reservation is no longer authorized for FMU access"
+            );
+        }
+
         FmuSessionTicketRedeemResponse response = new FmuSessionTicketRedeemResponse();
         response.setClaims(claims);
         response.setExpiresAt(Math.min(record.expiresAt(), exp));
@@ -183,6 +226,41 @@ public class FmuSessionTicketService {
     @Scheduled(fixedDelayString = "${auth.fmu.session-ticket.cleanup-interval-ms:60000}")
     public void scheduledCleanupExpired() {
         cleanupExpired();
+    }
+
+    /**
+     * Revokes every outstanding ticket bound to a reservation. The contract
+     * event listener calls this as an eager optimization; redeem still reads
+     * the reservation on-chain so event lag cannot preserve access.
+     */
+    public int revokeByReservationKey(String reservationKey) {
+        String normalizedKey = normalize(reservationKey);
+        if (normalizedKey == null) {
+            return 0;
+        }
+
+        int revokedInMemory = tickets.entrySet().stream()
+            .filter(entry -> normalizedKey.equalsIgnoreCase(
+                normalize(entry.getValue().claims().get("reservationKey"))
+            ))
+            .mapToInt(entry -> {
+                tickets.remove(entry.getKey(), entry.getValue());
+                return 1;
+            })
+            .sum();
+
+        if (!isPersistentStoreAvailable()) {
+            return revokedInMemory;
+        }
+        try {
+            return jdbcTemplate.update(
+                "DELETE FROM " + TICKETS_TABLE + " WHERE reservation_key = ?",
+                normalizedKey
+            );
+        } catch (DataAccessException e) {
+            handlePersistenceException("revoke", e);
+            return revokedInMemory;
+        }
     }
 
     private void cleanupExpired() {

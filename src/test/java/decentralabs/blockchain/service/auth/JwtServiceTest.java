@@ -160,6 +160,7 @@ class JwtServiceTest {
         bookingInfo.put("accessKey", "BouncingBall.fmu");
         bookingInfo.put("resourceType", "fmu");
         bookingInfo.put("reservationKey", expectedReservationKey);
+        bookingInfo.put("payerInstitutionWallet", "0x1234567890abcdef1234567890abcdef12345678");
 
         // When
         String token = jwtService.generateToken(null, bookingInfo);
@@ -174,6 +175,7 @@ class JwtServiceTest {
         assertEquals(expectedReservationKey, claims.get("reservationKey", String.class));
         assertEquals("fmu", claims.get("resourceType", String.class));
         assertEquals("BouncingBall.fmu", claims.get("accessKey", String.class));
+        assertEquals("0x1234567890abcdef1234567890abcdef12345678", claims.get("payerInstitutionWallet", String.class));
     }
 
     @Test

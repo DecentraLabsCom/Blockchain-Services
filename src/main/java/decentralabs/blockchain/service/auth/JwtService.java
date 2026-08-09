@@ -65,6 +65,7 @@ public class JwtService {
         String labURL = null;
         String pucHash = null;
         String targetGatewayId = null;
+        String payerInstitutionWallet = null;
     
         if (bookingInfo != null) {
             labId = (BigInteger) bookingInfo.get("lab");
@@ -77,6 +78,7 @@ public class JwtService {
             labURL = (String) bookingInfo.get("labURL");
             pucHash = (String) bookingInfo.get("pucHash");
             targetGatewayId = (String) bookingInfo.get("targetGatewayId");
+            payerInstitutionWallet = (String) bookingInfo.get("payerInstitutionWallet");
         }
     
         String reservationKey = null;
@@ -128,6 +130,9 @@ public class JwtService {
         }
         if (targetGatewayId != null && !targetGatewayId.isBlank()) {
             jwtBuilder.claim("targetGatewayId", targetGatewayId);
+        }
+        if (payerInstitutionWallet != null && !payerInstitutionWallet.isBlank()) {
+            jwtBuilder.claim("payerInstitutionWallet", payerInstitutionWallet);
         }
         if (reservationKey != null && !reservationKey.isBlank()) {
             jwtBuilder.claim("reservationKey", reservationKey);

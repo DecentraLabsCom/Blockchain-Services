@@ -242,8 +242,10 @@ route.
 
 ## FMU session tickets
 
-Tickets are reservation-window reusable credentials for FMU reconnects. Claims
-are encrypted at rest and the ticket lookup key is hashed.
+Tickets are short-lived, reservation-bound reusable credentials for FMU
+reconnects. The default lifetime is 120 seconds and it never exceeds the
+booking window. Claims are encrypted at rest and the ticket lookup key is
+hashed.
 
 ```mermaid
 sequenceDiagram
@@ -257,6 +259,8 @@ sequenceDiagram
     B-->>R: sessionTicket + expiry
     R->>B: POST /auth/fmu/session-ticket/redeem
     Note over R,B: Bearer: per-gateway observer JWT
+    B->>B: Read reservation on-chain
+    B->>B: Require ACCESS_AUTHORIZED, lab, payer, PUC and active window
     B-->>R: Validated claims bound to targetGatewayId
     R->>F: Accept job or realtime session
     R->>B: Durable observation before session.created
@@ -267,7 +271,11 @@ FMU ticket issue and redemption use an independent token bucket configured by
 the `targetGatewayId` claim of the validated booking bearer, so multiple
 gateways sharing an IP do not share the issue burst. Requests without a valid
 gateway claim fall back to an IP bucket. Ticket issuance still validates the
-booking bearer and its FMU claims.
+booking bearer and its FMU claims. Redemption fails closed when the chain read
+is unavailable and removes the ticket when the reservation is no longer
+authorized. `BookingCanceled` and `BookingCanceledByProvider` also eagerly
+delete all persisted tickets for the reservation; those event handlers are an
+optimization, not the security boundary.
 
 ## WebAuthn credential lifecycle
 

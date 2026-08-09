@@ -7,6 +7,7 @@ import decentralabs.blockchain.event.NetworkSwitchEvent;
 import decentralabs.blockchain.notification.ReservationNotificationData;
 import decentralabs.blockchain.notification.ReservationNotificationService;
 import decentralabs.blockchain.service.health.LabMetadataService;
+import decentralabs.blockchain.service.auth.FmuSessionTicketService;
 import decentralabs.blockchain.service.labadmin.LabContentRetentionService;
 import decentralabs.blockchain.service.persistence.ReservationPersistenceService;
 import decentralabs.blockchain.domain.ProviderSettlementOperation;
@@ -286,6 +287,7 @@ public class ContractEventListenerConfig {
     private final IntentService intentService;
     private final ProviderSettlementPersistenceService providerSettlementPersistenceService;
     private final LabContentRetentionService contentRetentionService;
+    private final FmuSessionTicketService fmuSessionTicketService;
 
     @Value("${contract.address}")
     private String diamondContractAddress;
@@ -734,6 +736,8 @@ public class ContractEventListenerConfig {
         String reservationKey = toHex((Bytes32) eventValues.getIndexedValues().get(0));
         BigInteger labId = ((Uint256) eventValues.getIndexedValues().get(1)).getValue();
 
+        fmuSessionTicketService.revokeByReservationKey(reservationKey);
+
         ReservationEventPayload payload = buildPayload(
             reservationKey,
             labId,
@@ -750,6 +754,9 @@ public class ContractEventListenerConfig {
     private void handleProviderBookingCanceled(EventValues eventValues, Log eventLog) {
         String reservationKey = toHex((Bytes32) eventValues.getIndexedValues().get(0));
         BigInteger labId = ((Uint256) eventValues.getIndexedValues().get(1)).getValue();
+
+        fmuSessionTicketService.revokeByReservationKey(reservationKey);
+
         String payerInstitution = ((Address) eventValues.getIndexedValues().get(2)).getValue();
         String provider = ((Address) eventValues.getNonIndexedValues().get(0)).getValue();
         BigInteger refundAmount = ((org.web3j.abi.datatypes.generated.Uint96)

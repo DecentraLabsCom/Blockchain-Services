@@ -13,6 +13,7 @@ import decentralabs.blockchain.service.auth.AccessCredentialAuditService;
 import decentralabs.blockchain.service.auth.FmuSessionTicketService;
 import decentralabs.blockchain.service.auth.JwtService;
 import decentralabs.blockchain.service.auth.SessionTicketException;
+import decentralabs.blockchain.service.wallet.BlockchainBookingService;
 import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -107,7 +108,8 @@ class FmuSessionTicketControllerTest {
                 Mockito.mock(JwtService.class),
                 new StaticListableBeanFactory().getBeanProvider(org.springframework.jdbc.core.JdbcTemplate.class),
                 Mockito.mock(AccessCredentialAuditService.class),
-                Mockito.mock(decentralabs.blockchain.service.auth.AccessCodeTokenCipher.class)
+                Mockito.mock(decentralabs.blockchain.service.auth.AccessCodeTokenCipher.class),
+                Mockito.mock(BlockchainBookingService.class)
             );
         }
 
