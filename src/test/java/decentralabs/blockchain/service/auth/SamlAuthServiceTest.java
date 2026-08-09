@@ -205,6 +205,39 @@ class SamlAuthServiceTest {
         }
 
         @Test
+        @DisplayName("Should validate current on-chain authorization before provisioning")
+        void shouldValidateCurrentOnChainAuthorizationBeforeProvisioning() {
+            ProviderAccessCredentialRequest request = new ProviderAccessCredentialRequest();
+            request.setMarketplaceToken("provider-token");
+            request.setReservationKey("0xreservation");
+            request.setLabId("42");
+
+            when(marketplaceEndpointAuthService.enforceToken(eq("provider-token"), eq(null)))
+                .thenReturn(Map.of(
+                    "puc", TEST_PUC, "affiliation", TEST_AFFILIATION,
+                    "bookingInfoAllowed", true, "purpose", "lab_access",
+                    "reservationKey", "0xreservation", "labId", "42",
+                    "payerInstitutionWallet", "0xwallet"
+                ));
+            Map<String, Object> bookingInfo = new HashMap<>(Map.of(
+                "labURL", "https://lab.example.com",
+                "reservationKey", "0xreservation",
+                "reservationStatus", java.math.BigInteger.valueOf(2),
+                "resourceType", "lab"
+            ));
+            when(blockchainService.getBookingInfoForCredentialPreparation("0xwallet", "0xreservation", "42", TEST_PUC))
+                .thenReturn(bookingInfo);
+            when(blockchainService.validateAccessAuthorizedReservation(
+                "0xwallet", "0xreservation", "42", TEST_PUC
+            )).thenThrow(new SecurityException("authorization changed on-chain"));
+
+            assertThatThrownBy(() -> samlAuthService.issueAccessCredential(request))
+                .isInstanceOf(SecurityException.class)
+                .hasMessage("authorization changed on-chain");
+            verify(blockchainService, never()).provisionGuacamoleAccess(any(), anyBoolean(), anyString());
+        }
+
+        @Test
         @DisplayName("Should use the booking canonical reservation key throughout a labId-only request")
         void shouldUseCanonicalReservationKeyForLabIdFallback() throws Exception {
             ProviderAccessCredentialRequest request = new ProviderAccessCredentialRequest();
@@ -446,6 +479,9 @@ class SamlAuthServiceTest {
         when(blockchainService.getBookingInfoForCredentialPreparation(
             "0xwallet", "0xreservation", "42", TEST_PUC
         )).thenReturn(bookingInfo);
+        when(blockchainService.validateAccessAuthorizedReservation(
+            "0xwallet", "0xreservation", "42", TEST_PUC
+        )).thenReturn(Map.of("reservationStatus", java.math.BigInteger.valueOf(2)));
         when(accessAuthorizationProvisioningService.tryStart("0xreservation")).thenReturn(lease);
         when(accessAuthorizationProvisioningService.isCurrent(lease)).thenReturn(true);
         when(accessAuthorizationProvisioningService.heartbeat(lease)).thenReturn(true);
@@ -458,6 +494,9 @@ class SamlAuthServiceTest {
 
         var order = org.mockito.Mockito.inOrder(accessCheckInCoordinator, blockchainService);
         order.verify(accessCheckInCoordinator).recordAccessGranted(request, claims, bookingInfo);
+        order.verify(blockchainService).validateAccessAuthorizedReservation(
+            "0xwallet", "0xreservation", "42", TEST_PUC
+        );
         order.verify(blockchainService).provisionGuacamoleAccess(bookingInfo, false, "fence-token");
     }
 

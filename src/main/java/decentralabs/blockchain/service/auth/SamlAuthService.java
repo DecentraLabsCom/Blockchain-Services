@@ -95,9 +95,6 @@ public class SamlAuthService {
             String puc = stringClaim(marketplaceJWTClaims, "puc");
             String txHash = request.getAccessAuthorizationTxHash();
             // Authorization is derived from the validated on-chain booking state.
-            // Do not hold the HTTP request open while the payer transaction is
-            // mined. The consumer/provider outbox is the durable worker; the
-            // caller retries this endpoint after the pending response.
             if (!isAccessAuthorized(bookingInfo)) {
                 enforceConsumerCheckInState(
                     canonicalReservationKey,
@@ -105,11 +102,14 @@ public class SamlAuthService {
                     request.getMarketplaceToken(),
                     request.getLabId()
                 );
-                validatePendingTransaction(txHash);
-                refreshAccessAuthorization(
-                    payerInstitutionWallet, canonicalReservationKey, request.getLabId(), puc, bookingInfo, txHash
-                );
             }
+            validatePendingTransaction(txHash);
+            refreshAccessAuthorization(
+                payerInstitutionWallet, canonicalReservationKey, request.getLabId(), puc, bookingInfo, txHash
+            );
+            blockchainService.validateAccessAuthorizedReservation(
+                payerInstitutionWallet, canonicalReservationKey, request.getLabId(), puc
+            );
             // codeql[java/user-controlled-bypass]
             provisionalLease = provisionAuthorizedGuacamoleAccess(
                 bookingInfo, canonicalReservationKey, payerInstitutionWallet, request.getLabId(), puc, txHash
@@ -230,11 +230,12 @@ public class SamlAuthService {
                     "Institutional check-in publication failed permanently"
                 );
             }
-            if (!isAccessAuthorized(bookingInfo)) {
-                refreshAccessAuthorization(
-                    wallet, canonicalReservationKey, request.getLabId(), jwtPuc, bookingInfo, null
-                );
-            }
+            refreshAccessAuthorization(
+                wallet, canonicalReservationKey, request.getLabId(), jwtPuc, bookingInfo, null
+            );
+            blockchainService.validateAccessAuthorizedReservation(
+                wallet, canonicalReservationKey, request.getLabId(), jwtPuc
+            );
             // codeql[java/user-controlled-bypass]
             provisionalLease = provisionAuthorizedGuacamoleAccess(
                 bookingInfo, canonicalReservationKey, wallet, request.getLabId(), jwtPuc, null
@@ -270,6 +271,9 @@ public class SamlAuthService {
             String puc,
             Map<String, Object> preparedBookingInfo,
             String txHash) {
+        if (isAccessAuthorized(preparedBookingInfo)) {
+            return;
+        }
         Map<String, Object> state = blockchainService.getAccessAuthorizationState(
             wallet,
             reservationKeyFromBooking(preparedBookingInfo, reservationKey),
@@ -531,17 +535,13 @@ public class SamlAuthService {
             return;
         }
         try {
-            if (provisionalLease != null && !accessAuthorizationProvisioningService.beginRollback(provisionalLease)) {
+            if (!accessAuthorizationProvisioningService.beginRollback(provisionalLease)) {
                 return;
             }
             blockchainService.deletePreparedGuacamoleAccess(bookingInfo);
-            if (provisionalLease != null) {
-                accessAuthorizationProvisioningService.markRolledBack(provisionalLease);
-            }
+            accessAuthorizationProvisioningService.markRolledBack(provisionalLease);
         } catch (RuntimeException cleanupError) {
-            if (provisionalLease != null) {
-                accessAuthorizationProvisioningService.markFailed(provisionalLease);
-            }
+            accessAuthorizationProvisioningService.markFailed(provisionalLease);
             log.error("Failed to clean up the unissued Guacamole user", cleanupError);
         }
     }
