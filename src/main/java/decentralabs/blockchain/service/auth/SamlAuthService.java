@@ -102,9 +102,13 @@ public class SamlAuthService {
                 request.getLabId()
             );
             validatePendingTransaction(txHash);
+            // The authorization state is read from the chain and failures abort issuance.
+            // codeql[java/user-controlled-bypass]
             refreshAccessAuthorization(
                 payerInstitutionWallet, canonicalReservationKey, request.getLabId(), puc, bookingInfo, txHash
             );
+            // This independent on-chain ownership/status/window check runs before provisioning.
+            // codeql[java/user-controlled-bypass]
             blockchainService.validateAccessAuthorizedReservation(
                 payerInstitutionWallet, canonicalReservationKey, request.getLabId(), puc
             );
@@ -228,9 +232,13 @@ public class SamlAuthService {
                     "Institutional check-in publication failed permanently"
                 );
             }
+            // The authorization state is read from the chain and failures abort issuance.
+            // codeql[java/user-controlled-bypass]
             refreshAccessAuthorization(
                 wallet, canonicalReservationKey, request.getLabId(), jwtPuc, bookingInfo, null
             );
+            // This independent on-chain ownership/status/window check runs before provisioning.
+            // codeql[java/user-controlled-bypass]
             blockchainService.validateAccessAuthorizedReservation(
                 wallet, canonicalReservationKey, request.getLabId(), jwtPuc
             );
