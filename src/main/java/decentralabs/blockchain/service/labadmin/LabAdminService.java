@@ -21,11 +21,13 @@ import decentralabs.blockchain.util.LogSanitizer;
 import java.io.IOException;
 import java.math.BigInteger;
 import java.net.URI;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.Base64;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -71,8 +73,34 @@ public class LabAdminService {
     private static final long FULL_DAY_SECONDS = 86_400L;
     private static final int DEFAULT_RESERVATION_PAGE_SIZE = 100;
     private static final int MAX_RESERVATION_PAGE_SIZE = 500;
+    private static final int ON_CHAIN_RESERVATION_PAGE_SIZE = 100;
+    private static final int DEFAULT_ACTIONABLE_RPC_BUDGET = 500;
 
     public record LabAdminDeleteAssetResponse(boolean success, boolean deleted, String path) {}
+
+    private record ReservationCursor(BigInteger labId, BigInteger offset) {}
+
+    private static final class RpcBudgetExceededException extends RuntimeException {
+        private RpcBudgetExceededException() {
+            super("Actionable reservation RPC budget exhausted");
+        }
+    }
+
+    private static final class RpcBudget {
+        private final int maximum;
+        private int used;
+
+        private RpcBudget(int maximum) {
+            this.maximum = maximum;
+        }
+
+        private void consume() {
+            if (used >= maximum) {
+                throw new RpcBudgetExceededException();
+            }
+            used++;
+        }
+    }
 
     private final InstitutionalWalletService institutionalWalletService;
     private final InstitutionalTxManagerProvider txManagerProvider;
@@ -104,6 +132,9 @@ public class LabAdminService {
 
     @Value("${provider.puc-hash:}")
     private String configuredCreatorPucHash;
+
+    @Value("${lab.admin.reservations.rpc-budget:500}")
+    private int actionableReservationsRpcBudget = DEFAULT_ACTIONABLE_RPC_BUDGET;
 
     public Map<String, Object> status() {
         String wallet = institutionalWalletService.getInstitutionalWalletAddress();
@@ -163,11 +194,200 @@ public class LabAdminService {
     }
 
     public Map<String, Object> listActionableReservations() throws Exception {
-        return listActionableReservations(0, null);
+        return listActionableReservations(0, null, null);
     }
 
     public Map<String, Object> listActionableReservations(Integer offset, Integer limit) throws Exception {
-        return listReservations(true, offset, limit);
+        return listActionableReservations(offset, limit, null);
+    }
+
+    public Map<String, Object> listActionableReservations(Integer offset, Integer limit, String cursor)
+        throws Exception {
+        String wallet = requireProviderWallet();
+        Diamond diamond = loadReadonlyDiamond();
+        long now = Instant.now().getEpochSecond();
+        int safeOffset = normalizeReservationOffset(offset);
+        int safeLimit = normalizeReservationPageSize(limit);
+        List<BigInteger> labIds = new ArrayList<>(walletService.getLabsOwnedByProvider(wallet));
+        Map<BigInteger, String> labNames = new HashMap<>();
+        Map<String, String> institutionNames = new HashMap<>();
+        List<LabAdminReservation> reservations = new ArrayList<>(safeLimit);
+        RpcBudget budget = new RpcBudget(Math.max(1, actionableReservationsRpcBudget));
+
+        ReservationCursor start = hasText(cursor)
+            ? decodeReservationCursor(cursor)
+            : (labIds.isEmpty() ? null : new ReservationCursor(labIds.get(0), BigInteger.ZERO));
+        int startLabIndex = start == null ? 0 : labIds.indexOf(start.labId());
+        if (start != null && startLabIndex < 0) {
+            throw new IllegalArgumentException("Reservation cursor does not reference an owned lab");
+        }
+        BigInteger startRawOffset = start == null ? BigInteger.ZERO : start.offset();
+        int actionableToSkip = hasText(cursor) ? 0 : safeOffset;
+        String nextCursor = null;
+        boolean budgetExhausted = false;
+
+        outer:
+        for (int labIndex = startLabIndex; labIndex < labIds.size(); labIndex++) {
+            BigInteger labId = labIds.get(labIndex);
+            BigInteger rawOffset = labIndex == startLabIndex ? startRawOffset : BigInteger.ZERO;
+            while (true) {
+                Diamond.ReservationKeyPage reservationPage;
+                try {
+                    budget.consume();
+                    reservationPage = diamond.getReservationsOfTokenPaginated(
+                        labId,
+                        rawOffset,
+                        BigInteger.valueOf(ON_CHAIN_RESERVATION_PAGE_SIZE)
+                    ).send();
+                } catch (RpcBudgetExceededException ex) {
+                    nextCursor = encodeReservationCursor(labId, rawOffset);
+                    budgetExhausted = true;
+                    break outer;
+                } catch (Exception ex) {
+                    log.debug("Unable to load reservation page at offset {} for lab {}", rawOffset, labId, ex);
+                    nextCursor = encodeReservationCursor(labId, rawOffset);
+                    break outer;
+                }
+
+                if (reservationPage == null || reservationPage.keys() == null
+                    || reservationPage.keys().isEmpty()) {
+                    break;
+                }
+                BigInteger rawTotal = reservationPage.total() == null
+                    ? rawOffset.add(BigInteger.valueOf(reservationPage.keys().size()))
+                    : reservationPage.total();
+
+                for (int pageIndex = 0; pageIndex < reservationPage.keys().size(); pageIndex++) {
+                    BigInteger currentRawOffset = rawOffset.add(BigInteger.valueOf(pageIndex));
+                    byte[] key = reservationPage.keys().get(pageIndex);
+                    try {
+                        budget.consume();
+                        Diamond.Reservation reservation = diamond.getReservation(key).send();
+                        if (!hasReservation(reservation)
+                            || !wallet.equalsIgnoreCase(reservation.labProvider)) {
+                            continue;
+                        }
+                        Boolean sessionStarted = readSessionStartedStatus(diamond, key, reservation, budget);
+                        List<LabAdminCancellationOption> cancellationOptions = providerCancellationOptions(
+                            reservation, now, sessionStarted
+                        );
+                        if (cancellationOptions.isEmpty()) {
+                            continue;
+                        }
+                        if (actionableToSkip > 0) {
+                            actionableToSkip--;
+                            continue;
+                        }
+
+                        String labName = labNames.get(reservation.labId);
+                        if (!labNames.containsKey(reservation.labId)) {
+                            labName = resolveLabName(diamond, reservation.labId, budget);
+                            labNames.put(reservation.labId, labName);
+                        }
+                        String institutionAddress = reservation.payerInstitution;
+                        String institutionKey = normalizeAddressKey(institutionAddress);
+                        String institutionName = institutionNames.get(institutionKey);
+                        if (!institutionNames.containsKey(institutionKey)) {
+                            institutionName = resolveInstitutionName(diamond, institutionAddress, budget);
+                            institutionNames.put(institutionKey, institutionName);
+                        }
+                        reservations.add(toLabAdminReservation(
+                            key, reservation, labName, institutionName, cancellationOptions
+                        ));
+                        if (reservations.size() >= safeLimit) {
+                            nextCursor = nextReservationCursor(
+                                labIds, labIndex, currentRawOffset.add(BigInteger.ONE), rawTotal
+                            );
+                            break outer;
+                        }
+                    } catch (RpcBudgetExceededException ex) {
+                        nextCursor = encodeReservationCursor(labId, currentRawOffset);
+                        budgetExhausted = true;
+                        break outer;
+                    } catch (Exception ex) {
+                        log.debug("Unable to load actionable reservation at offset {} for lab {}", currentRawOffset, labId, ex);
+                    }
+                }
+
+                rawOffset = rawOffset.add(BigInteger.valueOf(reservationPage.keys().size()));
+                if (rawOffset.compareTo(rawTotal) >= 0) {
+                    break;
+                }
+            }
+        }
+
+        int nextOffset = safeOffset > Integer.MAX_VALUE - reservations.size()
+            ? Integer.MAX_VALUE
+            : safeOffset + reservations.size();
+        boolean hasMore = nextCursor != null;
+        Map<String, Object> pagination = new LinkedHashMap<>();
+        pagination.put("offset", safeOffset);
+        pagination.put("limit", safeLimit);
+        pagination.put("returned", reservations.size());
+        pagination.put("nextOffset", nextOffset);
+        pagination.put("hasMore", hasMore);
+        if (nextCursor != null) {
+            pagination.put("nextCursor", nextCursor);
+        }
+        pagination.put("rpcCalls", budget.used);
+        pagination.put("rpcBudget", budget.maximum);
+
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("success", true);
+        result.put("providerAddress", wallet);
+        result.put("asOf", now);
+        result.put("view", "actionable");
+        result.put("count", reservations.size());
+        result.put("offset", safeOffset);
+        result.put("limit", safeLimit);
+        result.put("nextOffset", nextOffset);
+        result.put("hasMore", hasMore);
+        result.put("truncated", hasMore);
+        result.put("rpcBudgetExhausted", budgetExhausted);
+        if (nextCursor != null) {
+            result.put("nextCursor", nextCursor);
+        }
+        result.put("pagination", pagination);
+        result.put("reservations", List.copyOf(reservations));
+        return result;
+    }
+
+    private ReservationCursor decodeReservationCursor(String cursor) {
+        try {
+            String decoded = new String(Base64.getUrlDecoder().decode(cursor), StandardCharsets.UTF_8);
+            String[] parts = decoded.split("\\|", -1);
+            if (parts.length != 3 || !"v1".equals(parts[0])) {
+                throw new IllegalArgumentException("Unsupported reservation cursor");
+            }
+            BigInteger labId = new BigInteger(parts[1]);
+            BigInteger offset = new BigInteger(parts[2]);
+            if (labId.signum() <= 0 || offset.signum() < 0) {
+                throw new IllegalArgumentException("Invalid reservation cursor");
+            }
+            return new ReservationCursor(labId, offset);
+        } catch (IllegalArgumentException ex) {
+            throw new IllegalArgumentException("Invalid reservation cursor", ex);
+        }
+    }
+
+    private String encodeReservationCursor(BigInteger labId, BigInteger offset) {
+        String value = "v1|" + labId + "|" + offset;
+        return Base64.getUrlEncoder().withoutPadding().encodeToString(value.getBytes(StandardCharsets.UTF_8));
+    }
+
+    private String nextReservationCursor(
+        List<BigInteger> labIds,
+        int currentLabIndex,
+        BigInteger nextRawOffset,
+        BigInteger currentLabTotal
+    ) {
+        if (nextRawOffset.compareTo(currentLabTotal) < 0) {
+            return encodeReservationCursor(labIds.get(currentLabIndex), nextRawOffset);
+        }
+        if (currentLabIndex + 1 < labIds.size()) {
+            return encodeReservationCursor(labIds.get(currentLabIndex + 1), BigInteger.ZERO);
+        }
+        return null;
     }
 
     private Map<String, Object> listReservations(boolean actionableOnly, Integer offset, Integer limit) throws Exception {
@@ -413,6 +633,30 @@ public class LabAdminService {
         }
     }
 
+    private Boolean readSessionStartedStatus(
+        Diamond diamond,
+        byte[] reservationKey,
+        Diamond.Reservation reservation,
+        RpcBudget budget
+    ) {
+        if (!STATUS_CONFIRMED.equals(reservation.status) && !STATUS_ACCESS_AUTHORIZED.equals(reservation.status)) {
+            return Boolean.FALSE;
+        }
+        try {
+            var call = diamond.hasReservationSessionStarted(reservationKey);
+            if (call == null) {
+                return null;
+            }
+            budget.consume();
+            return call.send();
+        } catch (RpcBudgetExceededException ex) {
+            throw ex;
+        } catch (Exception ex) {
+            log.debug("Unable to determine SessionStarted status for provider reservation", ex);
+            return null;
+        }
+    }
+
     private List<LabAdminCancellationOption> providerCancellationOptions(
         Diamond.Reservation reservation,
         long now,
@@ -482,7 +726,14 @@ public class LabAdminService {
     }
 
     private String resolveLabName(Diamond diamond, BigInteger labId) {
+        return resolveLabName(diamond, labId, null);
+    }
+
+    private String resolveLabName(Diamond diamond, BigInteger labId, RpcBudget budget) {
         try {
+            if (budget != null) {
+                budget.consume();
+            }
             Diamond.Lab lab = diamond.getLab(labId).send();
             if (lab == null || lab.base == null || !hasText(lab.base.uri)) {
                 return null;
@@ -491,6 +742,8 @@ public class LabAdminService {
             return metadata == null || !hasText(metadata.getName())
                 ? null
                 : metadata.getName().trim();
+        } catch (RpcBudgetExceededException ex) {
+            throw ex;
         } catch (Exception ex) {
             log.debug("Unable to resolve name for lab {}", labId, ex);
             return null;
@@ -498,10 +751,17 @@ public class LabAdminService {
     }
 
     private String resolveInstitutionName(Diamond diamond, String institutionAddress) {
+        return resolveInstitutionName(diamond, institutionAddress, null);
+    }
+
+    private String resolveInstitutionName(Diamond diamond, String institutionAddress, RpcBudget budget) {
         if (!hasText(institutionAddress) || ZERO_ADDRESS.equalsIgnoreCase(institutionAddress)) {
             return null;
         }
         try {
+            if (budget != null) {
+                budget.consume();
+            }
             String[] organizations = diamond
                 .getRegisteredSchacHomeOrganizations(institutionAddress)
                 .send();
@@ -519,6 +779,8 @@ public class LabAdminService {
                 }
             }
             return String.join(", ", names);
+        } catch (RpcBudgetExceededException ex) {
+            throw ex;
         } catch (Exception ex) {
             log.debug("Unable to resolve institution name for wallet {}", institutionAddress, ex);
             return null;
@@ -684,29 +946,6 @@ public class LabAdminService {
         );
     }
 
-    public LabAdminTransactionResponse bindCreatorPucHash(BigInteger labId, String creatorPucHash) throws Exception {
-        return bindCreatorPucHash(labId, creatorPucHash, null);
-    }
-
-    public LabAdminTransactionResponse bindCreatorPucHash(
-        BigInteger labId, String creatorPucHash, String idempotencyKey
-    ) throws Exception {
-        requireOwnedLab(labId);
-        String normalizedPucHash = requireCreatorPucHash(creatorPucHash);
-        TransactionReceipt receipt = loadWritableDiamond(operationKey("bind-creator", labId, idempotencyKey))
-            .bindLabCreatorPucHash(labId, normalizedPucHash)
-            .send();
-        requireSuccessfulReceipt(receipt, "Creator binding");
-        return new LabAdminTransactionResponse(
-            true,
-            "bindLabCreatorPucHash",
-            receipt.getTransactionHash(),
-            receipt.getStatus(),
-            labId,
-            walletService.getLabTokenUri(labId).orElse(null)
-        );
-    }
-
     public LabAdminTransactionResponse update(BigInteger labId, LabAdminPublishRequest request) throws Exception {
         return update(labId, request, null);
     }
@@ -762,13 +1001,22 @@ public class LabAdminService {
     public LabAdminTransactionResponse deleteLab(BigInteger labId, String idempotencyKey) throws Exception {
         requireOwnedLab(labId);
         String uri = walletService.getLabTokenUri(labId).orElse(null);
+        String operationKey = operationKey("delete", labId, idempotencyKey);
         // Reserve the content hand-off before broadcasting. If this durable
         // write is unavailable, do not create an on-chain deletion that the
         // content service cannot safely reconcile after a crash.
-        contentRetentionService.prepareDeletion(labId, uri);
-        TransactionReceipt receipt = loadWritableDiamond(operationKey("delete", labId, idempotencyKey))
-            .deleteLab(labId).send();
+        contentRetentionService.prepareDeletion(labId, uri, operationKey);
+        TransactionReceipt receipt;
+        try {
+            receipt = loadWritableDiamond(operationKey).deleteLab(labId).send();
+        } catch (Exception ex) {
+            // A timeout or RPC failure is not evidence of a revert. Preserve
+            // the durable block and let the reconciler inspect the tx outbox.
+            contentRetentionService.markBroadcastUnknown(labId, operationKey, ex.getMessage());
+            throw ex;
+        }
         if (receipt == null) {
+            contentRetentionService.markBroadcastUnknown(labId, operationKey, "Lab deletion transaction returned no receipt");
             throw new IllegalStateException("Lab deletion transaction returned no receipt");
         }
         if (!receipt.isStatusOK()) {

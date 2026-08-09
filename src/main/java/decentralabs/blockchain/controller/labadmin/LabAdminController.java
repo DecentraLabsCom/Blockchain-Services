@@ -4,11 +4,11 @@ import decentralabs.blockchain.dto.labadmin.LabAdminAssetResponse;
 import decentralabs.blockchain.dto.labadmin.LabAdminPublishRequest;
 import decentralabs.blockchain.dto.labadmin.LabAdminReservationCancelRequest;
 import decentralabs.blockchain.dto.labadmin.LabAdminTransactionResponse;
+import decentralabs.blockchain.config.ProviderConsumerModeCondition;
 import decentralabs.blockchain.exception.IdempotencyKeyPayloadMismatchException;
 import decentralabs.blockchain.service.auth.JwtService;
 import decentralabs.blockchain.service.labadmin.LabAdminService;
 import decentralabs.blockchain.util.LogSanitizer;
-import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.math.BigInteger;
 import java.time.Instant;
@@ -16,10 +16,8 @@ import java.util.HashMap;
 import java.util.Map;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.core.io.Resource;
-import org.springframework.http.CacheControl;
+import org.springframework.context.annotation.Conditional;
 import org.springframework.http.HttpStatus;
-import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -31,12 +29,9 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
-import org.springframework.web.servlet.HandlerMapping;
-
-import jakarta.servlet.http.HttpServletRequest;
-import java.time.Duration;
 
 @RestController
+@Conditional(ProviderConsumerModeCondition.class)
 @RequiredArgsConstructor
 @Slf4j
 public class LabAdminController {
@@ -77,12 +72,16 @@ public class LabAdminController {
     @GetMapping("/lab-admin/reservations/actionable")
     public ResponseEntity<?> actionableReservations(
         @RequestParam(required = false) Integer offset,
-        @RequestParam(required = false) Integer limit
+        @RequestParam(required = false) Integer limit,
+        @RequestParam(required = false) String cursor
     ) {
         try {
-            return ok(offset == null && limit == null
-                ? labAdminService.listActionableReservations()
-                : labAdminService.listActionableReservations(offset, limit));
+            Map<String, Object> response = cursor != null
+                ? labAdminService.listActionableReservations(offset == null ? 0 : offset, limit, cursor)
+                : offset == null && limit == null
+                    ? labAdminService.listActionableReservations()
+                    : labAdminService.listActionableReservations(offset, limit);
+            return ok(response);
         } catch (IllegalArgumentException | IllegalStateException ex) {
             return badRequest(ex);
         } catch (Exception ex) {
@@ -166,27 +165,6 @@ public class LabAdminController {
             return badRequest(ex);
         } catch (Exception ex) {
             return internal("Failed to publish lab", ex);
-        }
-    }
-
-    @PostMapping("/lab-admin/labs/{labId}/creator-binding")
-    public ResponseEntity<?> bindCreatorPucHash(
-        @PathVariable BigInteger labId,
-        @RequestBody(required = false) Map<String, String> body,
-        @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey
-    ) {
-        try {
-            String creatorPucHash = body == null ? null : body.get("creatorPucHash");
-            LabAdminTransactionResponse response = hasText(idempotencyKey)
-                ? labAdminService.bindCreatorPucHash(labId, creatorPucHash, idempotencyKey)
-                : labAdminService.bindCreatorPucHash(labId, creatorPucHash);
-            return ResponseEntity.ok(response);
-        } catch (IdempotencyKeyPayloadMismatchException ex) {
-            return idempotencyConflict(ex);
-        } catch (IllegalArgumentException | IllegalStateException ex) {
-            return badRequest(ex);
-        } catch (Exception ex) {
-            return internal("Failed to bind creator PUC hash", ex);
         }
     }
 
@@ -289,39 +267,6 @@ public class LabAdminController {
         } catch (Exception ex) {
             return internal("Failed to unlist lab", ex);
         }
-    }
-
-    @GetMapping("/lab-content/**")
-    public ResponseEntity<Resource> content(HttpServletRequest request) {
-        try {
-            String path = extractWildcardPath(request, "/lab-content/");
-            Resource resource = labAdminService.loadContentResource(path);
-            String contentType = labAdminService.contentTypeFor(path);
-            return ResponseEntity.ok()
-                .contentType(MediaType.parseMediaType(contentType))
-                .cacheControl(CacheControl.maxAge(Duration.ofHours(1)).cachePublic())
-                .header("Access-Control-Allow-Origin", "*")
-                .header("Access-Control-Allow-Methods", "GET, HEAD, OPTIONS")
-                .header("Access-Control-Allow-Headers", "Content-Type")
-                .header("X-Content-Type-Options", "nosniff")
-                .body(resource);
-        } catch (FileNotFoundException ex) {
-            log.debug("Lab content not found", ex);
-            return ResponseEntity.notFound().build();
-        } catch (Exception ex) {
-            log.warn("Failed to serve lab content: {}", LogSanitizer.sanitize(ex.getMessage()));
-            return ResponseEntity.badRequest().build();
-        }
-    }
-
-    private String extractWildcardPath(HttpServletRequest request, String prefix) {
-        Object pathWithinMapping = request.getAttribute(HandlerMapping.PATH_WITHIN_HANDLER_MAPPING_ATTRIBUTE);
-        String path = pathWithinMapping == null ? request.getRequestURI() : pathWithinMapping.toString();
-        int index = path.indexOf(prefix);
-        if (index >= 0) {
-            return path.substring(index + prefix.length());
-        }
-        return "";
     }
 
     private ResponseEntity<Map<String, Object>> ok(Map<String, Object> body) {

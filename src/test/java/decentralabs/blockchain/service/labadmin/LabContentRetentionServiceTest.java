@@ -113,9 +113,33 @@ class LabContentRetentionServiceTest {
 
     @Test
     void refusesToPrepareDeletionWithoutMetadataUri() {
-        assertThatThrownBy(() -> service.prepareDeletion(BigInteger.valueOf(46), null))
+        assertThatThrownBy(() -> service.prepareDeletion(BigInteger.valueOf(46), null, "operation-46"))
             .isInstanceOf(IllegalStateException.class)
             .hasMessageContaining("Metadata URI is unavailable");
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void preparationPersistsOperationKeyAndExplicitBroadcastState() {
+        ObjectProvider<JdbcTemplate> provider = mock(ObjectProvider.class);
+        JdbcTemplate jdbcTemplate = mock(JdbcTemplate.class);
+        when(provider.getIfAvailable()).thenReturn(jdbcTemplate);
+        service = new LabContentRetentionService(provider);
+
+        service.prepareDeletion(
+            BigInteger.valueOf(47),
+            "https://gateway.example/lab-content/content/lab-47/metadata.json",
+            "lab-admin:delete:47:command-1"
+        );
+
+        ArgumentCaptor<String> sql = ArgumentCaptor.forClass(String.class);
+        ArgumentCaptor<Object[]> parameters = ArgumentCaptor.forClass(Object[].class);
+        verify(jdbcTemplate).update(sql.capture(), parameters.capture());
+        assertThat(sql.getValue())
+            .contains("operation_key")
+            .contains("broadcast_status");
+        assertThat(Arrays.asList(parameters.getValue()))
+            .contains("lab-admin:delete:47:command-1", "PREPARED");
     }
 
     @Test
@@ -134,10 +158,11 @@ class LabContentRetentionServiceTest {
         ArgumentCaptor<Object[]> parameters = ArgumentCaptor.forClass(Object[].class);
         verify(jdbcTemplate).query(sql.capture(), any(RowMapper.class), parameters.capture());
         assertThat(sql.getValue())
+            .contains("broadcast_status=?")
             .contains("status=? AND next_attempt_at <= CURRENT_TIMESTAMP")
             .contains("status=? AND (lease_expires_at IS NULL OR lease_expires_at < CURRENT_TIMESTAMP)");
         assertThat(Arrays.asList(parameters.getValue()))
-            .containsExactly("PENDING_TOMBSTONE", "PROCESSING", 25);
+            .containsExactly("CONFIRMED_DELETED", "PENDING_TOMBSTONE", "PROCESSING", 25);
     }
 
     @Test

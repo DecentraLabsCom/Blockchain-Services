@@ -25,8 +25,10 @@ the selected topology, while the backend `.env` owns this role decision.
 The provider feature controls the conditional OIDC/JWKS and FMU controllers and
 the health operating mode. The SAML controller still contains both provider and
 consumer mappings, so the application security chain denies provider-side SAML/
-access routes in `consumer-only`; network exposure and the intended topology
-remain defense-in-depth controls.
+access and `/lab-admin/**` routes in `consumer-only`; the provider Lab Admin
+controller is not created. The public `/lab-content/**` read controller remains
+common to both roles. Network exposure and the intended topology remain
+defense-in-depth controls.
 
 ## System context
 

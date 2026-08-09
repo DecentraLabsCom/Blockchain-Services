@@ -159,6 +159,14 @@ public class SecurityConfig {
                         fmuSessionTicketEndpoint + "/**"
                     ).denyAll();
                 }
+                if (providersEnabled) {
+                    authorize.requestMatchers("/lab-admin/**").permitAll();
+                } else {
+                    // Lab administration includes provider reads, writes and local asset
+                    // staging.  The mode boundary must be enforced before the localhost
+                    // convenience rule and before the generic OPTIONS rule below.
+                    authorize.requestMatchers("/lab-admin/**").denyAll();
+                }
                 // Provider-only routes are decided above this catch-all OPTIONS rule.
                 // Consumer-only also omits their CORS registrations, so a preflight
                 // receives no provider integration headers.
@@ -177,7 +185,6 @@ public class SecurityConfig {
                 authorize.requestMatchers("/onboarding/**").permitAll();
                 authorize.requestMatchers("/institution-config/**").permitAll();
                 authorize.requestMatchers("/lab-content/**").permitAll();
-                authorize.requestMatchers("/lab-admin/**").permitAll();
                 authorize.requestMatchers(HttpMethod.POST, "/access-audit/internal/session-observed")
                     .hasRole("SESSION_OBSERVER");
                 authorize.requestMatchers("/access-audit/internal/**").hasRole("INTERNAL");
@@ -261,7 +268,17 @@ public class SecurityConfig {
         // ALL wallet endpoints - localhost only
         source.registerCorsConfiguration(walletEndpoint + "/**", walletConfiguration);
         source.registerCorsConfiguration(billingEndpoint + "/**", walletConfiguration);
-        source.registerCorsConfiguration("/lab-admin/**", walletConfiguration);
+        if (providersEnabled) {
+            source.registerCorsConfiguration("/lab-admin/**", walletConfiguration);
+        } else {
+            // Keep a matching, empty CORS policy so consumer-only preflights are
+            // rejected by CorsFilter instead of falling through as a successful
+            // generic OPTIONS request.
+            CorsConfiguration deniedLabAdminConfiguration = new CorsConfiguration();
+            deniedLabAdminConfiguration.setAllowedOrigins(List.of());
+            deniedLabAdminConfiguration.setAllowedMethods(List.of());
+            source.registerCorsConfiguration("/lab-admin/**", deniedLabAdminConfiguration);
+        }
         source.registerCorsConfiguration("/lab-content/**", labContentConfiguration);
         // Token-based onboarding (invite tokens) - localhost only
         source.registerCorsConfiguration("/onboarding/token/**", walletConfiguration);

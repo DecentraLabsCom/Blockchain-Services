@@ -79,6 +79,12 @@ import java.util.concurrent.TimeUnit;
 @Slf4j
 public class WalletService {
 
+    public enum LabPresence {
+        EXISTS,
+        ABSENT,
+        UNKNOWN
+    }
+
     private static final BigInteger CREDIT_LEDGER_PAGE_SIZE = BigInteger.valueOf(50);
     private static final BigInteger PROVIDER_RECEIVABLE_PAGE_SIZE = BigInteger.valueOf(1000);
     private static final int MAX_CREDIT_LEDGER_ITEMS = 1000;
@@ -1005,6 +1011,48 @@ public class WalletService {
         } catch (Exception e) {
             log.error("Error getting provider receivable status for lab {}", labId, e);
             return Optional.empty();
+        }
+    }
+
+    /**
+     * Reads ERC-721 ownership with an explicit RPC-failure outcome. The
+     * deletion reconciler must not interpret a temporary RPC failure as proof
+     * that a lab was burned.
+     */
+    public LabPresence resolveLabPresence(BigInteger labId) {
+        if (labId == null || labId.signum() <= 0) {
+            return LabPresence.UNKNOWN;
+        }
+        try {
+            Web3j web3j = getWeb3jInstance();
+            Function function = new Function(
+                "ownerOf",
+                Collections.singletonList(new Uint256(labId)),
+                Collections.singletonList(new TypeReference<Address>() {})
+            );
+            EthCall response = web3j.ethCall(
+                Transaction.createEthCallTransaction(null, contractAddress, FunctionEncoder.encode(function)),
+                DefaultBlockParameterName.LATEST
+            ).send();
+            if (response == null) {
+                return LabPresence.UNKNOWN;
+            }
+            if (response.hasError()) {
+                // ownerOf reverts for a burned/non-existent ERC-721 token. A
+                // transport/RPC error is not proof that the token is absent.
+                String message = response.getError() == null ? "" : response.getError().getMessage();
+                String normalized = message == null ? "" : message.toLowerCase(Locale.ROOT);
+                return normalized.contains("revert") || normalized.contains("nonexistent")
+                    || normalized.contains("does not exist") || normalized.contains("invalid token")
+                    ? LabPresence.ABSENT
+                    : LabPresence.UNKNOWN;
+            }
+            @SuppressWarnings("rawtypes")
+            List<Type> decoded = FunctionReturnDecoder.decode(response.getValue(), function.getOutputParameters());
+            return decoded.isEmpty() ? LabPresence.UNKNOWN : LabPresence.EXISTS;
+        } catch (Exception ex) {
+            log.debug("Unable to resolve presence for lab {}: {}", labId, LogSanitizer.sanitize(ex.getMessage()));
+            return LabPresence.UNKNOWN;
         }
     }
 

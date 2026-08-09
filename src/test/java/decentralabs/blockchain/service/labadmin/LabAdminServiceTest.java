@@ -546,13 +546,17 @@ class LabAdminServiceTest {
         when(writable.deleteLab(labId)).thenReturn(deleteCall);
         when(deleteCall.send()).thenReturn(receipt);
         doReturn(writable).when(service).loadWritableDiamond(org.mockito.ArgumentMatchers.anyString());
-        doNothing().when(contentRetentionService).prepareDeletion(labId, metadataUri);
+        doNothing().when(contentRetentionService).prepareDeletion(
+            eq(labId), eq(metadataUri), eq("lab-admin:delete:7:delete-command-1")
+        );
         doNothing().when(contentRetentionService).completeDeletion(labId, metadataUri, "0xdelete");
 
         service.deleteLab(labId, "delete-command-1");
 
         var order = org.mockito.Mockito.inOrder(contentRetentionService, writable);
-        order.verify(contentRetentionService).prepareDeletion(labId, metadataUri);
+        order.verify(contentRetentionService).prepareDeletion(
+            labId, metadataUri, "lab-admin:delete:7:delete-command-1"
+        );
         order.verify(writable).deleteLab(labId);
         order.verify(contentRetentionService).completeDeletion(labId, metadataUri, "0xdelete");
     }
@@ -569,13 +573,45 @@ class LabAdminServiceTest {
         when(walletService.isLabOwnedByProvider(wallet, labId)).thenReturn(true);
         when(walletService.getLabTokenUri(labId)).thenReturn(Optional.of(metadataUri));
         doThrow(new IllegalStateException("deletion outbox unavailable"))
-            .when(contentRetentionService).prepareDeletion(labId, metadataUri);
+            .when(contentRetentionService).prepareDeletion(
+                eq(labId), eq(metadataUri), eq("lab-admin:delete:7:delete-command-1")
+            );
 
         assertThatThrownBy(() -> service.deleteLab(labId, "delete-command-1"))
             .isInstanceOf(IllegalStateException.class)
             .hasMessage("deletion outbox unavailable");
 
         verify(service, org.mockito.Mockito.never()).loadWritableDiamond(org.mockito.ArgumentMatchers.anyString());
+    }
+
+    @Test
+    void ambiguousBroadcastIsRecordedAndIsNotCancelled() throws Exception {
+        BigInteger labId = BigInteger.valueOf(7);
+        String wallet = "0x1111111111111111111111111111111111111111";
+        String metadataUri = "https://lab.example.edu/lab-content/content/lab-demo/metadata.json";
+        Diamond writable = mock(Diamond.class);
+        RemoteFunctionCall<TransactionReceipt> deleteCall = mockRemoteFunctionCall();
+
+        when(institutionalWalletService.isConfigured()).thenReturn(true);
+        when(institutionalWalletService.getInstitutionalWalletAddress()).thenReturn(wallet);
+        when(walletService.isLabProvider(wallet)).thenReturn(true);
+        when(walletService.isLabOwnedByProvider(wallet, labId)).thenReturn(true);
+        when(walletService.getLabTokenUri(labId)).thenReturn(Optional.of(metadataUri));
+        when(writable.deleteLab(labId)).thenReturn(deleteCall);
+        doThrow(new java.io.IOException("RPC timeout after broadcast")).when(deleteCall).send();
+        doReturn(writable).when(service).loadWritableDiamond(org.mockito.ArgumentMatchers.anyString());
+        doNothing().when(contentRetentionService).prepareDeletion(
+            eq(labId), eq(metadataUri), eq("lab-admin:delete:7:delete-command-1")
+        );
+
+        assertThatThrownBy(() -> service.deleteLab(labId, "delete-command-1"))
+            .isInstanceOf(java.io.IOException.class)
+            .hasMessage("RPC timeout after broadcast");
+
+        verify(contentRetentionService).markBroadcastUnknown(
+            labId, "lab-admin:delete:7:delete-command-1", "RPC timeout after broadcast"
+        );
+        verify(contentRetentionService, org.mockito.Mockito.never()).cancelPreparedDeletion(labId);
     }
 
     @Test
@@ -614,6 +650,7 @@ class LabAdminServiceTest {
         );
         RemoteFunctionCall<BigInteger> count = mockRemoteFunctionCall();
         RemoteFunctionCall<byte[]> keyCall = mockRemoteFunctionCall();
+        RemoteFunctionCall<Diamond.ReservationKeyPage> pageCall = mockRemoteFunctionCall();
         RemoteFunctionCall<Diamond.Reservation> reservationCall = mockRemoteFunctionCall();
         RemoteFunctionCall<Diamond.Lab> labCall = mockRemoteFunctionCall();
         RemoteFunctionCall<Boolean> sessionStartedCall = mockRemoteFunctionCall();
@@ -626,6 +663,9 @@ class LabAdminServiceTest {
         when(count.send()).thenReturn(BigInteger.ONE);
         when(diamond.getReservationOfTokenByIndex(labId, BigInteger.ZERO)).thenReturn(keyCall);
         when(keyCall.send()).thenReturn(key);
+        when(diamond.getReservationsOfTokenPaginated(eq(labId), any(BigInteger.class), eq(BigInteger.valueOf(100))))
+            .thenReturn(pageCall);
+        when(pageCall.send()).thenReturn(new Diamond.ReservationKeyPage(List.of(key), BigInteger.ONE));
         when(diamond.getReservation(key)).thenReturn(reservationCall);
         when(reservationCall.send()).thenReturn(reservation);
         when(diamond.hasReservationSessionStarted(org.mockito.ArgumentMatchers.any(byte[].class)))
@@ -661,7 +701,7 @@ class LabAdminServiceTest {
     }
 
     @Test
-    void paginatesAllActionableReservationsBeyondLegacyFiveHundredCap() throws Exception {
+    void usesOnChainReservationPagesAndReturnsAResumeCursor() throws Exception {
         String wallet = "0x1111111111111111111111111111111111111111";
         String institution = "0x3333333333333333333333333333333333333333";
         BigInteger labId = BigInteger.valueOf(7);
@@ -682,8 +722,7 @@ class LabAdminServiceTest {
             BigInteger.valueOf(20_000_000)
         );
         Diamond diamond = mock(Diamond.class);
-        RemoteFunctionCall<BigInteger> count = mockRemoteFunctionCall();
-        RemoteFunctionCall<byte[]> keyCall = mockRemoteFunctionCall();
+        RemoteFunctionCall<Diamond.ReservationKeyPage> pageCall = mockRemoteFunctionCall();
         RemoteFunctionCall<Diamond.Reservation> reservationCall = mockRemoteFunctionCall();
         RemoteFunctionCall<Diamond.Lab> labCall = mockRemoteFunctionCall();
         RemoteFunctionCall<Boolean> sessionStartedCall = mockRemoteFunctionCall();
@@ -701,10 +740,10 @@ class LabAdminServiceTest {
         when(institutionalWalletService.getInstitutionalWalletAddress()).thenReturn(wallet);
         when(walletService.isLabProvider(wallet)).thenReturn(true);
         when(walletService.getLabsOwnedByProvider(wallet)).thenReturn(List.of(labId));
-        when(diamond.getReservationsOfToken(labId)).thenReturn(count);
-        when(count.send()).thenReturn(BigInteger.valueOf(501));
-        when(diamond.getReservationOfTokenByIndex(eq(labId), any(BigInteger.class))).thenReturn(keyCall);
-        when(keyCall.send()).thenReturn(key);
+        List<byte[]> firstPageKeys = java.util.stream.Stream.generate(() -> key).limit(100).toList();
+        when(diamond.getReservationsOfTokenPaginated(eq(labId), any(BigInteger.class), eq(BigInteger.valueOf(100))))
+            .thenReturn(pageCall);
+        when(pageCall.send()).thenReturn(new Diamond.ReservationKeyPage(firstPageKeys, BigInteger.valueOf(501)));
         when(diamond.getReservation(key)).thenReturn(reservationCall);
         when(reservationCall.send()).thenReturn(reservation);
         when(diamond.hasReservationSessionStarted(any(byte[].class))).thenReturn(sessionStartedCall);
@@ -719,15 +758,28 @@ class LabAdminServiceTest {
         doReturn(diamond).when(service).loadReadonlyDiamond();
 
         Map<String, Object> firstPage = service.listActionableReservations(0, 100);
-        assertThat(firstPage.get("totalCount")).isEqualTo(501);
+        assertThat(firstPage).doesNotContainKey("totalCount");
         assertThat(firstPage.get("count")).isEqualTo(100);
         assertThat(firstPage.get("hasMore")).isEqualTo(true);
         assertThat(firstPage.get("nextOffset")).isEqualTo(100);
+        assertThat(firstPage.get("nextCursor")).isEqualTo(firstPage.get("pagination") instanceof Map<?, ?> pagination
+            ? pagination.get("nextCursor")
+            : null);
+        String nextCursor = (String) firstPage.get("nextCursor");
+        Map<String, Object> secondPage = service.listActionableReservations(100, 100, nextCursor);
+        assertThat(secondPage.get("count")).isEqualTo(100);
+        assertThat(secondPage.get("offset")).isEqualTo(100);
+        verify(diamond).getReservationsOfTokenPaginated(labId, BigInteger.ZERO, BigInteger.valueOf(100));
+        verify(diamond).getReservationsOfTokenPaginated(labId, BigInteger.valueOf(100), BigInteger.valueOf(100));
+        verify(diamond, org.mockito.Mockito.never()).getReservationsOfToken(labId);
+        verify(diamond, org.mockito.Mockito.never()).getReservationOfTokenByIndex(eq(labId), any(BigInteger.class));
 
-        Map<String, Object> lastPage = service.listActionableReservations(500, 100);
-        assertThat(lastPage.get("totalCount")).isEqualTo(501);
-        assertThat(lastPage.get("count")).isEqualTo(1);
-        assertThat(lastPage.get("hasMore")).isEqualTo(false);
+        ReflectionTestUtils.setField(service, "actionableReservationsRpcBudget", 1);
+        Map<String, Object> budgetLimited = service.listActionableReservations(0, 100);
+        assertThat(budgetLimited.get("count")).isEqualTo(0);
+        assertThat(budgetLimited.get("rpcBudgetExhausted")).isEqualTo(true);
+        assertThat(budgetLimited.get("hasMore")).isEqualTo(true);
+        assertThat(budgetLimited.get("nextCursor")).isNotNull();
     }
 
     @Test

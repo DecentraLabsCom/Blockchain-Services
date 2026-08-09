@@ -23,9 +23,11 @@ BLOCKCHAIN_SERVICES_MODE=consumer-only     # or provider-consumer
 configurations. An explicit mode wins over that flag. The parent gateway owns
 the Full/Lite topology; changing `ISSUER` or adding a Lite access plane must not
 change a backend from consumer-only to provider-consumer. Spring Security
-rejects provider access routes in `consumer-only` at the application boundary;
-network isolation remains required as defense in depth for administrative and
-future surfaces.
+rejects provider access routes and all `/lab-admin/**` routes in
+`consumer-only` at the application boundary, and the provider Lab Admin
+controller is not created. `/lab-content/**` remains the common public
+read-only content surface. Network isolation remains required as defense in
+depth for administrative and future surfaces.
 
 ## 2. Persistent state is required in production
 
@@ -67,7 +69,7 @@ and units.
 | Gateway integration | `ACCESS_CODE_REDEEMER_CREDENTIALS_JSON`, `SESSION_OBSERVER_CREDENTIALS_JSON`, `LAB_MANAGER_TOKEN*` | Credentials are per gateway; never reuse the admin token as an observer credential. |
 | Lab content | `LAB_CONTENT_BASE_PATH`, `LAB_CONTENT_RETENTION`, `LAB_CONTENT_GC_INTERVAL_MS`, `LAB_CONTENT_MAX_*` | The public content route serves only safe uploaded assets and generated metadata. |
 | Lab metadata fetches | `LAB_METADATA_MAX_BYTES`, `LAB_METADATA_HTTP_*`, `LAB_METADATA_MAX_CONCURRENT_FETCHES`, `LAB_METADATA_LOCAL_*` | Remote metadata is HTTPS-only and bound to the provider origin registered on-chain. Keep local fixtures disabled in production. |
-| Durable workers | `INSTITUTIONAL_*_OUTBOX_*`, `CONTRACT_EVENT_*`, `LAB_CONTENT_DELETION_OUTBOX_*`, `HEALTH_QUEUE_STUCK_THRESHOLD_SECONDS` | Tune only with an operator who owns reconciliation. |
+| Durable workers | `INSTITUTIONAL_*_OUTBOX_*`, `CONTRACT_EVENT_*`, `LAB_CONTENT_DELETION_OUTBOX_*`, `LAB_CONTENT_DELETION_RECONCILIATION_BATCH_SIZE`, `HEALTH_QUEUE_STUCK_THRESHOLD_SECONDS` | Tune only with an operator who owns reconciliation. Ambiguous deletion broadcasts remain blocked and must be reviewed as `STUCK_UNKNOWN`; do not cancel them by timeout alone. |
 
 `CONTRACT_ADDRESS` has no packaged fallback and is mandatory. The service
 does not become ready until it has queried the configured RPC and verified the

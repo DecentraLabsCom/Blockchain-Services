@@ -46,6 +46,14 @@ class DiamondCreditAbiTest {
                 new TypeReference<Uint256>() {}
             )
         );
+        Function reservationPageFunction = new Function(
+            "getReservationsOfTokenPaginated",
+            Arrays.asList(new Uint256(7), new Uint256(0), new Uint256(100)),
+            Arrays.asList(
+                new TypeReference<DynamicArray<Bytes32>>() {},
+                new TypeReference<Uint256>() {}
+            )
+        );
 
         assertThat(FunctionReturnDecoder.decode(
             stripSelector(FunctionEncoder.encode(lotsFunction)),
@@ -54,6 +62,10 @@ class DiamondCreditAbiTest {
         assertThat(FunctionReturnDecoder.decode(
             stripSelector(FunctionEncoder.encode(movementsFunction)),
             movementsFunction.getOutputParameters()
+        )).hasSize(2);
+        assertThat(FunctionReturnDecoder.decode(
+            stripSelector(FunctionEncoder.encode(reservationPageFunction)),
+            reservationPageFunction.getOutputParameters()
         )).hasSize(2);
     }
 

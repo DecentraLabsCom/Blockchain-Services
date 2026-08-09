@@ -81,6 +81,10 @@ filter plus the configured access token.
 
 ## Lab administration and content
 
+- The provider-facing `/lab-admin/**` controller and routes are enabled only in
+  `provider-consumer` mode. `consumer-only` denies the whole path at Spring
+  Security, including local asset staging and `OPTIONS` preflight requests;
+  this remains true if the institution wallet is provider-registered on-chain.
 - `/lab-admin/**` accepts the ordinary admin route token or the dedicated
   `X-Lab-Manager-Token` only from an allowed `LAB_MANAGER_ALLOWED_CIDRS` range.
   The latter does not authorize wallet, billing or audit routes.

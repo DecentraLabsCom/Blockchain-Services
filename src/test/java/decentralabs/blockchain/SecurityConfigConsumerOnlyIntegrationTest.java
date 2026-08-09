@@ -2,6 +2,9 @@ package decentralabs.blockchain;
 
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.anonymous;
 import static org.springframework.security.test.web.servlet.setup.SecurityMockMvcConfigurers.springSecurity;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.options;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -108,6 +111,40 @@ class SecurityConfigConsumerOnlyIntegrationTest {
     void providerFmuTicketRouteIsDeniedInConsumerOnlyMode() throws Exception {
         performProviderPost("/auth/fmu/session-ticket/issue", "198.51.100.34")
             .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void labAdminReadSurfaceIsDeniedEvenFromLocalhostInConsumerOnlyMode() throws Exception {
+        performLocal(get("/lab-admin/status"))
+            .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void labAdminAssetStagingIsDeniedEvenFromLocalhostInConsumerOnlyMode() throws Exception {
+        performLocal(post("/lab-admin/assets"))
+            .andExpect(status().isForbidden());
+
+        performLocal(delete("/lab-admin/assets"))
+            .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void labAdminPreflightIsDeniedInConsumerOnlyMode() throws Exception {
+        performLocal(options("/lab-admin/assets")
+                .header("Origin", "https://gateway.example")
+                .header("Access-Control-Request-Method", "POST"))
+            .andExpect(status().isForbidden());
+    }
+
+    private org.springframework.test.web.servlet.ResultActions performLocal(
+        org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder request
+    ) throws Exception {
+        return mockMvc.perform(request
+            .with(anonymous())
+            .with(req -> {
+                req.setRemoteAddr("127.0.0.1");
+                return req;
+            }));
     }
 
     private org.springframework.test.web.servlet.ResultActions performProviderPost(

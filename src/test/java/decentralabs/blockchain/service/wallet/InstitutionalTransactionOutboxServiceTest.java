@@ -85,6 +85,21 @@ class InstitutionalTransactionOutboxServiceTest {
     }
 
     @Test
+    void findsTheDurableAttemptByOperationKeyForCrossOutboxReconciliation() {
+        InstitutionalTransactionOutboxService.Attempt existing = attempt(
+            "0x1111111111111111111111111111111111111111",
+            BigInteger.valueOf(21000),
+            BigInteger.ZERO,
+            "0x1234"
+        );
+        stubExisting(existing);
+
+        assertThat(service.findByOperationKey(
+            existing.walletAddress(), existing.chainId(), existing.operationKey()
+        )).containsSame(existing);
+    }
+
+    @Test
     void reusesAnIdempotencyKeyWhenThePayloadIsIdentical() {
         InstitutionalTransactionOutboxService.Attempt existing = attempt(
             "0x1111111111111111111111111111111111111111",

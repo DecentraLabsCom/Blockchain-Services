@@ -192,10 +192,21 @@ public class IntentOnChainExecutor {
             return send(deleteFunction, credentials, record, action);
         }
 
-        contentRetentionService.prepareDeletion(payload.getLabId(), metadataUri);
-        ExecutionResult result = send(deleteFunction, credentials, record, action);
-        if (!result.success() && (result.txHash() == null || result.reason() != null && result.reason().startsWith("tx_reverted"))) {
-            contentRetentionService.cancelPreparedDeletion(payload.getLabId());
+        String operationKey = "intent:" + record.getRequestId();
+        contentRetentionService.prepareDeletion(payload.getLabId(), metadataUri, operationKey);
+        ExecutionResult result;
+        try {
+            result = send(deleteFunction, credentials, record, action);
+        } catch (Exception ex) {
+            contentRetentionService.markBroadcastUnknown(payload.getLabId(), operationKey, ex.getMessage());
+            throw ex;
+        }
+        if (!result.success()) {
+            if (result.reason() != null && result.reason().startsWith("tx_reverted")) {
+                contentRetentionService.cancelPreparedDeletion(payload.getLabId());
+            } else {
+                contentRetentionService.markBroadcastUnknown(payload.getLabId(), operationKey, result.reason());
+            }
         }
         if (result.success() && payload.getLabId() != null) {
             try {

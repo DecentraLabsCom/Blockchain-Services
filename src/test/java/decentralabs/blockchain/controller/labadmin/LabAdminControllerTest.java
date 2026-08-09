@@ -42,7 +42,10 @@ class LabAdminControllerTest {
         labAdminService = mock(LabAdminService.class);
         jwtService = mock(JwtService.class);
         mockMvc = MockMvcBuilders
-            .standaloneSetup(new LabAdminController(labAdminService, jwtService))
+            .standaloneSetup(
+                new LabAdminController(labAdminService, jwtService),
+                new LabContentController(labAdminService)
+            )
             .build();
     }
 
@@ -113,6 +116,26 @@ class LabAdminControllerTest {
     }
 
     @Test
+    void actionableReservationsForwardsResumeCursor() throws Exception {
+        when(labAdminService.listActionableReservations(100, 100, "v1-cursor"))
+            .thenReturn(Map.of(
+                "success", true,
+                "count", 1,
+                "nextOffset", 101,
+                "hasMore", false
+            ));
+
+        mockMvc.perform(get("/lab-admin/reservations/actionable")
+                .param("offset", "100")
+                .param("limit", "100")
+                .param("cursor", "v1-cursor"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.nextOffset").value(101));
+
+        verify(labAdminService).listActionableReservations(100, 100, "v1-cursor");
+    }
+
+    @Test
     void cancelReservationForwardsKeyReasonAndIdempotencyKey() throws Exception {
         when(labAdminService.cancelReservation(
             "0x" + "ab".repeat(32), 7, "cancel-command-1"
@@ -175,31 +198,6 @@ class LabAdminControllerTest {
             .andExpect(jsonPath("$.success").value(false))
             .andExpect(jsonPath("$.code").value("IDEMPOTENCY_KEY_PAYLOAD_MISMATCH"))
             .andExpect(jsonPath("$.status").value(409));
-    }
-
-    @Test
-    void creatorBindingForwardsHashAndIdempotencyKey() throws Exception {
-        String pucHash = "0x" + "1".repeat(64);
-        when(labAdminService.bindCreatorPucHash(BigInteger.valueOf(5), pucHash, "bind-command-1"))
-            .thenReturn(new decentralabs.blockchain.dto.labadmin.LabAdminTransactionResponse(
-                true,
-                "bindLabCreatorPucHash",
-                "0xtx",
-                "0x1",
-                BigInteger.valueOf(5),
-                "https://lab.example.edu/metadata.json"
-            ));
-
-        mockMvc.perform(post("/lab-admin/labs/5/creator-binding")
-                .header("Idempotency-Key", "bind-command-1")
-                .contentType(MediaType.APPLICATION_JSON)
-                .content("{\"creatorPucHash\":\"" + pucHash + "\"}"))
-            .andExpect(status().isOk())
-            .andExpect(jsonPath("$.success").value(true))
-            .andExpect(jsonPath("$.action").value("bindLabCreatorPucHash"))
-            .andExpect(jsonPath("$.labId").value(5));
-
-        verify(labAdminService).bindCreatorPucHash(BigInteger.valueOf(5), pucHash, "bind-command-1");
     }
 
     @Test

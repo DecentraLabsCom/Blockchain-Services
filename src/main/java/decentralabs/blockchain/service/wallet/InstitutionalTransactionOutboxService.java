@@ -10,6 +10,7 @@ import java.time.Instant;
 import java.util.List;
 import java.util.Locale;
 import java.util.Objects;
+import java.util.Optional;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
@@ -229,6 +230,23 @@ public class InstitutionalTransactionOutboxService {
             return null;
         }
         return findBlockingInternal(walletAddress, chainId);
+    }
+
+    /**
+     * Looks up the durable transaction associated with a business operation.
+     * Deletion reconciliation uses this to distinguish a missing receipt from
+     * a transaction that was never materialized by the RPC boundary.
+     */
+    public Optional<Attempt> findByOperationKey(
+        String walletAddress,
+        BigInteger chainId,
+        String operationKey
+    ) {
+        if (jdbcTemplate == null || walletAddress == null || walletAddress.isBlank()
+            || chainId == null || operationKey == null || operationKey.isBlank()) {
+            return Optional.empty();
+        }
+        return Optional.ofNullable(find(walletAddress, chainId, operationKey, false));
     }
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)

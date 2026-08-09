@@ -37,6 +37,13 @@ public class Diamond extends Contract {
     
     public static final String BINARY = "";  // Not needed for already deployed contracts
 
+    /** Paginated reservation keys and the lab's raw reservation count. */
+    public record ReservationKeyPage(List<byte[]> keys, BigInteger total) {
+        public ReservationKeyPage {
+            keys = List.copyOf(keys);
+        }
+    }
+
     /** Read-only audit projection of a provider settlement claim. */
     public static class ProviderSettlementClaim {
         public BigInteger labId;
@@ -600,6 +607,35 @@ public class Diamond extends Contract {
                 });
     }
 
+    /**
+     * Get a bounded page of reservation keys for a lab token.
+     * The contract's page limit is currently 100 and the order is only suitable
+     * for snapshot iteration, not for a globally sorted view.
+     */
+    @SuppressWarnings("rawtypes")
+    public RemoteFunctionCall<ReservationKeyPage> getReservationsOfTokenPaginated(
+        BigInteger tokenId,
+        BigInteger offset,
+        BigInteger limit
+    ) {
+        final Function function = new Function(
+            "getReservationsOfTokenPaginated",
+            Arrays.asList(new Uint256(tokenId), new Uint256(offset), new Uint256(limit)),
+            Arrays.asList(
+                new TypeReference<DynamicArray<Bytes32>>() {},
+                new TypeReference<Uint256>() {}
+            )
+        );
+        return new RemoteFunctionCall<>(function, () -> {
+            List<Type> results = executeCallMultipleValueReturn(function);
+            DynamicArray<?> encodedKeys = (DynamicArray<?>) results.get(0);
+            List<byte[]> keys = encodedKeys.getValue().stream()
+                .map(value -> ((Bytes32) value).getValue())
+                .toList();
+            return new ReservationKeyPage(keys, ((Uint256) results.get(1)).getValue());
+        });
+    }
+
     /** Returns the number of active reservations overlapping a window. */
     @SuppressWarnings("rawtypes")
     public RemoteFunctionCall<BigInteger> getConcurrentReservationCount(
@@ -701,54 +737,6 @@ public class Diamond extends Contract {
     }
 
     /**
-     * Add a lab owned by the transaction sender.
-     */
-    public RemoteFunctionCall<TransactionReceipt> addLab(
-        String uri,
-        BigInteger price,
-        String accessURI,
-        String accessKey,
-        BigInteger resourceType
-    ) {
-        final Function function = new Function(
-            "addLab",
-            Arrays.asList(
-                new Utf8String(uri),
-                new Uint96(price),
-                new Utf8String(accessURI),
-                new Utf8String(accessKey),
-                new Uint8(resourceType)
-            ),
-            List.of()
-        );
-        return executeRemoteCallTransaction(function);
-    }
-
-    /**
-     * Add and list a lab owned by the transaction sender in one transaction.
-     */
-    public RemoteFunctionCall<TransactionReceipt> addAndListLab(
-        String uri,
-        BigInteger price,
-        String accessURI,
-        String accessKey,
-        BigInteger resourceType
-    ) {
-        final Function function = new Function(
-            "addAndListLab",
-            Arrays.asList(
-                new Utf8String(uri),
-                new Uint96(price),
-                new Utf8String(accessURI),
-                new Utf8String(accessKey),
-                new Uint8(resourceType)
-            ),
-            List.of()
-        );
-        return executeRemoteCallTransaction(function);
-    }
-
-    /**
      * Add a lab and bind the creator PUC hash atomically.
      */
     public RemoteFunctionCall<TransactionReceipt> addLabWithPucHash(
@@ -795,21 +783,6 @@ public class Diamond extends Contract {
                 new Uint8(resourceType),
                 new Bytes32(toBytes32(pucHash))
             ),
-            List.of()
-        );
-        return executeRemoteCallTransaction(function);
-    }
-
-    /**
-     * Bind an existing unbound lab to its creator PUC hash.
-     */
-    public RemoteFunctionCall<TransactionReceipt> bindLabCreatorPucHash(
-        BigInteger labId,
-        String pucHash
-    ) {
-        final Function function = new Function(
-            "bindLabCreatorPucHash",
-            Arrays.asList(new Uint256(labId), new Bytes32(toBytes32(pucHash))),
             List.of()
         );
         return executeRemoteCallTransaction(function);

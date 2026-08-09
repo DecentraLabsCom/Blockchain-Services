@@ -4,6 +4,14 @@ This guide covers the provider-facing backend APIs for publishing labs,
 managing their public metadata/content and issuing an FMU describe token. It is
 not a Marketplace catalogue API.
 
+The complete `/lab-admin/**` surface exists only in
+`BLOCKCHAIN_SERVICES_MODE=provider-consumer`. In `consumer-only` the
+controller is not created and Spring Security rejects every `/lab-admin/**`
+request, including asset staging and preflight requests, even when the
+institution's wallet is also a provider on-chain. The public
+`/lab-content/**` read route is the common content surface and is not an
+administrative write path.
+
 ## Access boundary
 
 All `/lab-admin/**` routes pass through `LocalhostOnlyFilter`. By default, they
@@ -23,7 +31,7 @@ connection strings and internal runbooks out of the uploaded content tree.
 | `GET /lab-admin/status` | Provider wallet, configured creator PUC hash, content URLs, FMU inventory and Guacamole availability. |
 | `GET /lab-admin/labs` | Labs owned by the institutional provider wallet. |
 | `GET /lab-admin/reservations/upcoming` (`offset`, `limit`) | Upcoming pending, confirmed or access-authorized reservations for provider-owned labs. |
-| `GET /lab-admin/reservations/actionable` (`offset`, `limit`) | Provider-cancellable reservations, including post-start service-failure cases still inside attestation grace. |
+| `GET /lab-admin/reservations/actionable` (`offset`, `limit`, `cursor`) | Provider-cancellable reservations, including post-start service-failure cases still inside attestation grace. |
 | `POST /lab-admin/reservations/{reservationKey}/cancel` | Deny a pending request or cancel a confirmed/access-authorized booking when its selected provider reason is eligible. |
 | `GET /lab-admin/guacamole/connections` | Safe Guacamole connection catalogue for administration. |
 | `POST /lab-admin/assets` | Upload a JPEG/PNG/WebP/GIF image or PDF document. |
@@ -31,7 +39,6 @@ connection strings and internal runbooks out of the uploaded content tree.
 | `POST /lab-admin/labs` | Create a lab, optionally list it immediately. |
 | `PUT /lab-admin/labs/{labId}` | Update a provider-owned lab. |
 | `DELETE /lab-admin/labs/{labId}` | Delete a provider-owned lab and tombstone local content. |
-| `POST /lab-admin/labs/{labId}/creator-binding` | Bind a non-zero `bytes32` creator PUC hash. |
 | `POST /lab-admin/labs/{labId}/list` | List a lab after metadata preflight. |
 | `POST /lab-admin/labs/{labId}/unlist` | Remove a lab from listing. |
 | `POST /lab-admin/fmu/provider-describe-token` | Issue a 60-second FMU describe token for an `.fmu` filename. |
@@ -104,10 +111,20 @@ units and as service credits; service credits use seven decimal places.
 
 `GET /lab-admin/reservations/actionable` is the provider cancellation view. It
 accepts optional `offset` (default `0`) and `limit` (default `100`, maximum
-`500`) query parameters. The page size is not a total-result cap: the backend
-scans every reservation index for every provider-owned lab, then returns
-`pagination.total`, `pagination.nextOffset` and `pagination.hasMore` so the
-Lab Manager can load subsequent pages.
+`500`) query parameters. The backend consumes the contract's bounded
+`getReservationsOfTokenPaginated` pages and returns an opaque `nextCursor`
+containing the next `(labId, offset)` position. The Lab Manager sends that
+cursor on the next request; `nextOffset` remains the display/compatibility
+offset. The response reports `pagination.hasMore` and the configured RPC
+budget, but does not claim an exact actionable total because calculating one
+would require scanning every reservation again.
+
+Results are streamed in provider-lab/on-chain snapshot order and are not a
+globally start-time-sorted list. The cursor is valid for the current snapshot;
+on-chain reservation ordering is not guaranteed stable across mutations.
+`LAB_ADMIN_RESERVATIONS_RPC_BUDGET` (default `500`) bounds the reservation
+scan/enrichment RPC work per request. A budget exhaustion returns a cursor
+rather than blocking the page.
 
 The endpoint returns future pending/confirmed reservations and confirmed or
 access-authorized reservations whose `SessionStarted` evidence is absent and
@@ -159,26 +176,43 @@ in addition to `LAB_CONTENT_MAX_FILE_SIZE` and
 `LAB_CONTENT_MAX_REQUEST_SIZE` at the servlet layer. Uploads accept only the
 listed content types and filenames are normalised before storage.
 
-Deleting a lab first reserves a durable MySQL deletion hand-off, then submits
+Deleting a lab first reserves a durable MySQL deletion hand-off, including the
+exact `operationKey` passed to `InstitutionalTxManagerProvider`, and then submits
 the on-chain transaction. The row stores the lab ID, metadata URI, transaction
-hash, state, retry count and last error. Content is denied while the row is
-pending, even before the filesystem tombstone exists. A worker retries the
-local tombstone and the durable `LabDeleted` event listener repairs the row if
-the request process crashes. If a worker crashes after claiming a row, its
-expired `PROCESSING` lease is reclaimed by a later worker cycle, so the local
-deletion cannot remain blocked indefinitely. Tombstoned content returns 404 immediately, but
-remains on disk for `LAB_CONTENT_RETENTION` (default `7d`) so operators can
-recover it. The scheduled collector removes expired tombstones and their
-content every `LAB_CONTENT_GC_INTERVAL_MS` (default one hour), recording the
-`PURGED` state.
+hash, broadcast state, local hand-off state, retry count and last error. The
+broadcast state is `PREPARED`, `BROADCAST_UNKNOWN`, `CONFIRMED_DELETED`,
+`CANCELLED` or `STUCK_UNKNOWN`. A timeout or RPC failure moves the row to
+`BROADCAST_UNKNOWN`; it is never cancelled without a receipt-backed revert.
+The reconciler joins the row to the institutional transaction outbox, checks
+receipts (including replacement hashes), and reads on-chain lab presence. A
+mined successful deletion or a canonical `LabDeleted` event moves the row to
+`CONFIRMED_DELETED`; a lab that still exists without a recoverable transaction
+becomes `STUCK_UNKNOWN` and remains blocked for operator intervention.
+
+Only `CONFIRMED_DELETED` rows are consumed by the filesystem worker, so a
+prepared row with a null hash has an explicit reconciliation route and cannot
+silently age forever. Content is denied while the row is pending, even before
+the filesystem tombstone exists. If a worker crashes after claiming a row, its
+expired `PROCESSING` lease is reclaimed by a later worker cycle. Tombstoned
+content returns 404 immediately, but remains on disk for
+`LAB_CONTENT_RETENTION` (default `7d`) so operators can recover it. The
+scheduled collector removes expired tombstones and their content every
+`LAB_CONTENT_GC_INTERVAL_MS` (default one hour), recording the `PURGED` state.
 
 ```mermaid
 stateDiagram-v2
     [*] --> Listed
     Listed --> Unlisted: unlistLab
     Unlisted --> Listed: listLab + metadata preflight
-    Listed --> PendingTombstone: durable hand-off + deleteLab receipt
-    Unlisted --> PendingTombstone: durable hand-off + deleteLab receipt
+    Listed --> Prepared: durable hand-off + operationKey
+    Unlisted --> Prepared: durable hand-off + operationKey
+    Prepared --> BroadcastUnknown: timeout / RPC ambiguity
+    BroadcastUnknown --> ConfirmedDeleted: receipt or LabDeleted
+    BroadcastUnknown --> Cancelled: receipt-backed revert
+    BroadcastUnknown --> StuckUnknown: lab exists + no recoverable tx
+    Prepared --> ConfirmedDeleted: deleteLab receipt
+    Prepared --> Cancelled: receipt-backed revert
+    ConfirmedDeleted --> PendingTombstone: filesystem hand-off
     PendingTombstone --> Processing: worker claim
     Processing --> Tombstoned: local hand-off succeeds
     Processing --> PendingTombstone: failure or expired lease
@@ -186,9 +220,11 @@ stateDiagram-v2
     Hidden --> Purged: retention deadline + collector
 ```
 
-`Listed`, `Unlisted` and `Deleted` are on-chain lab states. `PendingTombstone`,
-`PROCESSING`, `Tombstoned` and `PURGED` describe only the local content
-hand-off; a tombstone or purge never recreates or changes the on-chain lab.
+`Listed`, `Unlisted` and `Deleted` are on-chain lab states. `PREPARED`,
+`BROADCAST_UNKNOWN`, `CONFIRMED_DELETED`, `CANCELLED` and `STUCK_UNKNOWN`
+describe the broadcast decision; `PendingTombstone`, `PROCESSING`,
+`Tombstoned` and `PURGED` describe only the local content hand-off. A
+tombstone or purge never recreates or changes the on-chain lab.
 
 If the chain deletion succeeds but writing the tombstone fails, content remains
 blocked and the outbox worker retries it. The chain remains authoritative; do

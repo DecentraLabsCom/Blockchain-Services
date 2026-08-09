@@ -697,6 +697,12 @@
     "defaultValue": 14400
   },
   {
+    "name": "lab.admin.reservations.rpc-budget",
+    "type": "java.lang.Integer",
+    "description": "Maximum blockchain RPC calls spent serving one actionable-reservations page before returning a resume cursor.",
+    "defaultValue": 500
+  },
+  {
     "name": "lab.content.base-path",
     "type": "java.lang.String",
     "description": "Base directory where Lab Manager stores generated lab metadata, images, and documentation.",
