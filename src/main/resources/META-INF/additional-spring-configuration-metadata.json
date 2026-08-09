@@ -566,6 +566,16 @@
     "description": "Password for decrypting institutional wallet key."
   },
   {
+    "name": "provider.settlement.approver.private-key",
+    "type": "java.lang.String",
+    "description": "Private key for the provider settlement approval signer."
+  },
+  {
+    "name": "provider.settlement.payer.private-key",
+    "type": "java.lang.String",
+    "description": "Private key for the provider settlement payment signer."
+  },
+  {
     "name": "saml.idp.trust-mode",
     "type": "java.lang.String",
     "description": "Trust mode for IdPs: whitelist or any.",

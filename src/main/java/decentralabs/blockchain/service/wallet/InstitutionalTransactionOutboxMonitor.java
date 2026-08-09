@@ -13,6 +13,7 @@ import org.web3j.crypto.TransactionEncoder;
 import org.web3j.utils.Numeric;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.web3j.protocol.Web3j;
@@ -37,15 +38,28 @@ public class InstitutionalTransactionOutboxMonitor {
     private final InstitutionalTransactionOutboxService outboxService;
     private final WalletService walletService;
     private final InstitutionalWalletService institutionalWalletService;
+    private final ProviderSettlementSigner settlementSigner;
 
+    @Autowired
+    public InstitutionalTransactionOutboxMonitor(
+        InstitutionalTransactionOutboxService outboxService,
+        WalletService walletService,
+        InstitutionalWalletService institutionalWalletService,
+        ProviderSettlementSigner settlementSigner
+    ) {
+        this.outboxService = outboxService;
+        this.walletService = walletService;
+        this.institutionalWalletService = institutionalWalletService;
+        this.settlementSigner = settlementSigner;
+    }
+
+    /** Test-only constructor retaining the general institutional-wallet monitor. */
     public InstitutionalTransactionOutboxMonitor(
         InstitutionalTransactionOutboxService outboxService,
         WalletService walletService,
         InstitutionalWalletService institutionalWalletService
     ) {
-        this.outboxService = outboxService;
-        this.walletService = walletService;
-        this.institutionalWalletService = institutionalWalletService;
+        this(outboxService, walletService, institutionalWalletService, null);
     }
 
     @Value("${institutional.transaction-outbox.monitor.enabled:true}")
@@ -80,10 +94,16 @@ public class InstitutionalTransactionOutboxMonitor {
         if (!enabled) {
             return;
         }
+        Web3j web3j = walletService.getWeb3jInstance();
+        int limit = Math.max(1, batchSize);
         try {
-            monitor(walletService.getWeb3jInstance(), Math.max(1, batchSize));
+            monitor(web3j, limit);
         } catch (Exception ex) {
             log.warn("Institutional transaction outbox monitor unavailable: {}", ex.getMessage());
+        }
+        if (settlementSigner != null && settlementSigner.isConfigured()) {
+            monitorSettlementSigner(web3j, limit, "approval", settlementSigner::approverCredentials);
+            monitorSettlementSigner(web3j, limit, "payment", settlementSigner::payerCredentials);
         }
     }
 
@@ -91,9 +111,40 @@ public class InstitutionalTransactionOutboxMonitor {
         if (web3j == null) {
             return 0;
         }
+        return monitorWithWallet(
+            web3j, limit, institutionalWalletService.getInstitutionalWalletAddress(), null
+        );
+    }
+
+    private void monitorSettlementSigner(
+        Web3j web3j,
+        int limit,
+        String role,
+        java.util.function.Supplier<Credentials> credentialsSupplier
+    ) {
+        try {
+            monitor(web3j, limit, credentialsSupplier.get());
+        } catch (Exception ex) {
+            log.warn("Provider settlement {} signer outbox monitor unavailable: {}", role, ex.getMessage());
+        }
+    }
+
+    private int monitor(Web3j web3j, int limit, Credentials credentials) {
+        if (web3j == null) {
+            return 0;
+        }
+        return monitorWithWallet(web3j, limit, credentials == null ? null : credentials.getAddress(), credentials);
+    }
+
+    private int monitorWithWallet(
+        Web3j web3j,
+        int limit,
+        String walletAddress,
+        Credentials credentials
+    ) {
         MonitoringContext context;
         try {
-            context = resolveContext(web3j);
+            context = resolveContext(web3j, walletAddress);
         } catch (Exception ex) {
             log.warn("Unable to resolve institutional outbox context: {}", ex.getMessage());
             return 0;
@@ -107,10 +158,11 @@ public class InstitutionalTransactionOutboxMonitor {
             .toList();
         if (!matchingRecoveryCandidates.isEmpty()) {
             try {
-                Credentials credentials = institutionalWalletService.getInstitutionalCredentials();
-                if (credentials != null && context.walletAddress().equalsIgnoreCase(credentials.getAddress())) {
+                Credentials recoveryCredentials = credentials != null
+                    ? credentials : institutionalWalletService.getInstitutionalCredentials();
+                if (recoveryCredentials != null && context.walletAddress().equalsIgnoreCase(recoveryCredentials.getAddress())) {
                     for (InstitutionalTransactionOutboxService.Attempt attempt : matchingRecoveryCandidates) {
-                        updated += recoverReserved(web3j, credentials, attempt) ? 1 : 0;
+                        updated += recoverReserved(web3j, recoveryCredentials, attempt) ? 1 : 0;
                     }
                 } else {
                     log.warn("Institutional credentials do not match the active wallet; recovery is quarantined");
@@ -138,10 +190,9 @@ public class InstitutionalTransactionOutboxMonitor {
         return updated;
     }
 
-    private MonitoringContext resolveContext(Web3j web3j) throws Exception {
+    private MonitoringContext resolveContext(Web3j web3j, String walletAddress) throws Exception {
         EthChainId response = inspectRpc(web3j.ethChainId()::send, "reading chain ID");
         BigInteger chainId = response.getChainId();
-        String walletAddress = institutionalWalletService.getInstitutionalWalletAddress();
         if (chainId == null || chainId.signum() <= 0) {
             throw new IllegalStateException("RPC returned no valid chain ID");
         }

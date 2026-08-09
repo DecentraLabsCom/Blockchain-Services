@@ -24,6 +24,7 @@ public class InstitutionalTxManagerProvider {
     private Web3j currentWeb3j;
     private Long currentChainId;
     private String currentOperationKey;
+    private String currentWalletAddress;
 
     public InstitutionalTxManagerProvider(
         InstitutionalWalletService institutionalWalletService,
@@ -48,12 +49,39 @@ public class InstitutionalTxManagerProvider {
         }
         long chainId = resolveChainId(web3j);
         synchronized (lock) {
-            if (txManager == null
-                || currentWeb3j != web3j
-                || currentChainId == null
-                || !Objects.equals(currentChainId, chainId)
-                || !Objects.equals(currentOperationKey, operationKey)) {
-                Credentials credentials = institutionalWalletService.getInstitutionalCredentials();
+            if (isCurrent(web3j, operationKey, chainId, currentWalletAddress)) {
+                return txManager;
+            }
+        }
+        return getWithResolvedChain(
+            web3j, operationKey, institutionalWalletService.getInstitutionalCredentials(), chainId
+        );
+    }
+
+    /**
+     * Returns a durable transaction manager for an explicitly selected signer.
+     * Settlement approval and payment use this overload so their EVM sender is
+     * independent from the general institutional wallet.
+     */
+    public TransactionManager get(Web3j web3j, String operationKey, Credentials credentials) {
+        if (web3j == null) {
+            throw new IllegalArgumentException("web3j is required");
+        }
+        long chainId = resolveChainId(web3j);
+        return getWithResolvedChain(web3j, operationKey, credentials, chainId);
+    }
+
+    private TransactionManager getWithResolvedChain(
+        Web3j web3j,
+        String operationKey,
+        Credentials credentials,
+        long chainId
+    ) {
+        if (credentials == null) {
+            throw new IllegalArgumentException("credentials are required");
+        }
+        synchronized (lock) {
+            if (!isCurrent(web3j, operationKey, chainId, credentials.getAddress())) {
                 TransactionReceiptProcessor receiptProcessor = new PollingTransactionReceiptProcessor(web3j, 1500, 40);
                 txManager = new PendingNonceFastRawTransactionManager(
                     web3j, credentials, chainId, receiptProcessor, transactionOutboxService, operationKey
@@ -61,10 +89,19 @@ public class InstitutionalTxManagerProvider {
                 currentWeb3j = web3j;
                 currentChainId = chainId;
                 currentOperationKey = operationKey;
+                currentWalletAddress = credentials.getAddress();
                 log.info("Institutional tx manager initialized (chainId={})", chainId);
             }
         }
         return txManager;
+    }
+
+    private boolean isCurrent(Web3j web3j, String operationKey, long chainId, String walletAddress) {
+        return txManager != null
+            && currentWeb3j == web3j
+            && Objects.equals(currentChainId, chainId)
+            && Objects.equals(currentOperationKey, operationKey)
+            && Objects.equals(currentWalletAddress, walletAddress);
     }
 
     private long resolveChainId(Web3j web3j) {

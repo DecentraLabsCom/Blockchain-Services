@@ -3,6 +3,7 @@ package decentralabs.blockchain.service.billing;
 import decentralabs.blockchain.contract.Diamond;
 import decentralabs.blockchain.service.wallet.InstitutionalTxManagerProvider;
 import decentralabs.blockchain.service.wallet.InstitutionalWalletService;
+import decentralabs.blockchain.service.wallet.ProviderSettlementSigner;
 import decentralabs.blockchain.service.wallet.WalletService;
 import decentralabs.blockchain.util.LogSanitizer;
 import java.math.BigDecimal;
@@ -15,6 +16,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.web3j.protocol.Web3j;
 import org.web3j.protocol.core.methods.response.TransactionReceipt;
+import org.web3j.crypto.Credentials;
 import org.web3j.tx.TransactionManager;
 import org.web3j.tx.gas.StaticGasProvider;
 import org.web3j.utils.Convert;
@@ -39,6 +41,7 @@ public class ProviderSettlementChainClient {
     private final InstitutionalTxManagerProvider txManagerProvider;
     private final InstitutionalWalletService institutionalWalletService;
     private final WalletService walletService;
+    private final ProviderSettlementSigner settlementSigner;
 
     @Value("${contract.address}")
     private String contractAddress;
@@ -71,12 +74,17 @@ public class ProviderSettlementChainClient {
         Diamond diamond = loadWritableDiamond(operationKey);
         return toReceipt(diamond.submitProviderSettlementClaim(
             claimId, labId, amount, batchId, invoiceReferenceHash
-        ).send());
+        ).send(), actorAddress());
     }
 
     public ChainReceipt approve(byte[] claimId, byte[] approvalReferenceHash, String operationKey) throws Exception {
-        Diamond diamond = loadWritableDiamond(operationKey);
-        return toReceipt(diamond.approveProviderSettlementClaim(claimId, approvalReferenceHash).send());
+        settlementSigner.requireDistinctSigners();
+        Credentials credentials = settlementSigner.approverCredentials();
+        Diamond diamond = loadWritableDiamond(operationKey, credentials);
+        return toReceipt(
+            diamond.approveProviderSettlementClaim(claimId, approvalReferenceHash).send(),
+            credentials.getAddress()
+        );
     }
 
     public ChainReceipt pay(
@@ -85,30 +93,32 @@ public class ProviderSettlementChainClient {
         byte[] paymentAttestationHash,
         String operationKey
     ) throws Exception {
-        Diamond diamond = loadWritableDiamond(operationKey);
+        settlementSigner.requireDistinctSigners();
+        Credentials credentials = settlementSigner.payerCredentials();
+        Diamond diamond = loadWritableDiamond(operationKey, credentials);
         return toReceipt(diamond.recordProviderSettlementClaimPayment(
             claimId, paymentReferenceHash, paymentAttestationHash
-        ).send());
+        ).send(), credentials.getAddress());
     }
 
     public ChainReceipt disputeBatch(byte[] batchId, byte[] referenceHash, String operationKey) throws Exception {
         Diamond diamond = loadWritableDiamond(operationKey);
-        return toReceipt(diamond.disputeSettlementBatch(batchId, referenceHash).send());
+        return toReceipt(diamond.disputeSettlementBatch(batchId, referenceHash).send(), actorAddress());
     }
 
     public ChainReceipt reverseBatch(byte[] batchId, byte[] referenceHash, String operationKey) throws Exception {
         Diamond diamond = loadWritableDiamond(operationKey);
-        return toReceipt(diamond.reverseSettlementBatch(batchId, referenceHash).send());
+        return toReceipt(diamond.reverseSettlementBatch(batchId, referenceHash).send(), actorAddress());
     }
 
     public ChainReceipt disputeClaim(byte[] claimId, byte[] referenceHash, String operationKey) throws Exception {
         Diamond diamond = loadWritableDiamond(operationKey);
-        return toReceipt(diamond.disputeSettlementClaim(claimId, referenceHash).send());
+        return toReceipt(diamond.disputeSettlementClaim(claimId, referenceHash).send(), actorAddress());
     }
 
     public ChainReceipt reverseClaim(byte[] claimId, byte[] referenceHash, String operationKey) throws Exception {
         Diamond diamond = loadWritableDiamond(operationKey);
-        return toReceipt(diamond.reverseSettlementClaim(claimId, referenceHash).send());
+        return toReceipt(diamond.reverseSettlementClaim(claimId, referenceHash).send(), actorAddress());
     }
 
     public Diamond.ProviderSettlementClaim readClaim(byte[] claimId) throws Exception {
@@ -119,7 +129,7 @@ public class ProviderSettlementChainClient {
         return loadReadonlyDiamond().getProviderSettlementClaimApprovalReferenceHash(claimId).send();
     }
 
-    private ChainReceipt toReceipt(TransactionReceipt receipt) {
+    private ChainReceipt toReceipt(TransactionReceipt receipt, String actor) {
         if (receipt == null || !"0x1".equalsIgnoreCase(receipt.getStatus())) {
             String status = receipt == null ? "missing" : receipt.getStatus();
             throw new IllegalStateException("Settlement transaction was not mined successfully (status=" + status + ")");
@@ -128,7 +138,7 @@ public class ProviderSettlementChainClient {
             receipt.getTransactionHash(),
             receipt.getBlockNumber(),
             receipt.getBlockHash(),
-            actorAddress()
+            actor.toLowerCase(Locale.ROOT)
         );
     }
 
@@ -143,8 +153,12 @@ public class ProviderSettlementChainClient {
     }
 
     private Diamond loadWritableDiamond(String operationKey) {
+        return loadWritableDiamond(operationKey, institutionalWalletService.getInstitutionalCredentials());
+    }
+
+    private Diamond loadWritableDiamond(String operationKey, Credentials credentials) {
         Web3j web3j = walletService.getWeb3jInstance();
-        TransactionManager txManager = txManagerProvider.get(web3j, operationKey);
+        TransactionManager txManager = txManagerProvider.get(web3j, operationKey, credentials);
         return Diamond.load(
             contractAddress,
             web3j,

@@ -27,6 +27,8 @@ class InstitutionalTxManagerProviderTest {
 
     private static final Credentials CREDENTIALS =
         Credentials.create("4f3edf983ac636a65a842ce7c78d9aa706d3b113bce036f7f8f2f0d9f7d4c001");
+    private static final Credentials SETTLEMENT_CREDENTIALS =
+        Credentials.create("6c8753d3f2c7d4b9b6a1e5f7a9c3d2e1f0b8c7d6e5f4a3b2c1d0e9f8a7b6c502");
 
     @Mock
     private InstitutionalWalletService institutionalWalletService;
@@ -113,6 +115,21 @@ class InstitutionalTxManagerProviderTest {
         assertThatThrownBy(() -> provider.get(web3j))
             .isInstanceOf(IllegalStateException.class)
             .hasMessageContaining("chainId");
+    }
+
+    @Test
+    void get_acceptsExplicitSettlementCredentials() throws Exception {
+        stubChainId(web3j, 11155111L);
+
+        try (MockedConstruction<PendingNonceFastRawTransactionManager> construction =
+                 mockConstruction(PendingNonceFastRawTransactionManager.class)) {
+
+            TransactionManager manager = provider.get(web3j, "settlement:approve", SETTLEMENT_CREDENTIALS);
+
+            assertThat(manager).isNotNull();
+            assertThat(construction.constructed()).hasSize(1);
+            verify(institutionalWalletService, times(0)).getInstitutionalCredentials();
+        }
     }
 
     @Test

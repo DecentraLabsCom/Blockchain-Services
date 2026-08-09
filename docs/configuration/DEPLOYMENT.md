@@ -58,7 +58,7 @@ and units.
 
 | Group | Required settings | Notes |
 | --- | --- | --- |
-| Chain and wallet | `CONTRACT_ADDRESS`, `BLOCKCHAIN_NETWORK_ACTIVE`, RPC URL, `INSTITUTIONAL_WALLET_*` or an encrypted persisted wallet | The wallet signs automated transactions. Keep RPC credentials outside Git. |
+| Chain and wallet | `CONTRACT_ADDRESS`, `BLOCKCHAIN_NETWORK_ACTIVE`, RPC URL, `INSTITUTIONAL_WALLET_*` or an encrypted persisted wallet | The institutional wallet signs general automated transactions. Provider settlement additionally requires `PROVIDER_SETTLEMENT_APPROVER_PRIVATE_KEY` and `PROVIDER_SETTLEMENT_PAYER_PRIVATE_KEY`; keep all secrets outside Git. |
 | Database | `SPRING_DATASOURCE_URL`, `SPRING_DATASOURCE_USERNAME`, `SPRING_DATASOURCE_PASSWORD` | Flyway validates migrations at startup. |
 | Signing and Marketplace | `PRIVATE_KEY_PATH`, `PUBLIC_KEY_PATH`, `MARKETPLACE_PUBLIC_KEY_URL`, `PUBLIC_BASE_URL` | Mount private keys read-only and use HTTPS endpoints. |
 | Provider mode | `FEATURES_PROVIDERS_ENABLED`, `FEATURES_PROVIDERS_REGISTRATION_ENABLED`, `FEATURES_ORGANIZATIONS_ENABLED`, `PROVIDER_RESERVATION_AVAILABILITY_LOCK_TIMEOUT_SECONDS` | Registration is independently feature-gated. Provider reservation confirmation/denial automation is enabled only when the provider flag is true and the wallet is the current lab owner or its authorized backend. Capacity checks use a shared MySQL advisory lock keyed by chain, contract and lab; all replicas that can confirm the same lab must use the same persistent database. |

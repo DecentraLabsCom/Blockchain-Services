@@ -206,14 +206,19 @@ authoritative on-chain `ownerOf(labId)` value; `providerAddress` is not
 accepted in the invoice request body. SQL stores that address as a
 receipt-backed projection snapshot. Approval is allowed only from
 `SUBMITTED`; its EUR amount must exactly match the invoice and its
-`approvalRef` must be unique. Payment is allowed only from `APPROVED`; its
+`approvalRef` must be unique. The approval transaction is signed by the
+configured `PROVIDER_SETTLEMENT_APPROVER_PRIVATE_KEY` wallet, which must hold
+`SETTLEMENT_APPROVER_ROLE`. Payment is allowed only from `APPROVED`; its
 provider and EUR amount must match the claim and it requires unique
-`paymentRef` plus a non-empty `paymentAttestation`. `bankRef`, `eurcTxHash` and
-`usdcTxHash` are optional supplementary evidence. `approvedBy` and `paidBy`
-are derived from the transaction sender and are never accepted from the HTTP
-body. Human references are hashed with the shared UTF-8/keccak encoding before
-being sent on-chain. Retries reuse the same operation key and transaction
-outbox row; they must not create a second claim.
+`paymentRef` plus a non-empty `paymentAttestation`. The payment transaction is
+signed by the configured `PROVIDER_SETTLEMENT_PAYER_PRIVATE_KEY` wallet, which
+must hold `SETTLEMENT_PAYER_ROLE`, and that wallet must differ from the
+approval wallet. `bankRef`, `eurcTxHash` and `usdcTxHash` are optional
+supplementary evidence. `approvedBy` and `paidBy` are derived from the
+transaction sender and are never accepted from the HTTP body. Human references
+are hashed with the shared UTF-8/keccak encoding before being sent on-chain.
+Retries reuse the same operation key and transaction outbox row; they must not
+create a second claim.
 
 The dashboard settlement form calls the object-bound endpoints directly:
 `POST /billing/provider-receivables/{labId}/invoice` for submit,
