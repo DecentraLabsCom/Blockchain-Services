@@ -83,6 +83,9 @@ class SamlAuthServiceTest {
         lenient().when(jwtService.generateIssuedToken(eq(null), any()))
             .thenReturn(new JwtService.IssuedToken("booking-token", "jwt-jti-default", 1_700_000_000L, null));
         lenient().when(accessAuthorizationProvisioningService.markActivated(any())).thenReturn(true);
+        lenient().when(blockchainService.getAccessAuthorizationState(
+            anyString(), anyString(), anyString(), anyString()
+        )).thenReturn(Map.of("reservationStatus", java.math.BigInteger.valueOf(2)));
     }
 
     @Nested

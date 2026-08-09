@@ -95,14 +95,12 @@ public class SamlAuthService {
             String puc = stringClaim(marketplaceJWTClaims, "puc");
             String txHash = request.getAccessAuthorizationTxHash();
             // Authorization is derived from the validated on-chain booking state.
-            if (!isAccessAuthorized(bookingInfo)) {
-                enforceConsumerCheckInState(
-                    canonicalReservationKey,
-                    marketplaceJWTClaims,
-                    request.getMarketplaceToken(),
-                    request.getLabId()
-                );
-            }
+            enforceConsumerCheckInState(
+                canonicalReservationKey,
+                marketplaceJWTClaims,
+                request.getMarketplaceToken(),
+                request.getLabId()
+            );
             validatePendingTransaction(txHash);
             refreshAccessAuthorization(
                 payerInstitutionWallet, canonicalReservationKey, request.getLabId(), puc, bookingInfo, txHash
@@ -271,9 +269,6 @@ public class SamlAuthService {
             String puc,
             Map<String, Object> preparedBookingInfo,
             String txHash) {
-        if (isAccessAuthorized(preparedBookingInfo)) {
-            return;
-        }
         Map<String, Object> state = blockchainService.getAccessAuthorizationState(
             wallet,
             reservationKeyFromBooking(preparedBookingInfo, reservationKey),
