@@ -8,6 +8,7 @@ import decentralabs.blockchain.service.auth.FmuSessionTicketService;
 import decentralabs.blockchain.service.auth.SessionTicketException;
 import decentralabs.blockchain.config.ProviderConsumerModeCondition;
 import java.util.Map;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.annotation.Conditional;
@@ -52,7 +53,7 @@ public class FmuSessionTicketController {
 
     @PostMapping("/redeem")
     public ResponseEntity<?> redeem(
-        @RequestBody(required = false) FmuSessionTicketRedeemRequest request,
+        @Valid @RequestBody FmuSessionTicketRedeemRequest request,
         Authentication authentication
     ) {
         try {

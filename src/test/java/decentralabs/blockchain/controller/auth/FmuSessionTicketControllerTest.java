@@ -24,6 +24,7 @@ import org.springframework.http.MediaType;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
+import org.springframework.validation.beanvalidation.OptionalValidatorFactoryBean;
 
 class FmuSessionTicketControllerTest {
 
@@ -36,7 +37,9 @@ class FmuSessionTicketControllerTest {
     void setUp() {
         sessionTicketService = new StubFmuSessionTicketService();
         controller = new FmuSessionTicketController(sessionTicketService);
-        mockMvc = MockMvcBuilders.standaloneSetup(controller).build();
+        mockMvc = MockMvcBuilders.standaloneSetup(controller)
+            .setValidator(new OptionalValidatorFactoryBean())
+            .build();
         objectMapper = new ObjectMapper();
     }
 
@@ -95,6 +98,17 @@ class FmuSessionTicketControllerTest {
             .isEqualTo("lab.example");
     }
 
+    @Test
+    void shouldRejectRedeemWithoutSessionTicketBeforeCallingService() throws Exception {
+        mockMvc.perform(post("/auth/fmu/session-ticket/redeem")
+                .principal(new UsernamePasswordAuthenticationToken("lab.example", null))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{}"))
+            .andExpect(status().isBadRequest());
+
+        org.assertj.core.api.Assertions.assertThat(sessionTicketService.redeemCalls).isZero();
+    }
+
     private static final class StubFmuSessionTicketService extends FmuSessionTicketService {
 
         private FmuSessionTicketIssueResponse issueResponse;
@@ -102,6 +116,7 @@ class FmuSessionTicketControllerTest {
         private RuntimeException issueException;
         private RuntimeException redeemException;
         private String redeemGatewayId;
+        private int redeemCalls;
 
         private StubFmuSessionTicketService() {
             super(
@@ -129,6 +144,7 @@ class FmuSessionTicketControllerTest {
             if (redeemException != null) {
                 throw redeemException;
             }
+            redeemCalls++;
             redeemGatewayId = authenticatedGatewayId;
             return redeemResponse;
         }

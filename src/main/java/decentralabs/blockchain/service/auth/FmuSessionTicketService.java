@@ -138,9 +138,6 @@ public class FmuSessionTicketService {
                 "Missing authenticated gateway identity"
             );
         }
-        if (request == null || request.getSessionTicket() == null || request.getSessionTicket().isBlank()) {
-            throw new SessionTicketException(HttpStatus.BAD_REQUEST, "SESSION_TICKET_INVALID", "Missing sessionTicket");
-        }
         String ticket = request.getSessionTicket().trim();
         TicketRecord record = loadTicket(ticket);
         if (record == null) {
@@ -157,6 +154,11 @@ public class FmuSessionTicketService {
         String claimLabId = normalize(claims.get("labId"));
         String claimReservationKey = normalize(claims.get("reservationKey"));
         String targetGatewayId = normalize(claims.get("targetGatewayId"));
+        String requestedLabId = normalize(request.getLabId());
+        String requestedReservationKey = normalize(request.getReservationKey());
+        boolean labMatches = requestedLabId == null || requestedLabId.equals(claimLabId);
+        boolean reservationKeyMatches = requestedReservationKey == null
+            || requestedReservationKey.equalsIgnoreCase(claimReservationKey);
         if (targetGatewayId == null || !gatewayId.equalsIgnoreCase(targetGatewayId)) {
             throw new SessionTicketException(
                 HttpStatus.FORBIDDEN,
@@ -164,14 +166,6 @@ public class FmuSessionTicketService {
                 "Session ticket is not authorized for this gateway"
             );
         }
-        if (request.getLabId() != null && !request.getLabId().isBlank() && !request.getLabId().trim().equals(claimLabId)) {
-            throw new SessionTicketException(HttpStatus.FORBIDDEN, "LAB_MISMATCH", "Ticket labId mismatch");
-        }
-        if (request.getReservationKey() != null && !request.getReservationKey().isBlank()
-            && !request.getReservationKey().trim().equalsIgnoreCase(claimReservationKey)) {
-            throw new SessionTicketException(HttpStatus.FORBIDDEN, "FORBIDDEN", "Ticket reservationKey mismatch");
-        }
-
         long nbf = toEpochSecond(claims.get("nbf"), "Missing nbf claim");
         long exp = toEpochSecond(claims.get("exp"), "Missing exp claim");
         if (now < nbf) {
@@ -215,6 +209,12 @@ public class FmuSessionTicketService {
                 "RESERVATION_NOT_ACTIVE",
                 "Reservation is no longer authorized for FMU access"
             );
+        }
+        if (!labMatches) {
+            throw new SessionTicketException(HttpStatus.FORBIDDEN, "LAB_MISMATCH", "Ticket labId mismatch");
+        }
+        if (!reservationKeyMatches) {
+            throw new SessionTicketException(HttpStatus.FORBIDDEN, "FORBIDDEN", "Ticket reservationKey mismatch");
         }
 
         FmuSessionTicketRedeemResponse response = new FmuSessionTicketRedeemResponse();

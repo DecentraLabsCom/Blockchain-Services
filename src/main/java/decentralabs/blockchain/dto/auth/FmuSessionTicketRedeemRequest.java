@@ -1,6 +1,11 @@
 package decentralabs.blockchain.dto.auth;
 
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Size;
+
 public class FmuSessionTicketRedeemRequest {
+    @NotBlank
+    @Size(max = 256)
     private String sessionTicket;
     private String labId;
     private String reservationKey;

@@ -219,6 +219,27 @@ class FmuSessionTicketServiceTest {
     }
 
     @Test
+    void shouldCheckOnChainAuthorizationBeforeClientSuppliedMetadata() {
+        long now = System.currentTimeMillis() / 1000;
+        Map<String, Object> claims = validClaims(now);
+        when(jwtService.validateToken("booking-token")).thenReturn(true);
+        when(jwtService.extractAllClaims("booking-token")).thenReturn(claims);
+
+        var issueResponse = service.issue("Bearer booking-token", new FmuSessionTicketIssueRequest());
+        FmuSessionTicketRedeemRequest redeemRequest = new FmuSessionTicketRedeemRequest();
+        redeemRequest.setSessionTicket(issueResponse.getSessionTicket());
+        redeemRequest.setLabId("client-supplied-different-lab");
+
+        assertThatThrownBy(() -> service.redeem(redeemRequest, "lab.example"))
+            .isInstanceOf(SessionTicketException.class)
+            .extracting("code")
+            .isEqualTo("LAB_MISMATCH");
+        verify(blockchainBookingService).isFmuSessionReservationAuthorized(
+            anyString(), anyString(), anyString(), anyString(), anyLong()
+        );
+    }
+
+    @Test
     void shouldRevokeAllTicketsForReservationKey() {
         service = buildService(jdbcTemplate);
 
