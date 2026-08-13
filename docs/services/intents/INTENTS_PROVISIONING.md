@@ -191,6 +191,12 @@ Provider + consumer deployments submit it to `apply-provider-token`; consumer-on
 deployments submit it to `apply-consumer-token`. If no direct token is available, the modal links to the backend pairing setup, which contains
 the Marketplace challenge instructions.
 
+![Institutional backend pairing](../../images/institution-pairing.png)
+
+The page refuses to begin the ceremony when `PUBLIC_BASE_URL` is missing or
+invalid. Treat that warning as a deployment-configuration error; do not paste
+wallet or organization values into the browser to work around it.
+
 ```mermaid
 sequenceDiagram
     participant Admin as Institution admin

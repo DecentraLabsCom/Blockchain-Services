@@ -148,6 +148,19 @@ browser ceremony and completion are intentionally session-bound; see the
 These surfaces are network-restricted by `LocalhostOnlyFilter`; billing admin
 also requires a valid internal/access token according to deployment mode.
 
+## Administrative UI
+
+The backend serves two browser-facing administrative surfaces. They are
+protected by the localhost/private-network boundary and the configured admin
+token; they are not public Marketplace pages.
+
+| Surface | Route | Purpose |
+| --- | --- | --- |
+| Wallet Dashboard | `/wallet-dashboard/` | Institutional wallet, balances, funding and billing administration. |
+| Institutional pairing | `/institution-config/` | Marketplace challenge and backend registration ceremony. |
+
+![Wallet Dashboard](docs/images/wallet-dashboard.png)
+
 ### Health and metrics
 
 - `GET /health` — detailed application status, including durable queue health.

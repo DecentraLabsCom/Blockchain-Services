@@ -256,6 +256,13 @@ runbooks.
 - Provisioning token flows are documented in
   [Intents and provisioning](../intents/INTENTS_PROVISIONING.md).
 
+The Wallet Dashboard is the administrative entry point for creating or
+importing the institutional wallet, checking balances and opening billing
+operations. The screenshot shows the initial protected dashboard state; the
+actual wallet address, network and balances depend on the deployment.
+
+![Wallet Dashboard](../../images/wallet-dashboard.png)
+
 `/onboarding/token/**` is reserved by filters/CORS in this repository version;
 there is no public controller endpoint for it.
 
