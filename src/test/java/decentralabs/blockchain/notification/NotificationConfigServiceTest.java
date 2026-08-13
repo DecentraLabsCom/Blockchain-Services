@@ -179,6 +179,28 @@ class NotificationConfigServiceTest {
         }
 
         @Test
+        @DisplayName("Should preserve stored secrets when blank values are submitted")
+        void shouldPreserveStoredSecretsWhenBlankValuesAreSubmitted() {
+            properties.getMail().getSmtp().setPassword("stored-smtp-secret");
+            properties.getMail().getGraph().setClientSecret("stored-graph-secret");
+            NotificationUpdateRequest request = new NotificationUpdateRequest(
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                new NotificationUpdateRequest.Smtp(null, null, null, "", null, null, null),
+                new NotificationUpdateRequest.Graph(null, null, "   ", null)
+            );
+
+            service.updateMailConfig(request);
+
+            assertEquals("stored-smtp-secret", service.getMailConfig().getSmtp().getPassword());
+            assertEquals("stored-graph-secret", service.getMailConfig().getGraph().getClientSecret());
+        }
+
+        @Test
         @DisplayName("Should persist config to file")
         void shouldPersistConfigToFile() {
             NotificationUpdateRequest request = new NotificationUpdateRequest(
@@ -341,6 +363,17 @@ class NotificationConfigServiceTest {
     class GetPublicConfigTests {
 
         @Test
+        @DisplayName("Should return public config when optional fields are unset")
+        void shouldReturnPublicConfigWhenOptionalFieldsAreUnset() {
+            Map<String, Object> config = assertDoesNotThrow(service::getPublicConfig);
+
+            @SuppressWarnings("unchecked")
+            Map<String, Object> smtp = (Map<String, Object>) config.get("smtp");
+            assertNull(smtp.get("host"));
+            assertEquals(false, smtp.get("passwordConfigured"));
+        }
+
+        @Test
         @DisplayName("Should return public config without secrets")
         void shouldReturnPublicConfigWithoutSecrets() {
             properties.getMail().setEnabled(true);
@@ -375,6 +408,7 @@ class NotificationConfigServiceTest {
             assertEquals(587, smtp.get("port"));
             assertEquals("user@test.com", smtp.get("username"));
             assertFalse(smtp.containsKey("password"));
+            assertEquals(true, smtp.get("passwordConfigured"));
             
             // Graph should not include clientSecret
             @SuppressWarnings("unchecked")
@@ -382,6 +416,7 @@ class NotificationConfigServiceTest {
             assertEquals("tenant-123", graph.get("tenantId"));
             assertEquals("client-456", graph.get("clientId"));
             assertFalse(graph.containsKey("clientSecret"));
+            assertEquals(true, graph.get("clientSecretConfigured"));
         }
     }
 

@@ -70,15 +70,16 @@ public class NotificationAdminController {
                     "error", String.join("; ", errors)
                 ));
             }
+            notificationConfigService.updateMailConfig(request);
             return ResponseEntity.ok(Map.of(
                 "success", true,
-                "config", notificationConfigService.updateMailConfig(request)
+                "config", notificationConfigService.getPublicConfig()
             ));
         } catch (Exception ex) {
             log.error("Failed to update notification config: {}", ex.getMessage(), ex);
             return ResponseEntity.internalServerError().body(Map.of(
                 "success", false,
-                "error", "Failed to update notification config: " + ex.getMessage()
+                "error", "Failed to update notification config"
             ));
         }
     }

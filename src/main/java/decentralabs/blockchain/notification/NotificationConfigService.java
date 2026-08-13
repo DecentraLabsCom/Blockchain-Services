@@ -5,6 +5,7 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -75,7 +76,7 @@ public class NotificationConfigService {
             if (reqSmtp.host() != null) smtp.setHost(reqSmtp.host());
             if (reqSmtp.port() != null) smtp.setPort(reqSmtp.port());
             if (reqSmtp.username() != null) smtp.setUsername(reqSmtp.username());
-            if (reqSmtp.password() != null) smtp.setPassword(reqSmtp.password());
+            if (hasText(reqSmtp.password())) smtp.setPassword(reqSmtp.password());
             if (reqSmtp.auth() != null) smtp.setAuth(reqSmtp.auth());
             if (reqSmtp.startTls() != null) smtp.setStartTls(reqSmtp.startTls());
             if (reqSmtp.timeoutMs() != null) smtp.setTimeoutMs(reqSmtp.timeoutMs());
@@ -86,31 +87,44 @@ public class NotificationConfigService {
             NotificationUpdateRequest.Graph reqGraph = request.graph();
             if (reqGraph.tenantId() != null) graph.setTenantId(reqGraph.tenantId());
             if (reqGraph.clientId() != null) graph.setClientId(reqGraph.clientId());
-            if (reqGraph.clientSecret() != null) graph.setClientSecret(reqGraph.clientSecret());
+            if (hasText(reqGraph.clientSecret())) graph.setClientSecret(reqGraph.clientSecret());
             if (reqGraph.from() != null) graph.setFrom(reqGraph.from());
         }
     }
 
     public Map<String, Object> getPublicConfig() {
         NotificationProperties.Mail mail = properties.getMail();
-        return Map.of(
-            "enabled", mail.isEnabled(),
-            "driver", mail.getDriver(),
-            "from", mail.getFrom(),
-            "fromName", mail.getFromName(),
-            "defaultTo", mail.getDefaultTo(),
-            "timezone", mail.getTimezone(),
-            "smtp", Map.of(
-                "host", mail.getSmtp().getHost(),
-                "port", mail.getSmtp().getPort(),
-                "username", mail.getSmtp().getUsername()
-            ),
-            "graph", Map.of(
-                "tenantId", mail.getGraph().getTenantId(),
-                "clientId", mail.getGraph().getClientId(),
-                "from", mail.getGraph().getFrom()
-            )
-        );
+        NotificationProperties.Smtp smtpConfig = mail.getSmtp();
+        Map<String, Object> smtp = new LinkedHashMap<>();
+        smtp.put("host", smtpConfig.getHost());
+        smtp.put("port", smtpConfig.getPort());
+        smtp.put("username", smtpConfig.getUsername());
+        smtp.put("auth", smtpConfig.isAuth());
+        smtp.put("startTls", smtpConfig.isStartTls());
+        smtp.put("timeoutMs", smtpConfig.getTimeoutMs());
+        smtp.put("passwordConfigured", hasText(smtpConfig.getPassword()));
+
+        NotificationProperties.Graph graphConfig = mail.getGraph();
+        Map<String, Object> graph = new LinkedHashMap<>();
+        graph.put("tenantId", graphConfig.getTenantId());
+        graph.put("clientId", graphConfig.getClientId());
+        graph.put("from", graphConfig.getFrom());
+        graph.put("clientSecretConfigured", hasText(graphConfig.getClientSecret()));
+
+        Map<String, Object> config = new LinkedHashMap<>();
+        config.put("enabled", mail.isEnabled());
+        config.put("driver", mail.getDriver());
+        config.put("from", mail.getFrom());
+        config.put("fromName", mail.getFromName());
+        config.put("defaultTo", mail.getDefaultTo());
+        config.put("timezone", mail.getTimezone());
+        config.put("smtp", smtp);
+        config.put("graph", graph);
+        return config;
+    }
+
+    private boolean hasText(String value) {
+        return value != null && !value.isBlank();
     }
 
     public void loadFromDiskIfPresent() {

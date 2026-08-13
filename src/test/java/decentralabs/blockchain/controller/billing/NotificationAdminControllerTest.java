@@ -114,15 +114,23 @@ class NotificationAdminControllerTest {
 
             NotificationProperties.Mail mailConfig = new NotificationProperties.Mail();
             mailConfig.setEnabled(true);
+            mailConfig.getSmtp().setPassword("must-not-leave-the-server");
+            Map<String, Object> publicConfig = Map.of(
+                "enabled", true,
+                "smtp", Map.of("passwordConfigured", true)
+            );
 
             when(notificationConfigService.validateUpdate(any())).thenReturn(Collections.emptyList());
             when(notificationConfigService.updateMailConfig(any())).thenReturn(mailConfig);
+            when(notificationConfigService.getPublicConfig()).thenReturn(publicConfig);
 
             mockMvc.perform(post("/billing/admin/notifications")
                     .contentType(MediaType.APPLICATION_JSON)
                     .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.success").value(true));
+                .andExpect(jsonPath("$.success").value(true))
+                .andExpect(jsonPath("$.config.smtp.passwordConfigured").value(true))
+                .andExpect(jsonPath("$.config.smtp.password").doesNotExist());
         }
 
         @Test
@@ -166,7 +174,8 @@ class NotificationAdminControllerTest {
                     .contentType(MediaType.APPLICATION_JSON)
                     .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isInternalServerError())
-                .andExpect(jsonPath("$.success").value(false));
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.error").value("Failed to update notification config"));
         }
     }
 
