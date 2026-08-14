@@ -186,15 +186,9 @@ public class ReservationProjectionService {
             BigInteger labId = new BigInteger(row.labId());
             Diamond.Lab lab = diamond().getLab(labId).send();
             String accessUri = lab == null || lab.base == null ? null : lab.base.accessURI;
-            String normalized = normalizeAccessUri(accessUri);
-            if (normalized != null) {
-                jdbcTemplate.update(
-                    "UPDATE lab_reservations SET access_uri = ? WHERE transaction_hash = ? AND access_uri IS NULL",
-                    normalized,
-                    row.transactionHash()
-                );
-            }
-            return normalized;
+            // Projection reads must remain side-effect free. Legacy accessURI values are
+            // resolved for this response only; durable backfilling belongs to a write path.
+            return normalizeAccessUri(accessUri);
         } catch (Exception ex) {
             log.warn(
                 "Unable to resolve accessURI for legacy reservation {}: {}",
