@@ -66,17 +66,44 @@ class MarketplaceEndpointAuthServiceTest {
 
     private String makeJwt(Map<String, Object> claims, PrivateKey privateKey) {
         long now = System.currentTimeMillis();
+        return makeJwtWithTemporalClaims(
+                claims,
+                privateKey,
+                new Date(now),
+                new Date(now + 60_000)
+        );
+    }
+
+    private String makeJwtWithTtl(Map<String, Object> claims, long ttlSeconds) {
+        long now = System.currentTimeMillis();
+        return makeJwtWithTemporalClaims(
+                claims,
+                keyPair.getPrivate(),
+                new Date(now),
+                new Date(now + ttlSeconds * 1_000)
+        );
+    }
+
+    private String makeJwtWithTemporalClaims(
+            Map<String, Object> claims,
+            PrivateKey privateKey,
+            Date issuedAt,
+            Date expiration
+    ) {
         // add audience claim manually (newer JwtBuilder API expects the audience helper to be used via the builder,
         // but that helper doesn't accept a single string parameter, so it's simpler to include it in the map)
         Map<String, Object> payload = new java.util.HashMap<>(claims);
         payload.put("aud", "https://backend.example.edu");
-        return Jwts.builder()
+        var builder = Jwts.builder()
                 .claims(payload)
-                .issuer("marketplace")
-                .issuedAt(new Date(now))
-                .expiration(new Date(now + 60_000))
-                .signWith(privateKey) // algorithm chosen based on key (RS256)
-                .compact();
+                .issuer("marketplace");
+        if (issuedAt != null) {
+            builder.issuedAt(issuedAt);
+        }
+        if (expiration != null) {
+            builder.expiration(expiration);
+        }
+        return builder.signWith(privateKey).compact(); // algorithm chosen based on key (RS256)
     }
 
     @Test
@@ -96,6 +123,58 @@ class MarketplaceEndpointAuthServiceTest {
     @Test
     void shouldRejectInvalidToken() {
         assertThatThrownBy(() -> service.enforceToken("not-a-token", null))
+                .isInstanceOf(ResponseStatusException.class)
+                .hasMessageContaining("invalid_marketplace_token");
+    }
+
+    @Test
+    void shouldRejectTokenWithoutIssuedAt() {
+        String jwt = makeJwtWithTemporalClaims(
+                Map.of("puc", "u-no-iat"),
+                keyPair.getPrivate(),
+                null,
+                new Date(System.currentTimeMillis() + 60_000)
+        );
+
+        assertThatThrownBy(() -> service.enforceToken(jwt, null))
+                .isInstanceOf(ResponseStatusException.class)
+                .hasMessageContaining("invalid_marketplace_token");
+    }
+
+    @Test
+    void shouldRejectTokenWithoutExpiration() {
+        String jwt = makeJwtWithTemporalClaims(
+                Map.of("puc", "u-no-exp"),
+                keyPair.getPrivate(),
+                new Date(System.currentTimeMillis()),
+                null
+        );
+
+        assertThatThrownBy(() -> service.enforceToken(jwt, null))
+                .isInstanceOf(ResponseStatusException.class)
+                .hasMessageContaining("invalid_marketplace_token");
+    }
+
+    @Test
+    void shouldRejectTokenWithTtlAboveConfiguredMaximum() {
+        String jwt = makeJwtWithTtl(Map.of("puc", "u-long-lived"), 61);
+
+        assertThatThrownBy(() -> service.enforceToken(jwt, null))
+                .isInstanceOf(ResponseStatusException.class)
+                .hasMessageContaining("invalid_marketplace_token");
+    }
+
+    @Test
+    void shouldRejectTokenIssuedTooFarInTheFuture() {
+        long now = System.currentTimeMillis();
+        String jwt = makeJwtWithTemporalClaims(
+                Map.of("puc", "u-future"),
+                keyPair.getPrivate(),
+                new Date(now + 61_000),
+                new Date(now + 121_000)
+        );
+
+        assertThatThrownBy(() -> service.enforceToken(jwt, null))
                 .isInstanceOf(ResponseStatusException.class)
                 .hasMessageContaining("invalid_marketplace_token");
     }

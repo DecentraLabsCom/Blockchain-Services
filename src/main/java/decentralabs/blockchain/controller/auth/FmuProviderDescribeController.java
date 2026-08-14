@@ -51,7 +51,7 @@ public class FmuProviderDescribeController {
             @RequestBody(required = false) Map<String, String> body
     ) {
         try {
-            marketplaceEndpointAuthService.enforceAuthorization(authorization, null);
+            marketplaceEndpointAuthService.enforceAuthorization(authorization, "fmu:describe");
 
             String fmuFileName = body == null ? null : body.get("fmuFileName");
             if (fmuFileName == null || fmuFileName.isBlank()) {

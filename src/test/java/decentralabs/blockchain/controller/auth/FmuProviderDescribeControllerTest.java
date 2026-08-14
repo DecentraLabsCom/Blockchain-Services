@@ -1,8 +1,10 @@
 package decentralabs.blockchain.controller.auth;
 
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -53,7 +55,7 @@ class FmuProviderDescribeControllerTest {
 
     @Test
     void missingAuthorizationHeaderReturns401() throws Exception {
-        when(authService.enforceAuthorization(isNull(), isNull()))
+        when(authService.enforceAuthorization(isNull(), eq("fmu:describe")))
             .thenThrow(new ResponseStatusException(HttpStatus.UNAUTHORIZED, "missing_marketplace_token"));
 
         mockMvc.perform(post("/auth/fmu/provider-describe-token")
@@ -65,7 +67,7 @@ class FmuProviderDescribeControllerTest {
 
     @Test
     void invalidMarketplaceTokenReturns401() throws Exception {
-        when(authService.enforceAuthorization(any(), isNull()))
+        when(authService.enforceAuthorization(any(), eq("fmu:describe")))
             .thenThrow(new ResponseStatusException(HttpStatus.UNAUTHORIZED, "invalid_marketplace_token"));
 
         mockMvc.perform(post("/auth/fmu/provider-describe-token")
@@ -80,7 +82,7 @@ class FmuProviderDescribeControllerTest {
 
     @Test
     void missingBodyReturns400() throws Exception {
-        when(authService.enforceAuthorization(any(), isNull())).thenReturn(Collections.emptyMap());
+        when(authService.enforceAuthorization(any(), eq("fmu:describe"))).thenReturn(Collections.emptyMap());
 
         mockMvc.perform(post("/auth/fmu/provider-describe-token")
                 .header("Authorization", "Bearer valid.token")
@@ -90,7 +92,7 @@ class FmuProviderDescribeControllerTest {
 
     @Test
     void missingFmuFileNameReturns400() throws Exception {
-        when(authService.enforceAuthorization(any(), isNull())).thenReturn(Collections.emptyMap());
+        when(authService.enforceAuthorization(any(), eq("fmu:describe"))).thenReturn(Collections.emptyMap());
 
         mockMvc.perform(post("/auth/fmu/provider-describe-token")
                 .header("Authorization", "Bearer valid.token")
@@ -102,7 +104,7 @@ class FmuProviderDescribeControllerTest {
 
     @Test
     void blankFmuFileNameReturns400() throws Exception {
-        when(authService.enforceAuthorization(any(), isNull())).thenReturn(Collections.emptyMap());
+        when(authService.enforceAuthorization(any(), eq("fmu:describe"))).thenReturn(Collections.emptyMap());
 
         mockMvc.perform(post("/auth/fmu/provider-describe-token")
                 .header("Authorization", "Bearer valid.token")
@@ -114,7 +116,7 @@ class FmuProviderDescribeControllerTest {
 
     @Test
     void fmuFileNameWithoutDotFmuExtensionReturns400() throws Exception {
-        when(authService.enforceAuthorization(any(), isNull())).thenReturn(Collections.emptyMap());
+        when(authService.enforceAuthorization(any(), eq("fmu:describe"))).thenReturn(Collections.emptyMap());
 
         mockMvc.perform(post("/auth/fmu/provider-describe-token")
                 .header("Authorization", "Bearer valid.token")
@@ -126,7 +128,7 @@ class FmuProviderDescribeControllerTest {
 
     @Test
     void fmuFileNameCaseInsensitiveExtensionAccepted() throws Exception {
-        when(authService.enforceAuthorization(any(), isNull())).thenReturn(Collections.emptyMap());
+        when(authService.enforceAuthorization(any(), eq("fmu:describe"))).thenReturn(Collections.emptyMap());
         when(jwtService.generateToken(any(), isNull())).thenReturn("signed.jwt.token");
 
         mockMvc.perform(post("/auth/fmu/provider-describe-token")
@@ -136,13 +138,15 @@ class FmuProviderDescribeControllerTest {
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.token").value("signed.jwt.token"))
             .andExpect(jsonPath("$.expiresIn").value(60));
+
+        verify(authService).enforceAuthorization(any(), eq("fmu:describe"));
     }
 
     // ── Success path ───────────────────────────────────────────────────────
 
     @Test
     void validRequestReturnsTokenAndExpiresIn() throws Exception {
-        when(authService.enforceAuthorization(any(), isNull())).thenReturn(Collections.emptyMap());
+        when(authService.enforceAuthorization(any(), eq("fmu:describe"))).thenReturn(Collections.emptyMap());
         when(jwtService.generateToken(any(), isNull())).thenReturn("signed.jwt.token");
 
         mockMvc.perform(post("/auth/fmu/provider-describe-token")
@@ -156,7 +160,7 @@ class FmuProviderDescribeControllerTest {
 
     @Test
     void tokenClaimsContainAccessKeyAndResourceType() throws Exception {
-        when(authService.enforceAuthorization(any(), isNull())).thenReturn(Collections.emptyMap());
+        when(authService.enforceAuthorization(any(), eq("fmu:describe"))).thenReturn(Collections.emptyMap());
 
         java.util.concurrent.atomic.AtomicReference<Map<String, Object>> capturedClaims =
             new java.util.concurrent.atomic.AtomicReference<>();
@@ -187,7 +191,7 @@ class FmuProviderDescribeControllerTest {
 
     @Test
     void fmuFileNameIsTrimmedBeforeStoringInClaims() throws Exception {
-        when(authService.enforceAuthorization(any(), isNull())).thenReturn(Collections.emptyMap());
+        when(authService.enforceAuthorization(any(), eq("fmu:describe"))).thenReturn(Collections.emptyMap());
 
         java.util.concurrent.atomic.AtomicReference<Map<String, Object>> capturedClaims =
             new java.util.concurrent.atomic.AtomicReference<>();

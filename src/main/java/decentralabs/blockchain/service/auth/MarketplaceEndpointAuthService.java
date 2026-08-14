@@ -120,7 +120,9 @@ public class MarketplaceEndpointAuthService {
             .clockSkewSeconds(clockSkewSeconds)
             .build();
         Jws<Claims> jws = parser.parseSignedClaims(token);
-        return jws.getPayload();
+        Claims claims = jws.getPayload();
+        validateTemporalClaims(claims);
+        return claims;
     }
 
     private String resolveAudience() {
@@ -158,7 +160,9 @@ public class MarketplaceEndpointAuthService {
             || !expectedInstitution.equalsIgnoreCase(tokenInstitution.trim())) {
             throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "invalid_marketplace_token");
         }
+    }
 
+    private void validateTemporalClaims(Claims claims) {
         if (claims.getIssuedAt() == null || claims.getExpiration() == null) {
             throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "invalid_marketplace_token");
         }

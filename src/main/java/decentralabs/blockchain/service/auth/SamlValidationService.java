@@ -493,7 +493,7 @@ public class SamlValidationService {
                 && "Response".equals(response.getLocalName());
         String responseInResponseTo = null;
         String destination = null;
-        if (completeResponse) {
+        if (response != null && completeResponse) {
             responseInResponseTo = normalizeConfiguredValue(response.getAttribute("InResponseTo"));
             destination = normalizeConfiguredValue(response.getAttribute("Destination"));
         }
