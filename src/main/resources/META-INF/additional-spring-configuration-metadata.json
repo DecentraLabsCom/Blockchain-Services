@@ -1314,6 +1314,12 @@
     "defaultValue": "{}"
   },
   {
+    "name": "security.reservation-projection.credentials-json",
+    "type": "java.lang.String",
+    "description": "JSON object mapping Lite gateway IDs to reservation projection credentials and accessURI scopes.",
+    "defaultValue": "{}"
+  },
+  {
     "name": "access.audit.observation-window-tolerance-seconds",
     "type": "java.lang.Long",
     "description": "Tolerance in seconds when matching an observed access credential to its audit window.",

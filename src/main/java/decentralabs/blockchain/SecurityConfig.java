@@ -188,6 +188,7 @@ public class SecurityConfig {
                 authorize.requestMatchers(HttpMethod.POST, "/access-audit/internal/session-observed")
                     .hasRole("SESSION_OBSERVER");
                 authorize.requestMatchers("/access-audit/internal/**").hasRole("INTERNAL");
+                authorize.requestMatchers(HttpMethod.GET, "/reservations/projection").permitAll();
                 authorize.requestMatchers(intentsEndpoint + "/**").permitAll();
                 // Wallet dashboard static resources (HTML/CSS/JS)
                 authorize.requestMatchers("/wallet-dashboard/**").permitAll();
