@@ -6,6 +6,7 @@ import decentralabs.blockchain.service.wallet.WalletService;
 import java.io.IOException;
 import java.math.BigInteger;
 import java.util.List;
+import java.util.Locale;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -40,6 +41,20 @@ import org.web3j.utils.Numeric;
 @Slf4j
 public class SessionStartedOnChainClient {
     public enum TransactionState { PENDING, SUCCEEDED, FAILED }
+
+    public static class SessionStartedPreflightException extends RuntimeException {
+        private final boolean observationAlreadyUsed;
+
+        public SessionStartedPreflightException(String message) {
+            super(message);
+            this.observationAlreadyUsed = message != null
+                && message.toLowerCase(Locale.ROOT).contains("session already used");
+        }
+
+        public boolean observationAlreadyUsed() {
+            return observationAlreadyUsed;
+        }
+    }
 
     private final WalletService walletService;
     private final InstitutionalWalletService institutionalWalletService;
@@ -101,6 +116,38 @@ public class SessionStartedOnChainClient {
             return response.getChainId();
         } catch (Exception ex) {
             throw new IllegalStateException("Failed to resolve SessionStarted publication chainId", ex);
+        }
+    }
+
+    /**
+     * Runs the exact markSessionStarted call as an eth_call before allocating
+     * a nonce and broadcasting. The contract performs the authoritative
+     * identity check, including gatewayId + sessionId + accessType.
+     */
+    public void validateSessionStartedPreflight(SessionStartedOnChainSubmission submission) {
+        validate(submission);
+        Web3j web3j = walletService.getWeb3jInstance();
+        long chainId = getChainId(web3j);
+        validateDomainChainId(chainId);
+        Credentials credentials = institutionalWalletService.getInstitutionalCredentials();
+        String encoded = FunctionEncoder.encode(sessionStartedFunction(submission));
+        try {
+            EthCall response = web3j.ethCall(
+                Transaction.createEthCallTransaction(credentials.getAddress(), contractAddress, encoded),
+                DefaultBlockParameterName.LATEST
+            ).send();
+            if (response == null) {
+                throw new IllegalStateException("RPC returned no SessionStarted preflight response");
+            }
+            if (response.hasError()) {
+                String message = response.getError() != null && response.getError().getMessage() != null
+                    ? response.getError().getMessage() : "contract_reverted";
+                throw new SessionStartedPreflightException(
+                    "SessionStarted preflight reverted: " + message
+                );
+            }
+        } catch (IOException ex) {
+            throw new IllegalStateException("Failed to run SessionStarted preflight eth_call: " + ex.getMessage(), ex);
         }
     }
 

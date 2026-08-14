@@ -21,6 +21,7 @@ import org.springframework.jdbc.BadSqlGrammarException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 import org.web3j.crypto.Credentials;
 
 @Service
@@ -44,6 +45,7 @@ public class SessionStartedAttestationService {
         this.signer = signer;
     }
 
+    @Transactional
     public boolean recordSessionStarted(
         AccessCredentialSessionObservedRequest request,
         long startedAt,
@@ -173,34 +175,148 @@ public class SessionStartedAttestationService {
         SignedSessionStartedAttestation signed,
         AccessCredentialSessionObservedRequest request
     ) {
-        int updated = jdbcTemplate.update(
-            """
-            INSERT INTO session_started_attestations (
-                reservation_key, lab_id, puc_hash, signer_address, gateway_id,
-                session_id, access_type, started_at, nonce, credential_hash,
-                client_proof_hash, digest, signature, credential_reference_type,
-                credential_reference_id
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            ON DUPLICATE KEY UPDATE
-                updated_at = CURRENT_TIMESTAMP
-            """,
-            payload.reservationKey(),
-            payload.labId(),
-            payload.pucHash(),
-            payload.signer(),
-            payload.gatewayId(),
-            payload.sessionId(),
-            payload.accessType(),
-            toTimestamp(payload.startedAt()),
-            payload.nonce(),
-            payload.credentialHash(),
-            blankToNull(payload.clientProofHash()),
-            signed.digest(),
-            signed.signature(),
-            credentialReferenceType(request),
-            credentialReferenceId(request)
-        );
-        return updated > 0;
+        try {
+            if (!reserveObservationIdentity(payload)) {
+                return false;
+            }
+        } catch (RuntimeException ex) {
+            releaseObservationIdentityIfUnpersisted(payload);
+            throw ex;
+        }
+        try {
+            int updated = jdbcTemplate.update(
+                """
+                INSERT INTO session_started_attestations (
+                    reservation_key, lab_id, puc_hash, signer_address, gateway_id,
+                    session_id, access_type, started_at, nonce, credential_hash,
+                    client_proof_hash, digest, signature, credential_reference_type,
+                    credential_reference_id
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON DUPLICATE KEY UPDATE
+                    updated_at = CURRENT_TIMESTAMP
+                """,
+                payload.reservationKey(),
+                payload.labId(),
+                payload.pucHash(),
+                payload.signer(),
+                payload.gatewayId(),
+                payload.sessionId(),
+                payload.accessType(),
+                toTimestamp(payload.startedAt()),
+                payload.nonce(),
+                payload.credentialHash(),
+                blankToNull(payload.clientProofHash()),
+                signed.digest(),
+                signed.signature(),
+                credentialReferenceType(request),
+                credentialReferenceId(request)
+            );
+            if (updated > 0) {
+                return true;
+            }
+            releaseObservationIdentityIfUnpersisted(payload);
+            return false;
+        } catch (RuntimeException ex) {
+            releaseObservationIdentityIfUnpersisted(payload);
+            throw ex;
+        }
+    }
+
+    private boolean reserveObservationIdentity(SessionStartedAttestationPayload payload) {
+        String gatewayId = nullToEmpty(payload.gatewayId());
+        try {
+            jdbcTemplate.update(
+                """
+                INSERT INTO session_started_observation_locks (
+                    gateway_id, session_id, access_type, reservation_key
+                ) VALUES (?, ?, ?, ?)
+                ON DUPLICATE KEY UPDATE reservation_key = reservation_key
+                """,
+                gatewayId,
+                payload.sessionId(),
+                payload.accessType(),
+                payload.reservationKey()
+            );
+            String owner = jdbcTemplate.queryForObject(
+                """
+                SELECT reservation_key
+                FROM session_started_observation_locks
+                WHERE gateway_id = ? AND session_id = ? AND access_type = ?
+                """,
+                String.class,
+                gatewayId,
+                payload.sessionId(),
+                payload.accessType()
+            );
+            if (payload.reservationKey().equals(owner)) {
+                return true;
+            }
+            // Migration seeding may have selected another reservation when
+            // legacy data already contained duplicate identities. Preserve
+            // idempotent retries for an exact old row, but reject new reuse.
+            Integer existingCount = jdbcTemplate.queryForObject(
+                """
+                SELECT COUNT(*)
+                FROM session_started_attestations
+                WHERE reservation_key = ?
+                  AND COALESCE(gateway_id, '') = ?
+                  AND session_id = ?
+                  AND access_type = ?
+                """,
+                Integer.class,
+                payload.reservationKey(),
+                gatewayId,
+                payload.sessionId(),
+                payload.accessType()
+            );
+            if (existingCount != null && existingCount > 0) {
+                return true;
+            }
+            log.warn(
+                "SessionStarted observation rejected: session identity is owned by another reservation "
+                    + "gateway={} session={} accessType={}",
+                LogSanitizer.maskIdentifier(gatewayId),
+                LogSanitizer.maskIdentifier(payload.sessionId()),
+                LogSanitizer.sanitize(payload.accessType())
+            );
+            return false;
+        } catch (BadSqlGrammarException ex) {
+            log.warn("SessionStarted observation identity guard unavailable: {}", LogSanitizer.sanitize(ex.getMessage()));
+            return false;
+        }
+    }
+
+    private void releaseObservationIdentityIfUnpersisted(SessionStartedAttestationPayload payload) {
+        String gatewayId = nullToEmpty(payload.gatewayId());
+        try {
+            jdbcTemplate.update(
+                """
+                DELETE FROM session_started_observation_locks
+                WHERE gateway_id = ? AND session_id = ? AND access_type = ?
+                  AND reservation_key = ?
+                  AND NOT EXISTS (
+                      SELECT 1 FROM session_started_attestations
+                      WHERE reservation_key = ?
+                        AND COALESCE(gateway_id, '') = ?
+                        AND session_id = ?
+                        AND access_type = ?
+                  )
+                """,
+                gatewayId,
+                payload.sessionId(),
+                payload.accessType(),
+                payload.reservationKey(),
+                payload.reservationKey(),
+                gatewayId,
+                payload.sessionId(),
+                payload.accessType()
+            );
+        } catch (RuntimeException cleanupFailure) {
+            log.warn(
+                "SessionStarted observation identity cleanup failed: {}",
+                LogSanitizer.sanitize(cleanupFailure.getMessage())
+            );
+        }
     }
 
     private RowMapper<AuditCredential> auditCredentialRowMapper() {

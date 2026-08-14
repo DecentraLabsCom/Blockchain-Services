@@ -73,6 +73,24 @@ class SessionStartedOnChainPublisherServiceTest {
     }
 
     @Test
+    void quarantinesAlreadyUsedObservationBeforeBroadcast() throws Exception {
+        SessionStartedOnChainPublisherService service = buildService(jdbcTemplate);
+        mockSubmittedQuery(List.of());
+        mockPendingQuery("QUEUED", 0, null, null, null, null);
+        when(jdbcTemplate.update(anyString(), any(Object[].class))).thenReturn(1);
+        when(onChainClient.hasSessionStarted("0xabc")).thenReturn(false);
+        org.mockito.Mockito.doThrow(new SessionStartedOnChainClient.SessionStartedPreflightException(
+            "SessionStarted preflight reverted: Session already used"
+        )).when(onChainClient).validateSessionStartedPreflight(any());
+
+        assertThat(service.publishPending(10)).isZero();
+
+        verify(onChainClient).validateSessionStartedPreflight(any());
+        verify(transactionDispatcher, never()).dispatchPrepared(anyString(), any(), any(), any(), any(), any(), any());
+        verify(jdbcTemplate).update(contains("onchain_status = ?"), any(Object[].class));
+    }
+
+    @Test
     void claimsSessionStartedWithDatabaseOwnedLeaseAndFencesDurableWrites() throws Exception {
         SessionStartedOnChainPublisherService service = buildService(jdbcTemplate);
         mockSubmittedQuery(List.of());

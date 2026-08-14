@@ -175,6 +175,8 @@ public class SessionStartedOnChainPublisherService {
                 return resumePersistedSubmission(record, claim, durableVersion.get());
             }
 
+            onChainClient.validateSessionStartedPreflight(submission);
+
             String walletAddress = context.walletAddress();
             BigInteger existingNonce = walletAddress.equalsIgnoreCase(record.walletAddress())
                 ? record.transactionNonce() : null;
@@ -207,6 +209,13 @@ public class SessionStartedOnChainPublisherService {
                 LogSanitizer.sanitize(txHash)
             );
             return true;
+        } catch (SessionStartedOnChainClient.SessionStartedPreflightException ex) {
+            if (ex.observationAlreadyUsed()) {
+                markPreBroadcastSuperseded(claim, durableVersion.get(), ex);
+            } else {
+                markPreBroadcastPermanent(claim, durableVersion.get(), ex);
+            }
+            return false;
         } catch (InstitutionalWalletDispatchException ex) {
             switch (ex.outcome()) {
                 case PRE_BROADCAST_BLOCKED -> markPreBroadcastBlocked(claim, durableVersion.get());
@@ -629,6 +638,16 @@ public class SessionStartedOnChainPublisherService {
             false
         );
         log.error("SessionStarted publication requires manual intervention for attestation {}: {}", claim.id(), ex.getMessage());
+    }
+
+    private void markPreBroadcastSuperseded(PublishClaim claim, long expectedVersion, Exception ex) {
+        updatePreBroadcastStatus(
+            claim, expectedVersion,
+            "SUPERSEDED",
+            "SessionStarted observation already used on-chain: " + LogSanitizer.sanitize(ex.getMessage()),
+            false
+        );
+        log.info("SessionStarted observation was already used on-chain; attestation {} superseded", claim.id());
     }
 
     private void updatePreBroadcastStatus(

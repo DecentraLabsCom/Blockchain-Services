@@ -2,7 +2,10 @@ package decentralabs.blockchain.service.auth;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.contains;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -79,6 +82,42 @@ class SessionStartedAttestationServiceTest {
     }
 
     @Test
+    void shouldRejectSessionIdAlreadyReservedByAnotherReservation() throws Exception {
+        Credentials credentials = Credentials.create("4f3edf983ac636a65a842ce7c78d9aa706d3b113bce036f7f8f2f0d9f7d4c001");
+        SessionStartedAttestationService service = buildService(jdbcTemplate);
+        when(institutionalWalletService.getInstitutionalCredentials()).thenReturn(credentials);
+        when(walletService.isLabOwnedByProvider(credentials.getAddress(), BigInteger.valueOf(42))).thenReturn(true);
+        when(jdbcTemplate.query(anyString(), anyAuditCredentialRowMapper(), any(Object[].class)))
+            .thenAnswer(invocation -> {
+                RowMapper<?> mapper = invocation.getArgument(1);
+                ResultSet rs = org.mockito.Mockito.mock(ResultSet.class);
+                when(rs.getString("reservation_key")).thenReturn("0xnew-reservation");
+                when(rs.getString("lab_id")).thenReturn("42");
+                when(rs.getString("puc_hash")).thenReturn("0x" + "1".repeat(64));
+                when(rs.getString("access_type")).thenReturn("fmu");
+                when(rs.getString("jwt_jti")).thenReturn("jwt-jti-new");
+                when(rs.getString("fmu_ticket_id")).thenReturn(null);
+                when(rs.getString("credential_hash")).thenReturn("b".repeat(64));
+                return List.of(mapper.mapRow(rs, 0));
+            });
+        when(jdbcTemplate.queryForObject(
+            contains("FROM session_started_observation_locks"), eq(String.class), any(Object[].class)
+        )).thenReturn("0xold-reservation");
+
+        AccessCredentialSessionObservedRequest request = new AccessCredentialSessionObservedRequest();
+        request.setReservationKey("0xnew-reservation");
+        request.setJwtJti("jwt-jti-new");
+        request.setSessionId("fmu:reused-session");
+        request.setGatewayId("gateway-a");
+        request.setAccessType("fmu");
+
+        boolean recorded = service.recordSessionStarted(request, 1_700_010_000L, "fmu");
+
+        org.assertj.core.api.Assertions.assertThat(recorded).isFalse();
+        verify(jdbcTemplate, never()).update(contains("INSERT INTO session_started_attestations"), any(Object[].class));
+    }
+
+    @Test
     void shouldSkipWhenLocalWalletDoesNotOwnLabOnChain() throws Exception {
         Credentials credentials = Credentials.create("4f3edf983ac636a65a842ce7c78d9aa706d3b113bce036f7f8f2f0d9f7d4c001");
         SessionStartedAttestationService service = buildService(jdbcTemplate);
@@ -127,6 +166,11 @@ class SessionStartedAttestationServiceTest {
 
     private SessionStartedAttestationService buildService(JdbcTemplate template) {
         when(jdbcTemplateProvider.getIfAvailable()).thenReturn(template);
+        if (template != null) {
+            lenient().when(template.queryForObject(
+                contains("FROM session_started_observation_locks"), eq(String.class), any(Object[].class)
+            )).thenReturn("0xabc");
+        }
         return new SessionStartedAttestationService(
             jdbcTemplateProvider,
             institutionalWalletService,
