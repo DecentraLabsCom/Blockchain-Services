@@ -167,11 +167,12 @@ class MarketplaceEndpointAuthServiceTest {
     @Test
     void shouldRejectTokenIssuedTooFarInTheFuture() {
         long now = System.currentTimeMillis();
+        long issuedAt = now + 120_000;
         String jwt = makeJwtWithTemporalClaims(
                 Map.of("puc", "u-future"),
                 keyPair.getPrivate(),
-                new Date(now + 61_000),
-                new Date(now + 121_000)
+                new Date(issuedAt),
+                new Date(issuedAt + 60_000)
         );
 
         assertThatThrownBy(() -> service.enforceToken(jwt, null))
