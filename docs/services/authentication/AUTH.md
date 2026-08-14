@@ -26,7 +26,7 @@ defense in depth, but is no longer the sole boundary for these routes.
 | `POST /auth/access-code/redeem` | Prepare a browser/gateway redemption and return a short-lived handle (`provider-consumer` only) | Gateway ID + per-gateway redeemer credential |
 | `POST /auth/access-code/redeem/commit` | Commit a prepared redemption after gateway-local validation (`provider-consumer` only) | Same gateway credential + redemption handle |
 | `POST /auth/access-code/redeem/release` | Release a prepared redemption after local validation fails (`provider-consumer` only) | Same gateway credential + redemption handle |
-| `POST /auth/fmu/session-ticket/issue` | Issue reusable FMU ticket (conditional) | Booking bearer and reservation window |
+| `POST /auth/fmu/session-ticket/issue` | Issue short-lived FMU handoff credential (conditional) | Booking bearer and reservation window |
 | `POST /auth/fmu/session-ticket/redeem` | Exchange FMU ticket for claims (conditional) | Per-gateway session-observer JWT |
 | `POST /access-audit/internal/session-observed` | Receive durable runtime observation | Per-gateway session-observer JWT |
 
@@ -242,10 +242,19 @@ route.
 
 ## FMU session tickets
 
-Tickets are short-lived, reservation-bound reusable credentials for FMU
-reconnects. The default lifetime is 120 seconds and it never exceeds the
-booking window. Claims are encrypted at rest and the ticket lookup key is
-hashed.
+Tickets are short-lived, reservation-bound credentials that authorize an FMU
+`session.create` handoff. The current implementation allows the credential to
+be redeemed again while it remains valid, but each redemption is a new handoff;
+the ticket is not an FMU runtime session and is not the reconnect handle. The
+default lifetime is 120 seconds and it never exceeds the booking window. Claims
+are encrypted at rest and the ticket lookup key is hashed.
+
+After `session.created`, reconnect through the Gateway with `session.attach`,
+using the returned `sessionId` and the original validated context. Station
+retains the existing FMU state only during `FMU_ATTACH_GRACE_SECONDS`; a
+reconnect must not call `session.create` or replay the ticket. If that grace
+period expires, the client must start a new handoff and therefore a new FMU
+session.
 
 ```mermaid
 sequenceDiagram
