@@ -4,7 +4,6 @@ import decentralabs.blockchain.service.BackendUrlResolver;
 import decentralabs.blockchain.service.auth.SamlValidationService;
 import decentralabs.blockchain.service.auth.FmuSessionTicketService;
 import decentralabs.blockchain.service.auth.WebauthnCredentialService;
-import decentralabs.blockchain.config.BackendOperatingModeConfiguration;
 import decentralabs.blockchain.service.intent.Eip712IntentVerifier;
 import decentralabs.blockchain.service.intent.IntentPersistenceService;
 import decentralabs.blockchain.service.intent.IntentRecord;
