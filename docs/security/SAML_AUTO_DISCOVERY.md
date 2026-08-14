@@ -13,14 +13,15 @@ issuer, `NameID` and consumed attributes are then read only from that same
 assertion subtree; no document-wide fallback is used.
 
 This closes the XML Signature Wrapping / signed-node confusion class addressed
-by this boundary. The service is still a deliberately narrow assertion
-validator, not a complete SAML Web SSO profile implementation: the current
-backend API does not carry the original AuthnRequest context or configured SP
-profile needed to validate every `AudienceRestriction`, `Recipient`,
-`SubjectConfirmationData` and `InResponseTo` value. Public production
-deployments should use Spring Security SAML/OpenSAML (or add an equivalent
-profile validator with explicit audience, recipient and request correlation)
-before treating those controls as satisfied.
+by this boundary. After signature verification the backend also requires
+non-expired `Conditions` and bearer `SubjectConfirmationData`, including a
+non-empty `AudienceRestriction`, an absolute `Recipient`, and (when a complete
+SAML `Response` is supplied) matching `InResponseTo`/`Destination` values.
+Configure `saml.validation.expected-audience` and
+`saml.validation.expected-recipient` when the backend is used as a direct SAML
+consumer. The Marketplace callback has the original AuthnRequest context and
+enforces the configured SP audience, callback recipient, condition windows and
+one-time transaction/assertion identifiers before creating a session.
 
 ## Effective trust model
 
@@ -94,6 +95,12 @@ saml.idp.metadata.url=
 # Optional per-issuer TLS profile; default is modern. Supported values are
 # modern, compatibility, and legacy-rsa.
 saml.idp.metadata.tls-profile={'https://legacy-idp.example':'compatibility'}
+
+# Optional direct-backend SP binding (the Marketplace callback always checks
+# its own NEXT_PUBLIC_SAML_SP_* values before forwarding the assertion).
+saml.validation.clock-skew-ms=60000
+saml.validation.expected-audience=https://marketplace.example/api/auth/sso/saml2/metadata
+saml.validation.expected-recipient=https://marketplace.example/api/auth/sso/saml2/callback
 
 # SIR2/RedIRIS FPP example. Use legacy-rsa only for an endpoint that requires
 # the TLS_RSA_WITH_AES_256_CBC_SHA256 cipher suite.

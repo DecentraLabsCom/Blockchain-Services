@@ -30,6 +30,7 @@ import java.io.IOException;
 import java.io.StringWriter;
 import java.math.BigInteger;
 import java.nio.charset.StandardCharsets;
+import java.time.Instant;
 import java.security.KeyFactory;
 import java.security.PrivateKey;
 import java.security.Security;
@@ -77,7 +78,59 @@ class SamlValidationServiceTest {
     @BeforeEach
     void setUp() throws Exception {
         samlValidationService = new SamlValidationService();
+        ReflectionTestUtils.setField(samlValidationService, "expectedAudience", "https://sp.example.com/metadata");
+        ReflectionTestUtils.setField(samlValidationService, "expectedRecipient", "https://sp.example.com/callback");
         seedTestMetadataCertificate();
+    }
+
+    @Test
+    void shouldAcceptAValidSamlWebSsoAssertionProfile() throws Exception {
+        Document doc = parseXML(createSamlAssertionProfile(
+                "https://sp.example.com/metadata",
+                "https://sp.example.com/callback",
+                Instant.now().plusSeconds(300).toString()
+        ));
+
+        samlValidationService.validateAssertionProfile(doc, doc.getDocumentElement());
+    }
+
+    @Test
+    void shouldRejectExpiredSamlConditions() throws Exception {
+        Document doc = parseXML(createSamlAssertionProfile(
+                "https://sp.example.com/metadata",
+                "https://sp.example.com/callback",
+                Instant.now().minusSeconds(120).toString()
+        ));
+
+        assertThatThrownBy(() -> samlValidationService.validateAssertionProfile(doc, doc.getDocumentElement()))
+                .isInstanceOf(SecurityException.class)
+                .hasMessageContaining("Conditions.NotOnOrAfter");
+    }
+
+    @Test
+    void shouldRejectSamlAudienceForAnotherServiceProvider() throws Exception {
+        Document doc = parseXML(createSamlAssertionProfile(
+                "https://other-sp.example.com/metadata",
+                "https://sp.example.com/callback",
+                Instant.now().plusSeconds(300).toString()
+        ));
+
+        assertThatThrownBy(() -> samlValidationService.validateAssertionProfile(doc, doc.getDocumentElement()))
+                .isInstanceOf(SecurityException.class)
+                .hasMessageContaining("AudienceRestriction");
+    }
+
+    @Test
+    void shouldRejectSamlSubjectConfirmationForAnotherRecipient() throws Exception {
+        Document doc = parseXML(createSamlAssertionProfile(
+                "https://sp.example.com/metadata",
+                "https://other-sp.example.com/callback",
+                Instant.now().plusSeconds(300).toString()
+        ));
+
+        assertThatThrownBy(() -> samlValidationService.validateAssertionProfile(doc, doc.getDocumentElement()))
+                .isInstanceOf(SecurityException.class)
+                .hasMessageContaining("Recipient");
     }
 
     @Test
@@ -714,12 +767,44 @@ class SamlValidationServiceTest {
                 "</saml:Assertion>";
     }
 
+    private String createSamlAssertionProfile(String audience, String recipient, String notOnOrAfter) {
+        return """
+                <saml:Assertion xmlns:saml="urn:oasis:names:tc:SAML:2.0:assertion" ID="_profile123" Version="2.0">
+                  <saml:Issuer>%s</saml:Issuer>
+                  <saml:Subject>
+                    <saml:SubjectConfirmation Method="urn:oasis:names:tc:SAML:2.0:cm:bearer">
+                      <saml:SubjectConfirmationData NotBefore="%s" NotOnOrAfter="%s" Recipient="%s" />
+                    </saml:SubjectConfirmation>
+                  </saml:Subject>
+                  <saml:Conditions NotBefore="%s" NotOnOrAfter="%s">
+                    <saml:AudienceRestriction><saml:Audience>%s</saml:Audience></saml:AudienceRestriction>
+                  </saml:Conditions>
+                </saml:Assertion>
+                """.formatted(
+                        TEST_ISSUER,
+                        Instant.now().minusSeconds(30),
+                        notOnOrAfter,
+                        recipient,
+                        Instant.now().minusSeconds(30),
+                        notOnOrAfter,
+                        audience
+                );
+    }
+
     private String createSamlAssertionWithAttributes(String issuer, Map<String, String> attributes) {
         StringBuilder sb = new StringBuilder();
         sb.append("<saml:Assertion xmlns:saml=\"urn:oasis:names:tc:SAML:2.0:assertion\" " +
                 "xmlns:ds=\"http://www.w3.org/2000/09/xmldsig#\" " +
                 "ID=\"_test123\" Version=\"2.0\">");
         sb.append("<saml:Issuer>").append(escapeXmlText(issuer)).append("</saml:Issuer>");
+        sb.append("<saml:Subject><saml:SubjectConfirmation Method=\"urn:oasis:names:tc:SAML:2.0:cm:bearer\">")
+                .append("<saml:SubjectConfirmationData NotBefore=\"2020-01-01T00:00:00Z\" ")
+                .append("NotOnOrAfter=\"2099-01-01T00:00:00Z\" Recipient=\"https://sp.example.com/callback\" ")
+                .append("InResponseTo=\"_request-1\"/>")
+                .append("</saml:SubjectConfirmation></saml:Subject>");
+        sb.append("<saml:Conditions NotBefore=\"2020-01-01T00:00:00Z\" NotOnOrAfter=\"2099-01-01T00:00:00Z\">")
+                .append("<saml:AudienceRestriction><saml:Audience>https://sp.example.com/metadata</saml:Audience>")
+                .append("</saml:AudienceRestriction></saml:Conditions>");
         sb.append("<saml:AttributeStatement>");
         
         for (Map.Entry<String, String> entry : attributes.entrySet()) {
@@ -800,7 +885,8 @@ class SamlValidationServiceTest {
                 )
         ).replace("ID=\"_test123\"", "ID=\"_wrapped123\"");
         String responseXml = "<samlp:Response xmlns:samlp=\"urn:oasis:names:tc:SAML:2.0:protocol\""
-                + " xmlns:saml=\"urn:oasis:names:tc:SAML:2.0:assertion\">"
+                + " xmlns:saml=\"urn:oasis:names:tc:SAML:2.0:assertion\" ID=\"_response-1\""
+                + " InResponseTo=\"_request-1\" Destination=\"https://sp.example.com/callback\">"
                 + "<saml:Subject><saml:NameID>attacker@example.net</saml:NameID></saml:Subject>"
                 + "<saml:AttributeStatement>"
                 + "<saml:Attribute Name=\"eduPersonPrincipalName\"><saml:AttributeValue>attacker@example.net"

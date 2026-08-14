@@ -587,6 +587,22 @@
     "description": "Trusted IdP issuers JSON map (only used if trust-mode=whitelist)."
   },
   {
+    "name": "saml.validation.clock-skew-ms",
+    "type": "java.lang.Long",
+    "description": "Allowed clock skew for SAML Conditions and SubjectConfirmationData.",
+    "defaultValue": 60000
+  },
+  {
+    "name": "saml.validation.expected-audience",
+    "type": "java.lang.String",
+    "description": "Optional expected SAML service-provider audience for direct backend consumers."
+  },
+  {
+    "name": "saml.validation.expected-recipient",
+    "type": "java.lang.String",
+    "description": "Optional expected SAML SubjectConfirmationData recipient for direct backend consumers."
+  },
+  {
     "name": "saml.idp.metadata.override",
     "type": "java.lang.String",
     "description": "Issuer-to-metadata URL map. Required for every whitelisted issuer."
@@ -759,6 +775,12 @@
     "type": "java.lang.Long",
     "description": "Base retry delay in milliseconds for failed lab-content tombstone writes.",
     "defaultValue": 30000
+  },
+  {
+    "name": "lab.content.deletion.reconciliation.batch-size",
+    "type": "java.lang.Integer",
+    "description": "Maximum number of lab-content deletion reconciliation records processed per worker cycle.",
+    "defaultValue": 25
   },
   {
     "name": "lab.content.deletion.outbox.retry-max-delay-ms",

@@ -39,6 +39,8 @@ import java.security.KeyStore;
 import java.security.MessageDigest;
 import java.security.Security;
 import java.security.cert.CertificateFactory;
+import java.time.Instant;
+import java.time.format.DateTimeParseException;
 import java.security.cert.X509Certificate;
 import java.util.ArrayList;
 import java.util.Base64;
@@ -79,6 +81,7 @@ public class SamlValidationService {
     
     private static final Logger logger = LoggerFactory.getLogger(SamlValidationService.class);
     private static final String SAML_ASSERTION_NAMESPACE = "urn:oasis:names:tc:SAML:2.0:assertion";
+    private static final String SAML_PROTOCOL_NAMESPACE = "urn:oasis:names:tc:SAML:2.0:protocol";
     private static final String XML_SIGNATURE_NAMESPACE = XMLSignature.XMLNS;
     private static final String TLS_PROFILE_MODERN = "modern";
     private static final String TLS_PROFILE_COMPATIBILITY = "compatibility";
@@ -167,6 +170,17 @@ public class SamlValidationService {
 
     @Value("${saml.metadata.certificate-cache-ms:300000}")
     private long metadataCertificateCacheMs = 300_000L;
+
+    @Value("${saml.validation.clock-skew-ms:60000}")
+    private long validationClockSkewMs = 60_000L;
+
+    /** Optional SP profile. The Marketplace callback supplies the authoritative
+     * profile; these values allow direct backend consumers to fail closed too. */
+    @Value("${saml.validation.expected-audience:}")
+    private String expectedAudience = "";
+
+    @Value("${saml.validation.expected-recipient:}")
+    private String expectedRecipient = "";
     
     // Optional: only used in whitelist mode
     private Map<String, String> trustedIdps = Collections.emptyMap();
@@ -320,6 +334,8 @@ public class SamlValidationService {
                 throw new SecurityException("SAML assertion signature is INVALID");
             }
         }
+
+        validateAssertionProfile(doc, assertion);
         
         // Extract attributes after signature validation.
         // Keep alignment with Marketplace PUC resolution:
@@ -426,6 +442,141 @@ public class SamlValidationService {
             throw new SecurityException("SAML Assertion must contain a valid ID attribute");
         }
         assertion.setIdAttribute("ID", true);
+    }
+
+    /**
+     * Enforces the bearer assertion part of the SAML Web SSO profile after the
+     * XML signature has been verified. The backend may receive an assertion
+     * without the original AuthnRequest, so request correlation is checked when
+     * the complete SAML Response is present and the Marketplace performs the
+     * authoritative one-time transaction check.
+     */
+    void validateAssertionProfile(Document doc, Element assertion) {
+        Element conditions = requireExactlyOneDirectChild(assertion, "Conditions");
+        validateSamlTimeWindow(conditions, "Conditions", true);
+
+        List<Element> audienceRestrictions = directChildren(
+                conditions, SAML_ASSERTION_NAMESPACE, "AudienceRestriction"
+        );
+        if (audienceRestrictions.isEmpty()) {
+            throw new SecurityException("SAML AudienceRestriction is required");
+        }
+        String configuredAudience = normalizeConfiguredValue(expectedAudience);
+        for (Element restriction : audienceRestrictions) {
+            List<String> audiences = directChildren(restriction, SAML_ASSERTION_NAMESPACE, "Audience")
+                    .stream()
+                    .map(element -> element.getTextContent())
+                    .map(this::normalizeConfiguredValue)
+                    .filter(value -> value != null)
+                    .toList();
+            if (audiences.isEmpty()) {
+                throw new SecurityException("SAML AudienceRestriction must contain an Audience");
+            }
+            if (configuredAudience != null && !audiences.contains(configuredAudience)) {
+                throw new SecurityException("SAML AudienceRestriction does not match the configured service provider");
+            }
+        }
+
+        Element subject = requireExactlyOneDirectChild(assertion, "Subject");
+        List<Element> confirmations = directChildren(subject, SAML_ASSERTION_NAMESPACE, "SubjectConfirmation");
+        if (confirmations.size() != 1
+                || !"urn:oasis:names:tc:SAML:2.0:cm:bearer".equals(
+                        normalizeConfiguredValue(confirmations.get(0).getAttribute("Method")))) {
+            throw new SecurityException("SAML SubjectConfirmation bearer method is required");
+        }
+
+        Element confirmationData = requireExactlyOneDirectChild(confirmations.get(0), "SubjectConfirmationData");
+        validateSamlTimeWindow(confirmationData, "SubjectConfirmationData", false);
+
+        String recipient = normalizeConfiguredValue(confirmationData.getAttribute("Recipient"));
+        if (recipient == null || !isAbsoluteHttpUrl(recipient)) {
+            throw new SecurityException("SAML SubjectConfirmationData Recipient is invalid");
+        }
+        String configuredRecipient = normalizeConfiguredValue(expectedRecipient);
+        if (configuredRecipient != null && !configuredRecipient.equals(recipient)) {
+            throw new SecurityException("SAML SubjectConfirmationData Recipient does not match the configured callback");
+        }
+
+        Element response = doc == null ? null : doc.getDocumentElement();
+        if (response != null
+                && SAML_PROTOCOL_NAMESPACE.equals(response.getNamespaceURI())
+                && "Response".equals(response.getLocalName())) {
+            String responseInResponseTo = normalizeConfiguredValue(response.getAttribute("InResponseTo"));
+            String confirmationInResponseTo = normalizeConfiguredValue(
+                    confirmationData.getAttribute("InResponseTo")
+            );
+            if (responseInResponseTo == null || confirmationInResponseTo == null
+                    || !responseInResponseTo.equals(confirmationInResponseTo)) {
+                throw new SecurityException(
+                        "SAML SubjectConfirmationData InResponseTo does not match the Response"
+                );
+            }
+            String destination = normalizeConfiguredValue(response.getAttribute("Destination"));
+            if (destination != null && !destination.equals(recipient)) {
+                throw new SecurityException("SAML Response Destination does not match Recipient");
+            }
+        }
+    }
+
+    private Element requireExactlyOneDirectChild(Element parent, String localName) {
+        List<Element> children = directChildren(parent, SAML_ASSERTION_NAMESPACE, localName);
+        if (children.size() != 1) {
+            throw new SecurityException("SAML " + localName + " is required exactly once");
+        }
+        return children.get(0);
+    }
+
+    private void validateSamlTimeWindow(Element element, String fieldName, boolean requireNotBefore) {
+        String notBeforeValue = normalizeConfiguredValue(element.getAttribute("NotBefore"));
+        if (requireNotBefore && notBeforeValue == null) {
+            throw new SecurityException("SAML " + fieldName + ".NotBefore is required");
+        }
+        Instant notBefore = parseSamlInstant(notBeforeValue, fieldName + ".NotBefore", requireNotBefore);
+        Instant notOnOrAfter = parseSamlInstant(
+                normalizeConfiguredValue(element.getAttribute("NotOnOrAfter")),
+                fieldName + ".NotOnOrAfter",
+                true
+        );
+        long now = System.currentTimeMillis();
+        if (notBefore != null && notBefore.toEpochMilli() > now + validationClockSkewMs) {
+            throw new SecurityException("SAML " + fieldName + ".NotBefore is in the future");
+        }
+        if (now >= notOnOrAfter.toEpochMilli() + validationClockSkewMs) {
+            throw new SecurityException("SAML " + fieldName + ".NotOnOrAfter has expired");
+        }
+    }
+
+    private Instant parseSamlInstant(String value, String fieldName, boolean required) {
+        if (value == null) {
+            if (required) {
+                throw new SecurityException("SAML " + fieldName + " is required");
+            }
+            return null;
+        }
+        try {
+            return Instant.parse(value);
+        } catch (DateTimeParseException ex) {
+            throw new SecurityException("SAML " + fieldName + " is invalid", ex);
+        }
+    }
+
+    private boolean isAbsoluteHttpUrl(String value) {
+        try {
+            URI uri = URI.create(value);
+            return uri.getHost() != null && !uri.getHost().isBlank()
+                    && ("https".equalsIgnoreCase(uri.getScheme())
+                        || "http".equalsIgnoreCase(uri.getScheme()));
+        } catch (IllegalArgumentException ex) {
+            return false;
+        }
+    }
+
+    private String normalizeConfiguredValue(String value) {
+        if (value == null) {
+            return null;
+        }
+        String normalized = value.trim();
+        return normalized.isEmpty() ? null : normalized;
     }
 
     private Element firstDirectChild(Element parent, String namespace, String localName) {
