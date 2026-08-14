@@ -4,6 +4,7 @@ import decentralabs.blockchain.service.BackendUrlResolver;
 import decentralabs.blockchain.service.auth.SamlValidationService;
 import decentralabs.blockchain.service.auth.FmuSessionTicketService;
 import decentralabs.blockchain.service.auth.WebauthnCredentialService;
+import decentralabs.blockchain.config.BackendOperatingModeConfiguration;
 import decentralabs.blockchain.service.intent.Eip712IntentVerifier;
 import decentralabs.blockchain.service.intent.IntentPersistenceService;
 import decentralabs.blockchain.service.intent.IntentRecord;
@@ -94,6 +95,9 @@ class ReservationIntentProcessedE2ETest {
     @Mock
     private BackendUrlResolver backendUrlResolver;
 
+    @Mock
+    private BackendOperatingModeConfiguration backendOperatingModeConfiguration;
+
     private IntentService intentService;
     private ContractEventListenerConfig listener;
 
@@ -113,7 +117,8 @@ class ReservationIntentProcessedE2ETest {
             walletService,
             "0x0000000000000000000000000000000000000001",
             new SimpleMeterRegistry(),
-            backendUrlResolver
+            backendUrlResolver,
+            backendOperatingModeConfiguration
         );
         listener = new ContractEventListenerConfig(
             eventPollingFallbackService,

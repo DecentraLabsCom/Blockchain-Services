@@ -115,6 +115,7 @@ public class IntentAuthorizationService {
     public AuthorizationSession createSession(IntentAuthorizationRequest request) {
         IntentSubmission submission = buildSubmission(request);
         IntentMeta meta = submission.getMeta();
+        intentService.enforceActionAllowedById(meta.getAction());
         String puc = resolvePuc(submission);
         if (puc == null || puc.isBlank()) {
             // codeql[java/log-injection]

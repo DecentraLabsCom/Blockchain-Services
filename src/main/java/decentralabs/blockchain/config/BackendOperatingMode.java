@@ -2,6 +2,8 @@ package decentralabs.blockchain.config;
 
 import java.util.Locale;
 
+import decentralabs.blockchain.dto.intent.IntentAction;
+
 /**
  * Role of a blockchain-services process. This is intentionally independent of
  * the Full/Lite access-plane topology selected by the parent gateway.
@@ -42,5 +44,14 @@ public enum BackendOperatingMode {
 
     public static boolean providerConsumer(String configuredMode, boolean legacyProvidersEnabled) {
         return resolve(configuredMode, legacyProvidersEnabled) == PROVIDER_CONSUMER;
+    }
+
+    /**
+     * Returns whether this backend role may accept and execute the intent
+     * action. Consumer-only is an application capability boundary; an
+     * on-chain provider role on the submitted wallet must not widen it.
+     */
+    public boolean allowsIntentAction(IntentAction action) {
+        return action != null && (this == PROVIDER_CONSUMER || !action.isProviderAction());
     }
 }

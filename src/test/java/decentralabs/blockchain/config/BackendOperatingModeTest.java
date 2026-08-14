@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import decentralabs.blockchain.dto.intent.IntentAction;
 import org.junit.jupiter.api.Test;
 
 class BackendOperatingModeTest {
@@ -49,5 +50,21 @@ class BackendOperatingModeTest {
             IllegalArgumentException.class,
             () -> BackendOperatingMode.resolve("full", true)
         );
+    }
+
+    @Test
+    void consumerOnlyRejectsProviderIntentActionsButKeepsConsumerActions() {
+        assertFalse(BackendOperatingMode.CONSUMER_ONLY.allowsIntentAction(IntentAction.LAB_ADD));
+        assertFalse(BackendOperatingMode.CONSUMER_ONLY.allowsIntentAction(IntentAction.DIRECT_BOOKING));
+        assertTrue(BackendOperatingMode.CONSUMER_ONLY.allowsIntentAction(IntentAction.RESERVATION_REQUEST));
+        assertTrue(BackendOperatingMode.CONSUMER_ONLY.allowsIntentAction(IntentAction.CANCEL_BOOKING));
+        assertFalse(BackendOperatingMode.CONSUMER_ONLY.allowsIntentAction(null));
+    }
+
+    @Test
+    void providerConsumerAllowsEveryKnownIntentAction() {
+        for (IntentAction action : IntentAction.values()) {
+            assertTrue(BackendOperatingMode.PROVIDER_CONSUMER.allowsIntentAction(action));
+        }
     }
 }

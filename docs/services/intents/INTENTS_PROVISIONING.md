@@ -28,6 +28,12 @@ the exact public origin of this backend as audience, the authenticated
 Disable this check only for a deliberately isolated deployment; do not
 compensate by exposing `/intents` publicly.
 
+The backend operating mode also limits the action surface. In
+`consumer-only`, reservation requests and consumer-side cancellations remain
+available, while provider lab lifecycle actions and `DIRECT_BOOKING` are
+rejected before WebAuthn, persistence or execution. An on-chain provider role
+on the submitted wallet does not elevate a consumer-only backend.
+
 ### Trust boundary
 
 WebAuthn is an off-chain authorization gate implemented by this backend. The

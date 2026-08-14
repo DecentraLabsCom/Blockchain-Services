@@ -41,6 +41,8 @@ import decentralabs.blockchain.service.auth.SamlValidationService;
 import decentralabs.blockchain.service.auth.WebauthnCredentialService;
 import decentralabs.blockchain.service.BackendUrlResolver;
 import decentralabs.blockchain.service.wallet.WalletService;
+import decentralabs.blockchain.config.BackendOperatingMode;
+import decentralabs.blockchain.config.BackendOperatingModeConfiguration;
 
 @ExtendWith(MockitoExtension.class)
 @DisplayName("IntentService Tests")
@@ -67,6 +69,9 @@ class IntentServiceTest {
     @Mock
     private BackendUrlResolver backendUrlResolver;
 
+    @Mock
+    private BackendOperatingModeConfiguration backendOperatingModeConfiguration;
+
     private IntentService service;
     private String creatorHashToReturn;
     private BigInteger labPriceToReturn;
@@ -88,7 +93,8 @@ class IntentServiceTest {
             walletService,
             "0x0000000000000000000000000000000000000001",
             meterRegistry,
-            backendUrlResolver
+            backendUrlResolver,
+            backendOperatingModeConfiguration
         ) {
             @Override
             String fetchCreatorPucHash(BigInteger labId) {
@@ -100,7 +106,29 @@ class IntentServiceTest {
                 return labPriceToReturn;
             }
         };
+        lenient().when(backendOperatingModeConfiguration.operatingMode())
+            .thenReturn(BackendOperatingMode.PROVIDER_CONSUMER);
         lenient().when(samlValidationService.resolveStableUserId(any(), any(), any())).thenCallRealMethod();
+    }
+
+    @Test
+    void consumerOnlyRejectsProviderActionsBeforeProcessing() {
+        when(backendOperatingModeConfiguration.operatingMode())
+            .thenReturn(BackendOperatingMode.CONSUMER_ONLY);
+
+        ResponseStatusException providerAction = assertThrows(
+            ResponseStatusException.class,
+            () -> service.enforceActionAllowed(IntentAction.LAB_ADD)
+        );
+        assertEquals(403, providerAction.getStatusCode().value());
+        assertEquals("provider_intent_not_available_in_consumer_only", providerAction.getReason());
+
+        assertThrows(
+            ResponseStatusException.class,
+            () -> service.enforceActionAllowed(IntentAction.DIRECT_BOOKING)
+        );
+        assertDoesNotThrow(() -> service.enforceActionAllowed(IntentAction.RESERVATION_REQUEST));
+        assertDoesNotThrow(() -> service.enforceActionAllowed(IntentAction.CANCEL_BOOKING));
     }
 
     @Test
@@ -141,7 +169,8 @@ class IntentServiceTest {
             walletService,
             "0x0000000000000000000000000000000000000001",
             meterRegistry,
-            backendUrlResolver
+            backendUrlResolver,
+            backendOperatingModeConfiguration
         );
 
         String hash = "0x" + "f".repeat(64);

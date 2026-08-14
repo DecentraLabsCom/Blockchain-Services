@@ -291,4 +291,25 @@ class IntentActionTest {
             assertEquals(3, reservationPayloadCount);
         }
     }
+
+    @Nested
+    @DisplayName("Operating mode classification Tests")
+    class OperatingModeClassificationTests {
+
+        @Test
+        @DisplayName("Should classify only provider-side lab and own-lab booking actions as provider actions")
+        void shouldClassifyProviderActions() {
+            assertTrue(IntentAction.LAB_ADD.isProviderAction());
+            assertTrue(IntentAction.LAB_ADD_AND_LIST.isProviderAction());
+            assertTrue(IntentAction.LAB_SET_URI.isProviderAction());
+            assertTrue(IntentAction.LAB_UPDATE.isProviderAction());
+            assertTrue(IntentAction.LAB_DELETE.isProviderAction());
+            assertTrue(IntentAction.LAB_LIST.isProviderAction());
+            assertTrue(IntentAction.LAB_UNLIST.isProviderAction());
+            assertTrue(IntentAction.DIRECT_BOOKING.isProviderAction());
+            assertFalse(IntentAction.RESERVATION_REQUEST.isProviderAction());
+            assertFalse(IntentAction.CANCEL_RESERVATION_REQUEST.isProviderAction());
+            assertFalse(IntentAction.CANCEL_BOOKING.isProviderAction());
+        }
+    }
 }

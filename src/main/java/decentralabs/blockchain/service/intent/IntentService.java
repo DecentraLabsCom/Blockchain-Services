@@ -49,6 +49,7 @@ import decentralabs.blockchain.service.auth.WebauthnCredentialService;
 import decentralabs.blockchain.service.auth.WebauthnCredentialService.WebauthnCredential;
 import decentralabs.blockchain.service.BackendUrlResolver;
 import decentralabs.blockchain.service.wallet.WalletService;
+import decentralabs.blockchain.config.BackendOperatingModeConfiguration;
 import decentralabs.blockchain.util.PucHashUtil;
 import decentralabs.blockchain.util.PucNormalizer;
 import decentralabs.blockchain.util.LogSanitizer;
@@ -89,6 +90,7 @@ public class IntentService {
     private final BackendUrlResolver backendUrlResolver;
     private final String contractAddress;
     private final MeterRegistry meterRegistry;
+    private final BackendOperatingModeConfiguration backendOperatingModeConfiguration;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     @Value("${webauthn.rp.id:}")
@@ -117,7 +119,8 @@ public class IntentService {
         WalletService walletService,
         @Value("${contract.address}") String contractAddress,
         MeterRegistry meterRegistry,
-        BackendUrlResolver backendUrlResolver
+        BackendUrlResolver backendUrlResolver,
+        BackendOperatingModeConfiguration backendOperatingModeConfiguration
     ) {
         this.defaultEta = defaultEta;
         this.samlReplayTtlMs = samlReplayTtlMs;
@@ -130,6 +133,7 @@ public class IntentService {
         this.contractAddress = contractAddress;
         this.meterRegistry = meterRegistry;
         this.backendUrlResolver = backendUrlResolver;
+        this.backendOperatingModeConfiguration = backendOperatingModeConfiguration;
     }
 
     @PostConstruct
@@ -166,6 +170,7 @@ public class IntentService {
         IntentMeta meta = Optional.ofNullable(submission.getMeta())
             .orElseThrow(() -> new ResponseStatusException(HttpStatus.BAD_REQUEST, "Missing intent meta"));
         IntentAction action = resolveAction(meta);
+        enforceActionAllowed(action);
         ActionIntentPayload actionPayload = submission.getActionPayload();
         ReservationIntentPayload reservationPayload = submission.getReservationPayload();
         String credentialId = requireWebauthnCredentialId(submission);
@@ -358,6 +363,21 @@ public class IntentService {
     private IntentAction resolveAction(IntentMeta meta) {
         return IntentAction.fromId(meta.getAction())
             .orElseThrow(() -> new ResponseStatusException(HttpStatus.BAD_REQUEST, "Unsupported action"));
+    }
+
+    void enforceActionAllowed(IntentAction action) {
+        if (!backendOperatingModeConfiguration.operatingMode().allowsIntentAction(action)) {
+            throw new ResponseStatusException(
+                HttpStatus.FORBIDDEN,
+                "provider_intent_not_available_in_consumer_only"
+            );
+        }
+    }
+
+    void enforceActionAllowedById(Integer actionId) {
+        IntentAction action = IntentAction.fromId(actionId)
+            .orElseThrow(() -> new ResponseStatusException(HttpStatus.BAD_REQUEST, "Unsupported action"));
+        enforceActionAllowed(action);
     }
 
     private void validatePayload(

@@ -43,6 +43,19 @@ public enum IntentAction {
         return reservationPayload;
     }
 
+    /**
+     * Provider-side lab lifecycle and own-lab atomic booking operations are
+     * unavailable to a consumer-only backend, even if a submitted wallet is
+     * still authorized on-chain as a provider.
+     */
+    public boolean isProviderAction() {
+        return switch (this) {
+            case LAB_ADD, LAB_ADD_AND_LIST, LAB_SET_URI, LAB_UPDATE,
+                LAB_DELETE, LAB_LIST, LAB_UNLIST, DIRECT_BOOKING -> true;
+            case RESERVATION_REQUEST, CANCEL_RESERVATION_REQUEST, CANCEL_BOOKING -> false;
+        };
+    }
+
     public static Optional<IntentAction> fromId(Integer id) {
         if (id == null) {
             return Optional.empty();
