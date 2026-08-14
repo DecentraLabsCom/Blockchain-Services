@@ -95,6 +95,79 @@ class SamlValidationServiceTest {
     }
 
     @Test
+    void shouldAcceptMultipleSubjectConfirmationsWhenOneBearerConfirmationIsValid() throws Exception {
+        String assertion = createSamlAssertionProfile(
+                "https://sp.example.com/metadata",
+                "https://sp.example.com/callback",
+                Instant.now().plusSeconds(300).toString()
+        ).replace(
+                "<saml:SubjectConfirmation Method=\"urn:oasis:names:tc:SAML:2.0:cm:bearer\">",
+                "<saml:SubjectConfirmation Method=\"urn:oasis:names:tc:SAML:2.0:cm:bearer\">"
+                        + "<saml:SubjectConfirmationData NotOnOrAfter=\""
+                        + Instant.now().minusSeconds(120)
+                        + "\" Recipient=\"https://other-sp.example.com/callback\" />"
+                        + "</saml:SubjectConfirmation>"
+                        + "<saml:SubjectConfirmation Method=\"urn:oasis:names:tc:SAML:2.0:cm:bearer\">"
+        );
+        Document doc = parseXML(assertion);
+
+        samlValidationService.validateAssertionProfile(doc, doc.getDocumentElement());
+    }
+
+    @Test
+    void shouldAcceptResponseWithoutDestinationWhenRecipientAndCorrelationAreValid() throws Exception {
+        String assertion = createSamlAssertionProfile(
+                "https://sp.example.com/metadata",
+                "https://sp.example.com/callback",
+                Instant.now().plusSeconds(300).toString()
+        ).replace(
+                "<saml:SubjectConfirmationData NotBefore=\"",
+                "<saml:SubjectConfirmationData InResponseTo=\"_request-1\" NotBefore=\""
+        );
+        Document doc = parseXML(
+                "<samlp:Response xmlns:samlp=\"urn:oasis:names:tc:SAML:2.0:protocol\" "
+                        + "ID=\"_response-1\" InResponseTo=\"_request-1\">"
+                        + assertion
+                        + "</samlp:Response>"
+        );
+
+        samlValidationService.validateAssertionProfile(
+                doc,
+                (org.w3c.dom.Element) doc.getElementsByTagNameNS(
+                        "urn:oasis:names:tc:SAML:2.0:assertion", "Assertion"
+                ).item(0)
+        );
+    }
+
+    @Test
+    void shouldRejectResponseDestinationForAnotherCallback() throws Exception {
+        String assertion = createSamlAssertionProfile(
+                "https://sp.example.com/metadata",
+                "https://sp.example.com/callback",
+                Instant.now().plusSeconds(300).toString()
+        ).replace(
+                "<saml:SubjectConfirmationData NotBefore=\"",
+                "<saml:SubjectConfirmationData InResponseTo=\"_request-1\" NotBefore=\""
+        );
+        Document doc = parseXML(
+                "<samlp:Response xmlns:samlp=\"urn:oasis:names:tc:SAML:2.0:protocol\" "
+                        + "ID=\"_response-1\" InResponseTo=\"_request-1\" "
+                        + "Destination=\"https://other-sp.example.com/callback\">"
+                        + assertion
+                        + "</samlp:Response>"
+        );
+
+        assertThatThrownBy(() -> samlValidationService.validateAssertionProfile(
+                doc,
+                (org.w3c.dom.Element) doc.getElementsByTagNameNS(
+                        "urn:oasis:names:tc:SAML:2.0:assertion", "Assertion"
+                ).item(0)
+        ))
+                .isInstanceOf(SecurityException.class)
+                .hasMessageContaining("Destination");
+    }
+
+    @Test
     void shouldRejectExpiredSamlConditions() throws Exception {
         Document doc = parseXML(createSamlAssertionProfile(
                 "https://sp.example.com/metadata",

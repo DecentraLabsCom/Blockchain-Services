@@ -479,43 +479,71 @@ public class SamlValidationService {
 
         Element subject = requireExactlyOneDirectChild(assertion, "Subject");
         List<Element> confirmations = directChildren(subject, SAML_ASSERTION_NAMESPACE, "SubjectConfirmation");
-        if (confirmations.size() != 1
-                || !"urn:oasis:names:tc:SAML:2.0:cm:bearer".equals(
-                        normalizeConfiguredValue(confirmations.get(0).getAttribute("Method")))) {
+        List<Element> bearerConfirmations = confirmations.stream()
+                .filter(confirmation -> "urn:oasis:names:tc:SAML:2.0:cm:bearer".equals(
+                        normalizeConfiguredValue(confirmation.getAttribute("Method"))))
+                .toList();
+        if (bearerConfirmations.isEmpty()) {
             throw new SecurityException("SAML SubjectConfirmation bearer method is required");
         }
 
-        Element confirmationData = requireExactlyOneDirectChild(confirmations.get(0), "SubjectConfirmationData");
-        validateSamlTimeWindow(confirmationData, "SubjectConfirmationData", false);
-
-        String recipient = normalizeConfiguredValue(confirmationData.getAttribute("Recipient"));
-        if (recipient == null || !isAbsoluteHttpUrl(recipient)) {
-            throw new SecurityException("SAML SubjectConfirmationData Recipient is invalid");
-        }
-        String configuredRecipient = normalizeConfiguredValue(expectedRecipient);
-        if (configuredRecipient != null && !configuredRecipient.equals(recipient)) {
-            throw new SecurityException("SAML SubjectConfirmationData Recipient does not match the configured callback");
-        }
-
         Element response = doc == null ? null : doc.getDocumentElement();
-        if (response != null
+        boolean completeResponse = response != null
                 && SAML_PROTOCOL_NAMESPACE.equals(response.getNamespaceURI())
-                && "Response".equals(response.getLocalName())) {
-            String responseInResponseTo = normalizeConfiguredValue(response.getAttribute("InResponseTo"));
-            String confirmationInResponseTo = normalizeConfiguredValue(
-                    confirmationData.getAttribute("InResponseTo")
-            );
-            if (responseInResponseTo == null || confirmationInResponseTo == null
-                    || !responseInResponseTo.equals(confirmationInResponseTo)) {
-                throw new SecurityException(
-                        "SAML SubjectConfirmationData InResponseTo does not match the Response"
-                );
-            }
-            String destination = normalizeConfiguredValue(response.getAttribute("Destination"));
-            if (destination != null && !destination.equals(recipient)) {
-                throw new SecurityException("SAML Response Destination does not match Recipient");
+                && "Response".equals(response.getLocalName());
+        String responseInResponseTo = null;
+        String destination = null;
+        if (completeResponse) {
+            responseInResponseTo = normalizeConfiguredValue(response.getAttribute("InResponseTo"));
+            destination = normalizeConfiguredValue(response.getAttribute("Destination"));
+        }
+
+        SecurityException lastConfirmationFailure = null;
+        for (Element confirmation : bearerConfirmations) {
+            try {
+                Element confirmationData = requireExactlyOneDirectChild(confirmation, "SubjectConfirmationData");
+                validateSamlTimeWindow(confirmationData, "SubjectConfirmationData", false);
+
+                String recipient = normalizeConfiguredValue(confirmationData.getAttribute("Recipient"));
+                if (recipient == null || !isAbsoluteHttpUrl(recipient)) {
+                    throw new SecurityException("SAML SubjectConfirmationData Recipient is invalid");
+                }
+                String configuredRecipient = normalizeConfiguredValue(expectedRecipient);
+                if (configuredRecipient != null && !configuredRecipient.equals(recipient)) {
+                    throw new SecurityException(
+                            "SAML SubjectConfirmationData Recipient does not match the configured callback"
+                    );
+                }
+
+                if (completeResponse) {
+                    String confirmationInResponseTo = normalizeConfiguredValue(
+                            confirmationData.getAttribute("InResponseTo")
+                    );
+                    if (responseInResponseTo == null || confirmationInResponseTo == null
+                            || !responseInResponseTo.equals(confirmationInResponseTo)) {
+                        throw new SecurityException(
+                                "SAML SubjectConfirmationData InResponseTo does not match the Response"
+                        );
+                    }
+                    if (destination != null && !destination.equals(recipient)) {
+                        throw new SecurityException("SAML Response Destination does not match Recipient");
+                    }
+                    if (destination == null) {
+                        logger.warn(
+                                "SAML Response Destination is absent; relying on Recipient and request correlation"
+                        );
+                    }
+                }
+                return;
+            } catch (SecurityException ex) {
+                lastConfirmationFailure = ex;
             }
         }
+
+        if (lastConfirmationFailure != null) {
+            throw lastConfirmationFailure;
+        }
+        throw new SecurityException("SAML SubjectConfirmationData is required");
     }
 
     private Element requireExactlyOneDirectChild(Element parent, String localName) {
