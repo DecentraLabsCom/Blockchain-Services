@@ -6,6 +6,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.test.util.ReflectionTestUtils;
 import org.w3c.dom.Document;
+import org.w3c.dom.Element;
 
 import javax.xml.parsers.DocumentBuilder;
 import javax.xml.parsers.DocumentBuilderFactory;
@@ -646,7 +647,19 @@ class SamlValidationServiceTest {
     }
 
     @Test
-    void shouldRejectResponsesWithMoreThanOneSignature() throws Exception {
+    void shouldAcceptResponseWithAssertionAndResponseSignatures() throws Exception {
+        String response = createSignedResponseWithSignedAssertion();
+
+        Map<String, String> attributes = samlValidationService.validateSamlAssertionWithSignature(response);
+
+        assertThat(attributes)
+                .containsEntry("issuer", TEST_ISSUER)
+                .containsEntry("puc", "user@university.edu")
+                .containsEntry("eduPersonPrincipalName", "user@university.edu");
+    }
+
+    @Test
+    void shouldRejectAssertionWithMoreThanOneDirectSignature() throws Exception {
         String signedAssertion = decodeXml(createSignedSamlAssertionWithAttributes(Map.of(
                 "eduPersonPrincipalName", "user@university.edu"
         )));
@@ -660,7 +673,7 @@ class SamlValidationServiceTest {
                 encodeXml(response)
         ))
                 .isInstanceOf(SecurityException.class)
-                .hasMessageContaining("exactly one XML Signature");
+                .hasMessageContaining("exactly one directly attached XML Signature");
     }
 
     @Test
@@ -915,11 +928,35 @@ class SamlValidationServiceTest {
         String xml = createSamlAssertionWithAttributes(TEST_ISSUER, attributes)
                 .replace("ID=\"_test123\"", "ID=\"_signed123\"");
         Document doc = parseXML(xml);
-        doc.getDocumentElement().setIdAttribute("ID", true);
+        signElement(doc.getDocumentElement(), "_signed123");
+        return serialize(doc);
+    }
+
+    private String createSignedResponseWithSignedAssertion() throws Exception {
+        String unsignedAssertion = createSamlAssertionWithAttributes(TEST_ISSUER, Map.of(
+                "eduPersonPrincipalName", "user@university.edu"
+        )).replace("ID=\"_test123\"", "ID=\"_signed123\"");
+        String responseXml = "<samlp:Response xmlns:samlp=\"urn:oasis:names:tc:SAML:2.0:protocol\""
+                + " xmlns:saml=\"urn:oasis:names:tc:SAML:2.0:assertion\" ID=\"_response-1\""
+                + " InResponseTo=\"_request-1\" Destination=\"https://sp.example.com/callback\">"
+                + unsignedAssertion
+                + "</samlp:Response>";
+
+        Document doc = parseXML(responseXml);
+        Element assertion = (Element) doc.getElementsByTagNameNS(
+                "urn:oasis:names:tc:SAML:2.0:assertion", "Assertion"
+        ).item(0);
+        signElement(assertion, "_signed123");
+        signElement(doc.getDocumentElement(), "_response-1");
+        return serialize(doc);
+    }
+
+    private void signElement(Element element, String id) throws Exception {
+        element.setIdAttribute("ID", true);
 
         XMLSignatureFactory signatureFactory = XMLSignatureFactory.getInstance("DOM");
         Reference reference = signatureFactory.newReference(
-                "#_signed123",
+                "#" + id,
                 signatureFactory.newDigestMethod(DigestMethod.SHA256, null),
                 List.of(signatureFactory.newTransform(Transform.ENVELOPED, (TransformParameterSpec) null)),
                 null,
@@ -935,9 +972,11 @@ class SamlValidationServiceTest {
         KeyInfo keyInfo = keyInfoFactory.newKeyInfo(List.of(
                 keyInfoFactory.newX509Data(List.of(certificates.get(0)))
         ));
-        DOMSignContext signContext = new DOMSignContext(testPrivateKey(), doc.getDocumentElement());
+        DOMSignContext signContext = new DOMSignContext(testPrivateKey(), element);
         signatureFactory.newXMLSignature(signedInfo, keyInfo).sign(signContext);
+    }
 
+    private String serialize(Document doc) throws Exception {
         TransformerFactory transformerFactory = TransformerFactory.newInstance();
         transformerFactory.setAttribute("http://javax.xml.XMLConstants/property/accessExternalDTD", "");
         transformerFactory.setAttribute("http://javax.xml.XMLConstants/property/accessExternalStylesheet", "");
@@ -945,7 +984,7 @@ class SamlValidationServiceTest {
         transformer.setOutputProperty(OutputKeys.OMIT_XML_DECLARATION, "yes");
         StringWriter writer = new StringWriter();
         transformer.transform(new DOMSource(doc), new StreamResult(writer));
-        return Base64.getEncoder().encodeToString(writer.toString().getBytes());
+        return Base64.getEncoder().encodeToString(writer.toString().getBytes(StandardCharsets.UTF_8));
     }
 
     private String createSignedResponseWithDecoyAttributes() throws Exception {

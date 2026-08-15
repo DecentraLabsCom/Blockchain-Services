@@ -301,7 +301,7 @@ public class SamlValidationService {
 
         rejectDuplicateXmlIds(doc);
         markAssertionIdAttribute(assertion);
-        requireSingleAssertionSignature(doc, assertion);
+        rejectMultipleAssertionSignatures(assertion);
         
         // Check if IdP is trusted (if in whitelist mode)
         if ("whitelist".equalsIgnoreCase(trustMode)) {
@@ -323,14 +323,14 @@ public class SamlValidationService {
         }
         
         // Verify signature
-        boolean signatureValid = verifySignature(doc, assertion, certs);
+        boolean signatureValid = verifySignature(assertion, certs);
         if (!signatureValid) {
             // IdPs commonly publish the replacement signing certificate before
             // they start using it.  Evict the issuer snapshot and perform one,
             // and only one, refresh for this assertion.
             evictCertificateCache(issuer);
             List<X509Certificate> refreshedCerts = getIdpCertificates(issuer, metadataUrl, true);
-            if (refreshedCerts.isEmpty() || !verifySignature(doc, assertion, refreshedCerts)) {
+            if (refreshedCerts.isEmpty() || !verifySignature(assertion, refreshedCerts)) {
                 throw new SecurityException("SAML assertion signature is INVALID");
             }
         }
@@ -406,16 +406,18 @@ public class SamlValidationService {
         return (Element) assertions.item(0);
     }
 
-    private void requireSingleAssertionSignature(Document doc, Element assertion) {
-        NodeList signatures = doc.getElementsByTagNameNS(XML_SIGNATURE_NAMESPACE, "Signature");
-        if (signatures.getLength() > 1) {
+    private void rejectMultipleAssertionSignatures(Element assertion) {
+        List<Element> signatures = directChildren(assertion, XML_SIGNATURE_NAMESPACE, "Signature");
+        if (signatures.size() > 1) {
             throw new SecurityException(
-                "SAML response must contain exactly one XML Signature; found " + signatures.getLength()
+                "SAML Assertion must contain exactly one directly attached XML Signature; found " + signatures.size()
             );
         }
-        if (signatures.getLength() == 1 && signatures.item(0).getParentNode() != assertion) {
-            throw new SecurityException("SAML XML Signature must be directly attached to the signed Assertion");
-        }
+    }
+
+    private Element findAssertionSignature(Element assertion) {
+        List<Element> signatures = directChildren(assertion, XML_SIGNATURE_NAMESPACE, "Signature");
+        return signatures.isEmpty() ? null : signatures.get(0);
     }
 
     private void rejectDuplicateXmlIds(Document doc) {
@@ -1283,7 +1285,7 @@ public class SamlValidationService {
     /**
      * Verifies XML signature using certificate
      */
-    private boolean verifySignature(Document doc, Element assertion, List<X509Certificate> certs) throws Exception {
+    private boolean verifySignature(Element assertion, List<X509Certificate> certs) throws Exception {
         if (certs == null || certs.isEmpty()) {
             logger.warn("No certificates provided for SAML signature validation");
             return false;
@@ -1292,7 +1294,7 @@ public class SamlValidationService {
         Exception lastError = null;
         for (X509Certificate cert : certs) {
             try {
-                if (verifySignatureWithCert(doc, assertion, cert)) {
+                if (verifySignatureWithCert(assertion, cert)) {
                     return true;
                 }
             } catch (SecurityException ex) {
@@ -1309,15 +1311,12 @@ public class SamlValidationService {
         return false;
     }
 
-    private boolean verifySignatureWithCert(Document doc, Element assertion, X509Certificate cert) throws Exception {
-        NodeList signatureNodes = doc.getElementsByTagNameNS(XML_SIGNATURE_NAMESPACE, "Signature");
-        if (signatureNodes.getLength() == 0) {
+    private boolean verifySignatureWithCert(Element assertion, X509Certificate cert) throws Exception {
+        Element signatureElement = findAssertionSignature(assertion);
+        if (signatureElement == null) {
             logger.warn("No signature found in SAML assertion");
             return false;
         }
-
-        requireSingleAssertionSignature(doc, assertion);
-        Element signatureElement = (Element) signatureNodes.item(0);
         
         // Create validation context with certificate
         DOMValidateContext valContext = new DOMValidateContext(cert.getPublicKey(), signatureElement);
