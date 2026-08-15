@@ -83,6 +83,66 @@ class LabAdminServiceTest {
     }
 
     @Test
+    void listLabsIncludesMetadataNameAndLeavesMissingNamesForUiFallback() throws Exception {
+        String wallet = "0x1111111111111111111111111111111111111111";
+        BigInteger namedLabId = BigInteger.ONE;
+        BigInteger unnamedLabId = BigInteger.TWO;
+        Diamond diamond = mock(Diamond.class);
+        RemoteFunctionCall<Diamond.Lab> namedLabCall = mockRemoteFunctionCall();
+        RemoteFunctionCall<Diamond.Lab> unnamedLabCall = mockRemoteFunctionCall();
+        RemoteFunctionCall<Boolean> namedListedCall = mockRemoteFunctionCall();
+        RemoteFunctionCall<Boolean> unnamedListedCall = mockRemoteFunctionCall();
+        Diamond.Lab namedLab = new Diamond.Lab(
+            namedLabId,
+            new Diamond.LabBase(
+                "https://lab.example.edu/lab-content/content/state-space/metadata.json",
+                BigInteger.ONE,
+                "https://lab.example.edu/fmu",
+                "StateSpace.fmu",
+                BigInteger.ZERO,
+                BigInteger.ONE
+            )
+        );
+        Diamond.Lab unnamedLab = new Diamond.Lab(
+            unnamedLabId,
+            new Diamond.LabBase(
+                "https://lab.example.edu/lab-content/content/remote/metadata.json",
+                BigInteger.ONE,
+                "https://lab.example.edu/guacamole",
+                "guac:id:2",
+                BigInteger.ZERO,
+                BigInteger.ZERO
+            )
+        );
+
+        when(institutionalWalletService.isConfigured()).thenReturn(true);
+        when(institutionalWalletService.getInstitutionalWalletAddress()).thenReturn(wallet);
+        when(walletService.isLabProvider(wallet)).thenReturn(true);
+        when(walletService.getLabsOwnedByProvider(wallet)).thenReturn(List.of(namedLabId, unnamedLabId));
+        when(diamond.getLab(namedLabId)).thenReturn(namedLabCall);
+        when(diamond.getLab(unnamedLabId)).thenReturn(unnamedLabCall);
+        when(namedLabCall.send()).thenReturn(namedLab);
+        when(unnamedLabCall.send()).thenReturn(unnamedLab);
+        when(diamond.isLabListed(namedLabId)).thenReturn(namedListedCall);
+        when(diamond.isLabListed(unnamedLabId)).thenReturn(unnamedListedCall);
+        when(namedListedCall.send()).thenReturn(true);
+        when(unnamedListedCall.send()).thenReturn(true);
+        when(labMetadataService.getLabMetadataForLab(namedLabId)).thenReturn(
+            LabMetadata.builder().name("StateSpace").build()
+        );
+        when(labMetadataService.getLabMetadataForLab(unnamedLabId))
+            .thenThrow(new IllegalStateException("Metadata unavailable"));
+        doReturn(diamond).when(service).loadReadonlyDiamond();
+
+        Map<String, Object> response = service.listLabs();
+        List<?> labs = (List<?>) response.get("labs");
+
+        assertThat(labs).hasSize(2);
+        assertThat(((Map<?, ?>) labs.get(0)).get("name")).isEqualTo("StateSpace");
+        assertThat(((Map<?, ?>) labs.get(1)).containsKey("name")).isFalse();
+    }
+
+    @Test
     void saveAssetStoresImageUnderContentIdAndReturnsPublicUrl() throws Exception {
         MockMultipartFile file = new MockMultipartFile(
             "file",

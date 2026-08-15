@@ -176,6 +176,10 @@ public class LabAdminService {
                 item.put("accessKey", lab.base.accessKey);
                 item.put("resourceType", lab.base.resourceType.intValue());
                 item.put("listed", loadReadonlyDiamond().isLabListed(labId).send());
+                String name = resolveLabName(lab, labId);
+                if (hasText(name)) {
+                    item.put("name", name);
+                }
             } catch (Exception ex) {
                 log.debug("Unable to load details for lab {}", labId, ex);
                 item.put("error", "Unable to load lab details");
@@ -735,17 +739,26 @@ public class LabAdminService {
                 budget.consume();
             }
             Diamond.Lab lab = diamond.getLab(labId).send();
-            if (lab == null || lab.base == null || !hasText(lab.base.uri)) {
-                return null;
-            }
-            var metadata = labMetadataService.getLabMetadataForLab(labId);
-            return metadata == null || !hasText(metadata.getName())
-                ? null
-                : metadata.getName().trim();
+            return resolveLabName(lab, labId);
         } catch (RpcBudgetExceededException ex) {
             throw ex;
         } catch (Exception ex) {
             log.debug("Unable to resolve name for lab {}", labId, ex);
+            return null;
+        }
+    }
+
+    private String resolveLabName(Diamond.Lab lab, BigInteger labId) {
+        if (lab == null || lab.base == null || !hasText(lab.base.uri)) {
+            return null;
+        }
+        try {
+            var metadata = labMetadataService.getLabMetadataForLab(labId);
+            return metadata == null || !hasText(metadata.getName())
+                ? null
+                : metadata.getName().trim();
+        } catch (Exception ex) {
+            log.debug("Unable to resolve name metadata for lab {}", labId, ex);
             return null;
         }
     }
