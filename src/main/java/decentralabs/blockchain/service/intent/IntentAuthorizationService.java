@@ -46,6 +46,7 @@ import decentralabs.blockchain.util.PucNormalizer;
 public class IntentAuthorizationService {
 
     private static final SecureRandom RANDOM = new SecureRandom();
+    private static final int MAX_SAML_DIAGNOSTIC_LENGTH = 512;
     private static final Set<String> WEBAUTHN_TRANSPORTS = Set.of(
         "usb", "nfc", "ble", "smart-card", "hybrid", "internal"
     );
@@ -373,10 +374,34 @@ public class IntentAuthorizationService {
                 return normalized;
             }
         } catch (Exception ex) {
-            log.warn("Invalid SAML while resolving intent authorization PUC");
+            Throwable rootCause = rootCause(ex);
+            log.warn(
+                "Invalid SAML while resolving intent authorization PUC. requestId={} exceptionType={} reason={} rootCauseType={} rootCause={}",
+                LogSanitizer.sanitize(submission.getMeta().getRequestId()),
+                LogSanitizer.sanitize(ex.getClass().getSimpleName()),
+                sanitizeSamlDiagnostic(ex),
+                LogSanitizer.sanitize(rootCause.getClass().getSimpleName()),
+                sanitizeSamlDiagnostic(rootCause)
+            );
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "invalid_saml", ex);
         }
         return null;
+    }
+
+    private Throwable rootCause(Throwable throwable) {
+        Throwable current = throwable;
+        while (current.getCause() != null && current.getCause() != current) {
+            current = current.getCause();
+        }
+        return current;
+    }
+
+    private String sanitizeSamlDiagnostic(Throwable throwable) {
+        String message = LogSanitizer.sanitize(throwable == null ? null : throwable.getMessage());
+        if (message.length() <= MAX_SAML_DIAGNOSTIC_LENGTH) {
+            return message;
+        }
+        return message.substring(0, MAX_SAML_DIAGNOSTIC_LENGTH) + "...";
     }
 
     private String expectedPucHash(ActionIntentPayload actionPayload, ReservationIntentPayload reservationPayload) {

@@ -12,6 +12,9 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import ch.qos.logback.classic.Logger;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.read.ListAppender;
 import decentralabs.blockchain.dto.intent.ActionIntentPayload;
 import decentralabs.blockchain.dto.intent.IntentAckResponse;
 import decentralabs.blockchain.dto.intent.IntentAuthorizationCompleteRequest;
@@ -40,6 +43,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoSettings;
 import org.mockito.quality.Strictness;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.web.server.ResponseStatusException;
@@ -209,6 +213,34 @@ class IntentAuthorizationServiceTest {
         assertThatThrownBy(() -> service.createSession(validAuthorizationRequest()))
             .isInstanceOf(ResponseStatusException.class)
             .hasMessageContaining("missing_puc_for_webauthn");
+    }
+
+    @Test
+    void createSession_logsSanitizedSamlFailureDiagnostics() throws Exception {
+        Logger logger = (Logger) LoggerFactory.getLogger(IntentAuthorizationService.class);
+        ListAppender<ILoggingEvent> appender = new ListAppender<>();
+        appender.start();
+        logger.addAppender(appender);
+        try {
+            when(samlValidationService.validateSamlAssertionWithSignature(any()))
+                .thenThrow(new SecurityException("signature failed\nraw-assertion-must-not-be-logged"));
+
+            assertThatThrownBy(() -> service.createSession(validAuthorizationRequest()))
+                .isInstanceOf(ResponseStatusException.class)
+                .hasMessageContaining("invalid_saml");
+
+            assertThat(appender.list)
+                .extracting(ILoggingEvent::getFormattedMessage)
+                .anySatisfy(message -> {
+                    assertThat(message)
+                        .contains("exceptionType=SecurityException")
+                        .contains("reason=signature failed_raw-assertion-must-not-be-logged")
+                        .doesNotContain("\n");
+                });
+        } finally {
+            logger.detachAppender(appender);
+            appender.stop();
+        }
     }
 
     @Test
