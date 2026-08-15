@@ -230,7 +230,7 @@ class IntentAuthorizationServiceTest {
                 .hasMessageContaining("invalid_saml");
 
             assertThat(appender.list)
-                .extracting(ILoggingEvent::getFormattedMessage)
+                .extracting((ILoggingEvent event) -> event.getFormattedMessage())
                 .anySatisfy(message -> {
                     assertThat(message)
                         .contains("exceptionType=SecurityException")
