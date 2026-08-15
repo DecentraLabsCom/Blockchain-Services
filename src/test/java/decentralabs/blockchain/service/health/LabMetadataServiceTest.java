@@ -14,6 +14,7 @@ import java.time.DayOfWeek;
 import java.time.Instant;
 import java.time.LocalTime;
 import java.util.List;
+import java.util.Optional;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -52,6 +53,25 @@ class LabMetadataServiceTest {
     @Nested
     @DisplayName("HTTP Metadata Fetch Tests")
     class HttpFetchTests {
+
+        @Test
+        @DisplayName("Should resolve a display name from the authoritative on-chain URI when its origin is not registered")
+        void shouldResolveDisplayNameFromAuthoritativeUri() {
+            BigInteger labId = BigInteger.valueOf(7);
+            String metadataUri = "https://n7alj90bp0isqv2j.public.blob.vercel-storage.com/data/Lab-UNED-2.json";
+            String json = createMinimalMetadataJson("Furuta Inverted Pendulum", "", "");
+
+            when(walletService.getLabTokenUri(labId)).thenReturn(Optional.of(metadataUri));
+            when(walletService.getLabMetadataOrigins(labId)).thenReturn(List.of("https://provider.example"));
+            when(metadataClient.fetch(metadataUri, List.of("https://provider.example")))
+                .thenThrow(new IllegalStateException("Metadata origin is not registered for this provider"));
+            when(metadataClient.fetchFromAuthoritativeUri(metadataUri))
+                .thenReturn(json.getBytes(StandardCharsets.UTF_8));
+
+            String name = metadataService.getLabDisplayNameForLab(labId);
+
+            assertThat(name).isEqualTo("Furuta Inverted Pendulum");
+        }
 
         @Test
         @DisplayName("Should fetch and parse metadata from HTTP URL")

@@ -54,6 +54,13 @@ class SafeLabMetadataClientTest {
     }
 
     @Test
+    void rejectsPrivateAddressForAuthoritativeOnChainUri() {
+        assertThatThrownBy(() -> client.fetchFromAuthoritativeUri("https://127.0.0.1/lab.json"))
+            .isInstanceOf(IllegalStateException.class)
+            .hasMessageContaining("private or reserved");
+    }
+
+    @Test
     void readsOnlyFilesBelowExplicitFixtureRoot() throws Exception {
         Path metadata = tempDir.resolve("Lab-demo.json");
         Files.writeString(metadata, "{\"name\":\"Fixture\"}");

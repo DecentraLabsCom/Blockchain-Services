@@ -127,10 +127,8 @@ class LabAdminServiceTest {
         when(diamond.isLabListed(unnamedLabId)).thenReturn(unnamedListedCall);
         when(namedListedCall.send()).thenReturn(true);
         when(unnamedListedCall.send()).thenReturn(true);
-        when(labMetadataService.getLabMetadataForLab(namedLabId)).thenReturn(
-            LabMetadata.builder().name("StateSpace").build()
-        );
-        when(labMetadataService.getLabMetadataForLab(unnamedLabId))
+        when(labMetadataService.getLabDisplayNameForLab(namedLabId)).thenReturn("StateSpace");
+        when(labMetadataService.getLabDisplayNameForLab(unnamedLabId))
             .thenThrow(new IllegalStateException("Metadata unavailable"));
         doReturn(diamond).when(service).loadReadonlyDiamond();
 

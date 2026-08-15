@@ -93,6 +93,38 @@ public class LabMetadataService {
     }
 
     /**
+     * Resolves the human-readable name used by administrative displays.
+     *
+     * <p>The normal metadata path remains bound to the provider's registered
+     * backend origins. If that metadata was published at an older public
+     * content store, the display name can still be read from the exact URI
+     * stored on-chain through the hardened authoritative-URI client.</p>
+     */
+    public String getLabDisplayNameForLab(BigInteger labId) {
+        if (labId == null || labId.signum() < 0) {
+            throw new IllegalArgumentException("labId is invalid");
+        }
+        String metadataUri = walletService.getLabTokenUri(labId)
+            .orElse(null);
+        if (metadataUri == null || metadataUri.isBlank()) {
+            return null;
+        }
+
+        try {
+            return loadMetadataName(metadataUri, walletService.getLabMetadataOrigins(labId));
+        } catch (Exception ex) {
+            log.debug("Registered metadata origin unavailable for display name of lab {}", labId, ex);
+        }
+
+        try {
+            return loadMetadataNameFromAuthoritativeUri(metadataUri);
+        } catch (Exception ex) {
+            log.debug("Authoritative metadata URI unavailable for display name of lab {}", labId, ex);
+            return null;
+        }
+    }
+
+    /**
      * Fetches a provider-submitted URI using only origins registered by that
      * provider on-chain. The URI is used for publication preflight, before a
      * new lab token exists.
@@ -151,6 +183,36 @@ public class LabMetadataService {
             log.error("Failed to fetch/parse lab metadata: {}", e.getMessage());
             throw new RuntimeException("Unable to load lab metadata", e);
         }
+    }
+
+    private String loadMetadataName(String metadataUri, Collection<String> allowedOrigins) {
+        try {
+            byte[] jsonContent = metadataClient.fetch(metadataUri, allowedOrigins);
+            return readMetadataName(jsonContent);
+        } catch (Exception ex) {
+            throw new RuntimeException("Unable to load lab metadata name", ex);
+        }
+    }
+
+    private String loadMetadataNameFromAuthoritativeUri(String metadataUri) {
+        try {
+            byte[] jsonContent = metadataClient.fetchFromAuthoritativeUri(metadataUri);
+            return readMetadataName(jsonContent);
+        } catch (Exception ex) {
+            throw new RuntimeException("Unable to load authoritative lab metadata name", ex);
+        }
+    }
+
+    private String readMetadataName(byte[] jsonContent) throws IOException {
+        JsonNode rootNode = objectMapper.readTree(jsonContent);
+        if (rootNode == null || !rootNode.isObject()) {
+            throw new IOException("Metadata document must be a JSON object");
+        }
+        JsonNode nameNode = rootNode.get("name");
+        if (nameNode == null || !nameNode.isTextual() || nameNode.asText().isBlank()) {
+            throw new IOException("Metadata document does not contain a name");
+        }
+        return nameNode.asText().trim();
     }
 
     private LabMetadata parseLabMetadata(JsonNode rootNode) {

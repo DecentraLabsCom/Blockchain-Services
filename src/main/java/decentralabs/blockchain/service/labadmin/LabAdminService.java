@@ -754,11 +754,16 @@ public class LabAdminService {
         }
         try {
             var metadata = labMetadataService.getLabMetadataForLab(labId);
-            return metadata == null || !hasText(metadata.getName())
-                ? null
-                : metadata.getName().trim();
+            if (metadata != null && hasText(metadata.getName())) {
+                return metadata.getName().trim();
+            }
         } catch (Exception ex) {
             log.debug("Unable to resolve name metadata for lab {}", labId, ex);
+        }
+        try {
+            return labMetadataService.getLabDisplayNameForLab(labId);
+        } catch (Exception ex) {
+            log.debug("Unable to resolve display name from authoritative metadata for lab {}", labId, ex);
             return null;
         }
     }

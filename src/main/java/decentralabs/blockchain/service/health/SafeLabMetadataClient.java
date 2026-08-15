@@ -89,6 +89,30 @@ public class SafeLabMetadataClient {
         }
     }
 
+    /**
+     * Loads a display-only document from the exact HTTPS URI stored on-chain.
+     *
+     * <p>This is intentionally separate from {@link #fetch(String, Collection)}:
+     * normal metadata reads require a provider-registered origin, while an
+     * on-chain URI may point to a public content-addressed store such as a
+     * Vercel Blob. The same HTTPS, DNS pinning, redirect, content-type and
+     * response-size protections still apply.</p>
+     */
+    public byte[] fetchFromAuthoritativeUri(String metadataUri) {
+        try {
+            if (metadataUri == null || metadataUri.isBlank()) {
+                throw new IOException("Metadata URI is empty");
+            }
+            URI candidate = parseUri(metadataUri.trim());
+            if (!"https".equalsIgnoreCase(candidate.getScheme())) {
+                throw new IOException("Authoritative lab metadata must use HTTPS");
+            }
+            return fetchRemote(candidate, origin(candidate));
+        } catch (IOException ex) {
+            throw new IllegalStateException(ex.getMessage(), ex);
+        }
+    }
+
     private byte[] fetchChecked(String metadataUri, Collection<String> allowedOrigins) throws IOException {
         if (metadataUri == null || metadataUri.isBlank()) {
             throw new IOException("Metadata URI is empty");
