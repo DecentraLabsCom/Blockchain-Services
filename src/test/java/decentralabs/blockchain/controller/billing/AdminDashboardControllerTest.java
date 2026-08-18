@@ -323,10 +323,7 @@ class AdminDashboardControllerTest {
             when(institutionalWalletService.getInstitutionalWalletAddress()).thenReturn(VALID_ADDRESS);
             when(walletService.isLabProvider(VALID_ADDRESS)).thenReturn(true);
             when(walletService.getLabsOwnedByProvider(VALID_ADDRESS)).thenReturn(List.of(BigInteger.valueOf(3)));
-            when(walletService.getLabTokenUri(BigInteger.valueOf(3))).thenReturn(Optional.of("https://example.com/lab-3.json"));
-            when(labMetadataService.getLabMetadataForLab(BigInteger.valueOf(3))).thenReturn(
-                decentralabs.blockchain.dto.health.LabMetadata.builder().name("Quantum Lab").build()
-            );
+            when(labMetadataService.getLabDisplayNameForLab(BigInteger.valueOf(3))).thenReturn("Quantum Lab");
             when(walletService.getProviderReceivableStatus(BigInteger.valueOf(3))).thenReturn(
                 Optional.of(new ProviderReceivableStatus(
                     BigInteger.valueOf(100_000_000),
@@ -475,10 +472,7 @@ class AdminDashboardControllerTest {
                 .thenReturn(List.of(BigInteger.ONE, BigInteger.TWO));
 
             when(walletService.isLabOwnedByProvider(VALID_ADDRESS, BigInteger.TWO)).thenReturn(true);
-            when(walletService.getLabTokenUri(BigInteger.TWO)).thenReturn(Optional.of("https://example.com/lab-2.json"));
-            when(labMetadataService.getLabMetadataForLab(BigInteger.valueOf(2))).thenReturn(
-                decentralabs.blockchain.dto.health.LabMetadata.builder().name("Lab Two").build()
-            );
+            when(labMetadataService.getLabDisplayNameForLab(BigInteger.valueOf(2))).thenReturn("Lab Two");
             when(walletService.getProviderReceivableStatus(BigInteger.ONE)).thenReturn(
                 Optional.of(new ProviderReceivableStatus(
                     BigInteger.valueOf(10_000_000),
@@ -519,6 +513,8 @@ class AdminDashboardControllerTest {
                 .andExpect(jsonPath("$.totalLabs").value(2))
                 .andExpect(jsonPath("$.hasMore").value(false))
                 .andExpect(jsonPath("$.labs[0].labId").value("2"))
+                .andExpect(jsonPath("$.labs[0].name").value("Lab Two"))
+                .andExpect(jsonPath("$.labs[0].label").value("Lab Two"))
                 .andExpect(jsonPath("$.summary.pendingLab").value("1"))
                 .andExpect(jsonPath("$.summary.claimedLab").value("2"))
                 .andExpect(jsonPath("$.summary.doubleAttestedReservationCount").value("1"))

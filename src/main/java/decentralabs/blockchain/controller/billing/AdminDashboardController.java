@@ -633,30 +633,16 @@ public class AdminDashboardController {
 
     private String resolveLabDisplayName(BigInteger labId) {
         String fallback = "Lab #" + labId;
-        return walletService.getLabTokenUri(labId)
-            .flatMap(uri -> resolveLabNameFromMetadata(labId, uri))
-            .orElse(fallback);
-    }
-
-    private Optional<String> resolveLabNameFromMetadata(BigInteger labId, String metadataUri) {
-        if (metadataUri == null || metadataUri.isBlank()) {
-            return Optional.empty();
-        }
-
         try {
-            var metadata = labMetadataService.getLabMetadataForLab(labId);
-            if (metadata == null || metadata.getName() == null) {
-                return Optional.empty();
-            }
-            String name = metadata.getName().trim();
-            return name.isEmpty() ? Optional.empty() : Optional.of(name);
+            String name = labMetadataService.getLabDisplayNameForLab(labId);
+            return name == null || name.isBlank() ? fallback : name.trim();
         } catch (RuntimeException ex) {
             log.debug(
-                "Unable to resolve lab name from metadata {}: {}",
-                LogSanitizer.sanitize(metadataUri),
+                "Unable to resolve display name for lab {}: {}",
+                labId,
                 LogSanitizer.sanitize(ex.getMessage())
             );
-            return Optional.empty();
+            return fallback;
         }
     }
 
