@@ -1,7 +1,6 @@
 package decentralabs.blockchain.service.billing;
 
 import decentralabs.blockchain.service.health.LabMetadataService;
-import decentralabs.blockchain.service.wallet.WalletService;
 import decentralabs.blockchain.util.CreditUnitConverter;
 import decentralabs.blockchain.util.LogSanitizer;
 import java.math.BigDecimal;
@@ -136,7 +135,6 @@ public class OnChainAdminTransactionService {
     );
 
     private final Web3j web3j;
-    private final WalletService walletService;
     private final LabMetadataService labMetadataService;
 
     @Value("${contract.address}")
@@ -684,35 +682,13 @@ public class OnChainAdminTransactionService {
 
         String fallback = "Lab #" + labId;
         try {
-            String resolved = walletService.getLabTokenUri(labId)
-                .flatMap(uri -> resolveLabNameFromMetadata(labId, uri))
-                .orElse(fallback);
-            labNameCache.put(cacheKey, resolved);
-            return resolved;
+            String resolved = labMetadataService.getLabDisplayNameForLab(labId);
+            String displayName = resolved == null || resolved.isBlank() ? fallback : resolved.trim();
+            labNameCache.put(cacheKey, displayName);
+            return displayName;
         } catch (Exception ex) {
             log.debug("Unable to resolve lab name for {}: {}", labId, LogSanitizer.sanitize(ex.getMessage()));
             return fallback;
-        }
-    }
-
-    private Optional<String> resolveLabNameFromMetadata(BigInteger labId, String metadataUri) {
-        if (metadataUri == null || metadataUri.isBlank()) {
-            return Optional.empty();
-        }
-        try {
-            var metadata = labMetadataService.getLabMetadataForLab(labId);
-            if (metadata == null || metadata.getName() == null) {
-                return Optional.empty();
-            }
-            String name = metadata.getName().trim();
-            return name.isEmpty() ? Optional.empty() : Optional.of(name);
-        } catch (RuntimeException ex) {
-            log.debug(
-                "Unable to resolve lab metadata {}: {}",
-                LogSanitizer.sanitize(metadataUri),
-                LogSanitizer.sanitize(ex.getMessage())
-            );
-            return Optional.empty();
         }
     }
 

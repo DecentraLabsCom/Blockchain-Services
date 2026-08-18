@@ -1123,34 +1123,11 @@ public class InstitutionalAdminService {
         }
         String fallback = "Lab #" + labId;
         try {
-            return walletService.getLabTokenUri(labId)
-                .flatMap(uri -> resolveLabNameFromMetadata(labId, uri))
-                .orElse(fallback);
+            String resolved = labMetadataService.getLabDisplayNameForLab(labId);
+            return resolved == null || resolved.isBlank() ? fallback : resolved.trim();
         } catch (Exception ex) {
             log.debug("Unable to resolve lab display name for {}: {}", labId, LogSanitizer.sanitize(ex.getMessage()));
             return fallback;
-        }
-    }
-
-    private java.util.Optional<String> resolveLabNameFromMetadata(BigInteger labId, String metadataUri) {
-        if (metadataUri == null || metadataUri.isBlank()) {
-            return java.util.Optional.empty();
-        }
-
-        try {
-            var metadata = labMetadataService.getLabMetadataForLab(labId);
-            if (metadata == null || metadata.getName() == null) {
-                return java.util.Optional.empty();
-            }
-            String name = metadata.getName().trim();
-            return name.isEmpty() ? java.util.Optional.empty() : java.util.Optional.of(name);
-        } catch (RuntimeException ex) {
-            log.debug(
-                "Unable to resolve lab name from metadata {}: {}",
-                LogSanitizer.sanitize(metadataUri),
-                LogSanitizer.sanitize(ex.getMessage())
-            );
-            return java.util.Optional.empty();
         }
     }
 

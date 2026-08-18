@@ -34,6 +34,7 @@ import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -372,12 +373,20 @@ class InstitutionalAdminServiceTest {
             );
             request.setLabId("3");
             request.setMaxBatch("50");
+            when(labMetadataService.getLabDisplayNameForLab(java.math.BigInteger.valueOf(3)))
+                .thenReturn("Quantum Lab");
 
             InstitutionalAdminResponse response = adminService.executeAdminOperation(request);
 
             assertThat(response.isSuccess()).isTrue();
             assertThat(response.getTransactionHash()).isEqualTo("0xcollect");
             assertThat(response.getOperationType()).isEqualTo("COLLECT_LAB_PAYOUT");
+
+            var transaction = org.mockito.ArgumentCaptor
+                .forClass(InstitutionalAnalyticsService.TransactionRecord.class);
+            verify(analyticsService).recordTransaction(eq(credentials.getAddress()), transaction.capture());
+            assertThat(transaction.getValue().getDescription())
+                .isEqualTo("Request provider payout for Quantum Lab (maxBatch=50)");
         }
 
         @Test
