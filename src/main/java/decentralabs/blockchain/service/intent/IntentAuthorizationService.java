@@ -34,7 +34,7 @@ import decentralabs.blockchain.dto.intent.IntentMeta;
 import decentralabs.blockchain.dto.intent.IntentSubmission;
 import decentralabs.blockchain.dto.intent.ReservationIntentPayload;
 import decentralabs.blockchain.service.BackendUrlResolver;
-import decentralabs.blockchain.service.auth.SamlValidationService;
+import decentralabs.blockchain.service.auth.InstitutionalSessionCredentialService;
 import decentralabs.blockchain.service.auth.WebauthnCredentialService;
 import decentralabs.blockchain.service.auth.WebauthnCredentialService.WebauthnCredential;
 import decentralabs.blockchain.util.PucHashUtil;
@@ -54,7 +54,7 @@ public class IntentAuthorizationService {
     private final IntentService intentService;
     private final IntentExecutionService intentExecutionService;
     private final WebauthnCredentialService webauthnCredentialService;
-    private final SamlValidationService samlValidationService;
+    private final InstitutionalSessionCredentialService institutionalSessionCredentialService;
     private final BackendUrlResolver backendUrlResolver;
 
     @Value("${webauthn.rp.id:${base.domain:localhost}}")
@@ -79,14 +79,14 @@ public class IntentAuthorizationService {
         IntentService intentService,
         IntentExecutionService intentExecutionService,
         WebauthnCredentialService webauthnCredentialService,
-        SamlValidationService samlValidationService,
+        InstitutionalSessionCredentialService institutionalSessionCredentialService,
         BackendUrlResolver backendUrlResolver,
         IntentAuthorizationSessionPersistenceService sessionPersistence
     ) {
         this.intentService = intentService;
         this.intentExecutionService = intentExecutionService;
         this.webauthnCredentialService = webauthnCredentialService;
-        this.samlValidationService = samlValidationService;
+        this.institutionalSessionCredentialService = institutionalSessionCredentialService;
         this.backendUrlResolver = backendUrlResolver;
         this.sessionPersistence = sessionPersistence;
     }
@@ -319,7 +319,7 @@ public class IntentAuthorizationService {
         submission.setActionPayload(request.getActionPayload());
         submission.setReservationPayload(request.getReservationPayload());
         submission.setSignature(request.getSignature());
-        submission.setSamlAssertion(request.getSamlAssertion());
+        submission.setInstitutionalSessionToken(request.getInstitutionalSessionToken());
         submission.setStableUserIdMode(request.getStableUserIdMode());
         return submission;
     }
@@ -359,24 +359,33 @@ public class IntentAuthorizationService {
     }
 
     private String resolvePuc(IntentSubmission submission) {
-        // Intent payloads do not carry raw PUC; derive it from the SAML assertion.
         try {
             String expectedPucHash = expectedPucHash(submission.getActionPayload(), submission.getReservationPayload());
-            var samlAttributes = samlValidationService.validateSamlAssertionWithSignature(submission.getSamlAssertion());
-            String samlUser = samlValidationService.resolveStableUserId(
-                samlAttributes,
-                submission.getStableUserIdMode(),
-                expectedPucHash
+            var credential = institutionalSessionCredentialService.validate(
+                submission.getInstitutionalSessionToken()
             );
-            String normalized = PucNormalizer.normalize(samlUser);
+            if (credential == null) {
+                throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "missing_institutional_session");
+            }
+            String payloadInstitution = expectedInstitution(submission.getActionPayload(), submission.getReservationPayload());
+            if (payloadInstitution != null && !payloadInstitution.equalsIgnoreCase(credential.institutionId())) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "institutional_session_institution_mismatch");
+            }
+            String normalized = PucNormalizer.normalize(credential.puc());
+            if (expectedPucHash != null && !expectedPucHash.isBlank()
+                && !PucHashUtil.hashPuc(normalized).equalsIgnoreCase(expectedPucHash)) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "puc_institutional_session_mismatch");
+            }
             if (normalized != null && !normalized.isBlank()) {
                 log.info("Resolved intent authorization PUC");
                 return normalized;
             }
+        } catch (ResponseStatusException ex) {
+            throw ex;
         } catch (Exception ex) {
             Throwable rootCause = rootCause(ex);
             log.warn(
-                "Invalid SAML while resolving intent authorization PUC. requestId={} exceptionType={} reason={} rootCauseType={} rootCause={}",
+                "Invalid institutional session while resolving intent authorization PUC. requestId={} exceptionType={} reason={} rootCauseType={} rootCause={}",
                 LogSanitizer.sanitize(submission.getMeta().getRequestId()),
                 LogSanitizer.sanitize(ex.getClass().getSimpleName()),
                 sanitizeSamlDiagnostic(ex),
@@ -412,6 +421,13 @@ public class IntentAuthorizationService {
             return actionPayload.getPucHash();
         }
         return null;
+    }
+
+    private String expectedInstitution(ActionIntentPayload actionPayload, ReservationIntentPayload reservationPayload) {
+        String value = reservationPayload != null
+            ? reservationPayload.getSchacHomeOrganization()
+            : actionPayload == null ? null : actionPayload.getSchacHomeOrganization();
+        return value == null || value.isBlank() ? null : value.trim();
     }
 
     private String getEffectiveRpId() {

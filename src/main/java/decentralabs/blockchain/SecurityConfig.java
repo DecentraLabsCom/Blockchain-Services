@@ -49,6 +49,8 @@ public class SecurityConfig {
 
     @Value("${endpoint.access-code:/auth/access-code}")
     private @Nonnull String accessCodeEndpoint = "/auth/access-code";
+
+    private static final String INSTITUTIONAL_SAML_SESSION_ENDPOINT = "/auth/saml/session";
     
     @Value("${endpoint.health:/health}")
     private @Nonnull String healthEndpoint = "/health";
@@ -118,6 +120,7 @@ public class SecurityConfig {
                     checkinInstitutionalEndpoint + "/status",
                     accessCredentialEndpoint,
                     accessCodeEndpoint + "/**",
+                    INSTITUTIONAL_SAML_SESSION_ENDPOINT,
                     healthEndpoint,
                     "/actuator/health/**",
                     "/actuator/info",
@@ -174,6 +177,7 @@ public class SecurityConfig {
                 authorize.requestMatchers("/").permitAll();
                 authorize.requestMatchers(authBasePath + "/.well-known/*").permitAll();
                 authorize.requestMatchers(jwksEndpoint).permitAll();
+                authorize.requestMatchers(INSTITUTIONAL_SAML_SESSION_ENDPOINT).permitAll();
                 authorize.requestMatchers(checkinInstitutionalEndpoint).permitAll();
                 authorize.requestMatchers(checkinInstitutionalEndpoint + "/status").permitAll();
                 authorize.requestMatchers(healthEndpoint).permitAll();
@@ -255,6 +259,7 @@ public class SecurityConfig {
         // access endpoints are only exposed as CORS integrations in provider mode.
         source.registerCorsConfiguration(checkinInstitutionalEndpoint, publicConfiguration);
         source.registerCorsConfiguration(checkinInstitutionalEndpoint + "/status", publicConfiguration);
+        source.registerCorsConfiguration(INSTITUTIONAL_SAML_SESSION_ENDPOINT, publicConfiguration);
         if (providersEnabled) {
             source.registerCorsConfiguration(authorizeAndIssueEndpoint, publicConfiguration);
             source.registerCorsConfiguration(accessCredentialEndpoint, publicConfiguration);

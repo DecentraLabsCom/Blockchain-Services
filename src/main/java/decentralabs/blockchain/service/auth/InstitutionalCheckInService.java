@@ -9,12 +9,10 @@ import decentralabs.blockchain.util.LogSanitizer;
 import java.nio.charset.StandardCharsets;
 import java.math.BigInteger;
 import java.time.Instant;
-import java.util.LinkedHashMap;
 import java.util.Locale;
 import java.util.Map;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;
@@ -39,24 +37,21 @@ public class InstitutionalCheckInService {
         }
     }
 
-    private final SamlValidationService samlValidationService;
+    private final InstitutionalSessionCredentialService institutionalSessionCredentialService;
     private final MarketplaceEndpointAuthService marketplaceEndpointAuthService;
     private final BlockchainBookingService bookingService;
     private final CheckInOnChainService checkInOnChainService;
     private final InstitutionalWalletService institutionalWalletService;
     private final InstitutionalCheckInDirectoryService directoryService;
-    private final RemoteInstitutionalCheckInClient remoteCheckInClient;
     private final InstitutionalCheckInOutboxService outboxService;
     private final InstitutionalWalletNonceDispatcher nonceDispatcher;
-
-    @Value("${institutional.checkin.delegation.enabled:true}")
-    private boolean delegationEnabled;
 
     public CheckInResponse checkIn(InstitutionalCheckInRequest request) {
         validateRequest(request);
 
-        SamlAssertionAttributes saml = validateSaml(request.getSamlAssertion());
-        MarketplaceIdentityClaims marketplaceIdentity = validateMarketplaceToken(request, saml);
+        InstitutionalSessionCredentialService.Credential institutionalSession =
+            validateInstitutionalSession(request.getInstitutionalSessionToken());
+        MarketplaceIdentityClaims marketplaceIdentity = validateMarketplaceToken(request, institutionalSession);
 
         String tokenIdentity = PucNormalizer.normalize(marketplaceIdentity.puc);
         if (tokenIdentity == null || tokenIdentity.isBlank()) {
@@ -69,7 +64,6 @@ public class InstitutionalCheckInService {
             throw new SecurityException("Request puc does not match authenticated user");
         }
 
-        String institutionOrganization = resolveInstitutionOrganization(saml);
         String institutionWallet = resolveInstitutionWallet(request, marketplaceIdentity.payerInstitutionWallet);
         if (institutionWallet == null || institutionWallet.isBlank() || ZERO_ADDRESS.equalsIgnoreCase(institutionWallet)) {
             throw new IllegalArgumentException("Institution wallet could not be resolved");
@@ -103,7 +97,11 @@ public class InstitutionalCheckInService {
         // configuredSigner is loaded from the institution wallet configuration and
         // the institution wallet was bound to the validated marketplace identity.
         if (!directoryService.isAuthorizedCheckInSigner(institutionWallet, configuredSigner)) {
-            return delegateToInstitutionBackend(request, institutionOrganization, institutionWallet);
+            // The institutional session credential is audience-bound to this
+            // backend. A remote backend cannot accept it, so cross-backend
+            // check-in is orchestrated by Marketplace and obtains a credential
+            // for each backend independently.
+            return signerNotAuthorizedResponse(reservationKey, configuredSigner);
         }
 
         InstitutionalCheckInOutboxRecord record = outboxService.enqueueAccessGranted(
@@ -381,8 +379,8 @@ public class InstitutionalCheckInService {
         if (request == null) {
             throw new IllegalArgumentException("Missing request");
         }
-        if (request.getSamlAssertion() == null || request.getSamlAssertion().isBlank()) {
-            throw new IllegalArgumentException("Missing samlAssertion");
+        if (request.getInstitutionalSessionToken() == null || request.getInstitutionalSessionToken().isBlank()) {
+            throw new IllegalArgumentException("Missing institutionalSessionToken");
         }
         if (request.getMarketplaceToken() == null || request.getMarketplaceToken().isBlank()) {
             throw new IllegalArgumentException("Missing marketplaceToken");
@@ -394,15 +392,20 @@ public class InstitutionalCheckInService {
         }
     }
 
-    private SamlAssertionAttributes validateSaml(String samlAssertion) {
+    private InstitutionalSessionCredentialService.Credential validateInstitutionalSession(String token) {
         try {
-            return samlValidationService.validateSamlAssertionDetailed(samlAssertion);
-        } catch (Exception e) {
-            throw new IllegalArgumentException("Invalid samlAssertion: " + e.getMessage(), e);
+            return institutionalSessionCredentialService.validate(token);
+        } catch (ResponseStatusException ex) {
+            throw new SecurityException("Invalid institutional session: " + ex.getReason(), ex);
+        } catch (Exception ex) {
+            throw new SecurityException("Invalid institutional session", ex);
         }
     }
 
-    private MarketplaceIdentityClaims validateMarketplaceToken(InstitutionalCheckInRequest request, SamlAssertionAttributes saml) {
+    private MarketplaceIdentityClaims validateMarketplaceToken(
+        InstitutionalCheckInRequest request,
+        InstitutionalSessionCredentialService.Credential institutionalSession
+    ) {
         try {
             String marketplaceToken = request.getMarketplaceToken();
             Map<String, Object> claims = marketplaceEndpointAuthService.enforceToken(marketplaceToken, null);
@@ -413,36 +416,31 @@ public class InstitutionalCheckInService {
             if (claimPuc == null || claimPuc.isBlank() || claimAffiliation == null || claimAffiliation.isBlank()) {
                 throw new IllegalArgumentException("Marketplace token missing required claims");
             }
-            String normalizedSamlPuc = PucNormalizer.normalize(saml.puc());
+            String normalizedSessionPuc = PucNormalizer.normalize(institutionalSession.puc());
             String normalizedClaimPuc = PucNormalizer.normalize(claimPuc);
-            String stableUserIdMode = firstClaim(claims, "stableUserIdMode");
-            if (stableUserIdMode != null && !stableUserIdMode.isBlank()) {
-                normalizedSamlPuc = PucNormalizer.normalize(
-                    samlValidationService.resolveStableUserId(
-                        toSamlAttributeMap(saml),
-                        stableUserIdMode,
-                        null
-                    )
-                );
-            }
-            if (normalizedSamlPuc == null
-                || normalizedSamlPuc.isBlank()
-                || !normalizedSamlPuc.equals(normalizedClaimPuc)) {
+            if (normalizedSessionPuc == null
+                || normalizedSessionPuc.isBlank()
+                || !normalizedSessionPuc.equals(normalizedClaimPuc)) {
                 throw new SecurityException("Marketplace token puc mismatch");
             }
-            if (saml.affiliation() != null && !saml.affiliation().isBlank() && !claimAffiliation.equals(saml.affiliation())) {
+            String sessionInstitution = normalizeOrganization(institutionalSession.institutionId());
+            if (sessionInstitution.isBlank() || !sessionInstitution.equals(normalizeOrganization(claimAffiliation))) {
                 throw new SecurityException("Marketplace token affiliation mismatch");
+            }
+            String claimStableUserIdMode = firstClaim(claims, "stableUserIdMode");
+            String sessionStableUserIdMode = institutionalSession.stableUserIdMode();
+            if (claimStableUserIdMode != null && !claimStableUserIdMode.isBlank()
+                && sessionStableUserIdMode != null && !sessionStableUserIdMode.isBlank()
+                && !claimStableUserIdMode.equals(sessionStableUserIdMode)) {
+                throw new SecurityException("Marketplace token stableUserIdMode mismatch");
             }
             enforceRequiredClaim(claims, "purpose", "lab_access");
             enforceBoundClaim(claims, "reservationKey", request.getReservationKey());
             enforceBoundClaim(claims, "labId", request.getLabId());
-            enforceRequiredSamlAssertionHash(claims, request.getSamlAssertion());
+            enforceRequiredInstitutionalSessionHash(claims, institutionalSession);
 
             String claimPayerInstitutionWallet = firstClaim(claims, "payerInstitutionWallet");
-            return new MarketplaceIdentityClaims(
-                claimPuc,
-                claimPayerInstitutionWallet
-            );
+            return new MarketplaceIdentityClaims(claimPuc, claimPayerInstitutionWallet);
         } catch (ResponseStatusException ex) {
             if (ex.getStatusCode().equals(HttpStatus.UNAUTHORIZED) || ex.getStatusCode().equals(HttpStatus.FORBIDDEN)) {
                 throw new SecurityException("Invalid marketplace token: " + ex.getReason(), ex);
@@ -472,39 +470,14 @@ public class InstitutionalCheckInService {
         return boundWallet;
     }
 
-    private String resolveInstitutionOrganization(SamlAssertionAttributes saml) {
-        String org = null;
-        if (saml.schacHomeOrganizations() != null && !saml.schacHomeOrganizations().isEmpty()) {
-            org = saml.schacHomeOrganizations().get(0);
-        }
-        if (org == null || org.isBlank()) {
-            org = saml.affiliation();
-        }
-
-        if (org == null || org.isBlank()) {
-            throw new IllegalArgumentException("Missing institution organization");
-        }
-
-        return normalizeOrganization(org);
-    }
-
-    private CheckInResponse delegateToInstitutionBackend(
-        InstitutionalCheckInRequest request,
-        String organization,
-        String institutionWallet
-    ) {
-        if (!delegationEnabled) {
-            throw new IllegalStateException("Local wallet is not authorized for institution check-in");
-        }
-        String backendUrl = directoryService.resolveOrganizationBackendUrl(organization);
-        if (backendUrl == null || backendUrl.isBlank()) {
-            throw new IllegalStateException("No institutional backend registered for organization "
-                + LogSanitizer.sanitize(organization));
-        }
-        request.setPayerInstitutionWallet(institutionWallet);
-        log.info("Delegating institutional check-in for organization {} to registered backend",
-            LogSanitizer.sanitize(organization));
-        return remoteCheckInClient.submit(backendUrl, request);
+    private CheckInResponse signerNotAuthorizedResponse(String reservationKey, String signer) {
+        CheckInResponse response = new CheckInResponse();
+        response.setValid(false);
+        response.setRetryable(false);
+        response.setReason("CHECKIN_SIGNER_NOT_AUTHORIZED");
+        response.setReservationKey(reservationKey);
+        response.setSigner(signer);
+        return response;
     }
 
     private boolean replacementRequested(InstitutionalCheckInOutboxRecord record) {
@@ -571,13 +544,15 @@ public class InstitutionalCheckInService {
         }
     }
 
-    private void enforceRequiredSamlAssertionHash(Map<String, Object> claims, String samlAssertion) {
+    private void enforceRequiredInstitutionalSessionHash(
+        Map<String, Object> claims,
+        InstitutionalSessionCredentialService.Credential institutionalSession
+    ) {
         String expectedHash = firstClaim(claims, "samlAssertionHash");
         if (expectedHash == null || expectedHash.isBlank()) {
             throw new SecurityException("Marketplace token samlAssertionHash is required");
         }
-        String actualHash = Numeric.toHexString(Hash.sha3(samlAssertion.getBytes(StandardCharsets.UTF_8)));
-        if (!expectedHash.equalsIgnoreCase(actualHash)) {
+        if (!expectedHash.equalsIgnoreCase(institutionalSession.samlAssertionHash())) {
             throw new SecurityException("Marketplace token samlAssertionHash mismatch");
         }
     }
@@ -617,27 +592,6 @@ public class InstitutionalCheckInService {
             }
         }
         return null;
-    }
-
-    private Map<String, String> toSamlAttributeMap(SamlAssertionAttributes saml) {
-        Map<String, String> values = new LinkedHashMap<>();
-        putIfPresent(values, "puc", saml.puc());
-        putIfPresent(values, "affiliation", saml.affiliation());
-        if (saml.attributes() != null) {
-            saml.attributes().forEach((key, attributeValues) -> {
-                if (attributeValues != null && !attributeValues.isEmpty()) {
-                    putIfPresent(values, key, attributeValues.get(0));
-                }
-            });
-        }
-        return values;
-    }
-
-    private void putIfPresent(Map<String, String> values, String key, String value) {
-        if (key == null || value == null || value.isBlank()) {
-            return;
-        }
-        values.put(key, value);
     }
 
 }

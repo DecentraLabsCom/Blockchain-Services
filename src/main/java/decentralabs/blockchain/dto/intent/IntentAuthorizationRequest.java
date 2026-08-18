@@ -24,7 +24,7 @@ public class IntentAuthorizationRequest {
     private String signature;
 
     @NotBlank
-    private String samlAssertion;
+    private String institutionalSessionToken;
 
     private String stableUserIdMode;
 
@@ -62,12 +62,12 @@ public class IntentAuthorizationRequest {
         this.signature = signature;
     }
 
-    public String getSamlAssertion() {
-        return samlAssertion;
+    public String getInstitutionalSessionToken() {
+        return institutionalSessionToken;
     }
 
-    public void setSamlAssertion(String samlAssertion) {
-        this.samlAssertion = samlAssertion;
+    public void setInstitutionalSessionToken(String institutionalSessionToken) {
+        this.institutionalSessionToken = institutionalSessionToken;
     }
 
     public String getStableUserIdMode() {

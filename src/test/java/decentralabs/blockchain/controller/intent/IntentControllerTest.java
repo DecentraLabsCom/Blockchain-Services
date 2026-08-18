@@ -209,7 +209,7 @@ class IntentControllerTest {
         meta.setExpiresAt(System.currentTimeMillis() + 3600000L);
         submission.setMeta(meta);
         submission.setSignature("0x" + "a".repeat(130));
-        submission.setSamlAssertion("base64-saml-assertion");
+        submission.setInstitutionalSessionToken("institutional-session-token");
         submission.setWebauthnCredentialId("credential-id-123");
         submission.setWebauthnClientDataJSON("eyJ0eXBlIjoid2ViYXV0aG4uZ2V0In0=");
         submission.setWebauthnAuthenticatorData("SZYN5YgOjGh0NBcPZHZgW4/krrmihjLHmVzzuoMdl2MBAAABBA==");

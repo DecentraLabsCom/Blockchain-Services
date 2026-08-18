@@ -7,6 +7,11 @@ import lombok.Setter;
 @Setter
 public class ProviderAccessCredentialRequest {
     private String marketplaceToken;
+    /**
+     * Marketplace JWT minted for the consumer backend audience. It is used
+     * only when the provider must query the consumer's remote check-in state.
+     */
+    private String consumerMarketplaceToken;
     private String reservationKey;
     private String labId;
     /**

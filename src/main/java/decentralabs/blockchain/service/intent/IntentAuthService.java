@@ -61,6 +61,9 @@ public class IntentAuthService {
     @Value("${intents.auth.status-scope:intents:status}")
     private String statusScope;
 
+    @Value("${intents.auth.session-scope:intents:session}")
+    private String sessionScope;
+
     @Value("${intents.auth.clock-skew-seconds:60}")
     private long clockSkewSeconds;
 
@@ -80,9 +83,16 @@ public class IntentAuthService {
         enforceAuthorization(authorizationHeader, statusScope);
     }
 
-    private void enforceAuthorization(String authorizationHeader, String requiredScope) {
+    public SessionAuthorization enforceSessionAuthorization(String authorizationHeader) {
         if (!enabled) {
-            return;
+            return new SessionAuthorization(false, java.util.Map.of());
+        }
+        return new SessionAuthorization(true, enforceAuthorization(authorizationHeader, sessionScope));
+    }
+
+    private java.util.Map<String, Object> enforceAuthorization(String authorizationHeader, String requiredScope) {
+        if (!enabled) {
+            return java.util.Map.of();
         }
 
         String token = extractBearerToken(authorizationHeader);
@@ -94,6 +104,7 @@ public class IntentAuthService {
         if (requiredScope != null && !requiredScope.isBlank() && !scopeContainsRequiredScope(claims, requiredScope)) {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "missing_intents_scope");
         }
+        return claims;
     }
 
     private Claims validateToken(String token) {
@@ -211,5 +222,14 @@ public class IntentAuthService {
                 .anyMatch(token -> token.equals(requiredScope));
         }
         return false;
+    }
+
+    public record SessionAuthorization(
+        boolean marketplaceBindingRequired,
+        java.util.Map<String, Object> claims
+    ) {
+        public SessionAuthorization {
+            claims = claims == null ? java.util.Map.of() : java.util.Map.copyOf(claims);
+        }
     }
 }

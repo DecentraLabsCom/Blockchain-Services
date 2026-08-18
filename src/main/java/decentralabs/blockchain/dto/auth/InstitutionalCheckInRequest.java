@@ -1,6 +1,5 @@
 package decentralabs.blockchain.dto.auth;
 
-import java.util.List;
 import lombok.Getter;
 import lombok.Setter;
 
@@ -8,11 +7,10 @@ import lombok.Setter;
 @Setter
 public class InstitutionalCheckInRequest {
     private String marketplaceToken;
-    private String samlAssertion;
+    /** Backend-issued credential created during the fresh SAML login callback. */
+    private String institutionalSessionToken;
     private String reservationKey;
     private String labId;
     private String payerInstitutionWallet;
     private String puc;
-    private Integer delegationHop;
-    private List<String> delegationTrace;
 }

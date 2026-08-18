@@ -1,5 +1,6 @@
 package decentralabs.blockchain.service.intent;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.lenient;
@@ -51,6 +52,7 @@ class IntentAuthServiceTest {
         ReflectionTestUtils.setField(service, "maxTtlSeconds", 60L);
         ReflectionTestUtils.setField(service, "submitScope", "intents:submit");
         ReflectionTestUtils.setField(service, "statusScope", "intents:status");
+        ReflectionTestUtils.setField(service, "sessionScope", "intents:session");
         ReflectionTestUtils.setField(service, "clockSkewSeconds", 60L);
 
         KeyPairGenerator keyGen = KeyPairGenerator.getInstance("RSA");
@@ -65,6 +67,9 @@ class IntentAuthServiceTest {
 
         assertThatCode(() -> service.enforceSubmitAuthorization(null)).doesNotThrowAnyException();
         assertThatCode(() -> service.enforceStatusAuthorization(null)).doesNotThrowAnyException();
+        IntentAuthService.SessionAuthorization sessionAuthorization = service.enforceSessionAuthorization(null);
+        assertThat(sessionAuthorization.marketplaceBindingRequired()).isFalse();
+        assertThat(sessionAuthorization.claims()).isEmpty();
     }
 
     @Test
@@ -100,6 +105,32 @@ class IntentAuthServiceTest {
         String jwt = makeJwt(Map.of("scope", "read write"));
 
         assertThatThrownBy(() -> service.enforceSubmitAuthorization("Bearer " + jwt))
+            .isInstanceOf(ResponseStatusException.class)
+            .hasMessageContaining("missing_intents_scope");
+    }
+
+    @Test
+    void sessionAuthorization_returnsBoundIdentityClaimsForItsDedicatedScope() {
+        String jwt = makeJwt(Map.of(
+            "scope", "intents:session",
+            "puc", "user@institution.edu",
+            "affiliation", "institution.edu"
+        ));
+
+        IntentAuthService.SessionAuthorization authorization = service
+            .enforceSessionAuthorization("Bearer " + jwt);
+
+        assertThat(authorization.marketplaceBindingRequired()).isTrue();
+        assertThat(authorization.claims())
+            .containsEntry("puc", "user@institution.edu")
+            .containsEntry("affiliation", "institution.edu");
+    }
+
+    @Test
+    void sessionAuthorization_rejectsAnotherIntentScope() {
+        String jwt = makeJwt(Map.of("scope", "intents:submit"));
+
+        assertThatThrownBy(() -> service.enforceSessionAuthorization("Bearer " + jwt))
             .isInstanceOf(ResponseStatusException.class)
             .hasMessageContaining("missing_intents_scope");
     }

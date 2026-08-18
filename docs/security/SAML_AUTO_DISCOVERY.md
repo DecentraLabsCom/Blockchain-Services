@@ -1,6 +1,10 @@
 # SAML metadata discovery and signature validation
 
-`SamlValidationService` validates the XML signature before exposing identity attributes to the authentication, institutional check-in and intent flows. It discovers signing certificates from IdP metadata; it is not an IdP registry or a replacement for the gateway network boundary.
+`SamlValidationService` validates the XML signature before exposing identity
+attributes to the initial institutional session exchange. Check-in and intent
+flows consume the resulting backend-owned credential rather than the raw SAML
+assertion. The service discovers signing certificates from IdP metadata; it is
+not an IdP registry or a replacement for the gateway network boundary.
 
 ## Assertion/signature binding
 
@@ -138,8 +142,8 @@ the application-level fallback.
 
 Signature verification happens before attributes are returned. The service then derives the stable PUC from `eduPersonPrincipalName` and/or `eduPersonTargetedID`, and resolves institution affiliation from `schacHomeOrganization`, scoped affiliation or email. Missing issuer, an untrusted issuer, blocked metadata, absent certificates, invalid signatures or missing PUC identity are authentication failures.
 
-The service is used by:
-
-- `POST /auth/authorize-and-issue` and `POST /auth/access-credential`;
-- `POST /auth/checkin-institutional`;
-- `POST /intents` when a SAML assertion is supplied.
+The service is used by `POST /auth/saml/session` to validate the fresh SAML
+assertion during the Marketplace callback and issue the backend-owned
+institutional session credential. Reservation, intent, cancellation, check-in
+and access endpoints consume that credential and do not parse or accept the raw
+SAML assertion.

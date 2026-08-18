@@ -305,8 +305,9 @@ class SamlAuthControllerTest {
         @DisplayName("Should accept institutional check-in")
         void shouldAcceptInstitutionalCheckIn() throws Exception {
             InstitutionalCheckInRequest request = new InstitutionalCheckInRequest();
+            request.setMarketplaceToken("marketplace-token");
+            request.setInstitutionalSessionToken("institutional-session-token");
             request.setReservationKey("0x" + "a".repeat(64));
-            request.setSamlAssertion("assertion");
 
             CheckInResponse response = new CheckInResponse();
             response.setValid(true);
@@ -325,8 +326,9 @@ class SamlAuthControllerTest {
         @DisplayName("Should acknowledge a queued institutional check-in without returning 500")
         void shouldAcknowledgeQueuedInstitutionalCheckIn() throws Exception {
             InstitutionalCheckInRequest request = new InstitutionalCheckInRequest();
+            request.setMarketplaceToken("marketplace-token");
+            request.setInstitutionalSessionToken("institutional-session-token");
             request.setReservationKey("0x" + "a".repeat(64));
-            request.setSamlAssertion("assertion");
 
             CheckInResponse response = new CheckInResponse();
             response.setValid(true);
@@ -349,8 +351,9 @@ class SamlAuthControllerTest {
         @DisplayName("Should reject a check-in whose durable wallet context is quarantined")
         void shouldRejectQuarantinedInstitutionalCheckIn() throws Exception {
             InstitutionalCheckInRequest request = new InstitutionalCheckInRequest();
+            request.setMarketplaceToken("marketplace-token");
+            request.setInstitutionalSessionToken("institutional-session-token");
             request.setReservationKey("0x" + "a".repeat(64));
-            request.setSamlAssertion("assertion");
 
             CheckInResponse response = new CheckInResponse();
             response.setValid(false);
@@ -375,8 +378,9 @@ class SamlAuthControllerTest {
         @DisplayName("Should reject a check-in already requiring manual intervention")
         void shouldRejectManualInstitutionalCheckIn() throws Exception {
             InstitutionalCheckInRequest request = new InstitutionalCheckInRequest();
+            request.setMarketplaceToken("marketplace-token");
+            request.setInstitutionalSessionToken("institutional-session-token");
             request.setReservationKey("0x" + "a".repeat(64));
-            request.setSamlAssertion("assertion");
 
             CheckInResponse response = new CheckInResponse();
             response.setValid(false);
@@ -421,26 +425,27 @@ class SamlAuthControllerTest {
         @DisplayName("Should return 400 for invalid institutional check-in")
         void shouldReturn400ForInvalidInstitutionalCheckIn() throws Exception {
             InstitutionalCheckInRequest request = new InstitutionalCheckInRequest();
+            request.setMarketplaceToken("marketplace-token");
             request.setReservationKey("0x" + "a".repeat(64));
-            request.setSamlAssertion("assertion");
 
             when(institutionalCheckInService.checkIn(any(InstitutionalCheckInRequest.class)))
-                .thenThrow(new IllegalArgumentException("Missing samlAssertion"));
+                .thenThrow(new IllegalArgumentException("Missing institutionalSessionToken"));
 
             mockMvc.perform(post("/auth/checkin-institutional")
                     .contentType(MediaType.APPLICATION_JSON)
                     .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.valid").value(false))
-                .andExpect(jsonPath("$.reason").value("Missing samlAssertion"));
+                .andExpect(jsonPath("$.reason").value("Missing institutionalSessionToken"));
         }
 
         @Test
         @DisplayName("Should return 401 for unauthorized institutional check-in")
         void shouldReturn401ForUnauthorizedInstitutionalCheckIn() throws Exception {
             InstitutionalCheckInRequest request = new InstitutionalCheckInRequest();
+            request.setMarketplaceToken("marketplace-token");
+            request.setInstitutionalSessionToken("institutional-session-token");
             request.setReservationKey("0x" + "a".repeat(64));
-            request.setSamlAssertion("assertion");
 
             when(institutionalCheckInService.checkIn(any(InstitutionalCheckInRequest.class)))
                 .thenThrow(new SecurityException("Invalid SAML assertion"));
@@ -486,7 +491,7 @@ class SamlAuthControllerTest {
     private SamlAuthRequest createValidSamlRequest() {
         SamlAuthRequest request = new SamlAuthRequest();
         request.setMarketplaceToken("eyJhbGciOiJSUzI1NiJ9.eyJzdWIiOiJ1c2VyIiwiZXhwIjoxOTk5OTk5OTk5fQ.signature");
-        request.setSamlAssertion("PHNhbWxwOlJlc3BvbnNlPi4uLjwvc2FtbHA6UmVzcG9uc2U+");
+        request.setInstitutionalSessionToken("institutional-session-token");
         request.setTimestamp(System.currentTimeMillis());
         return request;
     }

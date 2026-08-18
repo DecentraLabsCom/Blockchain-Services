@@ -18,10 +18,11 @@ defense in depth, but is no longer the sole boundary for these routes.
 
 | Endpoint | Purpose | Primary proof |
 | --- | --- | --- |
+| `POST /auth/saml/session` | Validate a fresh SAML assertion and issue the backend-owned institutional session credential | Marketplace JWT with `intents:session` + fresh SAML; signed SAML alone only when intent auth is explicitly disabled |
 | `GET /auth/jwks` | Provider signing key set (conditional) | Public read; provider controller enabled |
-| `POST /auth/authorize-and-issue` | Provider-side combined check-in and access delivery (`provider-consumer` only) | Marketplace JWT + SAML + on-chain state |
-| `POST /auth/access-credential` | Provider-side access credential flow (`provider-consumer` only) | Provider request + booking checks |
-| `POST /auth/checkin-institutional` | Institutional wallet check-in | Institutional request and configured delegation policy |
+| `POST /auth/authorize-and-issue` | Provider-side combined check-in and access delivery (`provider-consumer` only) | Marketplace JWT + institutional session credential + on-chain state |
+| `POST /auth/access-credential` | Provider-side access credential flow (`provider-consumer` only) | Provider-audience Marketplace JWT, consumer-audience JWT for delegated status, and booking checks |
+| `POST /auth/checkin-institutional` | Institutional wallet check-in | Marketplace JWT + audience-bound institutional session credential |
 | `POST /auth/checkin-institutional/status` | Query a delegated consumer check-in | Marketplace JWT + reservation binding |
 | `POST /auth/access-code/redeem` | Prepare a browser/gateway redemption and return a short-lived handle (`provider-consumer` only) | Gateway ID + per-gateway redeemer credential |
 | `POST /auth/access-code/redeem/commit` | Commit a prepared redemption after gateway-local validation (`provider-consumer` only) | Same gateway credential + redemption handle |
@@ -32,6 +33,36 @@ defense in depth, but is no longer the sole boundary for these routes.
 
 The backend never treats a request arriving at OpenResty as proof that a lab
 session was actually accepted or used.
+
+## Institutional session credential
+
+Marketplace exchanges the fresh SAML assertion at `POST /auth/saml/session`
+while completing the SAML callback. Spring Security exposes this service route
+without CSRF in both backend operating modes and applies the public-auth rate
+limit; the controller then requires a Marketplace service JWT with the
+`intents:session` scope when `INTENTS_AUTH_ENABLED=true`. It validates the
+assertion signature and Marketplace identity binding and returns a signed
+backend-owned credential. The credential contains the institution, encrypted
+PUC, validated assertion hash and an absolute expiry, one hour by default
+(`AUTH_INSTITUTIONAL_SESSION_TTL_SECONDS`).
+
+When `INTENTS_AUTH_ENABLED=false`, intended only for a deliberately isolated
+deployment, the endpoint has no Marketplace claims to bind. It derives the PUC
+and institution exclusively from the successfully signature-validated SAML
+assertion and still applies the same assertion and credential validation. No
+bearer is required in that mode.
+
+Reservation, cancellation, intent authorization and institutional lab check-in
+requests must send that credential rather than the raw SAML assertion. The
+backend validates the credential and compares its PUC, institution and
+assertion hash with the Marketplace payload. A Marketplace reauthentication
+issues a new credential; the credential is not sliding or renewed by ordinary
+traffic. Marketplace treats the session as sliding through activity-triggered
+SAML reauthentication during the final five minutes: that callback obtains a
+new backend credential and a new Marketplace session window. Ordinary traffic
+cannot extend the current credential horizon. The raw assertion is therefore
+accepted by the backend only at `POST /auth/saml/session`, never at reservation,
+cancellation, intent or lab-access endpoints.
 
 The controller maps OIDC discovery at `/.well-known/openid-configuration`, but
 the current Spring Security allow-list uses `/auth/.well-known/*`. Do not
@@ -53,9 +84,9 @@ sequenceDiagram
     participant G as Lab Gateway
     participant Q as Guacamole / FMU
 
-    M->>B: POST /auth/authorize-and-issue
+    M->>B: POST /auth/authorize-and-issue + institutional session credential
     B->>B: Verify Marketplace JWT
-    B->>B: Verify SAML assertion and identity binding
+    B->>B: Verify institutional session identity and assertion-hash binding
     B->>C: Check reservation, payer and time window
     B->>B: Queue institutional check-in (durable outbox)
     B-->>M: 202/503 pending + Retry-After (fast response)
@@ -80,8 +111,8 @@ The exact validator varies by endpoint, but booking-aware provider flows must
 establish all of the following before issuing access material:
 
 1. Marketplace JWT signature, issuer, audience and expiry.
-2. SAML signature, issuer trust and required attributes.
-3. Identity equality between the Marketplace token and SAML assertion.
+2. Institutional session credential signature, audience, type and expiry.
+3. Identity and assertion-hash equality between the Marketplace token and credential.
 4. Payer institution and wallet authorization.
 5. Reservation identity, lab identity and validity window.
 6. On-chain authorization (`ACCESS_AUTHORIZED`) when the flow requires it.
@@ -132,6 +163,12 @@ When provider and consumer are separate backends, the provider can delegate the
 institutional check-in to the payer institution's registered backend. When they
 are the same backend, the request is persisted to the local check-in outbox and
 the scheduled worker is the recovery path.
+
+For a separate provider and consumer, Marketplace sends two audience-scoped
+JWTs to the provider access endpoint: the provider-audience token authorizes
+the provider operation, while the consumer-audience token is forwarded only to
+the consumer status endpoint. These tokens must not be reused across backend
+audiences.
 
 ### Check-in transaction lifecycle
 

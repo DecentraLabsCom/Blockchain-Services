@@ -11,17 +11,12 @@ import decentralabs.blockchain.exception.AccessAuthorizationContextMismatchExcep
 import decentralabs.blockchain.exception.AccessAuthorizationManualInterventionException;
 import decentralabs.blockchain.exception.AccessAuthorizationSignerNotAuthorizedException;
 import decentralabs.blockchain.exception.SamlAuthenticationException;
-import decentralabs.blockchain.exception.SamlExpiredAssertionException;
-import decentralabs.blockchain.exception.SamlInvalidIssuerException;
-import decentralabs.blockchain.exception.SamlMalformedResponseException;
-import decentralabs.blockchain.exception.SamlMissingAttributesException;
-import decentralabs.blockchain.exception.SamlReplayAttackException;
-import decentralabs.blockchain.exception.SamlServiceUnavailableException;
 import decentralabs.blockchain.service.wallet.BlockchainBookingService;
 import decentralabs.blockchain.util.LogSanitizer;
 import decentralabs.blockchain.util.PucNormalizer;
 import decentralabs.blockchain.util.PucHashUtil;
 import java.util.Collection;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.stream.Stream;
@@ -39,7 +34,7 @@ public class SamlAuthService {
     private final BlockchainBookingService blockchainService;
     private final JwtService jwtService;
     private final MarketplaceEndpointAuthService marketplaceEndpointAuthService;
-    private final SamlValidationService samlValidationService;
+    private final InstitutionalSessionCredentialService institutionalSessionCredentialService;
     private final InstitutionalAccessCheckInCoordinator accessCheckInCoordinator;
     private final AccessCredentialDeliveryService accessCredentialDeliveryService;
     private final AccessAuthorizationProvisioningService accessAuthorizationProvisioningService;
@@ -98,7 +93,7 @@ public class SamlAuthService {
             enforceConsumerCheckInState(
                 canonicalReservationKey,
                 marketplaceJWTClaims,
-                request.getMarketplaceToken(),
+                request.getConsumerMarketplaceToken(),
                 request.getLabId()
             );
             validatePendingTransaction(txHash);
@@ -151,29 +146,28 @@ public class SamlAuthService {
      * contract exposes ACCESS_AUTHORIZED.
      */
     public AuthResponse authorizeAndIssue(SamlAuthRequest request) throws SamlAuthenticationException {
+        if (request == null) {
+            throw new IllegalArgumentException("Missing request");
+        }
         String marketplaceToken = request.getMarketplaceToken();
-        String samlAssertion = request.getSamlAssertion();
-        auditSAMLAuthentication();
         if (marketplaceToken == null || marketplaceToken.isBlank()) {
             throw new IllegalArgumentException("Missing marketplaceToken");
         }
-        if (samlAssertion == null || samlAssertion.isBlank()) {
-            throw new IllegalArgumentException("Missing samlAssertion");
+        if (request.getInstitutionalSessionToken() == null || request.getInstitutionalSessionToken().isBlank()) {
+            throw new IllegalArgumentException("Missing institutionalSessionToken");
         }
 
+        InstitutionalSessionCredentialService.Credential institutionalSession =
+            validateInstitutionalSession(request.getInstitutionalSessionToken());
         Map<String, Object> marketplaceJWTClaims = validateMarketplaceJWTBasic(marketplaceToken);
-        Map<String, String> samlAttributes = validateSAMLAssertion(samlAssertion);
         String jwtPuc = stringClaim(marketplaceJWTClaims, "puc");
         String jwtAffiliation = stringClaim(marketplaceJWTClaims, "affiliation");
-        String samlPuc = resolveSamlPucForMarketplaceToken(
-            samlAttributes,
-            stringClaim(marketplaceJWTClaims, "stableUserIdMode")
-        );
-        if (!Objects.equals(PucNormalizer.normalize(jwtPuc), PucNormalizer.normalize(samlPuc))
+        if (!Objects.equals(PucNormalizer.normalize(jwtPuc), PucNormalizer.normalize(institutionalSession.puc()))
                 || normalizeAffiliation(jwtAffiliation) == null
-                || !normalizeAffiliation(jwtAffiliation).equals(normalizeAffiliation(samlAttributes.get("affiliation")))) {
-            throw new SecurityException("JWT and SAML identity mismatch");
+                || !normalizeAffiliation(jwtAffiliation).equals(normalizeAffiliation(institutionalSession.institutionId()))) {
+            throw new SecurityException("JWT and institutional session identity mismatch");
         }
+        enforceInstitutionalSessionBinding(marketplaceJWTClaims, institutionalSession);
         enforceBookingInfoEntitlement(marketplaceJWTClaims);
         enforceLabAccessPurpose(marketplaceJWTClaims);
         enforceClaimEquals(marketplaceJWTClaims, "reservationKey", request.getReservationKey());
@@ -345,7 +339,7 @@ public class SamlAuthService {
     private void enforceConsumerCheckInState(
         String reservationKey,
         Map<String, Object> marketplaceClaims,
-        String marketplaceToken,
+        String consumerMarketplaceToken,
         String labId
     ) {
         InstitutionalCheckInOutboxService.CheckInOutboxState state =
@@ -363,8 +357,11 @@ public class SamlAuthService {
         if (backendUrl == null || backendUrl.isBlank()) {
             return;
         }
+        if (consumerMarketplaceToken == null || consumerMarketplaceToken.isBlank()) {
+            throw new SecurityException("Missing consumerMarketplaceToken for remote check-in status");
+        }
         InstitutionalCheckInStatusRequest statusRequest = new InstitutionalCheckInStatusRequest();
-        statusRequest.setMarketplaceToken(marketplaceToken);
+        statusRequest.setMarketplaceToken(consumerMarketplaceToken);
         statusRequest.setReservationKey(reservationKey);
         statusRequest.setLabId(labId);
         try {
@@ -563,59 +560,34 @@ public class SamlAuthService {
         }
     }
 
-    private Map<String, String> validateSAMLAssertion(String samlAssertion) throws SamlAuthenticationException {
+    private InstitutionalSessionCredentialService.Credential validateInstitutionalSession(String token) {
         try {
-            Map<String, String> attributes = samlValidationService.validateSamlAssertionWithSignature(samlAssertion);
-            log.info("SAML assertion validated WITH SIGNATURE.");
-            return attributes;
-        } catch (Exception e) {
-            String errorMessage = e.getMessage();
-            if (errorMessage != null) {
-                if (errorMessage.contains("expired") || errorMessage.contains("not valid")) {
-                    throw new SamlExpiredAssertionException("SAML assertion has expired: " + errorMessage, e);
-                }
-                if (errorMessage.contains("not in trusted list") || errorMessage.contains("unknown-idp")) {
-                    throw new SamlInvalidIssuerException("Issuer not trusted: " + errorMessage, e);
-                }
-                if (errorMessage.contains("signature is INVALID") || errorMessage.contains("Could not validate")) {
-                    throw new SamlMalformedResponseException("Invalid SAML response format: " + errorMessage, e);
-                }
-                if (errorMessage.contains("missing")
-                    && (errorMessage.contains("PUC") || errorMessage.contains("puc") || errorMessage.contains("affiliation"))) {
-                    throw new SamlMissingAttributesException(
-                        "SAML assertion missing required attributes: " + errorMessage,
-                        e
-                    );
-                }
-                if (errorMessage.contains("replay") || errorMessage.contains("already used")) {
-                    throw new SamlReplayAttackException(
-                        "SAML assertion already used (replay attack detected): " + errorMessage,
-                        e
-                    );
-                }
-                if (errorMessage.contains("unavailable") || errorMessage.contains("Could not retrieve")) {
-                    throw new SamlServiceUnavailableException(
-                        "IdP metadata service unavailable: " + errorMessage,
-                        e
-                    );
-                }
-            }
-            throw new SamlMalformedResponseException("Invalid SAML response format: " + errorMessage, e);
+            return institutionalSessionCredentialService.validate(token);
+        } catch (ResponseStatusException ex) {
+            throw new SecurityException("Invalid institutional session: " + ex.getReason(), ex);
+        } catch (Exception ex) {
+            throw new SecurityException("Invalid institutional session", ex);
         }
     }
 
-    private String resolveSamlPucForMarketplaceToken(
-        Map<String, String> samlAttributes,
-        String stableUserIdMode
+    private void enforceInstitutionalSessionBinding(
+        Map<String, Object> marketplaceClaims,
+        InstitutionalSessionCredentialService.Credential institutionalSession
     ) {
-        if (stableUserIdMode == null || stableUserIdMode.isBlank()) {
-            return samlAttributes == null ? null : samlAttributes.get("puc");
+        String expectedHash = stringClaim(marketplaceClaims, "samlAssertionHash");
+        if (expectedHash == null || expectedHash.isBlank()) {
+            throw new SecurityException("Marketplace token samlAssertionHash is required");
         }
-        return samlValidationService.resolveStableUserId(samlAttributes, stableUserIdMode, null);
-    }
-
-    private void auditSAMLAuthentication() {
-        log.info("SAML Authentication attempt recorded");
+        if (!expectedHash.equalsIgnoreCase(institutionalSession.samlAssertionHash())) {
+            throw new SecurityException("Marketplace token samlAssertionHash mismatch");
+        }
+        String claimStableUserIdMode = stringClaim(marketplaceClaims, "stableUserIdMode");
+        String sessionStableUserIdMode = institutionalSession.stableUserIdMode();
+        if (claimStableUserIdMode != null && !claimStableUserIdMode.isBlank()
+            && sessionStableUserIdMode != null && !sessionStableUserIdMode.isBlank()
+            && !claimStableUserIdMode.equals(sessionStableUserIdMode)) {
+            throw new SecurityException("Marketplace token stableUserIdMode mismatch");
+        }
     }
 
     private void enforceBookingInfoEntitlement(Map<String, Object> marketplaceClaims) {
@@ -705,7 +677,7 @@ public class SamlAuthService {
         if (affiliation == null || affiliation.isBlank()) {
             return null;
         }
-        String normalized = affiliation.trim().toLowerCase();
+        String normalized = affiliation.trim().toLowerCase(Locale.ROOT);
         if (normalized.contains("@")) {
             String[] parts = normalized.split("@");
             if (parts.length == 2) {

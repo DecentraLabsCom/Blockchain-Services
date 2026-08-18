@@ -21,6 +21,11 @@ class RateLimitTestController {
         return "ok";
     }
 
+    @PostMapping("/auth/saml/session")
+    public String institutionalSamlSession() {
+        return "ok";
+    }
+
     @PostMapping("/auth/fmu/session-ticket/redeem")
     public String redeemFmuSessionTicket() {
         return "ok";

@@ -23,7 +23,7 @@ import decentralabs.blockchain.dto.intent.IntentAuthorizationStatusResponse;
 import decentralabs.blockchain.dto.intent.IntentMeta;
 import decentralabs.blockchain.dto.intent.IntentSubmission;
 import decentralabs.blockchain.service.BackendUrlResolver;
-import decentralabs.blockchain.service.auth.SamlValidationService;
+import decentralabs.blockchain.service.auth.InstitutionalSessionCredentialService;
 import decentralabs.blockchain.service.auth.WebauthnCredentialService;
 import decentralabs.blockchain.service.auth.WebauthnCredentialService.WebauthnCredential;
 import java.math.BigInteger;
@@ -62,7 +62,7 @@ class IntentAuthorizationServiceTest {
     private WebauthnCredentialService webauthnCredentialService;
 
     @Mock
-    private SamlValidationService samlValidationService;
+    private InstitutionalSessionCredentialService institutionalSessionCredentialService;
 
     @Mock
     private BackendUrlResolver backendUrlResolver;
@@ -81,7 +81,7 @@ class IntentAuthorizationServiceTest {
             intentService,
             intentExecutionService,
             webauthnCredentialService,
-            samlValidationService,
+            institutionalSessionCredentialService,
             backendUrlResolver,
             sessionPersistence
         );
@@ -139,8 +139,18 @@ class IntentAuthorizationServiceTest {
             );
             return true;
         });
-        lenient().when(samlValidationService.validateSamlAssertionWithSignature(any())).thenReturn(Map.of("puc", "user@example.edu"));
-        lenient().when(samlValidationService.resolveStableUserId(any(), any(), any())).thenCallRealMethod();
+        lenient().when(institutionalSessionCredentialService.validate(anyString())).thenReturn(
+            new InstitutionalSessionCredentialService.Credential(
+                "user@example.edu",
+                "uned.es",
+                "principal",
+                "0x" + "a".repeat(64),
+                Instant.now(),
+                Instant.now().plusSeconds(3600),
+                Instant.now().plusSeconds(3600),
+                "test-session"
+            )
+        );
     }
 
     @AfterEach
@@ -174,15 +184,10 @@ class IntentAuthorizationServiceTest {
 
     @Test
     void createSession_usesDeclaredPrincipalModeWhenSamlAlsoContainsTargetedId() throws Exception {
-        when(samlValidationService.validateSamlAssertionWithSignature(any())).thenReturn(Map.of(
-            "puc", "user@example.edu|targeted-user",
-            "eduPersonPrincipalName", "user@example.edu",
-            "eduPersonTargetedID", "targeted-user"
-        ));
         when(webauthnCredentialService.getCredentials("user@example.edu"))
             .thenReturn(List.of(credential("cred-1", true, 100L)));
         IntentAuthorizationRequest request = validAuthorizationRequest();
-        request.setStableUserIdMode(SamlValidationService.STABLE_USER_ID_MODE_PRINCIPAL);
+        request.setStableUserIdMode("principal");
 
         IntentAuthorizationService.AuthorizationSession session = service.createSession(request);
 
@@ -208,11 +213,12 @@ class IntentAuthorizationServiceTest {
 
     @Test
     void createSession_rejectsInvalidSaml() throws Exception {
-        when(samlValidationService.validateSamlAssertionWithSignature(any())).thenReturn(Map.of());
+        when(institutionalSessionCredentialService.validate(anyString()))
+            .thenThrow(new ResponseStatusException(HttpStatus.BAD_REQUEST, "invalid_institutional_session"));
 
         assertThatThrownBy(() -> service.createSession(validAuthorizationRequest()))
             .isInstanceOf(ResponseStatusException.class)
-            .hasMessageContaining("missing_puc_for_webauthn");
+            .hasMessageContaining("invalid_institutional_session");
     }
 
     @Test
@@ -222,7 +228,7 @@ class IntentAuthorizationServiceTest {
         appender.start();
         logger.addAppender(appender);
         try {
-            when(samlValidationService.validateSamlAssertionWithSignature(any()))
+            when(institutionalSessionCredentialService.validate(anyString()))
                 .thenThrow(new SecurityException("signature failed\nraw-assertion-must-not-be-logged"));
 
             assertThatThrownBy(() -> service.createSession(validAuthorizationRequest()))
@@ -416,7 +422,7 @@ class IntentAuthorizationServiceTest {
         request.setMeta(validMeta());
         request.setActionPayload(validActionPayload());
         request.setSignature("0xsig");
-        request.setSamlAssertion("assertion");
+        request.setInstitutionalSessionToken("institutional-token");
         request.setReturnUrl("https://app.example/callback");
         return request;
     }
@@ -437,7 +443,7 @@ class IntentAuthorizationServiceTest {
     private ActionIntentPayload validActionPayload() {
         ActionIntentPayload payload = new ActionIntentPayload();
         payload.setExecutor("0xexecutor");
-        payload.setPucHash("0x" + "1".repeat(64));
+        payload.setPucHash(decentralabs.blockchain.util.PucHashUtil.hashPuc("user@example.edu"));
         payload.setLabId(BigInteger.ONE);
         return payload;
     }

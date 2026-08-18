@@ -44,7 +44,6 @@ import java.util.concurrent.TimeUnit;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -101,7 +100,6 @@ public class WebauthnOnboardingService {
     private ScheduledExecutorService cleanupScheduler;
 
     private final WebauthnCredentialService credentialService;
-    private final SamlValidationService samlValidationService; // May be null
     private final BackendUrlResolver backendUrlResolver;
 
     @Value("${webauthn.rp.id:}")
@@ -140,9 +138,6 @@ public class WebauthnOnboardingService {
     @Value("${webauthn.user-verification:preferred}")
     private String userVerification;
 
-    @Value("${webauthn.validate-saml:true}")
-    private boolean validateSaml;
-
     @Value("${webauthn.completed-session.ttl.seconds:3600}")
     private long completedSessionTtlSeconds;
 
@@ -151,14 +146,9 @@ public class WebauthnOnboardingService {
 
     public WebauthnOnboardingService(
             WebauthnCredentialService credentialService,
-            ObjectProvider<SamlValidationService> samlValidationServiceProvider,
             BackendUrlResolver backendUrlResolver) {
         this.credentialService = credentialService;
-        this.samlValidationService = samlValidationServiceProvider.getIfAvailable();
         this.backendUrlResolver = backendUrlResolver;
-        if (this.samlValidationService == null) {
-            log.warn("SamlValidationService not available. SAML assertion validation will be skipped.");
-        }
     }
 
     @PostConstruct
@@ -241,18 +231,6 @@ public class WebauthnOnboardingService {
         
         if (stableUserId.isEmpty() || institutionId.isEmpty()) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "stableUserId and institutionId are required");
-        }
-
-        // Validate SAML assertion if provided and validation is enabled
-        if (validateSaml && request.getSamlAssertion() != null && !request.getSamlAssertion().isEmpty()) {
-            validateSamlAssertion(
-                request.getSamlAssertion(),
-                stableUserId,
-                request.getStableUserIdMode(),
-                institutionId
-            );
-            // codeql[java/log-injection]
-            log.debug("SAML assertion validated for user: {}", LogSanitizer.maskIdentifier(stableUserId));
         }
 
         // Generate cryptographically secure challenge
@@ -912,63 +890,6 @@ public class WebauthnOnboardingService {
 
     private String normalize(String value) {
         return value == null ? "" : value.trim();
-    }
-
-    /**
-     * Validate the SAML assertion provided in the onboarding request.
-     * Extracts and verifies attributes from the assertion.
-     * 
-     * @param samlAssertion Base64-encoded SAML assertion
-     * @param expectedPuc Expected PUC from the request
-     * @param stableUserIdMode PUC derivation mode used by Marketplace
-     * @param expectedInstitutionId Expected institution ID from the request
-     * @return Map of validated attributes from the assertion
-     * @throws ResponseStatusException if validation fails
-     */
-    private java.util.Map<String, String> validateSamlAssertion(
-            String samlAssertion,
-            String expectedPuc,
-            String stableUserIdMode,
-            String expectedInstitutionId) {
-        if (samlValidationService == null) {
-            log.warn("SAML validation requested but SamlValidationService is not available. Skipping validation.");
-            return java.util.Collections.emptyMap();
-        }
-
-        try {
-            // The samlAssertion is already Base64-encoded, pass it directly to the service
-            // validateSamlAssertionWithSignature expects Base64-encoded assertion and handles decoding internally
-            java.util.Map<String, String> attributes = samlValidationService.validateSamlAssertionWithSignature(samlAssertion);
-            
-            String assertionPuc = samlValidationService.resolveStableUserId(attributes, stableUserIdMode, null);
-            if (assertionPuc != null && !assertionPuc.isBlank() && !assertionPuc.equals(expectedPuc)) {
-                log.warn("SAML assertion PUC does not match expected PUC");
-                throw new ResponseStatusException(HttpStatus.FORBIDDEN, "saml_puc_mismatch");
-            }
-            String assertionInstitutionId = attributes.get("institutionId");
-            if (assertionInstitutionId != null
-                && !assertionInstitutionId.isBlank()
-                && expectedInstitutionId != null
-                && !expectedInstitutionId.isBlank()
-                && !assertionInstitutionId.equals(expectedInstitutionId)) {
-                log.warn("SAML assertion institutionId does not match expected institutionId");
-            }
-
-            log.debug("SAML assertion validated successfully");
-            return attributes;
-
-        } catch (IllegalArgumentException e) {
-            log.error("Failed to decode SAML assertion");
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Invalid SAML assertion encoding");
-        } catch (SecurityException e) {
-            log.error("SAML assertion validation failed");
-            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Invalid SAML assertion: " + e.getMessage());
-        } catch (ResponseStatusException e) {
-            throw e;
-        } catch (Exception e) {
-            log.error("SAML assertion validation failed");
-            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Failed to validate SAML assertion: " + e.getMessage());
-        }
     }
 
     /**

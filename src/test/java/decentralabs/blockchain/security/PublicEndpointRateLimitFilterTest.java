@@ -153,6 +153,19 @@ class PublicEndpointRateLimitFilterTest {
     }
 
     @Test
+    void institutionalSamlSession_isRateLimited() throws Exception {
+        String clientIp = "10.10.10.16";
+        for (int i = 0; i < 3; i++) {
+            mockMvc.perform(post("/auth/saml/session")
+                    .with(req -> { req.setRemoteAddr(clientIp); return req; }))
+                .andExpect(status().isOk());
+        }
+        mockMvc.perform(post("/auth/saml/session")
+                .with(req -> { req.setRemoteAddr(clientIp); return req; }))
+            .andExpect(status().isTooManyRequests());
+    }
+
+    @Test
     void fmuSessionTicketRedemption_usesAnIndependentBucketPerObserverGateway() throws Exception {
         String clientIp = "10.10.10.12";
         SecurityContextHolder.getContext().setAuthentication(

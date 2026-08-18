@@ -84,8 +84,9 @@ class SamlAuthControllerIntegrationTest {
     @Test
     void shouldAcceptInstitutionalCheckIn() throws Exception {
         InstitutionalCheckInRequest request = new InstitutionalCheckInRequest();
+        request.setMarketplaceToken("marketplace-token");
+        request.setInstitutionalSessionToken("institutional-session-token");
         request.setReservationKey("0x" + "c".repeat(64));
-        request.setSamlAssertion("assertion");
 
         CheckInResponse response = new CheckInResponse();
         response.setValid(true);
@@ -104,7 +105,7 @@ class SamlAuthControllerIntegrationTest {
     private SamlAuthRequest createBaseRequest() {
         SamlAuthRequest request = new SamlAuthRequest();
         request.setMarketplaceToken("eyJhbGciOiJSUzI1NiJ9.token");
-        request.setSamlAssertion("PHNhbWw+PC9zYW1sPg==");
+        request.setInstitutionalSessionToken("institutional-session-token");
         request.setTimestamp(System.currentTimeMillis());
         return request;
     }

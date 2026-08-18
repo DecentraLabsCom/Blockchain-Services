@@ -94,6 +94,20 @@ class SecurityConfigConsumerOnlyIntegrationTest {
     }
 
     @Test
+    void institutionalSamlSessionRemainsAvailable() throws Exception {
+        mockMvc.perform(post("/auth/saml/session")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{}")
+                .with(anonymous())
+                .with(request -> {
+                    request.setRemoteAddr("198.51.100.36");
+                    return request;
+                }))
+            .andExpect(status().isOk())
+            .andExpect(content().string("institutional-session-ok"));
+    }
+
+    @Test
     void institutionalConsumerCheckInStatusRemainsAvailable() throws Exception {
         mockMvc.perform(post("/auth/checkin-institutional/status")
                 .contentType(MediaType.APPLICATION_JSON)

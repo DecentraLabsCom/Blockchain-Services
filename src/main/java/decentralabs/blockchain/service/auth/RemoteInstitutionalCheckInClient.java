@@ -2,7 +2,6 @@ package decentralabs.blockchain.service.auth;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import decentralabs.blockchain.dto.auth.CheckInResponse;
-import decentralabs.blockchain.dto.auth.InstitutionalCheckInRequest;
 import decentralabs.blockchain.dto.auth.InstitutionalCheckInStatusRequest;
 import decentralabs.blockchain.service.BackendUrlResolver;
 import java.io.ByteArrayOutputStream;
@@ -12,7 +11,6 @@ import java.net.InetAddress;
 import java.net.URI;
 import java.net.UnknownHostException;
 import java.time.Duration;
-import java.util.ArrayList;
 import java.util.List;
 import lombok.extern.slf4j.Slf4j;
 import okhttp3.Dns;
@@ -33,17 +31,11 @@ import org.springframework.web.util.UriComponentsBuilder;
 public class RemoteInstitutionalCheckInClient {
     private static final MediaType JSON = MediaType.get("application/json; charset=utf-8");
     private static final long MAX_RESPONSE_BYTES = 1024 * 1024;
-    private static final int MAX_DELEGATION_HOPS = 1;
-    private static final int MAX_DELEGATION_TRACE_ENTRIES = 8;
-
     private final ObjectMapper objectMapper;
     private final HostResolver hostResolver;
     private final PinnedTransport transport;
     private final OkHttpClient baseHttpClient;
     private final BackendUrlResolver backendUrlResolver;
-
-    @Value("${institutional.checkin.delegation.endpoint-path:${endpoint.checkin-institutional:/auth/checkin-institutional}}")
-    private String endpointPath;
 
     @Value("${institutional.checkin.delegation.allow-http:false}")
     private boolean allowHttp;
@@ -96,52 +88,13 @@ public class RemoteInstitutionalCheckInClient {
         this.baseHttpClient = null;
     }
 
-    public CheckInResponse submit(String backendBaseUrl, InstitutionalCheckInRequest request) {
-        RemoteCheckInResult result = submitDetailed(backendBaseUrl, request);
-        if (!result.isHttpSuccessful()) {
-            throw new RemoteInstitutionalCheckInException(result);
-        }
-        if (result.body() == null) {
-            throw new IllegalStateException("Remote institutional check-in returned an empty response");
-        }
-        return result.body();
-    }
-
-    public RemoteCheckInResult submitDetailed(
-        String backendBaseUrl,
-        InstitutionalCheckInRequest request
-    ) {
-        URI endpoint = buildEndpoint(backendBaseUrl);
-        if (isDelegationLoop(backendBaseUrl, request)) {
-            return delegationLoopResult();
-        }
-        if (isSelfDelegation(backendBaseUrl)) {
-            return selfDelegationResult();
-        }
-        try {
-            List<InetAddress> addresses = hostResolver.resolve(endpoint.getHost());
-            assertAddressesAllowed(endpoint.getHost(), addresses);
-            prepareDelegationMetadata(request);
-            RemoteCheckInResult response = transport.post(endpoint, request, List.copyOf(addresses));
-            if (response == null) {
-                throw new IllegalStateException("Remote institutional check-in returned an empty response");
-            }
-            return response;
-        } catch (IllegalArgumentException | SecurityException ex) {
-            throw ex;
-        } catch (Exception ex) {
-            log.warn("Remote institutional check-in request failed for {}", endpoint.getHost());
-            throw new IllegalStateException("Remote institutional check-in failed", ex);
-        }
-    }
-
     public RemoteCheckInResult queryStatus(
         String backendBaseUrl,
         InstitutionalCheckInStatusRequest request
     ) {
         URI endpoint = buildEndpoint(backendBaseUrl, statusEndpointPath());
         if (isSelfDelegation(backendBaseUrl, statusEndpointPath())) {
-            return selfDelegationResult();
+            return selfBackendResult();
         }
         try {
             List<InetAddress> addresses = hostResolver.resolve(endpoint.getHost());
@@ -219,71 +172,12 @@ public class RemoteInstitutionalCheckInClient {
         }
     }
 
-    private RemoteCheckInResult selfDelegationResult() {
+    private RemoteCheckInResult selfBackendResult() {
         CheckInResponse response = new CheckInResponse();
         response.setValid(false);
         response.setReason("CHECKIN_SIGNER_NOT_AUTHORIZED");
         response.setRetryable(false);
         return new RemoteCheckInResult(409, response, null);
-    }
-
-    private RemoteCheckInResult delegationLoopResult() {
-        CheckInResponse response = new CheckInResponse();
-        response.setValid(false);
-        response.setReason("CHECKIN_DELEGATION_LOOP");
-        response.setRetryable(false);
-        return new RemoteCheckInResult(409, response, null);
-    }
-
-    private boolean isDelegationLoop(String backendBaseUrl, InstitutionalCheckInRequest request) {
-        if (request == null) {
-            return false;
-        }
-        int hop = request.getDelegationHop() == null ? 0 : request.getDelegationHop();
-        if (hop < 0 || hop >= MAX_DELEGATION_HOPS
-            || (request.getDelegationTrace() != null
-                && request.getDelegationTrace().size() > MAX_DELEGATION_TRACE_ENTRIES)) {
-            return true;
-        }
-        String target = normalizeBaseUrl(backendBaseUrl, "");
-        return target != null
-            && request.getDelegationTrace() != null
-            && request.getDelegationTrace().stream()
-                .map(value -> normalizeBaseUrl(value, ""))
-                .anyMatch(target::equals);
-    }
-
-    private void prepareDelegationMetadata(InstitutionalCheckInRequest request) {
-        if (request == null) {
-            return;
-        }
-        int hop = request.getDelegationHop() == null ? 0 : request.getDelegationHop();
-        List<String> trace = new ArrayList<>(request.getDelegationTrace() == null
-            ? List.of() : request.getDelegationTrace().stream()
-                .filter(value -> value != null && !value.isBlank())
-                .limit(MAX_DELEGATION_TRACE_ENTRIES)
-                .toList());
-        String current = normalizeBaseUrl(configuredPublicBaseUrl, "");
-        if (current == null && backendUrlResolver != null) {
-            current = normalizeBaseUrl(backendUrlResolver.resolveBaseDomain(), "");
-        }
-        if (current != null && !trace.contains(current)) {
-            trace.add(current);
-        }
-        if (trace.size() > MAX_DELEGATION_TRACE_ENTRIES) {
-            trace = new ArrayList<>(trace.subList(
-                trace.size() - MAX_DELEGATION_TRACE_ENTRIES, trace.size()
-            ));
-        }
-        if (hop < 0 || hop >= MAX_DELEGATION_HOPS) {
-            return;
-        }
-        request.setDelegationHop(Math.incrementExact(hop));
-        request.setDelegationTrace(List.copyOf(trace));
-    }
-
-    private boolean isSelfDelegation(String backendBaseUrl) {
-        return isSelfDelegation(backendBaseUrl, delegationEndpointPath());
     }
 
     private boolean isSelfDelegation(String backendBaseUrl, String endpointPathForComparison) {
@@ -326,10 +220,6 @@ public class RemoteInstitutionalCheckInClient {
         } catch (IllegalArgumentException ex) {
             return null;
         }
-    }
-
-    private URI buildEndpoint(String backendBaseUrl) {
-        return buildEndpoint(backendBaseUrl, delegationEndpointPath());
     }
 
     private URI buildEndpoint(String backendBaseUrl, String endpointPath) {
@@ -449,11 +339,6 @@ public class RemoteInstitutionalCheckInClient {
             return "";
         }
         return normalized;
-    }
-
-    private String delegationEndpointPath() {
-        return endpointPath == null || endpointPath.isBlank()
-            ? "/auth/checkin-institutional" : endpointPath;
     }
 
     private String statusEndpointPath() {

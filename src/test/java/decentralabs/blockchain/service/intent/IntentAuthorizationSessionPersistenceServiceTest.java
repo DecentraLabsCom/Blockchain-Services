@@ -58,7 +58,10 @@ class IntentAuthorizationSessionPersistenceServiceTest {
         String ciphertext = (String) arguments.getValue()[3];
 
         assertThat(ciphertext).startsWith("v1.");
-        assertThat(payloadCipher.decrypt(ciphertext)).contains("assertion");
+        assertThat(payloadCipher.decrypt(ciphertext))
+            .contains("submission")
+            .contains("allowedCredentials")
+            .doesNotContain("samlAssertion");
         assertThat(ciphertext).doesNotContain("assertion");
     }
 
@@ -129,7 +132,6 @@ class IntentAuthorizationSessionPersistenceServiceTest {
         submission.setMeta(meta);
         submission.setActionPayload(actionPayload);
         submission.setSignature("0xsig");
-        submission.setSamlAssertion("assertion");
 
         return new IntentAuthorizationService.AuthorizationSession(
             "session-123",

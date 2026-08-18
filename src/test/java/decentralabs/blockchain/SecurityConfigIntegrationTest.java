@@ -372,6 +372,20 @@ class SecurityConfigIntegrationTest {
     }
 
     @Test
+    void institutionalSamlSessionEndpoint_isAccessibleWithoutSpringAuthenticationOrCsrf() throws Exception {
+        mockMvc.perform(post("/auth/saml/session")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{}")
+                .with(anonymous())
+                .with(req -> {
+                    req.setRemoteAddr("198.51.100.31");
+                    return req;
+                }))
+            .andExpect(status().isOk())
+            .andExpect(content().string("institutional-session-ok"));
+    }
+
+    @Test
     void accessCredentialEndpoint_isRateLimitedPerIp() throws Exception {
         mockMvc.perform(post("/auth/access-credential")
                 .contentType(MediaType.APPLICATION_JSON)
@@ -468,6 +482,11 @@ class SecurityConfigIntegrationTest {
         @PostMapping("/auth/access-credential")
         String accessCredential() {
             return "access-credential-ok";
+        }
+
+        @PostMapping("/auth/saml/session")
+        String institutionalSamlSession() {
+            return "institutional-session-ok";
         }
 
         @PostMapping("/auth/authorize-and-issue")

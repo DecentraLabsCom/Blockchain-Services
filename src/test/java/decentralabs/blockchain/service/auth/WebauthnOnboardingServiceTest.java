@@ -12,7 +12,6 @@ import java.io.ByteArrayOutputStream;
 import java.lang.reflect.Field;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
-import java.util.Map;
 import java.util.Base64;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -20,7 +19,6 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.web.server.ResponseStatusException;
 
 @ExtendWith(MockitoExtension.class)
@@ -28,9 +26,6 @@ class WebauthnOnboardingServiceTest {
 
     @Mock
     private WebauthnCredentialService credentialService;
-
-    @Mock
-    private ObjectProvider<SamlValidationService> samlValidationServiceProvider;
 
     @Mock
     private BackendUrlResolver backendUrlResolver;
@@ -45,8 +40,8 @@ class WebauthnOnboardingServiceTest {
         // Use lenient() because not all tests use this mock
         lenient().when(backendUrlResolver.resolveBaseDomain()).thenReturn("https://localhost");
         
-        service = new WebauthnOnboardingService(credentialService, samlValidationServiceProvider, backendUrlResolver);
-        configureService(false);
+        service = new WebauthnOnboardingService(credentialService, backendUrlResolver);
+        configureService();
         
         // Initialize the service (starts cleanup scheduler)
         service.init();
@@ -70,7 +65,7 @@ class WebauthnOnboardingServiceTest {
         field.set(target, value);
     }
 
-    private void configureService(boolean validateSaml) throws Exception {
+    private void configureService() throws Exception {
         // Set configuration via reflection (normally done by Spring)
         setField("rpId", "localhost");
         setField("rpName", "Test Gateway");
@@ -82,7 +77,6 @@ class WebauthnOnboardingServiceTest {
         setField("authenticatorAttachment", "platform");
         setField("residentKey", "preferred");
         setField("userVerification", "preferred");
-        setField("validateSaml", validateSaml);
         setField("completedSessionTtlSeconds", 3600L);
     }
 
@@ -115,7 +109,6 @@ class WebauthnOnboardingServiceTest {
     void init_acceptsPreferredUserVerificationPolicy() throws Exception {
         WebauthnOnboardingService misconfiguredService = new WebauthnOnboardingService(
             credentialService,
-            samlValidationServiceProvider,
             backendUrlResolver
         );
         setField(misconfiguredService, "attestationConveyance", "none");
@@ -130,7 +123,6 @@ class WebauthnOnboardingServiceTest {
     void init_rejectsInvalidUserVerificationPolicy() throws Exception {
         WebauthnOnboardingService misconfiguredService = new WebauthnOnboardingService(
             credentialService,
-            samlValidationServiceProvider,
             backendUrlResolver
         );
         setField(misconfiguredService, "attestationConveyance", "none");
@@ -170,36 +162,6 @@ class WebauthnOnboardingServiceTest {
 
         assertNotEquals(response1.getChallenge(), response2.getChallenge());
         assertNotEquals(response1.getSessionId(), response2.getSessionId());
-    }
-
-    @Test
-    void generateOptions_resolvesSamlPucWithRequestedStableUserIdMode() throws Exception {
-        service.shutdown();
-
-        SamlValidationService samlValidationService = mock(SamlValidationService.class);
-        when(samlValidationServiceProvider.getIfAvailable()).thenReturn(samlValidationService);
-        service = new WebauthnOnboardingService(credentialService, samlValidationServiceProvider, backendUrlResolver);
-        configureService(true);
-        service.init();
-
-        Map<String, String> attributes = Map.of(
-            "eduPersonPrincipalName", "alice@uned.es",
-            "eduPersonTargetedID", "targeted-alice",
-            "puc", "alice@uned.es|targeted-alice"
-        );
-        when(samlValidationService.validateSamlAssertionWithSignature("assertion")).thenReturn(attributes);
-        when(samlValidationService.resolveStableUserId(attributes, "principal", null)).thenReturn("alice@uned.es");
-
-        WebauthnOnboardingOptionsRequest request = new WebauthnOnboardingOptionsRequest();
-        request.setStableUserId("alice@uned.es");
-        request.setStableUserIdMode("principal");
-        request.setInstitutionId("uned.es");
-        request.setSamlAssertion("assertion");
-
-        WebauthnOnboardingOptionsResponse response = service.generateOptions(request);
-
-        assertNotNull(response.getSessionId());
-        verify(samlValidationService).resolveStableUserId(attributes, "principal", null);
     }
 
     @Test

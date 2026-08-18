@@ -1,18 +1,13 @@
 package decentralabs.blockchain.service.auth;
 
-import decentralabs.blockchain.dto.auth.CheckInResponse;
-import decentralabs.blockchain.dto.auth.InstitutionalCheckInRequest;
 import decentralabs.blockchain.dto.auth.SamlAuthRequest;
-import decentralabs.blockchain.exception.AccessAuthorizationDelegationException;
 import decentralabs.blockchain.service.wallet.InstitutionalWalletService;
 import decentralabs.blockchain.util.PucHashUtil;
 import decentralabs.blockchain.util.PucNormalizer;
 import java.math.BigInteger;
 import java.time.Instant;
-import java.util.Locale;
 import java.util.Map;
 import lombok.RequiredArgsConstructor;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 @Service
@@ -33,12 +28,8 @@ public class InstitutionalAccessCheckInCoordinator {
     private final InstitutionalCheckInOutboxService outboxService;
     private final InstitutionalWalletService institutionalWalletService;
     private final InstitutionalCheckInDirectoryService directoryService;
-    private final RemoteInstitutionalCheckInClient remoteCheckInClient;
     private final InstitutionalWalletNonceDispatcher nonceDispatcher;
     private final CheckInOnChainService checkInOnChainService;
-
-    @Value("${institutional.checkin.delegation.enabled:true}")
-    private boolean delegationEnabled;
 
     public AccessGrantedResult recordAccessGranted(
         SamlAuthRequest request,
@@ -124,7 +115,13 @@ public class InstitutionalAccessCheckInCoordinator {
             return dispatchImmediately(record);
         }
 
-        return delegateSynchronously(request, marketplaceClaims, reservationKey, institutionalWallet, puc, labId);
+        // The institutional session credential is audience-bound to this backend.
+        // Forwarding it to another backend would therefore be rejected by the
+        // receiver and would incorrectly turn a configuration mismatch into a
+        // cross-backend authentication attempt. Cross-backend check-in is
+        // orchestrated by Marketplace, which obtains a credential for each
+        // backend separately.
+        return AccessGrantedResult.SIGNER_NOT_AUTHORIZED;
     }
 
     private InstitutionalCheckInOutboxRecord reloadRecord(InstitutionalCheckInOutboxRecord record) {
@@ -187,55 +184,6 @@ public class InstitutionalAccessCheckInCoordinator {
         }
     }
 
-    private AccessGrantedResult delegateSynchronously(
-        SamlAuthRequest request,
-        Map<String, Object> marketplaceClaims,
-        String reservationKey,
-        String institutionalWallet,
-        String puc,
-        String resolvedLabId
-    ) {
-        if (!delegationEnabled) {
-            return AccessGrantedResult.SIGNER_NOT_AUTHORIZED;
-        }
-        String organization = normalizeOrganization(stringValue(marketplaceClaims.get("affiliation")));
-        String backendUrl = directoryService.resolveOrganizationBackendUrl(organization);
-        if (!hasText(backendUrl)) {
-            throw new IllegalStateException("No institutional backend registered for organization " + organization);
-        }
-
-        InstitutionalCheckInRequest checkInRequest = new InstitutionalCheckInRequest();
-        checkInRequest.setMarketplaceToken(request.getMarketplaceToken());
-        checkInRequest.setSamlAssertion(request.getSamlAssertion());
-        checkInRequest.setReservationKey(reservationKey);
-        checkInRequest.setLabId(firstNonBlank(request.getLabId(), resolvedLabId));
-        checkInRequest.setPayerInstitutionWallet(institutionalWallet);
-        checkInRequest.setPuc(puc);
-
-        RemoteInstitutionalCheckInClient.RemoteCheckInResult result =
-            remoteCheckInClient.submitDetailed(backendUrl, checkInRequest);
-        CheckInResponse response = result == null ? null : result.body();
-        String reason = response == null ? null : response.getReason();
-        if ("CHECKIN_SIGNER_NOT_AUTHORIZED".equals(reason)) {
-            return AccessGrantedResult.SIGNER_NOT_AUTHORIZED;
-        }
-        if ("CHECKIN_CONTEXT_MISMATCH".equals(reason)) {
-            return AccessGrantedResult.CONTEXT_MISMATCH;
-        }
-        if ("CHECKIN_MANUAL_INTERVENTION".equals(reason)) {
-            return AccessGrantedResult.MANUAL_INTERVENTION;
-        }
-        if (result == null || !result.isHttpSuccessful() || response == null || !response.isValid()) {
-            if (result != null && result.isRetryable()) {
-                return AccessGrantedResult.QUEUED;
-            }
-            throw new AccessAuthorizationDelegationException(result);
-        }
-        return response.getQueued() != null && response.getQueued()
-            ? AccessGrantedResult.QUEUED
-            : AccessGrantedResult.DISPATCHED;
-    }
-
     private boolean replacementRequested(InstitutionalCheckInOutboxRecord record) {
         return record != null
             && ("REPLACEMENT_PENDING".equalsIgnoreCase(record.status())
@@ -271,10 +219,6 @@ public class InstitutionalAccessCheckInCoordinator {
         }
         String trimmed = value.trim();
         return trimmed.isEmpty() ? null : trimmed;
-    }
-
-    private String normalizeOrganization(String value) {
-        return value == null ? "" : value.trim().toLowerCase(Locale.ROOT);
     }
 
     private boolean hasText(String value) {

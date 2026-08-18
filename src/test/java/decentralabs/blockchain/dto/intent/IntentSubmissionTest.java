@@ -64,14 +64,14 @@ class IntentSubmissionTest {
         }
 
         @Test
-        @DisplayName("Should fail validation when samlAssertion is null")
-        void shouldFailWhenSamlAssertionNull() {
+        @DisplayName("Should fail validation when institutional session token is null")
+        void shouldFailWhenInstitutionalSessionTokenNull() {
             IntentSubmission submission = createValidSubmission();
-            submission.setSamlAssertion(null);
+            submission.setInstitutionalSessionToken(null);
 
             Set<ConstraintViolation<IntentSubmission>> violations = validator.validate(submission);
 
-            assertTrue(violations.stream().anyMatch(v -> v.getPropertyPath().toString().equals("samlAssertion")));
+            assertTrue(violations.stream().anyMatch(v -> v.getPropertyPath().toString().equals("institutionalSessionToken")));
         }
 
         @Test
@@ -196,14 +196,12 @@ class IntentSubmissionTest {
         }
 
         @Test
-        @DisplayName("Should get and set samlAssertion")
-        void shouldGetSetSamlAssertion() {
+        @DisplayName("Should get and set institutional session token")
+        void shouldGetSetInstitutionalSessionToken() {
             IntentSubmission submission = new IntentSubmission();
-            String saml = "PHNhbWw6QXNzZXJ0aW9uPjwvc2FtbDpBc3NlcnRpb24+";
+            submission.setInstitutionalSessionToken("institutional-session-token");
 
-            submission.setSamlAssertion(saml);
-
-            assertEquals(saml, submission.getSamlAssertion());
+            assertEquals("institutional-session-token", submission.getInstitutionalSessionToken());
         }
 
         @Test
@@ -346,7 +344,7 @@ class IntentSubmissionTest {
         IntentSubmission submission = new IntentSubmission();
         submission.setMeta(createValidMeta());
         submission.setSignature("0xabcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef12");
-        submission.setSamlAssertion("PHNhbWw6QXNzZXJ0aW9uPjwvc2FtbDpBc3NlcnRpb24+");
+        submission.setInstitutionalSessionToken("institutional-session-token");
         submission.setWebauthnCredentialId("credential-id-123");
         submission.setWebauthnClientDataJSON("eyJ0eXBlIjoid2ViYXV0aG4uZ2V0IiwiY2hhbGxlbmdlIjoiYWJjIn0");
         submission.setWebauthnAuthenticatorData("SZYN5YgOjGh0NBcPZHZgW4_krrmihjLHmVzzuoMdl2M");

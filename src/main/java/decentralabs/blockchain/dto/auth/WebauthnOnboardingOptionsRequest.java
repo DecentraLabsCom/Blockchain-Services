@@ -34,16 +34,8 @@ public class WebauthnOnboardingOptionsRequest {
     private String displayName;
 
     /**
-     * Optional: Base64-encoded SAML assertion for cryptographic validation.
-     * If provided, the WIB will validate the assertion signature against the IdP.
-     * This strengthens the binding between federated identity and WebAuthn credential.
-     */
-    private String samlAssertion;
-
-    /**
-     * Optional cryptographic reference to the federated assertion.
-     * Can be a hash or signature of the assertion for audit purposes.
-     * Used when samlAssertion is not provided directly.
+     * Cryptographic reference to the already validated federated assertion.
+     * The raw assertion is intentionally never accepted by onboarding.
      */
     private String assertionReference;
 

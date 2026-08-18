@@ -1,7 +1,7 @@
 package decentralabs.blockchain.config;
 
 import decentralabs.blockchain.service.BackendUrlResolver;
-import decentralabs.blockchain.service.auth.SamlValidationService;
+import decentralabs.blockchain.service.auth.InstitutionalSessionCredentialService;
 import decentralabs.blockchain.service.auth.FmuSessionTicketService;
 import decentralabs.blockchain.service.auth.WebauthnCredentialService;
 import decentralabs.blockchain.service.intent.Eip712IntentVerifier;
@@ -86,7 +86,7 @@ class ReservationIntentProcessedE2ETest {
     private IntentWebhookService webhookService;
 
     @Mock
-    private SamlValidationService samlValidationService;
+    private InstitutionalSessionCredentialService institutionalSessionCredentialService;
 
     @Mock
     private WebauthnCredentialService webauthnCredentialService;
@@ -111,7 +111,7 @@ class ReservationIntentProcessedE2ETest {
             verifier,
             intentPersistenceService,
             webhookService,
-            samlValidationService,
+            institutionalSessionCredentialService,
             webauthnCredentialService,
             walletService,
             "0x0000000000000000000000000000000000000001",

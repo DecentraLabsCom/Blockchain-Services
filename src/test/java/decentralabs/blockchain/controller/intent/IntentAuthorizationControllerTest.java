@@ -84,7 +84,7 @@ class IntentAuthorizationControllerTest {
     @Test
     void authorizeIntent_rejectsInvalidRequestBody() throws Exception {
         String invalidRequest = """
-            {"signature":"sig","samlAssertion":"assertion"}
+            {"signature":"sig","institutionalSessionToken":"token"}
             """;
 
         mockMvc.perform(post("/intents/authorize")
@@ -218,7 +218,7 @@ class IntentAuthorizationControllerTest {
         request.setMeta(validMeta());
         request.setActionPayload(validActionPayload());
         request.setSignature("0xsig");
-        request.setSamlAssertion("assertion");
+        request.setInstitutionalSessionToken("institutional-session-token");
         request.setReturnUrl("https://app.example/callback");
         return request;
     }

@@ -29,6 +29,7 @@ import java.util.concurrent.ConcurrentHashMap;
  * Protects against brute force and DoS attacks on:
  * - /auth/authorize-and-issue
  * - /auth/checkin-institutional
+ * - /auth/saml/session
  * - /auth/access-credential
  * - /auth/access-code/*
  * - /auth/fmu/session-ticket/*
@@ -141,6 +142,7 @@ public class PublicEndpointRateLimitFilter extends OncePerRequestFilter {
     private boolean isAuthEndpoint(String path) {
         return path.startsWith("/auth/authorize-and-issue")
                 || path.startsWith("/auth/checkin-institutional")
+                || path.startsWith("/auth/saml/session")
                 || path.startsWith("/auth/access-credential")
                 || path.startsWith("/auth/access-code")
                 || path.startsWith("/onboarding/webauthn")

@@ -130,7 +130,6 @@ class IntentAuthorizationSessionPersistenceMySqlIntegrationTest {
         submission.setMeta(meta);
         submission.setActionPayload(payload);
         submission.setSignature("0xsig");
-        submission.setSamlAssertion("assertion");
 
         return new IntentAuthorizationService.AuthorizationSession(
             "0123456789abcdef0123456789abcdef",

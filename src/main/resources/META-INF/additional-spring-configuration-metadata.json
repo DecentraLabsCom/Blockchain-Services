@@ -66,6 +66,12 @@
       "defaultValue": 60
     },
     {
+      "name": "auth.institutional-session.ttl-seconds",
+      "type": "java.lang.Long",
+      "description": "Absolute lifetime in seconds of the backend-owned institutional session credential.",
+      "defaultValue": 3600
+    },
+    {
       "name": "auth.access-code.cleanup-interval-ms",
       "type": "java.lang.Long",
       "description": "Interval in milliseconds for purging expired access codes.",
@@ -119,27 +125,15 @@
     "defaultValue": "/intents"
   },
   {
-    "name": "institutional.checkin.delegation.enabled",
-    "type": "java.lang.Boolean",
-    "description": "Delegate institutional check-in to the payer institution backend when the local wallet is not an authorized check-in signer.",
-    "defaultValue": true
-  },
-  {
-    "name": "institutional.checkin.delegation.endpoint-path",
-    "type": "java.lang.String",
-    "description": "Endpoint path used when delegating check-in to a remote institutional backend.",
-    "defaultValue": "/auth/checkin-institutional"
-  },
-  {
     "name": "institutional.checkin.delegation.allow-http",
     "type": "java.lang.Boolean",
-    "description": "Allow HTTP instead of HTTPS for remote institutional check-in delegation. Keep disabled outside explicitly trusted development environments.",
+    "description": "Allow HTTP instead of HTTPS for remote institutional check-in status lookup. Keep disabled outside explicitly trusted development environments.",
     "defaultValue": false
   },
   {
     "name": "institutional.checkin.delegation.allow-private-networks",
     "type": "java.lang.Boolean",
-    "description": "Allow remote institutional check-in delegation to private, loopback, or reserved network addresses. Keep disabled unless an isolated deployment requires it.",
+    "description": "Allow remote institutional check-in status lookup to private, loopback, or reserved network addresses. Keep disabled unless an isolated deployment requires it.",
     "defaultValue": false
   },
   {
@@ -289,7 +283,7 @@
   {
     "name": "intents.auth.enabled",
     "type": "java.lang.Boolean",
-    "description": "Enable JWT auth for intents endpoints.",
+    "description": "Enable Marketplace JWT auth for intents endpoints and Marketplace identity binding for institutional session issuance. Disable only in an isolated deployment; signed SAML becomes the institutional session identity authority.",
     "defaultValue": true
   },
   {
@@ -331,6 +325,12 @@
     "type": "java.lang.String",
     "description": "Scope required to read intent status.",
     "defaultValue": "intents:status"
+  },
+  {
+    "name": "intents.auth.session-scope",
+    "type": "java.lang.String",
+    "description": "Scope required to issue backend-owned institutional session credentials.",
+    "defaultValue": "intents:session"
   },
   {
     "name": "intents.auth.clock-skew-seconds",

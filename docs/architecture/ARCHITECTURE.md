@@ -43,7 +43,7 @@ flowchart LR
     Station["Lab Station / remote lab"]
 
     User <--> Marketplace
-    Marketplace -->|JWT, SAML, intents| Backend
+    Marketplace -->|JWT, session credential, intents; fresh SAML only at session exchange| Backend
     User -->|opaque access code| Gateway
     Gateway -->|internal HTTP + observer JWT| Backend
     Gateway --> Station
@@ -57,7 +57,7 @@ flowchart LR
 
 | Boundary | Contract | Source of truth |
 | --- | --- | --- |
-| Marketplace → backend | Marketplace JWT, SAML assertion, intent payload | Signature, issuer/audience, claim and replay checks |
+| Marketplace → backend | Marketplace JWT, institutional session credential and intent/access payload; fresh SAML only at `/auth/saml/session` | Signature, issuer/audience, credential binding, claim and replay checks |
 | Backend → contracts | Web3j transactions and reads | On-chain reservation, credit and provider state |
 | Backend → MySQL | Outbox, nonce, ticket, delivery and audit rows | Durable local state and migration schema |
 | Gateway → backend | Internal access-code or session-observer credentials | Per-gateway configured credentials; never user-supplied gateway IDs |

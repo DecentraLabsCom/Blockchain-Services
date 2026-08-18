@@ -29,7 +29,6 @@ import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;
 
-import org.web3j.crypto.Hash;
 import org.web3j.protocol.Web3j;
 import org.web3j.tx.ReadonlyTransactionManager;
 import org.web3j.tx.gas.StaticGasProvider;
@@ -44,14 +43,13 @@ import decentralabs.blockchain.dto.intent.IntentStatus;
 import decentralabs.blockchain.dto.intent.IntentStatusResponse;
 import decentralabs.blockchain.dto.intent.IntentSubmission;
 import decentralabs.blockchain.dto.intent.ReservationIntentPayload;
-import decentralabs.blockchain.service.auth.SamlValidationService;
+import decentralabs.blockchain.service.auth.InstitutionalSessionCredentialService;
 import decentralabs.blockchain.service.auth.WebauthnCredentialService;
 import decentralabs.blockchain.service.auth.WebauthnCredentialService.WebauthnCredential;
 import decentralabs.blockchain.service.BackendUrlResolver;
 import decentralabs.blockchain.service.wallet.WalletService;
 import decentralabs.blockchain.config.BackendOperatingModeConfiguration;
 import decentralabs.blockchain.util.PucHashUtil;
-import decentralabs.blockchain.util.PucNormalizer;
 import decentralabs.blockchain.util.LogSanitizer;
 import lombok.extern.slf4j.Slf4j;
 import java.security.AlgorithmParameters;
@@ -84,7 +82,7 @@ public class IntentService {
     private final Eip712IntentVerifier verifier;
     private final IntentPersistenceService persistenceService;
     private final IntentWebhookService webhookService;
-    private final SamlValidationService samlValidationService;
+    private final InstitutionalSessionCredentialService institutionalSessionCredentialService;
     private final WebauthnCredentialService webauthnCredentialService;
     private final WalletService walletService;
     private final BackendUrlResolver backendUrlResolver;
@@ -114,7 +112,7 @@ public class IntentService {
         Eip712IntentVerifier verifier,
         IntentPersistenceService persistenceService,
         IntentWebhookService webhookService,
-        SamlValidationService samlValidationService,
+        InstitutionalSessionCredentialService institutionalSessionCredentialService,
         WebauthnCredentialService webauthnCredentialService,
         WalletService walletService,
         @Value("${contract.address}") String contractAddress,
@@ -127,7 +125,7 @@ public class IntentService {
         this.verifier = verifier;
         this.persistenceService = persistenceService;
         this.webhookService = webhookService;
-        this.samlValidationService = samlValidationService;
+        this.institutionalSessionCredentialService = institutionalSessionCredentialService;
         this.webauthnCredentialService = webauthnCredentialService;
         this.walletService = walletService;
         this.contractAddress = contractAddress;
@@ -188,28 +186,37 @@ public class IntentService {
 
         validatePayload(action, meta, actionPayload, reservationPayload, executorHasLabAuthority);
 
-        String samlAssertion = requireSamlAssertion(submission);
-        String expectedAssertionHash = computeAssertionHash(samlAssertion);
-        ensurePayloadAssertionHash(actionPayload, reservationPayload, expectedAssertionHash);
-        String validatedSamlUser = validateSamlAssertion(
-            actionPayload,
-            reservationPayload,
-            samlAssertion,
-            submission.getStableUserIdMode()
+        var institutionalCredential = institutionalSessionCredentialService.validate(
+            submission.getInstitutionalSessionToken()
         );
+        if (institutionalCredential == null) {
+            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "missing_institutional_session");
+        }
+        String expectedAssertionHash = institutionalCredential.samlAssertionHash();
+        ensurePayloadAssertionHash(actionPayload, reservationPayload, expectedAssertionHash);
+        String validatedSamlUser = institutionalCredential.puc();
+        String expectedPucHash = expectedPucHash(actionPayload, reservationPayload);
+        if (expectedPucHash != null && !isZeroBytes32(expectedPucHash)
+            && !PucHashUtil.hashPuc(validatedSamlUser).equalsIgnoreCase(normalizeBytes32(expectedPucHash))) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "puc_institutional_session_mismatch");
+        }
+        String expectedInstitution = expectedInstitution(actionPayload, reservationPayload);
+        if (expectedInstitution != null && !expectedInstitution.equalsIgnoreCase(institutionalCredential.institutionId())) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "institutional_session_institution_mismatch");
+        }
         // Derived identity values are hashed or control-character sanitized before logging.
         // codeql[java/log-injection]
         log.info(
-            "Intent SAML identity resolved. requestId={} stableUserIdMode={} resolvedPucHash={} payloadPucHash={} action={}",
+            "Intent institutional identity resolved. requestId={} stableUserIdMode={} resolvedPucHash={} payloadPucHash={} action={}",
             LogSanitizer.maskIdentifier(meta.getRequestId()),
             LogSanitizer.sanitize(submission.getStableUserIdMode()),
             PucHashUtil.hashPuc(validatedSamlUser),
             LogSanitizer.sanitize(expectedPucHash(actionPayload, reservationPayload)),
             action.getWireValue()
         );
-        // A federated SAML assertion is reused by the authenticated Marketplace
-        // session for multiple independent intents. Scope replay detection to
-        // the intent request so a second legitimate booking is not rejected.
+        // The backend institutional session credential binds the original SAML
+        // authentication to multiple independent intents. Scope replay detection
+        // to the intent request so a second legitimate booking is not rejected.
         checkAssertionReplay(expectedAssertionHash, meta.getRequestId());
 
         String puc = resolvePuc(validatedSamlUser);
@@ -645,19 +652,6 @@ public class IntentService {
         return ack;
     }
 
-    private String requireSamlAssertion(IntentSubmission submission) {
-        String samlAssertion = submission.getSamlAssertion();
-        if (samlAssertion == null || samlAssertion.isBlank()) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "missing_saml_for_intent");
-        }
-        return samlAssertion;
-    }
-
-    private String computeAssertionHash(String samlAssertion) {
-        byte[] digest = Hash.sha3(samlAssertion.getBytes(StandardCharsets.UTF_8));
-        return normalizeBytes32(Numeric.toHexString(digest));
-    }
-
     private void ensurePayloadAssertionHash(
         ActionIntentPayload actionPayload,
         ReservationIntentPayload reservationPayload,
@@ -677,45 +671,6 @@ public class IntentService {
         }
     }
 
-    private String validateSamlAssertion(
-        ActionIntentPayload actionPayload,
-        ReservationIntentPayload reservationPayload,
-        String samlAssertion,
-        String stableUserIdMode
-    ) {
-        try {
-            Map<String, String> samlAttrs = samlValidationService.validateSamlAssertionWithSignature(samlAssertion);
-            String expectedPucHash = expectedPucHash(actionPayload, reservationPayload);
-            String samlUser = samlValidationService.resolveStableUserId(
-                samlAttrs,
-                stableUserIdMode,
-                expectedPucHash
-            );
-            if (samlUser == null || samlUser.isBlank()) {
-                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "invalid_saml");
-            }
-            String normalizedSamlUser = PucNormalizer.normalize(samlUser);
-            if (normalizedSamlUser == null || normalizedSamlUser.isBlank()) {
-                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "invalid_saml");
-            }
-            if (expectedPucHash != null && !isZeroBytes32(expectedPucHash)) {
-                String expectedHash = normalizeBytes32(Numeric.toHexString(Hash.sha3(normalizedSamlUser.getBytes(StandardCharsets.UTF_8))));
-                String payloadHash = normalizeBytes32(expectedPucHash);
-                if (payloadHash == null || !payloadHash.equalsIgnoreCase(expectedHash)) {
-                    throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "puc_saml_mismatch");
-                }
-            }
-            return normalizedSamlUser;
-        } catch (ResponseStatusException ex) {
-            throw ex;
-        } catch (Exception ex) {
-            // codeql[java/log-injection]
-            log.warn("Invalid SAML assertion for intent: {}",
-                LogSanitizer.sanitize(ex.getMessage()));
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "invalid_saml");
-        }
-    }
-
     private String expectedPucHash(ActionIntentPayload actionPayload, ReservationIntentPayload reservationPayload) {
         if (reservationPayload != null && reservationPayload.getPucHash() != null && !reservationPayload.getPucHash().isBlank()) {
             return reservationPayload.getPucHash();
@@ -724,6 +679,13 @@ public class IntentService {
             return actionPayload.getPucHash();
         }
         return null;
+    }
+
+    private String expectedInstitution(ActionIntentPayload actionPayload, ReservationIntentPayload reservationPayload) {
+        String value = reservationPayload != null
+            ? reservationPayload.getSchacHomeOrganization()
+            : actionPayload == null ? null : actionPayload.getSchacHomeOrganization();
+        return value == null || value.isBlank() ? null : value.trim();
     }
 
     private String normalizeBytes32(String hex) {
@@ -1557,7 +1519,7 @@ public class IntentService {
         if (submission == null) {
             return;
         }
-        submission.setSamlAssertion(null);
+        submission.setInstitutionalSessionToken(null);
         submission.setWebauthnCredentialId(null);
         submission.setWebauthnClientDataJSON(null);
         submission.setWebauthnAuthenticatorData(null);

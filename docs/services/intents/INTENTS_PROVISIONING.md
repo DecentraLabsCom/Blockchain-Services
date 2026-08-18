@@ -21,12 +21,18 @@ valid JWT with:
 | Start WebAuthn authorization | `intents:authorize` | `intents.auth.authorize-scope` |
 | Notify registration mined | `intents:registration-mined` | `intents.auth.registration-mined-scope` |
 | Read intent/session status | `intents:status` | `intents.auth.status-scope` |
+| Issue institutional session credential | `intents:session` | `intents.auth.session-scope` |
 
 The token must use issuer `marketplace`, subject `marketplace`, a unique `jti`,
 the exact public origin of this backend as audience, the authenticated
 `institutionId`, and a lifetime no longer than the configured short TTL.
 Disable this check only for a deliberately isolated deployment; do not
 compensate by exposing `/intents` publicly.
+
+With `intents.auth.enabled=false`, `/auth/saml/session` also skips the absent
+Marketplace claim binding. It does not rely on bearer authority and derives the
+user PUC and institution only from the signature-validated SAML assertion. This
+is the isolated-mode fallback, not a compatibility path for a public deployment.
 
 The backend operating mode also limits the action surface. In
 `consumer-only`, reservation requests and consumer-side cancellations remain
@@ -56,10 +62,17 @@ register the intent while the WebAuthn session is being created; the browser
 completes WebAuthn afterward. The session package, registration and WebAuthn
 assertion must not be described as an on-chain proof of one another.
 
+The fresh SAML assertion is validated separately at `POST /auth/saml/session`.
+That endpoint binds the assertion to the Marketplace JWT claims and issues a
+signed backend-owned institutional session credential. Intent authorization and
+direct submission receive that credential, not the raw SAML assertion. Its
+absolute expiry is the backend reauthentication horizon.
+
 ## Endpoint contract
 
 | Method and path | Auth | Result |
 | --- | --- | --- |
+| `POST /auth/saml/session` | Session-scope Marketplace bearer + fresh SAML; fresh signed SAML alone in isolated auth-disabled mode | Issues the backend institutional session credential |
 | `POST /intents` | Submit bearer | Validates and ACKs an intent for queueing |
 | `GET /intents/{requestId}` | Status bearer | Returns execution status |
 | `POST /intents/{requestId}/registration-mined` | Registration-mined bearer | Wakes queued processing after registration |
@@ -94,7 +107,7 @@ for the normal WebAuthn assertion verification and intent persistence path.
 - `meta` (including action, request ID, nonce and expiry fields as applicable);
 - one action payload variant (`actionPayload` or `reservationPayload`);
 - EIP-712 `signature`;
-- base64 SAML assertion;
+- backend `institutionalSessionToken`;
 - WebAuthn credential ID, client data, authenticator data and signature.
 
 The service checks that the payload shape matches `meta.action`; do not send a
@@ -103,7 +116,7 @@ reservation payload for a non-reservation action.
 ```mermaid
 flowchart TD
     A[POST /intents] --> B[Validate DTO and action shape]
-    B --> C[Validate SAML + assertion hash]
+    B --> C[Validate institutional session + assertion hash]
     C --> D[Reject SAML replay]
     D --> E[Verify WebAuthn assertion]
     E --> F[Check expiry and nonce replay]

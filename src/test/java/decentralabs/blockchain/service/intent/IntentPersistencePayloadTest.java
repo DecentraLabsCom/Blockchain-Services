@@ -34,7 +34,6 @@ class IntentPersistencePayloadTest {
         actionPayload.setAccessKey("execution-material");
         submission.setActionPayload(actionPayload);
         submission.setSignature("eip712-signature");
-        submission.setSamlAssertion("full-saml-assertion");
         submission.setWebauthnCredentialId("credential-id");
         submission.setWebauthnClientDataJSON("client-data");
         submission.setWebauthnAuthenticatorData("authenticator-data");
@@ -45,14 +44,12 @@ class IntentPersistencePayloadTest {
 
         assertThat(json).contains("execution-material");
         assertThat(json).doesNotContain(
-            "full-saml-assertion",
             "credential-id",
             "client-data",
             "authenticator-data",
             "webauthn-signature",
             "eip712-signature"
         );
-        assertThat(persisted.has("samlAssertion")).isFalse();
         assertThat(persisted.has("webauthnCredentialId")).isFalse();
         assertThat(persisted.has("webauthnClientDataJSON")).isFalse();
         assertThat(persisted.has("webauthnAuthenticatorData")).isFalse();

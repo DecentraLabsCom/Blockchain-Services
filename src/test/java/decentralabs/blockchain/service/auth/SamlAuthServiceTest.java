@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
@@ -13,6 +14,7 @@ import static org.mockito.Mockito.when;
 
 import java.util.HashMap;
 import java.util.Map;
+import java.time.Instant;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -44,7 +46,7 @@ class SamlAuthServiceTest {
     private MarketplaceEndpointAuthService marketplaceEndpointAuthService;
 
     @Mock
-    private SamlValidationService samlValidationService;
+    private InstitutionalSessionCredentialService institutionalSessionCredentialService;
 
     @Mock
     private InstitutionalAccessCheckInCoordinator accessCheckInCoordinator;
@@ -75,6 +77,7 @@ class SamlAuthServiceTest {
 
     private static final String TEST_PUC = "user123";
     private static final String TEST_AFFILIATION = "test-university";
+    private static final String TEST_ASSERTION_HASH = "0x" + "1".repeat(64);
 
     @BeforeEach
     void setUp() throws Exception {
@@ -83,6 +86,17 @@ class SamlAuthServiceTest {
         lenient().when(jwtService.generateIssuedToken(eq(null), any()))
             .thenReturn(new JwtService.IssuedToken("booking-token", "jwt-jti-default", 1_700_000_000L, null));
         lenient().when(accessAuthorizationProvisioningService.markActivated(any())).thenReturn(true);
+        lenient().when(institutionalSessionCredentialService.validate(anyString()))
+            .thenReturn(new InstitutionalSessionCredentialService.Credential(
+                TEST_PUC,
+                TEST_AFFILIATION,
+                "",
+                TEST_ASSERTION_HASH,
+                Instant.now().minusSeconds(60),
+                Instant.now().plusSeconds(3_540),
+                Instant.now().plusSeconds(3_540),
+                "session-jti"
+            ));
         lenient().when(blockchainService.getAccessAuthorizationState(
             anyString(), anyString(), anyString(), anyString()
         )).thenReturn(Map.of("reservationStatus", java.math.BigInteger.valueOf(2)));
@@ -129,6 +143,7 @@ class SamlAuthServiceTest {
         void shouldRejectProviderOnlyRetryForRemoteManualIntervention() {
             ProviderAccessCredentialRequest request = new ProviderAccessCredentialRequest();
             request.setMarketplaceToken("provider-token");
+            request.setConsumerMarketplaceToken("consumer-token");
             request.setReservationKey("0xreservation");
             request.setLabId("42");
 
@@ -157,7 +172,42 @@ class SamlAuthServiceTest {
 
             assertThatThrownBy(() -> samlAuthService.issueAccessCredential(request))
                 .isInstanceOf(AccessAuthorizationManualInterventionException.class);
+            verify(remoteInstitutionalCheckInClient).queryStatus(
+                eq("https://consumer.example"),
+                argThat(statusRequest -> "consumer-token".equals(statusRequest.getMarketplaceToken()))
+            );
             verify(accessAuthorizationProvisioningService, never()).tryStart(anyString());
+        }
+
+        @Test
+        @DisplayName("Should fail closed when remote check-in status has no consumer-audience token")
+        void shouldRejectRemoteStatusWithoutConsumerMarketplaceToken() {
+            ProviderAccessCredentialRequest request = new ProviderAccessCredentialRequest();
+            request.setMarketplaceToken("provider-token");
+            request.setReservationKey("0xreservation");
+            request.setLabId("42");
+
+            when(marketplaceEndpointAuthService.enforceToken(eq("provider-token"), eq(null)))
+                .thenReturn(Map.of(
+                    "puc", TEST_PUC, "affiliation", TEST_AFFILIATION,
+                    "bookingInfoAllowed", true, "purpose", "lab_access",
+                    "reservationKey", "0xreservation", "labId", "42",
+                    "payerInstitutionWallet", "0xwallet"
+                ));
+            Map<String, Object> bookingInfo = new HashMap<>(Map.of(
+                "reservationKey", "0xreservation",
+                "reservationStatus", java.math.BigInteger.ONE,
+                "resourceType", "lab"
+            ));
+            when(blockchainService.getBookingInfoForCredentialPreparation("0xwallet", "0xreservation", "42", TEST_PUC))
+                .thenReturn(bookingInfo);
+            when(institutionalCheckInDirectoryService.resolveOrganizationBackendUrl(TEST_AFFILIATION))
+                .thenReturn("https://consumer.example");
+
+            assertThatThrownBy(() -> samlAuthService.issueAccessCredential(request))
+                .isInstanceOf(SecurityException.class)
+                .hasMessage("Missing consumerMarketplaceToken for remote check-in status");
+            verify(remoteInstitutionalCheckInClient, never()).queryStatus(anyString(), any(InstitutionalCheckInStatusRequest.class));
         }
 
         @Test
@@ -452,15 +502,28 @@ class SamlAuthServiceTest {
     }
 
     @Test
+    void combinedFlowRequiresBackendInstitutionalSessionCredential() {
+        SamlAuthRequest request = new SamlAuthRequest();
+        request.setMarketplaceToken("combined-token");
+        request.setReservationKey("0xreservation");
+        request.setLabId("42");
+
+        assertThatThrownBy(() -> samlAuthService.authorizeAndIssue(request))
+            .isInstanceOf(IllegalArgumentException.class)
+            .hasMessage("Missing institutionalSessionToken");
+    }
+
+    @Test
     void combinedFlowBroadcastsCheckInBeforeProviderProvisioning() throws Exception {
         SamlAuthRequest request = new SamlAuthRequest();
         request.setMarketplaceToken("combined-token");
-        request.setSamlAssertion("signed-saml");
+        request.setInstitutionalSessionToken("institutional-session-token");
         request.setReservationKey("0xreservation");
         request.setLabId("42");
         Map<String, Object> claims = Map.of(
             "puc", TEST_PUC,
             "affiliation", TEST_AFFILIATION,
+            "samlAssertionHash", TEST_ASSERTION_HASH,
             "bookingInfoAllowed", true,
             "purpose", "lab_access",
             "reservationKey", "0xreservation",
@@ -477,8 +540,6 @@ class SamlAuthServiceTest {
             "0xreservation", "fence-token", 1L
         );
         when(marketplaceEndpointAuthService.enforceToken("combined-token", null)).thenReturn(claims);
-        when(samlValidationService.validateSamlAssertionWithSignature("signed-saml"))
-            .thenReturn(Map.of("puc", TEST_PUC, "affiliation", TEST_AFFILIATION));
         when(blockchainService.getBookingInfoForCredentialPreparation(
             "0xwallet", "0xreservation", "42", TEST_PUC
         )).thenReturn(bookingInfo);
@@ -507,12 +568,13 @@ class SamlAuthServiceTest {
     void combinedFlowReturnsPendingWithoutProvisioningUntilAuthorizationIsMined() throws Exception {
         SamlAuthRequest request = new SamlAuthRequest();
         request.setMarketplaceToken("combined-pending-token");
-        request.setSamlAssertion("signed-saml");
+        request.setInstitutionalSessionToken("institutional-session-token");
         request.setReservationKey("0xreservation");
         request.setLabId("42");
         Map<String, Object> claims = Map.of(
             "puc", TEST_PUC,
             "affiliation", TEST_AFFILIATION,
+            "samlAssertionHash", TEST_ASSERTION_HASH,
             "bookingInfoAllowed", true,
             "purpose", "lab_access",
             "reservationKey", "0xreservation",
@@ -526,8 +588,6 @@ class SamlAuthServiceTest {
             "resourceType", "lab"
         ));
         when(marketplaceEndpointAuthService.enforceToken("combined-pending-token", null)).thenReturn(claims);
-        when(samlValidationService.validateSamlAssertionWithSignature("signed-saml"))
-            .thenReturn(Map.of("puc", TEST_PUC, "affiliation", TEST_AFFILIATION));
         when(blockchainService.getBookingInfoForCredentialPreparation(
             "0xwallet", "0xreservation", "42", TEST_PUC
         )).thenReturn(bookingInfo);
@@ -548,12 +608,13 @@ class SamlAuthServiceTest {
     void combinedFlowStopsBeforeProvisioningWhenCheckInContextIsQuarantined() throws Exception {
         SamlAuthRequest request = new SamlAuthRequest();
         request.setMarketplaceToken("combined-quarantined-token");
-        request.setSamlAssertion("signed-saml");
+        request.setInstitutionalSessionToken("institutional-session-token");
         request.setReservationKey("0xreservation");
         request.setLabId("42");
         Map<String, Object> claims = Map.of(
             "puc", TEST_PUC,
             "affiliation", TEST_AFFILIATION,
+            "samlAssertionHash", TEST_ASSERTION_HASH,
             "bookingInfoAllowed", true,
             "purpose", "lab_access",
             "reservationKey", "0xreservation",
@@ -567,8 +628,6 @@ class SamlAuthServiceTest {
             "resourceType", "lab"
         ));
         when(marketplaceEndpointAuthService.enforceToken("combined-quarantined-token", null)).thenReturn(claims);
-        when(samlValidationService.validateSamlAssertionWithSignature("signed-saml"))
-            .thenReturn(Map.of("puc", TEST_PUC, "affiliation", TEST_AFFILIATION));
         when(blockchainService.getBookingInfoForCredentialPreparation(
             "0xwallet", "0xreservation", "42", TEST_PUC
         )).thenReturn(bookingInfo);
@@ -588,12 +647,13 @@ class SamlAuthServiceTest {
     void combinedFlowStopsBeforeProvisioningForManualIntervention() throws Exception {
         SamlAuthRequest request = new SamlAuthRequest();
         request.setMarketplaceToken("combined-manual-token");
-        request.setSamlAssertion("signed-saml");
+        request.setInstitutionalSessionToken("institutional-session-token");
         request.setReservationKey("0xreservation");
         request.setLabId("42");
         Map<String, Object> claims = Map.of(
             "puc", TEST_PUC,
             "affiliation", TEST_AFFILIATION,
+            "samlAssertionHash", TEST_ASSERTION_HASH,
             "bookingInfoAllowed", true,
             "purpose", "lab_access",
             "reservationKey", "0xreservation",
@@ -607,8 +667,6 @@ class SamlAuthServiceTest {
             "resourceType", "lab"
         ));
         when(marketplaceEndpointAuthService.enforceToken("combined-manual-token", null)).thenReturn(claims);
-        when(samlValidationService.validateSamlAssertionWithSignature("signed-saml"))
-            .thenReturn(Map.of("puc", TEST_PUC, "affiliation", TEST_AFFILIATION));
         when(blockchainService.getBookingInfoForCredentialPreparation(
             "0xwallet", "0xreservation", "42", TEST_PUC
         )).thenReturn(bookingInfo);

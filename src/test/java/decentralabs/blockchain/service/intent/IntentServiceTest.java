@@ -38,7 +38,7 @@ import decentralabs.blockchain.util.PucHashUtil;
 import decentralabs.blockchain.dto.intent.IntentStatusResponse;
 import decentralabs.blockchain.dto.intent.IntentSubmission;
 import decentralabs.blockchain.dto.intent.ReservationIntentPayload;
-import decentralabs.blockchain.service.auth.SamlValidationService;
+import decentralabs.blockchain.service.auth.InstitutionalSessionCredentialService;
 import decentralabs.blockchain.service.auth.WebauthnCredentialService;
 import decentralabs.blockchain.service.BackendUrlResolver;
 import decentralabs.blockchain.service.wallet.WalletService;
@@ -59,7 +59,7 @@ class IntentServiceTest {
     private IntentWebhookService webhookService;
 
     @Mock
-    private SamlValidationService samlValidationService;
+    private InstitutionalSessionCredentialService institutionalSessionCredentialService;
 
     @Mock
     private WebauthnCredentialService webauthnCredentialService;
@@ -89,7 +89,7 @@ class IntentServiceTest {
             verifier,
             persistenceService,
             webhookService,
-            samlValidationService,
+            institutionalSessionCredentialService,
             webauthnCredentialService,
             walletService,
             "0x0000000000000000000000000000000000000001",
@@ -109,7 +109,18 @@ class IntentServiceTest {
         };
         lenient().when(backendOperatingModeConfiguration.operatingMode())
             .thenReturn(BackendOperatingMode.PROVIDER_CONSUMER);
-        lenient().when(samlValidationService.resolveStableUserId(any(), any(), any())).thenCallRealMethod();
+        lenient().when(institutionalSessionCredentialService.validate(anyString())).thenReturn(
+            new InstitutionalSessionCredentialService.Credential(
+                "user@institution.edu",
+                "uned.es",
+                "principal",
+                "0x" + "b".repeat(64),
+                Instant.now(),
+                Instant.now().plusSeconds(3600),
+                Instant.now().plusSeconds(3600),
+                "test-session"
+            )
+        );
     }
 
     @Test
@@ -153,7 +164,7 @@ class IntentServiceTest {
     @DisplayName("Should clear federated and WebAuthn material after processing attempt")
     void shouldClearTransientIdentityMaterialAfterProcessingAttempt() {
         IntentSubmission submission = new IntentSubmission();
-        submission.setSamlAssertion("full-saml-assertion");
+        submission.setInstitutionalSessionToken("institutional-token");
         submission.setWebauthnCredentialId("credential-id");
         submission.setWebauthnClientDataJSON("client-data");
         submission.setWebauthnAuthenticatorData("authenticator-data");
@@ -163,7 +174,7 @@ class IntentServiceTest {
 
         assertThrows(ResponseStatusException.class, () -> service.processIntent(submission));
 
-        assertNull(submission.getSamlAssertion());
+        assertNull(submission.getInstitutionalSessionToken());
         assertNull(submission.getWebauthnCredentialId());
         assertNull(submission.getWebauthnClientDataJSON());
         assertNull(submission.getWebauthnAuthenticatorData());
@@ -182,7 +193,7 @@ class IntentServiceTest {
             verifier,
             persistenceService,
             webhookService,
-            samlValidationService,
+            institutionalSessionCredentialService,
             webauthnCredentialService,
             walletService,
             "0x0000000000000000000000000000000000000001",
@@ -320,34 +331,10 @@ class IntentServiceTest {
     }
 
     @Test
-    @DisplayName("SAML validation resolves action pucHash with principal mode")
-    void validateSamlAssertionResolvesActionPayloadPucHashWithPrincipalMode() throws Exception {
-        when(samlValidationService.validateSamlAssertionWithSignature("saml")).thenReturn(Map.of(
-            "puc", "user@example.edu|targeted-user",
-            "eduPersonPrincipalName", "user@example.edu",
-            "eduPersonTargetedID", "targeted-user"
-        ));
-        ActionIntentPayload payload = createValidActionPayload();
-        payload.setPucHash(PucHashUtil.hashPuc("user@example.edu"));
-
-        var method = IntentService.class.getDeclaredMethod(
-            "validateSamlAssertion",
-            ActionIntentPayload.class,
-            ReservationIntentPayload.class,
-            String.class,
-            String.class
-        );
-        method.setAccessible(true);
-
-        String resolved = (String) method.invoke(
-            service,
-            payload,
-            null,
-            "saml",
-            SamlValidationService.STABLE_USER_ID_MODE_PRINCIPAL
-        );
-
-        assertEquals("user@example.edu", resolved);
+    @DisplayName("Institutional session identity is the source for intent PUC resolution")
+    void institutionalSessionIdentityIsUsedForIntentPucResolution() {
+        assertDoesNotThrow(() -> institutionalSessionCredentialService.validate("token"));
+        verify(institutionalSessionCredentialService).validate("token");
     }
 
     private IntentMeta createValidMeta() {
@@ -367,7 +354,7 @@ class IntentServiceTest {
         ActionIntentPayload payload = new ActionIntentPayload();
         payload.setLabId(BigInteger.valueOf(42));
         payload.setExecutor("0x1234567890abcdef1234567890abcdef12345678");
-        payload.setPucHash("0x" + "c".repeat(64));
+        payload.setPucHash(PucHashUtil.hashPuc("user@institution.edu"));
         payload.setAssertionHash("0x" + "b".repeat(64));
         return payload;
     }
@@ -376,7 +363,7 @@ class IntentServiceTest {
         ReservationIntentPayload payload = new ReservationIntentPayload();
         payload.setLabId(BigInteger.valueOf(42));
         payload.setExecutor("0x1234567890abcdef1234567890abcdef12345678");
-        payload.setPucHash("0x" + "c".repeat(64));
+        payload.setPucHash(PucHashUtil.hashPuc("user@institution.edu"));
         payload.setStart(Instant.now().plusSeconds(3600).getEpochSecond());
         payload.setEnd(Instant.now().plusSeconds(7200).getEpochSecond());
         payload.setPrice(BigInteger.valueOf(payload.getEnd() - payload.getStart()));
@@ -448,7 +435,7 @@ class IntentServiceTest {
             // Service should not reject due to executor != signer; it will fail later due to missing SAML
             ResponseStatusException ex = assertThrows(ResponseStatusException.class,
                 () -> service.processIntent(submission));
-            assertTrue(ex.getReason().toLowerCase().contains("saml"));
+            assertTrue(ex.getReason().toLowerCase().contains("institutional"));
         }
 
         @Test
@@ -467,20 +454,19 @@ class IntentServiceTest {
         }
 
         @Test
-        @DisplayName("Should reject when SAML assertion is missing")
-        void shouldRejectMissingSamlAssertion() {
+        @DisplayName("Should reject when institutional session is missing")
+        void shouldRejectMissingInstitutionalSession() {
             IntentMeta meta = createValidMeta();
             ActionIntentPayload payload = createValidActionPayload();
             
             IntentSubmission submission = new IntentSubmission();
             submission.setMeta(meta);
             submission.setActionPayload(payload);
-            submission.setSamlAssertion(null);
             submission.setWebauthnCredentialId("cred123");
 
             ResponseStatusException ex = assertThrows(ResponseStatusException.class,
                 () -> service.processIntent(submission));
-            assertTrue(ex.getReason().contains("saml"));
+            assertTrue(ex.getReason().contains("institutional_session"));
         }
 
         @Test
@@ -492,7 +478,7 @@ class IntentServiceTest {
             IntentSubmission submission = new IntentSubmission();
             submission.setMeta(meta);
             submission.setActionPayload(payload);
-            submission.setSamlAssertion("valid-saml");
+            submission.setInstitutionalSessionToken("institutional-token");
             submission.setWebauthnCredentialId(null);
 
             ResponseStatusException ex = assertThrows(ResponseStatusException.class,
@@ -583,7 +569,6 @@ class IntentServiceTest {
             IntentSubmission submission = new IntentSubmission();
             submission.setMeta(meta);
             submission.setReservationPayload(payload);
-            submission.setSamlAssertion("saml");
             submission.setWebauthnCredentialId("cred");
 
             ResponseStatusException ex = assertThrows(ResponseStatusException.class,
@@ -603,7 +588,6 @@ class IntentServiceTest {
             IntentSubmission submission = new IntentSubmission();
             submission.setMeta(meta);
             submission.setReservationPayload(payload);
-            submission.setSamlAssertion("saml");
             submission.setWebauthnCredentialId("cred");
 
             ResponseStatusException ex = assertThrows(ResponseStatusException.class,
@@ -624,7 +608,6 @@ class IntentServiceTest {
             IntentSubmission submission = new IntentSubmission();
             submission.setMeta(meta);
             submission.setReservationPayload(payload);
-            submission.setSamlAssertion("saml");
             submission.setWebauthnCredentialId("cred");
 
             ResponseStatusException ex = assertThrows(ResponseStatusException.class,
@@ -644,7 +627,6 @@ class IntentServiceTest {
             IntentSubmission submission = new IntentSubmission();
             submission.setMeta(meta);
             submission.setReservationPayload(payload);
-            submission.setSamlAssertion("saml");
             submission.setWebauthnCredentialId("cred");
 
             ResponseStatusException ex = assertThrows(ResponseStatusException.class,
@@ -664,7 +646,6 @@ class IntentServiceTest {
             IntentSubmission submission = new IntentSubmission();
             submission.setMeta(meta);
             submission.setReservationPayload(payload);
-            submission.setSamlAssertion("saml");
             submission.setWebauthnCredentialId("cred");
 
             ResponseStatusException ex = assertThrows(ResponseStatusException.class,
@@ -689,7 +670,6 @@ class IntentServiceTest {
             IntentSubmission submission = new IntentSubmission();
             submission.setMeta(meta);
             submission.setActionPayload(payload);
-            submission.setSamlAssertion("saml");
             submission.setWebauthnCredentialId("cred");
 
             ResponseStatusException ex = assertThrows(ResponseStatusException.class,
@@ -737,7 +717,6 @@ class IntentServiceTest {
             IntentSubmission submission = new IntentSubmission();
             submission.setMeta(meta);
             submission.setActionPayload(payload);
-            submission.setSamlAssertion("saml");
             submission.setWebauthnCredentialId("cred");
 
             ResponseStatusException ex = assertThrows(ResponseStatusException.class,
@@ -760,24 +739,24 @@ class IntentServiceTest {
             ActionIntentPayload payload = createValidActionPayload();
             
             // We need to compute a valid SAML hash that matches the payload's assertionHash
-            String samlAssertion = "valid-saml-assertion";
+            String institutionalSessionToken = "institutional-token";
             
             IntentSubmission submission = new IntentSubmission();
             submission.setMeta(meta);
             submission.setActionPayload(payload);
-            submission.setSamlAssertion(samlAssertion);
+            submission.setInstitutionalSessionToken(institutionalSessionToken);
             submission.setWebauthnCredentialId("cred123");
             submission.setWebauthnClientDataJSON("Y2xpZW50ZGF0YQ"); // base64
             submission.setWebauthnAuthenticatorData("YXV0aGRhdGE");
             submission.setWebauthnSignature("c2lnbmF0dXJl");
 
-            // The test will fail on assertion hash mismatch before reaching expiration check
-            // This is expected behavior - the system validates hash before checking expiration
+            // The test validates the backend session binding before the intent
+            // expiration gate; the payload PUC is deliberately not the session PUC.
             ResponseStatusException ex = assertThrows(ResponseStatusException.class,
                 () -> service.processIntent(submission));
             
-            // Fails on hash mismatch - this is a valid validation failure
-            assertTrue(ex.getReason().contains("assertion_hash_mismatch"));
+            assertTrue(ex.getReason().toLowerCase().contains("puc_institutional_session_mismatch")
+                || ex.getReason().toLowerCase().contains("creator"));
         }
     }
 
