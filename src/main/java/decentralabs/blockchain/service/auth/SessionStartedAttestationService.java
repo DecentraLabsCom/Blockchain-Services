@@ -23,6 +23,9 @@ import org.springframework.jdbc.core.RowMapper;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.web3j.crypto.Credentials;
+import org.web3j.protocol.Web3j;
+import org.web3j.protocol.core.DefaultBlockParameterName;
+import org.web3j.protocol.core.methods.response.EthBlock;
 
 @Service
 @Slf4j
@@ -84,12 +87,13 @@ public class SessionStartedAttestationService {
                 return false;
             }
             String normalizedAccessType = normalizeAccessType(firstNonBlank(accessType, credential.accessType()));
+            long effectiveStartedAt = normalizeStartedAtForChain(startedAt);
             String nonce = buildNonce(
                 credential.reservationKey(),
                 request.getGatewayId(),
                 request.getSessionId(),
                 normalizedAccessType,
-                startedAt,
+                effectiveStartedAt,
                 credential.credentialHash()
             );
             SessionStartedAttestationPayload payload = new SessionStartedAttestationPayload(
@@ -100,7 +104,7 @@ public class SessionStartedAttestationService {
                 request.getGatewayId(),
                 request.getSessionId(),
                 normalizedAccessType,
-                startedAt,
+                effectiveStartedAt,
                 nonce,
                 credential.credentialHash(),
                 request.getClientProofHash()
@@ -115,6 +119,42 @@ public class SessionStartedAttestationService {
             log.warn("SessionStarted attestation signing failed: {}", LogSanitizer.sanitize(ex.getMessage()));
         }
         return false;
+    }
+
+    /**
+     * RPC nodes can briefly expose a latest block whose timestamp is behind
+     * the local wall clock. The reservation contract correctly rejects a
+     * future startedAt, so sign and persist the chain-compatible value.
+     */
+    private long normalizeStartedAtForChain(long observedAt) {
+        try {
+            Web3j web3j = walletService.getWeb3jInstance();
+            EthBlock response = web3j
+                .ethGetBlockByNumber(DefaultBlockParameterName.LATEST, false)
+                .send();
+            if (response == null || response.hasError() || response.getBlock() == null
+                    || response.getBlock().getTimestamp() == null) {
+                return observedAt;
+            }
+            BigInteger chainTimestamp = response.getBlock().getTimestamp();
+            if (chainTimestamp.signum() < 0 || chainTimestamp.compareTo(BigInteger.valueOf(Long.MAX_VALUE)) > 0) {
+                return observedAt;
+            }
+            long latestChainTimestamp = chainTimestamp.longValue();
+            if (latestChainTimestamp < observedAt) {
+                log.info(
+                    "Normalized SessionStarted timestamp to latest chain block. observedAt={} chainTimestamp={}",
+                    observedAt, latestChainTimestamp
+                );
+            }
+            return Math.min(observedAt, latestChainTimestamp);
+        } catch (Exception ex) {
+            log.warn(
+                "Unable to resolve latest chain timestamp for SessionStarted; preserving observedAt: {}",
+                LogSanitizer.sanitize(ex.getMessage())
+            );
+            return observedAt;
+        }
     }
 
     public List<SessionStartedAttestationEntry> findByReservationKey(String reservationKey) {

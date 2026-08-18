@@ -91,6 +91,24 @@ class SessionStartedOnChainPublisherServiceTest {
     }
 
     @Test
+    void retriesManualInterventionCausedByStartedAtBeingInTheFuture() throws Exception {
+        SessionStartedOnChainPublisherService service = buildService(jdbcTemplate);
+        mockSubmittedQuery(List.of());
+        mockPendingQuery("MANUAL_INTERVENTION", 1, null, null, null, null);
+        when(jdbcTemplate.update(anyString(), any(Object[].class))).thenReturn(1);
+        when(onChainClient.hasSessionStarted("0xabc")).thenReturn(false);
+        org.mockito.Mockito.doThrow(new SessionStartedOnChainClient.SessionStartedPreflightException(
+            "SessionStarted preflight reverted: execution reverted: StartedAt in future"
+        )).when(onChainClient).validateSessionStartedPreflight(any());
+
+        assertThat(service.publishPending(10)).isZero();
+
+        verify(onChainClient).validateSessionStartedPreflight(any());
+        verify(transactionDispatcher, never()).dispatchPrepared(anyString(), any(), any(), any(), any(), any(), any());
+        verify(jdbcTemplate).update(contains("onchain_status = CASE WHEN"), any(Object[].class));
+    }
+
+    @Test
     void claimsSessionStartedWithDatabaseOwnedLeaseAndFencesDurableWrites() throws Exception {
         SessionStartedOnChainPublisherService service = buildService(jdbcTemplate);
         mockSubmittedQuery(List.of());
@@ -481,7 +499,7 @@ class SessionStartedOnChainPublisherServiceTest {
         assertThat(service.publishPending(10)).isEqualTo(1);
 
         verify(jdbcTemplate).query(
-            contains("onchain_status IN ('QUEUED', 'RETRY', 'SUBMITTING', 'FAILED')"),
+            contains("onchain_status IN ('QUEUED', 'RETRY', 'SUBMITTING', 'REPLACEMENT_PENDING')"),
             anyTransactionRowMapper(), any(Object[].class)
         );
         verify(onChainClient).prepareSessionStarted(any(), eq(BigInteger.valueOf(45)), eq(1));

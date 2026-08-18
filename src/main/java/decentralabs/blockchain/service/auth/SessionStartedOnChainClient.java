@@ -44,15 +44,21 @@ public class SessionStartedOnChainClient {
 
     public static class SessionStartedPreflightException extends RuntimeException {
         private final boolean observationAlreadyUsed;
+        private final boolean startedAtInFuture;
 
         public SessionStartedPreflightException(String message) {
             super(message);
-            this.observationAlreadyUsed = message != null
-                && message.toLowerCase(Locale.ROOT).contains("session already used");
+            String normalizedMessage = message == null ? "" : message.toLowerCase(Locale.ROOT);
+            this.observationAlreadyUsed = normalizedMessage.contains("session already used");
+            this.startedAtInFuture = normalizedMessage.contains("startedat in future");
         }
 
         public boolean observationAlreadyUsed() {
             return observationAlreadyUsed;
+        }
+
+        public boolean startedAtInFuture() {
+            return startedAtInFuture;
         }
     }
 

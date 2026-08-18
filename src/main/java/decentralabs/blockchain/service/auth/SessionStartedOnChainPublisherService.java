@@ -102,6 +102,10 @@ public class SessionStartedOnChainPublisherService {
                     OR (onchain_status = 'FAILED'
                         AND onchain_tx_hash IS NULL
                         AND onchain_signed_raw_transaction IS NULL)
+                    OR (onchain_status = 'MANUAL_INTERVENTION'
+                        AND onchain_tx_hash IS NULL
+                        AND onchain_signed_raw_transaction IS NULL
+                        AND LOWER(COALESCE(onchain_publish_last_error, '')) LIKE '%startedat in future%')
                   )
                   AND (
                     onchain_status = 'FAILED'
@@ -114,7 +118,7 @@ public class SessionStartedOnChainPublisherService {
                   AND (
                     (onchain_chain_id = ? AND LOWER(onchain_wallet_address) = LOWER(?))
                     OR (onchain_chain_id IS NULL
-                        AND onchain_status IN ('QUEUED', 'RETRY', 'SUBMITTING', 'FAILED')
+                        AND onchain_status IN ('QUEUED', 'RETRY', 'SUBMITTING', 'FAILED', 'MANUAL_INTERVENTION')
                         AND LOWER(signer_address) = LOWER(?))
                   )
                 ORDER BY created_at ASC, id ASC
@@ -212,6 +216,8 @@ public class SessionStartedOnChainPublisherService {
         } catch (SessionStartedOnChainClient.SessionStartedPreflightException ex) {
             if (ex.observationAlreadyUsed()) {
                 markPreBroadcastSuperseded(claim, durableVersion.get(), ex);
+            } else if (ex.startedAtInFuture()) {
+                markPreBroadcastTransient(claim, durableVersion.get(), ex);
             } else {
                 markPreBroadcastPermanent(claim, durableVersion.get(), ex);
             }
@@ -243,7 +249,8 @@ public class SessionStartedOnChainPublisherService {
         }
         String status = record.status();
         return ("QUEUED".equals(status) || "RETRY".equals(status)
-                || "SUBMITTING".equals(status) || "FAILED".equals(status))
+                || "SUBMITTING".equals(status) || "FAILED".equals(status)
+                || "MANUAL_INTERVENTION".equals(status))
             && context.walletAddress().equalsIgnoreCase(record.submission().signerAddress());
     }
 
@@ -277,6 +284,10 @@ public class SessionStartedOnChainPublisherService {
                     OR (onchain_status = 'FAILED'
                         AND onchain_tx_hash IS NULL
                         AND onchain_signed_raw_transaction IS NULL)
+                    OR (onchain_status = 'MANUAL_INTERVENTION'
+                        AND onchain_tx_hash IS NULL
+                        AND onchain_signed_raw_transaction IS NULL
+                        AND LOWER(COALESCE(onchain_publish_last_error, '')) LIKE '%startedat in future%')
                   )
                   AND (
                     onchain_status = 'FAILED'
@@ -313,7 +324,7 @@ public class SessionStartedOnChainPublisherService {
                 onchain_publish_last_error = 'Another attestation owns the reservation on-chain publication',
                 updated_at = CURRENT_TIMESTAMP
             WHERE id = ? AND onchain_version = ?
-              AND onchain_status IN ('QUEUED', 'RETRY', 'FAILED')
+              AND onchain_status IN ('QUEUED', 'RETRY', 'FAILED', 'MANUAL_INTERVENTION')
             """,
             record.submission().id(), record.version()
         );
