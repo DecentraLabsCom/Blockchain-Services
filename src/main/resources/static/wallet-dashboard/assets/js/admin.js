@@ -1664,7 +1664,6 @@ function getSettlementRowStatus(lab) {
 function renderCollectSettlementOverview() {
     const overviewEl = document.getElementById('providerSettlementOverview');
     const noteEl = document.getElementById('providerSettlementOverviewNote');
-    const loadedCountEl = document.getElementById('providerSettlementLoadedCount');
     const loadMoreBtn = document.getElementById('providerSettlementLoadMoreBtn');
     const pendingEl = document.getElementById('settlementSummaryPending');
     const claimedEl = document.getElementById('settlementSummaryClaimed');
@@ -1682,9 +1681,6 @@ function renderCollectSettlementOverview() {
 
     if (!shouldShow) {
         tableBody.innerHTML = '<tr><td colspan="6" class="settlement-table-empty">No settlement data available.</td></tr>';
-        if (loadedCountEl) {
-            loadedCountEl.textContent = 'No labs loaded';
-        }
         if (loadMoreBtn) {
             loadMoreBtn.classList.add('hidden');
         }
@@ -1703,12 +1699,6 @@ function renderCollectSettlementOverview() {
             ? 'Summary is cached across all visible labs.'
             : 'Summary loaded from the current lab list.';
         noteEl.textContent = `${scope} Detailed status is fetched only for the selected lab. Potential no-show fees: ${formatLabTokenRaw(totals.potentialNoShowFee)} credits; grace pending: ${totals.pendingClosures.toString()}.`;
-    }
-    if (loadedCountEl) {
-        const total = Number.isFinite(Number(DashboardState.collectTotalLabs)) && DashboardState.collectTotalLabs > 0
-            ? DashboardState.collectTotalLabs
-            : labs.length;
-        loadedCountEl.textContent = `Loaded ${labs.length} of ${total} labs`;
     }
     if (loadMoreBtn) {
         loadMoreBtn.classList.toggle('hidden', DashboardState.collectHasMore !== true);

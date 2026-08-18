@@ -278,7 +278,6 @@
                                 </table>
                             </div>
                             <div class="settlement-overview-footer">
-                                <span class="settlement-overview-note" id="providerSettlementLoadedCount">Loading labs...</span>
                                 <button type="button" id="providerSettlementLoadMoreBtn" class="btn btn-secondary hidden">
                                     <i class="fas fa-plus"></i> Load more labs
                                 </button>
@@ -286,10 +285,6 @@
                         </div>
                         <div class="info-text hidden" id="collectLifecycleSummary"></div>
                         <form id="providerSettlementTransitionForm" class="operation-form hidden operation-form-spaced">
-                            <p class="operation-description">
-                                Settlement uses the canonical batch/claim lifecycle. Select the object-bound action;
-                                the deprecated aggregate state selector is no longer available.
-                            </p>
                             <div class="form-group">
                                 <label for="providerSettlementOperationSelect">Settlement action</label>
                                 <select id="providerSettlementOperationSelect" class="settlement-transition-select">

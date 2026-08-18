@@ -1062,7 +1062,7 @@ public class AdminDashboardController {
             result.put("provider", institutionalAddress);
             if (limited.isEmpty()) {
                 result.put("note", knownUsers.isEmpty()
-                    ? "No institutional users have interacted yet from this provider."
+                    ? "No institutional users have interacted yet."
                     : "Users recorded but no on-chain spending detected for current period.");
             }
 
