@@ -140,6 +140,25 @@ class IntentExecutionServiceTest {
         }
 
         @Test
+        @DisplayName("Should wait for registration before executing CANCEL_BOOKING")
+        void shouldWaitForRegistrationBeforeExecutingCancelBooking() {
+            IntentRecord intent = createIntentRecord(
+                "req-cancel-booking-pending",
+                "CANCEL_BOOKING",
+                IntentStatus.AUTHORIZED_PENDING_REGISTRATION
+            );
+            when(intentService.findByRequestId("req-cancel-booking-pending")).thenReturn(Optional.of(intent));
+            when(registrationVerifier.verifyRegistration(intent))
+                .thenReturn(IntentRegistrationVerifier.RegistrationVerificationResult.retryable("intent_not_registered"));
+
+            executionService.processQueuedIntent("req-cancel-booking-pending");
+
+            verify(registrationVerifier).verifyRegistration(intent);
+            verifyNoInteractions(onChainExecutor);
+            verify(intentService, never()).markQueued(any());
+        }
+
+        @Test
         @DisplayName("Should fail authorized reservation when registered payload mismatches")
         void shouldFailAuthorizedIntentOnRegistrationMismatch() {
             IntentRecord intent = createIntentRecord("req-mismatch", "RESERVATION_REQUEST", IntentStatus.AUTHORIZED_PENDING_REGISTRATION);

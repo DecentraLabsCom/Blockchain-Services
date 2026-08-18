@@ -15,6 +15,7 @@ import java.security.interfaces.ECPublicKey;
 import java.security.spec.ECGenParameterSpec;
 import java.time.Instant;
 import java.util.Base64;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 
@@ -129,6 +130,23 @@ class IntentServiceTest {
         );
         assertDoesNotThrow(() -> service.enforceActionAllowed(IntentAction.RESERVATION_REQUEST));
         assertDoesNotThrow(() -> service.enforceActionAllowed(IntentAction.CANCEL_BOOKING));
+    }
+
+    @Test
+    @DisplayName("Should migrate legacy queued intents behind the registration gate")
+    void shouldMigrateLegacyQueuedIntentsBehindRegistrationGate() {
+        IntentRecord legacy = new IntentRecord(
+            "legacy-cancel-booking",
+            IntentAction.CANCEL_BOOKING.getWireValue(),
+            "0xexecutor"
+        );
+        when(persistenceService.findPending()).thenReturn(List.of(legacy));
+
+        service.loadPendingIntents();
+
+        assertEquals(IntentStatus.AUTHORIZED_PENDING_REGISTRATION, legacy.getStatus());
+        assertSame(legacy, service.getQueuedIntents().get("legacy-cancel-booking"));
+        verify(persistenceService).upsert(legacy);
     }
 
     @Test

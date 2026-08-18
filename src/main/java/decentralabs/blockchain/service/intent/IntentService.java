@@ -147,6 +147,13 @@ public class IntentService {
             if (record == null || record.getRequestId() == null) {
                 continue;
             }
+            if (record.getStatus() == IntentStatus.QUEUED) {
+                // Records created before the registration gate was applied to
+                // every intent must be re-queued through on-chain verification
+                // after a service restart.
+                record.setStatus(IntentStatus.AUTHORIZED_PENDING_REGISTRATION);
+                persistenceService.upsert(record);
+            }
             intents.put(record.getRequestId(), record);
             if (record.getSigner() != null && record.getNonce() != null) {
                 nonceIndex.put(buildNonceKey(record.getSigner(), record.getNonce()), record.getRequestId());
@@ -239,9 +246,13 @@ public class IntentService {
         }
 
         IntentRecord record = new IntentRecord(meta.getRequestId(), action.getWireValue(), meta.getExecutor());
-        if (action.usesReservationPayload()) {
-            record.setStatus(IntentStatus.AUTHORIZED_PENDING_REGISTRATION);
-        }
+        // Every intent is registered on-chain before the backend may execute it.
+        // This gate is especially important for action payloads such as
+        // CANCEL_BOOKING: their registration can still be mining when WebAuthn
+        // authorization completes. Starting them as QUEUED would make the
+        // executor submit against a non-existent intent and permanently leave
+        // the on-chain registration in PENDING.
+        record.setStatus(IntentStatus.AUTHORIZED_PENDING_REGISTRATION);
         record.setSigner(meta.getSigner());
         record.setExecutor(meta.getExecutor());
         record.setActionId(meta.getAction());
