@@ -1,6 +1,5 @@
 package decentralabs.blockchain.service.auth;
 
-import decentralabs.blockchain.dto.auth.SamlAuthRequest;
 import decentralabs.blockchain.service.wallet.InstitutionalWalletService;
 import decentralabs.blockchain.util.PucHashUtil;
 import decentralabs.blockchain.util.PucNormalizer;
@@ -32,7 +31,6 @@ public class InstitutionalAccessCheckInCoordinator {
     private final CheckInOnChainService checkInOnChainService;
 
     public AccessGrantedResult recordAccessGranted(
-        SamlAuthRequest request,
         Map<String, Object> marketplaceClaims,
         Map<String, Object> bookingInfo
     ) {
