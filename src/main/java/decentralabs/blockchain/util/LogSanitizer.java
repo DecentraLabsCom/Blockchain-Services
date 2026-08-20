@@ -10,7 +10,7 @@ import java.util.regex.Pattern;
  */
 public final class LogSanitizer {
 
-    private static final Pattern CONTROL_CHARS = Pattern.compile("[\\r\\n\\t]+");
+    private static final Pattern CONTROL_CHARS = Pattern.compile("[\\p{Cntrl}]+");
 
     private LogSanitizer() {
         // Utility class
