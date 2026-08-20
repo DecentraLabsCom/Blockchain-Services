@@ -222,6 +222,13 @@ class IntentAuthorizationServiceTest {
     }
 
     @Test
+    void createSession_rejectsMissingRequest() {
+        assertThatThrownBy(() -> service.createSession(null))
+            .isInstanceOf(ResponseStatusException.class)
+            .hasMessageContaining("missing_intent_authorization_request");
+    }
+
+    @Test
     void createSession_logsSanitizedSamlFailureDiagnostics() throws Exception {
         Logger logger = (Logger) LoggerFactory.getLogger(IntentAuthorizationService.class);
         ListAppender<ILoggingEvent> appender = new ListAppender<>();
@@ -240,7 +247,9 @@ class IntentAuthorizationServiceTest {
                 .anySatisfy(message -> {
                     assertThat(message)
                         .contains("exceptionType=SecurityException")
-                        .contains("reason=signature failed_raw-assertion-must-not-be-logged")
+                        .contains("rootCauseType=SecurityException")
+                        .doesNotContain("signature failed")
+                        .doesNotContain("raw-assertion-must-not-be-logged")
                         .doesNotContain("\n");
                 });
         } finally {

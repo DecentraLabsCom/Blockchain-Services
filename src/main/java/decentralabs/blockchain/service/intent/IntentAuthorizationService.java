@@ -46,7 +46,6 @@ import decentralabs.blockchain.util.PucNormalizer;
 public class IntentAuthorizationService {
 
     private static final SecureRandom RANDOM = new SecureRandom();
-    private static final int MAX_SAML_DIAGNOSTIC_LENGTH = 512;
     private static final Set<String> WEBAUTHN_TRANSPORTS = Set.of(
         "usb", "nfc", "ble", "smart-card", "hybrid", "internal"
     );
@@ -114,6 +113,9 @@ public class IntentAuthorizationService {
     }
 
     public AuthorizationSession createSession(IntentAuthorizationRequest request) {
+        if (request == null) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "missing_intent_authorization_request");
+        }
         IntentSubmission submission = buildSubmission(request);
         IntentMeta meta = submission.getMeta();
         intentService.enforceActionAllowedById(meta.getAction());
@@ -359,6 +361,9 @@ public class IntentAuthorizationService {
     }
 
     private String resolvePuc(IntentSubmission submission) {
+        if (submission == null) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "missing_intent_submission");
+        }
         try {
             String expectedPucHash = expectedPucHash(submission.getActionPayload(), submission.getReservationPayload());
             var credential = institutionalSessionCredentialService.validate(
@@ -384,18 +389,10 @@ public class IntentAuthorizationService {
             throw ex;
         } catch (Exception ex) {
             Throwable rootCause = rootCause(ex);
-            String requestId = "";
-            if (submission != null && submission.getMeta() != null) {
-                requestId = submission.getMeta().getRequestId();
-            }
-            String sanitizedRequestId = LogSanitizer.sanitize(requestId);
             log.warn(
-                "Invalid institutional session while resolving intent authorization PUC. requestId={} exceptionType={} reason={} rootCauseType={} rootCause={}",
-                sanitizedRequestId,
-                LogSanitizer.sanitize(ex.getClass().getSimpleName()),
-                sanitizeSamlDiagnostic(ex),
-                LogSanitizer.sanitize(rootCause.getClass().getSimpleName()),
-                sanitizeSamlDiagnostic(rootCause)
+                "Invalid institutional session while resolving intent authorization PUC. exceptionType={} rootCauseType={}",
+                ex.getClass().getSimpleName(),
+                rootCause.getClass().getSimpleName()
             );
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "invalid_saml", ex);
         }
@@ -408,14 +405,6 @@ public class IntentAuthorizationService {
             current = current.getCause();
         }
         return current;
-    }
-
-    private String sanitizeSamlDiagnostic(Throwable throwable) {
-        String message = LogSanitizer.sanitize(throwable == null ? null : throwable.getMessage());
-        if (message.length() <= MAX_SAML_DIAGNOSTIC_LENGTH) {
-            return message;
-        }
-        return message.substring(0, MAX_SAML_DIAGNOSTIC_LENGTH) + "...";
     }
 
     private String expectedPucHash(ActionIntentPayload actionPayload, ReservationIntentPayload reservationPayload) {

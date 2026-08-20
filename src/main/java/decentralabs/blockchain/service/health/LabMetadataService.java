@@ -117,6 +117,9 @@ public class LabMetadataService {
         }
 
         try {
+            // This display-only fallback remains behind SafeLabMetadataClient's HTTPS,
+            // DNS-pinning, redirect, content-type and response-size checks.
+            // codeql[java/user-controlled-bypass]
             return loadMetadataNameFromAuthoritativeUri(metadataUri);
         } catch (Exception ex) {
             log.debug("Authoritative metadata URI unavailable for display name of lab {}", labId, ex);
