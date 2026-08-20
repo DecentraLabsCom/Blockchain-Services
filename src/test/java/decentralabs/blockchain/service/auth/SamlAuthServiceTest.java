@@ -253,7 +253,7 @@ class SamlAuthServiceTest {
             assertThat(response.getAccessCode()).isEqualTo("opaque-code");
             assertThat(response.getLabURL()).isEqualTo("https://lab.example.com/guacamole/");
             assertThat(response.getReservationKey()).isEqualTo("0xreservation");
-            verify(accessCheckInCoordinator, never()).recordAccessGranted(any(), any(), any());
+            verify(accessCheckInCoordinator, never()).recordAccessGranted(any(), any());
             verify(accessCredentialDeliveryService).deliver(any(), any(), eq(bookingInfo), eq(lease));
         }
 
@@ -557,7 +557,7 @@ class SamlAuthServiceTest {
         samlAuthService.authorizeAndIssue(request);
 
         var order = org.mockito.Mockito.inOrder(accessCheckInCoordinator, blockchainService);
-        order.verify(accessCheckInCoordinator).recordAccessGranted(request, claims, bookingInfo);
+        order.verify(accessCheckInCoordinator).recordAccessGranted(claims, bookingInfo);
         order.verify(blockchainService).validateAccessAuthorizedReservation(
             "0xwallet", "0xreservation", "42", TEST_PUC
         );
@@ -591,7 +591,7 @@ class SamlAuthServiceTest {
         when(blockchainService.getBookingInfoForCredentialPreparation(
             "0xwallet", "0xreservation", "42", TEST_PUC
         )).thenReturn(bookingInfo);
-        when(accessCheckInCoordinator.recordAccessGranted(request, claims, bookingInfo))
+        when(accessCheckInCoordinator.recordAccessGranted(claims, bookingInfo))
             .thenReturn(InstitutionalAccessCheckInCoordinator.AccessGrantedResult.QUEUED);
         when(blockchainService.getAccessAuthorizationState("0xwallet", "0xreservation", "42", TEST_PUC))
             .thenReturn(Map.of("reservationStatus", java.math.BigInteger.ONE));
@@ -631,7 +631,7 @@ class SamlAuthServiceTest {
         when(blockchainService.getBookingInfoForCredentialPreparation(
             "0xwallet", "0xreservation", "42", TEST_PUC
         )).thenReturn(bookingInfo);
-        when(accessCheckInCoordinator.recordAccessGranted(request, claims, bookingInfo))
+        when(accessCheckInCoordinator.recordAccessGranted(claims, bookingInfo))
             .thenReturn(InstitutionalAccessCheckInCoordinator.AccessGrantedResult.CONTEXT_MISMATCH);
 
         assertThatThrownBy(() -> samlAuthService.authorizeAndIssue(request))
@@ -670,7 +670,7 @@ class SamlAuthServiceTest {
         when(blockchainService.getBookingInfoForCredentialPreparation(
             "0xwallet", "0xreservation", "42", TEST_PUC
         )).thenReturn(bookingInfo);
-        when(accessCheckInCoordinator.recordAccessGranted(request, claims, bookingInfo))
+        when(accessCheckInCoordinator.recordAccessGranted(claims, bookingInfo))
             .thenReturn(InstitutionalAccessCheckInCoordinator.AccessGrantedResult.MANUAL_INTERVENTION);
 
         assertThatThrownBy(() -> samlAuthService.authorizeAndIssue(request))

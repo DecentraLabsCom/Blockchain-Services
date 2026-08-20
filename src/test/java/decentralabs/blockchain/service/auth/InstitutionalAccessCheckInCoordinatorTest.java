@@ -8,7 +8,6 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-import decentralabs.blockchain.dto.auth.SamlAuthRequest;
 import decentralabs.blockchain.service.wallet.InstitutionalWalletService;
 import decentralabs.blockchain.util.PucHashUtil;
 import java.math.BigInteger;
@@ -64,7 +63,6 @@ class InstitutionalAccessCheckInCoordinatorTest {
         when(outboxService.claim(pending.id())).thenReturn(claim);
 
         coordinator.recordAccessGranted(
-            request(),
             claims(),
             Map.of(
                 "reservationKey", "0xabc",
@@ -96,7 +94,6 @@ class InstitutionalAccessCheckInCoordinatorTest {
         when(outboxService.claim(submitted.id())).thenReturn(null);
 
         coordinator.recordAccessGranted(
-            request(),
             claims(),
             Map.of("reservationKey", "0xabc", "lab", BigInteger.valueOf(42), "reservationStatus", BigInteger.ONE)
         );
@@ -120,7 +117,6 @@ class InstitutionalAccessCheckInCoordinatorTest {
         when(outboxService.claim(restarted.id())).thenReturn(claim);
 
         coordinator.recordAccessGranted(
-            request(),
             claims(),
             Map.of("reservationKey", "0xabc", "lab", BigInteger.valueOf(42), "reservationStatus", BigInteger.ONE)
         );
@@ -140,7 +136,6 @@ class InstitutionalAccessCheckInCoordinatorTest {
         when(outboxService.claim(replacement.id())).thenReturn(claim);
 
         coordinator.recordAccessGranted(
-            request(),
             claims(),
             Map.of("reservationKey", "0xabc", "lab", BigInteger.valueOf(42), "reservationStatus", BigInteger.ONE)
         );
@@ -165,7 +160,6 @@ class InstitutionalAccessCheckInCoordinatorTest {
         )).thenReturn(false);
 
         InstitutionalAccessCheckInCoordinator.AccessGrantedResult result = coordinator.recordAccessGranted(
-            request(),
             claims(),
             Map.of("reservationKey", "0xabc", "lab", BigInteger.valueOf(42), "reservationStatus", BigInteger.ONE)
         );
@@ -189,7 +183,6 @@ class InstitutionalAccessCheckInCoordinatorTest {
         when(outboxService.enqueueAccessGranted(any(), any(), any(), any(), any(), any())).thenReturn(manual);
 
         InstitutionalAccessCheckInCoordinator.AccessGrantedResult result = coordinator.recordAccessGranted(
-            request(),
             claims(),
             Map.of("reservationKey", "0xabc", "lab", BigInteger.valueOf(42), "reservationStatus", BigInteger.ONE)
         );
@@ -222,7 +215,6 @@ class InstitutionalAccessCheckInCoordinatorTest {
         when(outboxService.findById(replacement.id())).thenReturn(mined);
 
         InstitutionalAccessCheckInCoordinator.AccessGrantedResult result = coordinator.recordAccessGranted(
-            request(),
             claims(),
             Map.of("reservationKey", "0xabc", "lab", BigInteger.valueOf(42), "reservationStatus", BigInteger.ONE)
         );
@@ -245,7 +237,6 @@ class InstitutionalAccessCheckInCoordinatorTest {
         when(outboxService.claim(restarted.id())).thenReturn(claim);
 
         InstitutionalAccessCheckInCoordinator.AccessGrantedResult result = coordinator.recordAccessGranted(
-            request(),
             claims(),
             Map.of("reservationKey", "0xabc", "lab", BigInteger.valueOf(42), "reservationStatus", BigInteger.ONE)
         );
@@ -269,7 +260,6 @@ class InstitutionalAccessCheckInCoordinatorTest {
             .thenThrow(new InstitutionalWalletDispatchException("uncertain", new IllegalStateException("rpc response lost")));
 
         coordinator.recordAccessGranted(
-            request(),
             claims(),
             Map.of("reservationKey", "0xabc", "lab", BigInteger.valueOf(42), "reservationStatus", BigInteger.ONE)
         );
@@ -297,7 +287,6 @@ class InstitutionalAccessCheckInCoordinatorTest {
         when(outboxService.markRetry(any(InstitutionalCheckInOutboxClaim.class), any(Integer.class), any(), any())).thenReturn(true);
 
         coordinator.recordAccessGranted(
-            request(),
             claims(),
             Map.of("reservationKey", "0xabc", "lab", BigInteger.valueOf(42), "reservationStatus", BigInteger.ONE)
         );
@@ -312,7 +301,6 @@ class InstitutionalAccessCheckInCoordinatorTest {
     @Test
     void skipsCheckInWhenReservationAccessAlreadyAuthorized() {
         coordinator.recordAccessGranted(
-            request(),
             claims(),
             Map.of(
                 "reservationKey", "0xabc",
@@ -334,7 +322,6 @@ class InstitutionalAccessCheckInCoordinatorTest {
         )).thenReturn(false);
 
         assertThat(coordinator.recordAccessGranted(
-            request(),
             claims(),
             Map.of(
                 "reservationKey", "0xabc",
@@ -348,7 +335,6 @@ class InstitutionalAccessCheckInCoordinatorTest {
     @Test
     void rejectsAccessWhenPucClaimIsMissingForPendingCheckIn() {
         assertThatThrownBy(() -> coordinator.recordAccessGranted(
-            request(),
             Map.of(
                 "affiliation", "org.example",
                 "payerInstitutionWallet", "0x1111111111111111111111111111111111111111"
@@ -361,14 +347,6 @@ class InstitutionalAccessCheckInCoordinatorTest {
         ))
             .isInstanceOf(IllegalStateException.class)
             .hasMessageContaining("Missing PUC");
-    }
-
-    private SamlAuthRequest request() {
-        SamlAuthRequest request = new SamlAuthRequest();
-        request.setMarketplaceToken("market-token");
-        request.setInstitutionalSessionToken("institutional-session-token");
-        request.setReservationKey("0xabc");
-        return request;
     }
 
     private Map<String, Object> claims() {
