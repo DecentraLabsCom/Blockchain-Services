@@ -384,9 +384,14 @@ public class IntentAuthorizationService {
             throw ex;
         } catch (Exception ex) {
             Throwable rootCause = rootCause(ex);
+            String requestId = "";
+            if (submission != null && submission.getMeta() != null) {
+                requestId = submission.getMeta().getRequestId();
+            }
+            String sanitizedRequestId = LogSanitizer.sanitize(requestId);
             log.warn(
                 "Invalid institutional session while resolving intent authorization PUC. requestId={} exceptionType={} reason={} rootCauseType={} rootCause={}",
-                LogSanitizer.sanitize(submission.getMeta().getRequestId()),
+                sanitizedRequestId,
                 LogSanitizer.sanitize(ex.getClass().getSimpleName()),
                 sanitizeSamlDiagnostic(ex),
                 LogSanitizer.sanitize(rootCause.getClass().getSimpleName()),
