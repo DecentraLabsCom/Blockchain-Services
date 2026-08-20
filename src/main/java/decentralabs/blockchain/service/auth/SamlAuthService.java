@@ -200,7 +200,7 @@ public class SamlAuthService {
             // remote Guacamole provisioning work. The access gate remains
             // ACCESS_AUTHORIZED; this only removes avoidable broadcast delay.
             InstitutionalAccessCheckInCoordinator.AccessGrantedResult checkInResult =
-                accessCheckInCoordinator.recordAccessGranted(request, marketplaceJWTClaims, bookingInfo);
+                accessCheckInCoordinator.recordAccessGranted(marketplaceJWTClaims, bookingInfo);
             if (checkInResult == InstitutionalAccessCheckInCoordinator.AccessGrantedResult.CONTEXT_MISMATCH) {
                 throw new AccessAuthorizationContextMismatchException(
                     "Check-in transaction belongs to a different chain or signer",
