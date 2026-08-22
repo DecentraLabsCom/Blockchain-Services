@@ -6,6 +6,7 @@ import decentralabs.blockchain.util.PucNormalizer;
 import io.jsonwebtoken.Claims;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
+import java.util.Collection;
 import java.util.Date;
 import java.util.Locale;
 import java.util.Map;
@@ -87,8 +88,8 @@ public class InstitutionalSessionCredentialService {
                 throw new IllegalArgumentException("Invalid institutional session subject");
             }
             validationCheck = "audience";
-            Object audience = claims.get("aud");
-            if (audience == null || !backendUrlResolver.resolveBaseDomain().equals(String.valueOf(audience))) {
+            String audience = normalizeAudienceClaim(claims.get("aud"));
+            if (audience == null || !backendUrlResolver.resolveBaseDomain().equals(audience)) {
                 throw new IllegalArgumentException("Invalid institutional session audience");
             }
             validationCheck = "institution-id";
@@ -147,6 +148,17 @@ public class InstitutionalSessionCredentialService {
             current = current.getCause();
         }
         return current;
+    }
+
+    private String normalizeAudienceClaim(Object audienceClaim) {
+        if (audienceClaim instanceof String audience) {
+            return audience;
+        }
+        if (audienceClaim instanceof Collection<?> audiences && audiences.size() == 1) {
+            Object onlyAudience = audiences.iterator().next();
+            return onlyAudience instanceof String audience ? audience : null;
+        }
+        return null;
     }
 
     private Instant instantClaim(Object value, String name) {

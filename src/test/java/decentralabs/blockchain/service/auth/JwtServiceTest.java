@@ -15,6 +15,7 @@ import java.security.PrivateKey;
 import java.security.interfaces.RSAPublicKey;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Set;
 
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.Jwts;
@@ -67,6 +68,21 @@ class JwtServiceTest {
         assertFalse(token.isEmpty());
         verify(keyService).loadPrivateKey();
         verify(keyService).getPublicKey();
+    }
+
+    @Test
+    void testGenerateToken_ParsesAudienceAsSingleValueSet() throws Exception {
+        Map<String, Object> claims = new HashMap<>();
+        claims.put("aud", "https://backend.example");
+
+        String token = jwtService.generateToken(claims, null);
+
+        Claims parsed = Jwts.parser()
+                .verifyWith(mockPublicKey)
+                .build()
+                .parseSignedClaims(token)
+                .getPayload();
+        assertEquals(Set.of("https://backend.example"), parsed.get("aud", Set.class));
     }
 
     @Test

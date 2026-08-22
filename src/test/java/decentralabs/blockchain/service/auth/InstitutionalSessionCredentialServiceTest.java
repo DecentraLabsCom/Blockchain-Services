@@ -16,6 +16,7 @@ import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.Jwts;
 import java.time.Instant;
 import java.util.Date;
+import java.util.Set;
 import org.slf4j.LoggerFactory;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -137,7 +138,7 @@ class InstitutionalSessionCredentialServiceTest {
             .issuedAt(Date.from(issuedAt))
             .expiration(Date.from(expiresAt))
             .add("sessionType", "institutional_saml_session")
-            .add("aud", "https://backend.example")
+            .add("aud", Set.of("https://backend.example"))
             .add("institutionId", "uned.es")
             .add("pucCiphertext", "ciphertext")
             .add("samlAssertionHash", "0x" + "a".repeat(64))
