@@ -10,6 +10,8 @@ import java.util.Date;
 import java.util.Locale;
 import java.util.Map;
 import lombok.RequiredArgsConstructor;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -22,6 +24,7 @@ public class InstitutionalSessionCredentialService {
 
     private static final String TOKEN_TYPE = "institutional_saml_session";
     private static final String SUBJECT = "institutional-session";
+    private static final Logger log = LoggerFactory.getLogger(InstitutionalSessionCredentialService.class);
 
     private final JwtService jwtService;
     private final BackendUrlResolver backendUrlResolver;
@@ -70,8 +73,10 @@ public class InstitutionalSessionCredentialService {
         if (token == null || token.isBlank()) {
             throw invalid("missing_institutional_session");
         }
+        String validationStage = "jwt";
         try {
             Claims claims = (Claims) jwtService.extractAllClaims(token);
+            validationStage = "claims";
             if (!TOKEN_TYPE.equals(claims.get("sessionType", String.class))
                 || !SUBJECT.equals(claims.getSubject())) {
                 throw new IllegalArgumentException("Invalid institutional session type");
@@ -82,8 +87,10 @@ public class InstitutionalSessionCredentialService {
             }
             String institutionId = requireText(claims.get("institutionId", String.class), "institutionId");
             String encryptedPuc = requireText(claims.get("pucCiphertext", String.class), "PUC");
+            validationStage = "puc-decryption";
             String puc = requireText(PucNormalizer.normalize(payloadCipher.decrypt(encryptedPuc)), "PUC");
             String assertionHash = requireHash(claims.get("samlAssertionHash", String.class));
+            validationStage = "timestamps";
             Instant issuedAt = instantClaim(claims.getIssuedAt(), "iat");
             Instant expiresAt = instantClaim(claims.getExpiration(), "exp");
             Instant reauthenticationAt = instantClaim(claims.get("reauthenticationAt"), "reauthenticationAt");
@@ -106,8 +113,23 @@ public class InstitutionalSessionCredentialService {
         } catch (ResponseStatusException ex) {
             throw ex;
         } catch (Exception ex) {
+            Throwable rootCause = rootCause(ex);
+            log.warn(
+                "Institutional session validation failed. stage={} exceptionType={} rootCauseType={}",
+                validationStage,
+                ex.getClass().getSimpleName(),
+                rootCause.getClass().getSimpleName()
+            );
             throw invalid("invalid_institutional_session");
         }
+    }
+
+    private Throwable rootCause(Throwable throwable) {
+        Throwable current = throwable;
+        while (current.getCause() != null && current.getCause() != current) {
+            current = current.getCause();
+        }
+        return current;
     }
 
     private Instant instantClaim(Object value, String name) {

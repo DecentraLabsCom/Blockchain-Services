@@ -7,12 +7,16 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.mockito.Mockito.lenient;
 
+import ch.qos.logback.classic.Logger;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.read.ListAppender;
 import decentralabs.blockchain.service.BackendUrlResolver;
 import decentralabs.blockchain.service.intent.IntentPayloadCipher;
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.Jwts;
 import java.time.Instant;
 import java.util.Date;
+import org.slf4j.LoggerFactory;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -93,6 +97,37 @@ class InstitutionalSessionCredentialServiceTest {
             () -> service.validate("expired")
         );
         assertEquals("invalid_institutional_session", exception.getReason());
+    }
+
+    @Test
+    void logsTheValidationStageWithoutSensitiveValuesWhenPucDecryptionFails() {
+        Claims claims = buildClaims(Instant.now().minusSeconds(30), Instant.now().plusSeconds(3600), true);
+        when(jwtService.extractAllClaims("puc-failure")).thenReturn(claims);
+        when(payloadCipher.decrypt("ciphertext"))
+            .thenThrow(new IllegalStateException("decryption failed for ciphertext"));
+
+        Logger logger = (Logger) LoggerFactory.getLogger(InstitutionalSessionCredentialService.class);
+        ListAppender<ILoggingEvent> appender = new ListAppender<>();
+        appender.start();
+        logger.addAppender(appender);
+
+        try {
+            assertThrows(
+                ResponseStatusException.class,
+                () -> service.validate("puc-failure")
+            );
+
+            String message = appender.list.getLast().getFormattedMessage();
+            assertEquals(
+                "Institutional session validation failed. stage=puc-decryption "
+                    + "exceptionType=IllegalStateException rootCauseType=IllegalStateException",
+                message
+            );
+            org.junit.jupiter.api.Assertions.assertFalse(message.contains("ciphertext"));
+        } finally {
+            logger.detachAppender(appender);
+            appender.stop();
+        }
     }
 
     private Claims buildClaims(Instant issuedAt, Instant expiresAt, boolean includeMode) {
