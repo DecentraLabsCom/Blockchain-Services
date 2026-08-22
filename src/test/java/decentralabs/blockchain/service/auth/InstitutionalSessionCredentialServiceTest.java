@@ -119,7 +119,7 @@ class InstitutionalSessionCredentialServiceTest {
 
             String message = appender.list.getLast().getFormattedMessage();
             assertEquals(
-                "Institutional session validation failed. stage=puc-decryption "
+                "Institutional session validation failed. stage=puc-decryption check=decrypt "
                     + "exceptionType=IllegalStateException rootCauseType=IllegalStateException",
                 message
             );

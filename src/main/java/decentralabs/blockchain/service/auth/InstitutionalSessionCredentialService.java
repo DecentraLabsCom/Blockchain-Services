@@ -74,27 +74,43 @@ public class InstitutionalSessionCredentialService {
             throw invalid("missing_institutional_session");
         }
         String validationStage = "jwt";
+        String validationCheck = "extract";
         try {
             Claims claims = (Claims) jwtService.extractAllClaims(token);
             validationStage = "claims";
-            if (!TOKEN_TYPE.equals(claims.get("sessionType", String.class))
-                || !SUBJECT.equals(claims.getSubject())) {
+            validationCheck = "session-type";
+            if (!TOKEN_TYPE.equals(claims.get("sessionType", String.class))) {
                 throw new IllegalArgumentException("Invalid institutional session type");
             }
+            validationCheck = "subject";
+            if (!SUBJECT.equals(claims.getSubject())) {
+                throw new IllegalArgumentException("Invalid institutional session subject");
+            }
+            validationCheck = "audience";
             Object audience = claims.get("aud");
             if (audience == null || !backendUrlResolver.resolveBaseDomain().equals(String.valueOf(audience))) {
                 throw new IllegalArgumentException("Invalid institutional session audience");
             }
+            validationCheck = "institution-id";
             String institutionId = requireText(claims.get("institutionId", String.class), "institutionId");
+            validationCheck = "puc-ciphertext";
             String encryptedPuc = requireText(claims.get("pucCiphertext", String.class), "PUC");
             validationStage = "puc-decryption";
+            validationCheck = "decrypt";
             String puc = requireText(PucNormalizer.normalize(payloadCipher.decrypt(encryptedPuc)), "PUC");
+            validationStage = "claims";
+            validationCheck = "saml-assertion-hash";
             String assertionHash = requireHash(claims.get("samlAssertionHash", String.class));
             validationStage = "timestamps";
+            validationCheck = "issued-at";
             Instant issuedAt = instantClaim(claims.getIssuedAt(), "iat");
+            validationCheck = "expiration";
             Instant expiresAt = instantClaim(claims.getExpiration(), "exp");
+            validationCheck = "reauthentication-at";
             Instant reauthenticationAt = instantClaim(claims.get("reauthenticationAt"), "reauthenticationAt");
+            validationCheck = "token-id";
             String tokenId = requireText(claims.getId(), "jti");
+            validationCheck = "session-horizon";
             if (expiresAt.getEpochSecond() != reauthenticationAt.getEpochSecond()
                 || expiresAt.getEpochSecond() - issuedAt.getEpochSecond() > Math.max(60, ttlSeconds) + 60
                 || !expiresAt.isAfter(Instant.now())) {
@@ -115,8 +131,9 @@ public class InstitutionalSessionCredentialService {
         } catch (Exception ex) {
             Throwable rootCause = rootCause(ex);
             log.warn(
-                "Institutional session validation failed. stage={} exceptionType={} rootCauseType={}",
+                "Institutional session validation failed. stage={} check={} exceptionType={} rootCauseType={}",
                 validationStage,
+                validationCheck,
                 ex.getClass().getSimpleName(),
                 rootCause.getClass().getSimpleName()
             );
