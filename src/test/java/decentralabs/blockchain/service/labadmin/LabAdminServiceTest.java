@@ -222,6 +222,7 @@ class LabAdminServiceTest {
         metadata.put("name", "Circuit Lab");
         metadata.put("description", "Remote electronics lab");
         metadata.put("image", "https://lab.example.edu/lab-content/content/lab-demo/images/cover.png");
+        metadata.put("demoEnabled", true);
         metadata.put("attributes", List.of(
             Map.of("trait_type", "category", "value", List.of("Electrical Engineering")),
             Map.of("trait_type", "keywords", "value", List.of("circuits", "remote")),
@@ -233,6 +234,7 @@ class LabAdminServiceTest {
 
         assertThat(metadata).doesNotContainKeys("category", "keywords", "images", "docs");
         assertThat(metadata.get("image")).isEqualTo("https://lab.example.edu/lab-content/content/lab-demo/images/cover.png");
+        assertThat(metadata.get("demoEnabled")).isEqualTo(true);
         assertThat(metadata.get("attributes")).isNotNull();
     }
 
