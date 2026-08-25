@@ -26,5 +26,31 @@ jobs:
           java-version: "21"
           cache: maven
 
+      - name: Verify Docker is available for MySQL integration tests
+        run: docker info
+
       - name: Build and run tests
         run: mvn -B -ntp verify
+
+      - name: Require MySQL integration tests to execute
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          reports=(
+            target/surefire-reports/TEST-decentralabs.blockchain.service.auth.InstitutionalConcurrencyMySqlIntegrationTest.xml
+            target/surefire-reports/TEST-decentralabs.blockchain.service.intent.IntentAuthorizationSessionPersistenceMySqlIntegrationTest.xml
+            target/surefire-reports/TEST-decentralabs.blockchain.service.provider.DistributedReservationAvailabilityLockServiceMySqlIntegrationTest.xml
+          )
+
+          for report in "${reports[@]}"; do
+            if [[ ! -f "$report" ]]; then
+              echo "Missing MySQL integration test report: $report" >&2
+              exit 1
+            fi
+
+            if ! grep -q 'skipped="0"' "$report"; then
+              echo "MySQL integration tests were skipped: $report" >&2
+              exit 1
+            fi
+          done

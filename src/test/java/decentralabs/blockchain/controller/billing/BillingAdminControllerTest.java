@@ -22,6 +22,7 @@ import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import static org.mockito.ArgumentMatchers.any; 
 import static org.mockito.Mockito.when;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -131,6 +132,42 @@ class BillingAdminControllerTest {
     }
 
     @Test
+    void executeAdminOperationReturnsServerErrorWhenServiceReturnsNull() throws Exception {
+        when(adminService.executeAdminOperation(any(InstitutionalAdminRequest.class))).thenReturn(null);
+
+        mockMvc.perform(post("/billing/admin/execute")
+                .with(csrf())
+                .with(request1 -> {
+                    request1.setRemoteAddr("127.0.0.1");
+                    return request1;
+                })
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{}"))
+            .andExpect(status().isInternalServerError())
+            .andExpect(jsonPath("$.success").value(false))
+            .andExpect(jsonPath("$.message").value("Internal server error: empty service response"));
+    }
+
+    @Test
+    void executeAdminOperationReturnsConflictForIdempotencyMismatch() throws Exception {
+        when(adminService.executeAdminOperation(any(InstitutionalAdminRequest.class)))
+            .thenThrow(new IdempotencyKeyPayloadMismatchException());
+
+        mockMvc.perform(post("/billing/admin/execute")
+                .with(csrf())
+                .with(request1 -> {
+                    request1.setRemoteAddr("127.0.0.1");
+                    return request1;
+                })
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{}"))
+            .andExpect(status().isConflict())
+            .andExpect(jsonPath("$.success").value(false))
+            .andExpect(jsonPath("$.code").value("IDEMPOTENCY_KEY_PAYLOAD_MISMATCH"))
+            .andExpect(jsonPath("$.status").value(409));
+    }
+
+    @Test
     void requestProviderPayoutPropagatesServiceResponses() throws Exception {
         InstitutionalAdminResponse success = InstitutionalAdminResponse.success("ok", "0xcollect", "COLLECT_LAB_PAYOUT");
         when(adminService.requestProviderPayoutWithConfiguredWallet("3", "50")).thenReturn(success);
@@ -219,5 +256,57 @@ class BillingAdminControllerTest {
             .andExpect(status().isBadRequest())
             .andExpect(jsonPath("$.success").value(false))
             .andExpect(jsonPath("$.message").value("collect failed"));
+    }
+
+    @Test
+    void requestProviderPayoutReturnsServerErrorWhenServiceReturnsNull() throws Exception {
+        when(adminService.requestProviderPayoutWithConfiguredWallet("3", "50")).thenReturn(null);
+
+        mockMvc.perform(post("/billing/admin/request-provider-payout")
+                .with(csrf())
+                .with(request1 -> {
+                    request1.setRemoteAddr("127.0.0.1");
+                    return request1;
+                })
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"labId\":\"3\",\"maxBatch\":\"50\"}"))
+            .andExpect(status().isInternalServerError())
+            .andExpect(jsonPath("$.success").value(false))
+            .andExpect(jsonPath("$.message").value("Internal server error: empty service response"));
+    }
+
+    @Test
+    void requestProviderPayoutReturnsServerErrorOnException() throws Exception {
+        when(adminService.requestProviderPayoutWithConfiguredWallet("3", "50"))
+            .thenThrow(new RuntimeException("payout unavailable"));
+
+        mockMvc.perform(post("/billing/admin/request-provider-payout")
+                .with(csrf())
+                .with(request1 -> {
+                    request1.setRemoteAddr("127.0.0.1");
+                    return request1;
+                })
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"labId\":\"3\",\"maxBatch\":\"50\"}"))
+            .andExpect(status().isInternalServerError())
+            .andExpect(jsonPath("$.success").value(false))
+            .andExpect(jsonPath("$.message").value("Internal server error: payout unavailable"));
+    }
+
+    @Test
+    void transactionStatusMapsServiceSuccessAndFailure() throws Exception {
+        when(adminService.getTransactionStatus("0xsuccess"))
+            .thenReturn(java.util.Map.of("success", true, "status", "MINED"));
+        when(adminService.getTransactionStatus("0xfailure"))
+            .thenReturn(java.util.Map.of("success", false, "error", "not found"));
+
+        mockMvc.perform(get("/billing/admin/transaction-status").param("txHash", "0xsuccess"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.success").value(true))
+            .andExpect(jsonPath("$.status").value("MINED"));
+        mockMvc.perform(get("/billing/admin/transaction-status").param("txHash", "0xfailure"))
+            .andExpect(status().isBadRequest())
+            .andExpect(jsonPath("$.success").value(false))
+            .andExpect(jsonPath("$.error").value("not found"));
     }
 }

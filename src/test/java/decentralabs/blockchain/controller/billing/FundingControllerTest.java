@@ -2,6 +2,7 @@ package decentralabs.blockchain.controller.billing;
 
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -9,6 +10,9 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import decentralabs.blockchain.domain.FundingOrder;
+import decentralabs.blockchain.domain.FundingInvoice;
+import decentralabs.blockchain.domain.PaymentReconciliation;
+import decentralabs.blockchain.domain.CreditAccount;
 import decentralabs.blockchain.exception.GlobalExceptionHandler;
 import decentralabs.blockchain.service.billing.CreditProjectionService;
 import decentralabs.blockchain.service.billing.FundingOrderService;
@@ -107,6 +111,25 @@ class FundingControllerTest {
     }
 
     @Test
+    void listFundingOrdersSupportsStatusAndDefaultsToDraft() throws Exception {
+        when(fundingOrderService.findByStatus(FundingOrder.Status.PAID)).thenReturn(List.of());
+        when(fundingOrderService.findByStatus(FundingOrder.Status.DRAFT)).thenReturn(List.of());
+
+        mockMvc.perform(get("/billing/funding-orders")
+                .header("Authorization", "Bearer marketplace-service-token")
+                .param("status", "paid"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$").isArray());
+        mockMvc.perform(get("/billing/funding-orders")
+                .header("Authorization", "Bearer marketplace-service-token"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$").isArray());
+
+        verify(fundingOrderService).findByStatus(FundingOrder.Status.PAID);
+        verify(fundingOrderService).findByStatus(FundingOrder.Status.DRAFT);
+    }
+
+    @Test
     void listFundingOrders_requiresBillingReadScopeWhenServiceTokenIsPresent() throws Exception {
         org.mockito.Mockito.doThrow(new org.springframework.web.server.ResponseStatusException(
             org.springframework.http.HttpStatus.FORBIDDEN, "missing_marketplace_scope"))
@@ -144,5 +167,84 @@ class FundingControllerTest {
         mockMvc.perform(get("/billing/funding-orders/33")
                 .header("Authorization", "Bearer marketplace-service-token"))
             .andExpect(status().isNotFound());
+    }
+
+    @Test
+    void getFundingOrderReturnsExistingOrder() throws Exception {
+        FundingOrder order = FundingOrder.builder().id(33L).status(FundingOrder.Status.INVOICED).build();
+        when(fundingOrderService.findById(33L)).thenReturn(Optional.of(order));
+
+        mockMvc.perform(get("/billing/funding-orders/33")
+                .header("Authorization", "Bearer marketplace-service-token"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.id").value(33))
+            .andExpect(jsonPath("$.status").value("INVOICED"));
+    }
+
+    @Test
+    void issuesInvoiceAndConfirmsPayment() throws Exception {
+        FundingInvoice invoice = FundingInvoice.builder().id(5L).fundingOrderId(33L).build();
+        PaymentReconciliation reconciliation = PaymentReconciliation.builder()
+            .id(6L)
+            .fundingOrderId(33L)
+            .paymentRef("PAY-33")
+            .build();
+        when(fundingOrderService.issueInvoice(33L, "INV-33", Instant.parse("2026-05-01T00:00:00Z")))
+            .thenReturn(invoice);
+        when(fundingOrderService.confirmPayment(33L, "PAY-33", new BigDecimal("12.50"), "BANK"))
+            .thenReturn(reconciliation);
+
+        mockMvc.perform(post("/billing/funding-orders/33/invoice")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {"invoiceNumber":"INV-33","dueAt":"2026-05-01T00:00:00Z"}
+                    """))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.id").value(5));
+        mockMvc.perform(post("/billing/funding-orders/33/confirm-payment")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {"paymentRef":"PAY-33","eurAmount":"12.50","paymentMethod":"BANK"}
+                    """))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.paymentRef").value("PAY-33"));
+    }
+
+    @Test
+    void cancelsAndMarksFundingOrderCredited() throws Exception {
+        mockMvc.perform(post("/billing/funding-orders/33/cancel"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.status").value("CANCELLED"));
+        mockMvc.perform(post("/billing/funding-orders/33/mark-credited"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.status").value("CREDITED"));
+
+        verify(fundingOrderService).cancelFundingOrder(33L);
+        verify(fundingOrderService).markCredited(33L);
+    }
+
+    @Test
+    void servesCreditAccountLotsAndBoundedMovements() throws Exception {
+        CreditAccount account = CreditAccount.builder().accountAddress(
+            "0x1111111111111111111111111111111111111111").build();
+        when(creditProjectionService.getAccount(account.getAccountAddress())).thenReturn(Optional.of(account));
+        when(creditProjectionService.getLots(account.getAccountAddress())).thenReturn(List.of());
+        when(creditProjectionService.getMovements(account.getAccountAddress(), 1000)).thenReturn(List.of());
+
+        mockMvc.perform(get("/billing/credit-accounts/{address}", account.getAccountAddress())
+                .header("Authorization", "Bearer marketplace-service-token"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.accountAddress").value(account.getAccountAddress()));
+        mockMvc.perform(get("/billing/credit-accounts/{address}/lots", account.getAccountAddress())
+                .header("Authorization", "Bearer marketplace-service-token"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$").isArray());
+        mockMvc.perform(get("/billing/credit-accounts/{address}/movements", account.getAccountAddress())
+                .header("Authorization", "Bearer marketplace-service-token")
+                .param("limit", "5000"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$").isArray());
+
+        verify(creditProjectionService).getMovements(account.getAccountAddress(), 1000);
     }
 }

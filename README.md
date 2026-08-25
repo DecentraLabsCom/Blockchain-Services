@@ -201,13 +201,20 @@ and transaction reference when those values are available.
 ## Local development
 
 Prerequisites: Java 21 and a POSIX shell or PowerShell. MySQL is required for
-durable tickets, outboxes, WebAuthn and audit flows; the unit-test suite uses
-its configured test infrastructure.
+durable tickets, outboxes, WebAuthn and audit flows. The MySQL concurrency tests
+use Testcontainers, so a running Docker daemon is required.
 
 ```bash
 ./mvnw test
 ./mvnw -DskipTests package
 java -jar target/blockchain-services-1.0-SNAPSHOT.war
+```
+
+To run only the MySQL/Testcontainers integration tests:
+
+```bash
+docker info
+./mvnw -Dtest="*MySqlIntegrationTest" test
 ```
 
 For a local consumer-only process, leave the provider flags at their defaults
