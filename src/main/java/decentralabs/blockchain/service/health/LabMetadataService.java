@@ -219,10 +219,25 @@ public class LabMetadataService {
     }
 
     private LabMetadata parseLabMetadata(JsonNode rootNode) {
+        String primaryImage = parseString(rootNode.get("image"));
+        List<String> additionalImages = new ArrayList<>();
+        appendDistinct(additionalImages, parseStringList(rootNode.get("images")));
+        if ((primaryImage == null || primaryImage.isBlank()) && !additionalImages.isEmpty()) {
+            primaryImage = additionalImages.remove(0);
+        }
+        String normalizedPrimaryImage = primaryImage == null ? null : primaryImage.trim();
+        if (normalizedPrimaryImage != null && !normalizedPrimaryImage.isBlank()) {
+            additionalImages.removeIf(normalizedPrimaryImage::equals);
+        }
+        List<String> documentation = new ArrayList<>();
+        appendDistinct(documentation, parseStringList(rootNode.get("docs")));
+        boolean hasDocumentation = rootNode.has("docs");
+        boolean hasAdditionalImages = rootNode.has("images");
+
         LabMetadata.LabMetadataBuilder builder = LabMetadata.builder()
             .name(rootNode.get("name").asText())
             .description(rootNode.get("description").asText())
-            .image(rootNode.get("image").asText());
+            .image(normalizedPrimaryImage);
         PricingMetadata pricingMetadata = null;
 
         if (rootNode.hasNonNull("pricing")) {
@@ -281,10 +296,23 @@ public class LabMetadataService {
                     case "bookingmode" -> builder.bookingMode(parseString(valueNode));
                     case "alloweddurations" -> builder.allowedDurations(parseAllowedDurations(valueNode));
                     case "periodrules" -> builder.periodRules(parseObject(valueNode, PeriodRules.class));
-                    case "docs" -> builder.documentation(parseStringList(valueNode));
-                    case "additionalimages" -> builder.additionalImages(parseStringList(valueNode));
+                    case "docs" -> {
+                        appendDistinct(documentation, parseStringList(valueNode));
+                        hasDocumentation = true;
+                    }
+                    case "additionalimages" -> {
+                        appendDistinct(additionalImages, parseStringList(valueNode));
+                        hasAdditionalImages = true;
+                    }
                 }
             }
+        }
+
+        if (hasDocumentation) {
+            builder.documentation(documentation);
+        }
+        if (hasAdditionalImages) {
+            builder.additionalImages(additionalImages);
         }
 
         return builder.build();
@@ -393,6 +421,18 @@ public class LabMetadataService {
             }
         }
         return list;
+    }
+
+    private void appendDistinct(List<String> target, List<String> values) {
+        for (String value : values) {
+            if (value == null || value.isBlank()) {
+                continue;
+            }
+            String normalized = value.trim();
+            if (!target.contains(normalized)) {
+                target.add(normalized);
+            }
+        }
     }
 
     /**

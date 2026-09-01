@@ -220,6 +220,24 @@ class LabMetadataServiceTest {
         }
 
         @Test
+        @DisplayName("Should handle a missing optional image")
+        void shouldHandleMissingOptionalImage() {
+            String json = """
+                {
+                    "name": "Image-less Lab",
+                    "description": "A lab without a primary image",
+                    "attributes": []
+                }
+                """;
+            when(metadataClient.fetch(anyString(), any())).thenReturn(json.getBytes(StandardCharsets.UTF_8));
+
+            LabMetadata metadata = metadataService.getLabMetadata("https://example.com/image-less.json");
+
+            assertThat(metadata.getName()).isEqualTo("Image-less Lab");
+            assertThat(metadata.getImage()).isNull();
+        }
+
+        @Test
         @DisplayName("Should parse documentation links")
         void shouldParseDocumentationLinks() {
             String json = createMetadataJsonWithDocs();
@@ -230,6 +248,40 @@ class LabMetadataServiceTest {
             assertThat(metadata.getDocumentation()).containsExactly(
                 "https://docs.example.com/manual.pdf",
                 "https://docs.example.com/guide.html"
+            );
+        }
+
+        @Test
+        @DisplayName("Should normalize root media and documentation aliases")
+        void shouldNormalizeRootMediaAndDocumentationAliases() {
+            String json = """
+                {
+                    "name": "Aliased Lab",
+                    "description": "Lab with root media aliases",
+                    "image": "https://images.example.com/cover.png",
+                    "images": [
+                        "https://images.example.com/cover.png",
+                        "https://images.example.com/side.png"
+                    ],
+                    "docs": ["https://docs.example.com/root.pdf"],
+                    "attributes": [
+                        { "trait_type": "additionalImages", "value": ["https://images.example.com/detail.png", "https://images.example.com/side.png"] },
+                        { "trait_type": "docs", "value": ["https://docs.example.com/attribute.pdf", "https://docs.example.com/root.pdf"] }
+                    ]
+                }
+                """;
+            when(metadataClient.fetch(anyString(), any())).thenReturn(json.getBytes(StandardCharsets.UTF_8));
+
+            LabMetadata metadata = metadataService.getLabMetadata("https://example.com/aliased.json");
+
+            assertThat(metadata.getImage()).isEqualTo("https://images.example.com/cover.png");
+            assertThat(metadata.getAdditionalImages()).containsExactly(
+                "https://images.example.com/side.png",
+                "https://images.example.com/detail.png"
+            );
+            assertThat(metadata.getDocumentation()).containsExactly(
+                "https://docs.example.com/root.pdf",
+                "https://docs.example.com/attribute.pdf"
             );
         }
 
@@ -254,9 +306,11 @@ class LabMetadataServiceTest {
                         { "unit": "week", "value": 1 }
                     ],
                     "periodRules": {
+                        "minimumNoticeHours": 12,
                         "allowCustomDateRange": true,
                         "minDurationDays": 1,
-                        "maxDurationDays": 90
+                        "maxDurationDays": 90,
+                        "enforceDailyWindow": true
                     },
                     "attributes": []
                 }
@@ -269,6 +323,8 @@ class LabMetadataServiceTest {
             assertThat(metadata.getBookingMode()).isEqualTo("calendar-period");
             assertThat(metadata.getAllowedDurations()).hasSize(2);
             assertThat(metadata.getPeriodRules().getMaxDurationDays()).isEqualTo(90);
+            assertThat(metadata.getPeriodRules().getMinimumNoticeHours()).isEqualTo(12);
+            assertThat(metadata.getPeriodRules().getEnforceDailyWindow()).isTrue();
         }
 
         @Test

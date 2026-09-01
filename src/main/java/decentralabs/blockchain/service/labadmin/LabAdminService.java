@@ -1612,23 +1612,81 @@ public class LabAdminService {
         addDistinct(images, primaryImage);
 
         List<Map<String, Object>> attributes = metadataAttributes(metadata.get("attributes"));
-        List<String> additionalImages = new ArrayList<>();
-
-        for (Map<String, Object> attribute : attributes) {
-            String traitType = objectsToString(attribute.get("trait_type"));
-            if ("additionalImages".equals(traitType)) {
-                addDistinct(additionalImages, stringList(attribute.get("value")));
-            }
+        boolean hasRootPeriodRules = metadata.containsKey("periodRules");
+        if (hasRootPeriodRules
+            && metadata.get("periodRules") != null
+            && !hasAttribute(attributes, "periodRules")) {
+            upsertAttribute(attributes, "periodRules", metadata.get("periodRules"));
         }
-
+        List<String> additionalImages = findAttributeList(attributes, "additionalImages");
+        addDistinct(images, stringList(metadata.get("images")));
         addDistinct(images, additionalImages);
 
-        if (primaryImage.isBlank() && !images.isEmpty()) {
+        if (!images.isEmpty()) {
             metadata.put("image", images.get(0));
         }
+        if (metadata.containsKey("images") || additionalImages != null) {
+            upsertListAttribute(attributes, "additionalImages", images.subList(1, images.size()));
+        }
+
+        List<String> docs = new ArrayList<>();
+        addDistinct(docs, stringList(metadata.get("docs")));
+        List<String> attributeDocs = findAttributeList(attributes, "docs");
+        addDistinct(docs, attributeDocs);
+        if (metadata.containsKey("docs") || attributeDocs != null) {
+            upsertListAttribute(attributes, "docs", docs);
+        }
+
+        if (metadata.containsKey("attributes")
+            || metadata.containsKey("images")
+            || metadata.containsKey("docs")
+            || hasRootPeriodRules) {
+            metadata.put("attributes", attributes);
+        }
+        metadata.remove("images");
+        metadata.remove("docs");
+        metadata.remove("periodRules");
+    }
+
+    private boolean hasAttribute(List<Map<String, Object>> attributes, String traitType) {
+        return attributes.stream().anyMatch(attribute ->
+            traitType.equals(objectsToString(attribute.get("trait_type")))
+        );
+    }
+
+    private void upsertAttribute(List<Map<String, Object>> attributes, String traitType, Object value) {
+        Map<String, Object> attribute = new LinkedHashMap<>();
+        attribute.put("trait_type", traitType);
+        attribute.put("value", value);
+        attributes.add(attribute);
+    }
+
+    private List<String> findAttributeList(List<Map<String, Object>> attributes, String traitType) {
+        for (Map<String, Object> attribute : attributes) {
+            if (traitType.equals(objectsToString(attribute.get("trait_type")))) {
+                return stringList(attribute.get("value"));
+            }
+        }
+        return null;
+    }
+
+    private void upsertListAttribute(List<Map<String, Object>> attributes, String traitType, List<String> value) {
+        for (Map<String, Object> attribute : attributes) {
+            if (traitType.equals(objectsToString(attribute.get("trait_type")))) {
+                attribute.put("value", value);
+                return;
+            }
+        }
+        Map<String, Object> attribute = new LinkedHashMap<>();
+        attribute.put("trait_type", traitType);
+        attribute.put("value", value);
+        attributes.add(attribute);
     }
 
     private void addDistinct(List<String> target, List<String> values) {
+        if (values == null) {
+            return;
+        }
         for (String value : values) {
             addDistinct(target, value);
         }

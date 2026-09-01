@@ -239,6 +239,67 @@ class LabAdminServiceTest {
     }
 
     @Test
+    void normalizeGeneratedMetadataConvertsRootMediaAliasesToCanonicalAttributes() {
+        Map<String, Object> metadata = new java.util.LinkedHashMap<>();
+        metadata.put("name", "Aliased Lab");
+        metadata.put("description", "Metadata with root media aliases");
+        metadata.put("periodRules", Map.of(
+            "startGranularity", "day",
+            "minimumNoticeHours", 6,
+            "allowCustomDateRange", true,
+            "minDurationDays", 1,
+            "maxDurationDays", 7,
+            "enforceDailyWindow", true
+        ));
+        metadata.put("images", List.of(
+            "https://lab.example.edu/lab-content/content/lab-demo/images/cover.png",
+            "https://lab.example.edu/lab-content/content/lab-demo/images/side.png"
+        ));
+        metadata.put("docs", List.of("https://lab.example.edu/lab-content/content/lab-demo/docs/root.pdf"));
+        metadata.put("attributes", List.of(
+            Map.of("trait_type", "additionalImages", "value", List.of(
+                "https://lab.example.edu/lab-content/content/lab-demo/images/detail.png"
+            )),
+            Map.of("trait_type", "docs", "value", List.of(
+                "https://lab.example.edu/lab-content/content/lab-demo/docs/attribute.pdf"
+            ))
+        ));
+
+        service.normalizeGeneratedMetadata(metadata);
+
+        assertThat(metadata).doesNotContainKeys("images", "docs", "periodRules");
+        assertThat(metadata.get("image"))
+            .isEqualTo("https://lab.example.edu/lab-content/content/lab-demo/images/cover.png");
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> attributes = (List<Map<String, Object>>) metadata.get("attributes");
+        assertThat(attributes).anyMatch(attribute ->
+            "additionalImages".equals(attribute.get("trait_type"))
+                && List.of(
+                    "https://lab.example.edu/lab-content/content/lab-demo/images/side.png",
+                    "https://lab.example.edu/lab-content/content/lab-demo/images/detail.png"
+                ).equals(attribute.get("value"))
+        );
+        assertThat(attributes).anyMatch(attribute ->
+            "docs".equals(attribute.get("trait_type"))
+                && List.of(
+                    "https://lab.example.edu/lab-content/content/lab-demo/docs/root.pdf",
+                    "https://lab.example.edu/lab-content/content/lab-demo/docs/attribute.pdf"
+                ).equals(attribute.get("value"))
+        );
+        assertThat(attributes).anyMatch(attribute ->
+            "periodRules".equals(attribute.get("trait_type"))
+                && Map.of(
+                    "startGranularity", "day",
+                    "minimumNoticeHours", 6,
+                    "allowCustomDateRange", true,
+                    "minDurationDays", 1,
+                    "maxDurationDays", 7,
+                    "enforceDailyWindow", true
+                ).equals(attribute.get("value"))
+        );
+    }
+
+    @Test
     void findOwnedLabByUriReturnsExistingLabId() {
         when(walletService.getLabTokenUri(BigInteger.valueOf(4)))
             .thenReturn(Optional.of("https://lab.example.edu/lab-content/content/lab-demo/metadata.json"));
