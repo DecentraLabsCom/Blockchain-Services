@@ -7,6 +7,10 @@ import decentralabs.blockchain.dto.billing.InstitutionalAdminRequest.AdminOperat
 import decentralabs.blockchain.dto.billing.InstitutionalAdminResponse;
 import decentralabs.blockchain.exception.IdempotencyKeyPayloadMismatchException;
 import decentralabs.blockchain.service.billing.InstitutionalAdminService;
+import ch.qos.logback.classic.Logger;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.read.ListAppender;
+import org.slf4j.LoggerFactory;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -21,6 +25,8 @@ import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
 import static org.mockito.ArgumentMatchers.any; 
 import static org.mockito.Mockito.when;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -187,6 +193,44 @@ class BillingAdminControllerTest {
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.success").value(true))
             .andExpect(jsonPath("$.transactionHash").value("0xcollect"));
+    }
+
+    @Test
+    void requestProviderPayoutSanitizesLabIdBeforeLogging() throws Exception {
+        String maliciousLabId = "3\r\n\tforged";
+        InstitutionalAdminResponse success = InstitutionalAdminResponse.success("ok", "0xcollect", "COLLECT_LAB_PAYOUT");
+        when(adminService.requestProviderPayoutWithConfiguredWallet(maliciousLabId, "50")).thenReturn(success);
+
+        Logger logger = (Logger) LoggerFactory.getLogger(BillingAdminController.class);
+        ListAppender<ILoggingEvent> appender = new ListAppender<>();
+        appender.start();
+        logger.addAppender(appender);
+        InstitutionalAdminRequest request = new InstitutionalAdminRequest();
+        request.setLabId(maliciousLabId);
+        request.setMaxBatch("50");
+        try {
+            mockMvc.perform(post("/billing/admin/request-provider-payout")
+                    .with(csrf())
+                    .with(request1 -> {
+                        request1.setRemoteAddr("127.0.0.1");
+                        return request1;
+                    })
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isOk());
+        } finally {
+            logger.detachAppender(appender);
+        }
+
+        String loggedMessage = appender.list.stream()
+            .map((ILoggingEvent event) -> event.getFormattedMessage())
+            .filter(message -> message.contains("Received server-side provider payout request"))
+            .findFirst()
+            .orElseThrow();
+        assertTrue(loggedMessage.contains("lab 3___forged"));
+        assertFalse(loggedMessage.contains("\r"));
+        assertFalse(loggedMessage.contains("\n"));
+        assertFalse(loggedMessage.contains("\t"));
     }
 
     @Test

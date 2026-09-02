@@ -93,10 +93,18 @@ public class GlobalExceptionHandler {
         response.put("code", "INTENT_PERSISTENCE_UNAVAILABLE");
         response.put("status", HttpStatus.SERVICE_UNAVAILABLE.value());
 
+        String requestUriForLog = LogSanitizer.sanitize(String.valueOf(request.getRequestURI())
+            .replace('\r', '_')
+            .replace('\n', '_')
+            .replace('\t', '_'));
+        String exceptionMessageForLog = LogSanitizer.sanitize(String.valueOf(ex.getMessage())
+            .replace('\r', '_')
+            .replace('\n', '_')
+            .replace('\t', '_'));
         log.error(
             "Intent persistence unavailable at {}: {}",
-            String.valueOf(request.getRequestURI()).replaceAll("[\\r\\n\\t]+", "_"),
-            String.valueOf(ex.getMessage()).replaceAll("[\\r\\n\\t]+", "_")
+            requestUriForLog,
+            exceptionMessageForLog
         );
         return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).body(response);
     }

@@ -44,8 +44,8 @@ class GlobalExceptionHandlerTest {
         @Test
         @DisplayName("Should return 503 without exposing persistence details")
         void shouldReturn503WithoutExposingPersistenceDetails() {
-            when(request.getRequestURI()).thenReturn("/api/test\nforged-path");
-            IntentPersistenceException ex = new IntentPersistenceException("database failure\nforged entry");
+            when(request.getRequestURI()).thenReturn("/api/test\r\n\tforged-path");
+            IntentPersistenceException ex = new IntentPersistenceException("database failure\r\n\tforged entry");
             Logger logger = (Logger) LoggerFactory.getLogger(GlobalExceptionHandler.class);
             ListAppender<ILoggingEvent> appender = new ListAppender<>();
             appender.start();
@@ -65,9 +65,15 @@ class GlobalExceptionHandlerTest {
             assertEquals("INTENT_PERSISTENCE_UNAVAILABLE", response.getBody().get("code"));
             assertEquals(503, response.getBody().get("status"));
             assertFalse(response.getBody().toString().contains("database failure"));
-            assertTrue(appender.list.stream()
+            String loggedMessage = appender.list.stream()
                 .map((ILoggingEvent event) -> event.getFormattedMessage())
-                .anyMatch(message -> message.contains("/api/test_forged-path: database failure_forged entry")));
+                .filter(message -> message.contains("Intent persistence unavailable at"))
+                .findFirst()
+                .orElseThrow();
+            assertTrue(loggedMessage.contains("/api/test___forged-path: database failure___forged entry"));
+            assertFalse(loggedMessage.contains("\r"));
+            assertFalse(loggedMessage.contains("\n"));
+            assertFalse(loggedMessage.contains("\t"));
         }
     }
 

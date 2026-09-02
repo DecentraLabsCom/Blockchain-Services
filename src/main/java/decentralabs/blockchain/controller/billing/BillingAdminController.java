@@ -76,9 +76,12 @@ public class BillingAdminController {
         @RequestBody InstitutionalAdminRequest request,
         @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey
     ) {
-        // codeql[java/log-injection]
+        String labIdForLog = LogSanitizer.sanitize(String.valueOf(request.getLabId())
+            .replace('\r', '_')
+            .replace('\n', '_')
+            .replace('\t', '_'));
         log.info("Received server-side provider payout request for lab {}",
-            LogSanitizer.sanitize(String.valueOf(request.getLabId())));
+            labIdForLog);
         try {
             InstitutionalAdminResponse response = idempotencyKey != null && !idempotencyKey.isBlank()
                 ? adminService.requestProviderPayoutWithConfiguredWallet(
@@ -88,9 +91,8 @@ public class BillingAdminController {
                     request.getLabId(), request.getMaxBatch()
                 );
             if (response == null) {
-                // codeql[java/log-injection]
                 log.error("Admin service returned null response for payout request on lab {}",
-                    LogSanitizer.sanitize(String.valueOf(request.getLabId())));
+                    labIdForLog);
                 return ResponseEntity.internalServerError()
                     .body(InstitutionalAdminResponse.error("Internal server error: empty service response"));
             }
