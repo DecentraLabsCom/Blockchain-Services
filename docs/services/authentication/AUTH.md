@@ -4,6 +4,11 @@ This guide describes the authentication boundary owned by
 `blockchain-services` and the evidence boundary shared with Lab Gateway and
 Ops Worker.
 
+This guide also applies to the parallel standalone variant. The canonical
+embedded backend documentation is maintained under
+`Lab Gateway/blockchain-services`; standalone-specific deployment assumptions
+are called out here where they differ.
+
 ## Runtime boundary
 
 `BLOCKCHAIN_SERVICES_MODE=provider-consumer` selects provider+consumer

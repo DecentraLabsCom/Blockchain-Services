@@ -9,6 +9,11 @@ backend
 for the DecentraLabs gateway ecosystem. It is also publishable as a standalone
 WAR for an institution that only needs consumer funding and wallet operations.
 
+This checkout is the parallel standalone backend variant. The embedded
+`Lab Gateway/blockchain-services` submodule is the canonical backend target for
+the integrated Gateway deployment; use this repository when an independent
+backend checkout is explicitly required.
+
 The service owns four areas:
 
 - institutional authentication and access delivery (SAML, Marketplace JWT,

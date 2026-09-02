@@ -4,6 +4,11 @@ This document is the short architectural reference for the canonical backend in
 `Lab Gateway/blockchain-services`. It describes the deployed boundaries; it is
 not a substitute for the endpoint-specific guides.
 
+This checkout is the parallel standalone backend variant. The canonical
+embedded implementation for the integrated Gateway is
+`Lab Gateway/blockchain-services`; this document describes the corresponding
+standalone repository boundary.
+
 ## Scope and deployment modes
 
 The service is a Spring Boot 4.1 application running on Java 21. It can be used in
