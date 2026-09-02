@@ -95,9 +95,10 @@ jobs:
             
             ### 📚 Documentation
             
-            - [Authentication Service](https://github.com/DecentraLabsCom/blockchain-services/blob/main/AUTH_SERVICE.md)
-            - [Wallet & Treasury](https://github.com/DecentraLabsCom/blockchain-services/blob/main/WALLET_TREASURY.md)
-            - [Security Configuration](https://github.com/DecentraLabsCom/blockchain-services/blob/main/README.md#-security)
+            - [Authentication and access evidence](https://github.com/DecentraLabsCom/blockchain-services/blob/main/docs/services/authentication/AUTH.md)
+            - [Wallet, billing and administration](https://github.com/DecentraLabsCom/blockchain-services/blob/main/docs/services/wallet/WALLET_BILLING.md)
+            - [Security Configuration](https://github.com/DecentraLabsCom/blockchain-services/blob/main/README.md#security-baseline)
+            - [Operations and recovery](https://github.com/DecentraLabsCom/blockchain-services/blob/main/docs/operations/OPERATIONS.md)
           draft: false
           prerelease: false
           generate_release_notes: true

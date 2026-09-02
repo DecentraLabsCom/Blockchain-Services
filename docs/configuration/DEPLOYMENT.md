@@ -1,14 +1,13 @@
 # Deployment and configuration
 
-This guide configures the canonical backend at
-`Lab Gateway/blockchain-services`. The parallel `Blockchain-Services/`
-repository is not the default deployment target.
+This guide configures `blockchain-services` across its supported deployment
+topologies.
 
 ## 1. Choose the topology
 
 | Topology | Backend role | Required choices |
 | --- | --- | --- |
-| Lab Gateway Full | Embedded provider and consumer backend | Set `BLOCKCHAIN_SERVICES_MODE=provider-consumer`; configure the gateway as the local issuer and persist MySQL, `/app/data` and lab content. |
+| Lab Gateway Full | Provider and consumer backend used with the Gateway | Set `BLOCKCHAIN_SERVICES_MODE=provider-consumer`; configure the gateway as the local issuer and persist MySQL, `/app/data` and lab content. |
 | Lab Gateway Lite | Edge that trusts a remote Full gateway | The parent gateway's `ISSUER` points at Full. This backend does not make Lite an identity authority. Configure only the edge capabilities that the deployment needs. |
 | Standalone consumer | Institution wallet, funding and consumer operations | Set `BLOCKCHAIN_SERVICES_MODE=consumer-only`; provider routes and automation remain disabled. |
 
@@ -49,8 +48,12 @@ restart-safe credential or event-processing guarantees.
 
 Copy `.env.example` to `.env` for a standalone development deployment. For an
 integrated gateway, use the parent `Lab Gateway` compose file and keep the root
-gateway `.env` aligned with `blockchain-services/.env`. Do not run both compose
-topologies against the same port or database.
+gateway `.env` aligned with `blockchain-services/.env`. The backend template
+lists backend runtime variables; the parent template owns gateway-edge values
+such as `ISSUER`, `RESERVATION_PROJECTION_URL`,
+`RESERVATION_PROJECTION_GATEWAY_ID` and the mounted
+`RESERVATION_PROJECTION_TOKEN_FILE`. Do not run both compose topologies against
+the same port or database.
 
 Configure the following groups before enabling traffic. `.env.example` is the
 complete deployable-name reference; `application.properties` defines defaults
@@ -67,9 +70,18 @@ and units.
 | SAML | `SAML_IDP_TRUST_MODE`, `SAML_TRUSTED_IDP`, `SAML_IDP_METADATA_OVERRIDE` | Use `whitelist` in production. |
 | Admin boundary | `ADMIN_DASHBOARD_*`, `SECURITY_ALLOW_PRIVATE_NETWORKS`, `ADMIN_ALLOWED_CIDRS`, `ADMIN_ACCESS_TOKEN_*` | See [Security](../security/SECURITY.md). |
 | Gateway integration | `ACCESS_CODE_REDEEMER_CREDENTIALS_JSON`, `SESSION_OBSERVER_CREDENTIALS_JSON`, `LAB_MANAGER_TOKEN*` | Credentials are per gateway; never reuse the admin token as an observer credential. |
+| Lite reservation projection | `RESERVATION_PROJECTION_CREDENTIALS_JSON` | Full/backend side only. JSON is keyed by normalized gateway ID and each entry must contain a constant-time-compared `token` and HTTPS `accessUri`. The parent Lite gateway config uses `RESERVATION_PROJECTION_URL`, `RESERVATION_PROJECTION_GATEWAY_ID` and a mounted `RESERVATION_PROJECTION_TOKEN_FILE`. |
 | Lab content | `LAB_CONTENT_BASE_PATH`, `LAB_CONTENT_RETENTION`, `LAB_CONTENT_GC_INTERVAL_MS`, `LAB_CONTENT_MAX_*` | The public content route serves only safe uploaded assets and generated metadata. |
 | Lab metadata fetches | `LAB_METADATA_MAX_BYTES`, `LAB_METADATA_HTTP_*`, `LAB_METADATA_MAX_CONCURRENT_FETCHES`, `LAB_METADATA_LOCAL_*` | Remote metadata is HTTPS-only and bound to the provider origin registered on-chain. Keep local fixtures disabled in production. |
 | Durable workers | `INSTITUTIONAL_*_OUTBOX_*`, `CONTRACT_EVENT_*`, `LAB_CONTENT_DELETION_OUTBOX_*`, `LAB_CONTENT_DELETION_RECONCILIATION_BATCH_SIZE`, `HEALTH_QUEUE_STUCK_THRESHOLD_SECONDS` | Tune only with an operator who owns reconciliation. Ambiguous deletion broadcasts remain blocked and must be reviewed as `STUCK_UNKNOWN`; do not cancel them by timeout alone. |
+
+The less common runtime controls are intentionally also present in the
+repository `.env.example`, including access-code encryption and cleanup,
+institutional receipt polling, event websocket selection, FMU ticket persistence
+and rate limits, SAML audience/recipient validation, WebAuthn origin overrides,
+transaction-monitor leases, treasury collection/pruning and reservation timing.
+Use the variable names and defaults from that template rather than inventing
+property names from the Spring keys.
 
 `CONTRACT_ADDRESS` has no packaged fallback and is mandatory. The service
 does not become ready until it has queried the configured RPC and verified the

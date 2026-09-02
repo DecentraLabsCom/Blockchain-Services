@@ -175,7 +175,7 @@ public class SecurityConfig {
                 // receives no provider integration headers.
                 authorize.requestMatchers(HttpMethod.OPTIONS, "/**").permitAll();
                 authorize.requestMatchers("/").permitAll();
-                authorize.requestMatchers(authBasePath + "/.well-known/*").permitAll();
+                authorize.requestMatchers("/.well-known/openid-configuration").permitAll();
                 authorize.requestMatchers(jwksEndpoint).permitAll();
                 authorize.requestMatchers(INSTITUTIONAL_SAML_SESSION_ENDPOINT).permitAll();
                 authorize.requestMatchers(checkinInstitutionalEndpoint).permitAll();

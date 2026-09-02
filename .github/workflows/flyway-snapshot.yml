@@ -26,7 +26,7 @@ jobs:
 
       - name: Generate Flyway snapshot (Docker)
         run: |
-          docker run --rm --network host -v ${{ github.workspace }}:/flyway flyway/flyway:12.0.0 snapshot \
+          docker run --rm --network host -v ${{ github.workspace }}:/flyway flyway/flyway:13.4.0 snapshot \
             -url=jdbc:mysql://127.0.0.1:3306/blockchain_services \
             -user=root -password=rootpw \
             -locations=filesystem:/flyway/src/main/resources/db/migration \

@@ -1,9 +1,11 @@
 # API reference
 
-This is an implementation-oriented navigation reference for the canonical
-backend. It lists the controller mappings currently present in this repository;
-it is not an OpenAPI schema. Request and response fields are defined by the DTOs
-beside each controller, and route-specific validations remain authoritative.
+This is the implementation-oriented API contract index for the backend service.
+It lists every supported controller mapping in this repository; it is
+not an OpenAPI schema. Request and response fields are defined by the DTOs beside
+each controller, and route-specific validations remain authoritative. The
+integration-critical routes below include their transport details so callers do
+not need to infer them from controller source.
 
 ## Access legend
 
@@ -18,7 +20,9 @@ beside each controller, and route-specific validations remain authoritative.
 
 | Method | Path | Boundary / purpose |
 | --- | --- | --- |
+| GET | `/.well-known/openid-configuration` | Public OIDC discovery document; provider mode only. |
 | GET | `/auth/jwks` | Conditional provider controller; public key set for verifying backend JWTs. |
+| POST | `/auth/saml/session` | Public-auth route; exchanges a fresh SAML assertion for a backend-owned institutional session credential. |
 | POST | `/auth/authorize-and-issue` | Booking-aware provider SAML/Marketplace access delivery; denied in `consumer-only`. |
 | POST | `/auth/access-credential` | Provider access-credential flow; denied in `consumer-only`. |
 | POST | `/auth/checkin-institutional` | Institutional check-in; returns `202` while queued. |
@@ -32,10 +36,34 @@ beside each controller, and route-specific validations remain authoritative.
 | POST | `/access-audit/internal/session-observed` | Observer JWT; records durable runtime observation. |
 | GET | `/access-audit/internal/reservations/{reservationKey}` | Admin/internal boundary; audit and attestation summary. |
 
-`AuthController` maps OIDC discovery at `/.well-known/openid-configuration`,
-but the current security allow-list is `/auth/.well-known/*`. Consequently the
-discovery mapping is not a supported reachable integration endpoint until those
-two mappings are aligned. Use `/auth/jwks` only when provider mode is enabled.
+OIDC discovery is served at `/.well-known/openid-configuration` and is public
+when the provider controller is enabled. Its `issuer` ends in `/auth`, while
+`jwks_uri` remains `/auth/jwks`. Do not prepend `/auth` to the discovery path.
+
+Example response shape:
+
+```json
+{
+  "issuer": "https://gateway.example.edu/auth",
+  "authorization_endpoint": "https://gateway.example.edu/auth/authorize-and-issue",
+  "jwks_uri": "https://gateway.example.edu/auth/jwks"
+}
+```
+
+The SAML session exchange accepts the fresh assertion in the JSON body defined
+by `InstitutionalSessionRequest` and an optional Marketplace service JWT in the
+`Authorization: Bearer <token>` header. When intent authorization is enabled,
+the JWT must carry the `intents:session` scope. The response is the
+`InstitutionalSessionResponse` documented in [Authentication](../services/authentication/AUTH.md);
+the raw SAML assertion is not used by later reservation or access routes.
+
+Request and response fields:
+
+| Direction | Fields |
+| --- | --- |
+| Request JSON | `samlAssertion` (required), `stableUserIdMode` (optional). |
+| Response JSON | `sessionToken`, `expiresAt`, `reauthenticationAt`, `samlAssertionHash`. |
+| Errors | `400 invalid_saml` for malformed/invalid assertions; `401` for a missing or mismatched Marketplace identity binding. |
 
 The access routes marked provider-only are rejected by the application security
 chain when `BLOCKCHAIN_SERVICES_MODE=consumer-only`; a network boundary should
@@ -123,9 +151,41 @@ ceremony above.
 | PUT | `/lab-admin/labs/{labId}` | Provider-consumer mode only; admin boundary or allowed Lab Manager. |
 | DELETE | `/lab-admin/assets` | Provider-consumer mode only; admin boundary or allowed Lab Manager; removes an uploaded asset only. |
 | DELETE | `/lab-admin/labs/{labId}` | Provider-consumer mode only; admin boundary or allowed Lab Manager; irreversible on-chain lab deletion plus durable local-content tombstone hand-off. |
+| GET | `/reservations/projection` | Per-gateway reservation feed used by Lite automation; public at the HTTP security layer but requires a scoped gateway credential. |
 | GET | `/lab-content/**` | Public read-only content, CORS for `GET`/`HEAD`/`OPTIONS`. |
 | GET | `/health` | Detailed backend health and durable queue status. |
+| GET | `/billing/admin/contract-events/dead-letter` | Local/admin read-only view of contract-event dead letters and reorg evidence. |
 | GET | `/actuator/health/liveness`, `/actuator/health/readiness`, `/actuator/prometheus`, `/actuator/metrics`, `/actuator/info` | Process/orchestrator/monitoring endpoints. |
+
+### Lite reservation projection
+
+`GET /reservations/projection` is consumed by a Lite gateway's `ops-worker`.
+The Full/backend side stores one credential per gateway in
+`RESERVATION_PROJECTION_CREDENTIALS_JSON`:
+
+```json
+{
+  "lite-lab.example.edu": {
+    "token": "replace-with-a-secret",
+    "accessUri": "https://lite-lab.example.edu"
+  }
+}
+```
+
+The request must include `X-Gateway-ID` and
+`X-Reservation-Projection-Token`, plus ISO-8601 `from` and `to` query
+parameters. `limit` defaults to `200` and is capped at `500`; the requested
+window may not exceed 48 hours. Only `CONFIRMED` and `ACTIVE` reservations
+matching the credential's `accessUri` are returned.
+
+```http
+GET /reservations/projection?from=2026-09-02T08:00:00Z&to=2026-09-02T20:00:00Z&limit=200
+X-Gateway-ID: lite-lab.example.edu
+X-Reservation-Projection-Token: replace-with-a-secret
+```
+
+Invalid credentials return `403 RESERVATION_PROJECTION_FORBIDDEN`; a missing
+database or projection failure returns `503 RESERVATION_PROJECTION_UNAVAILABLE`.
 
 Use [Authentication](../services/authentication/AUTH.md),
 [Wallet and billing](../services/wallet/WALLET_BILLING.md),

@@ -1,18 +1,12 @@
 ---
-description: Canonical Spring Boot backend for institutional identity, funding, lab access and on-chain operations.
+description: Spring Boot backend for institutional identity, funding, lab access and on-chain operations.
 ---
 
 # DecentraLabs blockchain services
 
-`Lab Gateway/blockchain-services` is the canonical Java 21 / Spring Boot 4.1
-backend
-for the DecentraLabs gateway ecosystem. It is also publishable as a standalone
-WAR for an institution that only needs consumer funding and wallet operations.
-
-This checkout is the parallel standalone backend variant. The embedded
-`Lab Gateway/blockchain-services` submodule is the canonical backend target for
-the integrated Gateway deployment; use this repository when an independent
-backend checkout is explicitly required.
+`blockchain-services` is the Java 21 / Spring Boot 4.1 backend for the DecentraLabs
+gateway ecosystem. It can also be packaged as a standalone WAR for an
+institution that only needs consumer funding and wallet operations.
 
 The service owns four areas:
 
@@ -22,8 +16,7 @@ The service owns four areas:
 - signed intent intake, WebAuthn authorization and on-chain execution;
 - provider/consumer registration and gateway configuration.
 
-Start with the [documentation index](SUMMARY.md) and the parent
-[documentation contract](../docs/documentation-contract.md). The essential companion
+Start with the [documentation index](SUMMARY.md). The essential companion
 documents are the [architecture guide](docs/architecture/ARCHITECTURE.md),
 [deployment guide](docs/configuration/DEPLOYMENT.md),
 [security baseline](docs/security/SECURITY.md) and
@@ -76,6 +69,7 @@ reviewed Diamond upgrade.
 - `GET /auth/jwks`
 - `POST /auth/authorize-and-issue`
 - `POST /auth/access-credential`
+- `POST /auth/saml/session`
 - `POST /auth/checkin-institutional`
 - `POST /auth/checkin-institutional/status`
 - `POST /auth/access-code/redeem`
@@ -84,6 +78,7 @@ reviewed Diamond upgrade.
 - `POST /auth/fmu/session-ticket/issue`
 - `POST /auth/fmu/session-ticket/redeem`
 - `POST /auth/fmu/provider-describe-token`
+- `GET /.well-known/openid-configuration` (provider mode)
 - `POST /webauthn/revoke`
 - `GET /onboarding/webauthn/key-status/{stableUserId}`
 - `POST /onboarding/webauthn/options`
@@ -109,9 +104,9 @@ response until the institutional check-in outbox has produced on-chain
 that observes that state; the check-in submission and receipt monitors run in
 the background.
 
-The controller maps OIDC discovery at `/.well-known/openid-configuration`, but
-the current security allow-list is `/auth/.well-known/*`; it is therefore not a
-supported reachable integration endpoint until the mappings are aligned.
+OIDC discovery is available at `/.well-known/openid-configuration` when provider
+mode is enabled. The discovery document advertises an issuer under `/auth` and
+the key endpoint `/auth/jwks`; the discovery URL itself is at the host root.
 
 ### Intents
 
@@ -128,6 +123,18 @@ When `INTENTS_AUTH_ENABLED=true` (default), submit operations require the
 configured submit scope and reads require the configured status scope. The
 browser ceremony and completion are intentionally session-bound; see the
 [intent guide](docs/services/intents/INTENTS_PROVISIONING.md).
+
+### Lite reservation projection
+
+- `GET /reservations/projection` is the scoped reservation feed consumed by a
+  Lite gateway's `ops-worker`.
+- Send `X-Gateway-ID`, `X-Reservation-Projection-Token`, and ISO-8601 `from`
+  and `to` query parameters. `limit` defaults to `200` and is capped at `500`;
+  the window cannot exceed 48 hours.
+- Configure the Full/backend side with
+  `RESERVATION_PROJECTION_CREDENTIALS_JSON`. Each gateway entry contains a
+  token and HTTPS `accessUri`; see the [API reference](docs/reference/API_REFERENCE.md)
+  for the response and error contract.
 
 ### Wallet, billing and provisioning
 
@@ -255,7 +262,11 @@ Important configuration groups:
 Configuration precedence is environment/secrets manager, then local `.env`,
 then `application.properties`. The generated wallet configuration under the
 persistent data directory is an additional wallet-specific source and must be
-backed up together with its encryption key.
+backed up together with its encryption key. The backend `.env.example` is the
+standalone variable inventory; the parent `Lab Gateway/.env.example` owns
+Full/Lite gateway variables such as `ISSUER`, `RESERVATION_PROJECTION_URL` and
+the mounted projection token. The deployment guide records that ownership
+boundary.
 
 The tracked `.env.example` is the authoritative list of deployable environment
 names. Never commit `.env`, private keys, wallet files or database volumes. The
@@ -274,10 +285,11 @@ and identifies state that must be persistent in production.
 - Keep session-observer and gateway credentials per gateway; do not reuse one
   secret across Full/Lite instances.
 
-See [Security Configuration](docs/security/SECURITY.md) and
-[Authentication and access evidence](docs/services/authentication/AUTH.md) for the
-public security and access boundary. Detailed recovery and compliance runbooks
-are maintainer documentation kept outside the public documentation index.
+See [Security Configuration](docs/security/SECURITY.md),
+[Authentication and access evidence](docs/services/authentication/AUTH.md) and
+[Operations and recovery](docs/operations/OPERATIONS.md) for the public
+security, access and incident-response boundary. Detailed recovery and
+compliance procedures remain restricted operator documentation.
 
 ## Verification and release
 

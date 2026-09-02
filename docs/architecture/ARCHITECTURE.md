@@ -1,13 +1,8 @@
 # Architecture and operating model
 
-This document is the short architectural reference for the canonical backend in
-`Lab Gateway/blockchain-services`. It describes the deployed boundaries; it is
-not a substitute for the endpoint-specific guides.
-
-This checkout is the parallel standalone backend variant. The canonical
-embedded implementation for the integrated Gateway is
-`Lab Gateway/blockchain-services`; this document describes the corresponding
-standalone repository boundary.
+This document is the short architectural reference for `blockchain-services`.
+It describes service boundaries and deployment topologies; it is not a
+substitute for the endpoint-specific guides.
 
 ## Scope and deployment modes
 
@@ -16,9 +11,9 @@ three ways:
 
 | Mode | Typical topology | Provider/auth surface | Consumer/wallet surface |
 | --- | --- | --- | --- |
-| Full gateway | Lab Gateway + embedded backend | Enabled when backend mode is `provider-consumer` | Enabled |
+| Full gateway | Lab Gateway + blockchain-services backend | Enabled when backend mode is `provider-consumer` | Enabled |
 | Lite gateway edge | A Lite gateway trusts a remote Full gateway | Full remains the auth/provider authority; Lite validates remote issuer/JWKS | Present only when the Lite deployment explicitly needs this backend capability |
-| Standalone consumer | This repository without a provider gateway | Enabled only when backend mode is `provider-consumer` | Enabled |
+| Standalone consumer | blockchain-services without a provider gateway | Enabled only when backend mode is `provider-consumer` | Enabled |
 
 `BLOCKCHAIN_SERVICES_MODE` is the explicit backend role and accepts only
 `provider-consumer` or `consumer-only`. It is independent of the Full/Lite

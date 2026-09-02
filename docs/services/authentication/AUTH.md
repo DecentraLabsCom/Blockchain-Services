@@ -4,11 +4,6 @@ This guide describes the authentication boundary owned by
 `blockchain-services` and the evidence boundary shared with Lab Gateway and
 Ops Worker.
 
-This guide also applies to the parallel standalone variant. The canonical
-embedded backend documentation is maintained under
-`Lab Gateway/blockchain-services`; standalone-specific deployment assumptions
-are called out here where they differ.
-
 ## Runtime boundary
 
 `BLOCKCHAIN_SERVICES_MODE=provider-consumer` selects provider+consumer
@@ -69,10 +64,10 @@ cannot extend the current credential horizon. The raw assertion is therefore
 accepted by the backend only at `POST /auth/saml/session`, never at reservation,
 cancellation, intent or lab-access endpoints.
 
-The controller maps OIDC discovery at `/.well-known/openid-configuration`, but
-the current Spring Security allow-list uses `/auth/.well-known/*`. Do not
-integrate against discovery until those two mappings are aligned; `/auth/jwks`
-is the supported key endpoint when provider mode is enabled.
+OIDC discovery is available at `GET /.well-known/openid-configuration` when
+provider mode is enabled. The discovery document advertises an issuer under
+`/auth` and `GET /auth/jwks` as the key endpoint; the discovery URL itself is at
+the host root.
 
 ## Browser access flow
 

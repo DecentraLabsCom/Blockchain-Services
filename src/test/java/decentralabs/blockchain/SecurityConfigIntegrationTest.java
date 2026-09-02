@@ -386,6 +386,18 @@ class SecurityConfigIntegrationTest {
     }
 
     @Test
+    void oidcDiscovery_isAccessibleOnTheRootWellKnownPath() throws Exception {
+        mockMvc.perform(get("/.well-known/openid-configuration")
+                .with(anonymous())
+                .with(req -> {
+                    req.setRemoteAddr("198.51.100.32");
+                    return req;
+                }))
+            .andExpect(status().isOk())
+            .andExpect(content().string("oidc-ok"));
+    }
+
+    @Test
     void accessCredentialEndpoint_isRateLimitedPerIp() throws Exception {
         mockMvc.perform(post("/auth/access-credential")
                 .contentType(MediaType.APPLICATION_JSON)
@@ -487,6 +499,11 @@ class SecurityConfigIntegrationTest {
         @PostMapping("/auth/saml/session")
         String institutionalSamlSession() {
             return "institutional-session-ok";
+        }
+
+        @GetMapping("/.well-known/openid-configuration")
+        String oidcDiscovery() {
+            return "oidc-ok";
         }
 
         @PostMapping("/auth/authorize-and-issue")

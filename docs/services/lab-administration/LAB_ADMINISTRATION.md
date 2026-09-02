@@ -83,6 +83,13 @@ sequenceDiagram
 - Generated metadata must include `name` (maximum 160 characters) and
   `description` (maximum 4,000 characters). `image`, `images` and `docs`
   must be HTTPS or gateway content URLs.
+- The publisher normalizes root `images`/`docs` and the
+  `attributes.additionalImages`/`attributes.docs` aliases before writing the
+  file: images are merged and deduplicated with the first item as `image`,
+  documentation is merged into the `docs` attribute, and root aliases are
+  removed. A root `periodRules` value is copied to its attribute only when the
+  attribute is not already present. See the [metadata example](../../reference/example-lab-metadata.md)
+  for the exact precedence rules.
 - For on-chain `resourceType == 1` (FMU), the off-chain metadata must declare
   `maxConcurrentUsers` as a positive integer. The backend validates it during
   publication, update, listing preflight and provider confirmation; the

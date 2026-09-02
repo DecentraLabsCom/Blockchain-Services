@@ -1,9 +1,8 @@
 # Documentation index
 
-The canonical cross-project documentation contract is
-[here](../docs/documentation-contract.md). This index owns backend-specific
+This index owns backend-specific
 API, security and deployment details; Gateway topology and user-journey
-semantics remain in the parent workflow documents.
+semantics are described by the Gateway integration documentation.
 
 ## Start here
 
@@ -11,6 +10,7 @@ semantics remain in the parent workflow documents.
 2. [Architecture and operating model](docs/architecture/ARCHITECTURE.md)
 3. [Deployment and configuration](docs/configuration/DEPLOYMENT.md)
 4. [Security configuration](docs/security/SECURITY.md)
+5. [Operations and recovery](docs/operations/OPERATIONS.md)
 
 ## Service guides
 

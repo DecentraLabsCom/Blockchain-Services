@@ -1,6 +1,6 @@
 # Security configuration
 
-This is the production baseline for the canonical backend. It complements the
+This is the production baseline for `blockchain-services`. It complements the
 route-specific guidance in [Authentication](../services/authentication/AUTH.md) and
 [Wallet/Billing](../services/wallet/WALLET_BILLING.md).
 
