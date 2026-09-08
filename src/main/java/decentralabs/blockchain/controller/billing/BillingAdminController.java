@@ -23,7 +23,7 @@ import org.springframework.web.bind.annotation.RestController;
  * (reservations with triple validation + administrative functions).
  */
 @RestController
-@RequestMapping("/billing")
+@RequestMapping("/billing/admin")
 @RequiredArgsConstructor
 @Slf4j
 public class BillingAdminController {
@@ -34,7 +34,7 @@ public class BillingAdminController {
      * POST /billing/admin/execute
      * Wraps administrative contract operations with localhost+wallet checks.
      */
-    @PostMapping("/admin/execute")
+    @PostMapping("/execute")
     public ResponseEntity<?> executeAdminOperation(
         @RequestBody InstitutionalAdminRequest request
     ) {
@@ -71,7 +71,7 @@ public class BillingAdminController {
      * POST /billing/admin/request-provider-payout
      * Executes a provider payout request server-side using the configured institutional wallet.
      */
-    @PostMapping("/admin/request-provider-payout")
+    @PostMapping("/request-provider-payout")
     public ResponseEntity<?> requestProviderPayout(
         @RequestBody InstitutionalAdminRequest request,
         @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey
@@ -114,7 +114,7 @@ public class BillingAdminController {
         }
     }
 
-    @GetMapping("/admin/transaction-status")
+    @GetMapping("/transaction-status")
     public ResponseEntity<?> getTransactionStatus(@RequestParam String txHash) {
         var result = adminService.getTransactionStatus(txHash);
         if (Boolean.TRUE.equals(result.get("success"))) {

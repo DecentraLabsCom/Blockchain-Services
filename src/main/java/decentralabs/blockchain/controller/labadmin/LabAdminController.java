@@ -25,12 +25,14 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
 
 @RestController
+@RequestMapping("/lab-admin")
 @Conditional(ProviderConsumerModeCondition.class)
 @RequiredArgsConstructor
 @Slf4j
@@ -39,12 +41,12 @@ public class LabAdminController {
     private final LabAdminService labAdminService;
     private final JwtService jwtService;
 
-    @GetMapping("/lab-admin/status")
+    @GetMapping("/status")
     public ResponseEntity<?> status() {
         return ok(labAdminService.status());
     }
 
-    @GetMapping("/lab-admin/labs")
+    @GetMapping("/labs")
     public ResponseEntity<?> labs() {
         try {
             return ok(labAdminService.listLabs());
@@ -53,7 +55,7 @@ public class LabAdminController {
         }
     }
 
-    @GetMapping("/lab-admin/reservations/upcoming")
+    @GetMapping("/reservations/upcoming")
     public ResponseEntity<?> upcomingReservations(
         @RequestParam(required = false) Integer offset,
         @RequestParam(required = false) Integer limit
@@ -69,7 +71,7 @@ public class LabAdminController {
         }
     }
 
-    @GetMapping("/lab-admin/reservations/actionable")
+    @GetMapping("/reservations/actionable")
     public ResponseEntity<?> actionableReservations(
         @RequestParam(required = false) Integer offset,
         @RequestParam(required = false) Integer limit,
@@ -89,7 +91,7 @@ public class LabAdminController {
         }
     }
 
-    @PostMapping("/lab-admin/reservations/{reservationKey}/cancel")
+    @PostMapping("/reservations/{reservationKey}/cancel")
     public ResponseEntity<?> cancelReservation(
         @PathVariable String reservationKey,
         @RequestBody(required = false) LabAdminReservationCancelRequest request,
@@ -108,7 +110,7 @@ public class LabAdminController {
         }
     }
 
-    @GetMapping("/lab-admin/guacamole/connections")
+    @GetMapping("/guacamole/connections")
     public ResponseEntity<?> guacamoleConnections() {
         try {
             return ok(labAdminService.guacamoleConnections());
@@ -119,7 +121,7 @@ public class LabAdminController {
         }
     }
 
-    @PostMapping("/lab-admin/assets")
+    @PostMapping("/assets")
     public ResponseEntity<?> uploadAsset(
         @RequestParam(required = false) String contentId,
         @RequestParam(defaultValue = "images") String kind,
@@ -137,7 +139,7 @@ public class LabAdminController {
         }
     }
 
-    @DeleteMapping("/lab-admin/assets")
+    @DeleteMapping("/assets")
     public ResponseEntity<?> deleteAsset(@RequestBody(required = false) Map<String, String> body) {
         try {
             String path = body == null ? null : body.get("path");
@@ -149,7 +151,7 @@ public class LabAdminController {
         }
     }
 
-    @PostMapping("/lab-admin/labs")
+    @PostMapping("/labs")
     public ResponseEntity<?> publish(
         @RequestBody LabAdminPublishRequest request,
         @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey
@@ -168,7 +170,7 @@ public class LabAdminController {
         }
     }
 
-    @PutMapping("/lab-admin/labs/{labId}")
+    @PutMapping("/labs/{labId}")
     public ResponseEntity<?> update(
         @PathVariable BigInteger labId,
         @RequestBody LabAdminPublishRequest request,
@@ -188,7 +190,7 @@ public class LabAdminController {
         }
     }
 
-    @DeleteMapping("/lab-admin/labs/{labId}")
+    @DeleteMapping("/labs/{labId}")
     public ResponseEntity<?> deleteLab(
         @PathVariable BigInteger labId,
         @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey
@@ -207,7 +209,7 @@ public class LabAdminController {
         }
     }
 
-    @PostMapping("/lab-admin/fmu/provider-describe-token")
+    @PostMapping("/fmu/provider-describe-token")
     public ResponseEntity<?> fmuProviderDescribeToken(@RequestBody(required = false) Map<String, String> body) {
         try {
             String fmuFileName = body == null ? null : body.get("fmuFileName");
@@ -233,7 +235,7 @@ public class LabAdminController {
         }
     }
 
-    @PostMapping("/lab-admin/labs/{labId}/list")
+    @PostMapping("/labs/{labId}/list")
     public ResponseEntity<?> listLab(
         @PathVariable BigInteger labId,
         @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey
@@ -251,7 +253,7 @@ public class LabAdminController {
         }
     }
 
-    @PostMapping("/lab-admin/labs/{labId}/unlist")
+    @PostMapping("/labs/{labId}/unlist")
     public ResponseEntity<?> unlistLab(
         @PathVariable BigInteger labId,
         @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey

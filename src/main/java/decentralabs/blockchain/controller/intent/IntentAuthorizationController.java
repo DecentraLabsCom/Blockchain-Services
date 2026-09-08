@@ -25,7 +25,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 @RestController
-@RequestMapping("${endpoint.intents:/intents}")
+@RequestMapping("${endpoint.intents:/intents}/authorize")
 @RequiredArgsConstructor
 @Slf4j
 public class IntentAuthorizationController {
@@ -39,7 +39,7 @@ public class IntentAuthorizationController {
     @Value("${webauthn.user-verification:preferred}")
     private String userVerification;
 
-    @PostMapping("/authorize")
+    @PostMapping
     public ResponseEntity<IntentAuthorizationSessionResponse> authorizeIntent(
         @RequestBody @Valid IntentAuthorizationRequest request,
         @RequestHeader(value = "Authorization", required = false) String authorizationHeader
@@ -55,7 +55,7 @@ public class IntentAuthorizationController {
         return ResponseEntity.ok(response);
     }
 
-    @GetMapping("/authorize/status/{sessionId}")
+    @GetMapping("/status/{sessionId}")
     public ResponseEntity<IntentAuthorizationStatusResponse> getStatus(
         @PathVariable String sessionId,
         @RequestHeader(value = "Authorization", required = false) String authorizationHeader
@@ -64,14 +64,14 @@ public class IntentAuthorizationController {
         return ResponseEntity.ok(authorizationService.getStatus(sessionId));
     }
 
-    @GetMapping(value = "/authorize/ceremony/{sessionId}", produces = "text/html")
+    @GetMapping(value = "/ceremony/{sessionId}", produces = "text/html")
     public ResponseEntity<String> getCeremonyPage(@PathVariable String sessionId) {
         IntentAuthorizationService.AuthorizationSession session = authorizationService.getSession(sessionId);
         String html = generateCeremonyHtml(session);
         return ResponseEntity.ok(html);
     }
 
-    @PostMapping("/authorize/complete")
+    @PostMapping("/complete")
     public ResponseEntity<IntentAckResponse> completeAuthorization(
         @RequestBody @Valid IntentAuthorizationCompleteRequest request
     ) {
@@ -79,7 +79,7 @@ public class IntentAuthorizationController {
         return ResponseEntity.ok(response);
     }
 
-    @PostMapping("/authorize/client-error")
+    @PostMapping("/client-error")
     public ResponseEntity<Map<String, String>> reportClientError(@RequestBody Map<String, Object> payload) {
         log.warn(
             "Intent authorization client error. sessionId={} requestId={} name={} message={} rpId={} origin={} allowCredentials={} userAgent={}",
