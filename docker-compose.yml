@@ -3,7 +3,7 @@
 # Quick Start:
 # 1. Generate RSA keys (see README.md)
 # 2. Copy .env.example -> .env (gitignored) with default values
-# 3. Run: docker-compose up -d
+# 3. Run: docker compose up -d
 # 4. Open /wallet-dashboard and create/import the institutional wallet.
 #    The service auto-stores the encrypted key + credentials (no restart needed).
 #

@@ -15,7 +15,7 @@ $containerRunning = docker ps --format "{{.Names}}" | Select-String -Pattern "^$
 
 if (-not $containerRunning) {
     Write-Host "❌ Container '$ContainerName' is not running!" -ForegroundColor Red
-    Write-Host "   Run: docker-compose up -d" -ForegroundColor Yellow
+    Write-Host "   Run: docker compose up -d" -ForegroundColor Yellow
     exit 1
 }
 

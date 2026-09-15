@@ -15,7 +15,7 @@ CONTAINER_NAME="blockchain-services"
 echo "🔍 Checking if container is running..."
 if ! docker ps | grep -q "$CONTAINER_NAME"; then
     echo "❌ Container '$CONTAINER_NAME' is not running!"
-    echo "   Run: docker-compose up -d"
+    echo "   Run: docker compose up -d"
     exit 1
 fi
 
