@@ -251,6 +251,45 @@ class LabAdminServiceTest {
     }
 
     @Test
+    void normalizeGeneratedMetadataAllowsEmptyImageAliases() {
+        Map<String, Object> metadata = new java.util.LinkedHashMap<>();
+        metadata.put("name", "Lab Without Images");
+        metadata.put("description", "A lab that has no image configured");
+        metadata.put("image", "");
+        metadata.put("attributes", List.of(
+            Map.of("trait_type", "additionalImages", "value", List.of()),
+            Map.of("trait_type", "docs", "value", List.of())
+        ));
+
+        service.normalizeGeneratedMetadata(metadata);
+
+        assertThat(metadata).doesNotContainKeys("images", "docs", "periodRules");
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> attributes = (List<Map<String, Object>>) metadata.get("attributes");
+        assertThat(attributes).anyMatch(attribute ->
+            "additionalImages".equals(attribute.get("trait_type"))
+                && List.of().equals(attribute.get("value"))
+        );
+        assertThat(attributes).anyMatch(attribute ->
+            "docs".equals(attribute.get("trait_type"))
+                && List.of().equals(attribute.get("value"))
+        );
+    }
+
+    @Test
+    void normalizeGeneratedMetadataAllowsEmptyRootImageAlias() {
+        Map<String, Object> metadata = new java.util.LinkedHashMap<>();
+        metadata.put("name", "Root Alias Without Images");
+        metadata.put("description", "A lab with an empty root image alias");
+        metadata.put("images", List.of());
+
+        service.normalizeGeneratedMetadata(metadata);
+
+        assertThat(metadata).doesNotContainKeys("images", "docs", "periodRules");
+        assertThat(metadata.get("attributes")).isNotNull();
+    }
+
+    @Test
     void normalizeGeneratedMetadataConvertsRootMediaAliasesToCanonicalAttributes() {
         Map<String, Object> metadata = new java.util.LinkedHashMap<>();
         metadata.put("name", "Aliased Lab");

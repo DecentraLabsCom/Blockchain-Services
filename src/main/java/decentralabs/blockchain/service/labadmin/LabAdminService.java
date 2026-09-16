@@ -1644,7 +1644,10 @@ public class LabAdminService {
             metadata.put("image", images.get(0));
         }
         if (metadata.containsKey("images") || additionalImages != null) {
-            upsertListAttribute(attributes, "additionalImages", images.subList(1, images.size()));
+            List<String> remainingImages = images.size() > 1
+                ? new ArrayList<>(images.subList(1, images.size()))
+                : List.of();
+            upsertListAttribute(attributes, "additionalImages", remainingImages);
         }
 
         List<String> docs = new ArrayList<>();
@@ -1718,10 +1721,10 @@ public class LabAdminService {
     }
 
     private List<Map<String, Object>> metadataAttributes(Object value) {
-        if (!(value instanceof List<?> values)) {
-            return List.of();
-        }
         List<Map<String, Object>> attributes = new ArrayList<>();
+        if (!(value instanceof List<?> values)) {
+            return attributes;
+        }
         for (Object item : values) {
             if (item instanceof Map<?, ?> map) {
                 Map<String, Object> normalized = new LinkedHashMap<>();
