@@ -2,6 +2,7 @@ package decentralabs.blockchain.service.health;
 
 import com.fasterxml.jackson.core.JsonFactory;
 import com.fasterxml.jackson.core.StreamReadConstraints;
+import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import decentralabs.blockchain.dto.health.AllowedDuration;
@@ -234,7 +235,7 @@ public class LabMetadataService {
         appendDistinct(documentation, parseStringList(rootNode.get("docs")));
         boolean hasDocumentation = rootNode.has("docs");
         boolean hasAdditionalImages = rootNode.has("images");
-        Map<String, Object> termsOfUse = parseObject(rootNode.get("termsOfUse"), Map.class);
+        Map<String, Object> termsOfUse = parseObjectMap(rootNode.get("termsOfUse"));
 
         LabMetadata.LabMetadataBuilder builder = LabMetadata.builder()
             .name(rootNode.get("name").asText())
@@ -302,7 +303,7 @@ public class LabMetadataService {
                         appendDistinct(documentation, parseStringList(valueNode));
                         hasDocumentation = true;
                     }
-                    case "termsofuse" -> termsOfUse = parseObject(valueNode, Map.class);
+                    case "termsofuse" -> termsOfUse = parseObjectMap(valueNode);
                     case "additionalimages" -> {
                         appendDistinct(additionalImages, parseStringList(valueNode));
                         hasAdditionalImages = true;
@@ -438,6 +439,18 @@ public class LabMetadataService {
             if (!target.contains(normalized)) {
                 target.add(normalized);
             }
+        }
+    }
+
+    private Map<String, Object> parseObjectMap(JsonNode node) {
+        if (node == null || node.isNull() || !node.isObject()) {
+            return null;
+        }
+        try {
+            return objectMapper.convertValue(node, new TypeReference<Map<String, Object>>() { });
+        } catch (IllegalArgumentException ex) {
+            log.warn("Unable to parse metadata object: {}", ex.getMessage());
+            return null;
         }
     }
 
