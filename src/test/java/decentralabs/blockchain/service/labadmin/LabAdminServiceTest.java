@@ -127,7 +127,12 @@ class LabAdminServiceTest {
         when(diamond.isLabListed(unnamedLabId)).thenReturn(unnamedListedCall);
         when(namedListedCall.send()).thenReturn(true);
         when(unnamedListedCall.send()).thenReturn(true);
-        when(labMetadataService.getLabDisplayNameForLab(namedLabId)).thenReturn("StateSpace");
+        when(labMetadataService.getLabMetadataForLab(namedLabId)).thenReturn(LabMetadata.builder()
+            .name("StateSpace")
+            .description("State-space simulation laboratory")
+            .documentation(List.of("https://docs.example.com/manual.pdf", "https://docs.example.com/guide.html"))
+            .termsOfUse(Map.of("url", "https://docs.example.com/terms.html"))
+            .build());
         when(labMetadataService.getLabDisplayNameForLab(unnamedLabId))
             .thenThrow(new IllegalStateException("Metadata unavailable"));
         doReturn(diamond).when(service).loadReadonlyDiamond();
@@ -137,6 +142,13 @@ class LabAdminServiceTest {
 
         assertThat(labs).hasSize(2);
         assertThat(((Map<?, ?>) labs.get(0)).get("name")).isEqualTo("StateSpace");
+        assertThat(((Map<?, ?>) labs.get(0)).get("description")).isEqualTo("State-space simulation laboratory");
+        assertThat(((Map<?, ?>) labs.get(0)).get("documentation")).isEqualTo(
+            List.of("https://docs.example.com/manual.pdf", "https://docs.example.com/guide.html")
+        );
+        assertThat(((Map<?, ?>) labs.get(0)).get("termsOfUse")).isEqualTo(
+            Map.of("url", "https://docs.example.com/terms.html")
+        );
         assertThat(((Map<?, ?>) labs.get(1)).containsKey("name")).isFalse();
     }
 

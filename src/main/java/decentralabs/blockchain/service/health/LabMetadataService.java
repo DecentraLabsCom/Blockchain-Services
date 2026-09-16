@@ -29,6 +29,7 @@ import java.time.ZoneOffset;
 import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.stream.Collectors;
 import java.util.stream.StreamSupport;
@@ -233,6 +234,7 @@ public class LabMetadataService {
         appendDistinct(documentation, parseStringList(rootNode.get("docs")));
         boolean hasDocumentation = rootNode.has("docs");
         boolean hasAdditionalImages = rootNode.has("images");
+        Map<String, Object> termsOfUse = parseObject(rootNode.get("termsOfUse"), Map.class);
 
         LabMetadata.LabMetadataBuilder builder = LabMetadata.builder()
             .name(rootNode.get("name").asText())
@@ -300,6 +302,7 @@ public class LabMetadataService {
                         appendDistinct(documentation, parseStringList(valueNode));
                         hasDocumentation = true;
                     }
+                    case "termsofuse" -> termsOfUse = parseObject(valueNode, Map.class);
                     case "additionalimages" -> {
                         appendDistinct(additionalImages, parseStringList(valueNode));
                         hasAdditionalImages = true;
@@ -310,6 +313,9 @@ public class LabMetadataService {
 
         if (hasDocumentation) {
             builder.documentation(documentation);
+        }
+        if (termsOfUse != null && !termsOfUse.isEmpty()) {
+            builder.termsOfUse(termsOfUse);
         }
         if (hasAdditionalImages) {
             builder.additionalImages(additionalImages);

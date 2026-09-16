@@ -90,6 +90,9 @@ sequenceDiagram
   removed. A root `periodRules` value is copied to its attribute only when the
   attribute is not already present. See the [metadata example](../../reference/example-lab-metadata.md)
   for the exact precedence rules.
+- The `docs` attribute may contain multiple documentation URLs. The
+  `termsOfUse` attribute contains the single Terms of Use record; Lab Manager
+  reuses its `url` as the generated AAS `License` property.
 - For on-chain `resourceType == 1` (FMU), the off-chain metadata must declare
   `maxConcurrentUsers` as a positive integer. The backend validates it during
   publication, update, listing preflight and provider confirmation; the

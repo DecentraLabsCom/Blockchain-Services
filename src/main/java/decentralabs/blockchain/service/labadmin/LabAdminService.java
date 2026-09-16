@@ -176,7 +176,17 @@ public class LabAdminService {
                 item.put("accessKey", lab.base.accessKey);
                 item.put("resourceType", lab.base.resourceType.intValue());
                 item.put("listed", loadReadonlyDiamond().isLabListed(labId).send());
-                String name = resolveLabName(lab, labId);
+                LabMetadata metadata = resolveLabMetadata(labId);
+                if (metadata != null && hasText(metadata.getDescription())) {
+                    item.put("description", metadata.getDescription().trim());
+                }
+                if (metadata != null && metadata.getDocumentation() != null && !metadata.getDocumentation().isEmpty()) {
+                    item.put("documentation", metadata.getDocumentation());
+                }
+                if (metadata != null && metadata.getTermsOfUse() != null && !metadata.getTermsOfUse().isEmpty()) {
+                    item.put("termsOfUse", metadata.getTermsOfUse());
+                }
+                String name = resolveLabName(lab, labId, metadata);
                 if (hasText(name)) {
                     item.put("name", name);
                 }
@@ -749,21 +759,29 @@ public class LabAdminService {
     }
 
     private String resolveLabName(Diamond.Lab lab, BigInteger labId) {
+        return resolveLabName(lab, labId, resolveLabMetadata(labId));
+    }
+
+    private String resolveLabName(Diamond.Lab lab, BigInteger labId, LabMetadata metadata) {
         if (lab == null || lab.base == null || !hasText(lab.base.uri)) {
             return null;
         }
-        try {
-            var metadata = labMetadataService.getLabMetadataForLab(labId);
-            if (metadata != null && hasText(metadata.getName())) {
-                return metadata.getName().trim();
-            }
-        } catch (Exception ex) {
-            log.debug("Unable to resolve name metadata for lab {}", labId, ex);
+        if (metadata != null && hasText(metadata.getName())) {
+            return metadata.getName().trim();
         }
         try {
             return labMetadataService.getLabDisplayNameForLab(labId);
         } catch (Exception ex) {
             log.debug("Unable to resolve display name from authoritative metadata for lab {}", labId, ex);
+            return null;
+        }
+    }
+
+    private LabMetadata resolveLabMetadata(BigInteger labId) {
+        try {
+            return labMetadataService.getLabMetadataForLab(labId);
+        } catch (Exception ex) {
+            log.debug("Unable to resolve metadata for lab {}", labId, ex);
             return null;
         }
     }

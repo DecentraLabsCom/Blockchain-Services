@@ -249,6 +249,7 @@ class LabMetadataServiceTest {
                 "https://docs.example.com/manual.pdf",
                 "https://docs.example.com/guide.html"
             );
+            assertThat(metadata.getTermsOfUse()).containsEntry("url", "https://docs.example.com/terms.html");
         }
 
         @Test
@@ -665,7 +666,11 @@ class LabMetadataServiceTest {
                     { "trait_type": "docs", "value": [
                         "https://docs.example.com/manual.pdf",
                         "https://docs.example.com/guide.html"
-                    ]}
+                    ]},
+                    { "trait_type": "termsOfUse", "value": {
+                        "url": "https://docs.example.com/terms.html",
+                        "version": "1.0"
+                    }}
                 ]
             }
             """;

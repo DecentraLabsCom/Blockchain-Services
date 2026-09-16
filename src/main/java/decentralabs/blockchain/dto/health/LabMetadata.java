@@ -7,6 +7,7 @@ import lombok.NoArgsConstructor;
 
 import java.time.DayOfWeek;
 import java.util.List;
+import java.util.Map;
 
 /**
  * DTO representing lab metadata including availability configuration
@@ -43,5 +44,6 @@ public class LabMetadata {
     private String category;
     private List<String> keywords;
     private List<String> documentation;
+    private Map<String, Object> termsOfUse;
     private List<String> additionalImages;
 }
