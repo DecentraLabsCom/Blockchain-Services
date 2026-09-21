@@ -264,6 +264,7 @@ class IntentAuthorizationControllerTest {
             submission,
             List.of(new IntentAuthorizationService.AllowedCredential("cred-1", List.of("internal"))),
             "challenge",
+            decentralabs.blockchain.service.intent.IntentChallengeDigestService.SCHEME,
             "https://app.example/callback",
             expiresAt
         );

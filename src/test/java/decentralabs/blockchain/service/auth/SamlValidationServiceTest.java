@@ -618,6 +618,21 @@ class SamlValidationServiceTest {
     }
 
     @Test
+    void shouldExposeVersionedHashOfTheValidatedSignedAssertionReference() throws Exception {
+        Map<String, String> attributes = new java.util.LinkedHashMap<>();
+        attributes.put("eduPersonPrincipalName", "user@university.edu");
+        attributes.put("affiliation", "student@university.edu");
+        SamlAssertionAttributes validated = samlValidationService.validateSamlAssertionDetailed(
+            createSignedSamlAssertionWithAttributes(attributes)
+        );
+
+        assertThat(validated.assertionHashVersion())
+            .isEqualTo(SamlAttestationHashService.HASH_VERSION);
+        assertThat(validated.assertionHash())
+            .isEqualTo("0x349b7502042cc9c47d9e454e3f7d00d2000cd1b8bcc694f8828b4c4e9a51f0cb");
+    }
+
+    @Test
     void shouldExtractIdentityOnlyFromTheAssertionWhoseSignatureWasValidated() throws Exception {
         String wrappedAssertion = createSignedResponseWithDecoyAttributes();
 

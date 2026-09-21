@@ -1,6 +1,5 @@
 package decentralabs.blockchain.service.intent;
 
-import java.nio.charset.StandardCharsets;
 import java.security.SecureRandom;
 import java.time.Instant;
 import java.util.Arrays;
@@ -54,6 +53,7 @@ public class IntentAuthorizationService {
     private final IntentExecutionService intentExecutionService;
     private final WebauthnCredentialService webauthnCredentialService;
     private final InstitutionalSessionCredentialService institutionalSessionCredentialService;
+    private final IntentChallengeDigestService challengeDigestService;
     private final BackendUrlResolver backendUrlResolver;
 
     @Value("${webauthn.rp.id:${base.domain:localhost}}")
@@ -79,6 +79,7 @@ public class IntentAuthorizationService {
         IntentExecutionService intentExecutionService,
         WebauthnCredentialService webauthnCredentialService,
         InstitutionalSessionCredentialService institutionalSessionCredentialService,
+        IntentChallengeDigestService challengeDigestService,
         BackendUrlResolver backendUrlResolver,
         IntentAuthorizationSessionPersistenceService sessionPersistence
     ) {
@@ -86,6 +87,7 @@ public class IntentAuthorizationService {
         this.intentExecutionService = intentExecutionService;
         this.webauthnCredentialService = webauthnCredentialService;
         this.institutionalSessionCredentialService = institutionalSessionCredentialService;
+        this.challengeDigestService = challengeDigestService;
         this.backendUrlResolver = backendUrlResolver;
         this.sessionPersistence = sessionPersistence;
     }
@@ -119,7 +121,9 @@ public class IntentAuthorizationService {
         IntentSubmission submission = buildSubmission(request);
         IntentMeta meta = submission.getMeta();
         intentService.enforceActionAllowedById(meta.getAction());
-        String puc = resolvePuc(submission);
+        InstitutionalSessionCredentialService.Credential institutionalCredential =
+            resolveInstitutionalCredential(submission);
+        String puc = resolvePuc(submission, institutionalCredential);
         if (puc == null || puc.isBlank()) {
             // codeql[java/log-injection]
             log.warn("Intent authorization PUC resolution failed. requestId={} stableUserIdMode={} payloadPucHash={}",
@@ -144,9 +148,11 @@ public class IntentAuthorizationService {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "webauthn_credential_not_registered");
         }
 
-        String challengeString = buildWebauthnChallenge(puc, meta);
-        String challengeB64 = java.util.Base64.getUrlEncoder().withoutPadding()
-            .encodeToString(challengeString.getBytes(StandardCharsets.UTF_8));
+        IntentChallengeDigestService.Challenge challenge = challengeDigestService.build(
+            meta,
+            puc,
+            institutionalCredential.institutionId()
+        );
 
         String sessionId = randomSessionId();
         Instant expiresAt = Instant.now().plusSeconds(sessionTtlSeconds);
@@ -155,7 +161,8 @@ public class IntentAuthorizationService {
             sessionId,
             submission,
             allowedCredentials,
-            challengeB64,
+            challenge.challengeBase64Url(),
+            challenge.scheme(),
             request.getReturnUrl(),
             expiresAt
         );
@@ -186,6 +193,7 @@ public class IntentAuthorizationService {
 
     public AuthorizationSession getSession(String sessionId) {
         IntentAuthorizationSessionPersistenceService.StoredSession stored = loadSessionReadOnly(sessionId);
+        ensureSupportedChallengeScheme(stored.session());
         if (!stored.isTerminal() && stored.session().isExpired()) {
             throw new ResponseStatusException(HttpStatus.GONE, "Session expired");
         }
@@ -218,6 +226,7 @@ public class IntentAuthorizationService {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Invalid or expired session");
         }
         IntentAuthorizationSessionPersistenceService.StoredSession current = loadSession(request.getSessionId());
+        ensureSupportedChallengeScheme(current.session());
         if (current.isTerminal()) {
             return replayTerminalResult(current);
         }
@@ -258,7 +267,11 @@ public class IntentAuthorizationService {
             submission.setWebauthnAuthenticatorData(request.getAuthenticatorData());
             submission.setWebauthnSignature(request.getSignature());
 
-            IntentAckResponse ack = intentService.processIntent(submission);
+            IntentAckResponse ack = intentService.processIntent(
+                submission,
+                session.getChallenge(),
+                session.getChallengeScheme()
+            );
             if ("accepted".equalsIgnoreCase(ack.getStatus())) {
                 completeClaimOrThrow(claim, "SUCCESS", ack, null, HttpStatus.OK.value());
                 log.info("Intent authorization completion accepted");
@@ -360,18 +373,39 @@ public class IntentAuthorizationService {
             .toList();
     }
 
-    private String resolvePuc(IntentSubmission submission) {
+    private InstitutionalSessionCredentialService.Credential resolveInstitutionalCredential(
+        IntentSubmission submission
+    ) {
         if (submission == null) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "missing_intent_submission");
         }
         try {
-            String expectedPucHash = expectedPucHash(submission.getActionPayload(), submission.getReservationPayload());
             var credential = institutionalSessionCredentialService.validate(
                 submission.getInstitutionalSessionToken()
             );
             if (credential == null) {
                 throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "missing_institutional_session");
             }
+            return credential;
+        } catch (ResponseStatusException ex) {
+            throw ex;
+        } catch (Exception ex) {
+            Throwable rootCause = rootCause(ex);
+            log.warn(
+                "Invalid institutional session while resolving intent authorization PUC. exceptionType={} rootCauseType={}",
+                ex.getClass().getSimpleName(),
+                rootCause.getClass().getSimpleName()
+            );
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "invalid_saml", ex);
+        }
+    }
+
+    private String resolvePuc(
+        IntentSubmission submission,
+        InstitutionalSessionCredentialService.Credential credential
+    ) {
+        try {
+            String expectedPucHash = expectedPucHash(submission.getActionPayload(), submission.getReservationPayload());
             String payloadInstitution = expectedInstitution(submission.getActionPayload(), submission.getReservationPayload());
             if (payloadInstitution != null && !payloadInstitution.equalsIgnoreCase(credential.institutionId())) {
                 throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "institutional_session_institution_mismatch");
@@ -507,16 +541,10 @@ public class IntentAuthorizationService {
         return null;
     }
 
-    private String buildWebauthnChallenge(String puc, IntentMeta meta) {
-        return String.join("|",
-            puc.toLowerCase(Locale.ROOT),
-            meta.getRequestId(),
-            meta.getPayloadHash(),
-            String.valueOf(meta.getNonce()),
-            String.valueOf(meta.getRequestedAt()),
-            String.valueOf(meta.getExpiresAt()),
-            String.valueOf(meta.getAction())
-        );
+    private void ensureSupportedChallengeScheme(AuthorizationSession session) {
+        if (session == null || !IntentChallengeDigestService.SCHEME.equals(session.getChallengeScheme())) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "webauthn_challenge_scheme_rejected");
+        }
     }
 
     private String randomSessionId() {
@@ -651,6 +679,7 @@ public class IntentAuthorizationService {
         private IntentSubmission submission;
         private List<AllowedCredential> allowedCredentials;
         private String challenge;
+        private String challengeScheme;
         private String returnUrl;
         private Instant expiresAt;
 

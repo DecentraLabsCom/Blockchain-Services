@@ -299,6 +299,7 @@ public class IntentAuthorizationSessionPersistenceService {
                 payload.submission(),
                 allowedCredentials,
                 payload.challenge(),
+                payload.challengeScheme(),
                 payload.returnUrl(),
                 toInstant(rs.getTimestamp("expires_at"))
             );
@@ -327,6 +328,7 @@ public class IntentAuthorizationSessionPersistenceService {
                 session.getSubmission(),
                 session.getAllowedCredentials(),
                 session.getChallenge(),
+                session.getChallengeScheme(),
                 session.getReturnUrl()
             );
             return payloadCipher.encrypt(objectMapper.writeValueAsString(payload));
@@ -411,6 +413,7 @@ public class IntentAuthorizationSessionPersistenceService {
         IntentSubmission submission,
         List<IntentAuthorizationService.AllowedCredential> allowedCredentials,
         String challenge,
+        String challengeScheme,
         String returnUrl
     ) {}
 }

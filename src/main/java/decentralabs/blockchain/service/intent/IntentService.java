@@ -85,6 +85,7 @@ public class IntentService {
     private final InstitutionalSessionCredentialService institutionalSessionCredentialService;
     private final WebauthnCredentialService webauthnCredentialService;
     private final WalletService walletService;
+    private final IntentChallengeDigestService challengeDigestService;
     private final BackendUrlResolver backendUrlResolver;
     private final String contractAddress;
     private final MeterRegistry meterRegistry;
@@ -115,6 +116,7 @@ public class IntentService {
         InstitutionalSessionCredentialService institutionalSessionCredentialService,
         WebauthnCredentialService webauthnCredentialService,
         WalletService walletService,
+        IntentChallengeDigestService challengeDigestService,
         @Value("${contract.address}") String contractAddress,
         MeterRegistry meterRegistry,
         BackendUrlResolver backendUrlResolver,
@@ -128,6 +130,7 @@ public class IntentService {
         this.institutionalSessionCredentialService = institutionalSessionCredentialService;
         this.webauthnCredentialService = webauthnCredentialService;
         this.walletService = walletService;
+        this.challengeDigestService = challengeDigestService;
         this.contractAddress = contractAddress;
         this.meterRegistry = meterRegistry;
         this.backendUrlResolver = backendUrlResolver;
@@ -164,14 +167,31 @@ public class IntentService {
     }
 
     public IntentAckResponse processIntent(IntentSubmission submission) {
+        return processIntent(submission, null, null);
+    }
+
+    /**
+     * Processes an intent completed through the durable WebAuthn ceremony.
+     * The persisted challenge is supplied by the server-side authorization
+     * session; it is never accepted from the browser submission.
+     */
+    public IntentAckResponse processIntent(
+        IntentSubmission submission,
+        String persistedChallenge,
+        String persistedChallengeScheme
+    ) {
         try {
-            return processIntentInternal(submission);
+            return processIntentInternal(submission, persistedChallenge, persistedChallengeScheme);
         } finally {
             clearTransientIdentityMaterial(submission);
         }
     }
 
-    private IntentAckResponse processIntentInternal(IntentSubmission submission) {
+    private IntentAckResponse processIntentInternal(
+        IntentSubmission submission,
+        String persistedChallenge,
+        String persistedChallengeScheme
+    ) {
         IntentMeta meta = Optional.ofNullable(submission.getMeta())
             .orElseThrow(() -> new ResponseStatusException(HttpStatus.BAD_REQUEST, "Missing intent meta"));
         IntentAction action = resolveAction(meta);
@@ -222,7 +242,15 @@ public class IntentService {
         String puc = resolvePuc(validatedSamlUser);
         String pucHash = PucHashUtil.hashPuc(puc);
         enforceLabCreatorOwnershipPrecheck(action, actionPayload);
-        validateWebauthnAssertion(puc, credentialId, meta, submission);
+        validateWebauthnAssertion(
+            puc,
+            credentialId,
+            meta,
+            institutionalCredential.institutionId(),
+            submission,
+            persistedChallenge,
+            persistedChallengeScheme
+        );
 
         if (isExpired(meta.getExpiresAt())) {
             return buildRejectedAck(meta.getRequestId(), "expired");
@@ -750,7 +778,15 @@ public class IntentService {
         return credentialId;
     }
 
-    private void validateWebauthnAssertion(String puc, String credentialId, IntentMeta meta, IntentSubmission submission) {
+    private void validateWebauthnAssertion(
+        String puc,
+        String credentialId,
+        IntentMeta meta,
+        String institutionId,
+        IntentSubmission submission,
+        String persistedChallenge,
+        String persistedChallengeScheme
+    ) {
         if (isBlank(puc)) {
             log.warn("WebAuthn validation failed: missing PUC for WebAuthn");
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "missing_puc_for_webauthn");
@@ -770,10 +806,22 @@ public class IntentService {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "webauthn_credential_revoked");
         }
 
-        // These challenges are derived from the authenticated intent metadata;
-        // the client assertion is checked against them rather than trusted.
+        IntentChallengeDigestService.Challenge expectedChallenge;
+        try {
+            expectedChallenge = challengeDigestService.build(meta, puc, institutionId);
+        } catch (IllegalArgumentException ex) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "webauthn_challenge_invalid", ex);
+        }
+        if ((persistedChallenge == null) != (persistedChallengeScheme == null)
+            || (persistedChallenge != null
+                && (!IntentChallengeDigestService.SCHEME.equals(persistedChallengeScheme)
+                    || !challengeDigestService.matches(expectedChallenge, persistedChallenge)))) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "webauthn_challenge_mismatch");
+        }
+
+        // The challenge is derived from authenticated intent metadata; the
+        // client assertion is checked against it rather than trusted.
         // codeql[java/user-controlled-bypass]
-        String expectedChallenge = buildWebauthnChallenge(puc, meta);
         log.info("WebAuthn validation started. credentialIdPresent={}", !isBlank(credentialId));
         
         // WebAuthn assertion verification requires user-provided data by design.
@@ -819,18 +867,6 @@ public class IntentService {
         return value;
     }
 
-    private String buildWebauthnChallenge(String puc, IntentMeta meta) {
-        return String.join("|",
-            puc.toLowerCase(Locale.ROOT),
-            meta.getRequestId(),
-            meta.getPayloadHash(),
-            String.valueOf(meta.getNonce()),
-            String.valueOf(meta.getRequestedAt()),
-            String.valueOf(meta.getExpiresAt()),
-            String.valueOf(meta.getAction())
-        );
-    }
-
     /**
      * Verifies a WebAuthn assertion against the stored credential.
      * This method intentionally receives user-provided data because WebAuthn
@@ -844,7 +880,7 @@ public class IntentService {
         String clientDataJSONb64,
         String authenticatorDatab64,
         String signatureB64,
-        String expectedChallenge
+        IntentChallengeDigestService.Challenge expectedChallenge
     ) {
         try {
             byte[] clientData = Base64.getUrlDecoder().decode(clientDataJSONb64);
@@ -853,11 +889,11 @@ public class IntentService {
 
             JsonNode parsedClientData = validateClientData(clientData, "webauthn.get", expectedChallenge);
             String challengeFromClient = parsedClientData.path("challenge").asText();
-            String expectedChallengeB64 = Base64.getUrlEncoder().withoutPadding().encodeToString(expectedChallenge.getBytes(StandardCharsets.UTF_8));
-            if (!expectedChallengeB64.equals(challengeFromClient)) {
+            if (!expectedChallenge.challengeBase64Url().equals(challengeFromClient)
+                || !challengeDigestService.matches(expectedChallenge, challengeFromClient)) {
                 log.warn(
                     "WebAuthn challenge mismatch. expectedChallengeHash={} clientChallengeHash={}",
-                    PucHashUtil.hashPuc(expectedChallengeB64),
+                    PucHashUtil.hashPuc(expectedChallenge.challengeBase64Url()),
                     PucHashUtil.hashPuc(challengeFromClient)
                 );
                 throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "webauthn_challenge_mismatch");
@@ -897,7 +933,11 @@ public class IntentService {
         }
     }
 
-    private JsonNode validateClientData(byte[] clientData, String expectedType, String expectedChallenge) {
+    private JsonNode validateClientData(
+        byte[] clientData,
+        String expectedType,
+        IntentChallengeDigestService.Challenge expectedChallenge
+    ) {
         try {
             JsonNode parsed = objectMapper.readTree(clientData);
             if (parsed == null || !parsed.isObject()) {
@@ -907,9 +947,7 @@ public class IntentService {
                 throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "webauthn_clientdata_type_invalid");
             }
             String challenge = parsed.path("challenge").asText(null);
-            String expectedChallengeB64 = Base64.getUrlEncoder().withoutPadding()
-                .encodeToString(expectedChallenge.getBytes(StandardCharsets.UTF_8));
-            if (challenge == null || !expectedChallengeB64.equals(challenge)) {
+            if (challenge == null || !challengeDigestService.matches(expectedChallenge, challenge)) {
                 throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "webauthn_challenge_mismatch");
             }
             String origin = parsed.path("origin").asText(null);

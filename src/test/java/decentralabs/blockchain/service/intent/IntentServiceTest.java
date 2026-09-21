@@ -39,6 +39,7 @@ import decentralabs.blockchain.dto.intent.IntentStatusResponse;
 import decentralabs.blockchain.dto.intent.IntentSubmission;
 import decentralabs.blockchain.dto.intent.ReservationIntentPayload;
 import decentralabs.blockchain.service.auth.InstitutionalSessionCredentialService;
+import decentralabs.blockchain.service.auth.SamlAttestationHashService;
 import decentralabs.blockchain.service.auth.WebauthnCredentialService;
 import decentralabs.blockchain.service.BackendUrlResolver;
 import decentralabs.blockchain.service.wallet.WalletService;
@@ -63,6 +64,9 @@ class IntentServiceTest {
 
     @Mock
     private WebauthnCredentialService webauthnCredentialService;
+
+    @Mock
+    private IntentChallengeDigestService challengeDigestService;
 
     @Mock
     private WalletService walletService;
@@ -92,6 +96,7 @@ class IntentServiceTest {
             institutionalSessionCredentialService,
             webauthnCredentialService,
             walletService,
+            challengeDigestService,
             "0x0000000000000000000000000000000000000001",
             meterRegistry,
             backendUrlResolver,
@@ -115,12 +120,21 @@ class IntentServiceTest {
                 "uned.es",
                 "principal",
                 "0x" + "b".repeat(64),
+                SamlAttestationHashService.HASH_VERSION,
                 Instant.now(),
                 Instant.now().plusSeconds(3600),
                 Instant.now().plusSeconds(3600),
                 "test-session"
             )
         );
+        lenient().when(challengeDigestService.build(any(), anyString(), anyString()))
+            .thenReturn(testChallenge());
+        lenient().when(challengeDigestService.matches(any(), anyString()))
+            .thenAnswer(invocation -> {
+                IntentChallengeDigestService.Challenge expected = invocation.getArgument(0);
+                String candidate = invocation.getArgument(1);
+                return expected != null && expected.challengeBase64Url().equals(candidate);
+            });
     }
 
     @Test
@@ -196,6 +210,7 @@ class IntentServiceTest {
             institutionalSessionCredentialService,
             webauthnCredentialService,
             walletService,
+            challengeDigestService,
             "0x0000000000000000000000000000000000000001",
             meterRegistry,
             backendUrlResolver,
@@ -265,7 +280,7 @@ class IntentServiceTest {
         String puc = "user@institution.edu";
         String credentialId = Base64.getUrlEncoder().withoutPadding()
             .encodeToString("credential-assertion".getBytes(StandardCharsets.UTF_8));
-        String expectedChallenge = "challenge-data";
+        IntentChallengeDigestService.Challenge expectedChallenge = testChallenge();
 
         KeyPairGenerator keyPairGenerator = KeyPairGenerator.getInstance("EC");
         keyPairGenerator.initialize(new ECGenParameterSpec("secp256r1"));
@@ -276,8 +291,7 @@ class IntentServiceTest {
         byte[] coseKey = coseEcKey(x, y);
         String publicKeyB64 = Base64.getUrlEncoder().withoutPadding().encodeToString(coseKey);
 
-        String challengeB64 = Base64.getUrlEncoder().withoutPadding()
-            .encodeToString(expectedChallenge.getBytes(StandardCharsets.UTF_8));
+        String challengeB64 = expectedChallenge.challengeBase64Url();
         byte[] clientData = ("{\"type\":\"webauthn.get\",\"challenge\":\"" + challengeB64
             + "\",\"origin\":\"https://localhost\"}").getBytes(StandardCharsets.UTF_8);
         byte[] authenticatorData = new byte[37];
@@ -348,6 +362,15 @@ class IntentServiceTest {
         meta.setRequestedAt(Instant.now().getEpochSecond());
         meta.setExpiresAt(Instant.now().plusSeconds(300).getEpochSecond());
         return meta;
+    }
+
+    private IntentChallengeDigestService.Challenge testChallenge() {
+        return new IntentChallengeDigestService.Challenge(
+            new byte[32],
+            "0x" + "00".repeat(32),
+            "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+            IntentChallengeDigestService.SCHEME
+        );
     }
 
     private ActionIntentPayload createValidActionPayload() {
@@ -967,7 +990,7 @@ class IntentServiceTest {
         String clientData,
         String authenticatorData,
         String signature,
-        String expectedChallenge
+        IntentChallengeDigestService.Challenge expectedChallenge
     ) throws Exception {
         Method method = IntentService.class.getDeclaredMethod(
             "verifyWebauthnAssertion",
@@ -977,7 +1000,7 @@ class IntentServiceTest {
             String.class,
             String.class,
             String.class,
-            String.class
+            IntentChallengeDigestService.Challenge.class
         );
         method.setAccessible(true);
         try {

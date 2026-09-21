@@ -25,6 +25,7 @@ public class InstitutionalSessionCredentialService {
 
     private static final String TOKEN_TYPE = "institutional_saml_session";
     private static final String SUBJECT = "institutional-session";
+    public static final String SUPPORTED_ASSERTION_HASH_VERSION = SamlAttestationHashService.HASH_VERSION;
     private static final Logger log = LoggerFactory.getLogger(InstitutionalSessionCredentialService.class);
 
     private final JwtService jwtService;
@@ -38,11 +39,13 @@ public class InstitutionalSessionCredentialService {
         String institutionId,
         String puc,
         String stableUserIdMode,
-        String samlAssertionHash
+        String samlAssertionHash,
+        String samlAssertionHashVersion
     ) {
         String normalizedPuc = requireText(PucNormalizer.normalize(puc), "PUC");
         String normalizedInstitution = requireText(institutionId, "institutionId").toLowerCase(Locale.ROOT);
         String normalizedHash = requireHash(samlAssertionHash);
+        String normalizedHashVersion = requireHashVersion(samlAssertionHashVersion);
         Instant issuedAt = Instant.now().truncatedTo(ChronoUnit.SECONDS);
         Instant expiresAt = issuedAt.plusSeconds(Math.max(60, ttlSeconds));
 
@@ -54,13 +57,22 @@ public class InstitutionalSessionCredentialService {
             "pucCiphertext", payloadCipher.encrypt(normalizedPuc),
             "stableUserIdMode", stableUserIdMode == null ? "" : stableUserIdMode,
             "samlAssertionHash", normalizedHash,
+            "samlAssertionHashVersion", normalizedHashVersion,
             "reauthenticationAt", expiresAt.getEpochSecond(),
             "exp", Date.from(expiresAt)
         );
 
         try {
             String token = jwtService.generateToken(claims, null);
-            return new IssuedCredential(token, normalizedPuc, normalizedInstitution, normalizedHash, issuedAt, expiresAt);
+            return new IssuedCredential(
+                token,
+                normalizedPuc,
+                normalizedInstitution,
+                normalizedHash,
+                normalizedHashVersion,
+                issuedAt,
+                expiresAt
+            );
         } catch (Exception ex) {
             throw new ResponseStatusException(
                 HttpStatus.SERVICE_UNAVAILABLE,
@@ -102,6 +114,8 @@ public class InstitutionalSessionCredentialService {
             validationStage = "claims";
             validationCheck = "saml-assertion-hash";
             String assertionHash = requireHash(claims.get("samlAssertionHash", String.class));
+            validationCheck = "saml-assertion-hash-version";
+            String assertionHashVersion = requireHashVersion(claims.get("samlAssertionHashVersion", String.class));
             validationStage = "timestamps";
             validationCheck = "issued-at";
             Instant issuedAt = instantClaim(claims.getIssuedAt(), "iat");
@@ -122,6 +136,7 @@ public class InstitutionalSessionCredentialService {
                 institutionId.toLowerCase(Locale.ROOT),
                 claims.get("stableUserIdMode", String.class),
                 assertionHash,
+                assertionHashVersion,
                 issuedAt,
                 reauthenticationAt,
                 expiresAt,
@@ -181,6 +196,14 @@ public class InstitutionalSessionCredentialService {
         return normalized.toLowerCase(Locale.ROOT);
     }
 
+    private String requireHashVersion(String value) {
+        String normalized = requireText(value, "samlAssertionHashVersion");
+        if (!SUPPORTED_ASSERTION_HASH_VERSION.equals(normalized)) {
+            throw new IllegalArgumentException("Unsupported samlAssertionHashVersion");
+        }
+        return normalized;
+    }
+
     private ResponseStatusException invalid(String reason) {
         return new ResponseStatusException(HttpStatus.UNAUTHORIZED, reason);
     }
@@ -190,6 +213,7 @@ public class InstitutionalSessionCredentialService {
         String puc,
         String institutionId,
         String samlAssertionHash,
+        String samlAssertionHashVersion,
         Instant issuedAt,
         Instant expiresAt
     ) {}
@@ -199,6 +223,7 @@ public class InstitutionalSessionCredentialService {
         String institutionId,
         String stableUserIdMode,
         String samlAssertionHash,
+        String samlAssertionHashVersion,
         Instant issuedAt,
         Instant reauthenticationAt,
         Instant expiresAt,

@@ -136,6 +136,7 @@ class IntentAuthorizationSessionPersistenceMySqlIntegrationTest {
             submission,
             List.of(new IntentAuthorizationService.AllowedCredential("cred-1", List.of("internal"))),
             "challenge",
+            IntentChallengeDigestService.SCHEME,
             "https://app.example/callback",
             Instant.now().plusSeconds(300)
         );

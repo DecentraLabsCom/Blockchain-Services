@@ -92,6 +92,7 @@ class SamlAuthServiceTest {
                 TEST_AFFILIATION,
                 "",
                 TEST_ASSERTION_HASH,
+                SamlAttestationHashService.HASH_VERSION,
                 Instant.now().minusSeconds(60),
                 Instant.now().plusSeconds(3_540),
                 Instant.now().plusSeconds(3_540),

@@ -62,7 +62,7 @@ Request and response fields:
 | Direction | Fields |
 | --- | --- |
 | Request JSON | `samlAssertion` (required), `stableUserIdMode` (optional). |
-| Response JSON | `sessionToken`, `expiresAt`, `reauthenticationAt`, `samlAssertionHash`. |
+| Response JSON | `sessionToken`, `expiresAt`, `reauthenticationAt`, `samlAssertionHash`, `samlAssertionHashVersion`. |
 | Errors | `400 invalid_saml` for malformed/invalid assertions; `401` for a missing or mismatched Marketplace identity binding. |
 
 The access routes marked provider-only are rejected by the application security

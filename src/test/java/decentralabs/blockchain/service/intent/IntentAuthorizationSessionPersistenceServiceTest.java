@@ -61,6 +61,8 @@ class IntentAuthorizationSessionPersistenceServiceTest {
         assertThat(payloadCipher.decrypt(ciphertext))
             .contains("submission")
             .contains("allowedCredentials")
+            .contains("challengeScheme")
+            .contains(IntentChallengeDigestService.SCHEME)
             .doesNotContain("samlAssertion");
         assertThat(ciphertext).doesNotContain("assertion");
     }
@@ -138,6 +140,7 @@ class IntentAuthorizationSessionPersistenceServiceTest {
             submission,
             List.of(new IntentAuthorizationService.AllowedCredential("cred-1", List.of("internal"))),
             "challenge",
+            IntentChallengeDigestService.SCHEME,
             "https://app.example/callback",
             Instant.now().plusSeconds(300)
         );

@@ -7,6 +7,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -24,12 +25,11 @@ import decentralabs.blockchain.dto.intent.IntentMeta;
 import decentralabs.blockchain.dto.intent.IntentSubmission;
 import decentralabs.blockchain.service.BackendUrlResolver;
 import decentralabs.blockchain.service.auth.InstitutionalSessionCredentialService;
+import decentralabs.blockchain.service.auth.SamlAttestationHashService;
 import decentralabs.blockchain.service.auth.WebauthnCredentialService;
 import decentralabs.blockchain.service.auth.WebauthnCredentialService.WebauthnCredential;
 import java.math.BigInteger;
-import java.nio.charset.StandardCharsets;
 import java.time.Instant;
-import java.util.Base64;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -65,6 +65,9 @@ class IntentAuthorizationServiceTest {
     private InstitutionalSessionCredentialService institutionalSessionCredentialService;
 
     @Mock
+    private IntentChallengeDigestService challengeDigestService;
+
+    @Mock
     private BackendUrlResolver backendUrlResolver;
 
     private IntentAuthorizationService service;
@@ -82,6 +85,7 @@ class IntentAuthorizationServiceTest {
             intentExecutionService,
             webauthnCredentialService,
             institutionalSessionCredentialService,
+            challengeDigestService,
             backendUrlResolver,
             sessionPersistence
         );
@@ -145,12 +149,15 @@ class IntentAuthorizationServiceTest {
                 "uned.es",
                 "principal",
                 "0x" + "a".repeat(64),
+                SamlAttestationHashService.HASH_VERSION,
                 Instant.now(),
                 Instant.now().plusSeconds(3600),
                 Instant.now().plusSeconds(3600),
                 "test-session"
             )
         );
+        lenient().when(challengeDigestService.build(any(), anyString(), anyString()))
+            .thenReturn(testChallenge());
     }
 
     @AfterEach
@@ -174,8 +181,8 @@ class IntentAuthorizationServiceTest {
             .extracting((IntentAuthorizationService.AllowedCredential credential) -> credential.getId())
             .containsExactly("cred-new", "cred-old");
         assertThat(session.getReturnUrl()).isEqualTo("https://app.example/callback");
-        assertThat(new String(Base64.getUrlDecoder().decode(session.getChallenge()), StandardCharsets.UTF_8))
-            .isEqualTo("user@example.edu|request-123|0xpayload|7|100|200|3");
+        assertThat(session.getChallenge()).isEqualTo(testChallenge().challengeBase64Url());
+        assertThat(session.getChallengeScheme()).isEqualTo(IntentChallengeDigestService.SCHEME);
 
         IntentAuthorizationStatusResponse status = service.getStatus(session.getSessionId());
         assertThat(status.getStatus()).isEqualTo("PENDING");
@@ -192,8 +199,7 @@ class IntentAuthorizationServiceTest {
         IntentAuthorizationService.AuthorizationSession session = service.createSession(request);
 
         verify(webauthnCredentialService).getCredentials("user@example.edu");
-        assertThat(new String(Base64.getUrlDecoder().decode(session.getChallenge()), StandardCharsets.UTF_8))
-            .startsWith("user@example.edu|request-123|");
+        assertThat(session.getChallenge()).isEqualTo(testChallenge().challengeBase64Url());
     }
 
     @Test
@@ -209,6 +215,19 @@ class IntentAuthorizationServiceTest {
                 assertThat(allowed.getId()).isEqualTo("cred-1");
                 assertThat(allowed.getTransports()).containsExactly("hybrid", "internal");
             });
+    }
+
+    @Test
+    void rejectsPersistedSessionsWithoutTheV2ChallengeScheme() {
+        when(webauthnCredentialService.getCredentials("user@example.edu"))
+            .thenReturn(List.of(credential("cred-1", true, 100L)));
+        IntentAuthorizationService.AuthorizationSession session = service.createSession(validAuthorizationRequest());
+        session.setChallengeScheme(null);
+        storedSessions.put(session.getSessionId(), stored(session, "PENDING", null, null, null));
+
+        assertThatThrownBy(() -> service.getSession(session.getSessionId()))
+            .isInstanceOf(ResponseStatusException.class)
+            .hasMessageContaining("webauthn_challenge_scheme_rejected");
     }
 
     @Test
@@ -313,7 +332,7 @@ class IntentAuthorizationServiceTest {
         IntentAckResponse ack = new IntentAckResponse();
         ack.setRequestId("request-123");
         ack.setStatus("accepted");
-        when(intentService.processIntent(any(IntentSubmission.class))).thenReturn(ack);
+        when(intentService.processIntent(any(IntentSubmission.class), anyString(), anyString())).thenReturn(ack);
 
         IntentAuthorizationService.AuthorizationSession session = service.createSession(validAuthorizationRequest());
         IntentAuthorizationCompleteRequest request = validCompleteRequest(session.getSessionId(), "cred-1");
@@ -322,7 +341,11 @@ class IntentAuthorizationServiceTest {
 
         assertThat(response.getStatus()).isEqualTo("accepted");
         ArgumentCaptor<IntentSubmission> submissionCaptor = ArgumentCaptor.forClass(IntentSubmission.class);
-        verify(intentService).processIntent(submissionCaptor.capture());
+        verify(intentService).processIntent(
+            submissionCaptor.capture(),
+            eq(testChallenge().challengeBase64Url()),
+            eq(IntentChallengeDigestService.SCHEME)
+        );
         IntentSubmission submission = submissionCaptor.getValue();
         assertThat(submission.getWebauthnCredentialId()).isEqualTo("cred-1");
         assertThat(submission.getWebauthnClientDataJSON()).isEqualTo("client-data");
@@ -342,21 +365,21 @@ class IntentAuthorizationServiceTest {
         IntentAckResponse ack = new IntentAckResponse();
         ack.setRequestId("request-123");
         ack.setStatus("accepted");
-        when(intentService.processIntent(any(IntentSubmission.class))).thenReturn(ack);
+        when(intentService.processIntent(any(IntentSubmission.class), anyString(), anyString())).thenReturn(ack);
 
         IntentAuthorizationService.AuthorizationSession session = service.createSession(validAuthorizationRequest());
         IntentAuthorizationCompleteRequest request = validCompleteRequest(session.getSessionId(), "cred-1");
 
         assertThat(service.completeAuthorization(request)).isSameAs(ack);
         assertThat(service.completeAuthorization(request).getStatus()).isEqualTo("accepted");
-        verify(intentService).processIntent(any(IntentSubmission.class));
+        verify(intentService).processIntent(any(IntentSubmission.class), anyString(), anyString());
     }
 
     @Test
     void completeAuthorization_storesFailedStatusWhenIntentProcessingThrows() {
         when(webauthnCredentialService.getCredentials("user@example.edu"))
             .thenReturn(List.of(credential("cred-1", true, 100L)));
-        when(intentService.processIntent(any(IntentSubmission.class)))
+        when(intentService.processIntent(any(IntentSubmission.class), anyString(), anyString()))
             .thenThrow(new ResponseStatusException(HttpStatus.BAD_REQUEST, "invalid_intent"));
 
         IntentAuthorizationService.AuthorizationSession session = service.createSession(validAuthorizationRequest());
@@ -434,6 +457,15 @@ class IntentAuthorizationServiceTest {
         request.setInstitutionalSessionToken("institutional-token");
         request.setReturnUrl("https://app.example/callback");
         return request;
+    }
+
+    private IntentChallengeDigestService.Challenge testChallenge() {
+        return new IntentChallengeDigestService.Challenge(
+            new byte[32],
+            "0x" + "00".repeat(32),
+            "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+            IntentChallengeDigestService.SCHEME
+        );
     }
 
     private IntentMeta validMeta() {

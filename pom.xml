@@ -22,6 +22,7 @@
         <jackson.version>2.18.3</jackson.version>
         <netty.version>4.2.18.Final</netty.version>
         <flyway.version>13.7.0</flyway.version>
+        <xmlsec.version>4.0.4</xmlsec.version>
     </properties>
 
     <dependencies>
@@ -111,6 +112,13 @@
             <groupId>org.bouncycastle</groupId>
             <artifactId>bcprov-jdk18on</artifactId>
             <version>1.86</version>
+        </dependency>
+
+        <!-- XML canonicalization for the validated SAML XMLDSig Reference -->
+        <dependency>
+            <groupId>org.apache.santuario</groupId>
+            <artifactId>xmlsec</artifactId>
+            <version>${xmlsec.version}</version>
         </dependency>
 
         <!-- Spring Boot Starter Security for basic security -->

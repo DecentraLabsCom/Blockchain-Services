@@ -89,6 +89,17 @@ public class SamlValidationService {
     private static final String TLS_DISABLED_ALGORITHMS_PROPERTY = "jdk.tls.disabledAlgorithms";
     private static final String TLS_RSA_DISABLED_ALGORITHM = "TLS_RSA_*";
     private static final String TLS_RSA_DISABLED_PREFIX = "TLS_RSA_";
+
+    private final SamlAttestationHashService attestationHashService;
+
+    public SamlValidationService() {
+        this(new SamlAttestationHashService());
+    }
+
+    @Autowired
+    public SamlValidationService(SamlAttestationHashService attestationHashService) {
+        this.attestationHashService = attestationHashService;
+    }
     public static final String STABLE_USER_ID_MODE_PRINCIPAL = "principal";
     public static final String STABLE_USER_ID_MODE_PRINCIPAL_TARGETED_ID = "principal_targeted_id";
 
@@ -237,6 +248,10 @@ public class SamlValidationService {
      */
     public Map<String, String> validateSamlAssertionWithSignature(String samlAssertion) throws Exception {
         SamlAssertionAttributes attrs = validateSamlAssertionDetailed(samlAssertion);
+        return toIdentityAttributeMap(attrs);
+    }
+
+    Map<String, String> toIdentityAttributeMap(SamlAssertionAttributes attrs) {
         Map<String, String> attributes = new LinkedHashMap<>();
         attributes.put("puc", attrs.puc());
         attributes.put("affiliation", attrs.affiliation());
@@ -323,19 +338,23 @@ public class SamlValidationService {
         }
         
         // Verify signature
-        boolean signatureValid = verifySignature(assertion, certs);
-        if (!signatureValid) {
+        Reference validatedReference = verifySignature(assertion, certs);
+        if (validatedReference == null) {
             // IdPs commonly publish the replacement signing certificate before
             // they start using it.  Evict the issuer snapshot and perform one,
             // and only one, refresh for this assertion.
             evictCertificateCache(issuer);
             List<X509Certificate> refreshedCerts = getIdpCertificates(issuer, metadataUrl, true);
-            if (refreshedCerts.isEmpty() || !verifySignature(assertion, refreshedCerts)) {
+            validatedReference = refreshedCerts.isEmpty()
+                ? null
+                : verifySignature(assertion, refreshedCerts);
+            if (validatedReference == null) {
                 throw new SecurityException("SAML assertion signature is INVALID");
             }
         }
 
         validateAssertionProfile(doc, assertion);
+        String assertionHash = attestationHashService.hashValidatedReference(validatedReference, assertion);
         
         // Extract attributes after signature validation.
         // Keep alignment with Marketplace PUC resolution:
@@ -392,7 +411,9 @@ public class SamlValidationService {
             email,
             displayName,
             schacHomeOrganizations,
-            capturedAttributes
+            capturedAttributes,
+            assertionHash,
+            SamlAttestationHashService.HASH_VERSION
         );
     }
 
@@ -1285,17 +1306,18 @@ public class SamlValidationService {
     /**
      * Verifies XML signature using certificate
      */
-    private boolean verifySignature(Element assertion, List<X509Certificate> certs) throws Exception {
+    private Reference verifySignature(Element assertion, List<X509Certificate> certs) throws Exception {
         if (certs == null || certs.isEmpty()) {
             logger.warn("No certificates provided for SAML signature validation");
-            return false;
+            return null;
         }
 
         Exception lastError = null;
         for (X509Certificate cert : certs) {
             try {
-                if (verifySignatureWithCert(assertion, cert)) {
-                    return true;
+                Reference validatedReference = verifySignatureWithCert(assertion, cert);
+                if (validatedReference != null) {
+                    return validatedReference;
                 }
             } catch (SecurityException ex) {
                 throw ex;
@@ -1308,14 +1330,14 @@ public class SamlValidationService {
         if (lastError != null) {
             logger.warn("SAML signature verification failed for all certificates. Last error: {}", lastError.getMessage());
         }
-        return false;
+        return null;
     }
 
-    private boolean verifySignatureWithCert(Element assertion, X509Certificate cert) throws Exception {
+    private Reference verifySignatureWithCert(Element assertion, X509Certificate cert) throws Exception {
         Element signatureElement = findAssertionSignature(assertion);
         if (signatureElement == null) {
             logger.warn("No signature found in SAML assertion");
-            return false;
+            return null;
         }
         
         // Create validation context with certificate
@@ -1335,7 +1357,7 @@ public class SamlValidationService {
             logger.warn("SAML assertion signature is INVALID for cert {}", describeCert(cert));
         }
         
-        return valid;
+        return valid ? signature.getSignedInfo().getReferences().get(0) : null;
     }
 
     private void validateSignatureReferences(XMLSignature signature, String assertionId) {

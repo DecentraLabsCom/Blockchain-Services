@@ -61,12 +61,14 @@ class InstitutionalSessionCredentialServiceTest {
             "UNED.ES",
             "user@example.edu",
             "principal",
-            "0x" + "a".repeat(64)
+            "0x" + "a".repeat(64),
+            SamlAttestationHashService.HASH_VERSION
         );
 
         assertEquals("backend-session-token", issued.token());
         assertEquals("uned.es", issued.institutionId());
         assertEquals("0x" + "a".repeat(64), issued.samlAssertionHash());
+        assertEquals(SamlAttestationHashService.HASH_VERSION, issued.samlAssertionHashVersion());
         verify(jwtService).generateToken(tokenClaimsCaptor.capture(), org.mockito.ArgumentMatchers.isNull());
         assertEquals("ciphertext", tokenClaimsCaptor.getValue().get("pucCiphertext"));
         assertEquals(issued.expiresAt().getEpochSecond(), tokenClaimsCaptor.getValue().get("reauthenticationAt"));
@@ -85,6 +87,34 @@ class InstitutionalSessionCredentialServiceTest {
         assertEquals("user@example.edu", credential.puc());
         assertEquals("uned.es", credential.institutionId());
         assertEquals(expiresAt.getEpochSecond(), credential.expiresAt().getEpochSecond());
+    }
+
+    @Test
+    void rejectsCredentialsWithAnUnsupportedAssertionHashVersion() {
+        Instant issuedAt = Instant.now().minusSeconds(30);
+        Instant expiresAt = Instant.now().plusSeconds(3600);
+        Claims claims = buildClaims(issuedAt, expiresAt, true, "saml-assertion-c14n-keccak-v1");
+        when(jwtService.extractAllClaims("old-version")).thenReturn(claims);
+
+        ResponseStatusException exception = assertThrows(
+            ResponseStatusException.class,
+            () -> service.validate("old-version")
+        );
+        assertEquals("invalid_institutional_session", exception.getReason());
+    }
+
+    @Test
+    void rejectsCredentialsWithoutAnAssertionHashVersion() {
+        Instant issuedAt = Instant.now().minusSeconds(30);
+        Instant expiresAt = Instant.now().plusSeconds(3600);
+        Claims claims = buildClaims(issuedAt, expiresAt, true, null);
+        when(jwtService.extractAllClaims("missing-version")).thenReturn(claims);
+
+        ResponseStatusException exception = assertThrows(
+            ResponseStatusException.class,
+            () -> service.validate("missing-version")
+        );
+        assertEquals("invalid_institutional_session", exception.getReason());
     }
 
     @Test
@@ -132,6 +162,15 @@ class InstitutionalSessionCredentialServiceTest {
     }
 
     private Claims buildClaims(Instant issuedAt, Instant expiresAt, boolean includeMode) {
+        return buildClaims(issuedAt, expiresAt, includeMode, SamlAttestationHashService.HASH_VERSION);
+    }
+
+    private Claims buildClaims(
+        Instant issuedAt,
+        Instant expiresAt,
+        boolean includeMode,
+        String assertionHashVersion
+    ) {
         var builder = Jwts.claims()
             .subject("institutional-session")
             .id("session-jti")
@@ -143,6 +182,7 @@ class InstitutionalSessionCredentialServiceTest {
             .add("pucCiphertext", "ciphertext")
             .add("samlAssertionHash", "0x" + "a".repeat(64))
             .add("reauthenticationAt", expiresAt.getEpochSecond());
+        if (assertionHashVersion != null) builder.add("samlAssertionHashVersion", assertionHashVersion);
         if (includeMode) builder.add("stableUserIdMode", "principal");
         return builder.build();
     }

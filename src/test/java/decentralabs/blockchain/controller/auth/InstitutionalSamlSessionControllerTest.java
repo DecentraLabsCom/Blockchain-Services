@@ -15,6 +15,7 @@ import decentralabs.blockchain.dto.auth.InstitutionalSessionRequest;
 import decentralabs.blockchain.dto.auth.InstitutionalSessionResponse;
 import decentralabs.blockchain.exception.GlobalExceptionHandler;
 import decentralabs.blockchain.service.auth.InstitutionalSamlSessionService;
+import decentralabs.blockchain.service.auth.SamlAttestationHashService;
 import decentralabs.blockchain.service.intent.IntentAuthService;
 import java.time.Instant;
 import java.util.Map;
@@ -59,6 +60,7 @@ class InstitutionalSamlSessionControllerTest {
             .expiresAt(Instant.parse("2026-08-18T14:00:00Z"))
             .reauthenticationAt(Instant.parse("2026-08-18T14:00:00Z"))
             .samlAssertionHash("0x" + "a".repeat(64))
+            .samlAssertionHashVersion(SamlAttestationHashService.HASH_VERSION)
             .build();
 
         when(intentAuthService.enforceSessionAuthorization("Bearer marketplace-token"))
@@ -77,7 +79,8 @@ class InstitutionalSamlSessionControllerTest {
             .andExpect(jsonPath("$.sessionToken").value("backend-session-token"))
             .andExpect(jsonPath("$.expiresAt").value("2026-08-18T14:00:00Z"))
             .andExpect(jsonPath("$.reauthenticationAt").value("2026-08-18T14:00:00Z"))
-            .andExpect(jsonPath("$.samlAssertionHash").value("0x" + "a".repeat(64)));
+            .andExpect(jsonPath("$.samlAssertionHash").value("0x" + "a".repeat(64)))
+            .andExpect(jsonPath("$.samlAssertionHashVersion").value(SamlAttestationHashService.HASH_VERSION));
 
         verify(intentAuthService).enforceSessionAuthorization("Bearer marketplace-token");
         verify(sessionService).create(any(InstitutionalSessionRequest.class), anyMap(), org.mockito.ArgumentMatchers.eq(true));
@@ -93,6 +96,7 @@ class InstitutionalSamlSessionControllerTest {
             .expiresAt(Instant.parse("2026-08-18T14:00:00Z"))
             .reauthenticationAt(Instant.parse("2026-08-18T14:00:00Z"))
             .samlAssertionHash("0x" + "a".repeat(64))
+            .samlAssertionHashVersion(SamlAttestationHashService.HASH_VERSION)
             .build();
 
         when(intentAuthService.enforceSessionAuthorization(null))

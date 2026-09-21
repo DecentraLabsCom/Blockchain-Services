@@ -13,4 +13,5 @@ public class InstitutionalSessionResponse {
     private Instant expiresAt;
     private Instant reauthenticationAt;
     private String samlAssertionHash;
+    private String samlAssertionHashVersion;
 }

@@ -2,7 +2,6 @@ package decentralabs.blockchain.service.auth;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -43,24 +42,38 @@ class InstitutionalSamlSessionServiceTest {
             "eduPersonPrincipalName", "user@institution.edu",
             "affiliation", "Institution.EDU"
         );
+        SamlAssertionAttributes validated = new SamlAssertionAttributes(
+            "https://idp.example",
+            "user@institution.edu|targeted",
+            "Institution.EDU",
+            null,
+            null,
+            java.util.List.of(),
+            Map.of(),
+            "0x" + "a".repeat(64),
+            SamlAttestationHashService.HASH_VERSION
+        );
         Instant issuedAt = Instant.parse("2026-08-18T13:00:00Z");
         Instant expiresAt = Instant.parse("2026-08-18T14:00:00Z");
 
-        when(samlValidationService.validateSamlAssertionWithSignature("signed-saml"))
-            .thenReturn(attributes);
+        when(samlValidationService.validateSamlAssertionDetailed("signed-saml"))
+            .thenReturn(validated);
+        when(samlValidationService.toIdentityAttributeMap(validated)).thenReturn(attributes);
         when(samlValidationService.resolveStableUserId(attributes, "principal", null))
             .thenReturn("user@institution.edu");
         when(credentialService.issue(
                 eq("institution.edu"),
                 eq("user@institution.edu"),
                 eq("principal"),
-                any(String.class)
+                eq("0x" + "a".repeat(64)),
+                eq(SamlAttestationHashService.HASH_VERSION)
             ))
             .thenReturn(new InstitutionalSessionCredentialService.IssuedCredential(
                 "backend-session-token",
                 "user@institution.edu",
                 "institution.edu",
                 "0x" + "a".repeat(64),
+                SamlAttestationHashService.HASH_VERSION,
                 issuedAt,
                 expiresAt
             ));
@@ -73,7 +86,8 @@ class InstitutionalSamlSessionServiceTest {
             eq("institution.edu"),
             eq("user@institution.edu"),
             eq("principal"),
-            any(String.class)
+            eq("0x" + "a".repeat(64)),
+            eq(SamlAttestationHashService.HASH_VERSION)
         );
     }
 
@@ -82,8 +96,20 @@ class InstitutionalSamlSessionServiceTest {
         InstitutionalSessionRequest request = new InstitutionalSessionRequest();
         request.setSamlAssertion("signed-saml");
         request.setStableUserIdMode("principal");
-        when(samlValidationService.validateSamlAssertionWithSignature("signed-saml"))
-            .thenReturn(Map.of(
+        SamlAssertionAttributes validated = new SamlAssertionAttributes(
+            "https://idp.example",
+            "user@institution.edu",
+            "institution.edu",
+            null,
+            null,
+            java.util.List.of(),
+            Map.of(),
+            "0x" + "a".repeat(64),
+            SamlAttestationHashService.HASH_VERSION
+        );
+        when(samlValidationService.validateSamlAssertionDetailed("signed-saml"))
+            .thenReturn(validated);
+        when(samlValidationService.toIdentityAttributeMap(validated)).thenReturn(Map.of(
                 "puc", "user@institution.edu",
                 "affiliation", "institution.edu"
             ));

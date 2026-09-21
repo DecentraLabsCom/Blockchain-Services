@@ -43,8 +43,10 @@ limit; the controller then requires a Marketplace service JWT with the
 `intents:session` scope when `INTENTS_AUTH_ENABLED=true`. It validates the
 assertion signature and Marketplace identity binding and returns a signed
 backend-owned credential. The credential contains the institution, encrypted
-PUC, validated assertion hash and an absolute expiry, one hour by default
-(`AUTH_INSTITUTIONAL_SESSION_TTL_SECONDS`).
+PUC, the v2 hash of the validated XMLDSig Reference and an absolute expiry,
+one hour by default (`AUTH_INSTITUTIONAL_SESSION_TTL_SECONDS`). The response
+also exposes `samlAssertionHashVersion=saml-assertion-c14n-keccak-v2`; older or
+missing versions are rejected when the credential is validated.
 
 When `INTENTS_AUTH_ENABLED=false`, intended only for a deliberately isolated
 deployment, the endpoint has no Marketplace claims to bind. It derives the PUC

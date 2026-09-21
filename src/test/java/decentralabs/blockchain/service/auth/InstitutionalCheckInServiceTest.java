@@ -654,6 +654,7 @@ class InstitutionalCheckInServiceTest {
             institutionId,
             stableUserIdMode,
             samlAssertionHash("valid-saml"),
+            SamlAttestationHashService.HASH_VERSION,
             issuedAt,
             expiresAt,
             expiresAt,

@@ -4,15 +4,12 @@ import decentralabs.blockchain.dto.auth.InstitutionalSessionRequest;
 import decentralabs.blockchain.dto.auth.InstitutionalSessionResponse;
 import decentralabs.blockchain.util.PucHashUtil;
 import decentralabs.blockchain.util.PucNormalizer;
-import java.nio.charset.StandardCharsets;
 import java.util.Map;
 import java.util.Objects;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;
-import org.web3j.crypto.Hash;
-import org.web3j.utils.Numeric;
 
 @Service
 @RequiredArgsConstructor
@@ -27,8 +24,9 @@ public class InstitutionalSamlSessionService {
         boolean marketplaceBindingRequired
     ) {
         try {
-            Map<String, String> attributes = samlValidationService
-                .validateSamlAssertionWithSignature(request.getSamlAssertion());
+            SamlAssertionAttributes validated = samlValidationService
+                .validateSamlAssertionDetailed(request.getSamlAssertion());
+            Map<String, String> attributes = samlValidationService.toIdentityAttributeMap(validated);
             String marketplacePuc = marketplaceBindingRequired
                 ? requireMarketplacePuc(marketplaceClaims)
                 : null;
@@ -47,20 +45,19 @@ public class InstitutionalSamlSessionService {
                 throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "institutional_identity_mismatch");
             }
 
-            String assertionHash = Numeric.toHexString(Hash.sha3(
-                request.getSamlAssertion().getBytes(StandardCharsets.UTF_8)
-            ));
             var issued = credentialService.issue(
                 institutionId,
                 stableUserId,
                 request.getStableUserIdMode(),
-                assertionHash
+                validated.assertionHash(),
+                validated.assertionHashVersion()
             );
             return InstitutionalSessionResponse.builder()
                 .sessionToken(issued.token())
                 .expiresAt(issued.expiresAt())
                 .reauthenticationAt(issued.expiresAt())
                 .samlAssertionHash(issued.samlAssertionHash())
+                .samlAssertionHashVersion(issued.samlAssertionHashVersion())
                 .build();
         } catch (ResponseStatusException ex) {
             throw ex;

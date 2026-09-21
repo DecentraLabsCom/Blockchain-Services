@@ -92,6 +92,9 @@ class ReservationIntentProcessedE2ETest {
     private WebauthnCredentialService webauthnCredentialService;
 
     @Mock
+    private decentralabs.blockchain.service.intent.IntentChallengeDigestService challengeDigestService;
+
+    @Mock
     private BackendUrlResolver backendUrlResolver;
 
     @Mock
@@ -114,6 +117,7 @@ class ReservationIntentProcessedE2ETest {
             institutionalSessionCredentialService,
             webauthnCredentialService,
             walletService,
+            challengeDigestService,
             "0x0000000000000000000000000000000000000001",
             new SimpleMeterRegistry(),
             backendUrlResolver,

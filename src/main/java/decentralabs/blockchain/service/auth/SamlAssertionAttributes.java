@@ -11,7 +11,9 @@ public record SamlAssertionAttributes(
     String email,
     String displayName,
     List<String> schacHomeOrganizations,
-    Map<String, List<String>> attributes
+    Map<String, List<String>> attributes,
+    String assertionHash,
+    String assertionHashVersion
 ) {
     public SamlAssertionAttributes {
         schacHomeOrganizations = schacHomeOrganizations == null
