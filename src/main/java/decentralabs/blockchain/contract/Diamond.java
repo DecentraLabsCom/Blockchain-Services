@@ -1173,6 +1173,28 @@ public class Diamond extends Contract {
         );
     }
 
+    public static Function finalizeEligibleReservationsFunction(BigInteger labId, BigInteger maxBatch) {
+        return new Function(
+            "finalizeEligibleReservations",
+            Arrays.asList(new Uint256(labId), new Uint256(maxBatch)),
+            List.of(new TypeReference<Uint256>() {})
+        );
+    }
+
+    public static Function getLabFinalizationStatusFunction(BigInteger labId) {
+        return new Function(
+            "getLabFinalizationStatus",
+            List.of(new Uint256(labId)),
+            List.of(
+                new TypeReference<Uint256>() {},
+                new TypeReference<Uint256>() {},
+                new TypeReference<Uint256>() {},
+                new TypeReference<Uint256>() {},
+                new TypeReference<Uint64>() {}
+            )
+        );
+    }
+
     public RemoteFunctionCall<TransactionReceipt> submitProviderSettlementClaim(
         byte[] claimId,
         BigInteger labId,

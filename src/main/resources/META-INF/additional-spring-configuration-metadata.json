@@ -943,6 +943,12 @@
     "defaultValue": 1000000
   },
   {
+    "name": "ethereum.gas.limit.reservation-finalization",
+    "type": "java.lang.Integer",
+    "description": "Gas limit for the bounded permissionless reservation finalization transaction.",
+    "defaultValue": 5000000
+  },
+  {
     "name": "ethereum.gas.limit.direct.booking",
     "type": "java.lang.Integer",
     "description": "Gas limit for direct booking transactions, which atomically execute request+confirm and require more gas.",
@@ -1286,6 +1292,36 @@
     "type": "java.lang.Integer",
     "description": "Maximum number of provider labs processed in each automatic prune scheduler run.",
     "defaultValue": 25
+  },
+  {
+    "name": "reservation.finalization.scheduler.enabled",
+    "type": "java.lang.Boolean",
+    "description": "Enable the optional provider-consumer relayer for permissionless reservation finalization.",
+    "defaultValue": false
+  },
+  {
+    "name": "reservation.finalization.scheduler.interval-ms",
+    "type": "java.lang.Long",
+    "description": "Delay in milliseconds between optional reservation finalization relayer runs.",
+    "defaultValue": 60000
+  },
+  {
+    "name": "reservation.finalization.scheduler.max-batch",
+    "type": "java.lang.Integer",
+    "description": "Maximum reservations finalized per permissionless relayer transaction.",
+    "defaultValue": 10
+  },
+  {
+    "name": "reservation.finalization.scheduler.max-labs-per-run",
+    "type": "java.lang.Integer",
+    "description": "Maximum provider-owned labs inspected per permissionless finalization relayer run.",
+    "defaultValue": 25
+  },
+  {
+    "name": "reservation.finalization.scheduler.nonce-replacement-gas-bump-percent",
+    "type": "java.lang.Integer",
+    "description": "Gas-price bump percentage used by permissionless finalization transaction preparation for same-nonce replacements.",
+    "defaultValue": 15
   },
   {
     "name": "billing.admin.domain.name",

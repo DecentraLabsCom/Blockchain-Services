@@ -97,6 +97,7 @@ public class ContractDeploymentVerifier implements ApplicationRunner {
         String abiSha256 = sha256(abiResource);
         String selectorManifestSha256 = sha256(selectorManifestResource);
 
+        validateDeploymentState(manifest);
         ContractSnapshot snapshot = readSnapshot(manifest);
         validateSnapshot(
             configuredAddress,
@@ -264,6 +265,7 @@ public class ContractDeploymentVerifier implements ApplicationRunner {
         SelectorManifest selectorManifest,
         ContractSnapshot snapshot
     ) {
+        validateDeploymentState(manifest);
         requireAddress(configuredAddress, "configured address");
         if (!normalizeAddress(configuredAddress).equals(normalizeAddress(manifest.diamondAddress()))) {
             fail("configured address does not match the deployment manifest");
@@ -365,6 +367,12 @@ public class ContractDeploymentVerifier implements ApplicationRunner {
         return value == null ? null : value.trim().toLowerCase(Locale.ROOT);
     }
 
+    private static void validateDeploymentState(DeploymentManifest manifest) {
+        if (!"active".equalsIgnoreCase(normalizeText(manifest.deploymentState()))) {
+            fail("deployment manifest is not active: " + manifest.deploymentState());
+        }
+    }
+
     private static String normalizeText(String value) {
         return value == null ? null : value.trim().toLowerCase(Locale.ROOT);
     }
@@ -389,6 +397,7 @@ public class ContractDeploymentVerifier implements ApplicationRunner {
 
     public record DeploymentManifest(
         int schemaVersion,
+        String deploymentState,
         String network,
         BigInteger chainId,
         String abiVersion,

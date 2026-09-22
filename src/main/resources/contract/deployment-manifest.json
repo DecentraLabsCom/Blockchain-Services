@@ -1,10 +1,11 @@
 {
   "schemaVersion": 1,
+  "deploymentState": "pending-upgrade",
   "network": "sepolia",
   "chainId": 11155111,
   "abiVersion": "credit-ledger-v1",
-  "abiSha256": "281de0f6fa70188fa27eb997c28720ed1939a3bb362190bd57ea2d6004768615",
-  "selectorManifestSha256": "82651bc51be83944399413bf2de91be20fb578154982edf85d560a57ea3dd661",
+  "abiSha256": "f55f4dd361906b181a127334889bea791e21fe078003b15079edf98168703d82",
+  "selectorManifestSha256": "c7f2d0cb55a01914dc16e52411a9aca6ec010f18528342c6ddcae2a52d595f13",
   "diamondAddress": "0x1170d2D322Ff2cCeb20e6E79D2b3D2dfABFe6372",
   "expectedOwner": "0x183f062b6a8c39b9a9e71898741acf8f25e11561",
   "expectedDefaultAdminRole": "0x0000000000000000000000000000000000000000000000000000000000000000",

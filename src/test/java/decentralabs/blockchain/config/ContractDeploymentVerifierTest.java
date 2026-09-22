@@ -42,6 +42,21 @@ class ContractDeploymentVerifierTest {
     }
 
     @Test
+    void rejectsAManifestExplicitlyMarkedAsPendingUpgrade() {
+        ContractDeploymentVerifier.DeploymentManifest active = manifest();
+        ContractDeploymentVerifier.DeploymentManifest pending = new ContractDeploymentVerifier.DeploymentManifest(
+            active.schemaVersion(), "pending-upgrade", active.network(), active.chainId(), active.abiVersion(),
+            active.abiSha256(), active.selectorManifestSha256(), active.diamondAddress(), active.expectedOwner(),
+            active.expectedDefaultAdminRole(), active.criticalAddresses(), active.criticalCodeHashes(), active.facets()
+        );
+
+        assertThatThrownBy(() -> ContractDeploymentVerifier.validateSnapshot(
+            DIAMOND, "sepolia", "credit-ledger-v1", "abi-sha", "selector-sha",
+            pending, selectorManifest(), snapshot()
+        )).isInstanceOf(IllegalStateException.class).hasMessageContaining("pending-upgrade");
+    }
+
+    @Test
     void rejectsAConfiguredDiamondDifferentFromTheDeploymentManifest() {
         assertThatThrownBy(() -> ContractDeploymentVerifier.validateSnapshot(
             "0x4444444444444444444444444444444444444444", "sepolia", "credit-ledger-v1",
@@ -159,7 +174,7 @@ class ContractDeploymentVerifierTest {
 
     private static ContractDeploymentVerifier.DeploymentManifest manifest() {
         return new ContractDeploymentVerifier.DeploymentManifest(
-            1, "sepolia", BigInteger.valueOf(11155111), "credit-ledger-v1", "abi-sha", "selector-sha",
+            1, "active", "sepolia", BigInteger.valueOf(11155111), "credit-ledger-v1", "abi-sha", "selector-sha",
             DIAMOND, OWNER, DEFAULT_ADMIN_ROLE,
             Map.of("DiamondInit", FACET), Map.of(DIAMOND, DIAMOND_CODE_HASH),
             List.of(new ContractDeploymentVerifier.FacetExpectation("CoreFacet", FACET, CODE_HASH))
