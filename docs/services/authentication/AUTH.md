@@ -378,7 +378,9 @@ than falling back to an arbitrary browser origin.
 The SAML metadata pipeline is documented in
 [SAML Auto-Discovery](../../security/SAML_AUTO_DISCOVERY.md). The development default is
 `saml.idp.trust-mode=any`; production deployments should set `whitelist` and
-populate `saml.trusted.idp`.
+populate `saml.trusted.idp`. Validated XMLDSig references must use a SHA-2
+digest (SHA-256, SHA-384 or SHA-512); SHA-1 reference digests are rejected even
+when the surrounding XML signature verifies.
 
 Key paths default to:
 

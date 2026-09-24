@@ -6,6 +6,7 @@ import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
 import java.util.List;
+import javax.xml.crypto.dsig.DigestMethod;
 import javax.xml.crypto.dsig.Reference;
 import javax.xml.crypto.dsig.Transform;
 import javax.xml.crypto.dsig.spec.ExcC14NParameterSpec;
@@ -164,13 +165,14 @@ public class SamlAttestationHashService {
     }
 
     private void verifyReferenceDigest(Reference reference, byte[] canonicalBytes) {
+        String digestAlgorithm = resolveDigestAlgorithm(reference);
         byte[] calculatedDigest = reference.getCalculatedDigestValue();
         if (calculatedDigest == null) {
             throw new IllegalArgumentException("Validated SAML Reference has no calculated digest");
         }
 
         try {
-            MessageDigest digest = MessageDigest.getInstance(resolveDigestAlgorithm(reference));
+            MessageDigest digest = MessageDigest.getInstance(digestAlgorithm);
             byte[] reconstructedDigest = digest.digest(canonicalBytes);
             if (!MessageDigest.isEqual(calculatedDigest, reconstructedDigest)) {
                 throw new IllegalArgumentException("SAML Reference canonicalization does not match XMLDSig digest");
@@ -182,10 +184,9 @@ public class SamlAttestationHashService {
 
     private String resolveDigestAlgorithm(Reference reference) {
         return switch (reference.getDigestMethod().getAlgorithm()) {
-            case "http://www.w3.org/2000/09/xmldsig#sha1" -> "SHA-1";
-            case "http://www.w3.org/2001/04/xmlenc#sha256" -> "SHA-256";
-            case "http://www.w3.org/2001/04/xmldsig-more#sha384" -> "SHA-384";
-            case "http://www.w3.org/2001/04/xmlenc#sha512" -> "SHA-512";
+            case DigestMethod.SHA256 -> "SHA-256";
+            case DigestMethod.SHA384 -> "SHA-384";
+            case DigestMethod.SHA512 -> "SHA-512";
             default -> throw new IllegalArgumentException(
                 "Unsupported SAML Reference digest algorithm: " + reference.getDigestMethod().getAlgorithm()
             );
