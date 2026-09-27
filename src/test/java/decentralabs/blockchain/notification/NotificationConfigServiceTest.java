@@ -53,6 +53,7 @@ class NotificationConfigServiceTest {
             
             assertTrue(mail.isEnabled());
             assertEquals(MailDriver.NOOP, mail.getDriver());
+            assertEquals("", mail.getTimezone());
         }
     }
 

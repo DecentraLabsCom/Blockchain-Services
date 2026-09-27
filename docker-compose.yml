@@ -24,6 +24,8 @@ services:
     environment:
       - SPRING_PROFILES_ACTIVE=docker
       - JAVA_OPTS=-Xmx512m -Xms256m
+      - TZ=${TZ:-UTC}
+      - JAVA_TOOL_OPTIONS=-Duser.timezone=${TZ:-UTC}
       # Enable wallet persistence (REQUIRED for institutional wallet to work)
       - WALLET_PERSISTENCE_ENABLED=true
       # Path to wallet storage file (mounted as volume below)

@@ -24,7 +24,7 @@ public class NotificationProperties {
         private String from;
         private String fromName;
         private List<String> defaultTo = new ArrayList<>();
-        private String timezone = "UTC";
+        private String timezone = "";
         private Smtp smtp = new Smtp();
         private Graph graph = new Graph();
     }

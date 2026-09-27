@@ -7,6 +7,7 @@ import static org.mockito.Mockito.*;
 import java.math.BigInteger;
 import java.time.Instant;
 import java.util.List;
+import java.util.TimeZone;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -326,15 +327,24 @@ class ReservationNotificationServiceTest {
         }
 
         @Test
-        @DisplayName("Should handle blank timezone as UTC")
-        void shouldHandleBlankTimezone() {
-            NotificationProperties.Mail mail = createEnabledMailConfig();
-            mail.setTimezone("");
-            when(notificationConfigService.getMailConfig()).thenReturn(mail);
-            when(mailSenderFactory.resolve()).thenReturn(mailSender);
+        @DisplayName("Should use the Gateway timezone when the configured timezone is blank")
+        void shouldUseGatewayTimezoneWhenConfiguredTimezoneIsBlank() {
+            TimeZone previousTimeZone = TimeZone.getDefault();
+            try {
+                TimeZone.setDefault(TimeZone.getTimeZone("Asia/Tokyo"));
+                NotificationProperties.Mail mail = createEnabledMailConfig();
+                mail.setTimezone("");
+                when(notificationConfigService.getMailConfig()).thenReturn(mail);
+                when(mailSenderFactory.resolve()).thenReturn(mailSender);
 
-            assertDoesNotThrow(() -> service.notifyReservationApproved(createTestData()));
-            verify(mailSender).send(any());
+                service.notifyReservationApproved(createTestData());
+
+                ArgumentCaptor<NotificationMessage> captor = ArgumentCaptor.forClass(NotificationMessage.class);
+                verify(mailSender).send(captor.capture());
+                assertTrue(captor.getValue().subject().contains("2025-01-15 19:00"));
+            } finally {
+                TimeZone.setDefault(previousTimeZone);
+            }
         }
 
         @Test

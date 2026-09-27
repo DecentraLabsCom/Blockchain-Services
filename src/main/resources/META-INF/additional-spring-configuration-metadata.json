@@ -1110,8 +1110,7 @@
   {
     "name": "notifications.mail.timezone",
     "type": "java.lang.String",
-    "description": "Timezone for email notifications.",
-    "defaultValue": "UTC"
+    "description": "Timezone for email notifications. Blank uses the Gateway system timezone."
   },
   {
     "name": "notifications.mail.smtp.host",

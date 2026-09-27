@@ -114,7 +114,7 @@ public class ReservationNotificationService {
 
     private ZoneId resolveZone(String configured) {
         if (configured == null || configured.isBlank()) {
-            return ZoneId.of("UTC");
+            return ZoneId.systemDefault();
         }
         try {
             return ZoneId.of(configured);
