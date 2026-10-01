@@ -11,6 +11,8 @@ import static org.mockito.Mockito.when;
 import java.security.KeyPair;
 import java.security.KeyPairGenerator;
 import java.security.PublicKey;
+import java.security.interfaces.RSAPublicKey;
+import java.util.Arrays;
 import java.util.Base64;
 
 import org.junit.jupiter.api.BeforeEach;
@@ -33,6 +35,7 @@ class MarketplaceKeyServiceTest {
 
     private MarketplaceKeyService keyService;
     private String validPublicKeyPem;
+    private String validJwks;
     private KeyPair testKeyPair;
 
     @BeforeEach
@@ -52,6 +55,21 @@ class MarketplaceKeyServiceTest {
         byte[] publicKeyBytes = testKeyPair.getPublic().getEncoded();
         String base64Key = Base64.getEncoder().encodeToString(publicKeyBytes);
         validPublicKeyPem = "-----BEGIN PUBLIC KEY-----\n" + base64Key + "\n-----END PUBLIC KEY-----";
+        RSAPublicKey rsaPublicKey = (RSAPublicKey) testKeyPair.getPublic();
+        validJwks = "{\"keys\":[{"
+            + "\"kty\":\"RSA\",\"n\":\""
+            + encodeUnsigned(rsaPublicKey.getModulus())
+            + "\",\"e\":\"" + encodeUnsigned(rsaPublicKey.getPublicExponent())
+            + "\",\"kid\":\"active-kid\",\"alg\":\"RS256\",\"use\":\"sig\""
+            + "}]}";
+    }
+
+    private String encodeUnsigned(java.math.BigInteger value) {
+        byte[] bytes = value.toByteArray();
+        if (bytes.length > 1 && bytes[0] == 0) {
+            bytes = Arrays.copyOfRange(bytes, 1, bytes.length);
+        }
+        return Base64.getUrlEncoder().withoutPadding().encodeToString(bytes);
     }
 
     @Nested
@@ -69,6 +87,17 @@ class MarketplaceKeyServiceTest {
             assertThat(result).isNotNull();
             assertThat(result.getAlgorithm()).isEqualTo("RSA");
             verify(restTemplate).getForEntity(anyString(), eq(String.class));
+        }
+
+        @Test
+        @DisplayName("Should select a key from a JWKS response by kid")
+        void shouldSelectKeyFromJwksByKid() throws Exception {
+            when(restTemplate.getForEntity(anyString(), eq(String.class)))
+                .thenReturn(new ResponseEntity<>(validJwks, HttpStatus.OK));
+
+            PublicKey result = keyService.getPublicKey("active-kid", false);
+
+            assertThat(result.getEncoded()).isEqualTo(testKeyPair.getPublic().getEncoded());
         }
 
         @Test

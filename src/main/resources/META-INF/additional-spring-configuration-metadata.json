@@ -541,8 +541,8 @@
   {
     "name": "marketplace.public-key-url",
     "type": "java.lang.String",
-    "description": "URL where the marketplace exposes its public key for JWT validation.",
-    "defaultValue": "https://marketplace-decentralabs.vercel.app/.well-known/public-key.pem"
+    "description": "URL where the marketplace exposes its JWKS for JWT validation; it should contain the active and previous RSA signing keys during rotation.",
+    "defaultValue": "https://marketplace-decentralabs.vercel.app/.well-known/jwks.json"
   },
   {
     "name": "marketplace.key.cache-ms",

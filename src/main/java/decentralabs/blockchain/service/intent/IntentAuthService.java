@@ -109,23 +109,36 @@ public class IntentAuthService {
 
     private Claims validateToken(String token) {
         try {
-            PublicKey marketplacePublicKey = marketplaceKeyService.getPublicKey(false);
-            JwtParser parser = Jwts.parser()
-                .verifyWith(marketplacePublicKey)
-                .requireIssuer(issuer)
-                .requireAudience(resolveAudience())
-                .clockSkewSeconds(clockSkewSeconds)
-                .build();
-            Jws<Claims> jws = parser.parseSignedClaims(token);
-            Claims claims = jws.getPayload();
-            validateServiceClaims(claims);
-            return claims;
+            return parseTokenWithKey(
+                token,
+                marketplaceKeyService.getPublicKeyForToken(token, false));
         } catch (ResponseStatusException ex) {
             throw ex;
-        } catch (Exception ex) {
-            log.warn("Intent authorization JWT validation failed: {}", ex.getMessage());
+        } catch (Exception firstFailure) {
+            try {
+                return parseTokenWithKey(
+                    token,
+                    marketplaceKeyService.getPublicKeyForToken(token, true));
+            } catch (Exception refreshFailure) {
+                log.warn("Intent authorization JWT validation failed after key refresh: {}",
+                    refreshFailure.getMessage());
+                log.debug("Initial intent authorization JWT validation failure: {}", firstFailure.getMessage());
+            }
             throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "invalid_intents_token");
         }
+    }
+
+    private Claims parseTokenWithKey(String token, PublicKey marketplacePublicKey) {
+        JwtParser parser = Jwts.parser()
+            .verifyWith(marketplacePublicKey)
+            .requireIssuer(issuer)
+            .requireAudience(resolveAudience())
+            .clockSkewSeconds(clockSkewSeconds)
+            .build();
+        Jws<Claims> jws = parser.parseSignedClaims(token);
+        Claims claims = jws.getPayload();
+        validateServiceClaims(claims);
+        return claims;
     }
 
     private String resolveAudience() {

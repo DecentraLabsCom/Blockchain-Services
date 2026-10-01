@@ -4,6 +4,10 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.lenient;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 import decentralabs.blockchain.service.auth.MarketplaceKeyService;
 import decentralabs.blockchain.service.BackendUrlResolver;
@@ -58,7 +62,7 @@ class IntentAuthServiceTest {
         KeyPairGenerator keyGen = KeyPairGenerator.getInstance("RSA");
         keyGen.initialize(2048);
         keyPair = keyGen.generateKeyPair();
-        lenient().when(marketplaceKeyService.getPublicKey(false)).thenReturn(keyPair.getPublic());
+        lenient().when(marketplaceKeyService.getPublicKeyForToken(anyString(), eq(false))).thenReturn(keyPair.getPublic());
     }
 
     @Test
@@ -84,6 +88,35 @@ class IntentAuthServiceTest {
         assertThatThrownBy(() -> service.enforceSubmitAuthorization("Bearer not-a-jwt"))
             .isInstanceOf(ResponseStatusException.class)
             .hasMessageContaining("invalid_intents_token");
+    }
+
+    @Test
+    void submitAuthorization_refreshesJwksWhenTheCachedKeyDoesNotVerifyTheToken() throws Exception {
+        KeyPairGenerator keyGen = KeyPairGenerator.getInstance("RSA");
+        keyGen.initialize(2048);
+        KeyPair rotatedKeyPair = keyGen.generateKeyPair();
+        when(marketplaceKeyService.getPublicKeyForToken(anyString(), eq(false))).thenReturn(keyPair.getPublic());
+        when(marketplaceKeyService.getPublicKeyForToken(anyString(), eq(true))).thenReturn(rotatedKeyPair.getPublic());
+
+        long now = System.currentTimeMillis();
+        String jwt = Jwts.builder()
+            .claims(Map.of(
+                "scope", "intents:submit",
+                "institutionId", "institution.edu"
+            ))
+            .subject("marketplace")
+            .issuer("marketplace")
+            .audience().add("https://backend.example.edu").and()
+            .issuedAt(new Date(now))
+            .expiration(new Date(now + 30_000))
+            .id(java.util.UUID.randomUUID().toString())
+            .signWith(rotatedKeyPair.getPrivate())
+            .compact();
+
+        assertThatCode(() -> service.enforceSubmitAuthorization("Bearer " + jwt))
+            .doesNotThrowAnyException();
+        verify(marketplaceKeyService).getPublicKeyForToken(anyString(), eq(false));
+        verify(marketplaceKeyService).getPublicKeyForToken(anyString(), eq(true));
     }
 
     @Test

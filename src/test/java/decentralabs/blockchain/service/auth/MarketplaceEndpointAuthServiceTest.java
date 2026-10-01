@@ -23,6 +23,8 @@ import org.springframework.web.server.ResponseStatusException;
 
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 
 @ExtendWith(MockitoExtension.class)
 class MarketplaceEndpointAuthServiceTest {
@@ -56,7 +58,7 @@ class MarketplaceEndpointAuthServiceTest {
         keyGen.initialize(2048);
         keyPair = keyGen.generateKeyPair();
         // lenient stub because some tests do not exercise token parsing
-        org.mockito.Mockito.lenient().when(marketplaceKeyService.getPublicKey(false))
+        org.mockito.Mockito.lenient().when(marketplaceKeyService.getPublicKeyForToken(anyString(), eq(false)))
                 .thenReturn(keyPair.getPublic());
     }
 
@@ -204,8 +206,8 @@ class MarketplaceEndpointAuthServiceTest {
         keyGen.initialize(2048);
         KeyPair rotatedKeyPair = keyGen.generateKeyPair();
 
-        when(marketplaceKeyService.getPublicKey(false)).thenReturn(keyPair.getPublic());
-        when(marketplaceKeyService.getPublicKey(true)).thenReturn(rotatedKeyPair.getPublic());
+        when(marketplaceKeyService.getPublicKeyForToken(anyString(), eq(false))).thenReturn(keyPair.getPublic());
+        when(marketplaceKeyService.getPublicKeyForToken(anyString(), eq(true))).thenReturn(rotatedKeyPair.getPublic());
 
         String jwt = makeJwt(Map.of("puc", "u-rotated", "scope", "onboarding:webauthn"),
             rotatedKeyPair.getPrivate());
@@ -213,8 +215,8 @@ class MarketplaceEndpointAuthServiceTest {
         Map<String, Object> claims = service.enforceToken(jwt, "onboarding:webauthn");
 
         assertThat(claims).containsEntry("puc", "u-rotated");
-        verify(marketplaceKeyService).getPublicKey(false);
-        verify(marketplaceKeyService).getPublicKey(true);
+        verify(marketplaceKeyService).getPublicKeyForToken(anyString(), eq(false));
+        verify(marketplaceKeyService).getPublicKeyForToken(anyString(), eq(true));
     }
 
     @Test

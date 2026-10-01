@@ -97,12 +97,12 @@ public class MarketplaceEndpointAuthService {
 
     private Claims validateToken(String token) {
         try {
-            return parseTokenWithKey(token, marketplaceKeyService.getPublicKey(false), resolveAudience());
+            return parseTokenWithKey(token, marketplaceKeyService.getPublicKeyForToken(token, false), resolveAudience());
         } catch (ResponseStatusException ex) {
             throw ex;
         } catch (Exception firstFailure) {
             try {
-                return parseTokenWithKey(token, marketplaceKeyService.getPublicKey(true), resolveAudience());
+                return parseTokenWithKey(token, marketplaceKeyService.getPublicKeyForToken(token, true), resolveAudience());
             } catch (Exception refreshFailure) {
                 log.warn("Marketplace endpoint JWT validation failed after key refresh: {}",
                     refreshFailure.getMessage());
