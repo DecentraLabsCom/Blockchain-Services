@@ -5,7 +5,6 @@ import com.azure.core.credential.TokenRequestContext;
 import com.azure.identity.ClientSecretCredential;
 import com.azure.identity.ClientSecretCredentialBuilder;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import java.io.IOException;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
@@ -51,14 +50,14 @@ public class GraphMailSenderAdapter implements MailSenderAdapter {
     }
 
     @Override
-    public void send(NotificationMessage message) {
+    public MailSendResult send(NotificationMessage message) {
         if (!isConfigured()) {
             log.warn("Graph mail driver not fully configured. Skipping email notification.");
-            return;
+            return MailSendResult.skipped("Graph mail driver is not configured");
         }
         if (message.recipients() == null || message.recipients().isEmpty()) {
             log.warn("No recipients provided. Skipping email notification.");
-            return;
+            return MailSendResult.skipped("No recipients provided");
         }
 
         try {
@@ -68,7 +67,7 @@ public class GraphMailSenderAdapter implements MailSenderAdapter {
 
             if (token == null || token.isExpired()) {
                 log.error("Could not obtain access token for Microsoft Graph.");
-                return;
+                return MailSendResult.failed("Graph authentication failed");
             }
 
             Map<String, Object> payload = buildPayload(message);
@@ -86,12 +85,15 @@ public class GraphMailSenderAdapter implements MailSenderAdapter {
             try (Response response = httpClient.newCall(request).execute()) {
                 if (!response.isSuccessful()) {
                     log.error("Graph sendMail failed ({}): {}", response.code(), response.message());
+                    return MailSendResult.failed("Graph mail submission failed");
                 } else {
                     log.info("Sent reservation notification via Graph to {}", message.recipients());
+                    return MailSendResult.sent();
                 }
             }
-        } catch (IOException e) {
+        } catch (Exception e) {
             log.error("Failed to send reservation notification via Graph: {}", e.getMessage(), e);
+            return MailSendResult.failed("Graph delivery failed");
         }
     }
 

@@ -29,6 +29,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 
 import decentralabs.blockchain.security.AdminNetworkAccessPolicy;
 import decentralabs.blockchain.notification.MailDriver;
+import decentralabs.blockchain.notification.MailSendResult;
 import decentralabs.blockchain.notification.MailSenderAdapter;
 import decentralabs.blockchain.notification.MailSenderFactory;
 import decentralabs.blockchain.notification.NotificationConfigService;
@@ -194,10 +195,49 @@ class NotificationAdminControllerTest {
             
             MailSenderAdapter mockSender = org.mockito.Mockito.mock(MailSenderAdapter.class);
             when(mailSenderFactory.resolve()).thenReturn(mockSender);
+            when(mockSender.send(any())).thenReturn(MailSendResult.sent());
 
             mockMvc.perform(post("/billing/admin/notifications/test"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.success").value(true));
+        }
+
+        @Test
+        @DisplayName("Should return an error when the mail sender reports a delivery failure")
+        void shouldReturnErrorWhenSenderReportsDeliveryFailure() throws Exception {
+            NotificationProperties.Mail mailConfig = new NotificationProperties.Mail();
+            mailConfig.setDefaultTo(List.of("admin@example.com"));
+
+            when(notificationConfigService.getMailConfig()).thenReturn(mailConfig);
+            when(notificationConfigService.validateMailConfig()).thenReturn(Collections.emptyList());
+
+            MailSenderAdapter mockSender = org.mockito.Mockito.mock(MailSenderAdapter.class);
+            when(mailSenderFactory.resolve()).thenReturn(mockSender);
+            when(mockSender.send(any())).thenReturn(MailSendResult.failed("SMTP delivery failed"));
+
+            mockMvc.perform(post("/billing/admin/notifications/test"))
+                .andExpect(status().isBadGateway())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.error").value("SMTP delivery failed"));
+        }
+
+        @Test
+        @DisplayName("Should not report success when the selected driver skips delivery")
+        void shouldReturnErrorWhenSenderSkipsDelivery() throws Exception {
+            NotificationProperties.Mail mailConfig = new NotificationProperties.Mail();
+            mailConfig.setDefaultTo(List.of("admin@example.com"));
+
+            when(notificationConfigService.getMailConfig()).thenReturn(mailConfig);
+            when(notificationConfigService.validateMailConfig()).thenReturn(Collections.emptyList());
+
+            MailSenderAdapter mockSender = org.mockito.Mockito.mock(MailSenderAdapter.class);
+            when(mailSenderFactory.resolve()).thenReturn(mockSender);
+            when(mockSender.send(any())).thenReturn(MailSendResult.skipped("Notification driver is disabled"));
+
+            mockMvc.perform(post("/billing/admin/notifications/test"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.error").value("Notification driver is disabled"));
         }
 
         @Test

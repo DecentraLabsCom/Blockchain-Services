@@ -89,7 +89,13 @@ public class LabMetadataService {
         }
         String metadataUri = walletService.getLabTokenUri(labId)
             .orElseThrow(() -> new IllegalArgumentException("Lab metadata URI is missing"));
-        LabMetadata metadata = loadMetadata(metadataUri, walletService.getLabMetadataOrigins(labId));
+        LabMetadata metadata;
+        try {
+            metadata = loadMetadata(metadataUri, walletService.getLabMetadataOrigins(labId));
+        } catch (MetadataOriginNotRegisteredException ex) {
+            log.debug("Using authoritative metadata URI for lab {} because its origin is not registered", labId);
+            metadata = loadMetadataFromAuthoritativeUri(metadataUri);
+        }
         validateCapacityForResourceType(metadata, walletService.getLabResourceType(labId));
         return metadata;
     }
@@ -184,9 +190,25 @@ public class LabMetadataService {
             }
             return parseLabMetadata(rootNode);
 
+        } catch (MetadataOriginNotRegisteredException e) {
+            throw e;
         } catch (Exception e) {
             log.error("Failed to fetch/parse lab metadata: {}", e.getMessage());
             throw new RuntimeException("Unable to load lab metadata", e);
+        }
+    }
+
+    private LabMetadata loadMetadataFromAuthoritativeUri(String metadataUri) {
+        try {
+            byte[] jsonContent = metadataClient.fetchFromAuthoritativeUri(metadataUri);
+            JsonNode rootNode = objectMapper.readTree(jsonContent);
+            if (rootNode == null || !rootNode.isObject()) {
+                throw new IOException("Metadata document must be a JSON object");
+            }
+            return parseLabMetadata(rootNode);
+        } catch (Exception e) {
+            log.error("Failed to fetch/parse authoritative lab metadata: {}", e.getMessage());
+            throw new RuntimeException("Unable to load authoritative lab metadata", e);
         }
     }
 

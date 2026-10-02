@@ -2,6 +2,7 @@ package decentralabs.blockchain.controller.billing;
 
 import decentralabs.blockchain.notification.MailSenderAdapter;
 import decentralabs.blockchain.notification.MailSenderFactory;
+import decentralabs.blockchain.notification.MailSendResult;
 import decentralabs.blockchain.notification.NotificationConfigService;
 import decentralabs.blockchain.notification.NotificationMessage;
 import decentralabs.blockchain.notification.NotificationProperties;
@@ -105,7 +106,7 @@ public class NotificationAdminController {
         }
         try {
             MailSenderAdapter sender = mailSenderFactory.resolve();
-            sender.send(new NotificationMessage(
+            MailSendResult result = sender.send(new NotificationMessage(
                 mail.getDefaultTo(),
                 "Lab Gateway notification test",
                 "Test message from Lab Gateway",
@@ -113,7 +114,7 @@ public class NotificationAdminController {
                 null,
                 null
             ));
-            return ResponseEntity.ok(Map.of("success", true));
+            return deliveryResponse(result, "test notification");
         } catch (Exception ex) {
             log.error("Failed to send test notification: {}", ex.getMessage(), ex);
             return ResponseEntity.internalServerError().body(Map.of(
@@ -161,7 +162,7 @@ public class NotificationAdminController {
 
         try {
             MailSenderAdapter sender = mailSenderFactory.resolve();
-            sender.send(new NotificationMessage(
+            MailSendResult result = sender.send(new NotificationMessage(
                 recipients,
                 request.subject(),
                 request.textBody(),
@@ -169,7 +170,7 @@ public class NotificationAdminController {
                 request.icsContent(),
                 request.icsFileName()
             ));
-            return ResponseEntity.ok(Map.of("success", true));
+            return deliveryResponse(result, "notification");
         } catch (Exception ex) {
             log.error("Failed to send notification: {}", ex.getMessage(), ex);
             return ResponseEntity.internalServerError().body(Map.of(
@@ -183,6 +184,32 @@ public class NotificationAdminController {
         return ResponseEntity.status(403).body(Map.of(
             "success", false,
             "error", "Access denied: administrative endpoints only accessible from localhost"
+        ));
+    }
+
+    private ResponseEntity<?> deliveryResponse(MailSendResult result, String operation) {
+        if (result != null && result.status() == MailSendResult.Status.SENT) {
+            return ResponseEntity.ok(Map.of("success", true));
+        }
+
+        if (result == null) {
+            log.error("Mail sender returned no delivery result for {}", operation);
+            return ResponseEntity.status(HttpStatus.BAD_GATEWAY).body(Map.of(
+                "success", false,
+                "error", "Mail sender did not confirm delivery"
+            ));
+        }
+
+        String error = result.message() != null && !result.message().isBlank()
+            ? result.message()
+            : "Notification was not sent";
+        HttpStatus status = result.status() == MailSendResult.Status.FAILED
+            ? HttpStatus.BAD_GATEWAY
+            : HttpStatus.BAD_REQUEST;
+        log.warn("Mail {} was not sent: status={} reason={}", operation, result.status(), error);
+        return ResponseEntity.status(status).body(Map.of(
+            "success", false,
+            "error", error
         ));
     }
 

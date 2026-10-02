@@ -270,4 +270,25 @@ class SmtpMailSenderAdapterTest {
             assertMessageWasSent("Test", "user1@example.com", "user2@example.com", "user3@example.com");
         }
     }
+
+    @Nested
+    @DisplayName("Delivery Failure Tests")
+    class DeliveryFailureTests {
+
+        @Test
+        @DisplayName("Should report SMTP failures instead of swallowing them")
+        void shouldReportSmtpFailure() {
+            org.mockito.Mockito.doThrow(new RuntimeException("535 5.7.3 Authentication unsuccessful"))
+                .when(mailSender)
+                .send(org.mockito.ArgumentMatchers.any(MimeMessage.class));
+
+            SmtpMailSenderAdapter adapter = adapterWithMockedSender();
+
+            MailSendResult result = adapter.send(createSimpleMessage(
+                List.of("test@example.com"), "Test", "Body"));
+
+            assertEquals(MailSendResult.Status.FAILED, result.status());
+            assertEquals("SMTP delivery failed", result.message());
+        }
+    }
 }

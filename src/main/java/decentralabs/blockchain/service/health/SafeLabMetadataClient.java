@@ -252,7 +252,7 @@ public class SafeLabMetadataClient {
         }
         String actual = origin(uri);
         if (allowedOrigins == null || allowedOrigins.stream().noneMatch(origin -> originEquals(actual, origin))) {
-            throw new IOException("Metadata origin is not registered for this provider");
+            throw new MetadataOriginNotRegisteredException("Metadata origin is not registered for this provider");
         }
         return actual;
     }

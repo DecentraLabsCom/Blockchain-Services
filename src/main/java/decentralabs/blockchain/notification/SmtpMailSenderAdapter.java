@@ -25,21 +25,21 @@ public class SmtpMailSenderAdapter implements MailSenderAdapter {
     }
 
     @Override
-    public void send(NotificationMessage message) {
+    public MailSendResult send(NotificationMessage message) {
         String host = mailSender.getHost();
         if (host == null || host.isBlank()) {
             log.warn("SMTP host not configured. Skipping email notification.");
-            return;
+            return MailSendResult.skipped("SMTP host is not configured");
         }
         String from = mailProps.getFrom();
         if (from == null || from.isBlank()) {
             log.warn("SMTP sender (notifications.mail.from) not configured. Skipping email notification.");
-            return;
+            return MailSendResult.skipped("SMTP sender is not configured");
         }
 
         if (message.recipients() == null || message.recipients().isEmpty()) {
             log.warn("No recipients provided. Skipping email notification.");
-            return;
+            return MailSendResult.skipped("No recipients provided");
         }
 
         try {
@@ -58,7 +58,7 @@ public class SmtpMailSenderAdapter implements MailSenderAdapter {
                 .toArray(String[]::new);
             if (recipients.length == 0) {
                 log.warn("No recipients provided. Skipping email notification.");
-                return;
+                return MailSendResult.skipped("No recipients provided");
             }
             helper.setTo(recipients);
             String subject = Objects.requireNonNullElse(message.subject(), "");
@@ -86,8 +86,10 @@ public class SmtpMailSenderAdapter implements MailSenderAdapter {
 
             mailSender.send(mimeMessage);
             log.info("Sent reservation notification via SMTP to {}", message.recipients());
+            return MailSendResult.sent();
         } catch (Exception ex) {
             log.error("Failed to send reservation notification via SMTP: {}", ex.getMessage(), ex);
+            return MailSendResult.failed("SMTP delivery failed");
         }
     }
 
