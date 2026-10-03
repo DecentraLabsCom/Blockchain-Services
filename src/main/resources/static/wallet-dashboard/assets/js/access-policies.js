@@ -178,6 +178,30 @@
         if (error) error.textContent = message || '';
     }
 
+    const attributesJsonHint = 'Use JSON syntax like {"schacHome":["Hola"]}.';
+
+    function parseTestAttributes(value) {
+        let parsed;
+        try {
+            parsed = JSON.parse(String(value ?? '').trim() || '{}');
+        } catch (error) {
+            throw new Error(attributesJsonHint);
+        }
+        if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+            throw new Error('Attributes must be a JSON object.');
+        }
+
+        return Object.fromEntries(Object.entries(parsed).map(([key, rawValue]) => {
+            const values = Array.isArray(rawValue) ? rawValue : [rawValue];
+            if (values.some(item => item === null || (typeof item !== 'string' && typeof item !== 'number' && typeof item !== 'boolean'))) {
+                throw new Error('Attributes must contain scalar values.');
+            }
+            return [key, values.map(String)];
+        }));
+    }
+
+    window.WalletDashboardAccessPolicyAttributes = Object.freeze({ parse: parseTestAttributes });
+
     function openAttributesEditor() {
         const modal = $('accessPolicyAttributesModal');
         const preview = $('accessPolicyTestAttributes');
@@ -186,7 +210,7 @@
 
         attributesEditorPreviousFocus = document.activeElement;
         try {
-            editor.value = JSON.stringify(JSON.parse(preview.value || '{}'), null, 2);
+            editor.value = JSON.stringify(parseTestAttributes(preview.value), null, 2);
         } catch (error) {
             editor.value = preview.value || '{}';
         }
@@ -211,10 +235,7 @@
         const preview = $('accessPolicyTestAttributes');
         if (!editor || !preview) return;
         try {
-            const attributes = JSON.parse(editor.value.trim() || '{}');
-            if (!attributes || typeof attributes !== 'object' || Array.isArray(attributes)) {
-                throw new Error('Attributes must be a JSON object.');
-            }
+            const attributes = parseTestAttributes(editor.value);
             preview.value = JSON.stringify(attributes);
             closeAttributesEditor();
         } catch (error) {
@@ -360,7 +381,8 @@
     async function testPolicy(event) {
         event.preventDefault();
         let attributes;
-        try { attributes = JSON.parse($('accessPolicyTestAttributes').value || '{}'); } catch (error) { toast('Attributes must be valid JSON', 'error'); return; }
+        try { attributes = parseTestAttributes($('accessPolicyTestAttributes').value); }
+        catch (error) { toast(error.message, 'error'); return; }
         const response = await API.testAccessPolicy({
             attributes,
             categories: selectedValues($('accessPolicyTestCategories')),
