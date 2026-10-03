@@ -135,9 +135,9 @@ function updateRoleBasedSections() {
 
     if (creditPolicyTitle) {
         if (showInstitutionControls && showOperatorControls) {
-            creditPolicyTitle.textContent = 'Institution Policy and Operator Controls';
+            creditPolicyTitle.textContent = 'Spending Policy and Operator Controls';
         } else if (showInstitutionControls) {
-            creditPolicyTitle.textContent = 'Institution Policy';
+            creditPolicyTitle.textContent = 'Spending Policy';
         } else if (showOperatorControls) {
             creditPolicyTitle.textContent = 'Operator Controls';
         } else {
