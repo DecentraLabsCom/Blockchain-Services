@@ -32,7 +32,7 @@
 .policy-multi-select { position: relative; min-width: 0; }
 .policy-multi-select-trigger {
     width: 100%; display: flex; align-items: center; justify-content: space-between; gap: 0.7rem;
-    padding: var(--spacing-sm); border: 1px solid var(--border-color); border-radius: var(--radius-sm);
+    height: 3.125rem; min-height: 0; padding: 0 0.75rem; border: 1px solid var(--border-color); border-radius: var(--radius-sm);
     background: var(--bg-primary); color: var(--text-primary); font: inherit; font-size: 0.95rem; line-height: normal; text-align: left; cursor: pointer;
     transition: border-color 0.2s ease, box-shadow 0.2s ease, background 0.2s ease;
 }
@@ -69,6 +69,8 @@
 .policy-multi-select-clear { padding: 0.2rem 0.35rem; border: 0; background: transparent; color: var(--neon-blue); font: inherit; cursor: pointer; }
 .policy-empty { padding: var(--spacing-md); color: var(--text-secondary); border: 1px dashed var(--border-color); border-radius: var(--radius-md); text-align: center; }
 .policy-test-form { grid-template-columns: 1.5fr 1fr 0.5fr auto; }
+.policy-test-form .form-group > input,
+.policy-test-form .policy-multi-select-trigger { height: 3.125rem; }
 .policy-test-form textarea { resize: vertical; }
 .policy-test-result { margin-top: var(--spacing-sm); padding: 0.7rem 0.9rem; border-radius: var(--radius-md); font-weight: 700; }
 .policy-result-allow { color: var(--neon-green); background: rgba(0, 255, 170, 0.1); }

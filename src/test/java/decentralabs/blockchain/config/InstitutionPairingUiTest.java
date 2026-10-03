@@ -138,7 +138,7 @@ class InstitutionPairingUiTest {
         assertThat(script).contains("data-multiselect-option").contains("Search categories").contains("role=\"listbox\"");
         assertThat(script).doesNotContain("fa-search");
         assertThat(api).contains("/wallet-admin/access-policies");
-        assertThat(policyStyles).contains(".policy-multi-select").contains(".policy-test-form").contains("padding: var(--spacing-sm);");
+        assertThat(policyStyles).contains(".policy-multi-select").contains(".policy-test-form").contains("height: 3.125rem;");
         assertThat(policyStyles).doesNotContain("min-height: 2.8rem").doesNotContain("padding: 0.55rem 0.7rem 0.55rem 2rem");
         assertThat(sharedStyles).doesNotContain(".policy-multi-select");
     }
