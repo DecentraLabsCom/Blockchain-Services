@@ -63,6 +63,7 @@ and units.
 | --- | --- | --- |
 | Chain and wallet | `CONTRACT_ADDRESS`, `BLOCKCHAIN_NETWORK_ACTIVE`, RPC URL, `INSTITUTIONAL_WALLET_*` or an encrypted persisted wallet | The institutional wallet signs general automated transactions. Provider settlement additionally requires `PROVIDER_SETTLEMENT_APPROVER_PRIVATE_KEY` and `PROVIDER_SETTLEMENT_PAYER_PRIVATE_KEY`; keep all secrets outside Git. |
 | Database | `SPRING_DATASOURCE_URL`, `SPRING_DATASOURCE_USERNAME`, `SPRING_DATASOURCE_PASSWORD` | Flyway validates migrations at startup. |
+| Standalone Docker access and persistence | `BLOCKCHAIN_SERVICES_BIND_ADDRESS`, `BLOCKCHAIN_SERVICES_HOST_PORT`, `BLOCKCHAIN_DATA_PATH` | The repository compose publishes `127.0.0.1:8080` by default and persists `/app/data` under `./blockchain-data`. Bind to a private interface only with the admin-network and access-token controls enabled. |
 | Signing and Marketplace | `PRIVATE_KEY_PATH`, `PUBLIC_KEY_PATH`, `MARKETPLACE_PUBLIC_KEY_URL`, `PUBLIC_BASE_URL` | Mount private keys read-only and use HTTPS endpoints. |
 | Provider mode | `FEATURES_PROVIDERS_ENABLED`, `FEATURES_PROVIDERS_REGISTRATION_ENABLED`, `FEATURES_ORGANIZATIONS_ENABLED`, `PROVIDER_RESERVATION_AVAILABILITY_LOCK_TIMEOUT_SECONDS` | Registration is independently feature-gated. Provider reservation confirmation/denial automation is enabled only when the provider flag is true and the wallet is the current lab owner or its authorized backend. Capacity checks use a shared MySQL advisory lock keyed by chain, contract and lab; all replicas that can confirm the same lab must use the same persistent database. |
 | WebAuthn | `WEBAUTHN_RP_ID`, `WEBAUTHN_RP_ORIGINS`, `WEBAUTHN_AUTHENTICATOR_ATTACHMENT`, `WEBAUTHN_USER_VERIFICATION`, `WEBAUTHN_ATTESTATION_CONVEYANCE` | `preferred` verification is the default for browser/provider compatibility; `required` remains available as a strict policy. Only `none` attestation is accepted. |
@@ -158,9 +159,19 @@ java -jar target/blockchain-services-1.0-SNAPSHOT.war
 ```
 
 On Windows, use `./mvnw.cmd test` and `./mvnw.cmd -DskipTests package`.
-The repository `docker-compose.yml` is suitable for a standalone backend. The
-parent Lab Gateway compose topology is the correct entry point for Full or Lite
-integration.
+The repository `docker-compose.yml` is suitable for a standalone backend. It
+publishes the dashboard on loopback at port `8080` and stores wallet/JWT/key
+material in `./blockchain-data`. Override `BLOCKCHAIN_SERVICES_HOST_PORT` or
+`BLOCKCHAIN_DATA_PATH` when the institution needs a different local port or
+storage location. If the dashboard must be opened from another machine on the
+institution's private network, set `BLOCKCHAIN_SERVICES_BIND_ADDRESS`
+deliberately and configure `ADMIN_DASHBOARD_ALLOW_PRIVATE`,
+`SECURITY_ALLOW_PRIVATE_NETWORKS`, `ADMIN_ALLOWED_CIDRS` and
+`ADMIN_ACCESS_TOKEN` as described in [Security](../security/SECURITY.md); do
+not expose the dashboard directly to the public Internet.
+
+The parent Lab Gateway compose topology is the correct entry point for Full or
+Lite integration.
 
 After startup, distinguish the probes:
 

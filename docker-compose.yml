@@ -43,12 +43,16 @@ services:
       # Configuration directory (includes keys and provider.properties)
       - ./config:/app/config
       - ./logs:/app/logs
-      # Persistent storage for encrypted wallets (survives container restart)
-      - /opt/Lab-Gateway/blockchain-data:/app/data
-    
-    # Expose container port for internal networks; host mapping handled via override
-    expose:
-      - "8080"
+      # Persistent storage for encrypted wallets, JWT keys and generated
+      # encryption material (survives container recreation and is portable
+      # across standalone installation paths).
+      - ${BLOCKCHAIN_DATA_PATH:-./blockchain-data}:/app/data
+
+    # Standalone installations need a browser-reachable endpoint. Keep the
+    # default bound to loopback; an institution that deliberately enables
+    # private-network administration can override the bind address in .env.
+    ports:
+      - "${BLOCKCHAIN_SERVICES_BIND_ADDRESS:-127.0.0.1}:${BLOCKCHAIN_SERVICES_HOST_PORT:-8080}:8080"
 
     depends_on:
       mysql:

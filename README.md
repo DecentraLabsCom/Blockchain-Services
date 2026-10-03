@@ -230,8 +230,12 @@ docker info
 ```
 
 For a local consumer-only process, leave the provider flags at their defaults
-and open `http://localhost:8080/wallet-dashboard/`. For a Full gateway, enable
-the provider flags and use the parent repository's Docker Compose topology.
+and open `http://localhost:8080/wallet-dashboard/`. The repository compose
+publishes that endpoint on loopback and persists `/app/data` under
+`./blockchain-data`; use `BLOCKCHAIN_SERVICES_HOST_PORT` or
+`BLOCKCHAIN_DATA_PATH` when the institution needs different locations. For a
+Full gateway, enable the provider flags and use the parent repository's Docker
+Compose topology.
 
 ## Docker and configuration
 

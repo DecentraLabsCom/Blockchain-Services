@@ -258,8 +258,12 @@ runbooks.
 
 The Wallet Dashboard is the administrative entry point for creating or
 importing the institutional wallet, checking balances and opening billing
-operations. The screenshot shows the initial protected dashboard state; the
-actual wallet address, network and balances depend on the deployment.
+operations. In a standalone `consumer-only` deployment it is the
+institution's wallet and service-credit administration surface: provider-lab
+settlement is not applicable and the dashboard directs zero-balance
+institutions to fund through the Marketplace. The screenshot shows the initial
+protected dashboard state; the actual wallet address, network and balances
+depend on the deployment.
 
 ![Wallet Dashboard](../../images/wallet-dashboard.png)
 

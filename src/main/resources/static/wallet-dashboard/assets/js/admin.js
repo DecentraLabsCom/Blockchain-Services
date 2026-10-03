@@ -1317,25 +1317,42 @@ async function loadBalances() {
                         }
                     }
                     
-                    // Show promotional message only if NOT a provider and credit balance is 0
+                    // Consumer-only institutions should receive consumer guidance,
+                    // never a provider-registration upsell.
                     const promoContainer = document.getElementById('labPromoMessage');
                     if (promoContainer) {
                         if (!isProvider && parseFloat(labBalance) === 0) {
                             promoContainer.style.display = 'block';
-                            promoContainer.innerHTML = `
-                                <div class="provider-promo-card">
-                                    <div class="provider-promo-title">
-                                        <i class="fas fa-rocket provider-promo-icon"></i>
-                                        Register as a provider now to get <strong class="provider-promo-emphasis">1000 onboarding credits</strong>!
+                            const consumerOnly = DashboardState.operatingMode === 'consumer-only';
+                            promoContainer.innerHTML = consumerOnly
+                                ? `
+                                    <div class="provider-promo-card">
+                                        <div class="provider-promo-title">
+                                            <i class="fas fa-wallet provider-promo-icon"></i>
+                                            Fund the institution through the Marketplace to obtain service credits.
+                                        </div>
+                                        <a href="${escapeHtml(DashboardState.marketplaceUrl)}"
+                                           target="_blank" rel="noopener noreferrer"
+                                           class="provider-promo-link">
+                                            <i class="fas fa-external-link-alt"></i>
+                                            Open Marketplace funding
+                                        </a>
                                     </div>
-                                    <a href="https://marketplace-decentralabs.vercel.app" 
-                                       target="_blank" 
-                                       class="provider-promo-link">
-                                        <i class="fas fa-external-link-alt"></i>
-                                        Visit Marketplace
-                                    </a>
-                                </div>
-                            `;
+                                `
+                                : `
+                                    <div class="provider-promo-card">
+                                        <div class="provider-promo-title">
+                                            <i class="fas fa-rocket provider-promo-icon"></i>
+                                            Register as a provider now to get <strong class="provider-promo-emphasis">1000 onboarding credits</strong>!
+                                        </div>
+                                        <a href="${escapeHtml(DashboardState.marketplaceUrl)}"
+                                           target="_blank" rel="noopener noreferrer"
+                                           class="provider-promo-link">
+                                            <i class="fas fa-external-link-alt"></i>
+                                            Visit Marketplace
+                                        </a>
+                                    </div>
+                                `;
                         } else {
                             promoContainer.style.display = 'none';
                             promoContainer.innerHTML = '';
@@ -1746,6 +1763,27 @@ async function loadCollectLabs() {
     if (!selectEl || !pendingEl) {
         return;
     }
+
+    // Standalone consumer-only institutions do not own provider labs and must
+    // not probe provider settlement endpoints on every dashboard refresh.
+    if (DashboardState.operatingMode === 'consumer-only'
+        || (!DashboardState.isProvider && !DashboardState.isOperator)) {
+        DashboardState.collectLabs = [];
+        DashboardState.selectedCollectLabId = null;
+        DashboardState.collectAggregates = null;
+        DashboardState.collectCanExecute = false;
+        DashboardState.collectLoadingStatus = false;
+        selectEl.disabled = true;
+        selectEl.innerHTML = '<option value="">Provider settlement unavailable</option>';
+        pendingEl.textContent = '--';
+        setCollectPreviewMetrics(null);
+        setCollectStatusText('Not applicable to this institution', 'info');
+        setCollectPanelCompact(true);
+        updateCollectDetailVisibility();
+        renderCollectSettlementOverview();
+        return;
+    }
+
     loadCollectLabNameCache();
     clearCollectLabsRetryTimer();
     const previousLabs = Array.isArray(DashboardState.collectLabs)
