@@ -13,6 +13,10 @@ class InstitutionPairingUiTest {
     void walletDashboard_exposesTheCanonicalPairingFlow() throws IOException {
         String page = readResource("static/wallet-dashboard/index.html");
 
+        assertThat(page).contains("id=\"gatewayHomeLink\"")
+            .contains("href=\"/\"")
+            .contains("src=\"assets/images/LogoBannerDLabs.png\"")
+            .contains("<span class=\"logo-title\">Wallet &amp; Billing</span>");
         assertThat(page).contains("id=\"institutionPairingSection\"");
         assertThat(page).contains("id=\"openInstitutionConfigBtn\"");
         assertThat(page).contains("href=\"/institution-config/\"");
@@ -124,8 +128,11 @@ class InstitutionPairingUiTest {
         assertThat(page).contains("id=\"accessPolicyDefaultDecision\"");
         assertThat(page).contains("id=\"accessPolicyGroups\"");
         assertThat(page).contains("id=\"accessPolicyTestForm\"");
+        assertThat(page).contains("data-policy-multiselect");
+        assertThat(page).doesNotContain("id=\"accessPolicyTestCategories\" multiple");
         assertThat(page).contains("wallet-dashboard-tabs.js");
         assertThat(script).contains("accessPolicy").contains("Add matcher").contains("Import").contains("Export");
+        assertThat(script).contains("data-multiselect-option").contains("Search categories").contains("role=\"listbox\"");
         assertThat(api).contains("/wallet-admin/access-policies");
     }
 

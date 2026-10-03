@@ -56,10 +56,10 @@
         <header class="dashboard-header">
             <div class="header-content">
                 <h1 class="logo">
-                    <a class="logo-link" href="/">
-                        <img src="assets/images/logo.svg" alt="DecentraLabs" class="logo-icon-img">
-                        Wallet & Billing
+                    <a id="gatewayHomeLink" class="logo-link" href="/" aria-label="Return to Lab Gateway home">
+                        <img src="assets/images/LogoBannerDLabs.png" alt="DecentraLabs" class="logo-icon-img">
                     </a>
+                    <span class="logo-title">Wallet &amp; Billing</span>
                 </h1>
                 <div class="header-actions">
                     <div class="header-action-buttons">
@@ -533,7 +533,7 @@
                 <div class="card-body">
                     <div class="policy-toolbar">
                         <div>
-                            <p class="policy-summary" id="accessPolicySummary">Control paid lab access by institutional identity and lab category.</p>
+                            <p class="policy-summary" id="accessPolicySummary">Control paid lab access by user attributes and lab category.</p>
                             <small id="accessPolicyVersion" class="status-text"></small>
                         </div>
                         <div class="policy-toolbar-actions">
@@ -566,7 +566,7 @@
                     <div class="policy-section-heading"><div><h3>Test access</h3><span class="status-text">Use sample attributes before activating.</span></div></div>
                     <form id="accessPolicyTestForm" class="policy-test-form">
                         <div class="form-group"><label for="accessPolicyTestAttributes">Attributes (JSON)</label><textarea id="accessPolicyTestAttributes" rows="3" placeholder='{"eduPersonEntitlement":["engineering"]}'>{}</textarea></div>
-                        <div class="form-group"><label for="accessPolicyTestCategories">Lab categories</label><select id="accessPolicyTestCategories" multiple size="6" aria-label="Lab categories"></select></div>
+                        <div class="form-group"><label for="accessPolicyTestCategories-trigger">Lab categories</label><div id="accessPolicyTestCategories" class="policy-multi-select" data-policy-multiselect data-multiselect-label="Lab categories"></div></div>
                         <div class="form-group"><label for="accessPolicyTestPrice">Price (raw units)</label><input id="accessPolicyTestPrice" type="number" min="0" value="1"></div>
                         <button class="btn btn-secondary" type="submit"><i class="fas fa-vial"></i> Test</button>
                     </form>
