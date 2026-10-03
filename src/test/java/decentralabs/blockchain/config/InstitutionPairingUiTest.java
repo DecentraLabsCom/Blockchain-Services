@@ -146,7 +146,8 @@ class InstitutionPairingUiTest {
                 .contains(".policy-chip-remove");
         assertThat(policyStyles).contains(".policy-transfer").contains(".policy-test-form textarea")
                 .contains("resize: vertical;").contains("background: var(--bg-primary);").contains(".policy-transfer:focus");
-        assertThat(policyStyles).contains(".policy-settings-form > .btn").contains("align-items: center;").contains("justify-content: center;")
+        assertThat(policyStyles).contains(".policy-settings-form > .btn").contains("align-items: center;").contains("align-self: center;")
+                .contains("justify-content: center;").contains("gap: 0.5rem;")
                 .doesNotContain("min-height: 3.125rem;");
         assertThat(sharedStyles).doesNotContain(".policy-multi-select");
     }

@@ -19,7 +19,7 @@
 .policy-settings-form, .policy-test-form { display: grid; grid-template-columns: minmax(180px, 1fr) minmax(180px, 1fr) auto; gap: var(--spacing-sm); align-items: end; margin-bottom: var(--spacing-lg); }
 .policy-settings-form > .btn,
 .policy-test-form > .btn {
-    display: inline-flex; align-items: center; justify-content: center;
+    display: inline-flex; align-items: center; align-self: center; justify-content: center; gap: 0.5rem;
 }
 .policy-section-heading { margin: var(--spacing-lg) 0 var(--spacing-sm); }
 .policy-section-heading h3 { margin: 0; }
