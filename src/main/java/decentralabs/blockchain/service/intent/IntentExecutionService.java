@@ -14,6 +14,8 @@ import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
 import decentralabs.blockchain.dto.intent.IntentStatus;
+import decentralabs.blockchain.dto.intent.IntentAction;
+import decentralabs.blockchain.service.accesspolicy.LabCategoryAccessPolicyService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
@@ -26,6 +28,12 @@ public class IntentExecutionService {
     private final IntentOnChainExecutor onChainExecutor;
     private final IntentRegistrationVerifier registrationVerifier;
     private final ConcurrentHashMap<String, AtomicBoolean> executionGuards = new ConcurrentHashMap<>();
+    private LabCategoryAccessPolicyService accessPolicyService;
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    public void setAccessPolicyService(LabCategoryAccessPolicyService accessPolicyService) {
+        this.accessPolicyService = accessPolicyService;
+    }
 
     @Value("${intent.execution-interval-ms:1000}")
     private long executionIntervalMs;
@@ -106,6 +114,13 @@ public class IntentExecutionService {
                 intentService.markFailed(record, "expired");
                 return;
             }
+
+            IntentAction action = IntentAction.fromWireValue(record.getAction()).orElse(null);
+            if (accessPolicyService != null && action != null && action.usesReservationPayload()
+                && action != IntentAction.CANCEL_RESERVATION_REQUEST) {
+                accessPolicyService.enforceStored(record);
+            }
+
             intentService.markInProgress(record);
             IntentOnChainExecutor.ExecutionResult result = onChainExecutor.execute(record);
             if (result.success()) {

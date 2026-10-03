@@ -157,6 +157,19 @@ public class SamlValidationService {
         "urn:mace:dir:attribute-def:schachomeorganization",
         "urn:oid:1.3.6.1.4.1.25178.1.2.9"
     };
+
+    private static final String[] ENTITLEMENT_ATTRIBUTE_ALIASES = new String[] {
+        "edupersonentitlement", "urn:mace:dir:attribute-def:edupersonentitlement",
+        "urn:oid:1.3.6.1.4.1.5923.1.1.1.7"
+    };
+    private static final String[] AFFILIATION_ATTRIBUTE_ALIASES = new String[] {
+        "edupersonaffiliation", "edupersonprimaryaffiliation",
+        "urn:mace:dir:attribute-def:edupersonaffiliation",
+        "urn:oid:1.3.6.1.4.1.5923.1.1.1.1"
+    };
+    private static final String[] ORG_UNIT_ATTRIBUTE_ALIASES = new String[] {
+        "edupersonorgunitdn", "edupersonprimaryorgunitdn", "department", "faculty", "school"
+    };
     
     @Value("${saml.idp.trust-mode:whitelist}")
     private String trustMode;
@@ -403,6 +416,12 @@ public class SamlValidationService {
         if (!schacHomeOrganizations.isEmpty()) {
             capturedAttributes.put("schacHomeOrganization", schacHomeOrganizations);
         }
+        putAttributeValues(capturedAttributes, "eduPersonEntitlement",
+            extractSamlAttributeValuesByAliases(assertion, ENTITLEMENT_ATTRIBUTE_ALIASES));
+        putAttributeValues(capturedAttributes, "eduPersonAffiliation",
+            extractSamlAttributeValuesByAliases(assertion, AFFILIATION_ATTRIBUTE_ALIASES));
+        putAttributeValues(capturedAttributes, "orgUnit",
+            extractSamlAttributeValuesByAliases(assertion, ORG_UNIT_ATTRIBUTE_ALIASES));
 
         return new SamlAssertionAttributes(
             issuer,
@@ -1488,6 +1507,17 @@ public class SamlValidationService {
             return;
         }
         attributes.put(key, List.of(value));
+    }
+
+    private void putAttributeValues(Map<String, List<String>> attributes, String key, List<String> values) {
+        if (values == null || values.isEmpty()) return;
+        List<String> normalized = values.stream()
+            .filter(value -> value != null && !value.isBlank())
+            .map(String::trim)
+            .distinct()
+            .limit(64)
+            .toList();
+        if (!normalized.isEmpty()) attributes.put(key, normalized);
     }
 
 

@@ -34,6 +34,7 @@ import decentralabs.blockchain.dto.intent.IntentSubmission;
 import decentralabs.blockchain.dto.intent.ReservationIntentPayload;
 import decentralabs.blockchain.service.BackendUrlResolver;
 import decentralabs.blockchain.service.auth.InstitutionalSessionCredentialService;
+import decentralabs.blockchain.service.accesspolicy.LabCategoryAccessPolicyService;
 import decentralabs.blockchain.service.auth.WebauthnCredentialService;
 import decentralabs.blockchain.service.auth.WebauthnCredentialService.WebauthnCredential;
 import decentralabs.blockchain.util.PucHashUtil;
@@ -72,6 +73,12 @@ public class IntentAuthorizationService {
     private long processingLeaseSeconds;
 
     private final IntentAuthorizationSessionPersistenceService sessionPersistence;
+    private LabCategoryAccessPolicyService accessPolicyService;
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    public void setAccessPolicyService(LabCategoryAccessPolicyService accessPolicyService) {
+        this.accessPolicyService = accessPolicyService;
+    }
     private ScheduledExecutorService cleanupScheduler;
 
     public IntentAuthorizationService(
@@ -123,6 +130,14 @@ public class IntentAuthorizationService {
         intentService.enforceActionAllowedById(meta.getAction());
         InstitutionalSessionCredentialService.Credential institutionalCredential =
             resolveInstitutionalCredential(submission);
+        var intentAction = decentralabs.blockchain.dto.intent.IntentAction.fromId(meta.getAction()).orElse(null);
+        if (accessPolicyService != null && intentAction != null
+            && intentAction.usesReservationPayload()
+            && intentAction != decentralabs.blockchain.dto.intent.IntentAction.CANCEL_RESERVATION_REQUEST
+            && submission.getReservationPayload() != null) {
+            accessPolicyService.enforce(institutionalCredential, submission.getReservationPayload().getLabId(),
+                submission.getReservationPayload().getPrice(), List.of());
+        }
         String puc = resolvePuc(submission, institutionalCredential);
         if (puc == null || puc.isBlank()) {
             // codeql[java/log-injection]

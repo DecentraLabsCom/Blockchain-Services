@@ -32,6 +32,7 @@ public class IntentRecord {
     private Map<String, Object> data;
     private String payloadJson;
     private String pucHash;
+    private String institutionId;
     private String signer;
     private String executor;
     private Integer actionId;
@@ -181,6 +182,14 @@ public class IntentRecord {
 
     public void setPucHash(String pucHash) {
         this.pucHash = pucHash;
+    }
+
+    public String getInstitutionId() {
+        return institutionId;
+    }
+
+    public void setInstitutionId(String institutionId) {
+        this.institutionId = institutionId;
     }
 
     /**

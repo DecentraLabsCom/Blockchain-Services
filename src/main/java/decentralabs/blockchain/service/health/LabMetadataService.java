@@ -258,11 +258,17 @@ public class LabMetadataService {
         boolean hasDocumentation = rootNode.has("docs");
         boolean hasAdditionalImages = rootNode.has("images");
         Map<String, Object> termsOfUse = parseObjectMap(rootNode.get("termsOfUse"));
+        List<String> categories = new ArrayList<>();
+        appendDistinct(categories, parseStringList(rootNode.get("category")));
+        appendDistinct(categories, parseStringList(rootNode.get("categories")));
+        String rootCategory = parseString(rootNode.get("category"));
+        if (rootCategory != null) appendDistinct(categories, List.of(rootCategory));
 
         LabMetadata.LabMetadataBuilder builder = LabMetadata.builder()
             .name(rootNode.get("name").asText())
             .description(rootNode.get("description").asText())
-            .image(normalizedPrimaryImage);
+            .image(normalizedPrimaryImage)
+            .categories(categories);
         PricingMetadata pricingMetadata = null;
 
         if (rootNode.hasNonNull("pricing")) {
@@ -296,7 +302,15 @@ public class LabMetadataService {
                 JsonNode valueNode = attr.get("value");
 
                 switch (traitType.trim().toLowerCase()) {
-                    case "category" -> builder.category(parseString(valueNode));
+                    case "category" -> {
+                        appendDistinct(categories, parseStringList(valueNode));
+                        String category = parseString(valueNode);
+                        if (category != null) {
+                            builder.category(category);
+                            appendDistinct(categories, List.of(category));
+                        }
+                    }
+                    case "categories" -> appendDistinct(categories, parseStringList(valueNode));
                     case "keywords" -> builder.keywords(parseStringList(valueNode));
                     case "timeslots" -> builder.timeSlots(parseIntegerList(valueNode));
                     case "opens" -> builder.opens(parseEpochSeconds(valueNode));

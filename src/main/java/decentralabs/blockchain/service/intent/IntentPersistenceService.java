@@ -222,6 +222,7 @@ public class IntentPersistenceService {
             IntentPersistencePayload payload = objectMapper.readValue(unprotectPayload(payloadJson), IntentPersistencePayload.class);
             record.setActionPayload(payload.actionPayload());
             record.setReservationPayload(payload.reservationPayload());
+            record.setInstitutionId(payload.institutionId());
 
             if (record.getPucHash() == null) {
                 if (record.getReservationPayload() != null) {

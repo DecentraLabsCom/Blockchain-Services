@@ -130,6 +130,7 @@ public class SecurityConfig {
                     billingEndpoint + "/**",
                     "/webauthn/**",
                     intentsEndpoint + "/**",
+                    "/access-policy/**",
                     "/onboarding/**",
                     "/institution-config/**",
                     "/lab-admin/**",
@@ -194,6 +195,8 @@ public class SecurityConfig {
                 authorize.requestMatchers("/access-audit/internal/**").hasRole("INTERNAL");
                 authorize.requestMatchers(HttpMethod.GET, "/reservations/projection").permitAll();
                 authorize.requestMatchers(intentsEndpoint + "/**").permitAll();
+                authorize.requestMatchers("/access-policy/**").permitAll();
+                authorize.requestMatchers("/wallet-admin/**").permitAll();
                 // Wallet dashboard static resources (HTML/CSS/JS)
                 authorize.requestMatchers("/wallet-dashboard/**").permitAll();
                 // ALL wallet endpoints - restricted by CORS to localhost

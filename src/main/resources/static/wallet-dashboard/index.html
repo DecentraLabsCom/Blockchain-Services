@@ -524,14 +524,57 @@
                 </div>
             </section>
 
-            <!-- Access Policies Placeholder -->
-            <section id="accessPoliciesSection" class="card hidden" data-wallet-tab-section="institution" data-wallet-order="20">
+            <!-- Institutional access policies -->
+            <section id="accessPoliciesSection" class="card" data-wallet-tab-section="institution" data-wallet-order="20">
                 <div class="card-header">
-                    <h2><i class="fas fa-shield-halved"></i> Access Policies</h2>
-                    <span class="wallet-coming-soon">Coming Soon</span>
+                    <h2><i class="fas fa-shield-halved"></i> Institutional access</h2>
+                    <span id="accessPolicyStatus" class="policy-status policy-status-disabled">Not configured</span>
                 </div>
                 <div class="card-body">
-                    <p class="operation-description">Institutional access policies will be managed here in a future release.</p>
+                    <div class="policy-toolbar">
+                        <div>
+                            <p class="policy-summary" id="accessPolicySummary">Control paid lab access by institutional identity and lab category.</p>
+                            <small id="accessPolicyVersion" class="status-text"></small>
+                        </div>
+                        <div class="policy-toolbar-actions">
+                            <button id="accessPolicyActivateBtn" class="btn btn-success btn-small" type="button">Activate</button>
+                            <button id="accessPolicyDeactivateBtn" class="btn btn-secondary btn-small" type="button">Disable</button>
+                        </div>
+                    </div>
+
+                    <form id="accessPolicyForm" class="policy-settings-form">
+                        <div class="form-group">
+                            <label for="accessPolicyName">Policy name</label>
+                            <input id="accessPolicyName" type="text" maxlength="200" placeholder="Institutional lab access">
+                        </div>
+                        <div class="form-group">
+                            <label for="accessPolicyDefaultDecision">When there is no match</label>
+                            <select id="accessPolicyDefaultDecision">
+                                <option value="DENY">Deny access</option>
+                                <option value="ALLOW">Allow access</option>
+                            </select>
+                        </div>
+                        <button class="btn btn-primary" type="submit"><i class="fas fa-save"></i> Save policy</button>
+                    </form>
+
+                    <div class="policy-section-heading">
+                        <div><h3>Groups</h3><span class="status-text">Match identity attributes to category access.</span></div>
+                        <button id="addAccessPolicyGroupBtn" class="btn btn-secondary btn-small" type="button"><i class="fas fa-plus"></i> Add group</button>
+                    </div>
+                    <div id="accessPolicyGroups" class="policy-groups"></div>
+
+                    <div class="policy-section-heading"><div><h3>Test access</h3><span class="status-text">Use sample attributes before activating.</span></div></div>
+                    <form id="accessPolicyTestForm" class="policy-test-form">
+                        <div class="form-group"><label for="accessPolicyTestAttributes">Attributes (JSON)</label><textarea id="accessPolicyTestAttributes" rows="3" placeholder='{"eduPersonEntitlement":["engineering"]}'>{}</textarea></div>
+                        <div class="form-group"><label for="accessPolicyTestCategories">Lab categories</label><input id="accessPolicyTestCategories" type="text" placeholder="Computer Science, Cybersecurity"></div>
+                        <div class="form-group"><label for="accessPolicyTestPrice">Price (raw units)</label><input id="accessPolicyTestPrice" type="number" min="0" value="1"></div>
+                        <button class="btn btn-secondary" type="submit"><i class="fas fa-vial"></i> Test</button>
+                    </form>
+                    <div id="accessPolicyTestResult" class="policy-test-result hidden"></div>
+
+                    <div class="policy-section-heading"><div><h3>Audit</h3></div><div class="policy-import-actions"><button id="accessPolicyExportBtn" class="btn btn-secondary btn-small" type="button">Export</button><button id="accessPolicyImportBtn" class="btn btn-secondary btn-small" type="button">Import</button></div></div>
+                    <textarea id="accessPolicyTransfer" class="policy-transfer hidden" rows="5" placeholder="Policy JSON"></textarea>
+                    <div id="accessPolicyAudit" class="policy-audit"></div>
                 </div>
             </section>
 
@@ -666,5 +709,6 @@
     <script src="assets/js/api.js"></script>
     <script src="assets/js/wallet-dashboard-tabs.js"></script>
     <script src="assets/js/admin.js"></script>
+    <script src="assets/js/access-policies.js"></script>
 </body>
 </html>

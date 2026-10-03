@@ -4,6 +4,8 @@ import decentralabs.blockchain.dto.auth.InstitutionalSessionRequest;
 import decentralabs.blockchain.dto.auth.InstitutionalSessionResponse;
 import decentralabs.blockchain.util.PucHashUtil;
 import decentralabs.blockchain.util.PucNormalizer;
+import decentralabs.blockchain.service.accesspolicy.InstitutionalIdentityContextPersistenceService;
+import org.springframework.beans.factory.annotation.Autowired;
 import java.util.Map;
 import java.util.Objects;
 import lombok.RequiredArgsConstructor;
@@ -17,6 +19,12 @@ public class InstitutionalSamlSessionService {
 
     private final SamlValidationService samlValidationService;
     private final InstitutionalSessionCredentialService credentialService;
+    private InstitutionalIdentityContextPersistenceService identityContextPersistenceService;
+
+    @Autowired(required = false)
+    public void setIdentityContextPersistenceService(InstitutionalIdentityContextPersistenceService service) {
+        this.identityContextPersistenceService = service;
+    }
 
     public InstitutionalSessionResponse create(
         InstitutionalSessionRequest request,
@@ -52,6 +60,9 @@ public class InstitutionalSamlSessionService {
                 validated.assertionHash(),
                 validated.assertionHashVersion()
             );
+            if (identityContextPersistenceService != null) {
+                identityContextPersistenceService.upsertSaml(institutionId, stableUserId, validated, issued.expiresAt());
+            }
             return InstitutionalSessionResponse.builder()
                 .sessionToken(issued.token())
                 .expiresAt(issued.expiresAt())

@@ -17,17 +17,27 @@ import decentralabs.blockchain.dto.intent.ReservationIntentPayload;
 public record IntentPersistencePayload(
     IntentMeta meta,
     ActionIntentPayload actionPayload,
-    ReservationIntentPayload reservationPayload
+    ReservationIntentPayload reservationPayload,
+    String institutionId
 ) {
 
+    public IntentPersistencePayload(IntentMeta meta, ActionIntentPayload actionPayload, ReservationIntentPayload reservationPayload) {
+        this(meta, actionPayload, reservationPayload, null);
+    }
+
     public static IntentPersistencePayload from(IntentSubmission submission) {
+        return from(submission, null);
+    }
+
+    public static IntentPersistencePayload from(IntentSubmission submission, String institutionId) {
         if (submission == null) {
-            return new IntentPersistencePayload(null, null, null);
+            return new IntentPersistencePayload(null, null, null, institutionId);
         }
         return new IntentPersistencePayload(
             submission.getMeta(),
             submission.getActionPayload(),
-            submission.getReservationPayload()
+            submission.getReservationPayload(),
+            institutionId
         );
     }
 }

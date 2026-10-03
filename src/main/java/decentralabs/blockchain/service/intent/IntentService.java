@@ -44,6 +44,7 @@ import decentralabs.blockchain.dto.intent.IntentStatusResponse;
 import decentralabs.blockchain.dto.intent.IntentSubmission;
 import decentralabs.blockchain.dto.intent.ReservationIntentPayload;
 import decentralabs.blockchain.service.auth.InstitutionalSessionCredentialService;
+import decentralabs.blockchain.service.accesspolicy.LabCategoryAccessPolicyService;
 import decentralabs.blockchain.service.auth.WebauthnCredentialService;
 import decentralabs.blockchain.service.auth.WebauthnCredentialService.WebauthnCredential;
 import decentralabs.blockchain.service.BackendUrlResolver;
@@ -91,6 +92,12 @@ public class IntentService {
     private final MeterRegistry meterRegistry;
     private final BackendOperatingModeConfiguration backendOperatingModeConfiguration;
     private final ObjectMapper objectMapper = new ObjectMapper();
+    private LabCategoryAccessPolicyService accessPolicyService;
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    public void setAccessPolicyService(LabCategoryAccessPolicyService accessPolicyService) {
+        this.accessPolicyService = accessPolicyService;
+    }
 
     @Value("${webauthn.rp.id:}")
     private String webauthnRpId = "";
@@ -224,6 +231,15 @@ public class IntentService {
         if (expectedInstitution != null && !expectedInstitution.equalsIgnoreCase(institutionalCredential.institutionId())) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "institutional_session_institution_mismatch");
         }
+        if (accessPolicyService != null && action.usesReservationPayload()
+            && action != IntentAction.CANCEL_RESERVATION_REQUEST && reservationPayload != null) {
+            accessPolicyService.enforce(
+                institutionalCredential,
+                reservationPayload.getLabId(),
+                reservationPayload.getPrice(),
+                List.of()
+            );
+        }
         // Derived identity values are hashed or control-character sanitized before logging.
         // codeql[java/log-injection]
         log.info(
@@ -309,7 +325,8 @@ public class IntentService {
             record.setPucHash(pucHash);
         }
 
-        record.setPayloadJson(serializePayload(IntentPersistencePayload.from(submission)));
+        record.setInstitutionId(institutionalCredential.institutionId());
+        record.setPayloadJson(serializePayload(IntentPersistencePayload.from(submission, institutionalCredential.institutionId())));
 
         try {
             // Durability is part of acceptance: never publish an ACK that only

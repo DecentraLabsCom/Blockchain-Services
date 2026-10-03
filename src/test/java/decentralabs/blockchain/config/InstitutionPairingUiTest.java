@@ -114,6 +114,21 @@ class InstitutionPairingUiTest {
         assertThat(apiScript).contains("/institution-config/apply-consumer-token");
     }
 
+    @Test
+    void walletDashboardExposesInstitutionalAccessPolicyPanel() throws IOException {
+        String page = readResource("static/wallet-dashboard/index.html");
+        String script = readResource("static/wallet-dashboard/assets/js/access-policies.js");
+        String api = readResource("static/wallet-dashboard/assets/js/api.js");
+
+        assertThat(page).contains("id=\"accessPoliciesSection\"");
+        assertThat(page).contains("id=\"accessPolicyDefaultDecision\"");
+        assertThat(page).contains("id=\"accessPolicyGroups\"");
+        assertThat(page).contains("id=\"accessPolicyTestForm\"");
+        assertThat(page).contains("wallet-dashboard-tabs.js");
+        assertThat(script).contains("accessPolicy").contains("Add matcher").contains("Import").contains("Export");
+        assertThat(api).contains("/wallet-admin/access-policies");
+    }
+
     private String readResource(String path) throws IOException {
         try (InputStream stream = getClass().getClassLoader().getResourceAsStream(path)) {
             assertThat(stream).as("resource %s", path).isNotNull();

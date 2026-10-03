@@ -163,6 +163,33 @@ const API = {
         return await this.request('/institution-config/status');
     },
 
+    async getAccessPolicy() {
+        return await this.request('/wallet-admin/access-policies');
+    },
+
+    async saveAccessPolicy(policy) {
+        return await this.request('/wallet-admin/access-policies', {
+            method: 'PUT',
+            body: JSON.stringify(policy)
+        });
+    },
+
+    async activateAccessPolicy() {
+        return await this.request('/wallet-admin/access-policies/activate', { method: 'POST', body: '{}' });
+    },
+
+    async deactivateAccessPolicy() {
+        return await this.request('/wallet-admin/access-policies/deactivate', { method: 'POST', body: '{}' });
+    },
+
+    async testAccessPolicy(payload) {
+        return await this.request('/wallet-admin/access-policies/test', { method: 'POST', body: JSON.stringify(payload) });
+    },
+
+    async importAccessPolicy(policy) {
+        return await this.request('/wallet-admin/access-policies/import', { method: 'POST', body: JSON.stringify(policy) });
+    },
+
     /**
      * Apply an administrator-issued provisioning token.
      * Consumer-only deployments use the consumer endpoint; Full provider

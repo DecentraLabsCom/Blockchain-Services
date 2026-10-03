@@ -42,6 +42,7 @@ public class LabMetadata {
 
     // Existing attributes can be added here as needed
     private String category;
+    private List<String> categories;
     private List<String> keywords;
     private List<String> documentation;
     private Map<String, Object> termsOfUse;

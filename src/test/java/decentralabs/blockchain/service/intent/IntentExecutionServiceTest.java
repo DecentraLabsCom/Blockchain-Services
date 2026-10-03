@@ -20,6 +20,8 @@ import org.mockito.Captor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.http.HttpStatus;
+import org.springframework.web.server.ResponseStatusException;
 
 import decentralabs.blockchain.dto.intent.IntentStatus;
 import decentralabs.blockchain.service.intent.IntentOnChainExecutor.ExecutionResult;
@@ -40,6 +42,9 @@ class IntentExecutionServiceTest {
 
     @Mock
     private IntentRegistrationVerifier registrationVerifier;
+
+    @Mock
+    private decentralabs.blockchain.service.accesspolicy.LabCategoryAccessPolicyService accessPolicyService;
 
     @InjectMocks
     private IntentExecutionService executionService;
@@ -418,6 +423,23 @@ class IntentExecutionServiceTest {
     @Nested
     @DisplayName("Failed Execution")
     class FailedExecutionTests {
+
+        @Test
+        @DisplayName("Should stop before on-chain submission when access policy is revoked")
+        void shouldStopBeforeOnChainSubmissionWhenAccessPolicyIsRevoked() {
+            IntentRecord intent = createIntentRecord("req-policy-revoked", "RESERVATION_REQUEST", IntentStatus.QUEUED);
+            when(intentService.getQueuedIntents()).thenReturn(Map.of("req-policy-revoked", intent));
+            executionService.setAccessPolicyService(accessPolicyService);
+            doThrow(new ResponseStatusException(HttpStatus.FORBIDDEN, "LAB_CATEGORY_ACCESS_DENIED"))
+                .when(accessPolicyService).enforceStored(intent);
+
+            executionService.processQueuedIntents();
+
+            verify(accessPolicyService).enforceStored(intent);
+            verify(intentService).markFailed(eq(intent), contains("execution_error"));
+            verify(intentService, never()).markInProgress(any());
+            verifyNoInteractions(onChainExecutor);
+        }
         
         @Test
         @DisplayName("Should mark intent as failed when execution returns failure")
