@@ -555,7 +555,7 @@
                                 <option value="ALLOW">Allow access</option>
                             </select>
                         </div>
-                        <button class="btn btn-primary" type="submit"><i class="fas fa-save"></i> Save policy</button>
+                        <div class="policy-form-action"><button class="btn btn-primary" type="submit"><i class="fas fa-save"></i> Save policy</button></div>
                     </form>
 
                     <div class="policy-section-heading">
@@ -568,7 +568,7 @@
                     <form id="accessPolicyTestForm" class="policy-test-form">
                         <div class="form-group"><label for="accessPolicyTestAttributes">Attributes (JSON)</label><textarea id="accessPolicyTestAttributes" rows="3" placeholder='{"eduPersonEntitlement":["engineering"]}'>{}</textarea></div>
                         <div class="form-group"><label for="accessPolicyTestCategories-trigger">Lab categories</label><div id="accessPolicyTestCategories" class="policy-multi-select" data-policy-multiselect data-multiselect-label="Lab categories"></div></div>
-                        <button class="btn btn-secondary" type="submit"><i class="fas fa-vial"></i> Test</button>
+                        <div class="policy-form-action"><button class="btn btn-secondary" type="submit"><i class="fas fa-vial"></i> Test</button></div>
                     </form>
                     <div id="accessPolicyTestResult" class="policy-test-result hidden"></div>
 

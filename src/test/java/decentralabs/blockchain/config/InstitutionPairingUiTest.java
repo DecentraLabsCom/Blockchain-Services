@@ -131,6 +131,7 @@ class InstitutionPairingUiTest {
         assertThat(page).contains("id=\"accessPolicyDefaultDecision\"");
         assertThat(page).contains("id=\"accessPolicyGroups\"");
         assertThat(page).contains("id=\"accessPolicyTestForm\"");
+        assertThat(page).contains("class=\"policy-form-action\"");
         assertThat(page).doesNotContain("id=\"accessPolicyTestPrice\"");
         assertThat(page).contains("data-policy-multiselect");
         assertThat(page).doesNotContain("id=\"accessPolicyTestCategories\" multiple");
@@ -146,9 +147,11 @@ class InstitutionPairingUiTest {
                 .contains(".policy-chip-remove");
         assertThat(policyStyles).contains(".policy-transfer").contains(".policy-test-form textarea")
                 .contains("resize: vertical;").contains("background: var(--bg-primary);").contains(".policy-transfer:focus");
-        assertThat(policyStyles).contains(".policy-settings-form > .btn").contains("align-items: center;").contains("align-self: center;")
+        assertThat(policyStyles).contains(".policy-form-action").contains("align-self: stretch;").contains("align-items: center;")
                 .contains("justify-content: center;").contains("gap: 0.5rem;")
                 .doesNotContain("min-height: 3.125rem;");
+        assertThat(policyStyles).contains(".policy-form-action").contains("padding-top: calc(1.6 * 0.9rem + var(--spacing-xs));")
+                .contains(".policy-form-action { padding-top: 0; }");
         assertThat(sharedStyles).doesNotContain(".policy-multi-select");
     }
 
