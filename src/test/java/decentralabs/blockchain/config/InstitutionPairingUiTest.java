@@ -141,6 +141,7 @@ class InstitutionPairingUiTest {
         assertThat(policyStyles).contains(".policy-multi-select").contains(".policy-test-form").contains("height: 3.125rem;");
         assertThat(policyStyles).doesNotContain("min-height: 2.8rem").doesNotContain("padding: 0.55rem 0.7rem 0.55rem 2rem");
         assertThat(policyStyles).contains(".policy-group-heading input").contains("background: var(--bg-primary);").contains(".policy-group-heading input:focus");
+        assertThat(policyStyles).contains(".policy-transfer").contains("resize: vertical;").contains("background: var(--bg-primary);").contains(".policy-transfer:focus");
         assertThat(sharedStyles).doesNotContain(".policy-multi-select");
     }
 
