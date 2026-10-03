@@ -566,7 +566,7 @@
 
                     <div class="policy-section-heading"><div><h3>Test access</h3><span class="status-text">Use sample attributes before activating.</span></div></div>
                     <form id="accessPolicyTestForm" class="policy-test-form">
-                        <div class="form-group"><label for="accessPolicyTestAttributes">Attributes (JSON)</label><textarea id="accessPolicyTestAttributes" rows="3" placeholder='{"eduPersonEntitlement":["engineering"]}'>{}</textarea></div>
+                        <div class="form-group"><label for="accessPolicyTestAttributes">Attributes (JSON)</label><textarea id="accessPolicyTestAttributes" class="policy-json-preview" rows="1" readonly aria-haspopup="dialog" aria-controls="accessPolicyAttributesModal" title="Click to edit JSON" spellcheck="false">{}</textarea></div>
                         <div class="form-group"><label for="accessPolicyTestCategories-trigger">Lab categories</label><div id="accessPolicyTestCategories" class="policy-multi-select" data-policy-multiselect data-multiselect-label="Lab categories"></div></div>
                         <div class="policy-form-action"><button class="btn btn-secondary" type="submit"><i class="fas fa-vial"></i> Test</button></div>
                     </form>
@@ -619,6 +619,26 @@
 
     <!-- Toast Notification -->
     <div id="toast" class="toast"></div>
+    <!-- Access Policy Attributes Editor -->
+    <div id="accessPolicyAttributesModal" class="modal policy-json-modal" role="dialog" aria-modal="true" aria-labelledby="accessPolicyAttributesModalTitle" aria-describedby="accessPolicyAttributesModalDescription" aria-hidden="true">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 id="accessPolicyAttributesModalTitle"><i class="fas fa-code"></i> Edit test attributes</h2>
+                <button type="button" class="modal-close" id="closeAccessPolicyAttributesModal" title="Close">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <div class="modal-body">
+                <p id="accessPolicyAttributesModalDescription" class="policy-json-modal-description">Enter the JSON attributes used by the access test.</p>
+                <textarea id="accessPolicyAttributesEditor" class="policy-json-editor" rows="12" spellcheck="false" autocomplete="off">{}</textarea>
+                <p id="accessPolicyAttributesError" class="policy-json-error" role="alert" aria-live="polite"></p>
+                <div class="modal-actions">
+                    <button type="button" id="cancelAccessPolicyAttributesBtn" class="btn btn-secondary">Cancel</button>
+                    <button type="button" id="applyAccessPolicyAttributesBtn" class="btn btn-primary"><i class="fas fa-check"></i> Apply attributes</button>
+                </div>
+            </div>
+        </div>
+    </div>
     <!-- Input Modal (for prompts) -->
     <div id="inputModal" class="modal">
         <div class="modal-content">

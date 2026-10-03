@@ -14,6 +14,7 @@
     ];
 
     const state = { policy: null, audit: [], groups: [] };
+    let attributesEditorPreviousFocus = null;
     const $ = (id) => document.getElementById(id);
     const toast = (message, type) => {
         if (typeof window.showToast === 'function') window.showToast(message, type || 'info');
@@ -172,6 +173,79 @@
         if (empty) empty.classList.toggle('hidden', visibleOptions > 0);
     }
 
+    function setAttributesEditorError(message) {
+        const error = $('accessPolicyAttributesError');
+        if (error) error.textContent = message || '';
+    }
+
+    function openAttributesEditor() {
+        const modal = $('accessPolicyAttributesModal');
+        const preview = $('accessPolicyTestAttributes');
+        const editor = $('accessPolicyAttributesEditor');
+        if (!modal || !preview || !editor) return;
+
+        attributesEditorPreviousFocus = document.activeElement;
+        try {
+            editor.value = JSON.stringify(JSON.parse(preview.value || '{}'), null, 2);
+        } catch (error) {
+            editor.value = preview.value || '{}';
+        }
+        setAttributesEditorError('');
+        modal.classList.add('show');
+        modal.setAttribute('aria-hidden', 'false');
+        editor.focus();
+    }
+
+    function closeAttributesEditor() {
+        const modal = $('accessPolicyAttributesModal');
+        if (!modal) return;
+        modal.classList.remove('show');
+        modal.setAttribute('aria-hidden', 'true');
+        setAttributesEditorError('');
+        attributesEditorPreviousFocus?.focus();
+        attributesEditorPreviousFocus = null;
+    }
+
+    function applyAccessPolicyAttributes() {
+        const editor = $('accessPolicyAttributesEditor');
+        const preview = $('accessPolicyTestAttributes');
+        if (!editor || !preview) return;
+        try {
+            const attributes = JSON.parse(editor.value.trim() || '{}');
+            if (!attributes || typeof attributes !== 'object' || Array.isArray(attributes)) {
+                throw new Error('Attributes must be a JSON object.');
+            }
+            preview.value = JSON.stringify(attributes);
+            closeAttributesEditor();
+        } catch (error) {
+            setAttributesEditorError(error.message || 'Enter valid JSON.');
+            editor.focus();
+        }
+    }
+
+    function bindAttributesEditor() {
+        const preview = $('accessPolicyTestAttributes');
+        const modal = $('accessPolicyAttributesModal');
+        if (!preview || !modal) return;
+
+        preview.addEventListener('click', openAttributesEditor);
+        preview.addEventListener('keydown', event => {
+            if (event.key === 'Enter' || event.key === ' ') {
+                event.preventDefault();
+                openAttributesEditor();
+            }
+        });
+        $('closeAccessPolicyAttributesModal')?.addEventListener('click', closeAttributesEditor);
+        $('cancelAccessPolicyAttributesBtn')?.addEventListener('click', closeAttributesEditor);
+        $('applyAccessPolicyAttributesBtn')?.addEventListener('click', applyAccessPolicyAttributes);
+        modal.addEventListener('click', event => {
+            if (event.target === modal) closeAttributesEditor();
+        });
+        document.addEventListener('keydown', event => {
+            if (event.key === 'Escape' && modal.classList.contains('show')) closeAttributesEditor();
+        });
+    }
+
     function bindMultiSelectEvents() {
         document.addEventListener('click', event => {
             const trigger = event.target.closest('[data-multiselect-trigger]');
@@ -300,6 +374,7 @@
 
     function bind() {
         bindMultiSelectEvents();
+        bindAttributesEditor();
         renderTestCategories();
         $('accessPolicyForm').addEventListener('submit', event => { event.preventDefault(); save().catch(error => toast(error.message, 'error')); });
         $('accessPolicyActivateBtn').addEventListener('click', () => setEnabled(true).catch(error => toast(error.message, 'error')));

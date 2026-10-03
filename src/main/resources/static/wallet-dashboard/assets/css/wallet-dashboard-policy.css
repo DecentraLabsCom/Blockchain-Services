@@ -91,34 +91,53 @@
 .policy-empty { padding: var(--spacing-md); color: var(--text-secondary); border: 1px dashed var(--border-color); border-radius: var(--radius-md); text-align: center; }
 .policy-test-form { grid-template-columns: 1.5fr 1fr auto; }
 .policy-test-form .form-group > input,
-.policy-test-form .policy-multi-select-trigger { height: 3.125rem; }
+.policy-test-form .policy-multi-select-trigger,
+.policy-json-preview { height: 3.125rem; }
 .policy-test-result { margin-top: var(--spacing-sm); padding: 0.7rem 0.9rem; border-radius: var(--radius-md); font-weight: 700; }
 .policy-result-allow { color: var(--neon-green); background: rgba(0, 255, 170, 0.1); }
 .policy-result-deny { color: #ff8b98; background: rgba(255, 75, 92, 0.1); }
 .policy-transfer,
-.policy-test-form textarea {
+.policy-json-preview {
     padding: 0.5rem 0.75rem;
     border: 1px solid var(--border-color); border-radius: var(--radius-sm);
     background: var(--bg-primary); color: var(--text-primary); font-family: monospace;
-    font-size: 0.95rem; line-height: 1.45; resize: vertical;
+    font-size: 0.95rem; line-height: 1.45;
     transition: all 0.3s ease;
 }
 .policy-transfer {
     width: 100%; margin-bottom: var(--spacing-sm);
+    resize: vertical;
 }
-.policy-test-form textarea {
-    width: 100%;
+.policy-json-preview {
+    display: block; width: 100%; min-height: 3.125rem; max-height: 3.125rem;
+    overflow: hidden; resize: none; cursor: pointer; white-space: nowrap;
+    text-overflow: ellipsis;
 }
+.policy-json-preview:hover { border-color: var(--neon-blue); background: var(--bg-hover); }
 .policy-transfer:focus,
-.policy-test-form textarea:focus {
+.policy-json-preview:focus {
     outline: none; border-color: var(--neon-blue); box-shadow: 0 0 10px rgba(0, 212, 255, 0.3);
 }
 .policy-transfer::placeholder,
-.policy-test-form textarea::placeholder { color: var(--text-muted); }
+.policy-json-preview::placeholder { color: var(--text-muted); }
+.policy-json-modal .modal-content { width: min(900px, 92vw); max-width: 900px; }
+.policy-json-modal .modal-body { padding: var(--spacing-lg); }
+.policy-json-modal-description { margin: 0 0 var(--spacing-md); color: var(--text-secondary); }
+.policy-json-editor {
+    display: block; width: 100%; min-height: 20rem; max-height: 55vh; padding: var(--spacing-md);
+    border: 1px solid var(--border-color); border-radius: var(--radius-md);
+    background: rgba(0, 0, 0, 0.3); color: var(--text-primary); font-family: 'Roboto Mono', 'Fira Code', monospace;
+    font-size: 0.95rem; line-height: 1.55; resize: vertical; transition: all 0.3s ease;
+}
+.policy-json-editor:focus { outline: none; border-color: var(--neon-purple); box-shadow: 0 0 15px rgba(184, 54, 255, 0.3); }
+.policy-json-error { min-height: 1.5rem; margin: var(--spacing-xs) 0 0; color: var(--neon-red); font-size: 0.9rem; }
+.policy-json-modal .modal-actions { margin-top: var(--spacing-sm); }
 .policy-audit { display: grid; gap: 0.35rem; }
 .policy-audit-row { display: flex; justify-content: space-between; padding: 0.55rem 0.7rem; border-bottom: 1px solid rgba(255,255,255,0.06); color: var(--text-secondary); }
 @media (max-width: 800px) {
     .policy-settings-form, .policy-test-form, .policy-category-grid { grid-template-columns: 1fr; }
     .policy-form-action { padding-top: 0; }
     .policy-toolbar, .policy-section-heading { align-items: flex-start; flex-direction: column; }
+    .policy-json-modal .modal-body { padding: var(--spacing-md); }
+    .policy-json-editor { min-height: 14rem; }
 }
