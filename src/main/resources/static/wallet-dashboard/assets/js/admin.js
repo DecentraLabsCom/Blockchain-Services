@@ -53,6 +53,7 @@ function updateRoleBasedSections() {
     const providerPayoutActions = document.getElementById('providerPayoutActions');
     const providerSettlementTransitionForm = document.getElementById('providerSettlementTransitionForm');
     const operatorCreditPolicySection = document.getElementById('operatorCreditPolicySection');
+    const accessPoliciesSection = document.getElementById('accessPoliciesSection');
     const creditPolicyTitle = document.getElementById('creditPolicyTitle');
     const institutionPeriodBox = document.getElementById('institutionPeriodBox');
     const institutionLimitCard = document.getElementById('institutionLimitCard');
@@ -91,6 +92,9 @@ function updateRoleBasedSections() {
     }
     if (operatorCreditPolicySection) {
         operatorCreditPolicySection.classList.toggle('hidden', !showInstitutionControls && !showOperatorControls);
+    }
+    if (accessPoliciesSection) {
+        accessPoliciesSection.classList.toggle('hidden', !showInstitutionControls && !showOperatorControls);
     }
     if (institutionPeriodBox) {
         institutionPeriodBox.classList.toggle('hidden', !showInstitutionControls);
@@ -154,6 +158,12 @@ function updateRoleBasedSections() {
     if (collectLifecycleSummary && !collectLifecycleSummary.textContent.trim()) {
         collectLifecycleSummary.classList.add('hidden');
     }
+
+    window.WalletDashboardTabs?.setRoleVisibility({
+        isInstitution: showInstitutionControls,
+        isProvider: showProviderControls,
+        isOperator: showOperatorControls
+    });
 }
 
 function updateCollectDetailVisibility() {

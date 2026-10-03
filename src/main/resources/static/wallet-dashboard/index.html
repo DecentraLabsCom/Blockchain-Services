@@ -89,10 +89,34 @@
             <span class="warning-badge" id="operatingModeBadge">Loading Mode</span>
         </div>
 
+        <nav class="wallet-tabs" aria-label="Wallet dashboard sections">
+            <div class="wallet-tab-list" role="tablist" aria-orientation="horizontal">
+                <button class="wallet-tab" id="wallet-tab-overview" role="tab" type="button"
+                    data-wallet-tab="overview" aria-controls="wallet-panel-overview" aria-selected="true" tabindex="0">
+                    <i class="fas fa-gauge-high" aria-hidden="true"></i> Overview
+                </button>
+                <button class="wallet-tab" id="wallet-tab-institution" role="tab" type="button"
+                    data-wallet-tab="institution" data-wallet-tab-roles="institution,operator"
+                    aria-controls="wallet-panel-institution" aria-selected="false" tabindex="-1">
+                    <i class="fas fa-building-columns" aria-hidden="true"></i> Institution &amp; Credits
+                </button>
+                <button class="wallet-tab" id="wallet-tab-settlements" role="tab" type="button"
+                    data-wallet-tab="settlements" data-wallet-tab-roles="provider,operator"
+                    aria-controls="wallet-panel-settlements" aria-selected="false" tabindex="-1">
+                    <i class="fas fa-file-invoice-dollar" aria-hidden="true"></i> Provider Settlements
+                </button>
+            </div>
+            <p class="wallet-tab-status" id="walletTabStatus" role="status" aria-live="polite"></p>
+        </nav>
+
         <!-- Main Content -->
         <main class="dashboard-main">
+            <div id="wallet-panel-overview" class="wallet-tab-panel" role="tabpanel" aria-labelledby="wallet-tab-overview" hidden></div>
+            <div id="wallet-panel-institution" class="wallet-tab-panel" role="tabpanel" aria-labelledby="wallet-tab-institution" hidden></div>
+            <div id="wallet-panel-settlements" class="wallet-tab-panel" role="tabpanel" aria-labelledby="wallet-tab-settlements" hidden></div>
+
             <!-- System Status Section -->
-            <section class="card">
+            <section class="card" data-wallet-tab-section="overview" data-wallet-order="10">
                 <div class="card-header">
                     <h2>System Status</h2>
                     <span class="timestamp" id="lastUpdate">Last update: --</span>
@@ -138,7 +162,7 @@
             </section>
 
             <!-- Institutional Marketplace Pairing Section -->
-            <section class="card hidden" id="institutionPairingSection">
+            <section class="card hidden" id="institutionPairingSection" data-wallet-tab-section="overview" data-wallet-order="20">
                 <div class="card-header">
                     <h2><i class="fas fa-link"></i> Marketplace institution pairing</h2>
                     <span class="pairing-status-badge" id="institutionPairingStatus">Pairing required</span>
@@ -166,7 +190,7 @@
             </section>
 
             <!-- Wallet Balances Section -->
-            <section class="card">
+            <section class="card" data-wallet-tab-section="overview" data-wallet-order="30">
                 <div class="card-header">
                     <h2>Wallet & Service Balance</h2>
                 </div>
@@ -184,7 +208,7 @@
             </section>
 
             <!-- Provider Settlement Requests Section -->
-            <section class="card hidden" id="settlementOperationsSection">
+            <section class="card hidden" id="settlementOperationsSection" data-wallet-tab-section="settlements" data-wallet-order="10">
                 <div class="card-header">
                     <h2 id="settlementOperationsTitle">Provider Settlement</h2>
                 </div>
@@ -370,7 +394,7 @@
             </section>
 
             <!-- Credit and Policy Administration Section -->
-            <section class="card hidden" id="operatorCreditPolicySection">
+            <section class="card hidden" id="operatorCreditPolicySection" data-wallet-tab-section="institution" data-wallet-order="10">
                 <div class="card-header">
                     <h2 id="creditPolicyTitle">Institution Policy</h2>
                 </div>
@@ -500,8 +524,19 @@
                 </div>
             </section>
 
+            <!-- Access Policies Placeholder -->
+            <section id="accessPoliciesSection" class="card hidden" data-wallet-tab-section="institution" data-wallet-order="20">
+                <div class="card-header">
+                    <h2><i class="fas fa-shield-halved"></i> Access Policies</h2>
+                    <span class="wallet-coming-soon">Coming Soon</span>
+                </div>
+                <div class="card-body">
+                    <p class="operation-description">Institutional access policies will be managed here in a future release.</p>
+                </div>
+            </section>
+
             <!-- Recent Transactions Section -->
-            <section class="card">
+            <section class="card" data-wallet-tab-section="overview" data-wallet-order="40">
                 <div class="card-header">
                     <h2>Recent Transactions</h2>
                 </div>
@@ -629,6 +664,7 @@
 
     <!-- Scripts -->
     <script src="assets/js/api.js"></script>
+    <script src="assets/js/wallet-dashboard-tabs.js"></script>
     <script src="assets/js/admin.js"></script>
 </body>
 </html>

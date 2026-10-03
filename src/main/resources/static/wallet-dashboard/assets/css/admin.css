@@ -180,6 +180,104 @@ body {
     font-size: 0.9rem;
 }
 
+.wallet-tabs {
+    margin-bottom: var(--spacing-lg);
+}
+
+.wallet-tab-list {
+    display: flex;
+    gap: var(--spacing-xs);
+    overflow-x: auto;
+    padding: var(--spacing-xs);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-lg);
+    background: rgba(20, 25, 51, 0.82);
+}
+
+.wallet-tab-list::-webkit-scrollbar {
+    height: 8px;
+}
+
+.wallet-tab-list::-webkit-scrollbar-track {
+    background: transparent;
+    border-radius: 999px;
+}
+
+.wallet-tab-list::-webkit-scrollbar-thumb {
+    background: var(--neon-purple);
+    border: 2px solid rgba(20, 25, 51, 0.82);
+    border-radius: 999px;
+}
+
+.wallet-tab {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: var(--spacing-xs);
+    flex: 1 0 auto;
+    min-height: 44px;
+    padding: 0.65rem 1rem;
+    border: 1px solid transparent;
+    border-radius: var(--radius-md);
+    background: transparent;
+    color: var(--text-secondary);
+    font: inherit;
+    font-weight: 700;
+    cursor: pointer;
+    transition: background 0.18s ease, border-color 0.18s ease, color 0.18s ease;
+}
+
+.wallet-tab:hover {
+    color: var(--text-primary);
+    background: var(--bg-hover);
+}
+
+.wallet-tab[aria-selected="true"] {
+    color: var(--bg-primary);
+    border-color: rgba(0, 212, 255, 0.65);
+    background: linear-gradient(135deg, var(--neon-blue), var(--neon-purple));
+}
+
+.wallet-tab:focus-visible {
+    outline: 3px solid rgba(0, 212, 255, 0.35);
+    outline-offset: 2px;
+}
+
+.wallet-tab-status {
+    min-height: 1.2em;
+    margin: var(--spacing-xs) var(--spacing-xs) 0;
+    color: var(--neon-orange);
+    font-size: 0.84rem;
+}
+
+.wallet-tab[hidden],
+.wallet-tab-panel[hidden] {
+    display: none;
+}
+
+.wallet-tab-panel {
+    display: block;
+}
+
+[data-wallet-tab-section] {
+    display: none;
+}
+
+body:not(.wallet-tabs-ready) [data-wallet-tab-section="overview"]:not(.hidden),
+.wallet-tabs-ready .wallet-tab-panel > [data-wallet-tab-section]:not(.hidden) {
+    display: block;
+}
+
+.wallet-coming-soon {
+    padding: 0.35rem 0.65rem;
+    border: 1px solid var(--neon-purple);
+    border-radius: 999px;
+    color: var(--neon-purple);
+    font-size: 0.75rem;
+    font-weight: 700;
+    white-space: nowrap;
+}
+
 /* Cards */
 .card {
     background: var(--bg-card);
