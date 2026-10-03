@@ -21,6 +21,18 @@
 .policy-section-heading h3 { margin: 0; }
 .policy-groups { display: grid; gap: var(--spacing-sm); }
 .policy-group { padding: var(--spacing-md); border: 1px solid var(--border-color); border-radius: var(--radius-md); background: rgba(10, 15, 35, 0.45); }
+.policy-group-heading input,
+.policy-matcher-row input {
+    width: 100%; min-width: 0; background: var(--bg-primary); border: 1px solid var(--border-color);
+    border-radius: var(--radius-sm); padding: var(--spacing-sm); color: var(--text-primary);
+    font-size: 0.95rem; transition: all 0.3s ease;
+}
+.policy-group-heading input:focus,
+.policy-matcher-row input:focus {
+    outline: none; border-color: var(--neon-blue); box-shadow: 0 0 10px rgba(0, 212, 255, 0.3);
+}
+.policy-group-heading input::placeholder,
+.policy-matcher-row input::placeholder { color: var(--text-muted); }
 .policy-group-heading input { flex: 1; }
 .policy-chips { display: flex; flex-wrap: wrap; gap: 0.4rem; min-height: 1.7rem; margin: var(--spacing-sm) 0; }
 .policy-chip { padding: 0.25rem 0.55rem; border-radius: 999px; background: rgba(0, 212, 255, 0.12); color: var(--neon-blue); font-size: 0.78rem; }
