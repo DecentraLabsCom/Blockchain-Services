@@ -123,8 +123,11 @@ class InstitutionPairingUiTest {
         String page = readResource("static/wallet-dashboard/index.html");
         String script = readResource("static/wallet-dashboard/assets/js/access-policies.js");
         String api = readResource("static/wallet-dashboard/assets/js/api.js");
+        String policyStyles = readResource("static/wallet-dashboard/assets/css/wallet-dashboard-policy.css");
+        String sharedStyles = readResource("static/wallet-dashboard/assets/css/admin.css");
 
         assertThat(page).contains("id=\"accessPoliciesSection\"");
+        assertThat(page).contains("assets/css/wallet-dashboard-policy.css");
         assertThat(page).contains("id=\"accessPolicyDefaultDecision\"");
         assertThat(page).contains("id=\"accessPolicyGroups\"");
         assertThat(page).contains("id=\"accessPolicyTestForm\"");
@@ -134,6 +137,8 @@ class InstitutionPairingUiTest {
         assertThat(script).contains("accessPolicy").contains("Add matcher").contains("Import").contains("Export");
         assertThat(script).contains("data-multiselect-option").contains("Search categories").contains("role=\"listbox\"");
         assertThat(api).contains("/wallet-admin/access-policies");
+        assertThat(policyStyles).contains(".policy-multi-select").contains(".policy-test-form");
+        assertThat(sharedStyles).doesNotContain(".policy-multi-select");
     }
 
     private String readResource(String path) throws IOException {
