@@ -312,6 +312,7 @@ body:not(.wallet-tabs-ready) [data-wallet-tab-section="overview"]:not(.hidden),
 .policy-empty { padding: var(--spacing-md); color: var(--text-secondary); border: 1px dashed var(--border-color); border-radius: var(--radius-md); text-align: center; }
 .policy-test-form { grid-template-columns: 1.5fr 1fr 0.5fr auto; }
 .policy-test-form textarea { resize: vertical; }
+.policy-test-form select[multiple] { min-height: 7rem; }
 .policy-test-result { margin-top: var(--spacing-sm); padding: 0.7rem 0.9rem; border-radius: var(--radius-md); font-weight: 700; }
 .policy-result-allow { color: var(--neon-green); background: rgba(0, 255, 170, 0.1); }
 .policy-result-deny { color: #ff8b98; background: rgba(255, 75, 92, 0.1); }

@@ -37,6 +37,11 @@
         return categories.map(category => `<option value="${escapeHtml(category)}" ${selected.includes(category) ? 'selected' : ''}>${escapeHtml(category)}</option>`).join('');
     }
 
+    function renderTestCategories() {
+        const select = $('accessPolicyTestCategories');
+        if (select) select.innerHTML = categoryOptions([]);
+    }
+
     function escapeHtml(value) {
         return String(value ?? '').replace(/[&<>'"]/g, character => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[character]));
     }
@@ -137,7 +142,7 @@
         try { attributes = JSON.parse($('accessPolicyTestAttributes').value || '{}'); } catch (error) { toast('Attributes must be valid JSON', 'error'); return; }
         const response = await API.testAccessPolicy({
             attributes,
-            categories: $('accessPolicyTestCategories').value.split(',').map(value => value.trim()).filter(Boolean),
+            categories: selectedValues($('accessPolicyTestCategories')),
             price: $('accessPolicyTestPrice').value || '0',
         });
         const result = $('accessPolicyTestResult');
@@ -147,6 +152,7 @@
     }
 
     function bind() {
+        renderTestCategories();
         $('accessPolicyForm').addEventListener('submit', event => { event.preventDefault(); save().catch(error => toast(error.message, 'error')); });
         $('accessPolicyActivateBtn').addEventListener('click', () => setEnabled(true).catch(error => toast(error.message, 'error')));
         $('accessPolicyDeactivateBtn').addEventListener('click', () => setEnabled(false).catch(error => toast(error.message, 'error')));
