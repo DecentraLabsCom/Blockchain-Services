@@ -2,16 +2,12 @@ package decentralabs.blockchain.controller.accesspolicy;
 
 import decentralabs.blockchain.dto.accesspolicy.AccessPolicyBatchRequest;
 import decentralabs.blockchain.dto.accesspolicy.AccessPolicyEvaluateRequest;
-import decentralabs.blockchain.service.accesspolicy.AccessPolicyEvaluator;
-import decentralabs.blockchain.service.accesspolicy.InstitutionalIdentityContext;
 import decentralabs.blockchain.service.accesspolicy.LabCategoryAccessPolicyService;
 import decentralabs.blockchain.service.accesspolicy.PolicyEvaluation;
 import decentralabs.blockchain.service.auth.InstitutionalSessionCredentialService;
 import decentralabs.blockchain.service.auth.MarketplaceEndpointAuthService;
 import java.math.BigInteger;
-import java.time.Instant;
 import java.util.List;
-import java.util.Map;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -25,26 +21,25 @@ import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.server.ResponseStatusException;
 
 @RestController
-@RequestMapping("/access-policy")
+@RequestMapping("/access-policy/labs")
 @RequiredArgsConstructor
 public class AccessPolicyController {
     private final MarketplaceEndpointAuthService marketplaceAuth;
     private final InstitutionalSessionCredentialService credentialService;
     private final LabCategoryAccessPolicyService accessPolicyService;
-    private final AccessPolicyEvaluator evaluator = new AccessPolicyEvaluator();
-
-    @PostMapping("/labs/evaluate")
+    @PostMapping("/evaluate")
     public PolicyEvaluation evaluate(
         @RequestHeader(value = "Authorization", required = false) String authorization,
         @RequestBody AccessPolicyEvaluateRequest request
     ) {
         marketplaceAuth.enforceServiceAuthorization(authorization, "access-policy:evaluate");
-        var credential = validateCredential(request == null ? null : request.institutionalSessionToken());
-        requireLab(request == null ? null : request.labId());
-        return accessPolicyService.evaluate(credential, request.labId(), request.price(), request.categories());
+        AccessPolicyEvaluateRequest validRequest = requireRequest(request);
+        var credential = validateCredential(validRequest.institutionalSessionToken());
+        requireLab(validRequest.labId());
+        return accessPolicyService.evaluate(credential, validRequest.labId(), validRequest.price(), validRequest.categories());
     }
 
-    @GetMapping("/labs/{labId}/eligibility")
+    @GetMapping("/{labId}/eligibility")
     public PolicyEvaluation eligibility(
         @RequestHeader(value = "Authorization", required = false) String authorization,
         @RequestHeader(value = "X-Institutional-Session", required = false) String sessionToken,
@@ -59,7 +54,7 @@ public class AccessPolicyController {
             categories == null ? List.of() : categories);
     }
 
-    @PostMapping("/labs/eligibility:batch")
+    @PostMapping("/eligibility:batch")
     public List<PolicyEvaluation> batch(
         @RequestHeader(value = "Authorization", required = false) String authorization,
         @RequestBody AccessPolicyBatchRequest request
@@ -78,6 +73,11 @@ public class AccessPolicyController {
     private InstitutionalSessionCredentialService.Credential validateCredential(String token) {
         if (token == null || token.isBlank()) throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "missing_institutional_session");
         return credentialService.validate(token);
+    }
+
+    private AccessPolicyEvaluateRequest requireRequest(AccessPolicyEvaluateRequest request) {
+        if (request == null) throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "missing_access_policy_request");
+        return request;
     }
 
     private void requireLab(BigInteger labId) {

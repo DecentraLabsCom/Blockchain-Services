@@ -8,7 +8,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 
@@ -19,7 +18,6 @@ public class AccessPolicyPersistenceService {
     private final ObjectMapper objectMapper;
     private final Map<String, AccessPolicyProfile> memory = new ConcurrentHashMap<>();
 
-    @Autowired
     public AccessPolicyPersistenceService(JdbcTemplate jdbcTemplate, ObjectMapper objectMapper) {
         this.jdbcTemplate = jdbcTemplate;
         this.objectMapper = objectMapper;

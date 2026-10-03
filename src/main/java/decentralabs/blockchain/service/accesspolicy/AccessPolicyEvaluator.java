@@ -1,7 +1,6 @@
 package decentralabs.blockchain.service.accesspolicy;
 
 import java.math.BigInteger;
-import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;

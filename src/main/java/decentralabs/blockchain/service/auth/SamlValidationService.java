@@ -1513,7 +1513,7 @@ public class SamlValidationService {
         if (values == null || values.isEmpty()) return;
         List<String> normalized = values.stream()
             .filter(value -> value != null && !value.isBlank())
-            .map(String::trim)
+            .map(value -> value == null ? "" : value.trim())
             .distinct()
             .limit(64)
             .toList();

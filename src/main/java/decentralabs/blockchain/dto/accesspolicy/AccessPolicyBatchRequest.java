@@ -1,6 +1,5 @@
 package decentralabs.blockchain.dto.accesspolicy;
 
-import java.math.BigInteger;
 import java.util.List;
 
 public record AccessPolicyBatchRequest(

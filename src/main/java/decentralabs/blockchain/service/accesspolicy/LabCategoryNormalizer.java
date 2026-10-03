@@ -1,7 +1,6 @@
 package decentralabs.blockchain.service.accesspolicy;
 
 import java.text.Normalizer;
-import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.LinkedHashMap;
