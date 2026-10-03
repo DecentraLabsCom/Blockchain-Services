@@ -286,7 +286,7 @@
         const response = await API.testAccessPolicy({
             attributes,
             categories: selectedValues($('accessPolicyTestCategories')),
-            price: $('accessPolicyTestPrice').value || '0',
+            price: '1',
         });
         const result = $('accessPolicyTestResult');
         result.classList.remove('hidden');

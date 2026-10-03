@@ -80,7 +80,7 @@
 .policy-multi-select-footer { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; margin-top: 0.5rem; padding-top: 0.5rem; border-top: 1px solid rgba(255,255,255,0.08); color: var(--text-secondary); font-size: 0.78rem; }
 .policy-multi-select-clear { padding: 0.2rem 0.35rem; border: 0; background: transparent; color: var(--neon-blue); font: inherit; cursor: pointer; }
 .policy-empty { padding: var(--spacing-md); color: var(--text-secondary); border: 1px dashed var(--border-color); border-radius: var(--radius-md); text-align: center; }
-.policy-test-form { grid-template-columns: 1.5fr 1fr 0.5fr auto; }
+.policy-test-form { grid-template-columns: 1.5fr 1fr auto; }
 .policy-test-form .form-group > input,
 .policy-test-form .policy-multi-select-trigger { height: 3.125rem; }
 .policy-test-form textarea { resize: vertical; }

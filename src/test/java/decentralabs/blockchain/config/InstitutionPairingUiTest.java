@@ -131,11 +131,13 @@ class InstitutionPairingUiTest {
         assertThat(page).contains("id=\"accessPolicyDefaultDecision\"");
         assertThat(page).contains("id=\"accessPolicyGroups\"");
         assertThat(page).contains("id=\"accessPolicyTestForm\"");
+        assertThat(page).doesNotContain("id=\"accessPolicyTestPrice\"");
         assertThat(page).contains("data-policy-multiselect");
         assertThat(page).doesNotContain("id=\"accessPolicyTestCategories\" multiple");
         assertThat(page).contains("wallet-dashboard-tabs.js");
         assertThat(script).contains("accessPolicy").contains("Add matcher").contains("Import").contains("Export");
-        assertThat(script).contains("data-multiselect-option").contains("Search categories").contains("role=\"listbox\"");
+        assertThat(script).contains("data-multiselect-option").contains("Search categories").contains("role=\"listbox\"").contains("price: '1'");
+        assertThat(script).doesNotContain("accessPolicyTestPrice");
         assertThat(script).doesNotContain("fa-search");
         assertThat(api).contains("/wallet-admin/access-policies");
         assertThat(policyStyles).contains(".policy-multi-select").contains(".policy-test-form").contains("height: 3.125rem;");
