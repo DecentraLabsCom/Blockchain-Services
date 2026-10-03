@@ -31,9 +31,9 @@
 .policy-field-label { color: var(--text-secondary); font-size: 0.85rem; }
 .policy-multi-select { position: relative; min-width: 0; }
 .policy-multi-select-trigger {
-    width: 100%; min-height: 2.8rem; display: flex; align-items: center; justify-content: space-between; gap: 0.7rem;
-    padding: 0.45rem 0.7rem; border: 1px solid var(--border-color); border-radius: var(--radius-sm);
-    background: var(--bg-primary); color: var(--text-primary); font: inherit; text-align: left; cursor: pointer;
+    width: 100%; display: flex; align-items: center; justify-content: space-between; gap: 0.7rem;
+    padding: var(--spacing-sm); border: 1px solid var(--border-color); border-radius: var(--radius-sm);
+    background: var(--bg-primary); color: var(--text-primary); font: inherit; font-size: 0.95rem; line-height: normal; text-align: left; cursor: pointer;
     transition: border-color 0.2s ease, box-shadow 0.2s ease, background 0.2s ease;
 }
 .policy-multi-select-trigger:hover, .policy-multi-select-trigger[aria-expanded="true"] {
@@ -55,9 +55,8 @@
     position: absolute; z-index: 40; top: calc(100% + 0.4rem); left: 0; width: 100%; min-width: 16rem; padding: 0.65rem;
     border: 1px solid var(--border-color); border-radius: var(--radius-md); background: var(--bg-secondary); box-shadow: var(--shadow-lg);
 }
-.policy-multi-select-search { position: relative; display: block; margin-bottom: 0.5rem; }
-.policy-multi-select-search i { position: absolute; top: 50%; left: 0.7rem; color: var(--text-muted); transform: translateY(-50%); }
-.policy-multi-select-search input { width: 100%; padding: 0.55rem 0.7rem 0.55rem 2rem; border: 1px solid var(--border-color); border-radius: var(--radius-sm); background: var(--bg-primary); color: var(--text-primary); font: inherit; }
+.policy-multi-select-search { display: block; margin-bottom: 0.5rem; }
+.policy-multi-select-search input { width: 100%; padding: 0.55rem 0.7rem; border: 1px solid var(--border-color); border-radius: var(--radius-sm); background: var(--bg-primary); color: var(--text-primary); font: inherit; }
 .policy-multi-select-search input:focus { outline: none; border-color: var(--neon-blue); box-shadow: 0 0 8px rgba(0, 212, 255, 0.2); }
 .policy-multi-select-options { display: grid; gap: 0.15rem; max-height: 14rem; overflow-y: auto; padding-right: 0.15rem; }
 .policy-multi-select-option { display: flex; align-items: center; gap: 0.55rem; width: 100%; padding: 0.48rem 0.55rem; border: 0; border-radius: var(--radius-sm); background: transparent; color: var(--text-primary); font: inherit; text-align: left; cursor: pointer; }

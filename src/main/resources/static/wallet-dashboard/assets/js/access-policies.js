@@ -52,9 +52,8 @@
                 <span class="policy-multi-select-summary" data-multiselect-summary><span class="policy-multi-select-placeholder">Choose categories</span></span>
                 <i class="fas fa-chevron-down policy-multi-select-chevron" aria-hidden="true"></i>
             </button>
-            <div id="${safeId}-menu" class="policy-multi-select-menu hidden" data-multiselect-menu>
+                <div id="${safeId}-menu" class="policy-multi-select-menu hidden" data-multiselect-menu>
                 <div class="policy-multi-select-search">
-                    <i class="fas fa-search" aria-hidden="true"></i>
                     <input type="search" data-multiselect-search placeholder="Search categories" aria-label="Search ${safeLabel.toLowerCase()}" autocomplete="off">
                 </div>
                 <div class="policy-multi-select-options" data-multiselect-options role="listbox" aria-label="${safeLabel}" aria-multiselectable="true">
