@@ -30,9 +30,9 @@ connection strings and internal runbooks out of the uploaded content tree.
 | --- | --- |
 | `GET /lab-admin/status` | Provider wallet, configured creator PUC hash, content URLs, FMU inventory and Guacamole availability. |
 | `GET /lab-admin/labs` | Labs owned by the institutional provider wallet. |
-| `GET /lab-admin/reservations/upcoming` (`offset`, `limit`) | Upcoming pending, confirmed or access-authorized reservations for provider-owned labs. |
-| `GET /lab-admin/reservations/actionable` (`offset`, `limit`, `cursor`) | Provider-cancellable reservations, including post-start service-failure cases still inside attestation grace. |
-| `POST /lab-admin/reservations/{reservationKey}/cancel` | Deny a pending request or cancel a confirmed/access-authorized booking when its selected provider reason is eligible. |
+| `GET /lab-admin/reservations/upcoming` (`offset`, `limit`) | Upcoming pending, confirmed or access-authorized reservations for provider-owned labs assigned to the current Gateway. |
+| `GET /lab-admin/reservations/actionable` (`offset`, `limit`, `cursor`) | Provider-cancellable reservations assigned to the current Gateway, including post-start service-failure cases still inside attestation grace. |
+| `POST /lab-admin/reservations/{reservationKey}/cancel` | Deny a pending request or cancel a confirmed/access-authorized booking assigned to the current Gateway when its selected provider reason is eligible. |
 | `GET /lab-admin/guacamole/connections` | Safe Guacamole connection catalogue for administration. |
 | `POST /lab-admin/assets` | Upload a JPEG/PNG/WebP/GIF image or PDF document. |
 | `DELETE /lab-admin/assets` | Delete an uploaded image or document by its returned path. |
@@ -45,6 +45,12 @@ connection strings and internal runbooks out of the uploaded content tree.
 
 The full endpoint index, including non-lab routes, is in
 [API reference](../../reference/API_REFERENCE.md).
+
+Reservation endpoints use the `X-Gateway-ID` scope injected by the Gateway
+proxy. `blockchain-services` matches that scope against the host and port of
+each lab's on-chain `accessURI` before returning or cancelling a reservation.
+The scope is therefore independent from the institution or provider wallet;
+sharing either does not grant access to another Gateway's reservations.
 
 ## Publish and update flow
 

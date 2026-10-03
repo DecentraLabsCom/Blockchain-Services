@@ -33,6 +33,8 @@ import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
 class LabAdminControllerTest {
 
+    private static final String GATEWAY_ID = "gateway.example.edu";
+
     private LabAdminService labAdminService;
     private JwtService jwtService;
     private MockMvc mockMvc;
@@ -64,13 +66,14 @@ class LabAdminControllerTest {
 
     @Test
     void upcomingReservationsDelegatesToService() throws Exception {
-        when(labAdminService.listUpcomingReservations()).thenReturn(Map.of(
+        when(labAdminService.listUpcomingReservations(GATEWAY_ID)).thenReturn(Map.of(
             "success", true,
             "count", 1,
             "reservations", java.util.List.of(Map.of("reservationKey", "0x" + "ab".repeat(32)))
         ));
 
-        mockMvc.perform(get("/lab-admin/reservations/upcoming"))
+        mockMvc.perform(get("/lab-admin/reservations/upcoming")
+                .header("X-Gateway-ID", GATEWAY_ID))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.success").value(true))
             .andExpect(jsonPath("$.count").value(1))
@@ -79,24 +82,25 @@ class LabAdminControllerTest {
 
     @Test
     void actionableReservationsDelegatesToService() throws Exception {
-        when(labAdminService.listActionableReservations()).thenReturn(Map.of(
+        when(labAdminService.listActionableReservations(GATEWAY_ID)).thenReturn(Map.of(
             "success", true,
             "count", 1,
             "reservations", java.util.List.of(Map.of("reservationKey", "0x" + "cd".repeat(32)))
         ));
 
-        mockMvc.perform(get("/lab-admin/reservations/actionable"))
+        mockMvc.perform(get("/lab-admin/reservations/actionable")
+                .header("X-Gateway-ID", GATEWAY_ID))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.success").value(true))
             .andExpect(jsonPath("$.count").value(1))
             .andExpect(jsonPath("$.reservations[0].reservationKey").value("0x" + "cd".repeat(32)));
 
-        verify(labAdminService).listActionableReservations();
+        verify(labAdminService).listActionableReservations(GATEWAY_ID);
     }
 
     @Test
     void actionableReservationsForwardsPaginationParameters() throws Exception {
-        when(labAdminService.listActionableReservations(500, 100)).thenReturn(Map.of(
+        when(labAdminService.listActionableReservations(GATEWAY_ID, 500, 100)).thenReturn(Map.of(
             "success", true,
             "count", 1,
             "totalCount", 501,
@@ -105,6 +109,7 @@ class LabAdminControllerTest {
         ));
 
         mockMvc.perform(get("/lab-admin/reservations/actionable")
+                .header("X-Gateway-ID", GATEWAY_ID)
                 .param("offset", "500")
                 .param("limit", "100"))
             .andExpect(status().isOk())
@@ -112,12 +117,12 @@ class LabAdminControllerTest {
             .andExpect(jsonPath("$.totalCount").value(501))
             .andExpect(jsonPath("$.hasMore").value(false));
 
-        verify(labAdminService).listActionableReservations(500, 100);
+        verify(labAdminService).listActionableReservations(GATEWAY_ID, 500, 100);
     }
 
     @Test
     void actionableReservationsForwardsResumeCursor() throws Exception {
-        when(labAdminService.listActionableReservations(100, 100, "v1-cursor"))
+        when(labAdminService.listActionableReservations(GATEWAY_ID, 100, 100, "v1-cursor"))
             .thenReturn(Map.of(
                 "success", true,
                 "count", 1,
@@ -126,19 +131,20 @@ class LabAdminControllerTest {
             ));
 
         mockMvc.perform(get("/lab-admin/reservations/actionable")
+                .header("X-Gateway-ID", GATEWAY_ID)
                 .param("offset", "100")
                 .param("limit", "100")
                 .param("cursor", "v1-cursor"))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.nextOffset").value(101));
 
-        verify(labAdminService).listActionableReservations(100, 100, "v1-cursor");
+        verify(labAdminService).listActionableReservations(GATEWAY_ID, 100, 100, "v1-cursor");
     }
 
     @Test
     void cancelReservationForwardsKeyReasonAndIdempotencyKey() throws Exception {
         when(labAdminService.cancelReservation(
-            "0x" + "ab".repeat(32), 7, "cancel-command-1"
+            "0x" + "ab".repeat(32), 7, "cancel-command-1", GATEWAY_ID
         )).thenReturn(new decentralabs.blockchain.dto.labadmin.LabAdminTransactionResponse(
             true,
             "cancelConfirmedBookingByProvider",
@@ -149,21 +155,23 @@ class LabAdminControllerTest {
         ));
 
         mockMvc.perform(post("/lab-admin/reservations/0x" + "ab".repeat(32) + "/cancel")
+                .header("X-Gateway-ID", GATEWAY_ID)
                 .header("Idempotency-Key", "cancel-command-1")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("{\"reasonCode\":7}"))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.action").value("cancelConfirmedBookingByProvider"));
 
-        verify(labAdminService).cancelReservation("0x" + "ab".repeat(32), 7, "cancel-command-1");
+        verify(labAdminService).cancelReservation("0x" + "ab".repeat(32), 7, "cancel-command-1", GATEWAY_ID);
     }
 
     @Test
     void cancelReservationValidationErrorsReturnBadRequest() throws Exception {
-        when(labAdminService.cancelReservation(anyString(), eq(7), eq("cancel-command-1")))
+        when(labAdminService.cancelReservation(anyString(), eq(7), eq("cancel-command-1"), eq(GATEWAY_ID)))
             .thenThrow(new IllegalStateException("Reservation is not owned by this provider wallet"));
 
         mockMvc.perform(post("/lab-admin/reservations/0x" + "ab".repeat(32) + "/cancel")
+                .header("X-Gateway-ID", GATEWAY_ID)
                 .header("Idempotency-Key", "cancel-command-1")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("{\"reasonCode\":7}"))

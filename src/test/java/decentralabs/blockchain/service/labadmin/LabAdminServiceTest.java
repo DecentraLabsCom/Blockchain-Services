@@ -955,6 +955,106 @@ class LabAdminServiceTest {
     }
 
     @Test
+    void actionableReservationsOnlyIncludesLabsAssignedToRequestedGateway() throws Exception {
+        String wallet = "0x1111111111111111111111111111111111111111";
+        BigInteger localLabId = BigInteger.valueOf(7);
+        BigInteger remoteLabId = BigInteger.valueOf(8);
+        Diamond diamond = mock(Diamond.class);
+        RemoteFunctionCall<Diamond.Lab> localLabCall = mockRemoteFunctionCall();
+        RemoteFunctionCall<Diamond.Lab> remoteLabCall = mockRemoteFunctionCall();
+        RemoteFunctionCall<Diamond.ReservationKeyPage> localPageCall = mockRemoteFunctionCall();
+
+        when(institutionalWalletService.isConfigured()).thenReturn(true);
+        when(institutionalWalletService.getInstitutionalWalletAddress()).thenReturn(wallet);
+        when(walletService.isLabProvider(wallet)).thenReturn(true);
+        when(walletService.getLabsOwnedByProvider(wallet)).thenReturn(List.of(localLabId, remoteLabId));
+        when(diamond.getLab(localLabId)).thenReturn(localLabCall);
+        when(diamond.getLab(remoteLabId)).thenReturn(remoteLabCall);
+        when(localLabCall.send()).thenReturn(new Diamond.Lab(localLabId, new Diamond.LabBase(
+            "https://gateway-a.example.edu/lab-content/metadata.json",
+            BigInteger.ONE,
+            "https://gateway-a.example.edu/guacamole",
+            "guac:id:local",
+            BigInteger.ZERO,
+            BigInteger.ZERO
+        )));
+        when(remoteLabCall.send()).thenReturn(new Diamond.Lab(remoteLabId, new Diamond.LabBase(
+            "https://gateway-b.example.edu/lab-content/metadata.json",
+            BigInteger.ONE,
+            "https://gateway-b.example.edu/guacamole",
+            "guac:id:remote",
+            BigInteger.ZERO,
+            BigInteger.ZERO
+        )));
+        when(diamond.getReservationsOfTokenPaginated(
+            eq(localLabId), eq(BigInteger.ZERO), eq(BigInteger.valueOf(100))
+        )).thenReturn(localPageCall);
+        when(localPageCall.send()).thenReturn(new Diamond.ReservationKeyPage(
+            List.<byte[]>of(), BigInteger.ZERO
+        ));
+        doReturn(diamond).when(service).loadReadonlyDiamond();
+
+        Map<String, Object> response = service.listActionableReservations(
+            "gateway-a.example.edu", 0, 100, null
+        );
+
+        assertThat(response.get("count")).isEqualTo(0);
+        verify(diamond).getReservationsOfTokenPaginated(
+            localLabId, BigInteger.ZERO, BigInteger.valueOf(100)
+        );
+        verify(diamond, org.mockito.Mockito.never()).getReservationsOfTokenPaginated(
+            eq(remoteLabId), any(BigInteger.class), eq(BigInteger.valueOf(100))
+        );
+    }
+
+    @Test
+    void cancellationRejectsReservationAssignedToAnotherGateway() throws Exception {
+        String wallet = "0x1111111111111111111111111111111111111111";
+        BigInteger labId = BigInteger.valueOf(7);
+        String keyHex = "0x" + "cd".repeat(32);
+        long now = System.currentTimeMillis() / 1000;
+        Diamond.Reservation reservation = new Diamond.Reservation(
+            labId,
+            "0x2222222222222222222222222222222222222222",
+            BigInteger.valueOf(25_000_000),
+            wallet,
+            BigInteger.ONE,
+            BigInteger.valueOf(now + 3600),
+            BigInteger.valueOf(now + 7200),
+            BigInteger.ZERO,
+            BigInteger.ZERO,
+            wallet,
+            wallet,
+            BigInteger.valueOf(20_000_000)
+        );
+        Diamond readonly = mock(Diamond.class);
+        RemoteFunctionCall<Diamond.Reservation> reservationCall = mockRemoteFunctionCall();
+        RemoteFunctionCall<Diamond.Lab> labCall = mockRemoteFunctionCall();
+        when(institutionalWalletService.isConfigured()).thenReturn(true);
+        when(institutionalWalletService.getInstitutionalWalletAddress()).thenReturn(wallet);
+        when(walletService.isLabProvider(wallet)).thenReturn(true);
+        when(walletService.isLabOwnedByProvider(wallet, labId)).thenReturn(true);
+        when(readonly.getReservation(any(byte[].class))).thenReturn(reservationCall);
+        when(reservationCall.send()).thenReturn(reservation);
+        when(readonly.getLab(labId)).thenReturn(labCall);
+        when(labCall.send()).thenReturn(new Diamond.Lab(labId, new Diamond.LabBase(
+            "https://gateway-b.example.edu/lab-content/metadata.json",
+            BigInteger.ONE,
+            "https://gateway-b.example.edu/guacamole",
+            "guac:id:remote",
+            BigInteger.ZERO,
+            BigInteger.ZERO
+        )));
+        doReturn(readonly).when(service).loadReadonlyDiamond();
+
+        assertThatThrownBy(() -> service.cancelReservation(
+            keyHex, 7, "cancel-command-1", "gateway-a.example.edu"
+        ))
+            .isInstanceOf(IllegalStateException.class)
+            .hasMessageContaining("not assigned to this gateway");
+    }
+
+    @Test
     void providerServiceFailureOptionIsExposedForStartedReservationWithinGrace() {
         long now = System.currentTimeMillis() / 1000;
         Diamond.Reservation reservation = new Diamond.Reservation(
@@ -1063,6 +1163,7 @@ class LabAdminServiceTest {
         Diamond readonly = mock(Diamond.class);
         Diamond writable = mock(Diamond.class);
         RemoteFunctionCall<Diamond.Reservation> reservationCall = mockRemoteFunctionCall();
+        RemoteFunctionCall<Diamond.Lab> labCall = mockRemoteFunctionCall();
         RemoteFunctionCall<TransactionReceipt> transactionCall = mockRemoteFunctionCall();
         TransactionReceipt receipt = new TransactionReceipt();
         receipt.setStatus("0x1");
@@ -1073,6 +1174,15 @@ class LabAdminServiceTest {
         when(walletService.isLabOwnedByProvider(wallet, labId)).thenReturn(true);
         when(readonly.getReservation(org.mockito.ArgumentMatchers.any(byte[].class))).thenReturn(reservationCall);
         when(reservationCall.send()).thenReturn(reservation);
+        when(readonly.getLab(labId)).thenReturn(labCall);
+        when(labCall.send()).thenReturn(new Diamond.Lab(labId, new Diamond.LabBase(
+            "https://lab.example.edu/metadata.json",
+            BigInteger.ONE,
+            "https://lab.example.edu/guacamole",
+            "guac:id:local",
+            BigInteger.ZERO,
+            BigInteger.ZERO
+        )));
         when(writable.cancelConfirmedBookingByProvider(
             org.mockito.ArgumentMatchers.any(byte[].class), eq(BigInteger.valueOf(7))
         )).thenReturn(transactionCall);
@@ -1112,6 +1222,7 @@ class LabAdminServiceTest {
         Diamond readonly = mock(Diamond.class);
         Diamond writable = mock(Diamond.class);
         RemoteFunctionCall<Diamond.Reservation> reservationCall = mockRemoteFunctionCall();
+        RemoteFunctionCall<Diamond.Lab> labCall = mockRemoteFunctionCall();
         RemoteFunctionCall<Boolean> sessionStartedCall = mockRemoteFunctionCall();
         RemoteFunctionCall<TransactionReceipt> transactionCall = mockRemoteFunctionCall();
         TransactionReceipt receipt = new TransactionReceipt();
@@ -1123,6 +1234,15 @@ class LabAdminServiceTest {
         when(walletService.isLabOwnedByProvider(wallet, labId)).thenReturn(true);
         when(readonly.getReservation(org.mockito.ArgumentMatchers.any(byte[].class))).thenReturn(reservationCall);
         when(reservationCall.send()).thenReturn(reservation);
+        when(readonly.getLab(labId)).thenReturn(labCall);
+        when(labCall.send()).thenReturn(new Diamond.Lab(labId, new Diamond.LabBase(
+            "https://lab.example.edu/metadata.json",
+            BigInteger.ONE,
+            "https://lab.example.edu/guacamole",
+            "guac:id:local",
+            BigInteger.ZERO,
+            BigInteger.ZERO
+        )));
         when(readonly.hasReservationSessionStarted(org.mockito.ArgumentMatchers.any(byte[].class)))
             .thenReturn(sessionStartedCall);
         when(sessionStartedCall.send()).thenReturn(false);

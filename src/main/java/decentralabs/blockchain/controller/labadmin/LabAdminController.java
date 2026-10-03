@@ -58,12 +58,13 @@ public class LabAdminController {
     @GetMapping("/reservations/upcoming")
     public ResponseEntity<?> upcomingReservations(
         @RequestParam(required = false) Integer offset,
-        @RequestParam(required = false) Integer limit
+        @RequestParam(required = false) Integer limit,
+        @RequestHeader(value = "X-Gateway-ID", required = false) String gatewayId
     ) {
         try {
             return ok(offset == null && limit == null
-                ? labAdminService.listUpcomingReservations()
-                : labAdminService.listUpcomingReservations(offset, limit));
+                ? labAdminService.listUpcomingReservations(gatewayId)
+                : labAdminService.listUpcomingReservations(gatewayId, offset, limit));
         } catch (IllegalArgumentException | IllegalStateException ex) {
             return badRequest(ex);
         } catch (Exception ex) {
@@ -75,14 +76,15 @@ public class LabAdminController {
     public ResponseEntity<?> actionableReservations(
         @RequestParam(required = false) Integer offset,
         @RequestParam(required = false) Integer limit,
-        @RequestParam(required = false) String cursor
+        @RequestParam(required = false) String cursor,
+        @RequestHeader(value = "X-Gateway-ID", required = false) String gatewayId
     ) {
         try {
             Map<String, Object> response = cursor != null
-                ? labAdminService.listActionableReservations(offset == null ? 0 : offset, limit, cursor)
+                ? labAdminService.listActionableReservations(gatewayId, offset == null ? 0 : offset, limit, cursor)
                 : offset == null && limit == null
-                    ? labAdminService.listActionableReservations()
-                    : labAdminService.listActionableReservations(offset, limit);
+                    ? labAdminService.listActionableReservations(gatewayId)
+                    : labAdminService.listActionableReservations(gatewayId, offset, limit);
             return ok(response);
         } catch (IllegalArgumentException | IllegalStateException ex) {
             return badRequest(ex);
@@ -95,12 +97,13 @@ public class LabAdminController {
     public ResponseEntity<?> cancelReservation(
         @PathVariable String reservationKey,
         @RequestBody(required = false) LabAdminReservationCancelRequest request,
-        @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey
+        @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey,
+        @RequestHeader(value = "X-Gateway-ID", required = false) String gatewayId
     ) {
         try {
             Integer reasonCode = request == null ? null : request.reasonCode();
             LabAdminTransactionResponse response = labAdminService.cancelReservation(
-                reservationKey, reasonCode, idempotencyKey
+                reservationKey, reasonCode, idempotencyKey, gatewayId
             );
             return ResponseEntity.ok(response);
         } catch (IllegalArgumentException | IllegalStateException ex) {

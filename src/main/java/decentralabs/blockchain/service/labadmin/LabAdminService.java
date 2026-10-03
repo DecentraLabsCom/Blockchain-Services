@@ -200,29 +200,59 @@ public class LabAdminService {
     }
 
     public Map<String, Object> listUpcomingReservations() throws Exception {
-        return listUpcomingReservations(0, null);
+        return listUpcomingReservations(null, 0, null);
     }
 
     public Map<String, Object> listUpcomingReservations(Integer offset, Integer limit) throws Exception {
-        return listReservations(false, offset, limit);
+        return listUpcomingReservations(null, offset, limit);
+    }
+
+    public Map<String, Object> listUpcomingReservations(String gatewayId) throws Exception {
+        return listUpcomingReservations(gatewayId, 0, null);
+    }
+
+    public Map<String, Object> listUpcomingReservations(String gatewayId, Integer offset, Integer limit)
+        throws Exception {
+        return listReservations(false, offset, limit, gatewayId);
     }
 
     public Map<String, Object> listActionableReservations() throws Exception {
-        return listActionableReservations(0, null, null);
+        return listActionableReservations(null, 0, null, null);
     }
 
     public Map<String, Object> listActionableReservations(Integer offset, Integer limit) throws Exception {
-        return listActionableReservations(offset, limit, null);
+        return listActionableReservations(null, offset, limit, null);
     }
 
     public Map<String, Object> listActionableReservations(Integer offset, Integer limit, String cursor)
         throws Exception {
+        return listActionableReservations(null, offset, limit, cursor);
+    }
+
+    public Map<String, Object> listActionableReservations(String gatewayId) throws Exception {
+        return listActionableReservations(gatewayId, 0, null, null);
+    }
+
+    public Map<String, Object> listActionableReservations(String gatewayId, Integer offset, Integer limit)
+        throws Exception {
+        return listActionableReservations(gatewayId, offset, limit, null);
+    }
+
+    public Map<String, Object> listActionableReservations(
+        String gatewayId, Integer offset, Integer limit, String cursor
+    ) throws Exception {
         String wallet = requireProviderWallet();
         Diamond diamond = loadReadonlyDiamond();
+        String gatewayScope = resolveGatewayScope(gatewayId);
         long now = Instant.now().getEpochSecond();
         int safeOffset = normalizeReservationOffset(offset);
         int safeLimit = normalizeReservationPageSize(limit);
-        List<BigInteger> labIds = new ArrayList<>(walletService.getLabsOwnedByProvider(wallet));
+        List<BigInteger> labIds = new ArrayList<>();
+        for (BigInteger labId : walletService.getLabsOwnedByProvider(wallet)) {
+            if (isLabInGatewayScope(diamond, labId, gatewayScope)) {
+                labIds.add(labId);
+            }
+        }
         Map<BigInteger, String> labNames = new HashMap<>();
         Map<String, String> institutionNames = new HashMap<>();
         List<LabAdminReservation> reservations = new ArrayList<>(safeLimit);
@@ -404,9 +434,12 @@ public class LabAdminService {
         return null;
     }
 
-    private Map<String, Object> listReservations(boolean actionableOnly, Integer offset, Integer limit) throws Exception {
+    private Map<String, Object> listReservations(
+        boolean actionableOnly, Integer offset, Integer limit, String gatewayId
+    ) throws Exception {
         String wallet = requireProviderWallet();
         Diamond diamond = loadReadonlyDiamond();
+        String gatewayScope = resolveGatewayScope(gatewayId);
         long now = Instant.now().getEpochSecond();
         List<LabAdminReservation> reservations = new ArrayList<>();
         Map<BigInteger, String> labNames = new HashMap<>();
@@ -415,6 +448,9 @@ public class LabAdminService {
         int safeLimit = normalizeReservationPageSize(limit);
 
         for (BigInteger labId : walletService.getLabsOwnedByProvider(wallet)) {
+            if (!isLabInGatewayScope(diamond, labId, gatewayScope)) {
+                continue;
+            }
             BigInteger reservationCount;
             try {
                 reservationCount = diamond.getReservationsOfToken(labId).send();
@@ -521,10 +557,20 @@ public class LabAdminService {
         Integer reasonCode,
         String idempotencyKey
     ) throws Exception {
+        return cancelReservation(reservationKey, reasonCode, idempotencyKey, null);
+    }
+
+    public LabAdminTransactionResponse cancelReservation(
+        String reservationKey,
+        Integer reasonCode,
+        String idempotencyKey,
+        String gatewayId
+    ) throws Exception {
         String normalizedKey = normalizeReservationKey(reservationKey);
         BigInteger normalizedReason = requireProviderReason(reasonCode);
         String commandKey = requireReservationIdempotencyKey(idempotencyKey);
         String wallet = requireProviderWallet();
+        String gatewayScope = resolveGatewayScope(gatewayId);
         byte[] key = Numeric.hexStringToByteArray(normalizedKey);
         Diamond diamond = loadReadonlyDiamond();
         Diamond.Reservation reservation = diamond.getReservation(key).send();
@@ -535,6 +581,7 @@ public class LabAdminService {
             || !walletService.isLabOwnedByProvider(wallet, reservation.labId)) {
             throw new IllegalStateException("Reservation is not owned by this provider wallet");
         }
+        requireLabGatewayScope(diamond, reservation.labId, gatewayScope);
         long now = Instant.now().getEpochSecond();
         boolean serviceFailure = PROVIDER_SERVICE_FAILURE_REASON.equals(normalizedReason);
         if (!serviceFailure && (reservation.start == null || reservation.start.longValueExact() <= now)) {
@@ -1392,6 +1439,69 @@ public class LabAdminService {
             instance = UUID.randomUUID().toString();
         }
         return "lab-admin:" + action + ":" + String.valueOf(businessId) + ":" + instance;
+    }
+
+    private String resolveGatewayScope(String requestedGatewayId) {
+        String candidate = hasText(requestedGatewayId)
+            ? requestedGatewayId
+            : gatewayIdFromAccessUri(backendUrlResolver.resolveBaseDomain());
+        if (!hasText(candidate)) {
+            throw new IllegalStateException("Gateway scope is not configured");
+        }
+        String normalized = candidate.trim().toLowerCase(Locale.ROOT);
+        if (normalized.contains("://") || normalized.contains("/")
+            || normalized.contains("?") || normalized.contains("#")
+            || normalized.chars().anyMatch(Character::isWhitespace)) {
+            throw new IllegalArgumentException("Invalid gateway scope");
+        }
+        if (!normalized.startsWith("[") && normalized.endsWith(".")) {
+            normalized = normalized.substring(0, normalized.length() - 1);
+        }
+        return normalized;
+    }
+
+    private boolean isLabInGatewayScope(Diamond diamond, BigInteger labId, String gatewayScope) {
+        try {
+            Diamond.Lab lab = diamond.getLab(labId).send();
+            return lab != null && lab.base != null
+                && gatewayScope.equals(gatewayIdFromAccessUri(lab.base.accessURI));
+        } catch (Exception ex) {
+            log.debug("Unable to resolve gateway scope for lab {}", labId, ex);
+            return false;
+        }
+    }
+
+    private void requireLabGatewayScope(Diamond diamond, BigInteger labId, String gatewayScope) {
+        if (!isLabInGatewayScope(diamond, labId, gatewayScope)) {
+            throw new IllegalStateException("Lab is not assigned to this gateway");
+        }
+    }
+
+    private String gatewayIdFromAccessUri(String accessUri) {
+        if (!hasText(accessUri)) {
+            return null;
+        }
+        try {
+            URI uri = URI.create(accessUri.trim());
+            String host = uri.getHost();
+            if (!hasText(host)) {
+                return null;
+            }
+            String normalizedHost = host.toLowerCase(Locale.ROOT);
+            if (normalizedHost.contains(":")) {
+                normalizedHost = "[" + normalizedHost + "]";
+            }
+            String scheme = hasText(uri.getScheme())
+                ? uri.getScheme().toLowerCase(Locale.ROOT)
+                : "https";
+            int port = uri.getPort();
+            boolean defaultPort = port < 0
+                || ("https".equals(scheme) && port == 443)
+                || ("http".equals(scheme) && port == 80);
+            return defaultPort ? normalizedHost : normalizedHost + ":" + port;
+        } catch (RuntimeException ex) {
+            return null;
+        }
     }
 
     private String requireProviderWallet() {
