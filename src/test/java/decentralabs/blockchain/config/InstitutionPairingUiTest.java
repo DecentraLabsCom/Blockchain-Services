@@ -16,7 +16,7 @@ class InstitutionPairingUiTest {
         assertThat(page).contains("id=\"gatewayHomeLink\"")
             .contains("href=\"/\"")
             .contains("src=\"assets/images/LogoBannerDLabs.png\"")
-            .contains("<span class=\"logo-title\">Wallet &amp; Billing</span>");
+            .contains("<h1 class=\"logo-title\">Wallet &amp; Billing</h1>");
         assertThat(page).contains("id=\"institutionPairingSection\"");
         assertThat(page).contains("id=\"openInstitutionConfigBtn\"");
         assertThat(page).contains("href=\"/institution-config/\"");

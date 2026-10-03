@@ -90,14 +90,16 @@ body {
 }
 
 .header-content {
-    display: flex;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
     justify-content: space-between;
     align-items: center;
-    flex-wrap: wrap;
     gap: var(--spacing-md);
 }
 
 .logo {
+    grid-column: 1;
+    justify-self: start;
     font-size: 1.8rem;
     font-weight: 700;
     color: var(--neon-blue);
@@ -122,7 +124,14 @@ body {
 }
 
 .logo-title {
+    grid-column: 2;
+    justify-self: center;
+    margin: 0;
+    font-size: 1.8rem;
+    font-weight: 700;
     color: var(--neon-blue);
+    text-shadow: 0 0 10px rgba(0, 212, 255, 0.5);
+    white-space: nowrap;
 }
 
 .logo-icon {
@@ -136,6 +145,8 @@ body {
 }
 
 .header-actions {
+    grid-column: 3;
+    justify-self: end;
     display: flex;
     align-items: flex-start;
     gap: var(--spacing-md);
@@ -1997,8 +2008,8 @@ body:not(.wallet-tabs-ready) [data-wallet-tab-section="overview"]:not(.hidden),
     }
     
     .header-content {
-        flex-direction: column;
-        align-items: flex-start;
+        grid-template-columns: 1fr;
+        justify-items: center;
     }
     
     .info-grid,
@@ -2016,6 +2027,21 @@ body:not(.wallet-tabs-ready) [data-wallet-tab-section="overview"]:not(.hidden),
     
     .logo {
         font-size: 1.5rem;
+        grid-column: auto;
+        justify-self: center;
+    }
+
+    .logo-title {
+        grid-column: auto;
+        font-size: 1.5rem;
+    }
+
+    .header-actions {
+        grid-column: auto;
+        justify-self: center;
+        align-items: center;
+        flex-wrap: wrap;
+        justify-content: center;
     }
     
     .button-group {
