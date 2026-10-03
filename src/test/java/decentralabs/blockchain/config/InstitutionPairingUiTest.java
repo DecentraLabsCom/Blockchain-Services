@@ -150,7 +150,7 @@ class InstitutionPairingUiTest {
         assertThat(policyStyles).contains(".policy-form-action").contains("align-self: stretch;").contains("align-items: center;")
                 .contains("justify-content: center;").contains("gap: 0.5rem;")
                 .doesNotContain("min-height: 3.125rem;");
-        assertThat(policyStyles).contains(".policy-form-action").contains("padding-top: calc(1.6 * 0.9rem + var(--spacing-xs));")
+        assertThat(policyStyles).contains(".policy-form-action").contains("padding-top: calc(1.44rem + var(--spacing-xs));")
                 .contains(".policy-form-action { padding-top: 0; }");
         assertThat(sharedStyles).doesNotContain(".policy-multi-select");
     }

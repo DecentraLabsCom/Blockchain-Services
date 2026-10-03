@@ -19,7 +19,7 @@
 .policy-settings-form, .policy-test-form { display: grid; grid-template-columns: minmax(180px, 1fr) minmax(180px, 1fr) auto; gap: var(--spacing-sm); align-items: end; margin-bottom: var(--spacing-lg); }
 .policy-form-action {
     align-self: stretch; display: flex; align-items: center; justify-content: center;
-    padding-top: calc(1.6 * 0.9rem + var(--spacing-xs));
+    padding-top: calc(1.44rem + var(--spacing-xs));
 }
 .policy-form-action .btn {
     display: inline-flex; align-items: center; justify-content: center; gap: 0.5rem;
