@@ -6,6 +6,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.options;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -36,6 +37,7 @@ import org.springframework.web.context.WebApplicationContext;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 @SpringBootTest(
@@ -181,6 +183,20 @@ class SecurityConfigIntegrationTest {
                 }))
             .andExpect(status().isOk())
             .andExpect(content().string("wallet-ok"));
+    }
+
+    @Test
+    void walletAdminMutation_isNotBlockedByBackendCsrf() throws Exception {
+        mockMvc.perform(put("/wallet-admin/test")
+                .with(anonymous())
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{}")
+                .with(req -> {
+                    req.setRemoteAddr("127.0.0.1");
+                    return req;
+                }))
+            .andExpect(status().isOk())
+            .andExpect(content().string("wallet-admin-ok"));
     }
 
     @Test
@@ -437,6 +453,11 @@ class SecurityConfigIntegrationTest {
         @GetMapping("/wallet/test")
         String wallet() {
             return "wallet-ok";
+        }
+
+        @PutMapping("/wallet-admin/test")
+        String walletAdmin() {
+            return "wallet-admin-ok";
         }
 
         @GetMapping("/billing/admin/test")

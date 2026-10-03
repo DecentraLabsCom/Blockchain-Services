@@ -135,14 +135,15 @@ class InstitutionPairingUiTest {
         assertThat(page).contains("data-policy-multiselect");
         assertThat(page).doesNotContain("id=\"accessPolicyTestCategories\" multiple");
         assertThat(page).contains("wallet-dashboard-tabs.js");
-        assertThat(script).contains("accessPolicy").contains("Add matcher").contains("Import").contains("Export");
+        assertThat(script).contains("accessPolicy").contains("Add matcher").contains("Remove matcher").contains("Import").contains("Export");
         assertThat(script).contains("data-multiselect-option").contains("Search categories").contains("role=\"listbox\"").contains("price: '1'");
         assertThat(script).doesNotContain("accessPolicyTestPrice");
         assertThat(script).doesNotContain("fa-search");
         assertThat(api).contains("/wallet-admin/access-policies");
         assertThat(policyStyles).contains(".policy-multi-select").contains(".policy-test-form").contains("height: 3.125rem;");
         assertThat(policyStyles).doesNotContain("min-height: 2.8rem").doesNotContain("padding: 0.55rem 0.7rem 0.55rem 2rem");
-        assertThat(policyStyles).contains(".policy-group-heading input").contains("background: var(--bg-primary);").contains(".policy-group-heading input:focus");
+        assertThat(policyStyles).contains(".policy-group-heading input").contains("background: var(--bg-primary);").contains(".policy-group-heading input:focus")
+                .contains(".policy-chip-remove");
         assertThat(policyStyles).contains(".policy-transfer").contains(".policy-test-form textarea")
                 .contains("resize: vertical;").contains("background: var(--bg-primary);").contains(".policy-transfer:focus");
         assertThat(policyStyles).contains(".policy-settings-form > .btn").contains("align-items: center;").contains("justify-content: center;")

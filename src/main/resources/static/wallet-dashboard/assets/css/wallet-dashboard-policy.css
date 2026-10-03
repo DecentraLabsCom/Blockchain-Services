@@ -39,7 +39,9 @@
 .policy-matcher-row input::placeholder { color: var(--text-muted); }
 .policy-group-heading input { flex: 1; }
 .policy-chips { display: flex; flex-wrap: wrap; gap: 0.4rem; min-height: 1.7rem; margin: var(--spacing-sm) 0; }
-.policy-chip { padding: 0.25rem 0.55rem; border-radius: 999px; background: rgba(0, 212, 255, 0.12); color: var(--neon-blue); font-size: 0.78rem; }
+.policy-chip { display: inline-flex; align-items: center; gap: 0.35rem; padding: 0.25rem 0.55rem; border-radius: 999px; background: rgba(0, 212, 255, 0.12); color: var(--neon-blue); font-size: 0.78rem; }
+.policy-chip-remove { display: inline-flex; align-items: center; justify-content: center; width: 1rem; height: 1rem; padding: 0; border: 0; border-radius: 50%; background: transparent; color: inherit; font: inherit; line-height: 1; cursor: pointer; }
+.policy-chip-remove:hover, .policy-chip-remove:focus-visible { background: rgba(255, 255, 255, 0.16); color: var(--text-primary); }
 .policy-matcher-row { justify-content: flex-start; }
 .policy-matcher-row input { flex: 1; }
 .policy-category-grid { display: grid; grid-template-columns: 1fr 1fr; gap: var(--spacing-sm); margin-top: var(--spacing-sm); }

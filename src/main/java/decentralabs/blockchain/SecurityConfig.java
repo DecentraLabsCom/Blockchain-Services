@@ -131,6 +131,7 @@ public class SecurityConfig {
                     "/webauthn/**",
                     intentsEndpoint + "/**",
                     "/access-policy/**",
+                    "/wallet-admin/**",
                     "/onboarding/**",
                     "/institution-config/**",
                     "/lab-admin/**",

@@ -100,7 +100,11 @@
 
     function matcherChips(matchers) {
         return Object.entries(matchers || {}).flatMap(([key, values]) => (Array.isArray(values) ? values : [values])
-            .map(value => `<span class="policy-chip">${escapeHtml(key)}: ${escapeHtml(value)}</span>`)).join('');
+            .map(value => {
+                const safeKey = escapeHtml(key);
+                const safeValue = escapeHtml(value);
+                return `<span class="policy-chip"><span>${safeKey}: ${safeValue}</span><button type="button" class="policy-chip-remove" data-remove-matcher data-matcher-key="${safeKey}" data-matcher-value="${safeValue}" aria-label="Remove matcher ${safeKey}=${safeValue}" title="Remove matcher">&times;</button></span>`;
+            })).join('');
     }
 
     function renderGroups() {
@@ -307,6 +311,20 @@
             if (!group) return;
             const index = Number(group.dataset.policyGroup);
             if (event.target.matches('[data-remove-group]')) { readGroups(); state.groups.splice(index, 1); renderGroups(); return; }
+            const removeMatcher = event.target.closest('[data-remove-matcher]');
+            if (removeMatcher) {
+                const key = removeMatcher.dataset.matcherKey || '';
+                const value = removeMatcher.dataset.matcherValue || '';
+                readGroups();
+                const matchers = state.groups[index]?.matchers || {};
+                const values = Array.isArray(matchers[key]) ? matchers[key] : (matchers[key] == null ? [] : [matchers[key]]);
+                const remaining = values.filter(candidate => String(candidate) !== value);
+                if (remaining.length) matchers[key] = remaining;
+                else delete matchers[key];
+                state.groups[index].matchers = matchers;
+                renderGroups();
+                return;
+            }
             if (event.target.matches('[data-add-matcher]')) {
                 const input = group.querySelector('[data-matcher-input]');
                 const [key, ...parts] = input.value.split('=');
