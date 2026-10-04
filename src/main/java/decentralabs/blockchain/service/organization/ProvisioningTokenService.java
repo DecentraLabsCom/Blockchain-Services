@@ -48,7 +48,7 @@ public class ProvisioningTokenService {
     @Value("${marketplace.base-url:}")
     private String configuredMarketplaceBaseUrl;
 
-    @Value("${marketplace.url:https://decentralabs-marketplace.app}")
+    @Value("${marketplace.url:https://www.decentralabs-marketplace.app}")
     private String marketplaceUrl;
 
     private RestTemplate restTemplate = new RestTemplate();

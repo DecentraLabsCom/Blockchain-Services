@@ -31,7 +31,7 @@ services:
       # Path to wallet storage file (mounted as volume below)
       - WALLET_FILE_PATH=/app/data/wallets.json
       # Marketplace JWKS used to validate Marketplace-issued JWTs.
-      - MARKETPLACE_PUBLIC_KEY_URL=${MARKETPLACE_PUBLIC_KEY_URL:-https://decentralabs-marketplace.app/.well-known/jwks.json}
+      - MARKETPLACE_PUBLIC_KEY_URL=${MARKETPLACE_PUBLIC_KEY_URL:-https://www.decentralabs-marketplace.app/.well-known/jwks.json}
       # MySQL datasource for persistence (auth, WebAuthn, intents)
       - SPRING_DATASOURCE_URL=jdbc:mysql://mysql:3306/${BLOCKCHAIN_MYSQL_DATABASE:-blockchain_services}?serverTimezone=UTC&characterEncoding=UTF-8&useSSL=false&allowPublicKeyRetrieval=true
       - SPRING_DATASOURCE_USERNAME=${BLOCKCHAIN_MYSQL_USER:-blockchain}

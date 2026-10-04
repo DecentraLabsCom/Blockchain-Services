@@ -16,7 +16,7 @@ const DashboardState = {
     isOperator: false,
     welcomeModalDismissed: false,
     institutionRegistered: false,
-    marketplaceUrl: 'https://decentralabs-marketplace.app/',
+    marketplaceUrl: 'https://www.decentralabs-marketplace.app/',
     collectLabs: [],
     collectLabNames: {},
     selectedCollectLabId: null,
