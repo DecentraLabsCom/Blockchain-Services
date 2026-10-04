@@ -1200,7 +1200,8 @@
   {
     "name": "marketplace.base-url",
     "type": "java.lang.String",
-    "description": "Base URL of the DecentraLabs marketplace"
+    "description": "Base URL of the DecentraLabs marketplace",
+    "defaultValue": "https://decentralabs-marketplace.app"
   },
   {
     "name": "provider.name",
