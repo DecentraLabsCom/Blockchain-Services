@@ -81,6 +81,20 @@ class ConfigurationMetadataTest {
     }
 
     @Test
+    void usesTheCanonicalWwwMarketplaceOriginForProductionDefaults() throws Exception {
+        Map<String, JsonNode> properties = readProperties();
+
+        assertThat(properties.get("marketplace.url").path("defaultValue").asText())
+            .isEqualTo("https://www.decentralabs-marketplace.app");
+        assertThat(properties.get("marketplace.base-url").path("defaultValue").asText())
+            .isEqualTo("https://www.decentralabs-marketplace.app");
+        assertThat(properties.get("marketplace.public-key-url").path("defaultValue").asText())
+            .isEqualTo("https://www.decentralabs-marketplace.app/.well-known/jwks.json");
+        assertThat(properties.get("allowed-origins").path("defaultValue").asText())
+            .isEqualTo("http://localhost:3000,https://www.decentralabs-marketplace.app");
+    }
+
+    @Test
     void documentsSessionStartedAttestationDomainProperties() throws Exception {
         Map<String, JsonNode> properties = readProperties();
 

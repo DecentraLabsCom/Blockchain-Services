@@ -142,6 +142,25 @@ class BillingAdminControllerIntegrationTest {
 
     @Test
     @WithMockUser(roles = "INTERNAL")
+    void executeInternalAdminOperation_allowsBillingAdminPathWithInternalRole() throws Exception {
+        when(adminService.executeInternalAdminOperation(org.mockito.ArgumentMatchers.any(InstitutionalAdminRequest.class)))
+            .thenReturn(InstitutionalAdminResponse.success("ok", "0x1", "SET_USER_LIMIT"));
+
+        mockMvc.perform(post("/billing/admin/execute-internal")
+                .with(csrf())
+                .with(req -> {
+                    req.setRemoteAddr("127.0.0.1");
+                    return req;
+                })
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"operation\":\"SET_USER_LIMIT\",\"spendingLimit\":\"2000000000\"}"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.success").value(true))
+            .andExpect(jsonPath("$.transactionHash").value("0x1"));
+    }
+
+    @Test
+    @WithMockUser(roles = "INTERNAL")
     void requestProviderPayout_allowsBillingAdminPathWithInternalRole() throws Exception {
         when(adminService.requestProviderPayoutWithConfiguredWallet("3", "50"))
             .thenReturn(InstitutionalAdminResponse.success("ok", "0xcollect", "COLLECT_LAB_PAYOUT"));

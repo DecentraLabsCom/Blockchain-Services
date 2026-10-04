@@ -1309,6 +1309,28 @@ class InstitutionalAdminServiceTest {
     class SecurityGuardTests {
 
         @Test
+        @DisplayName("Should execute internal dashboard operations without a browser wallet signature")
+        void internalDashboardOperationUsesConfiguredWalletWithoutBrowserSignature() throws Exception {
+            Credentials credentials = Credentials.create("0x1");
+            when(httpServletRequest.getRemoteAddr()).thenReturn("127.0.0.1");
+            when(institutionalWalletService.getInstitutionalWalletAddress()).thenReturn(credentials.getAddress());
+            when(institutionalWalletService.getInstitutionalCredentials()).thenReturn(credentials);
+            when(rateLimitService.allowTransaction(credentials.getAddress())).thenReturn(true);
+            mockSuccessfulTransaction(credentials, "0xinternal");
+
+            InstitutionalAdminRequest request = new InstitutionalAdminRequest();
+            request.setOperation(AdminOperation.SET_USER_LIMIT);
+            request.setSpendingLimit("2000000000");
+
+            InstitutionalAdminResponse response = adminService.executeInternalAdminOperation(request);
+
+            assertThat(response.isSuccess()).isTrue();
+            assertThat(response.getTransactionHash()).isEqualTo("0xinternal");
+            assertThat(response.getOperationType()).isEqualTo("SET_USER_LIMIT");
+            verify(adminVerifier, org.mockito.Mockito.never()).verify(any(), any());
+        }
+
+        @Test
         @DisplayName("Should reject when EIP-712 signature verification fails")
         void shouldRejectWhenSignatureVerificationFails() {
             Credentials credentials = Credentials.create("0x1");

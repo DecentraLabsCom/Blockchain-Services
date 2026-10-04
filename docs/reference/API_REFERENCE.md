@@ -129,6 +129,7 @@ ceremony above.
 | POST | `/billing/funding-orders/{id}/invoice`, `/billing/funding-orders/{id}/confirm-payment`, `/billing/funding-orders/{id}/cancel`, `/billing/funding-orders/{id}/mark-credited` | Admin boundary; funding workflow transitions. |
 | GET | `/billing/credit-accounts/{address}`, `/billing/credit-accounts/{address}/lots`, `/billing/credit-accounts/{address}/movements` | Admin boundary; local credit projection. |
 | POST | `/billing/admin/execute` | Admin boundary and signed EIP-712 administrative command. |
+| POST | `/billing/admin/execute-internal` | Admin boundary; wallet-dashboard command signed and broadcast internally by the configured institutional wallet. |
 | POST | `/billing/admin/request-provider-payout` | Admin boundary; server-side payout request. |
 | GET | `/billing/admin/transaction-status` | Admin boundary; durable transaction status. |
 | GET | `/billing/admin/status`, `/billing/admin/balance`, `/billing/admin/transactions`, `/billing/admin/contract-info`, `/billing/admin/provider-labs`, `/billing/admin/provider-receivable-status`, `/billing/admin/billing-info`, `/billing/admin/top-spenders` | Admin boundary; dashboard reads. |

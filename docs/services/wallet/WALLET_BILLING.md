@@ -81,6 +81,18 @@ must be converted through `CreditUnitConverter` rather than by literals.
 
 ## Administrative transaction API
 
+### Internal wallet-dashboard execution
+
+The embedded wallet dashboard uses `POST /billing/admin/execute-internal`.
+This route applies the same gateway network/access-token boundary and role
+checks, then obtains the configured institutional wallet credentials from the
+backend. The backend signs and broadcasts the transaction through its durable
+transaction path; the browser does not connect to MetaMask and never signs an
+administrative command.
+
+The request contains the operation-specific fields and an `operationId` used
+for retry idempotency. It must not contain private key material.
+
 ### Signed admin execution
 
 `POST /billing/admin/execute` validates the configured institutional wallet,

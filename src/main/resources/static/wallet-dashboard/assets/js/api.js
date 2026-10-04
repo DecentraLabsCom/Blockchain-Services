@@ -5,7 +5,6 @@
 
 const API = {
     BASE_URL: window.location.origin,
-    ZERO_ADDRESS: '0x0000000000000000000000000000000000000000',
     
     /**
      * Generic fetch wrapper with error handling
@@ -62,89 +61,6 @@ const API = {
             console.error(`API request failed: ${endpoint}`, error);
             throw error;
         }
-    },
-
-    buildBillingAdminTypedData(status, payload) {
-        const domainConfig = (status && status.billingAdminEip712) || {};
-        const domain = {
-            name: domainConfig.name || 'DecentraLabsTreasuryAdmin',
-            version: domainConfig.version || '1',
-            chainId: domainConfig.chainId || 11155111,
-            verifyingContract: domainConfig.verifyingContract || status.contractAddress || this.ZERO_ADDRESS
-        };
-
-        const message = {
-            signer: payload.adminWalletAddress,
-            operation: payload.operation,
-            providerAddress: payload.providerAddress || this.ZERO_ADDRESS,
-            backendAddress: payload.backendAddress || this.ZERO_ADDRESS,
-            spendingLimit: payload.spendingLimit || '0',
-            spendingPeriod: payload.spendingPeriod || '0',
-            amount: payload.amount || '0',
-            labId: payload.labId || '0',
-            maxBatch: payload.maxBatch || '0',
-            creditAccount: payload.creditAccount || this.ZERO_ADDRESS,
-            creditDelta: payload.creditDelta || '0',
-            fromReceivableState: payload.fromReceivableState || '0',
-            toReceivableState: payload.toReceivableState || '0',
-            batchId: payload.batchId || '',
-            claimId: payload.claimId || '',
-            reference: payload.reference || '',
-            timestamp: payload.timestamp
-        };
-
-        return {
-            types: {
-                EIP712Domain: [
-                    { name: 'name', type: 'string' },
-                    { name: 'version', type: 'string' },
-                    { name: 'chainId', type: 'uint256' },
-                    { name: 'verifyingContract', type: 'address' }
-                ],
-                TreasuryAdminOperation: [
-                    { name: 'signer', type: 'address' },
-                    { name: 'operation', type: 'string' },
-                    { name: 'providerAddress', type: 'address' },
-                    { name: 'backendAddress', type: 'address' },
-                    { name: 'spendingLimit', type: 'uint256' },
-                    { name: 'spendingPeriod', type: 'uint256' },
-                    { name: 'amount', type: 'uint256' },
-                    { name: 'labId', type: 'uint256' },
-                    { name: 'maxBatch', type: 'uint256' },
-                    { name: 'creditAccount', type: 'address' },
-                    { name: 'creditDelta', type: 'int256' },
-                    { name: 'fromReceivableState', type: 'uint256' },
-                    { name: 'toReceivableState', type: 'uint256' },
-                    { name: 'batchId', type: 'string' },
-                    { name: 'claimId', type: 'string' },
-                    { name: 'reference', type: 'string' },
-                    { name: 'timestamp', type: 'uint64' }
-                ]
-            },
-            domain,
-            primaryType: 'TreasuryAdminOperation',
-            message
-        };
-    },
-
-    async signBillingAdminOperation(status, payload) {
-        if (!window.ethereum || !window.ethereum.request) {
-            throw new Error('No wallet provider found. Connect the institutional wallet to sign admin actions.');
-        }
-        const accounts = await window.ethereum.request({ method: 'eth_requestAccounts' });
-        const signer = payload.adminWalletAddress;
-        if (!signer) {
-            throw new Error('Institutional wallet address is missing.');
-        }
-        const match = (accounts || []).find(account => account.toLowerCase() === signer.toLowerCase());
-        if (!match) {
-            throw new Error('Connected wallet does not match the institutional wallet address.');
-        }
-        const typedData = this.buildBillingAdminTypedData(status, payload);
-        return await window.ethereum.request({
-            method: 'eth_signTypedData_v4',
-            params: [match, JSON.stringify(typedData)]
-        });
     },
 
     /**
@@ -237,30 +153,21 @@ const API = {
     },
 
     /**
-     * POST /billing/admin/execute
-     * Execute administrative operation
+     * POST /billing/admin/execute-internal
+     * Execute administrative operation through the configured server wallet
      * @param {string} operation - Operation type (SET_USER_LIMIT, SET_SPENDING_PERIOD, etc.)
      * @param {object} params - Operation parameters
      */
     async executeAdminOperation(operation, params) {
-        // Get institutional wallet address from status
-        const status = await this.getSystemStatus();
-        const adminWalletAddress = status.institutionalWalletAddress;
-
-        if (!adminWalletAddress) {
-            throw new Error('Institutional wallet not configured');
-        }
-
         const payload = {
-            adminWalletAddress,
             operation,
-            ...params
+            ...(params || {}),
+            operationId: (window.crypto && typeof window.crypto.randomUUID === 'function')
+                ? window.crypto.randomUUID()
+                : `${Date.now()}-${Math.random().toString(36).slice(2)}`
         };
 
-        payload.timestamp = Date.now();
-        payload.signature = await this.signBillingAdminOperation(status, payload);
-
-        return await this.request('/billing/admin/execute', {
+        return await this.request('/billing/admin/execute-internal', {
             method: 'POST',
             body: JSON.stringify(payload)
         });
