@@ -2,6 +2,7 @@ package decentralabs.blockchain.service.accesspolicy;
 
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.assertj.core.api.Assertions.assertThat;
 
 import decentralabs.blockchain.service.auth.SamlAssertionAttributes;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -24,5 +25,24 @@ class InstitutionalIdentityContextPersistenceServiceTest {
         assertNotNull(context);
         assertFalse(context.attributes().containsKey("puc"));
         assertFalse(context.identityReference().contains("puc-value"));
+    }
+
+    @Test
+    void storesNormalizedOidcClaimsWithoutTheRawToken() {
+        var service = new InstitutionalIdentityContextPersistenceService(null, new ObjectMapper());
+        service.upsertOidc("uni.example", "oidc:entra-id:tenant:oid-123", "entra-id",
+            "https://login.microsoftonline.com/tenant/v2.0", Map.of(
+                "roles", List.of("provider"),
+                "email", "user@example.com",
+                "access_token", "must-not-be-persisted"
+            ), Instant.now().plusSeconds(60));
+
+        var context = service.find("uni.example",
+            decentralabs.blockchain.util.PucHashUtil.hashPuc("oidc:entra-id:tenant:oid-123"));
+
+        assertNotNull(context);
+        assertThat(context.authMethod()).isEqualTo("oidc");
+        assertThat(context.attributes()).containsKey("roles");
+        assertFalse(context.attributes().containsKey("access_token"));
     }
 }

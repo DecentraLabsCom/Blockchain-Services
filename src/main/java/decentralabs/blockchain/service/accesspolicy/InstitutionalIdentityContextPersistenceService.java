@@ -6,6 +6,7 @@ import decentralabs.blockchain.service.auth.SamlAssertionAttributes;
 import decentralabs.blockchain.util.PucHashUtil;
 import java.sql.Timestamp;
 import java.time.Instant;
+import java.util.Collection;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -39,6 +40,48 @@ public class InstitutionalIdentityContextPersistenceService {
             assertion == null ? null : assertion.issuer(), safeAttributes, Instant.now(), expiresAt
         );
         upsert(context);
+    }
+
+    /**
+     * Persists only the normalized OIDC context. Raw tokens and unbounded
+     * provider claims deliberately never cross this boundary.
+     */
+    public void upsertOidc(
+        String institutionId,
+        String stableUserId,
+        String provider,
+        String issuer,
+        Map<String, ?> claims,
+        Instant expiresAt
+    ) {
+        Map<String, List<String>> safeAttributes = new LinkedHashMap<>();
+        if (claims != null) {
+            List.of(
+                "roles", "scp", "preferred_username", "email", "name", "tid", "oid",
+                "idp", "idp_name", "affiliation", "schacHomeOrganization",
+                "eduPersonAffiliation", "eduPersonEntitlement"
+            ).forEach(key -> {
+                Object value = claims.get(key);
+                List<String> values = value instanceof Collection<?> collection
+                    ? collection.stream().map(String::valueOf).toList()
+                    : value == null ? List.of() : List.of(String.valueOf(value));
+                List<String> bounded = values.stream()
+                    .filter(item -> item != null && !item.isBlank())
+                    .map(item -> item.length() > 512 ? item.substring(0, 512) : item)
+                    .limit(32)
+                    .toList();
+                if (!bounded.isEmpty()) safeAttributes.put(key, bounded);
+            });
+        }
+        upsert(new InstitutionalIdentityContext(
+            institutionId == null ? null : institutionId.toLowerCase(),
+            PucHashUtil.hashPuc(stableUserId),
+            "oidc",
+            issuer,
+            safeAttributes,
+            Instant.now(),
+            expiresAt
+        ));
     }
 
     public void upsert(InstitutionalIdentityContext context) {

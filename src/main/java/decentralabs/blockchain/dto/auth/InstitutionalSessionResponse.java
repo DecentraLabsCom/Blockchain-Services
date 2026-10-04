@@ -14,4 +14,10 @@ public class InstitutionalSessionResponse {
     private Instant reauthenticationAt;
     private String samlAssertionHash;
     private String samlAssertionHashVersion;
+    private String identityProtocol;
+    private String identityProvider;
+    private String identityIssuer;
+    private String identitySubject;
+    private String identityEvidenceHash;
+    private String identityEvidenceHashVersion;
 }

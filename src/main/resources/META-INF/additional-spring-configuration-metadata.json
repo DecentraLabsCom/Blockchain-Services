@@ -72,6 +72,38 @@
       "defaultValue": 3600
     },
     {
+      "name": "identity.oidc.entra.enabled",
+      "type": "java.lang.Boolean",
+      "description": "Enable independent validation of submitted Entra ID OIDC tokens.",
+      "defaultValue": false
+    },
+    {
+      "name": "identity.oidc.entra.issuers",
+      "type": "java.lang.String",
+      "description": "Comma-separated list of trusted Entra ID OIDC issuers."
+    },
+    {
+      "name": "identity.oidc.entra.audiences",
+      "type": "java.lang.String",
+      "description": "Comma-separated list of trusted Entra ID OIDC audiences."
+    },
+    {
+      "name": "identity.oidc.entra.jwks-url",
+      "type": "java.lang.String",
+      "description": "HTTPS URL of the Entra ID OIDC JSON Web Key Set."
+    },
+    {
+      "name": "identity.oidc.entra.allowed-tenants",
+      "type": "java.lang.String",
+      "description": "Comma-separated allow-list of Entra ID tenant IDs."
+    },
+    {
+      "name": "identity.oidc.entra.clock-skew-seconds",
+      "type": "java.lang.Long",
+      "description": "Clock skew tolerance for external OIDC token validation.",
+      "defaultValue": 60
+    },
+    {
       "name": "auth.access-code.cleanup-interval-ms",
       "type": "java.lang.Long",
       "description": "Interval in milliseconds for purging expired access codes.",

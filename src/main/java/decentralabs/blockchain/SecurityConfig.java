@@ -51,6 +51,7 @@ public class SecurityConfig {
     private @Nonnull String accessCodeEndpoint = "/auth/access-code";
 
     private static final String INSTITUTIONAL_SAML_SESSION_ENDPOINT = "/auth/saml/session";
+    private static final String INSTITUTIONAL_IDENTITY_SESSION_ENDPOINT = "/auth/identity/session";
     
     @Value("${endpoint.health:/health}")
     private @Nonnull String healthEndpoint = "/health";
@@ -121,6 +122,7 @@ public class SecurityConfig {
                     accessCredentialEndpoint,
                     accessCodeEndpoint + "/**",
                     INSTITUTIONAL_SAML_SESSION_ENDPOINT,
+                    INSTITUTIONAL_IDENTITY_SESSION_ENDPOINT,
                     healthEndpoint,
                     "/actuator/health/**",
                     "/actuator/info",
@@ -180,6 +182,7 @@ public class SecurityConfig {
                 authorize.requestMatchers("/.well-known/openid-configuration").permitAll();
                 authorize.requestMatchers(jwksEndpoint).permitAll();
                 authorize.requestMatchers(INSTITUTIONAL_SAML_SESSION_ENDPOINT).permitAll();
+                authorize.requestMatchers(INSTITUTIONAL_IDENTITY_SESSION_ENDPOINT).permitAll();
                 authorize.requestMatchers(checkinInstitutionalEndpoint).permitAll();
                 authorize.requestMatchers(checkinInstitutionalEndpoint + "/status").permitAll();
                 authorize.requestMatchers(healthEndpoint).permitAll();
@@ -264,6 +267,7 @@ public class SecurityConfig {
         source.registerCorsConfiguration(checkinInstitutionalEndpoint, publicConfiguration);
         source.registerCorsConfiguration(checkinInstitutionalEndpoint + "/status", publicConfiguration);
         source.registerCorsConfiguration(INSTITUTIONAL_SAML_SESSION_ENDPOINT, publicConfiguration);
+        source.registerCorsConfiguration(INSTITUTIONAL_IDENTITY_SESSION_ENDPOINT, publicConfiguration);
         if (providersEnabled) {
             source.registerCorsConfiguration(authorizeAndIssueEndpoint, publicConfiguration);
             source.registerCorsConfiguration(accessCredentialEndpoint, publicConfiguration);

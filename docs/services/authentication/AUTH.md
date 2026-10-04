@@ -19,6 +19,7 @@ defense in depth, but is no longer the sole boundary for these routes.
 | Endpoint | Purpose | Primary proof |
 | --- | --- | --- |
 | `POST /auth/saml/session` | Validate a fresh SAML assertion and issue the backend-owned institutional session credential | Marketplace JWT with `intents:session` + fresh SAML; signed SAML alone only when intent auth is explicitly disabled |
+| `POST /auth/identity/session` | Issue the backend-owned session credential for a previously validated OIDC identity envelope | Marketplace JWT with `intents:session`, normalized identity claims and provider-neutral evidence hash |
 | `GET /auth/jwks` | Provider signing key set (conditional) | Public read; provider controller enabled |
 | `POST /auth/authorize-and-issue` | Provider-side combined check-in and access delivery (`provider-consumer` only) | Marketplace JWT + institutional session credential + on-chain state |
 | `POST /auth/access-credential` | Provider-side access credential flow (`provider-consumer` only) | Provider-audience Marketplace JWT, consumer-audience JWT for delegated status, and booking checks |
@@ -70,6 +71,33 @@ OIDC discovery is available at `GET /.well-known/openid-configuration` when
 provider mode is enabled. The discovery document advertises an issuer under
 `/auth` and `GET /auth/jwks` as the key endpoint; the discovery URL itself is at
 the host root.
+
+### Provider-neutral identity sessions
+
+Marketplace validates the external provider response at its protocol boundary
+and sends a signed, short-lived service envelope to
+`POST /auth/identity/session`. For Entra ID, the raw ID token is additionally
+sent only in that server-to-server request so the backend can independently
+verify its signature, issuer, audience, expiry, tenant, object ID and evidence
+hash. The token is never placed in the browser session, backend credential,
+database or logs. The envelope contains the normalized principal,
+institution, provider, issuer, subject and a versioned `identityEvidenceHash`.
+The backend issues the same kind of backend-owned credential used by SAML and
+preserves the existing `samlAssertionHash` field only as an ABI compatibility
+alias for the physical contract `assertionHash` field.
+
+The current Marketplace adapter is Entra ID/OIDC and the backend independently
+validates that provider before issuing a session. CILogon/OIDC and EBSI VC
+adapters can use the same boundary without changing booking, intent, lab-access
+or on-chain payload shapes. VC issuance is intentionally rejected until a
+concrete EBSI/EUDI proof verifier and trust registry are enabled; accepting a
+Marketplace claim alone is not sufficient for a VC session.
+
+The backend validation is configured with `ENTRA_OIDC_ENABLED`, exact
+`ENTRA_OIDC_ISSUERS`, `ENTRA_OIDC_AUDIENCES`, `ENTRA_OIDC_JWKS_URL`,
+`ENTRA_OIDC_ALLOWED_TENANTS` and `ENTRA_OIDC_CLOCK_SKEW_SECONDS`. Issuer,
+audience, tenant and JWKS values are deployment configuration, never callback
+parameters.
 
 ## Browser access flow
 

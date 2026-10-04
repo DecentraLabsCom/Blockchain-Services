@@ -8,8 +8,10 @@ import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.Collection;
 import java.util.Date;
+import java.util.HashMap;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -18,13 +20,22 @@ import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;
 
-/** Backend-owned credential used after the initial fresh SAML validation. */
+/** Backend-owned credential used after fresh identity evidence validation. */
 @Service
 @RequiredArgsConstructor
 public class InstitutionalSessionCredentialService {
 
     private static final String TOKEN_TYPE = "institutional_saml_session";
+    private static final String IDENTITY_TOKEN_TYPE = "institutional_identity_session";
     private static final String SUBJECT = "institutional-session";
+    public static final String OIDC_ID_TOKEN_HASH_VERSION = "oidc-id-token-keccak-v1";
+    public static final String VC_CANONICAL_HASH_VERSION = "vc-canonical-keccak-v1";
+    private static final Set<String> SUPPORTED_IDENTITY_PROTOCOLS = Set.of("saml2", "oidc", "vc");
+    private static final Set<String> SUPPORTED_IDENTITY_HASH_VERSIONS = Set.of(
+        SamlAttestationHashService.HASH_VERSION,
+        OIDC_ID_TOKEN_HASH_VERSION,
+        VC_CANONICAL_HASH_VERSION
+    );
     public static final String SUPPORTED_ASSERTION_HASH_VERSION = SamlAttestationHashService.HASH_VERSION;
     private static final Logger log = LoggerFactory.getLogger(InstitutionalSessionCredentialService.class);
 
@@ -82,6 +93,83 @@ public class InstitutionalSessionCredentialService {
         }
     }
 
+    /**
+     * Issues the provider-neutral credential used by OIDC and future VC flows.
+     * The Marketplace service credential is the trust boundary for the
+     * already-validated external identity; this token carries only normalized
+     * identity metadata and an evidence hash, never the raw external token.
+     */
+    public IssuedCredential issueIdentity(
+        String institutionId,
+        String stableUserId,
+        String stableUserIdMode,
+        String identityProtocol,
+        String identityProvider,
+        String identityIssuer,
+        String identitySubject,
+        String identityEvidenceHash,
+        String identityEvidenceHashVersion
+    ) {
+        String normalizedStableUserId = requireText(PucNormalizer.normalize(stableUserId), "stableUserId");
+        String normalizedInstitution = requireText(institutionId, "institutionId").toLowerCase(Locale.ROOT);
+        String normalizedProtocol = requireText(identityProtocol, "identityProtocol").toLowerCase(Locale.ROOT);
+        if (!SUPPORTED_IDENTITY_PROTOCOLS.contains(normalizedProtocol)) {
+            throw new IllegalArgumentException("Unsupported identity protocol");
+        }
+        String normalizedProvider = requireText(identityProvider, "identityProvider").toLowerCase(Locale.ROOT);
+        String normalizedIssuer = requireText(identityIssuer, "identityIssuer");
+        String normalizedSubject = requireText(identitySubject, "identitySubject");
+        String normalizedHash = requireHash(identityEvidenceHash);
+        String normalizedHashVersion = requireIdentityHashVersion(identityEvidenceHashVersion);
+        Instant issuedAt = Instant.now().truncatedTo(ChronoUnit.SECONDS);
+        Instant expiresAt = issuedAt.plusSeconds(Math.max(60, ttlSeconds));
+
+        Map<String, Object> claims = new HashMap<>();
+        claims.put("aud", backendUrlResolver.resolveBaseDomain());
+        claims.put("sub", SUBJECT);
+        claims.put("sessionType", IDENTITY_TOKEN_TYPE);
+        claims.put("institutionId", normalizedInstitution);
+        claims.put("pucCiphertext", payloadCipher.encrypt(normalizedStableUserId));
+        claims.put("stableUserIdMode", stableUserIdMode == null ? "" : stableUserIdMode);
+        claims.put("identityProtocol", normalizedProtocol);
+        claims.put("identityProvider", normalizedProvider);
+        claims.put("identityIssuer", normalizedIssuer);
+        claims.put("identitySubject", normalizedSubject);
+        claims.put("identityEvidenceHash", normalizedHash);
+        claims.put("identityEvidenceHashVersion", normalizedHashVersion);
+        // The Diamond ABI still names this bytes32 field assertionHash. Keep
+        // the physical alias at the contract boundary until the ABI migrates.
+        claims.put("samlAssertionHash", normalizedHash);
+        claims.put("samlAssertionHashVersion", normalizedHashVersion);
+        claims.put("reauthenticationAt", expiresAt.getEpochSecond());
+        claims.put("exp", Date.from(expiresAt));
+
+        try {
+            String token = jwtService.generateToken(claims, null);
+            return new IssuedCredential(
+                token,
+                normalizedStableUserId,
+                normalizedInstitution,
+                normalizedHash,
+                normalizedHashVersion,
+                issuedAt,
+                expiresAt,
+                normalizedProtocol,
+                normalizedProvider,
+                normalizedIssuer,
+                normalizedSubject,
+                normalizedHash,
+                normalizedHashVersion
+            );
+        } catch (Exception ex) {
+            throw new ResponseStatusException(
+                HttpStatus.SERVICE_UNAVAILABLE,
+                "institutional_session_unavailable",
+                ex
+            );
+        }
+    }
+
     public Credential validate(String token) {
         if (token == null || token.isBlank()) {
             throw invalid("missing_institutional_session");
@@ -92,7 +180,8 @@ public class InstitutionalSessionCredentialService {
             Claims claims = (Claims) jwtService.extractAllClaims(token);
             validationStage = "claims";
             validationCheck = "session-type";
-            if (!TOKEN_TYPE.equals(claims.get("sessionType", String.class))) {
+            String sessionType = claims.get("sessionType", String.class);
+            if (!TOKEN_TYPE.equals(sessionType) && !IDENTITY_TOKEN_TYPE.equals(sessionType)) {
                 throw new IllegalArgumentException("Invalid institutional session type");
             }
             validationCheck = "subject";
@@ -112,10 +201,26 @@ public class InstitutionalSessionCredentialService {
             validationCheck = "decrypt";
             String puc = requireText(PucNormalizer.normalize(payloadCipher.decrypt(encryptedPuc)), "PUC");
             validationStage = "claims";
-            validationCheck = "saml-assertion-hash";
-            String assertionHash = requireHash(claims.get("samlAssertionHash", String.class));
-            validationCheck = "saml-assertion-hash-version";
-            String assertionHashVersion = requireHashVersion(claims.get("samlAssertionHashVersion", String.class));
+            validationCheck = "identity-evidence-hash";
+            String assertionHash = IDENTITY_TOKEN_TYPE.equals(sessionType)
+                ? requireHash(claims.get("identityEvidenceHash", String.class))
+                : requireHash(claims.get("samlAssertionHash", String.class));
+            validationCheck = "identity-evidence-hash-version";
+            String assertionHashVersion = IDENTITY_TOKEN_TYPE.equals(sessionType)
+                ? requireIdentityHashVersion(claims.get("identityEvidenceHashVersion", String.class))
+                : requireHashVersion(claims.get("samlAssertionHashVersion", String.class));
+            String identityProtocol = IDENTITY_TOKEN_TYPE.equals(sessionType)
+                ? requireText(claims.get("identityProtocol", String.class), "identityProtocol")
+                : "saml2";
+            String identityProvider = IDENTITY_TOKEN_TYPE.equals(sessionType)
+                ? requireText(claims.get("identityProvider", String.class), "identityProvider")
+                : "edugain";
+            String identityIssuer = IDENTITY_TOKEN_TYPE.equals(sessionType)
+                ? requireText(claims.get("identityIssuer", String.class), "identityIssuer")
+                : null;
+            String identitySubject = IDENTITY_TOKEN_TYPE.equals(sessionType)
+                ? requireText(claims.get("identitySubject", String.class), "identitySubject")
+                : null;
             validationStage = "timestamps";
             validationCheck = "issued-at";
             Instant issuedAt = instantClaim(claims.getIssuedAt(), "iat");
@@ -140,7 +245,13 @@ public class InstitutionalSessionCredentialService {
                 issuedAt,
                 reauthenticationAt,
                 expiresAt,
-                tokenId
+                tokenId,
+                identityProtocol,
+                identityProvider,
+                identityIssuer,
+                identitySubject,
+                assertionHash,
+                assertionHashVersion
             );
         } catch (ResponseStatusException ex) {
             throw ex;
@@ -204,6 +315,14 @@ public class InstitutionalSessionCredentialService {
         return normalized;
     }
 
+    private String requireIdentityHashVersion(String value) {
+        String normalized = requireText(value, "identityEvidenceHashVersion");
+        if (!SUPPORTED_IDENTITY_HASH_VERSIONS.contains(normalized)) {
+            throw new IllegalArgumentException("Unsupported identity evidence hash version");
+        }
+        return normalized;
+    }
+
     private ResponseStatusException invalid(String reason) {
         return new ResponseStatusException(HttpStatus.UNAUTHORIZED, reason);
     }
@@ -215,8 +334,40 @@ public class InstitutionalSessionCredentialService {
         String samlAssertionHash,
         String samlAssertionHashVersion,
         Instant issuedAt,
-        Instant expiresAt
-    ) {}
+        Instant expiresAt,
+        String identityProtocol,
+        String identityProvider,
+        String identityIssuer,
+        String identitySubject,
+        String identityEvidenceHash,
+        String identityEvidenceHashVersion
+    ) {
+        public IssuedCredential(
+            String token,
+            String puc,
+            String institutionId,
+            String samlAssertionHash,
+            String samlAssertionHashVersion,
+            Instant issuedAt,
+            Instant expiresAt
+        ) {
+            this(
+                token,
+                puc,
+                institutionId,
+                samlAssertionHash,
+                samlAssertionHashVersion,
+                issuedAt,
+                expiresAt,
+                "saml2",
+                "edugain",
+                null,
+                null,
+                samlAssertionHash,
+                samlAssertionHashVersion
+            );
+        }
+    }
 
     public record Credential(
         String puc,
@@ -227,6 +378,42 @@ public class InstitutionalSessionCredentialService {
         Instant issuedAt,
         Instant reauthenticationAt,
         Instant expiresAt,
-        String tokenId
-    ) {}
+        String tokenId,
+        String identityProtocol,
+        String identityProvider,
+        String identityIssuer,
+        String identitySubject,
+        String identityEvidenceHash,
+        String identityEvidenceHashVersion
+    ) {
+        public Credential(
+            String puc,
+            String institutionId,
+            String stableUserIdMode,
+            String samlAssertionHash,
+            String samlAssertionHashVersion,
+            Instant issuedAt,
+            Instant reauthenticationAt,
+            Instant expiresAt,
+            String tokenId
+        ) {
+            this(
+                puc,
+                institutionId,
+                stableUserIdMode,
+                samlAssertionHash,
+                samlAssertionHashVersion,
+                issuedAt,
+                reauthenticationAt,
+                expiresAt,
+                tokenId,
+                "saml2",
+                "edugain",
+                null,
+                null,
+                samlAssertionHash,
+                samlAssertionHashVersion
+            );
+        }
+    }
 }

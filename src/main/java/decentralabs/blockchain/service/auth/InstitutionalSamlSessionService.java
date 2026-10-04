@@ -69,6 +69,10 @@ public class InstitutionalSamlSessionService {
                 .reauthenticationAt(issued.expiresAt())
                 .samlAssertionHash(issued.samlAssertionHash())
                 .samlAssertionHashVersion(issued.samlAssertionHashVersion())
+                .identityProtocol(issued.identityProtocol())
+                .identityProvider(issued.identityProvider())
+                .identityEvidenceHash(issued.identityEvidenceHash())
+                .identityEvidenceHashVersion(issued.identityEvidenceHashVersion())
                 .build();
         } catch (ResponseStatusException ex) {
             throw ex;

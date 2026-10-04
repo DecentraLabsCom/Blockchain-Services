@@ -52,8 +52,18 @@ class ConfigurationMetadataTest {
             "auth.marketplace-endpoints.audience",
             "auth.marketplace-endpoints.institution-id",
             "auth.marketplace-endpoints.service-subject",
-            "auth.marketplace-endpoints.max-ttl-seconds"
+            "auth.marketplace-endpoints.max-ttl-seconds",
+            "identity.oidc.entra.enabled",
+            "identity.oidc.entra.issuers",
+            "identity.oidc.entra.audiences",
+            "identity.oidc.entra.jwks-url",
+            "identity.oidc.entra.allowed-tenants",
+            "identity.oidc.entra.clock-skew-seconds"
         );
+        assertThat(properties.get("identity.oidc.entra.enabled").path("defaultValue").asBoolean())
+            .isFalse();
+        assertThat(properties.get("identity.oidc.entra.clock-skew-seconds").path("defaultValue").asLong())
+            .isEqualTo(60L);
     }
 
     @Test
