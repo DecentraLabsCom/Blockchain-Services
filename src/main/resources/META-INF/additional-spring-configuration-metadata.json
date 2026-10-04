@@ -536,13 +536,13 @@
     "name": "marketplace.url",
     "type": "java.lang.String",
     "description": "URL of the DecentraLabs marketplace.",
-    "defaultValue": "https://marketplace-decentralabs.vercel.app"
+    "defaultValue": "https://decentralabs-marketplace.app"
   },
   {
     "name": "marketplace.public-key-url",
     "type": "java.lang.String",
     "description": "URL where the marketplace exposes its JWKS for JWT validation; it should contain the active and previous RSA signing keys during rotation.",
-    "defaultValue": "https://marketplace-decentralabs.vercel.app/.well-known/jwks.json"
+    "defaultValue": "https://decentralabs-marketplace.app/.well-known/jwks.json"
   },
   {
     "name": "marketplace.key.cache-ms",
@@ -852,7 +852,7 @@
     "name": "allowed-origins",
     "type": "java.lang.String",
     "description": "Comma-separated list of allowed CORS origins.",
-    "defaultValue": "http://localhost:3000,https://marketplace-decentralabs.vercel.app"
+    "defaultValue": "http://localhost:3000,https://decentralabs-marketplace.app"
   },
   {
     "name": "wallet.address",

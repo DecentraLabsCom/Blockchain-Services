@@ -50,7 +50,7 @@ public class AdminDashboardController {
     @Value("${contract.address}")
     private String contractAddress;
 
-    @Value("${marketplace.url:https://marketplace-decentralabs.vercel.app}")
+    @Value("${marketplace.url:https://decentralabs-marketplace.app}")
     private String marketplaceUrl;
 
     @Value("${billing.admin.domain.name:DecentraLabsTreasuryAdmin}")
