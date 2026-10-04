@@ -50,8 +50,8 @@ public class InstitutionRegistrationService {
     @Value("${marketplace.base-url:}")
     private String configuredMarketplaceBaseUrl = "";
 
-    @Value("${marketplace.url:https://marketplace-decentralabs.vercel.app}")
-    private String marketplaceUrl = "https://marketplace-decentralabs.vercel.app";
+    @Value("${marketplace.url:https://decentralabs-marketplace.app}")
+    private String marketplaceUrl = "https://decentralabs-marketplace.app";
 
     /** Server-side public origin used for pairing; never selected by the browser. */
     @Value("${public.base-url:}")
