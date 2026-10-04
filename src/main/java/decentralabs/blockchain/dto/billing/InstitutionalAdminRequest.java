@@ -22,6 +22,9 @@ public class InstitutionalAdminRequest {
     private Long timestamp;
     private String signature;
 
+    // Server-generated/client-held idempotency key for internal dashboard calls
+    private String operationId;
+
     // Operation parameters
     private String providerAddress; // Target provider for admin operations
     private String backendAddress;  // For backend authorization operations

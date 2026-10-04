@@ -164,6 +164,38 @@ public class InstitutionalAdminService {
     }
 
     /**
+     * Execute an operation requested by the local wallet dashboard.
+     *
+     * The dashboard is already protected by the gateway network/access-token
+     * boundary. The configured institutional wallet is the sole transaction
+     * signer, so no browser wallet or EIP-712 signature is involved here.
+     */
+    public InstitutionalAdminResponse executeInternalAdminOperation(InstitutionalAdminRequest request) {
+        try {
+            if (!isLocalhostRequest()) {
+                return InstitutionalAdminResponse.error("Access denied: administrative operations only allowed from localhost");
+            }
+
+            String institutionalAddress = institutionalWalletService.getInstitutionalWalletAddress();
+            if (institutionalAddress == null || institutionalAddress.isBlank()) {
+                return InstitutionalAdminResponse.error("Institutional wallet not configured");
+            }
+
+            String roleError = validateRoleForOperation(request, institutionalAddress);
+            if (roleError != null) {
+                return InstitutionalAdminResponse.error(roleError);
+            }
+
+            return executeOperation(request);
+        } catch (IdempotencyKeyPayloadMismatchException e) {
+            throw e;
+        } catch (Exception e) {
+            log.error("Error executing internal admin operation: {}", LogSanitizer.sanitize(e.getMessage()), e);
+            return InstitutionalAdminResponse.error("Administrative operation failed: " + e.getMessage());
+        }
+    }
+
+    /**
      * Executes provider payout request using the institutional wallet configured on the server.
      */
     public InstitutionalAdminResponse requestProviderPayoutWithConfiguredWallet(String labId, String maxBatch) {
@@ -965,9 +997,8 @@ public class InstitutionalAdminService {
     }
 
     /**
-     * Derives idempotency from the signed command instance, never from calldata
-     * alone. A new signature/timestamp is a new legitimate command; retrying
-     * the same signed command retains the same outbox key.
+     * Derives idempotency from the explicit operation id or signed command
+     * instance, never from calldata alone.
      */
     private String operationKey(InstitutionalAdminRequest request) {
         return operationKey(request, null);
@@ -979,6 +1010,9 @@ public class InstitutionalAdminService {
             : "internal";
         if (idempotencyKey != null && !idempotencyKey.isBlank()) {
             return "billing:" + operation + ":idempotency:" + sha256(idempotencyKey.trim());
+        }
+        if (request != null && request.getOperationId() != null && !request.getOperationId().isBlank()) {
+            return "billing:" + operation + ":operation:" + sha256(request.getOperationId().trim());
         }
         if (request != null && request.getTimestamp() != null
             && request.getTimestamp() > 0

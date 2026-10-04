@@ -68,6 +68,42 @@ public class BillingAdminController {
     }
 
     /**
+     * POST /billing/admin/execute-internal
+     * Executes a dashboard operation with the configured institutional wallet.
+     */
+    @PostMapping("/execute-internal")
+    public ResponseEntity<?> executeInternalAdminOperation(
+        @RequestBody InstitutionalAdminRequest request
+    ) {
+        String operation = request.getOperation() == null ? "unknown" : request.getOperation().name();
+        log.info("Received internal institutional admin request: {}", operation);
+        try {
+            InstitutionalAdminResponse response = adminService.executeInternalAdminOperation(request);
+            if (response == null) {
+                log.error("Internal admin service returned null response for operation {}", operation);
+                return ResponseEntity.internalServerError()
+                    .body(InstitutionalAdminResponse.error("Internal server error: empty service response"));
+            }
+            if (response.isSuccess()) {
+                log.info("Internal admin operation {} completed successfully. Tx: {}",
+                    operation,
+                    LogSanitizer.maskIdentifier(response.getTransactionHash()));
+                return ResponseEntity.ok(response);
+            }
+            log.warn("Internal admin operation {} failed: {}", operation,
+                LogSanitizer.sanitize(response.getMessage()));
+            return ResponseEntity.badRequest().body(response);
+        } catch (IdempotencyKeyPayloadMismatchException e) {
+            return idempotencyConflict(e);
+        } catch (Exception e) {
+            log.error("Error processing internal admin request: {}", LogSanitizer.sanitize(e.getMessage()), e);
+            return ResponseEntity.internalServerError().body(
+                InstitutionalAdminResponse.error("Internal server error: " + e.getMessage())
+            );
+        }
+    }
+
+    /**
      * POST /billing/admin/request-provider-payout
      * Executes a provider payout request server-side using the configured institutional wallet.
      */

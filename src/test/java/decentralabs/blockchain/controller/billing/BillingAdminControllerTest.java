@@ -174,6 +174,24 @@ class BillingAdminControllerTest {
     }
 
     @Test
+    void executeInternalAdminOperationUsesServerSideWalletFlow() throws Exception {
+        InstitutionalAdminResponse success = InstitutionalAdminResponse.success("ok", "0x1", "SET_USER_LIMIT");
+        when(adminService.executeInternalAdminOperation(any(InstitutionalAdminRequest.class))).thenReturn(success);
+
+        mockMvc.perform(post("/billing/admin/execute-internal")
+                .with(csrf())
+                .with(request1 -> {
+                    request1.setRemoteAddr("127.0.0.1");
+                    return request1;
+                })
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"operation\":\"SET_USER_LIMIT\",\"spendingLimit\":\"2000000000\"}"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.success").value(true))
+            .andExpect(jsonPath("$.transactionHash").value("0x1"));
+    }
+
+    @Test
     void requestProviderPayoutPropagatesServiceResponses() throws Exception {
         InstitutionalAdminResponse success = InstitutionalAdminResponse.success("ok", "0xcollect", "COLLECT_LAB_PAYOUT");
         when(adminService.requestProviderPayoutWithConfiguredWallet("3", "50")).thenReturn(success);
