@@ -16,6 +16,7 @@ semantics are described by the Gateway integration documentation.
 
 - [Authentication, access delivery and session evidence](docs/services/authentication/AUTH.md)
 - [Intents and institutional provisioning](docs/services/intents/INTENTS_PROVISIONING.md)
+- [Institutional access policies](docs/services/access-policy/ACCESS_POLICY.md)
 - [Wallet, billing and administration](docs/services/wallet/WALLET_BILLING.md)
 - [Lab administration and content](docs/services/lab-administration/LAB_ADMINISTRATION.md)
 - [SAML metadata discovery](docs/security/SAML_AUTO_DISCOVERY.md)

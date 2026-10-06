@@ -115,6 +115,26 @@ ceremony above.
 | POST | `/institution-config/save-and-register` | Retired endpoint; rejects editable-form registration. |
 | POST | `/institution-config/retry-registration` | Retired endpoint; a new pairing is required. |
 
+## Institutional access policies
+
+| Method | Path | Boundary / purpose |
+| --- | --- | --- |
+| POST | `/access-policy/labs/evaluate` | Marketplace service JWT with `access-policy:evaluate` plus an institutional session credential; evaluates one lab. |
+| GET | `/access-policy/labs/{labId}/eligibility` | Same Marketplace scope plus `X-Institutional-Session`; evaluates one lab using query hints. |
+| POST | `/access-policy/labs/eligibility:batch` | Same Marketplace scope plus one institutional session credential; at most 100 evaluations. |
+| GET | `/wallet-admin/access-policies`, `/effective`, `/{institutionId}` | Wallet-dashboard administrative boundary; reads the configured institution profile and audit. |
+| PUT | `/wallet-admin/access-policies`, `/{institutionId}` | Wallet-dashboard administrative boundary; writes a new profile version. |
+| POST | `/wallet-admin/access-policies/activate`, `/deactivate`, `/test`, `/{institutionId}/activate`, `/{institutionId}/deactivate`, `/{institutionId}/test` | Wallet-dashboard administrative boundary; lifecycle changes or dry-run evaluation. |
+| GET | `/wallet-admin/access-policies/export`, `/audit` | Wallet-dashboard administrative boundary; export or audit history. |
+| POST | `/wallet-admin/access-policies/import`, `/{institutionId}/import` | Wallet-dashboard administrative boundary; imports a profile as a new version. |
+
+The access-policy controller routes are `permitAll` at the generic Spring
+Security layer so Marketplace can reach them, but the controller enforces the
+service scope and institutional session. The wallet-dashboard routes remain
+behind the local/private-network administration boundary. See
+[Institutional access policies](../services/access-policy/ACCESS_POLICY.md) for
+matching, versioning and final execution re-checks.
+
 ## Wallet and billing
 
 | Method | Path | Boundary / purpose |

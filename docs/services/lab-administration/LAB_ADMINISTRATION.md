@@ -161,7 +161,7 @@ For `PENDING` reservations the provider reasons accepted by the contract are
 `1` (manual), `2` (not eligible), `6` (technical failure) and `7` (provider
 unavailable). For `CONFIRMED` reservations the endpoint calls
 `cancelConfirmedBookingByProvider`; the contract requires the provider to own
-the lab and refunds the full reservation price as service credits. Ordinary
+the lab and returns the full reservation price as service credits. Ordinary
 provider cancellation is limited to the pre-start window and scores the lab
 -1 with at least 24 hours' notice or -2 with less than 24 hours' notice. Reason
 code `8` (`PROVIDER_SERVICE_FAILURE`) is the explicit no-service path: it may

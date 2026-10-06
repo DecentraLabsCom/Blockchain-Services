@@ -165,10 +165,17 @@ budget; permanent preparation failures become `MANUAL_INTERVENTION` and are
 not automatically reopened. A mined revert is `MINED_FAILED`; `/health` reports
 it, together with manual-intervention rows and stale `RETRY`/`SUBMITTING` rows.
 
+Institutional category policies are an additional off-chain gate around
+reservation intents. Marketplace can preflight a lab, the backend checks the
+intent, and the execution worker re-checks the durable record before signing the
+on-chain transaction. Policy data and normalised identity context are stored in
+MySQL; raw SAML/OIDC credentials are not.
+
 ## Documentation map
 
 - [Authentication and access evidence](../services/authentication/AUTH.md)
 - [Intents and provisioning](../services/intents/INTENTS_PROVISIONING.md)
+- [Institutional access policies](../services/access-policy/ACCESS_POLICY.md)
 - [Wallet, billing and administration](../services/wallet/WALLET_BILLING.md)
 - [Lab administration and content](../services/lab-administration/LAB_ADMINISTRATION.md)
 - [Deployment and configuration](../configuration/DEPLOYMENT.md)

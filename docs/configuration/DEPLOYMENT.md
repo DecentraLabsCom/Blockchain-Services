@@ -34,7 +34,7 @@ The following data must survive a container restart:
 
 | State | Location / setting | Why it is durable |
 | --- | --- | --- |
-| MySQL | `SPRING_DATASOURCE_*` | Flyway schema, WebAuthn credentials, access delivery, audit records, nonce/outbox state, intents, contract-event journal and lab-content deletion hand-off. |
+| MySQL | `SPRING_DATASOURCE_*` | Flyway schema, WebAuthn credentials, access delivery, access-policy profiles and identity contexts, audit records, nonce/outbox state, intents, contract-event journal and lab-content deletion hand-off. |
 | Backend data | `/app/data` | Wallet store, generated wallet configuration and JWT key material when those defaults are used. |
 | Lab content | `LAB_CONTENT_BASE_PATH` | Uploaded metadata, images and documents; deletions are retained by tombstone before garbage collection. |
 | Wallet encryption key | `WALLET_CONFIG_ENCRYPTION_KEY` or `WALLET_CONFIG_KEY_FILE` | Required to recover encrypted wallet material. |

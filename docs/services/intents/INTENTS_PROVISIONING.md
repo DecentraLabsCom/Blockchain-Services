@@ -210,7 +210,11 @@ Provider + consumer deployments submit it to `apply-provider-token`; consumer-on
 deployments submit it to `apply-consumer-token`. If no direct token is available, the modal links to the backend pairing setup, which contains
 the Marketplace challenge instructions.
 
-![Institutional backend pairing](../../images/institution-pairing.png)
+![Institutional backend pairing page showing the public-origin validation warning](../../images/institution-pairing.png)
+
+This capture illustrates the pairing surface and its validation boundary; the
+red warning is the expected configuration error when `PUBLIC_BASE_URL` is
+missing or invalid, not a successful pairing result.
 
 The page refuses to begin the ceremony when `PUBLIC_BASE_URL` is missing or
 invalid. Treat that warning as a deployment-configuration error; do not paste

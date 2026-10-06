@@ -49,6 +49,12 @@ Provider mode also enforces `ROLE_INTERNAL` on `/billing/admin/**`; a valid
 localhost. Consumer-only deployments rely on the localhost/private-network
 filter plus the configured access token.
 
+`/wallet-admin/access-policies/**` uses the same local/private-network
+administration boundary as the wallet dashboard. `/access-policy/**` is
+reachable at the generic Spring Security layer for Marketplace integration but
+requires its own Marketplace service scope and institutional session credential;
+it is not an anonymous policy oracle.
+
 ## Authentication controls
 
 - Marketplace JWTs are verified against the cached RSA key from

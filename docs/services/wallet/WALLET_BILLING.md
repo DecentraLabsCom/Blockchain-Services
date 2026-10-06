@@ -7,7 +7,7 @@ Marketplace APIs.
 ## Network and authentication boundary
 
 `LocalhostOnlyFilter` protects `/wallet`, `/billing`, `/wallet-dashboard`,
-`/institution-config`, `/lab-admin` and `/access-audit/internal`. Requests are
+`/wallet-admin`, `/institution-config`, `/lab-admin` and `/access-audit/internal`. Requests are
 allowed from loopback by default. Remote private-network access requires the
 matching `ADMIN_DASHBOARD_ALLOW_PRIVATE`, `SECURITY_ALLOW_PRIVATE_NETWORKS` and
 CIDR settings, plus a valid route token when access-token enforcement applies.
@@ -265,6 +265,8 @@ runbooks.
 - `/institution-config/` serves provider/consumer configuration UI.
 - `/lab-admin/**` is a separate provider-lab surface; see
   [Lab administration and content](../lab-administration/LAB_ADMINISTRATION.md).
+- `/wallet-admin/access-policies/**` manages the optional institutional
+  category-access policy; see [Institutional access policies](../access-policy/ACCESS_POLICY.md).
 - Provisioning token flows are documented in
   [Intents and provisioning](../intents/INTENTS_PROVISIONING.md).
 

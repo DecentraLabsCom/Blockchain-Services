@@ -8,12 +8,13 @@ description: Spring Boot backend for institutional identity, funding, lab access
 gateway ecosystem. It can also be packaged as a standalone WAR for an
 institution that only needs consumer funding and wallet operations.
 
-The service owns four areas:
+The service owns five areas:
 
 - institutional authentication and access delivery (SAML, Marketplace JWT,
   WebAuthn, JWKS and opaque access codes);
 - institutional wallet, service-credit funding and billing administration;
 - signed intent intake, WebAuthn authorization and on-chain execution;
+- institutional lab-category access policies and audit;
 - provider/consumer registration and gateway configuration.
 
 Start with the [documentation index](SUMMARY.md). The essential companion
@@ -124,6 +125,18 @@ configured submit scope and reads require the configured status scope. The
 browser ceremony and completion are intentionally session-bound; see the
 [intent guide](docs/services/intents/INTENTS_PROVISIONING.md).
 
+### Institutional access policies
+
+- Dashboard administration: `/wallet-admin/access-policies/**`.
+- Marketplace evaluation: `/access-policy/labs/evaluate`,
+  `/access-policy/labs/{labId}/eligibility` and
+  `/access-policy/labs/eligibility:batch`.
+- Enabled profiles match normalised institutional identity attributes to lab
+  categories and are re-evaluated immediately before an intent transaction.
+
+See the [institutional access policy guide](docs/services/access-policy/ACCESS_POLICY.md)
+for semantics, proof requirements and persistence boundaries.
+
 ### Lite reservation projection
 
 - `GET /reservations/projection` is the scoped reservation feed consumed by a
@@ -168,7 +181,7 @@ token; they are not public Marketplace pages.
 
 | Surface | Route | Purpose |
 | --- | --- | --- |
-| Wallet Dashboard | `/wallet-dashboard/` | Institutional wallet, balances, funding and billing administration. |
+| Wallet Dashboard | `/wallet-dashboard/` | Institutional wallet, balances, funding, billing and access-policy administration. |
 | Institutional pairing | `/institution-config/` | Marketplace challenge and backend registration ceremony. |
 
 ![Wallet Dashboard](docs/images/wallet-dashboard.png)
