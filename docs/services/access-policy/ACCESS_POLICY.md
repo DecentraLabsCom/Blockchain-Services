@@ -44,6 +44,13 @@ The response identifies the policy version, matched groups/categories and a
 stable reason code. The display message is intentionally generic for denials;
 do not expose group membership or identity attributes to end users.
 
+![Access Policy administration panel](../../images/access-policy.png)
+
+This is an illustrative operator view with fictitious policy data. It shows the
+controls that matter during setup: the default decision, version/status,
+attribute matchers and allowed or denied lab categories. The **Test access**
+and **Audit** sections continue below the captured viewport.
+
 ## Administrative API
 
 The profile API is served to the wallet dashboard and uses the same
