@@ -1,5 +1,5 @@
 # Build Stage - Compiles the source code
-FROM public.ecr.aws/docker/library/maven:3.9-eclipse-temurin-21 AS builder
+FROM mirror.gcr.io/library/maven:3.9-eclipse-temurin-21 AS builder
 
 WORKDIR /build
 
@@ -18,7 +18,7 @@ RUN test -f target/blockchain-services-1.0-SNAPSHOT.war
 #########################################
 # Runtime Stage - Imagen final optimizada
 #########################################
-FROM public.ecr.aws/docker/library/eclipse-temurin:21-jre-jammy
+FROM mirror.gcr.io/eclipse-temurin:21-jre
 
 # Metadata
 LABEL maintainer="DecentraLabs <tech@decentralabs.com>"
