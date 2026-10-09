@@ -57,7 +57,7 @@ public class AccessPolicyController {
     @PostMapping("/eligibility:batch")
     public List<PolicyEvaluation> batch(
         @RequestHeader(value = "Authorization", required = false) String authorization,
-        @RequestBody AccessPolicyBatchRequest request
+        @RequestBody(required = false) AccessPolicyBatchRequest request
     ) {
         marketplaceAuth.enforceServiceAuthorization(authorization, "access-policy:evaluate");
         if (request == null || request.evaluations() == null || request.evaluations().size() > 100) {
