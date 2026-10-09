@@ -58,7 +58,15 @@ public class AccessTokenAuthenticationFilter extends OncePerRequestFilter {
         }
 
         String provided = request.getHeader(accessTokenHeader);
-        
+
+        if (provided == null || provided.isBlank()) {
+            String authorization = request.getHeader("Authorization");
+            if (authorization != null
+                && authorization.regionMatches(true, 0, "Bearer ", 0, 7)) {
+                provided = authorization.substring(7).trim();
+            }
+        }
+
         if (provided == null || provided.isBlank()) {
             provided = readTokenFromCookies(request.getCookies());
         }

@@ -20,6 +20,13 @@ consumer-only mode the local/private-network filter is the boundary and a valid
 may be supplied through `X-Access-Token`, a Bearer header or the configured
 cookie, not through a query parameter.
 
+The standalone wallet dashboard asks for `ADMIN_ACCESS_TOKEN` when a
+`provider-consumer` backend is accessed directly and the billing role token is
+not already present. The dashboard keeps the token in page memory only. A Full
+Gateway continues to use its short-lived administrative cookie. Consumer-only
+standalone dashboards do not need the provider-mode billing role token on
+loopback.
+
 Never expose `/wallet/reveal` or mutating billing endpoints directly to the
 Internet.
 

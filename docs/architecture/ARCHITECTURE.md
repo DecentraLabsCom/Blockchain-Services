@@ -9,11 +9,12 @@ substitute for the endpoint-specific guides.
 The service is a Spring Boot 4.1 application running on Java 21. It can be used in
 three ways:
 
-| Mode | Typical topology | Provider/auth surface | Consumer/wallet surface |
+| Deployment | Backend role | Provider/auth surface | Consumer/wallet surface |
 | --- | --- | --- | --- |
-| Full gateway | Lab Gateway + blockchain-services backend | Enabled when backend mode is `provider-consumer` | Enabled |
-| Lite gateway edge | A Lite gateway trusts a remote Full gateway | Full remains the auth/provider authority; Lite validates remote issuer/JWKS | Present only when the Lite deployment explicitly needs this backend capability |
-| Standalone consumer | blockchain-services without a provider gateway | Enabled only when backend mode is `provider-consumer` | Enabled |
+| Lab Gateway Full | `provider-consumer` | Enabled; backend is the local identity/provider authority | Enabled |
+| Lab Gateway Lite edge | No local authority role implied | Trusts a remote Full or standalone provider issuer and validates its JWT/JWKS | Only when separately configured for a local backend capability |
+| Standalone provider | `provider-consumer` | Enabled; backend can issue provider access for Lite gateways installed at other sites | Enabled |
+| Standalone consumer | `consumer-only` | Disabled; this deployment has no local Lite gateways | Enabled for institutional wallet, funding and reservations |
 
 `BLOCKCHAIN_SERVICES_MODE` is the explicit backend role and accepts only
 `provider-consumer` or `consumer-only`. It is independent of the Full/Lite
@@ -21,14 +22,20 @@ access-plane topology. `FEATURES_PROVIDERS_ENABLED` remains the packaged
 fallback for installations that have not added the role setting. Do not infer
 the backend role from `ISSUER`, the gateway topology, or the repository name.
 The parent `Lab Gateway` compose deployment supplies the values required for
-the selected topology, while the backend `.env` owns this role decision.
+the selected edge topology, while the backend `.env` owns this role decision.
+For a standalone provider, remote Lite gateways use this backend's public
+`/auth` issuer. A standalone consumer does not install Lite gateways for its
+backend; it uses the consumer wallet and funding surface only.
 The provider feature controls the conditional OIDC/JWKS and FMU controllers and
 the health operating mode. The SAML controller still contains both provider and
 consumer mappings, so the application security chain denies provider-side SAML/
-access and `/lab-admin/**` routes in `consumer-only`; the provider Lab Admin
-controller is not created. The public `/lab-content/**` read controller remains
-common to both roles. Network exposure and the intended topology remain
-defense-in-depth controls.
+access, provider settlement, provider network, provider payout, provider
+compliance and `/lab-admin/**` routes in `consumer-only`; provider-only
+controllers are not created. Institutional policy writes also require the
+configured wallet to hold the institution or default-admin role, while provider
+settlement routes check provider ownership or default-admin authority. The
+public `/lab-content/**` read controller remains common to both roles. Network
+exposure and the intended topology remain defense-in-depth controls.
 
 ## System context
 

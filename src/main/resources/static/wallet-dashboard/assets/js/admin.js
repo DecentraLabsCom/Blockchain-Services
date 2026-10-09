@@ -44,8 +44,10 @@ const COLLECT_LABS_RETRY_DELAYS_MS = [1500, 3500, 7000];
 function updateRoleBasedSections() {
     const hasWallet = Boolean(DashboardState.walletAddress);
     const showInstitutionControls = hasWallet && DashboardState.isInstitution;
-    const showProviderControls = hasWallet && DashboardState.isProvider;
+    const providerModeEnabled = DashboardState.operatingMode === 'provider-consumer';
+    const showProviderControls = hasWallet && providerModeEnabled && DashboardState.isProvider;
     const showOperatorControls = hasWallet && DashboardState.isOperator;
+    const showProviderOperatorControls = providerModeEnabled && showOperatorControls;
 
     const settlementSection = document.getElementById('settlementOperationsSection');
     const settlementTitle = document.getElementById('settlementOperationsTitle');
@@ -67,10 +69,10 @@ function updateRoleBasedSections() {
     const providerSettlementOperationSelect = document.getElementById('providerSettlementOperationSelect');
 
     if (settlementSection) {
-        settlementSection.classList.toggle('hidden', !showProviderControls && !showOperatorControls);
+        settlementSection.classList.toggle('hidden', !showProviderControls && !showProviderOperatorControls);
     }
     if (providerSettlementControls) {
-        providerSettlementControls.classList.toggle('hidden', !showProviderControls && !showOperatorControls);
+        providerSettlementControls.classList.toggle('hidden', !showProviderControls && !showProviderOperatorControls);
     }
     if (providerPayoutActions) {
         providerPayoutActions.classList.toggle(
@@ -79,13 +81,15 @@ function updateRoleBasedSections() {
         );
     }
     if (providerSettlementTransitionForm) {
-        providerSettlementTransitionForm.classList.toggle('hidden', !showProviderControls && !showOperatorControls);
+        providerSettlementTransitionForm.classList.toggle('hidden', !showProviderControls && !showProviderOperatorControls);
     }
     if (providerSettlementOperationSelect) {
         [...providerSettlementOperationSelect.options].forEach((option) => {
-            option.disabled = !showOperatorControls && option.value !== 'submit';
+            option.disabled = option.value === 'submit'
+                ? !showProviderControls
+                : !showProviderOperatorControls;
         });
-        if (!showOperatorControls && providerSettlementOperationSelect.value !== 'submit') {
+        if (!showProviderOperatorControls && providerSettlementOperationSelect.value !== 'submit') {
             providerSettlementOperationSelect.value = 'submit';
         }
         updateProviderSettlementOperationFields();
@@ -118,13 +122,13 @@ function updateRoleBasedSections() {
         operatorAdjustCreditsCard.classList.toggle('hidden', !showOperatorControls);
     }
     if (collectLifecycleSummary) {
-        collectLifecycleSummary.classList.toggle('hidden', !showProviderControls && !showOperatorControls);
+        collectLifecycleSummary.classList.toggle('hidden', !showProviderControls && !showProviderOperatorControls);
     }
 
     if (settlementTitle) {
-        if (showProviderControls && showOperatorControls) {
+        if (showProviderControls && showProviderOperatorControls) {
             settlementTitle.textContent = 'Provider Settlement and Operator Review';
-        } else if (showOperatorControls) {
+        } else if (showProviderOperatorControls) {
             settlementTitle.textContent = 'Operator Settlement Review';
         } else if (showProviderControls) {
             settlementTitle.textContent = 'Provider Settlement';
@@ -146,9 +150,9 @@ function updateRoleBasedSections() {
     }
 
     if (collectLabSelectLabel) {
-        if (showProviderControls && !showOperatorControls) {
+        if (showProviderControls && !showProviderOperatorControls) {
             collectLabSelectLabel.textContent = 'Select one of your labs';
-        } else if (showOperatorControls) {
+        } else if (showProviderOperatorControls) {
             collectLabSelectLabel.textContent = 'Select lab for settlement review';
         } else {
             collectLabSelectLabel.textContent = 'Select lab';
@@ -162,7 +166,8 @@ function updateRoleBasedSections() {
     window.WalletDashboardTabs?.setRoleVisibility({
         isInstitution: showInstitutionControls,
         isProvider: showProviderControls,
-        isOperator: showOperatorControls
+        isOperator: showOperatorControls,
+        operatingMode: DashboardState.operatingMode
     });
 }
 
@@ -177,7 +182,10 @@ function updateCollectDetailVisibility() {
         metricsEl.classList.toggle('hidden', !showDetails);
     }
     if (actionsEl) {
-        actionsEl.classList.toggle('hidden', !DashboardState.isProvider || !showDetails);
+        actionsEl.classList.toggle(
+            'hidden',
+            DashboardState.operatingMode !== 'provider-consumer' || !DashboardState.isProvider || !showDetails
+        );
     }
 }
 
@@ -776,9 +784,10 @@ function updateOperatingModeNotices(providerConfig) {
     const welcomeInstruction = document.getElementById('welcomePairingInstruction');
     const welcomeHelp = document.getElementById('welcomePairingHelp');
 
-    const operatingMode = providerConfig && providerConfig.operatingMode
-        ? providerConfig.operatingMode
-        : 'provider-consumer';
+    const configuredMode = providerConfig && providerConfig.operatingMode;
+    const operatingMode = configuredMode === 'provider-consumer' || configuredMode === 'consumer-only'
+        ? configuredMode
+        : 'unknown';
     const providerMode = operatingMode === 'provider-consumer';
 
     DashboardState.operatingMode = operatingMode;
@@ -789,20 +798,54 @@ function updateOperatingModeNotices(providerConfig) {
 
     const badge = document.getElementById('operatingModeBadge');
     if (badge) {
-        badge.textContent = providerMode ? 'Provider + Consumer Mode' : 'Consumer-Only Mode';
+        badge.textContent = providerMode
+            ? 'Provider + Consumer Mode'
+            : operatingMode === 'consumer-only'
+                ? 'Consumer-Only Mode'
+                : 'Backend Mode Unavailable';
     }
 
     if (welcomeInstruction) {
         welcomeInstruction.innerHTML = providerMode
             ? '<strong>Register this backend</strong> with your institution.'
-            : '<strong>Register this consumer backend</strong> with your institution.';
+            : operatingMode === 'consumer-only'
+                ? '<strong>Register this consumer backend</strong> with your institution.'
+                : '<strong>Backend role unavailable</strong>';
     }
 
     if (welcomeHelp) {
-        welcomeHelp.textContent = 'If a DecentraLabs administrator gave you a provisioning token, apply it below. Otherwise open backend pairing setup; that page explains the pairing challenge flow and links to the Marketplace.';
+        welcomeHelp.textContent = operatingMode === 'unknown'
+            ? 'The backend role could not be loaded. Reload the dashboard before applying a provisioning token.'
+            : 'If a DecentraLabs administrator gave you a provisioning token, apply it below. Otherwise open backend pairing setup; that page explains the pairing challenge flow and links to the Marketplace.';
     }
 
     updateInstitutionPairingGuidance(providerConfig);
+    updateRoleBasedSections();
+}
+
+async function loadDashboardSystemStatus(providerConfig) {
+    try {
+        return await API.getSystemStatus();
+    } catch (error) {
+        const providerMode = providerConfig?.operatingMode === 'provider-consumer';
+        const requiresStandaloneToken = providerMode && (error.status === 401 || error.status === 403);
+        if (!requiresStandaloneToken) throw error;
+
+        const token = await showInputModal(
+            'Provider dashboard access',
+            'Enter the backend ADMIN_ACCESS_TOKEN. It stays in memory for this page and is sent only to this backend.',
+            'password'
+        );
+        if (!token) throw error;
+
+        API.setAdminAccessToken(token);
+        try {
+            return await API.getSystemStatus();
+        } catch (retryError) {
+            API.clearAdminAccessToken();
+            throw retryError;
+        }
+    }
 }
 
 function updateInstitutionPairingGuidance(providerConfig) {
@@ -966,19 +1009,19 @@ function renderWalletSetupPrompt() {
 async function loadSystemStatus() {
     console.log('[loadSystemStatus] Starting...');
     try {
+        console.log('[loadSystemStatus] Calling API.getProviderConfigStatus()...');
+        const providerConfig = await API.getProviderConfigStatus().catch(error => {
+            console.warn('[loadSystemStatus] provider config status unavailable', error);
+            return null;
+        });
+        updateOperatingModeNotices(providerConfig);
+
         console.log('[loadSystemStatus] Calling API.getSystemStatus()...');
-        const [data, providerConfig] = await Promise.all([
-            API.getSystemStatus(),
-            API.getProviderConfigStatus().catch(error => {
-                console.warn('[loadSystemStatus] provider config status unavailable', error);
-                return null;
-            })
-        ]);
+        const data = await loadDashboardSystemStatus(providerConfig);
         console.log('[loadSystemStatus] Received data:', data);
         if (providerConfig) {
             console.log('[loadSystemStatus] Provider config status:', providerConfig);
         }
-        updateOperatingModeNotices(providerConfig);
         
         if (data.success) {
             const walletConfigured = data.walletConfigured;
@@ -1283,7 +1326,8 @@ async function loadBalances() {
                     `;
                     
                     // Check if user is a registered provider from billing data
-                    const isProvider = billingData.success && billingData.isProvider === true;
+                    const isProvider = DashboardState.operatingMode === 'provider-consumer'
+                        && billingData.success && billingData.isProvider === true;
                     const stakeInfo = billingData.stakeInfo || null;
                     // billing and bonded amounts only show 8 decimals
                     const billingBalance = formatEthDisplay(billingData.billingBalanceFormatted || '0', 8);
@@ -1321,7 +1365,8 @@ async function loadBalances() {
                     // never a provider-registration upsell.
                     const promoContainer = document.getElementById('labPromoMessage');
                     if (promoContainer) {
-                        if (!isProvider && parseFloat(labBalance) === 0) {
+                        if (DashboardState.operatingMode !== 'unknown'
+                            && !isProvider && parseFloat(labBalance) === 0) {
                             promoContainer.style.display = 'block';
                             const consumerOnly = DashboardState.operatingMode === 'consumer-only';
                             promoContainer.innerHTML = consumerOnly
@@ -1417,7 +1462,9 @@ function scheduleCollectLabsRetry(error) {
 }
 
 function shouldRetryEmptyCollectLabs() {
-    return Boolean(DashboardState.walletAddress) && (DashboardState.isProvider || DashboardState.isOperator);
+    return DashboardState.operatingMode === 'provider-consumer'
+        && Boolean(DashboardState.walletAddress)
+        && (DashboardState.isProvider || DashboardState.isOperator);
 }
 
 function scheduleNextCollectLabsRetry(statusMessage = null) {
@@ -1703,7 +1750,9 @@ function renderCollectSettlementOverview() {
     }
 
     const labs = Array.isArray(DashboardState.collectLabs) ? DashboardState.collectLabs : [];
-    const shouldShow = labs.length > 0 && (DashboardState.isProvider || DashboardState.isOperator);
+    const shouldShow = DashboardState.operatingMode === 'provider-consumer'
+        && labs.length > 0
+        && (DashboardState.isProvider || DashboardState.isOperator);
     overviewEl.classList.toggle('hidden', !shouldShow);
 
     if (!shouldShow) {
@@ -1766,7 +1815,7 @@ async function loadCollectLabs() {
 
     // Standalone consumer-only institutions do not own provider labs and must
     // not probe provider settlement endpoints on every dashboard refresh.
-    if (DashboardState.operatingMode === 'consumer-only'
+    if (DashboardState.operatingMode !== 'provider-consumer'
         || (!DashboardState.isProvider && !DashboardState.isOperator)) {
         DashboardState.collectLabs = [];
         DashboardState.selectedCollectLabId = null;
@@ -2060,7 +2109,8 @@ async function loadCollectStatusForSelectedLab() {
             hasPendingPayout = false;
         }
 
-        DashboardState.collectCanExecute = DashboardState.isProvider
+        DashboardState.collectCanExecute = DashboardState.operatingMode === 'provider-consumer'
+            && DashboardState.isProvider
             && payoutEnabledForSelectedLab
             && data.canRequestPayout === true;
         renderCollectSettlementOverview();
@@ -2074,11 +2124,14 @@ async function loadCollectStatusForSelectedLab() {
             }
         } else if (hasPendingClosures) {
             setCollectStatusText('Waiting for session attestation grace period', 'info');
-        } else if (DashboardState.isProvider && !payoutEnabledForSelectedLab) {
+        } else if (DashboardState.operatingMode === 'provider-consumer'
+            && DashboardState.isProvider && !payoutEnabledForSelectedLab) {
             setCollectStatusText('Payout requests are limited to this provider wallet\'s labs', 'warning');
-        } else if (!DashboardState.isProvider && DashboardState.isOperator && operatorReviewOnly) {
+        } else if (DashboardState.operatingMode === 'provider-consumer'
+            && !DashboardState.isProvider && DashboardState.isOperator && operatorReviewOnly) {
             setCollectStatusText('Operator review only', 'info');
-        } else if (!DashboardState.isProvider && DashboardState.isOperator && data.canRequestPayout === true) {
+        } else if (DashboardState.operatingMode === 'provider-consumer'
+            && !DashboardState.isProvider && DashboardState.isOperator && data.canRequestPayout === true) {
             setCollectStatusText('Payout available for owning provider', 'info');
         } else if (data.payoutRequestReason) {
             setCollectStatusText(data.payoutRequestReason, 'warning');

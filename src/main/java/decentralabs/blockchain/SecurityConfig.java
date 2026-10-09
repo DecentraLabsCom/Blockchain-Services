@@ -171,6 +171,22 @@ public class SecurityConfig {
                     // staging.  The mode boundary must be enforced before the localhost
                     // convenience rule and before the generic OPTIONS rule below.
                     authorize.requestMatchers("/lab-admin/**").denyAll();
+                    // Provider billing and settlement routes are separate from the
+                    // consumer wallet/funding API. Deny them before the generic
+                    // billing and OPTIONS rules so standalone consumer installs
+                    // cannot reach them by calling the routes directly.
+                    authorize.requestMatchers(
+                        billingEndpoint + "/provider-network",
+                        billingEndpoint + "/provider-network/**",
+                        billingEndpoint + "/provider-receivables",
+                        billingEndpoint + "/provider-receivables/**",
+                        billingEndpoint + "/admin/provider-labs",
+                        billingEndpoint + "/admin/provider-receivable-status",
+                        billingEndpoint + "/admin/request-provider-payout",
+                        billingEndpoint + "/compliance/exports/receivable-accruals",
+                        billingEndpoint + "/compliance/exports/completed-payouts",
+                        billingEndpoint + "/compliance/exports/provider-network"
+                    ).denyAll();
                 }
                 // Provider-only routes are decided above this catch-all OPTIONS rule.
                 // Consumer-only also omits their CORS registrations, so a preflight

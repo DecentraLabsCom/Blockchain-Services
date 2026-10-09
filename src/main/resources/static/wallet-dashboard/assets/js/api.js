@@ -5,6 +5,15 @@
 
 const API = {
     BASE_URL: window.location.origin,
+    adminAccessToken: null,
+
+    setAdminAccessToken(token) {
+        this.adminAccessToken = typeof token === 'string' && token.trim() ? token.trim() : null;
+    },
+
+    clearAdminAccessToken() {
+        this.adminAccessToken = null;
+    },
     
     /**
      * Generic fetch wrapper with error handling
@@ -13,6 +22,9 @@ const API = {
         const url = `${this.BASE_URL}${endpoint}`;
         const method = String(options.method || 'GET').toUpperCase();
         const headers = new Headers(options.headers || {});
+        if (this.adminAccessToken) {
+            headers.set('Authorization', `Bearer ${this.adminAccessToken}`);
+        }
         if (method === 'POST' || method === 'PUT' || method === 'PATCH' || method === 'DELETE') {
             const csrf = document.cookie.split('; ').find((entry) => entry.startsWith('dlabs_csrf='));
             if (csrf) {
@@ -30,6 +42,9 @@ const API = {
 
         try {
             const response = await fetch(url, config);
+            if (response.status === 401 && this.adminAccessToken) {
+                this.clearAdminAccessToken();
+            }
             const rawBody = await response.text();
             let data = null;
             if (rawBody) {
@@ -111,10 +126,15 @@ const API = {
      * Consumer-only deployments use the consumer endpoint; Full provider
      * deployments use the provider endpoint.
      */
-    async applyProvisioningToken(token, operatingMode = 'provider-consumer') {
-        const endpoint = operatingMode === 'consumer-only'
-            ? '/institution-config/apply-consumer-token'
-            : '/institution-config/apply-provider-token';
+    async applyProvisioningToken(token, operatingMode = 'unknown') {
+        const endpointByMode = {
+            'consumer-only': '/institution-config/apply-consumer-token',
+            'provider-consumer': '/institution-config/apply-provider-token'
+        };
+        const endpoint = endpointByMode[operatingMode];
+        if (!endpoint) {
+            throw new Error('Backend role is unavailable. Reload the dashboard before applying a provisioning token.');
+        }
         return await this.request(endpoint, {
             method: 'POST',
             body: JSON.stringify({ token })

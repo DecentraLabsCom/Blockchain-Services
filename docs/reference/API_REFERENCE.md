@@ -66,8 +66,12 @@ Request and response fields:
 | Errors | `400 invalid_saml` for malformed/invalid assertions; `401` for a missing or mismatched Marketplace identity binding. |
 
 The access routes marked provider-only are rejected by the application security
-chain when `BLOCKCHAIN_SERVICES_MODE=consumer-only`; a network boundary should
-still be retained as defense in depth.
+chain when `BLOCKCHAIN_SERVICES_MODE=consumer-only`. Provider settlement,
+provider-network, payout and provider compliance routes follow the same mode
+boundary. Provider invoice submission additionally requires the configured
+institutional wallet to hold the provider role and own the lab; settlement
+review and global provider-network operations require the default-admin role.
+A network boundary should still be retained as defense in depth.
 
 Provider access issuance is intentionally retryable. While the reservation is
 not yet `ACCESS_AUTHORIZED`, `/auth/authorize-and-issue` and

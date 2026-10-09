@@ -46,14 +46,19 @@ Do not infer that a loopback rule alone grants the provider billing role.
 
 Provider mode also enforces `ROLE_INTERNAL` on `/billing/admin/**`; a valid
 `ADMIN_ACCESS_TOKEN` is therefore required even when the request originates on
-localhost. Consumer-only deployments rely on the localhost/private-network
-filter plus the configured access token.
+localhost. Provider settlement and provider-network APIs are available only in
+`provider-consumer` mode and additionally check the configured institutional
+wallet's on-chain provider, lab-owner or default-admin role. Consumer-only
+deployments reject those routes before the generic billing rules and rely on
+the localhost/private-network filter plus the configured access token for the
+consumer dashboard.
 
-`/wallet-admin/access-policies/**` uses the same local/private-network
-administration boundary as the wallet dashboard. `/access-policy/**` is
-reachable at the generic Spring Security layer for Marketplace integration but
-requires its own Marketplace service scope and institutional session credential;
-it is not an anonymous policy oracle.
+`/wallet-admin/access-policies/**` uses the same local/private-network boundary
+and also requires the configured wallet to hold the institution or
+default-admin role. `/access-policy/**` is reachable at the generic Spring
+Security layer for Marketplace integration but requires its own Marketplace
+service scope and institutional session credential; it is not an anonymous
+policy oracle.
 
 ## Authentication controls
 

@@ -8,8 +8,9 @@ topologies.
 | Topology | Backend role | Required choices |
 | --- | --- | --- |
 | Lab Gateway Full | Provider and consumer backend used with the Gateway | Set `BLOCKCHAIN_SERVICES_MODE=provider-consumer`; configure the gateway as the local issuer and persist MySQL, `/app/data` and lab content. |
-| Lab Gateway Lite | Edge that trusts a remote Full gateway | The parent gateway's `ISSUER` points at Full. This backend does not make Lite an identity authority. Configure only the edge capabilities that the deployment needs. |
-| Standalone consumer | Institution wallet, funding and consumer operations | Set `BLOCKCHAIN_SERVICES_MODE=consumer-only`; provider routes and automation remain disabled. |
+| Lab Gateway Lite | Edge that trusts a remote provider authority | The parent gateway's `ISSUER` points at a Full or standalone provider backend. This edge does not make Lite an identity authority. Configure only the edge capabilities that the deployment needs. |
+| Standalone provider | Provider control plane and issuer for provider Lite gateways deployed elsewhere | Set `BLOCKCHAIN_SERVICES_MODE=provider-consumer`; set the provider registration and automation flags as needed. Point each remote Lite gateway's `ISSUER` to this backend's `/auth`. Keep the backend host port on loopback and expose required public endpoints through an HTTPS reverse proxy; keep wallet/dashboard routes private. Configure per-Lite gateway credentials in the backend environment. |
+| Standalone consumer | Institution wallet, funding and consumer operations | Set `BLOCKCHAIN_SERVICES_MODE=consumer-only`; provider routes and automation remain disabled. This installation does not need its own Lite gateway. |
 
 `BLOCKCHAIN_SERVICES_MODE` controls the backend role independently of the
 gateway topology and must be set explicitly for new deployments:
@@ -21,12 +22,13 @@ BLOCKCHAIN_SERVICES_MODE=consumer-only     # or provider-consumer
 `FEATURES_PROVIDERS_ENABLED=false` remains the packaged fallback for older
 configurations. An explicit mode wins over that flag. The parent gateway owns
 the Full/Lite topology; changing `ISSUER` or adding a Lite access plane must not
-change a backend from consumer-only to provider-consumer. Spring Security
-rejects provider access routes and all `/lab-admin/**` routes in
-`consumer-only` at the application boundary, and the provider Lab Admin
-controller is not created. `/lab-content/**` remains the common public
-read-only content surface. Network isolation remains required as defense in
-depth for administrative and future surfaces.
+change a backend from consumer-only to provider-consumer. In `consumer-only`,
+Spring Security rejects provider access, lab administration, provider settlement,
+provider network, provider compliance and provider payout routes at the
+application boundary; provider-only controllers are not created. Consumer
+wallet, funding, institutional policy and reservation flows remain available.
+`/lab-content/**` remains the common public read-only content surface. Network
+isolation remains required as defense in depth for administrative surfaces.
 
 ## 2. Persistent state is required in production
 

@@ -5,6 +5,7 @@ import decentralabs.blockchain.util.EthereumAddressValidator;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.Map;
@@ -22,6 +23,7 @@ public class ComplianceController {
     private final ComplianceExportService exportService;
 
     @GetMapping("/mica-volume")
+    @PreAuthorize("@walletDashboardAuthorizationService.canManageProviderNetwork()")
     public ResponseEntity<?> getMicaVolume() {
         return ResponseEntity.ok(Map.of(
                 "rolling12MonthEurVolume", exportService.exportRolling12MonthVolume(),
@@ -30,6 +32,7 @@ public class ComplianceController {
     }
 
     @GetMapping("/exports/prepaid-balances")
+    @PreAuthorize("@walletDashboardAuthorizationService.canManageInstitutionPolicies()")
     public ResponseEntity<?> exportPrepaidBalances(@RequestParam String address) {
         try {
             EthereumAddressValidator.validate(address, "address");
@@ -40,6 +43,7 @@ public class ComplianceController {
     }
 
     @GetMapping("/exports/consumed")
+    @PreAuthorize("@walletDashboardAuthorizationService.canManageInstitutionPolicies()")
     public ResponseEntity<?> exportConsumed(
             @RequestParam String address,
             @RequestParam(defaultValue = "1000") int limit) {
@@ -52,6 +56,7 @@ public class ComplianceController {
     }
 
     @GetMapping("/exports/expired")
+    @PreAuthorize("@walletDashboardAuthorizationService.canManageInstitutionPolicies()")
     public ResponseEntity<?> exportExpired(@RequestParam String address) {
         try {
             EthereumAddressValidator.validate(address, "address");
@@ -62,11 +67,13 @@ public class ComplianceController {
     }
 
     @GetMapping("/exports/receivable-accruals")
+    @PreAuthorize("@walletDashboardAuthorizationService.canManageProviderNetwork()")
     public ResponseEntity<?> exportReceivableAccruals() {
         return ResponseEntity.ok(exportService.exportProviderReceivableAccruals());
     }
 
     @GetMapping("/exports/completed-payouts")
+    @PreAuthorize("@walletDashboardAuthorizationService.canReadProviderPayouts(#p0)")
     public ResponseEntity<?> exportCompletedPayouts(@RequestParam String providerAddress) {
         try {
             EthereumAddressValidator.validate(providerAddress, "providerAddress");
@@ -77,6 +84,7 @@ public class ComplianceController {
     }
 
     @GetMapping("/exports/provider-network")
+    @PreAuthorize("@walletDashboardAuthorizationService.canManageProviderNetwork()")
     public ResponseEntity<?> exportProviderNetwork() {
         return ResponseEntity.ok(exportService.exportProviderNetworkSnapshot());
     }

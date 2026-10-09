@@ -5,8 +5,8 @@ description: Spring Boot backend for institutional identity, funding, lab access
 # DecentraLabs blockchain services
 
 `blockchain-services` is the Java 21 / Spring Boot 4.1 backend for the DecentraLabs
-gateway ecosystem. It can also be packaged as a standalone WAR for an
-institution that only needs consumer funding and wallet operations.
+gateway ecosystem. It can run inside a Lab Gateway Full deployment or as a
+standalone provider control plane or consumer wallet service.
 
 The service owns five areas:
 
@@ -27,8 +27,8 @@ documents are the [architecture guide](docs/architecture/ARCHITECTURE.md),
 
 | Mode | Enablement | Intended use | Provider/auth endpoints |
 | --- | --- | --- | --- |
-| Provider + consumer | `BLOCKCHAIN_SERVICES_MODE=provider-consumer` | Full or standalone control-plane backend | Enabled |
-| Consumer-only | `BLOCKCHAIN_SERVICES_MODE=consumer-only` (packaged default) | Standalone institution funding its own reservations | Disabled |
+| Provider + consumer | `BLOCKCHAIN_SERVICES_MODE=provider-consumer` | Lab Gateway Full or standalone provider backend serving remote Lite gateways | Enabled |
+| Consumer-only | `BLOCKCHAIN_SERVICES_MODE=consumer-only` (packaged default) | Standalone institution funding and booking reservations; no local Lite gateways | Disabled |
 
 `BLOCKCHAIN_SERVICES_MODE` is the explicit backend role and is independent of
 the parent gateway topology. Set it to `provider-consumer` or `consumer-only`.
@@ -44,11 +44,18 @@ The parent Lab Gateway selects Full versus Lite at the gateway boundary; a Lite
 gateway does not become the primary identity authority merely because this
 backend is present.
 
+For a standalone provider, set the backend to `provider-consumer` and configure
+its public issuer URL. Each separately installed provider Lab Gateway Lite points
+its own `ISSUER` to that backend's `/auth`; those Lite gateways do not need to be
+co-located with the provider backend. A standalone consumer keeps the packaged
+`consumer-only` role and does not install Lite gateways for its own backend.
+
 ```mermaid
 flowchart LR
     Full["Lab Gateway Full<br/>ISSUER empty/local"] --> Backend["blockchain-services"]
-    Lite["Lab Gateway Lite<br/>ISSUER points to Full /auth"] -->|access and observation| Full
-    Standalone["Standalone consumer"] --> Backend
+    Lite["Lab Gateway Lite<br/>ISSUER points to provider /auth"] -->|access and observation| Backend
+    Provider["Standalone provider<br/>provider-consumer"] --> Backend
+    Consumer["Standalone consumer<br/>consumer-only"] --> Backend
     Backend --> Contracts[("Smart Contracts")]
     Backend --> DB[("MySQL / Flyway")]
 ```
