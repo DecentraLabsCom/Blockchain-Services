@@ -16,8 +16,7 @@ public final class OidcIdentityContextAdapter {
         Map<String, Object> claims,
         OidcProviderConfiguration provider,
         String expectedNonce,
-        String institutionId,
-        String evidenceHash
+        String institutionId
     ) {
         if (claims == null || provider == null || !Boolean.TRUE.equals(claims.get("signatureVerified"))) {
             throw new IllegalArgumentException("OIDC signature must be verified before normalization");

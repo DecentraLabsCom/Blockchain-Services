@@ -60,10 +60,10 @@ public class AccessPolicyController {
         @RequestBody AccessPolicyBatchRequest request
     ) {
         marketplaceAuth.enforceServiceAuthorization(authorization, "access-policy:evaluate");
-        var credential = validateCredential(request == null ? null : request.institutionalSessionToken());
         if (request == null || request.evaluations() == null || request.evaluations().size() > 100) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "invalid_access_policy_batch");
         }
+        var credential = validateCredential(request.institutionalSessionToken());
         return request.evaluations().stream().map(item -> {
             requireLab(item.labId());
             return accessPolicyService.evaluate(credential, item.labId(), item.price(), item.categories());

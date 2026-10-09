@@ -89,13 +89,8 @@ public class LabMetadataService {
         }
         String metadataUri = walletService.getLabTokenUri(labId)
             .orElseThrow(() -> new IllegalArgumentException("Lab metadata URI is missing"));
-        LabMetadata metadata;
-        try {
-            metadata = loadMetadata(metadataUri, walletService.getLabMetadataOrigins(labId));
-        } catch (MetadataOriginNotRegisteredException ex) {
-            log.debug("Using authoritative metadata URI for lab {} because its origin is not registered", labId);
-            metadata = loadMetadataFromAuthoritativeUri(metadataUri);
-        }
+        // Full metadata can affect access policy, so require the provider-registered origin.
+        LabMetadata metadata = loadMetadata(metadataUri, walletService.getLabMetadataOrigins(labId));
         validateCapacityForResourceType(metadata, walletService.getLabResourceType(labId));
         return metadata;
     }
