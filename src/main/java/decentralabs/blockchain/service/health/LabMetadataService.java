@@ -193,20 +193,6 @@ public class LabMetadataService {
         }
     }
 
-    private LabMetadata loadMetadataFromAuthoritativeUri(String metadataUri) {
-        try {
-            byte[] jsonContent = metadataClient.fetchFromAuthoritativeUri(metadataUri);
-            JsonNode rootNode = objectMapper.readTree(jsonContent);
-            if (rootNode == null || !rootNode.isObject()) {
-                throw new IOException("Metadata document must be a JSON object");
-            }
-            return parseLabMetadata(rootNode);
-        } catch (Exception e) {
-            log.error("Failed to fetch/parse authoritative lab metadata: {}", e.getMessage());
-            throw new RuntimeException("Unable to load authoritative lab metadata", e);
-        }
-    }
-
     private String loadMetadataName(String metadataUri, Collection<String> allowedOrigins) {
         try {
             byte[] jsonContent = metadataClient.fetch(metadataUri, allowedOrigins);
