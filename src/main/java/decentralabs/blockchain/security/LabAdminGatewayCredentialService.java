@@ -7,7 +7,6 @@ import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.util.ArrayList;
-import java.util.Comparator;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Optional;
@@ -44,7 +43,7 @@ public class LabAdminGatewayCredentialService {
     public List<ConfiguredGateway> configuredGateways() {
         return credentials.stream()
             .map(credential -> new ConfiguredGateway(credential.gatewayId(), credential.accessUri()))
-            .sorted(Comparator.comparing(ConfiguredGateway::gatewayId))
+            .sorted((left, right) -> left.gatewayId().compareTo(right.gatewayId()))
             .toList();
     }
 

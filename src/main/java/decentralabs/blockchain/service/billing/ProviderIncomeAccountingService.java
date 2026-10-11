@@ -561,10 +561,6 @@ public class ProviderIncomeAccountingService {
         );
     }
 
-    private List<ActivityRow> loadCanonicalActivities(BigInteger chainId, String contract) {
-        return loadCanonicalActivities(chainId, contract, null);
-    }
-
     private List<ActivityRow> loadCanonicalActivities(
         BigInteger chainId, String contract, Set<String> batchIds
     ) {
