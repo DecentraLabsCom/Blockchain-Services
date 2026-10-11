@@ -28,15 +28,15 @@
     { "name": "InstitutionalOrgRegistryFacet", "address": "0x461Ee020C3007Dff92Cb05a75F10A06D13fc551A", "codeHash": "0x8ca059f3fd7301fcea4f7a808bd01e761a11a8f411b1bac044fc0a1d00b28261" },
     { "name": "InstitutionalTreasuryFacet", "address": "0x2fDE6903396b006A28ADcc5EB58067986F42d7B8", "codeHash": "0x9ceb3cab7b2d6bce3a10f37d1495d1c6c0f28897656e02b25340958ac92c4da6" },
     { "name": "LabFacet", "address": "0xCC8648B4Cb2eE16A9967eFeBaEc0d9Bd3281e17E", "codeHash": "0x6c6c507d2c312cdf44b11cbc1b04f5a4f3106891e4e376b99c7e37614cfb215f" },
-    { "name": "LabAdminFacet", "address": "0xc9cd9110BEB2238520377182ea4c3F922F2db729", "codeHash": "0x46c1cda85ba4856be66618a448f4676547991bd9f1026e7e6fc2b0cab53855d9" },
+    { "name": "LabAdminFacet", "address": "0x5ee73EA020d5a52201E82F7A791676f5979Ea819", "codeHash": "0x8dd57fea7fd16793b0b414af2559ba73d639ff41fd07ae17e6b3485665b5bad8" },
     { "name": "LabIntentFacet", "address": "0x34F038eb897b1495C4b2734e067249B2A6902368", "codeHash": "0x17d8ac3058490b5d1f7790a40faf8cf7ee7dfdf16c9862e631f6cf316735d482" },
     { "name": "LabQueryFacet", "address": "0x61311Be0496e82A3f330D0F527fb78a7A0D2aA5A", "codeHash": "0xae84f03549f917036f806eb30fe5324ca1a671b227b41428511da63816ca870d" },
     { "name": "LabReputationFacet", "address": "0xc13ABE01660572e0695A7983B12E9A2509A1C572", "codeHash": "0x57edcfbebce9422d0227d9f0b5321e8bd71373124b2480f799eab56eb473ad8d" },
     { "name": "ProviderSettlementFacet", "address": "0x29Eab450Af07FF0BF6b9727d78c1cE613AeAc8Af", "codeHash": "0x004dcfbfc9118f8dfc0144fd77d26d134832738ebcd6beb1c86ec81c2532e95f" },
     { "name": "ReservationFinalizationFacet", "address": "0x4B3f9A7aF6854Ee8baa6c2Bc90AEc1fDd567CdCc", "codeHash": "0x5e56f1cdcba4260b1ec0250dd16a8c2aba5a5385458bfd811f9e574918f3e958" },
     { "name": "InstitutionalReservationRequestValidationFacet", "address": "0x7B7c119549F47c5C303804909aC1Dad969f31829", "codeHash": "0xcc31fb2df65015d86239bcc5dc9428a78eb46166f12f3d709caaa1f0fa083d52" },
-    { "name": "InstitutionalReservationRequestCreationFacet", "address": "0x1e1A0242637CD1656ff7C20E52916A5457462dE8", "codeHash": "0x8698e2dd995b99d1788ec459f9f139bf5840143fded5c2b284b6c5f74d8aa08b" },
-    { "name": "InstitutionalReservationConfirmationFacet", "address": "0x954FA4fce32325C6423D6e378ff481d9aDa99D48", "codeHash": "0x010fb809b35ccd59a99e5914c4f676c9d69a169a015fe518f245bc8faf68556a" },
+    { "name": "InstitutionalReservationRequestCreationFacet", "address": "0x02d43a07CB22221A6c9c1c7a9D40336026A49Dc5", "codeHash": "0x62b8ab53e53608140ebf44fb8197a7fca8fdc09c3d0204ae91d96c275e1c65cc" },
+    { "name": "InstitutionalReservationConfirmationFacet", "address": "0xd9AC4D40a114EC0982834D1F11Ff0Cb3B4Aad7Ca", "codeHash": "0x44b7ba0c187d306b14fa4f4f1bafa29a44b432fb985001ee4dc8da4ed49b2e7b" },
     { "name": "InstitutionalReservationCancellationFacet", "address": "0xb8B8459014572f0C2931FE4cc318531A52ba0e11", "codeHash": "0x5af421047b7c7e9e4007ef0a320751431386ea54bdb341591886da350e9a3ad7" },
     { "name": "InstitutionalReservationQueryFacet", "address": "0xd15bDE7749Ace356e898cc1ac39bD582397E2CA2", "codeHash": "0x7acef3bf2ae543e99b33440aa9d0ba5ddd4278b241bd5dd79f50ab0a64bff8fe" },
     { "name": "InstitutionalReservationFacet", "address": "0xd1b20AC94e1D75d9450Af957cfC9D10f4c77A966", "codeHash": "0x794369be4c378539ce0f0621f6f82f9c783568b20b8d4b6d02b38de65341404c" },
@@ -44,7 +44,7 @@
     { "name": "ReservationSessionFacet", "address": "0xE8db70d8bd5EEc44b9D903455CD2e5908014cd35", "codeHash": "0xbb54149b8036d070553012749d17cfc649ac02ef1aead178efc4fe58fe60d925" },
     { "name": "ReservationStatsFacet", "address": "0x1EaC0c2898705685Fe90022A6A6b394831f66C19", "codeHash": "0x50c94703c43b6fab0c44957134ed04f1d0e69d1496442d126869fa9ff9e94c7a" },
     { "name": "ReservationDenialFacet", "address": "0xeeeB98bB27fF9ccE9272abd9aFCD322e0348B844", "codeHash": "0x54161aa0f5167e6165f5b801bd63141ab87e2186ae3e21b34bdaba44a17abe06" },
-    { "name": "ReservationIntentFacet", "address": "0x5ac2eB3387C14899faa978E3A4BbbDABFB34C317", "codeHash": "0xe0747d7414dfa5a3b760c1b8b8c88d981646dfdb8b332dcb921a7c15f3acc948" },
+    { "name": "ReservationIntentFacet", "address": "0xd124751fDC792fc373AA381D9A4a940eEfeFb375", "codeHash": "0xecbeea450e87ada009b18d8369978512edb9c091f64980f378dd5cec55751c09" },
     { "name": "ReservationIntentCancellationFacet", "address": "0x79e88C2e6bD4f4c51d488422c57dFEA97cb61bFC", "codeHash": "0xeb2fd64895927fb48685147de32168cd667e746a85592e27bcec3cb6fee8e5c1" }
   ]
 }
