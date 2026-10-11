@@ -9,6 +9,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import decentralabs.blockchain.service.billing.ComplianceExportService;
+import decentralabs.blockchain.service.billing.ProviderIncomeAccountingService;
 import java.math.BigDecimal;
 import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
@@ -27,11 +28,16 @@ class ComplianceControllerTest {
     @Mock
     private ComplianceExportService exportService;
 
+    @Mock
+    private ProviderIncomeAccountingService providerIncomeAccountingService;
+
     private MockMvc mockMvc;
 
     @BeforeEach
     void setUp() {
-        mockMvc = MockMvcBuilders.standaloneSetup(new ComplianceController(exportService)).build();
+        mockMvc = MockMvcBuilders.standaloneSetup(
+            new ComplianceController(exportService, providerIncomeAccountingService)
+        ).build();
     }
 
     @Test

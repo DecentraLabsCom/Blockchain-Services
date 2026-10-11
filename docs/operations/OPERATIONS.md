@@ -59,7 +59,7 @@ Interpret the results as follows:
 The main queue counters are `nonce_backlog`, `access_deliveries_stuck`,
 `session_started_unknown`, `session_started_failed`,
 `institutional_transactions_stuck`, `contract_events_dead_letter` and
-`contract_events_orphaned`. Prometheus/Actuator metrics should be monitored in
+`contract_events_orphaned`. Prometheus/Actuator metrics should be monitored
 separately for provider receivable pagination and listener errors.
 
 ## 3. Durable transaction incidents

@@ -9,6 +9,7 @@ import decentralabs.blockchain.dto.billing.ApproveProviderInvoiceRequest;
 import decentralabs.blockchain.dto.billing.RecordProviderPayoutRequest;
 import decentralabs.blockchain.dto.billing.SubmitProviderInvoiceRequest;
 import decentralabs.blockchain.dto.billing.SuspendProviderRequest;
+import decentralabs.blockchain.config.ProviderConsumerModeCondition;
 import decentralabs.blockchain.service.billing.ProviderNetworkService;
 import decentralabs.blockchain.service.billing.ProviderSettlementService;
 import decentralabs.blockchain.util.EthereumAddressValidator;
@@ -17,7 +18,9 @@ import java.math.BigDecimal;
 import java.util.Map;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.context.annotation.Conditional;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -30,12 +33,14 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("/billing")
 @RequiredArgsConstructor
 @Slf4j
+@Conditional(ProviderConsumerModeCondition.class)
 public class ProviderBillingController {
 
     private final ProviderNetworkService providerNetworkService;
     private final ProviderSettlementService providerSettlementService;
 
     @GetMapping("/provider-network")
+    @PreAuthorize("@walletDashboardAuthorizationService.canManageProviderNetwork()")
     public ResponseEntity<?> listProviderNetwork(@RequestParam(required = false) String status) {
         if ("all".equalsIgnoreCase(status)) {
             return ResponseEntity.ok(providerNetworkService.findAll());
@@ -44,6 +49,7 @@ public class ProviderBillingController {
     }
 
     @PostMapping("/provider-network")
+    @PreAuthorize("@walletDashboardAuthorizationService.canManageProviderNetwork()")
     public ResponseEntity<ProviderNetworkMembership> activateProvider(
         @Valid @RequestBody ActivateProviderRequest request
     ) {
@@ -60,6 +66,7 @@ public class ProviderBillingController {
     }
 
     @PostMapping("/provider-network/{id}/suspend")
+    @PreAuthorize("@walletDashboardAuthorizationService.canManageProviderNetwork()")
     public ResponseEntity<Map<String, String>> suspendProvider(
         @PathVariable long id,
         @RequestBody(required = false) SuspendProviderRequest request
@@ -71,6 +78,7 @@ public class ProviderBillingController {
     }
 
     @PostMapping("/provider-network/{id}/terminate")
+    @PreAuthorize("@walletDashboardAuthorizationService.canManageProviderNetwork()")
     public ResponseEntity<Map<String, String>> terminateProvider(
         @PathVariable long id,
         @RequestBody(required = false) SuspendProviderRequest request
@@ -81,6 +89,7 @@ public class ProviderBillingController {
     }
 
     @GetMapping("/provider-receivables")
+    @PreAuthorize("@walletDashboardAuthorizationService.canReviewProviderSettlements()")
     public ResponseEntity<?> listProviderInvoices(@RequestParam(required = false) String status) {
         if (status != null) {
             ProviderInvoiceRecord.Status resolvedStatus = ProviderInvoiceRecord.Status.valueOf(status.toUpperCase());
@@ -92,6 +101,7 @@ public class ProviderBillingController {
     }
 
     @PostMapping("/provider-receivables/{labId}/invoice")
+    @PreAuthorize("@walletDashboardAuthorizationService.canSubmitProviderInvoice(#p0)")
     public ResponseEntity<ProviderInvoiceRecord> submitProviderInvoice(
         @PathVariable String labId,
         @Valid @RequestBody SubmitProviderInvoiceRequest request
@@ -108,6 +118,7 @@ public class ProviderBillingController {
     }
 
     @PostMapping("/provider-receivables/invoices/{invoiceId}/approve")
+    @PreAuthorize("@walletDashboardAuthorizationService.canReviewProviderSettlements()")
     public ResponseEntity<ProviderApproval> approveInvoice(
         @PathVariable long invoiceId,
         @Valid @RequestBody ApproveProviderInvoiceRequest request
@@ -121,6 +132,7 @@ public class ProviderBillingController {
     }
 
     @PostMapping("/provider-receivables/invoices/{invoiceId}/pay")
+    @PreAuthorize("@walletDashboardAuthorizationService.canReviewProviderSettlements()")
     public ResponseEntity<ProviderPayout> recordPayout(
         @PathVariable long invoiceId,
         @Valid @RequestBody RecordProviderPayoutRequest request

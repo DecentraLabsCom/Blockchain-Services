@@ -103,6 +103,7 @@
                 </button>
                 <button class="wallet-tab" id="wallet-tab-settlements" role="tab" type="button"
                     data-wallet-tab="settlements" data-wallet-tab-roles="provider,operator"
+                    data-wallet-tab-modes="provider-consumer"
                     aria-controls="wallet-panel-settlements" aria-selected="false" tabindex="-1">
                     <i class="fas fa-file-invoice-dollar" aria-hidden="true"></i> Provider Settlements
                 </button>
@@ -115,6 +116,41 @@
             <div id="wallet-panel-overview" class="wallet-tab-panel" role="tabpanel" aria-labelledby="wallet-tab-overview" hidden></div>
             <div id="wallet-panel-institution" class="wallet-tab-panel" role="tabpanel" aria-labelledby="wallet-tab-institution" hidden></div>
             <div id="wallet-panel-settlements" class="wallet-tab-panel" role="tabpanel" aria-labelledby="wallet-tab-settlements" hidden></div>
+
+            <section class="card hidden" id="providerGatewayDepartmentsSection"
+                data-wallet-tab-section="settlements" data-wallet-order="5">
+                <div class="card-header">
+                    <div>
+                        <h2>Lite Gateways and departments</h2>
+                        <p class="gateway-departments-help">
+                            Lite Gateways in the provider's loaded trust configuration appear here automatically. Assign a department or group name for the income report.
+                        </p>
+                    </div>
+                    <button type="button" class="btn btn-secondary btn-small" id="providerGatewayDepartmentsRefreshBtn">
+                        <i class="fas fa-rotate-right" aria-hidden="true"></i> Refresh
+                    </button>
+                </div>
+                <div class="card-body">
+                    <p class="settlement-overview-note" id="providerGatewayDepartmentsNote" role="status" aria-live="polite">
+                        Loading registered Lite Gateways...
+                    </p>
+                    <div class="settlement-labs-table-wrap">
+                        <table class="settlement-labs-table gateway-departments-table">
+                            <thead>
+                                <tr>
+                                    <th>Gateway ID</th>
+                                    <th>Access URI</th>
+                                    <th>Department / group</th>
+                                    <th>Action</th>
+                                </tr>
+                            </thead>
+                            <tbody id="providerGatewayDepartmentsBody">
+                                <tr><td colspan="4" class="settlement-table-empty">Loading registered Lite Gateways...</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </section>
 
             <!-- System Status Section -->
             <section class="card" data-wallet-tab-section="overview" data-wallet-order="10">
@@ -214,6 +250,85 @@
                     <h2 id="settlementOperationsTitle">Provider Settlement</h2>
                 </div>
                 <div class="card-body">
+                    <div class="settlement-overview" id="providerIncomeReportSection">
+                        <div class="settlement-overview-header">
+                            <div>
+                                <h3>Provider income by department</h3>
+                                <p class="settlement-overview-note" id="providerIncomeReportNote">
+                                    Loading generation history and settlement reconciliation...
+                                </p>
+                            </div>
+                            <button type="button" class="btn btn-secondary btn-small" id="providerIncomeExportBtn" disabled>
+                                <i class="fas fa-download"></i> Export CSV
+                            </button>
+                        </div>
+                        <h4 class="settlement-income-subheading">Institution-wide total</h4>
+                        <div class="settlement-labs-table-wrap">
+                            <table class="settlement-labs-table">
+                                <thead>
+                                    <tr>
+                                        <th>Scope</th>
+                                        <th>Gateways</th>
+                                        <th>Labs</th>
+                                        <th>Confirmed</th>
+                                        <th>Potential share (credits)</th>
+                                        <th>Accrued (credits)</th>
+                                        <th>Unbatched (credits)</th>
+                                        <th>Queued (credits)</th>
+                                        <th>In process (credits)</th>
+                                        <th>Paid externally (credits)</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="providerIncomeInstitutionReportBody">
+                                    <tr><td colspan="10" class="settlement-table-empty">Loading institution total...</td></tr>
+                                </tbody>
+                            </table>
+                        </div>
+                        <h4 class="settlement-income-subheading">Department totals</h4>
+                        <div class="settlement-labs-table-wrap">
+                            <table class="settlement-labs-table">
+                                <thead>
+                                    <tr>
+                                        <th>Department / group</th>
+                                        <th>Gateways</th>
+                                        <th>Labs</th>
+                                        <th>Confirmed</th>
+                                        <th>Potential share (credits)</th>
+                                        <th>Accrued (credits)</th>
+                                        <th>Unbatched (credits)</th>
+                                        <th>Queued (credits)</th>
+                                        <th>In process (credits)</th>
+                                        <th>Paid externally (credits)</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="providerIncomeGatewayReportBody">
+                                    <tr><td colspan="10" class="settlement-table-empty">Loading department totals...</td></tr>
+                                </tbody>
+                            </table>
+                        </div>
+                        <h4 class="settlement-income-subheading">Lab details</h4>
+                        <div class="settlement-labs-table-wrap">
+                            <table class="settlement-labs-table">
+                                <thead>
+                                    <tr>
+                                        <th>Department / group</th>
+                                        <th>Gateway ID</th>
+                                        <th>Lab</th>
+                                        <th>Confirmed</th>
+                                        <th>Potential share (credits)</th>
+                                        <th>Accrued (credits)</th>
+                                        <th>Unbatched (credits)</th>
+                                        <th>Queued (credits)</th>
+                                        <th>In process (credits)</th>
+                                        <th>Paid externally (credits)</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="providerIncomeReportBody">
+                                    <tr><td colspan="10" class="settlement-table-empty">Loading provider income report...</td></tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
                     <div class="collect-panel" id="collectPanel">
                         <div id="providerSettlementControls">
                         <div class="collect-grid">

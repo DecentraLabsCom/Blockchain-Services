@@ -1,5 +1,7 @@
 package decentralabs.blockchain.controller.billing;
 
+import decentralabs.blockchain.config.BackendOperatingMode;
+import decentralabs.blockchain.config.BackendOperatingModeConfiguration;
 import decentralabs.blockchain.dto.wallet.PayoutRequestSimulationResult;
 import decentralabs.blockchain.dto.wallet.ProviderReceivableStatus;
 import decentralabs.blockchain.service.billing.OnChainAdminTransactionService;
@@ -44,6 +46,7 @@ public class AdminDashboardController {
     private final OnChainAdminTransactionService onChainAdminTransactionService;
     private final LabMetadataService labMetadataService;
     private final AdminNetworkAccessPolicy adminNetworkAccessPolicy;
+    private final BackendOperatingModeConfiguration operatingMode;
 
     private static final int LAB_TOKEN_DECIMALS = CreditUnitConverter.CREDIT_DECIMALS;
 
@@ -103,7 +106,8 @@ public class AdminDashboardController {
             String institutionalAddress = institutionalWalletService.getInstitutionalWalletAddress();
             boolean walletConfigured = institutionalAddress != null && !institutionalAddress.isBlank();
             boolean isInstitution = walletConfigured && walletService.isInstitution(institutionalAddress);
-            boolean isProvider = walletConfigured && walletService.isLabProvider(institutionalAddress);
+            boolean isProvider = operatingMode.operatingMode() == BackendOperatingMode.PROVIDER_CONSUMER
+                && walletConfigured && walletService.isLabProvider(institutionalAddress);
             Optional<String> defaultAdminRole = walletService.getDefaultAdminRole();
             boolean isDefaultAdmin = walletConfigured && walletService.isDefaultAdmin(institutionalAddress);
 
@@ -741,14 +745,16 @@ public class AdminDashboardController {
                 }
             }
             
-            // Get billing balance from contract
-            java.math.BigInteger billingBalance = walletService.getInstitutionalBillingBalance(institutionalAddress);
-            if (billingBalance != null) {
-                info.put("billingBalance", billingBalance.toString());
-                info.put("billingBalanceFormatted", formatLabTokens(billingBalance));
-            } else {
-                info.put("billingBalance", "0");
-                info.put("billingBalanceFormatted", "0");
+            boolean providerMode = operatingMode.operatingMode() == BackendOperatingMode.PROVIDER_CONSUMER;
+            if (providerMode) {
+                java.math.BigInteger billingBalance = walletService.getInstitutionalBillingBalance(institutionalAddress);
+                if (billingBalance != null) {
+                    info.put("billingBalance", billingBalance.toString());
+                    info.put("billingBalanceFormatted", formatLabTokens(billingBalance));
+                } else {
+                    info.put("billingBalance", "0");
+                    info.put("billingBalanceFormatted", "0");
+                }
             }
 
             java.math.BigInteger serviceCreditBalance = walletService.getTotalServiceCreditBalance(institutionalAddress);
@@ -756,7 +762,7 @@ public class AdminDashboardController {
             info.put("serviceCreditBalanceFormatted", formatLabTokens(serviceCreditBalance));
 
             // Check if wallet is registered as provider
-            boolean isProvider = walletService.isLabProvider(institutionalAddress);
+            boolean isProvider = providerMode && walletService.isLabProvider(institutionalAddress);
             info.put("isProvider", isProvider);
             
             // Get stake info if provider

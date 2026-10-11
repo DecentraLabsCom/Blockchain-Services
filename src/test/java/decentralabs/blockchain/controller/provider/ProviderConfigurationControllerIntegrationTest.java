@@ -11,11 +11,14 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import decentralabs.blockchain.controller.TestSecurityConfig;
 import decentralabs.blockchain.dto.provider.ConsumerProvisioningTokenPayload;
 import decentralabs.blockchain.dto.provider.ProvisioningTokenPayload;
 import decentralabs.blockchain.security.AdminNetworkAccessPolicy;
+import decentralabs.blockchain.security.LabAdminGatewayCredentialService;
 import decentralabs.blockchain.security.LocalhostOnlyFilter;
+import decentralabs.blockchain.service.BackendUrlResolver;
 import decentralabs.blockchain.service.organization.InstitutionRegistrationService;
 import decentralabs.blockchain.service.organization.ProviderConfigurationPersistenceService;
 import decentralabs.blockchain.service.organization.ProvisioningTokenService;
@@ -26,6 +29,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.SpringBootConfiguration;
 import org.springframework.boot.autoconfigure.EnableAutoConfiguration;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
 import org.springframework.http.MediaType;
 import org.springframework.test.context.TestPropertySource;
@@ -214,9 +218,15 @@ class ProviderConfigurationControllerIntegrationTest {
     @EnableAutoConfiguration
     @Import({
         ProviderConfigurationController.class,
+        BackendUrlResolver.class,
         AdminNetworkAccessPolicy.class,
+        LabAdminGatewayCredentialService.class,
         LocalhostOnlyFilter.class
     })
     static class TestApplication {
+        @Bean
+        ObjectMapper objectMapper() {
+            return new ObjectMapper();
+        }
     }
 }

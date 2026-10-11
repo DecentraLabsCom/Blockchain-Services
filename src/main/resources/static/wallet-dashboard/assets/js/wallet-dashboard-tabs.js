@@ -92,7 +92,12 @@ document.addEventListener('DOMContentLoaded', () => {
         }));
     }
 
-    function setRoleVisibility({ isInstitution = false, isProvider = false, isOperator = false } = {}) {
+    function setRoleVisibility({
+        isInstitution = false,
+        isProvider = false,
+        isOperator = false,
+        operatingMode = 'unknown'
+    } = {}) {
         const availableRoles = new Set();
         if (isInstitution) availableRoles.add('institution');
         if (isProvider) availableRoles.add('provider');
@@ -103,8 +108,14 @@ document.addEventListener('DOMContentLoaded', () => {
                 .split(',')
                 .map(role => role.trim())
                 .filter(Boolean);
-            const visible = requiredRoles.length === 0
+            const requiredModes = (tab.dataset.walletTabModes || '')
+                .split(',')
+                .map(mode => mode.trim())
+                .filter(Boolean);
+            const roleAllowed = requiredRoles.length === 0
                 || requiredRoles.some(role => availableRoles.has(role));
+            const modeAllowed = requiredModes.length === 0 || requiredModes.includes(operatingMode);
+            const visible = roleAllowed && modeAllowed;
             tab.hidden = !visible;
             tab.setAttribute('aria-hidden', visible ? 'false' : 'true');
         });

@@ -120,7 +120,7 @@ public class MarketplaceKeyService {
         if (header == null || !JWT_ALGORITHM.equals(header.path("alg").asText())) {
             throw new Exception("Marketplace JWT uses an unsupported signing algorithm");
         }
-        JsonNode kid = header == null ? null : header.get("kid");
+        JsonNode kid = header.get("kid");
         return kid == null || kid.isNull() || kid.asText().isBlank() ? null : kid.asText();
     }
 

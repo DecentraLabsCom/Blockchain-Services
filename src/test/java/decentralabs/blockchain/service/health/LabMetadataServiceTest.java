@@ -74,23 +74,18 @@ class LabMetadataServiceTest {
         }
 
         @Test
-        @DisplayName("Should load full metadata from the authoritative URI when its origin is not registered")
-        void shouldLoadFullMetadataFromAuthoritativeUri() {
+        @DisplayName("Should reject full metadata from an unregistered authoritative URI")
+        void shouldRejectFullMetadataFromUnregisteredAuthoritativeUri() {
             BigInteger labId = BigInteger.valueOf(7);
             String metadataUri = "https://n7alj90bp0isqv2j.public.blob.vercel-storage.com/data/Lab-UNED-2.json";
-            String json = createMinimalMetadataJson("Furuta Inverted Pendulum", "A pendulum lab", "");
 
             when(walletService.getLabTokenUri(labId)).thenReturn(Optional.of(metadataUri));
             when(walletService.getLabMetadataOrigins(labId)).thenReturn(List.of("https://provider.example"));
             when(metadataClient.fetch(metadataUri, List.of("https://provider.example")))
                 .thenThrow(new MetadataOriginNotRegisteredException("Metadata origin is not registered for this provider"));
-            when(metadataClient.fetchFromAuthoritativeUri(metadataUri))
-                .thenReturn(json.getBytes(StandardCharsets.UTF_8));
 
-            LabMetadata metadata = metadataService.getLabMetadataForLab(labId);
-
-            assertThat(metadata.getName()).isEqualTo("Furuta Inverted Pendulum");
-            assertThat(metadata.getDescription()).isEqualTo("A pendulum lab");
+            assertThatThrownBy(() -> metadataService.getLabMetadataForLab(labId))
+                .isInstanceOf(MetadataOriginNotRegisteredException.class);
         }
 
         @Test

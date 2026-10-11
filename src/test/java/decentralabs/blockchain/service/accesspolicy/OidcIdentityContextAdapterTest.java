@@ -14,14 +14,14 @@ class OidcIdentityContextAdapterTest {
 
     @Test
     void rejectsUnverifiedOrUntrustedClaims() {
-        assertThrows(IllegalArgumentException.class, () -> adapter.normalize(Map.of("iss", "https://idp.example", "sub", "1"), provider, null, "uni.example", null));
-        assertThrows(IllegalArgumentException.class, () -> adapter.normalize(Map.of("signatureVerified", true, "iss", "https://evil.example", "sub", "1", "aud", "marketplace"), provider, null, "uni.example", null));
+        assertThrows(IllegalArgumentException.class, () -> adapter.normalize(Map.of("iss", "https://idp.example", "sub", "1"), provider, null, "uni.example"));
+        assertThrows(IllegalArgumentException.class, () -> adapter.normalize(Map.of("signatureVerified", true, "iss", "https://evil.example", "sub", "1", "aud", "marketplace"), provider, null, "uni.example"));
     }
 
     @Test
     void normalizesValidatedClaimsWithoutPersistingToken() {
         var context = adapter.normalize(Map.of("signatureVerified", true, "iss", "https://idp.example", "sub", "user-1",
-            "aud", "marketplace", "nonce", "n", "eduPersonEntitlement", List.of("engineering")), provider, "n", "uni.example", "0xhash");
+            "aud", "marketplace", "nonce", "n", "eduPersonEntitlement", List.of("engineering")), provider, "n", "uni.example");
 
         assertEquals("oidc", context.authMethod());
         assertEquals(List.of("engineering"), context.attributes().get("eduPersonEntitlement"));

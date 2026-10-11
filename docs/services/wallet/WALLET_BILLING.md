@@ -7,7 +7,7 @@ Marketplace APIs.
 ## Network and authentication boundary
 
 `LocalhostOnlyFilter` protects `/wallet`, `/billing`, `/wallet-dashboard`,
-`/institution-config`, `/lab-admin` and `/access-audit/internal`. Requests are
+`/wallet-admin`, `/institution-config`, `/lab-admin` and `/access-audit/internal`. Requests are
 allowed from loopback by default. Remote private-network access requires the
 matching `ADMIN_DASHBOARD_ALLOW_PRIVATE`, `SECURITY_ALLOW_PRIVATE_NETWORKS` and
 CIDR settings, plus a valid route token when access-token enforcement applies.
@@ -19,6 +19,13 @@ consumer-only mode the local/private-network filter is the boundary and a valid
 `ADMIN_ACCESS_TOKEN` is the intended remote-administration control. The token
 may be supplied through `X-Access-Token`, a Bearer header or the configured
 cookie, not through a query parameter.
+
+The standalone wallet dashboard asks for `ADMIN_ACCESS_TOKEN` when a
+`provider-consumer` backend is accessed directly and the billing role token is
+not already present. The dashboard keeps the token in page memory only. A Full
+Gateway continues to use its short-lived administrative cookie. Consumer-only
+standalone dashboards do not need the provider-mode billing role token on
+loopback.
 
 Never expose `/wallet/reveal` or mutating billing endpoints directly to the
 Internet.
@@ -201,6 +208,33 @@ is distinct from the aggregate `settlementQueuedRaw` lifecycle bucket.
 
 ### Provider settlement claims
 
+The provider income report is available at `GET /billing/compliance/provider-income`.
+It derives its scope from the configured institutional wallet; callers cannot
+choose another provider address. The report includes only that wallet's
+recorded generation and reconciled settlement activity, grouped by the
+department name assigned to a Gateway (or its Gateway ID when unnamed) and by
+lab. When multiple Gateways share a department name, the department total
+combines them; the lab rows retain their Gateway ID. The report starts with an
+institution-wide total, followed by the department totals and lab details.
+Amounts are service credits; `paid` means an external payment proof was
+recorded, not that credits are redeemable for cash. The route retains its
+provider-network administrator permission in provider-consumer mode.
+
+The Lite Lab Manager uses `GET /lab-admin/billing/provider-income` for a
+read-only report limited to the Gateway bound to its authenticated backend
+credential. The backend derives the Gateway from the filter-established scope;
+the browser cannot choose one. This view never runs settlement-source
+reconciliation and does not expose Wallet & Billing administration endpoints.
+
+The **Lite Gateways and departments** section in the Provider Settlements tab
+lists entries from `LAB_ADMIN_GATEWAY_CREDENTIALS_JSON` without exposing their
+tokens. A provider-network administrator can assign or clear each display name
+through `GET /billing/provider-gateways` and
+`PUT /billing/provider-gateways/{gatewayId}`. Names are stored in the backend
+database and affect report labels only; they do not change the trusted Gateway
+identity. The roster reflects the provider backend's loaded configuration, so
+a newly added Lite appears after its trust configuration is reloaded.
+
 Provider network and receivable operations are under `/billing/provider-network`
 and `/billing/provider-receivables`. The Diamond is the canonical settlement
 ledger; SQL is a receipt-backed projection and durable reconciliation outbox:
@@ -265,6 +299,8 @@ runbooks.
 - `/institution-config/` serves provider/consumer configuration UI.
 - `/lab-admin/**` is a separate provider-lab surface; see
   [Lab administration and content](../lab-administration/LAB_ADMINISTRATION.md).
+- `/wallet-admin/access-policies/**` manages the optional institutional
+  category-access policy; see [Institutional access policies](../access-policy/ACCESS_POLICY.md).
 - Provisioning token flows are documented in
   [Intents and provisioning](../intents/INTENTS_PROVISIONING.md).
 

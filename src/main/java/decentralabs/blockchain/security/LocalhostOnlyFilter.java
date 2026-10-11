@@ -1,7 +1,12 @@
 package decentralabs.blockchain.security;
 
+import decentralabs.blockchain.service.BackendUrlResolver;
+import decentralabs.blockchain.util.GatewayIdentity;
 import decentralabs.blockchain.util.LogSanitizer;
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.util.Optional;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -26,6 +31,8 @@ public class LocalhostOnlyFilter extends OncePerRequestFilter {
         LocalhostOnlyFilter.class.getName() + ".localBillingReadAllowed";
 
     private final AdminNetworkAccessPolicy adminNetworkAccessPolicy;
+    private final LabAdminGatewayCredentialService labAdminGatewayCredentialService;
+    private final BackendUrlResolver backendUrlResolver;
 
     @Value("${security.access-token:}")
     private String accessToken;
@@ -46,7 +53,18 @@ public class LocalhostOnlyFilter extends OncePerRequestFilter {
     private boolean marketplaceBillingReadsEnabled;
 
     public LocalhostOnlyFilter(AdminNetworkAccessPolicy adminNetworkAccessPolicy) {
+        this(adminNetworkAccessPolicy, null, null);
+    }
+
+    @org.springframework.beans.factory.annotation.Autowired
+    public LocalhostOnlyFilter(
+        AdminNetworkAccessPolicy adminNetworkAccessPolicy,
+        LabAdminGatewayCredentialService labAdminGatewayCredentialService,
+        BackendUrlResolver backendUrlResolver
+    ) {
         this.adminNetworkAccessPolicy = adminNetworkAccessPolicy;
+        this.labAdminGatewayCredentialService = labAdminGatewayCredentialService;
+        this.backendUrlResolver = backendUrlResolver;
     }
 
     @Override
@@ -81,6 +99,11 @@ public class LocalhostOnlyFilter extends OncePerRequestFilter {
             log.warn("Blocked non-localhost request: path={}, clientIp={}", path, clientIp);
             response.sendError(HttpServletResponse.SC_FORBIDDEN,
                 "Endpoint is available from localhost only");
+            return;
+        }
+
+        if (isLabAdminPath(request) && !establishLabAdminScope(request)) {
+            response.sendError(HttpServletResponse.SC_FORBIDDEN, "Gateway scope is invalid or not authorized");
             return;
         }
 
@@ -186,11 +209,78 @@ public class LocalhostOnlyFilter extends OncePerRequestFilter {
     }
 
     private boolean hasValidLabManagerToken(HttpServletRequest request) {
-        if (labManagerToken == null || labManagerToken.isBlank()) {
+        String suppliedToken = labManagerTokenFromRequest(request);
+        if (suppliedToken == null) {
             return false;
         }
 
-        String headerToken = request.getHeader(labManagerTokenHeader);
-        return headerToken != null && labManagerToken.equals(headerToken.trim());
+        Optional<String> mappedGateway = labAdminGatewayCredentialService == null
+            ? Optional.empty()
+            : labAdminGatewayCredentialService.gatewayIdForToken(suppliedToken);
+        if (mappedGateway.isPresent()) {
+            String requestedGateway = GatewayIdentity.normalizeGatewayId(request.getHeader("X-Gateway-ID"));
+            return mappedGateway.get().equals(requestedGateway);
+        }
+        return constantTimeEquals(labManagerToken, suppliedToken);
+    }
+
+    private boolean establishLabAdminScope(HttpServletRequest request) {
+        if (hasValidAccessToken(request)) {
+            request.setAttribute(LabAdminGatewayScope.REQUEST_ATTRIBUTE, LabAdminGatewayScope.forInstitution());
+            return true;
+        }
+
+        String suppliedToken = labManagerTokenFromRequest(request);
+        Optional<String> mappedGateway = labAdminGatewayCredentialService == null || suppliedToken == null
+            ? Optional.empty()
+            : labAdminGatewayCredentialService.gatewayIdForToken(suppliedToken);
+        if (mappedGateway.isPresent()) {
+            String requestedGateway = GatewayIdentity.normalizeGatewayId(request.getHeader("X-Gateway-ID"));
+            if (!mappedGateway.get().equals(requestedGateway)) {
+                return false;
+            }
+            request.setAttribute(
+                LabAdminGatewayScope.REQUEST_ATTRIBUTE,
+                LabAdminGatewayScope.forGateway(mappedGateway.get())
+            );
+            return true;
+        }
+
+        String localGateway = localGatewayId();
+        if (localGateway == null) {
+            // The one-argument constructor is retained for isolated filter tests.
+            request.setAttribute(LabAdminGatewayScope.REQUEST_ATTRIBUTE, LabAdminGatewayScope.forInstitution());
+            return true;
+        }
+        String requestedGateway = GatewayIdentity.normalizeGatewayId(request.getHeader("X-Gateway-ID"));
+        if (requestedGateway != null && !localGateway.equals(requestedGateway)) {
+            return false;
+        }
+        request.setAttribute(
+            LabAdminGatewayScope.REQUEST_ATTRIBUTE,
+            LabAdminGatewayScope.forGateway(localGateway)
+        );
+        return true;
+    }
+
+    private String localGatewayId() {
+        return backendUrlResolver == null
+            ? null
+            : GatewayIdentity.fromAccessUri(backendUrlResolver.resolveBaseDomain());
+    }
+
+    private String labManagerTokenFromRequest(HttpServletRequest request) {
+        String supplied = request.getHeader(labManagerTokenHeader);
+        return supplied == null || supplied.isBlank() ? null : supplied.trim();
+    }
+
+    private boolean constantTimeEquals(String expected, String actual) {
+        if (expected == null || expected.isBlank() || actual == null) {
+            return false;
+        }
+        return MessageDigest.isEqual(
+            expected.trim().getBytes(StandardCharsets.UTF_8),
+            actual.trim().getBytes(StandardCharsets.UTF_8)
+        );
     }
 }

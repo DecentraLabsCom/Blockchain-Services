@@ -10,6 +10,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import decentralabs.blockchain.SecurityConfig;
 import decentralabs.blockchain.security.AccessTokenAuthenticationFilter;
 import decentralabs.blockchain.security.AdminNetworkAccessPolicy;
+import decentralabs.blockchain.security.LabAdminGatewayCredentialService;
 import decentralabs.blockchain.security.LocalhostOnlyFilter;
 import decentralabs.blockchain.security.PreAuthenticationRateLimitFilter;
 import decentralabs.blockchain.security.PublicEndpointRateLimitFilter;
@@ -202,6 +203,7 @@ class BillingAdminControllerIntegrationTest {
         AccessTokenAuthenticationFilter.class,
         SessionObserverAuthenticationFilter.class,
         AdminNetworkAccessPolicy.class,
+        LabAdminGatewayCredentialService.class,
         LocalhostOnlyFilter.class,
         PreAuthenticationRateLimitFilter.class,
         PublicEndpointRateLimitFilter.class,

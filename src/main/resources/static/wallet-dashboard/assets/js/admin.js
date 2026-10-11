@@ -33,6 +33,10 @@ const DashboardState = {
     collectAggregates: null,
     settlementLatestBatchId: null,
     settlementInvoices: [],
+    providerIncomeReport: null,
+    providerIncomeReportError: null,
+    providerGatewayDepartments: [],
+    providerGatewayDepartmentsError: null,
     transactionsLimit: 10,
     operatingMode: 'unknown',
     providerRegistrationEnabled: false,
@@ -44,10 +48,13 @@ const COLLECT_LABS_RETRY_DELAYS_MS = [1500, 3500, 7000];
 function updateRoleBasedSections() {
     const hasWallet = Boolean(DashboardState.walletAddress);
     const showInstitutionControls = hasWallet && DashboardState.isInstitution;
-    const showProviderControls = hasWallet && DashboardState.isProvider;
+    const providerModeEnabled = DashboardState.operatingMode === 'provider-consumer';
+    const showProviderControls = hasWallet && providerModeEnabled && DashboardState.isProvider;
     const showOperatorControls = hasWallet && DashboardState.isOperator;
+    const showProviderOperatorControls = providerModeEnabled && showOperatorControls;
 
     const settlementSection = document.getElementById('settlementOperationsSection');
+    const gatewayDepartmentsSection = document.getElementById('providerGatewayDepartmentsSection');
     const settlementTitle = document.getElementById('settlementOperationsTitle');
     const providerSettlementControls = document.getElementById('providerSettlementControls');
     const providerPayoutActions = document.getElementById('providerPayoutActions');
@@ -67,10 +74,13 @@ function updateRoleBasedSections() {
     const providerSettlementOperationSelect = document.getElementById('providerSettlementOperationSelect');
 
     if (settlementSection) {
-        settlementSection.classList.toggle('hidden', !showProviderControls && !showOperatorControls);
+        settlementSection.classList.toggle('hidden', !showProviderControls && !showProviderOperatorControls);
+    }
+    if (gatewayDepartmentsSection) {
+        gatewayDepartmentsSection.classList.toggle('hidden', !showProviderOperatorControls);
     }
     if (providerSettlementControls) {
-        providerSettlementControls.classList.toggle('hidden', !showProviderControls && !showOperatorControls);
+        providerSettlementControls.classList.toggle('hidden', !showProviderControls && !showProviderOperatorControls);
     }
     if (providerPayoutActions) {
         providerPayoutActions.classList.toggle(
@@ -79,13 +89,15 @@ function updateRoleBasedSections() {
         );
     }
     if (providerSettlementTransitionForm) {
-        providerSettlementTransitionForm.classList.toggle('hidden', !showProviderControls && !showOperatorControls);
+        providerSettlementTransitionForm.classList.toggle('hidden', !showProviderControls && !showProviderOperatorControls);
     }
     if (providerSettlementOperationSelect) {
         [...providerSettlementOperationSelect.options].forEach((option) => {
-            option.disabled = !showOperatorControls && option.value !== 'submit';
+            option.disabled = option.value === 'submit'
+                ? !showProviderControls
+                : !showProviderOperatorControls;
         });
-        if (!showOperatorControls && providerSettlementOperationSelect.value !== 'submit') {
+        if (!showProviderOperatorControls && providerSettlementOperationSelect.value !== 'submit') {
             providerSettlementOperationSelect.value = 'submit';
         }
         updateProviderSettlementOperationFields();
@@ -118,13 +130,13 @@ function updateRoleBasedSections() {
         operatorAdjustCreditsCard.classList.toggle('hidden', !showOperatorControls);
     }
     if (collectLifecycleSummary) {
-        collectLifecycleSummary.classList.toggle('hidden', !showProviderControls && !showOperatorControls);
+        collectLifecycleSummary.classList.toggle('hidden', !showProviderControls && !showProviderOperatorControls);
     }
 
     if (settlementTitle) {
-        if (showProviderControls && showOperatorControls) {
+        if (showProviderControls && showProviderOperatorControls) {
             settlementTitle.textContent = 'Provider Settlement and Operator Review';
-        } else if (showOperatorControls) {
+        } else if (showProviderOperatorControls) {
             settlementTitle.textContent = 'Operator Settlement Review';
         } else if (showProviderControls) {
             settlementTitle.textContent = 'Provider Settlement';
@@ -146,9 +158,9 @@ function updateRoleBasedSections() {
     }
 
     if (collectLabSelectLabel) {
-        if (showProviderControls && !showOperatorControls) {
+        if (showProviderControls && !showProviderOperatorControls) {
             collectLabSelectLabel.textContent = 'Select one of your labs';
-        } else if (showOperatorControls) {
+        } else if (showProviderOperatorControls) {
             collectLabSelectLabel.textContent = 'Select lab for settlement review';
         } else {
             collectLabSelectLabel.textContent = 'Select lab';
@@ -162,7 +174,8 @@ function updateRoleBasedSections() {
     window.WalletDashboardTabs?.setRoleVisibility({
         isInstitution: showInstitutionControls,
         isProvider: showProviderControls,
-        isOperator: showOperatorControls
+        isOperator: showOperatorControls,
+        operatingMode: DashboardState.operatingMode
     });
 }
 
@@ -177,7 +190,10 @@ function updateCollectDetailVisibility() {
         metricsEl.classList.toggle('hidden', !showDetails);
     }
     if (actionsEl) {
-        actionsEl.classList.toggle('hidden', !DashboardState.isProvider || !showDetails);
+        actionsEl.classList.toggle(
+            'hidden',
+            DashboardState.operatingMode !== 'provider-consumer' || !DashboardState.isProvider || !showDetails
+        );
     }
 }
 
@@ -776,9 +792,10 @@ function updateOperatingModeNotices(providerConfig) {
     const welcomeInstruction = document.getElementById('welcomePairingInstruction');
     const welcomeHelp = document.getElementById('welcomePairingHelp');
 
-    const operatingMode = providerConfig && providerConfig.operatingMode
-        ? providerConfig.operatingMode
-        : 'provider-consumer';
+    const configuredMode = providerConfig && providerConfig.operatingMode;
+    const operatingMode = configuredMode === 'provider-consumer' || configuredMode === 'consumer-only'
+        ? configuredMode
+        : 'unknown';
     const providerMode = operatingMode === 'provider-consumer';
 
     DashboardState.operatingMode = operatingMode;
@@ -789,20 +806,54 @@ function updateOperatingModeNotices(providerConfig) {
 
     const badge = document.getElementById('operatingModeBadge');
     if (badge) {
-        badge.textContent = providerMode ? 'Provider + Consumer Mode' : 'Consumer-Only Mode';
+        badge.textContent = providerMode
+            ? 'Provider + Consumer Mode'
+            : operatingMode === 'consumer-only'
+                ? 'Consumer-Only Mode'
+                : 'Backend Mode Unavailable';
     }
 
     if (welcomeInstruction) {
         welcomeInstruction.innerHTML = providerMode
             ? '<strong>Register this backend</strong> with your institution.'
-            : '<strong>Register this consumer backend</strong> with your institution.';
+            : operatingMode === 'consumer-only'
+                ? '<strong>Register this consumer backend</strong> with your institution.'
+                : '<strong>Backend role unavailable</strong>';
     }
 
     if (welcomeHelp) {
-        welcomeHelp.textContent = 'If a DecentraLabs administrator gave you a provisioning token, apply it below. Otherwise open backend pairing setup; that page explains the pairing challenge flow and links to the Marketplace.';
+        welcomeHelp.textContent = operatingMode === 'unknown'
+            ? 'The backend role could not be loaded. Reload the dashboard before applying a provisioning token.'
+            : 'If a DecentraLabs administrator gave you a provisioning token, apply it below. Otherwise open backend pairing setup; that page explains the pairing challenge flow and links to the Marketplace.';
     }
 
     updateInstitutionPairingGuidance(providerConfig);
+    updateRoleBasedSections();
+}
+
+async function loadDashboardSystemStatus(providerConfig) {
+    try {
+        return await API.getSystemStatus();
+    } catch (error) {
+        const providerMode = providerConfig?.operatingMode === 'provider-consumer';
+        const requiresStandaloneToken = providerMode && (error.status === 401 || error.status === 403);
+        if (!requiresStandaloneToken) throw error;
+
+        const token = await showInputModal(
+            'Provider dashboard access',
+            'Enter the backend ADMIN_ACCESS_TOKEN. It stays in memory for this page and is sent only to this backend.',
+            'password'
+        );
+        if (!token) throw error;
+
+        API.setAdminAccessToken(token);
+        try {
+            return await API.getSystemStatus();
+        } catch (retryError) {
+            API.clearAdminAccessToken();
+            throw retryError;
+        }
+    }
 }
 
 function updateInstitutionPairingGuidance(providerConfig) {
@@ -966,19 +1017,19 @@ function renderWalletSetupPrompt() {
 async function loadSystemStatus() {
     console.log('[loadSystemStatus] Starting...');
     try {
+        console.log('[loadSystemStatus] Calling API.getProviderConfigStatus()...');
+        const providerConfig = await API.getProviderConfigStatus().catch(error => {
+            console.warn('[loadSystemStatus] provider config status unavailable', error);
+            return null;
+        });
+        updateOperatingModeNotices(providerConfig);
+
         console.log('[loadSystemStatus] Calling API.getSystemStatus()...');
-        const [data, providerConfig] = await Promise.all([
-            API.getSystemStatus(),
-            API.getProviderConfigStatus().catch(error => {
-                console.warn('[loadSystemStatus] provider config status unavailable', error);
-                return null;
-            })
-        ]);
+        const data = await loadDashboardSystemStatus(providerConfig);
         console.log('[loadSystemStatus] Received data:', data);
         if (providerConfig) {
             console.log('[loadSystemStatus] Provider config status:', providerConfig);
         }
-        updateOperatingModeNotices(providerConfig);
         
         if (data.success) {
             const walletConfigured = data.walletConfigured;
@@ -1283,7 +1334,8 @@ async function loadBalances() {
                     `;
                     
                     // Check if user is a registered provider from billing data
-                    const isProvider = billingData.success && billingData.isProvider === true;
+                    const isProvider = DashboardState.operatingMode === 'provider-consumer'
+                        && billingData.success && billingData.isProvider === true;
                     const stakeInfo = billingData.stakeInfo || null;
                     // billing and bonded amounts only show 8 decimals
                     const billingBalance = formatEthDisplay(billingData.billingBalanceFormatted || '0', 8);
@@ -1321,7 +1373,8 @@ async function loadBalances() {
                     // never a provider-registration upsell.
                     const promoContainer = document.getElementById('labPromoMessage');
                     if (promoContainer) {
-                        if (!isProvider && parseFloat(labBalance) === 0) {
+                        if (DashboardState.operatingMode !== 'unknown'
+                            && !isProvider && parseFloat(labBalance) === 0) {
                             promoContainer.style.display = 'block';
                             const consumerOnly = DashboardState.operatingMode === 'consumer-only';
                             promoContainer.innerHTML = consumerOnly
@@ -1417,7 +1470,9 @@ function scheduleCollectLabsRetry(error) {
 }
 
 function shouldRetryEmptyCollectLabs() {
-    return Boolean(DashboardState.walletAddress) && (DashboardState.isProvider || DashboardState.isOperator);
+    return DashboardState.operatingMode === 'provider-consumer'
+        && Boolean(DashboardState.walletAddress)
+        && (DashboardState.isProvider || DashboardState.isOperator);
 }
 
 function scheduleNextCollectLabsRetry(statusMessage = null) {
@@ -1703,7 +1758,9 @@ function renderCollectSettlementOverview() {
     }
 
     const labs = Array.isArray(DashboardState.collectLabs) ? DashboardState.collectLabs : [];
-    const shouldShow = labs.length > 0 && (DashboardState.isProvider || DashboardState.isOperator);
+    const shouldShow = DashboardState.operatingMode === 'provider-consumer'
+        && labs.length > 0
+        && (DashboardState.isProvider || DashboardState.isOperator);
     overviewEl.classList.toggle('hidden', !shouldShow);
 
     if (!shouldShow) {
@@ -1757,6 +1814,303 @@ function renderCollectSettlementOverview() {
     }).join('');
 }
 
+function providerIncomeRawAmount(row, field) {
+    const rawValue = String(row[`${field}Raw`] ?? '');
+    if (/^\d+$/.test(rawValue)) return BigInt(rawValue);
+
+    const displayValue = String(row[field] ?? '0');
+    const match = displayValue.match(/^(\d+)(?:\.(\d{0,7}))?$/);
+    if (!match) return 0n;
+    const fractional = (match[2] || '').padEnd(7, '0');
+    return BigInt(match[1]) * 10000000n + BigInt(fractional || '0');
+}
+
+function formatProviderIncomeRawAmount(rawAmount) {
+    const whole = rawAmount / 10000000n;
+    const fractional = (rawAmount % 10000000n).toString().padStart(7, '0');
+    return `${whole}.${fractional}`;
+}
+
+function summarizeProviderIncomeByGateway(rows) {
+    const amountFields = ['potentialProviderShare', 'accrued', 'unbatched', 'queued', 'inProcess', 'paid'];
+    const groups = new Map();
+
+    rows.forEach(row => {
+        const gatewayId = row.gatewayId || '__unassigned__';
+        const departmentName = String(row.departmentName || '').trim();
+        const groupKey = departmentName
+            ? `department:${departmentName.toLowerCase()}`
+            : `gateway:${gatewayId}`;
+        let summary = groups.get(groupKey);
+        if (!summary) {
+            summary = {
+                groupKey,
+                gatewayLabel: departmentName || row.gatewayLabel || 'Gateway unassigned',
+                gatewayIds: new Set(),
+                accessUris: new Set(),
+                labIds: new Set(),
+                confirmedReservations: 0,
+                amounts: Object.fromEntries(amountFields.map(field => [field, 0n]))
+            };
+            groups.set(groupKey, summary);
+        }
+
+        if (row.gatewayId) summary.gatewayIds.add(String(row.gatewayId));
+        if (row.accessUri) summary.accessUris.add(String(row.accessUri));
+        summary.labIds.add(row.labId ? String(row.labId) : 'unknown');
+        summary.confirmedReservations += Number(row.confirmedReservations || 0);
+        amountFields.forEach(field => {
+            summary.amounts[field] += providerIncomeRawAmount(row, field);
+        });
+    });
+
+    return Array.from(groups.values()).sort((left, right) =>
+        left.gatewayLabel.localeCompare(right.gatewayLabel)
+    );
+}
+
+function summarizeProviderIncomeInstitution(departmentRows) {
+    const amountFields = ['potentialProviderShare', 'accrued', 'unbatched', 'queued', 'inProcess', 'paid'];
+    const summary = {
+        gatewayIds: new Set(),
+        labIds: new Set(),
+        confirmedReservations: 0,
+        amounts: Object.fromEntries(amountFields.map(field => [field, 0n]))
+    };
+
+    departmentRows.forEach(department => {
+        department.gatewayIds.forEach(gatewayId => summary.gatewayIds.add(gatewayId));
+        department.labIds.forEach(labId => summary.labIds.add(labId));
+        summary.confirmedReservations += department.confirmedReservations;
+        amountFields.forEach(field => {
+            summary.amounts[field] += department.amounts[field];
+        });
+    });
+    summary.departmentCount = departmentRows.length;
+    return summary;
+}
+
+function renderProviderIncomeReport() {
+    const tableBody = document.getElementById('providerIncomeReportBody');
+    const departmentBody = document.getElementById('providerIncomeGatewayReportBody');
+    const institutionBody = document.getElementById('providerIncomeInstitutionReportBody');
+    const noteEl = document.getElementById('providerIncomeReportNote');
+    const exportButton = document.getElementById('providerIncomeExportBtn');
+    if (!tableBody || !departmentBody || !institutionBody || !noteEl || !exportButton) return;
+
+    const report = DashboardState.providerIncomeReport;
+    const rows = report && Array.isArray(report.rows) ? report.rows : [];
+    if (!report) {
+        institutionBody.innerHTML = '<tr><td colspan="10" class="settlement-table-empty">Institution income is unavailable.</td></tr>';
+        departmentBody.innerHTML = '<tr><td colspan="10" class="settlement-table-empty">Provider income history is unavailable.</td></tr>';
+        tableBody.innerHTML = '<tr><td colspan="10" class="settlement-table-empty">Provider income history is unavailable.</td></tr>';
+        exportButton.disabled = true;
+        noteEl.textContent = DashboardState.providerIncomeReportError
+            ? `Provider income report unavailable: ${DashboardState.providerIncomeReportError}`
+            : 'The report needs durable database storage and canonical contract event history.';
+        return;
+    }
+
+    const unresolvedCount = Number(report.unresolvedBatchCount || 0);
+    const scopeMismatches = Number(report.scopeReferenceMismatchCount || 0);
+    const trackingStart = report.trackingStartBlock || 'recent lookback';
+    const providerWallet = report.providerAddress ? `Provider wallet: ${report.providerAddress}. ` : '';
+    noteEl.textContent = `${providerWallet}Amounts are service credits. Event tracking starts at ${trackingStart}; first observed confirmation: ${report.firstObservedConfirmationBlock || 'none'}. Paid externally means a payment proof was recorded. ${unresolvedCount} batch(es) for these labs need source reconciliation (${report.unresolvedBatchAmount || '0.0000000'} credits); ${scopeMismatches} claim scope reference(s) do not match a recorded batch.`;
+    exportButton.disabled = rows.length === 0;
+    exportButton.onclick = downloadProviderIncomeReportCsv;
+
+    const departmentRows = summarizeProviderIncomeByGateway(rows);
+    const institution = summarizeProviderIncomeInstitution(departmentRows);
+    institutionBody.innerHTML = `
+        <tr>
+            <td>Institution (${escapeHtml(String(institution.departmentCount))} department/group(s))</td>
+            <td>${escapeHtml(String(institution.gatewayIds.size))}</td>
+            <td>${escapeHtml(String(institution.labIds.size))}</td>
+            <td>${escapeHtml(String(institution.confirmedReservations))}</td>
+            <td>${escapeHtml(formatProviderIncomeRawAmount(institution.amounts.potentialProviderShare))}</td>
+            <td>${escapeHtml(formatProviderIncomeRawAmount(institution.amounts.accrued))}</td>
+            <td>${escapeHtml(formatProviderIncomeRawAmount(institution.amounts.unbatched))}</td>
+            <td>${escapeHtml(formatProviderIncomeRawAmount(institution.amounts.queued))}</td>
+            <td>${escapeHtml(formatProviderIncomeRawAmount(institution.amounts.inProcess))}</td>
+            <td>${escapeHtml(formatProviderIncomeRawAmount(institution.amounts.paid))}</td>
+        </tr>
+    `;
+
+    if (!rows.length) {
+        departmentBody.innerHTML = '<tr><td colspan="10" class="settlement-table-empty">No provider income events have been indexed for this wallet during the reported coverage period.</td></tr>';
+        tableBody.innerHTML = '<tr><td colspan="10" class="settlement-table-empty">No provider income events have been indexed for this wallet during the reported coverage period.</td></tr>';
+        return;
+    }
+
+    departmentBody.innerHTML = departmentRows.map(department => `
+        <tr>
+            <td title="${escapeHtml([...department.gatewayIds, ...department.accessUris].join(', '))}">${escapeHtml(department.gatewayLabel)}</td>
+            <td>${escapeHtml(String(department.gatewayIds.size))}</td>
+            <td>${escapeHtml(String(department.labIds.size))}</td>
+            <td>${escapeHtml(String(department.confirmedReservations))}</td>
+            <td>${escapeHtml(formatProviderIncomeRawAmount(department.amounts.potentialProviderShare))}</td>
+            <td>${escapeHtml(formatProviderIncomeRawAmount(department.amounts.accrued))}</td>
+            <td>${escapeHtml(formatProviderIncomeRawAmount(department.amounts.unbatched))}</td>
+            <td>${escapeHtml(formatProviderIncomeRawAmount(department.amounts.queued))}</td>
+            <td>${escapeHtml(formatProviderIncomeRawAmount(department.amounts.inProcess))}</td>
+            <td>${escapeHtml(formatProviderIncomeRawAmount(department.amounts.paid))}</td>
+        </tr>
+    `).join('');
+
+    tableBody.innerHTML = rows.map(row => `
+        <tr>
+            <td>${escapeHtml(row.gatewayLabel || 'Gateway unassigned')}</td>
+            <td>${escapeHtml(row.gatewayId || '')}</td>
+            <td>${escapeHtml(row.labId ? `Lab #${row.labId}` : 'Unknown lab')}</td>
+            <td>${escapeHtml(String(row.confirmedReservations || 0))}</td>
+            <td>${escapeHtml(row.potentialProviderShare || '0.0000000')}</td>
+            <td>${escapeHtml(row.accrued || '0.0000000')}</td>
+            <td>${escapeHtml(row.unbatched || '0.0000000')}</td>
+            <td>${escapeHtml(row.queued || '0.0000000')}</td>
+            <td>${escapeHtml(row.inProcess || '0.0000000')}</td>
+            <td>${escapeHtml(row.paid || '0.0000000')}</td>
+        </tr>
+    `).join('');
+}
+
+function downloadProviderIncomeReportCsv() {
+    const report = DashboardState.providerIncomeReport;
+    const rows = report && Array.isArray(report.rows) ? report.rows : [];
+    if (!rows.length) return;
+    const headers = [
+        'gatewayId', 'departmentName', 'accessUri', 'labId', 'confirmedReservations', 'potentialProviderShareCredits',
+        'accruedCredits', 'unbatchedCredits', 'queuedCredits', 'inProcessCredits', 'paidExternallyCredits',
+        'invalidatedCredits'
+    ];
+    const values = rows.map(row => [
+        row.gatewayId || '', row.departmentName || '', row.accessUri || '', row.labId || '', row.confirmedReservations || 0,
+        row.potentialProviderShare || '0.0000000', row.accrued || '0.0000000', row.unbatched || '0.0000000',
+        row.queued || '0.0000000', row.inProcess || '0.0000000', row.paid || '0.0000000',
+        row.invalidated || '0.0000000'
+    ]);
+    const csvCell = value => {
+        let text = String(value);
+        if (/^[\t\r ]*[=+\-@]/.test(text)) text = `'${text}`;
+        return `"${text.replaceAll('"', '""')}"`;
+    };
+    const csv = [headers, ...values].map(row => row.map(csvCell).join(',')).join('\r\n');
+    const objectUrl = URL.createObjectURL(new Blob([`\ufeff${csv}`], { type: 'text/csv;charset=utf-8' }));
+    const link = document.createElement('a');
+    link.href = objectUrl;
+    link.download = `provider-income-${new Date().toISOString().slice(0, 10)}.csv`;
+    link.click();
+    setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
+}
+
+async function loadProviderIncomeReport() {
+    if (DashboardState.operatingMode !== 'provider-consumer'
+        || (!DashboardState.isProvider && !DashboardState.isOperator)) {
+        DashboardState.providerIncomeReport = null;
+        DashboardState.providerIncomeReportError = null;
+        renderProviderIncomeReport();
+        return;
+    }
+    try {
+        const report = await API.getProviderIncomeReport();
+        if (!report || report.success !== true) throw new Error(report && report.error || 'Report unavailable');
+        DashboardState.providerIncomeReport = report;
+        DashboardState.providerIncomeReportError = null;
+    } catch (error) {
+        DashboardState.providerIncomeReport = null;
+        DashboardState.providerIncomeReportError = error.message;
+    }
+    renderProviderIncomeReport();
+}
+
+function renderProviderGatewayDepartments() {
+    const tableBody = document.getElementById('providerGatewayDepartmentsBody');
+    const noteEl = document.getElementById('providerGatewayDepartmentsNote');
+    if (!tableBody || !noteEl) return;
+
+    if (DashboardState.providerGatewayDepartmentsError) {
+        noteEl.textContent = `Gateway department list unavailable: ${DashboardState.providerGatewayDepartmentsError}`;
+        tableBody.innerHTML = `<tr><td colspan="4" class="settlement-table-empty">${escapeHtml(DashboardState.providerGatewayDepartmentsError)}</td></tr>`;
+        return;
+    }
+
+    const gateways = DashboardState.providerGatewayDepartments;
+    noteEl.textContent = 'The list reflects Lite Gateways trusted by this provider backend. Saving a name changes report labels only; a blank name restores the Gateway ID.';
+    if (!gateways.length) {
+        tableBody.innerHTML = '<tr><td colspan="4" class="settlement-table-empty">No Lite Gateways are registered with this provider backend.</td></tr>';
+        return;
+    }
+
+    tableBody.innerHTML = gateways.map(gateway => `
+        <tr>
+            <td>${escapeHtml(gateway.gatewayId)}</td>
+            <td>${escapeHtml(gateway.accessUri)}</td>
+            <td>
+                <input type="text" maxlength="120" class="gateway-department-name-input"
+                    data-gateway-id="${escapeHtml(gateway.gatewayId)}"
+                    aria-label="Department or group name for ${escapeHtml(gateway.gatewayId)}"
+                    value="${escapeHtml(gateway.departmentName || '')}">
+            </td>
+            <td><button type="button" class="btn btn-primary btn-small gateway-department-save"
+                data-gateway-id="${escapeHtml(gateway.gatewayId)}">Save</button></td>
+        </tr>
+    `).join('');
+}
+
+async function loadProviderGatewayDepartments() {
+    if (DashboardState.operatingMode !== 'provider-consumer' || !DashboardState.isOperator) {
+        DashboardState.providerGatewayDepartments = [];
+        DashboardState.providerGatewayDepartmentsError = null;
+        renderProviderGatewayDepartments();
+        return;
+    }
+
+    try {
+        const response = await API.getProviderGatewayDepartments();
+        if (!response || response.success !== true || !Array.isArray(response.gateways)) {
+            throw new Error(response && response.error || 'Gateway list unavailable');
+        }
+        DashboardState.providerGatewayDepartments = response.gateways;
+        DashboardState.providerGatewayDepartmentsError = null;
+    } catch (error) {
+        DashboardState.providerGatewayDepartments = [];
+        DashboardState.providerGatewayDepartmentsError = error.message;
+    }
+    renderProviderGatewayDepartments();
+}
+
+function setupProviderGatewayDepartmentHandlers() {
+    const refreshButton = document.getElementById('providerGatewayDepartmentsRefreshBtn');
+    refreshButton?.addEventListener('click', loadProviderGatewayDepartments);
+
+    const tableBody = document.getElementById('providerGatewayDepartmentsBody');
+    tableBody?.addEventListener('click', async event => {
+        const button = event.target.closest('[data-gateway-id].gateway-department-save');
+        if (!button || button.disabled) return;
+        const gatewayId = button.dataset.gatewayId;
+        const input = button.closest('tr')?.querySelector('.gateway-department-name-input');
+        if (!input) return;
+
+        button.disabled = true;
+        try {
+            const response = await API.updateProviderGatewayDepartment(gatewayId, input.value.trim());
+            if (!response || response.success !== true || !response.gateway) {
+                throw new Error(response && response.error || 'Unable to save department name');
+            }
+            DashboardState.providerGatewayDepartments = DashboardState.providerGatewayDepartments.map(gateway =>
+                gateway.gatewayId === response.gateway.gatewayId ? response.gateway : gateway
+            );
+            renderProviderGatewayDepartments();
+            await loadProviderIncomeReport();
+            showToast(response.gateway.departmentName
+                ? `Saved department name for ${gatewayId}`
+                : `Department name cleared for ${gatewayId}`, 'success');
+        } catch (error) {
+            button.disabled = false;
+            showToast(`Unable to save department name: ${error.message}`, 'error');
+        }
+    });
+}
+
 async function loadCollectLabs() {
     const selectEl = document.getElementById('collectLabSelect');
     const pendingEl = document.getElementById('collectPendingTotal');
@@ -1766,7 +2120,7 @@ async function loadCollectLabs() {
 
     // Standalone consumer-only institutions do not own provider labs and must
     // not probe provider settlement endpoints on every dashboard refresh.
-    if (DashboardState.operatingMode === 'consumer-only'
+    if (DashboardState.operatingMode !== 'provider-consumer'
         || (!DashboardState.isProvider && !DashboardState.isOperator)) {
         DashboardState.collectLabs = [];
         DashboardState.selectedCollectLabId = null;
@@ -1781,6 +2135,7 @@ async function loadCollectLabs() {
         setCollectPanelCompact(true);
         updateCollectDetailVisibility();
         renderCollectSettlementOverview();
+        loadProviderIncomeReport();
         return;
     }
 
@@ -1923,6 +2278,7 @@ async function loadCollectLabs() {
     } finally {
         DashboardState.collectLoadingStatus = false;
         updateCollectButtonState();
+        loadProviderIncomeReport();
     }
 }
 
@@ -2060,7 +2416,8 @@ async function loadCollectStatusForSelectedLab() {
             hasPendingPayout = false;
         }
 
-        DashboardState.collectCanExecute = DashboardState.isProvider
+        DashboardState.collectCanExecute = DashboardState.operatingMode === 'provider-consumer'
+            && DashboardState.isProvider
             && payoutEnabledForSelectedLab
             && data.canRequestPayout === true;
         renderCollectSettlementOverview();
@@ -2074,11 +2431,14 @@ async function loadCollectStatusForSelectedLab() {
             }
         } else if (hasPendingClosures) {
             setCollectStatusText('Waiting for session attestation grace period', 'info');
-        } else if (DashboardState.isProvider && !payoutEnabledForSelectedLab) {
+        } else if (DashboardState.operatingMode === 'provider-consumer'
+            && DashboardState.isProvider && !payoutEnabledForSelectedLab) {
             setCollectStatusText('Payout requests are limited to this provider wallet\'s labs', 'warning');
-        } else if (!DashboardState.isProvider && DashboardState.isOperator && operatorReviewOnly) {
+        } else if (DashboardState.operatingMode === 'provider-consumer'
+            && !DashboardState.isProvider && DashboardState.isOperator && operatorReviewOnly) {
             setCollectStatusText('Operator review only', 'info');
-        } else if (!DashboardState.isProvider && DashboardState.isOperator && data.canRequestPayout === true) {
+        } else if (DashboardState.operatingMode === 'provider-consumer'
+            && !DashboardState.isProvider && DashboardState.isOperator && data.canRequestPayout === true) {
             setCollectStatusText('Payout available for owning provider', 'info');
         } else if (data.payoutRequestReason) {
             setCollectStatusText(data.payoutRequestReason, 'warning');
@@ -2450,6 +2810,7 @@ async function refreshAllData() {
     await Promise.all([
         loadBalances(),
         loadCollectLabs(),
+        loadProviderGatewayDepartments(),
         loadBillingAdminData(),
         loadRecentTransactions()
     ]);
@@ -2692,6 +3053,8 @@ function setupFormHandlers() {
 
 // Setup button handlers
 function setupButtonHandlers() {
+    setupProviderGatewayDepartmentHandlers();
+
     // Refresh button
     const refreshBtn = document.getElementById('refreshBtn');
     if (refreshBtn) {

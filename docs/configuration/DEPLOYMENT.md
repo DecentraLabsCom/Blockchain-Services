@@ -8,8 +8,9 @@ topologies.
 | Topology | Backend role | Required choices |
 | --- | --- | --- |
 | Lab Gateway Full | Provider and consumer backend used with the Gateway | Set `BLOCKCHAIN_SERVICES_MODE=provider-consumer`; configure the gateway as the local issuer and persist MySQL, `/app/data` and lab content. |
-| Lab Gateway Lite | Edge that trusts a remote Full gateway | The parent gateway's `ISSUER` points at Full. This backend does not make Lite an identity authority. Configure only the edge capabilities that the deployment needs. |
-| Standalone consumer | Institution wallet, funding and consumer operations | Set `BLOCKCHAIN_SERVICES_MODE=consumer-only`; provider routes and automation remain disabled. |
+| Lab Gateway Lite | Edge that trusts a remote provider authority | The parent gateway's `ISSUER` points at a Full or standalone provider backend. This edge does not make Lite an identity authority. Configure only the edge capabilities that the deployment needs. |
+| Standalone provider | Provider control plane and issuer for provider Lite gateways deployed elsewhere | Set `BLOCKCHAIN_SERVICES_MODE=provider-consumer`; set the provider registration and automation flags as needed. Point each remote Lite gateway's `ISSUER` to this backend's `/auth`. Keep the backend host port on loopback and expose required public endpoints through an HTTPS reverse proxy; keep wallet/dashboard routes private. Configure per-Lite gateway credentials in the backend environment. |
+| Standalone consumer | Institution wallet, funding and consumer operations | Set `BLOCKCHAIN_SERVICES_MODE=consumer-only`; provider routes and automation remain disabled. This installation does not need its own Lite gateway. |
 
 `BLOCKCHAIN_SERVICES_MODE` controls the backend role independently of the
 gateway topology and must be set explicitly for new deployments:
@@ -21,12 +22,13 @@ BLOCKCHAIN_SERVICES_MODE=consumer-only     # or provider-consumer
 `FEATURES_PROVIDERS_ENABLED=false` remains the packaged fallback for older
 configurations. An explicit mode wins over that flag. The parent gateway owns
 the Full/Lite topology; changing `ISSUER` or adding a Lite access plane must not
-change a backend from consumer-only to provider-consumer. Spring Security
-rejects provider access routes and all `/lab-admin/**` routes in
-`consumer-only` at the application boundary, and the provider Lab Admin
-controller is not created. `/lab-content/**` remains the common public
-read-only content surface. Network isolation remains required as defense in
-depth for administrative and future surfaces.
+change a backend from consumer-only to provider-consumer. In `consumer-only`,
+Spring Security rejects provider access, lab administration, provider settlement,
+provider network, provider compliance and provider payout routes at the
+application boundary; provider-only controllers are not created. Consumer
+wallet, funding, institutional policy and reservation flows remain available.
+`/lab-content/**` remains the common public read-only content surface. Network
+isolation remains required as defense in depth for administrative surfaces.
 
 ## 2. Persistent state is required in production
 
@@ -34,7 +36,7 @@ The following data must survive a container restart:
 
 | State | Location / setting | Why it is durable |
 | --- | --- | --- |
-| MySQL | `SPRING_DATASOURCE_*` | Flyway schema, WebAuthn credentials, access delivery, audit records, nonce/outbox state, intents, contract-event journal and lab-content deletion hand-off. |
+| MySQL | `SPRING_DATASOURCE_*` | Flyway schema, WebAuthn credentials, access delivery, access-policy profiles and identity contexts, audit records, nonce/outbox state, intents, contract-event journal and lab-content deletion hand-off. |
 | Backend data | `/app/data` | Wallet store, generated wallet configuration and JWT key material when those defaults are used. |
 | Lab content | `LAB_CONTENT_BASE_PATH` | Uploaded metadata, images and documents; deletions are retained by tombstone before garbage collection. |
 | Wallet encryption key | `WALLET_CONFIG_ENCRYPTION_KEY` or `WALLET_CONFIG_KEY_FILE` | Required to recover encrypted wallet material. |
@@ -72,6 +74,7 @@ and units.
 | Admin boundary | `ADMIN_DASHBOARD_*`, `SECURITY_ALLOW_PRIVATE_NETWORKS`, `ADMIN_ALLOWED_CIDRS`, `ADMIN_ACCESS_TOKEN_*` | See [Security](../security/SECURITY.md). |
 | Gateway integration | `ACCESS_CODE_REDEEMER_CREDENTIALS_JSON`, `SESSION_OBSERVER_CREDENTIALS_JSON`, `LAB_MANAGER_TOKEN*` | Credentials are per gateway; never reuse the admin token as an observer credential. |
 | Lite reservation projection | `RESERVATION_PROJECTION_CREDENTIALS_JSON` | Full/backend side only. JSON is keyed by normalized gateway ID and each entry must contain a constant-time-compared `token` and HTTPS `accessUri`. The parent Lite gateway config uses `RESERVATION_PROJECTION_URL`, `RESERVATION_PROJECTION_GATEWAY_ID` and a mounted `RESERVATION_PROJECTION_TOKEN_FILE`. |
+| Lite lab administration | `LAB_ADMIN_GATEWAY_CREDENTIALS_JSON` | Provider/backend side only. JSON is keyed by normalized Gateway ID; each entry has a unique `token` and matching `accessUri`. The Lite receives that token as `LAB_ADMIN_BACKEND_TOKEN`. The backend binds every lab-admin request to the credential's Gateway before listing or mutating labs. |
 | Lab content | `LAB_CONTENT_BASE_PATH`, `LAB_CONTENT_RETENTION`, `LAB_CONTENT_GC_INTERVAL_MS`, `LAB_CONTENT_MAX_*` | The public content route serves only safe uploaded assets and generated metadata. |
 | Lab metadata fetches | `LAB_METADATA_MAX_BYTES`, `LAB_METADATA_HTTP_*`, `LAB_METADATA_MAX_CONCURRENT_FETCHES`, `LAB_METADATA_LOCAL_*` | Remote metadata is HTTPS-only and bound to the provider origin registered on-chain. Keep local fixtures disabled in production. |
 | Durable workers | `INSTITUTIONAL_*_OUTBOX_*`, `CONTRACT_EVENT_*`, `LAB_CONTENT_DELETION_OUTBOX_*`, `LAB_CONTENT_DELETION_RECONCILIATION_BATCH_SIZE`, `HEALTH_QUEUE_STUCK_THRESHOLD_SECONDS` | Tune only with an operator who owns reconciliation. Ambiguous deletion broadcasts remain blocked and must be reviewed as `STUCK_UNKNOWN`; do not cancel them by timeout alone. |

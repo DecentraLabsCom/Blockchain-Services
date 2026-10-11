@@ -27,6 +27,8 @@ import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
+import decentralabs.blockchain.config.BackendOperatingMode;
+import decentralabs.blockchain.config.BackendOperatingModeConfiguration;
 import decentralabs.blockchain.dto.wallet.NetworkInfo;
 import decentralabs.blockchain.dto.wallet.NetworkResponse;
 import decentralabs.blockchain.dto.wallet.PayoutRequestSimulationResult;
@@ -63,6 +65,9 @@ class AdminDashboardControllerTest {
     @Mock
     private OnChainAdminTransactionService onChainAdminTransactionService;
 
+    @Mock
+    private BackendOperatingModeConfiguration operatingMode;
+
     @InjectMocks
     private AdminDashboardController adminDashboardController;
 
@@ -76,6 +81,7 @@ class AdminDashboardControllerTest {
         lenient().when(adminNetworkAccessPolicy.isLocalOnly()).thenReturn(false);
         lenient().when(adminNetworkAccessPolicy.isPrivateAccessEnabled()).thenReturn(true);
         lenient().when(adminNetworkAccessPolicy.getConfiguredCidrs()).thenReturn(Collections.emptyList());
+        lenient().when(operatingMode.operatingMode()).thenReturn(BackendOperatingMode.PROVIDER_CONSUMER);
         lenient().when(onChainAdminTransactionService.getRecentTransactions(any(), anyInt()))
             .thenReturn(Collections.emptyList());
         ReflectionTestUtils.setField(adminDashboardController, "contractAddress", VALID_ADDRESS);

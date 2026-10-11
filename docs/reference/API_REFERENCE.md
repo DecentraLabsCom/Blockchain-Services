@@ -66,8 +66,12 @@ Request and response fields:
 | Errors | `400 invalid_saml` for malformed/invalid assertions; `401` for a missing or mismatched Marketplace identity binding. |
 
 The access routes marked provider-only are rejected by the application security
-chain when `BLOCKCHAIN_SERVICES_MODE=consumer-only`; a network boundary should
-still be retained as defense in depth.
+chain when `BLOCKCHAIN_SERVICES_MODE=consumer-only`. Provider settlement,
+provider-network, payout and provider compliance routes follow the same mode
+boundary. Provider invoice submission additionally requires the configured
+institutional wallet to hold the provider role and own the lab; settlement
+review and global provider-network operations require the default-admin role.
+A network boundary should still be retained as defense in depth.
 
 Provider access issuance is intentionally retryable. While the reservation is
 not yet `ACCESS_AUTHORIZED`, `/auth/authorize-and-issue` and
@@ -115,6 +119,26 @@ ceremony above.
 | POST | `/institution-config/save-and-register` | Retired endpoint; rejects editable-form registration. |
 | POST | `/institution-config/retry-registration` | Retired endpoint; a new pairing is required. |
 
+## Institutional access policies
+
+| Method | Path | Boundary / purpose |
+| --- | --- | --- |
+| POST | `/access-policy/labs/evaluate` | Marketplace service JWT with `access-policy:evaluate` plus an institutional session credential; evaluates one lab. |
+| GET | `/access-policy/labs/{labId}/eligibility` | Same Marketplace scope plus `X-Institutional-Session`; evaluates one lab using query hints. |
+| POST | `/access-policy/labs/eligibility:batch` | Same Marketplace scope plus one institutional session credential; at most 100 evaluations. |
+| GET | `/wallet-admin/access-policies`, `/effective`, `/{institutionId}` | Wallet-dashboard administrative boundary; reads the configured institution profile and audit. |
+| PUT | `/wallet-admin/access-policies`, `/{institutionId}` | Wallet-dashboard administrative boundary; writes a new profile version. |
+| POST | `/wallet-admin/access-policies/activate`, `/deactivate`, `/test`, `/{institutionId}/activate`, `/{institutionId}/deactivate`, `/{institutionId}/test` | Wallet-dashboard administrative boundary; lifecycle changes or dry-run evaluation. |
+| GET | `/wallet-admin/access-policies/export`, `/audit` | Wallet-dashboard administrative boundary; export or audit history. |
+| POST | `/wallet-admin/access-policies/import`, `/{institutionId}/import` | Wallet-dashboard administrative boundary; imports a profile as a new version. |
+
+The access-policy controller routes are `permitAll` at the generic Spring
+Security layer so Marketplace can reach them, but the controller enforces the
+service scope and institutional session. The wallet-dashboard routes remain
+behind the local/private-network administration boundary. See
+[Institutional access policies](../services/access-policy/ACCESS_POLICY.md) for
+matching, versioning and final execution re-checks.
+
 ## Wallet and billing
 
 | Method | Path | Boundary / purpose |
@@ -137,6 +161,8 @@ ceremony above.
 | POST | `/billing/admin/notifications/test`, `/billing/admin/notifications/send` | Admin boundary; test or send notification. |
 | GET/POST | `/billing/provider-network` | Admin boundary; list or activate provider network membership. |
 | POST | `/billing/provider-network/{id}/suspend`, `/billing/provider-network/{id}/terminate` | Admin boundary; lifecycle changes. |
+| GET | `/billing/provider-gateways` | Provider-consumer mode; provider-network administrator; lists configured Lite Gateway IDs and department labels, never credentials. |
+| PUT | `/billing/provider-gateways/{gatewayId}` | Provider-consumer mode; provider-network administrator; assigns or clears a department label for a currently configured Lite Gateway. |
 | GET | `/billing/provider-receivables` | Admin boundary; filterable provider invoice list. |
 | POST | `/billing/provider-receivables/{labId}/invoice` | Admin boundary; submit the on-chain claim, then project its receipt. The provider is derived from `ownerOf(labId)`; `providerAddress` is not a request field. |
 | POST | `/billing/provider-receivables/invoices/{invoiceId}/approve`, `/pay` | Admin boundary; execute the on-chain transition and project only after a successful receipt. Actor fields are not accepted in the body. |
@@ -146,6 +172,8 @@ ceremony above.
 | Method | Path | Boundary / purpose |
 | --- | --- | --- |
 | GET | `/billing/compliance/mica-volume` | Admin boundary; current rolling volume. |
+| GET | `/billing/compliance/provider-income` | Provider-consumer mode; admin boundary; report scoped to the configured institutional wallet and grouped by department/Gateway and lab. |
+| GET | `/lab-admin/billing/provider-income` | Provider-consumer mode; Gateway-scoped Lab Manager credential; read-only report limited to the authenticated Gateway's labs. |
 | GET | `/billing/compliance/exports/prepaid-balances`, `/consumed`, `/expired`, `/receivable-accruals`, `/completed-payouts`, `/provider-network` | Admin boundary; evidence exports. |
 | GET | `/lab-admin/status`, `/lab-admin/labs`, `/lab-admin/reservations/upcoming`, `/lab-admin/reservations/actionable` (`offset`, `limit`, `cursor` pagination), `/lab-admin/guacamole/connections` | Provider-consumer mode only; admin boundary or allowed Lab Manager. Actionable pages return `nextCursor` and a bounded RPC budget instead of an exact total. |
 | POST | `/lab-admin/assets`, `/lab-admin/labs`, `/lab-admin/fmu/provider-describe-token`, `/lab-admin/labs/{labId}/list`, `/lab-admin/labs/{labId}/unlist`, `/lab-admin/reservations/{reservationKey}/cancel` | Provider-consumer mode only; admin boundary or allowed Lab Manager; mutations require an idempotency key where documented. |
@@ -187,6 +215,35 @@ X-Reservation-Projection-Token: replace-with-a-secret
 
 Invalid credentials return `403 RESERVATION_PROJECTION_FORBIDDEN`; a missing
 database or projection failure returns `503 RESERVATION_PROJECTION_UNAVAILABLE`.
+
+### Lite lab-administration scope
+
+The Full/backend provider maps each Lite's unique backend token in
+`LAB_ADMIN_GATEWAY_CREDENTIALS_JSON`:
+
+```json
+{
+  "lite-lab.example.edu": {
+    "token": "replace-with-a-unique-secret",
+    "accessUri": "https://lite-lab.example.edu"
+  }
+}
+```
+
+OpenResty sends that token and its configured `X-Gateway-ID`; the backend
+rejects a mismatch and binds `/lab-admin/labs`, reservation operations and
+lab mutations to the mapped Gateway's on-chain `accessURI`. The Full/backend
+`ADMIN_ACCESS_TOKEN` remains the institution-wide operator credential.
+
+`GET /billing/provider-gateways` lists Gateway IDs and access URIs from that
+configured map without returning tokens. A provider-network administrator can
+use `PUT /billing/provider-gateways/{gatewayId}` with
+`{"departmentName":"Physics"}` to assign a display name; an empty or omitted
+name clears it. Only a Gateway currently present in the configured map can be
+renamed. Labels are stored in the backend database and change report
+presentation, not Gateway trust or authorization. The list reflects the
+provider backend's loaded configuration, so newly issued Lite credentials
+appear after that configuration is reloaded.
 
 Use [Authentication](../services/authentication/AUTH.md),
 [Wallet and billing](../services/wallet/WALLET_BILLING.md),

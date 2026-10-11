@@ -5,15 +5,16 @@ description: Spring Boot backend for institutional identity, funding, lab access
 # DecentraLabs blockchain services
 
 `blockchain-services` is the Java 21 / Spring Boot 4.1 backend for the DecentraLabs
-gateway ecosystem. It can also be packaged as a standalone WAR for an
-institution that only needs consumer funding and wallet operations.
+gateway ecosystem. It can run inside a Lab Gateway Full deployment or as a
+standalone provider control plane or consumer wallet service.
 
-The service owns four areas:
+The service owns five areas:
 
 - institutional authentication and access delivery (SAML, Marketplace JWT,
   WebAuthn, JWKS and opaque access codes);
 - institutional wallet, service-credit funding and billing administration;
 - signed intent intake, WebAuthn authorization and on-chain execution;
+- institutional lab-category access policies and audit;
 - provider/consumer registration and gateway configuration.
 
 Start with the [documentation index](SUMMARY.md). The essential companion
@@ -26,8 +27,8 @@ documents are the [architecture guide](docs/architecture/ARCHITECTURE.md),
 
 | Mode | Enablement | Intended use | Provider/auth endpoints |
 | --- | --- | --- | --- |
-| Provider + consumer | `BLOCKCHAIN_SERVICES_MODE=provider-consumer` | Full or standalone control-plane backend | Enabled |
-| Consumer-only | `BLOCKCHAIN_SERVICES_MODE=consumer-only` (packaged default) | Standalone institution funding its own reservations | Disabled |
+| Provider + consumer | `BLOCKCHAIN_SERVICES_MODE=provider-consumer` | Lab Gateway Full or standalone provider backend serving remote Lite gateways | Enabled |
+| Consumer-only | `BLOCKCHAIN_SERVICES_MODE=consumer-only` (packaged default) | Standalone institution funding and booking reservations; no local Lite gateways | Disabled |
 
 `BLOCKCHAIN_SERVICES_MODE` is the explicit backend role and is independent of
 the parent gateway topology. Set it to `provider-consumer` or `consumer-only`.
@@ -43,11 +44,18 @@ The parent Lab Gateway selects Full versus Lite at the gateway boundary; a Lite
 gateway does not become the primary identity authority merely because this
 backend is present.
 
+For a standalone provider, set the backend to `provider-consumer` and configure
+its public issuer URL. Each separately installed provider Lab Gateway Lite points
+its own `ISSUER` to that backend's `/auth`; those Lite gateways do not need to be
+co-located with the provider backend. A standalone consumer keeps the packaged
+`consumer-only` role and does not install Lite gateways for its own backend.
+
 ```mermaid
 flowchart LR
     Full["Lab Gateway Full<br/>ISSUER empty/local"] --> Backend["blockchain-services"]
-    Lite["Lab Gateway Lite<br/>ISSUER points to Full /auth"] -->|access and observation| Full
-    Standalone["Standalone consumer"] --> Backend
+    Lite["Lab Gateway Lite<br/>ISSUER points to provider /auth"] -->|access and observation| Backend
+    Provider["Standalone provider<br/>provider-consumer"] --> Backend
+    Consumer["Standalone consumer<br/>consumer-only"] --> Backend
     Backend --> Contracts[("Smart Contracts")]
     Backend --> DB[("MySQL / Flyway")]
 ```
@@ -124,6 +132,18 @@ configured submit scope and reads require the configured status scope. The
 browser ceremony and completion are intentionally session-bound; see the
 [intent guide](docs/services/intents/INTENTS_PROVISIONING.md).
 
+### Institutional access policies
+
+- Dashboard administration: `/wallet-admin/access-policies/**`.
+- Marketplace evaluation: `/access-policy/labs/evaluate`,
+  `/access-policy/labs/{labId}/eligibility` and
+  `/access-policy/labs/eligibility:batch`.
+- Enabled profiles match normalised institutional identity attributes to lab
+  categories and are re-evaluated immediately before an intent transaction.
+
+See the [institutional access policy guide](docs/services/access-policy/ACCESS_POLICY.md)
+for semantics, proof requirements and persistence boundaries.
+
 ### Lite reservation projection
 
 - `GET /reservations/projection` is the scoped reservation feed consumed by a
@@ -168,7 +188,7 @@ token; they are not public Marketplace pages.
 
 | Surface | Route | Purpose |
 | --- | --- | --- |
-| Wallet Dashboard | `/wallet-dashboard/` | Institutional wallet, balances, funding and billing administration. |
+| Wallet Dashboard | `/wallet-dashboard/` | Institutional wallet, balances, funding, billing and access-policy administration. |
 | Institutional pairing | `/institution-config/` | Marketplace challenge and backend registration ceremony. |
 
 ![Wallet Dashboard](docs/images/wallet-dashboard.png)
