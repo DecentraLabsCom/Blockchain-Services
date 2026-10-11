@@ -35,6 +35,8 @@ const DashboardState = {
     settlementInvoices: [],
     providerIncomeReport: null,
     providerIncomeReportError: null,
+    providerGatewayDepartments: [],
+    providerGatewayDepartmentsError: null,
     transactionsLimit: 10,
     operatingMode: 'unknown',
     providerRegistrationEnabled: false,
@@ -52,6 +54,7 @@ function updateRoleBasedSections() {
     const showProviderOperatorControls = providerModeEnabled && showOperatorControls;
 
     const settlementSection = document.getElementById('settlementOperationsSection');
+    const gatewayDepartmentsSection = document.getElementById('providerGatewayDepartmentsSection');
     const settlementTitle = document.getElementById('settlementOperationsTitle');
     const providerSettlementControls = document.getElementById('providerSettlementControls');
     const providerPayoutActions = document.getElementById('providerPayoutActions');
@@ -72,6 +75,9 @@ function updateRoleBasedSections() {
 
     if (settlementSection) {
         settlementSection.classList.toggle('hidden', !showProviderControls && !showProviderOperatorControls);
+    }
+    if (gatewayDepartmentsSection) {
+        gatewayDepartmentsSection.classList.toggle('hidden', !showProviderOperatorControls);
     }
     if (providerSettlementControls) {
         providerSettlementControls.classList.toggle('hidden', !showProviderControls && !showProviderOperatorControls);
@@ -1808,16 +1814,96 @@ function renderCollectSettlementOverview() {
     }).join('');
 }
 
+function providerIncomeRawAmount(row, field) {
+    const rawValue = String(row[`${field}Raw`] ?? '');
+    if (/^\d+$/.test(rawValue)) return BigInt(rawValue);
+
+    const displayValue = String(row[field] ?? '0');
+    const match = displayValue.match(/^(\d+)(?:\.(\d{0,7}))?$/);
+    if (!match) return 0n;
+    const fractional = (match[2] || '').padEnd(7, '0');
+    return BigInt(match[1]) * 10000000n + BigInt(fractional || '0');
+}
+
+function formatProviderIncomeRawAmount(rawAmount) {
+    const whole = rawAmount / 10000000n;
+    const fractional = (rawAmount % 10000000n).toString().padStart(7, '0');
+    return `${whole}.${fractional}`;
+}
+
+function summarizeProviderIncomeByGateway(rows) {
+    const amountFields = ['potentialProviderShare', 'accrued', 'unbatched', 'queued', 'inProcess', 'paid'];
+    const groups = new Map();
+
+    rows.forEach(row => {
+        const gatewayId = row.gatewayId || '__unassigned__';
+        const departmentName = String(row.departmentName || '').trim();
+        const groupKey = departmentName
+            ? `department:${departmentName.toLowerCase()}`
+            : `gateway:${gatewayId}`;
+        let summary = groups.get(groupKey);
+        if (!summary) {
+            summary = {
+                groupKey,
+                gatewayLabel: departmentName || row.gatewayLabel || 'Gateway unassigned',
+                gatewayIds: new Set(),
+                accessUris: new Set(),
+                labIds: new Set(),
+                confirmedReservations: 0,
+                amounts: Object.fromEntries(amountFields.map(field => [field, 0n]))
+            };
+            groups.set(groupKey, summary);
+        }
+
+        if (row.gatewayId) summary.gatewayIds.add(String(row.gatewayId));
+        if (row.accessUri) summary.accessUris.add(String(row.accessUri));
+        summary.labIds.add(row.labId ? String(row.labId) : 'unknown');
+        summary.confirmedReservations += Number(row.confirmedReservations || 0);
+        amountFields.forEach(field => {
+            summary.amounts[field] += providerIncomeRawAmount(row, field);
+        });
+    });
+
+    return Array.from(groups.values()).sort((left, right) =>
+        left.gatewayLabel.localeCompare(right.gatewayLabel)
+    );
+}
+
+function summarizeProviderIncomeInstitution(departmentRows) {
+    const amountFields = ['potentialProviderShare', 'accrued', 'unbatched', 'queued', 'inProcess', 'paid'];
+    const summary = {
+        gatewayIds: new Set(),
+        labIds: new Set(),
+        confirmedReservations: 0,
+        amounts: Object.fromEntries(amountFields.map(field => [field, 0n]))
+    };
+
+    departmentRows.forEach(department => {
+        department.gatewayIds.forEach(gatewayId => summary.gatewayIds.add(gatewayId));
+        department.labIds.forEach(labId => summary.labIds.add(labId));
+        summary.confirmedReservations += department.confirmedReservations;
+        amountFields.forEach(field => {
+            summary.amounts[field] += department.amounts[field];
+        });
+    });
+    summary.departmentCount = departmentRows.length;
+    return summary;
+}
+
 function renderProviderIncomeReport() {
     const tableBody = document.getElementById('providerIncomeReportBody');
+    const departmentBody = document.getElementById('providerIncomeGatewayReportBody');
+    const institutionBody = document.getElementById('providerIncomeInstitutionReportBody');
     const noteEl = document.getElementById('providerIncomeReportNote');
     const exportButton = document.getElementById('providerIncomeExportBtn');
-    if (!tableBody || !noteEl || !exportButton) return;
+    if (!tableBody || !departmentBody || !institutionBody || !noteEl || !exportButton) return;
 
     const report = DashboardState.providerIncomeReport;
     const rows = report && Array.isArray(report.rows) ? report.rows : [];
     if (!report) {
-        tableBody.innerHTML = '<tr><td colspan="9" class="settlement-table-empty">Provider income history is unavailable.</td></tr>';
+        institutionBody.innerHTML = '<tr><td colspan="10" class="settlement-table-empty">Institution income is unavailable.</td></tr>';
+        departmentBody.innerHTML = '<tr><td colspan="10" class="settlement-table-empty">Provider income history is unavailable.</td></tr>';
+        tableBody.innerHTML = '<tr><td colspan="10" class="settlement-table-empty">Provider income history is unavailable.</td></tr>';
         exportButton.disabled = true;
         noteEl.textContent = DashboardState.providerIncomeReportError
             ? `Provider income report unavailable: ${DashboardState.providerIncomeReportError}`
@@ -1828,18 +1914,53 @@ function renderProviderIncomeReport() {
     const unresolvedCount = Number(report.unresolvedBatchCount || 0);
     const scopeMismatches = Number(report.scopeReferenceMismatchCount || 0);
     const trackingStart = report.trackingStartBlock || 'recent lookback';
-    noteEl.textContent = `Event tracking starts at ${trackingStart}; first observed confirmation: ${report.firstObservedConfirmationBlock || 'none'}. Paid externally means a payment proof was recorded. ${unresolvedCount} batch(es) need source reconciliation (${report.unresolvedBatchAmount || '0.0000000'} credits); ${scopeMismatches} claim scope reference(s) do not match a recorded batch.`;
+    const providerWallet = report.providerAddress ? `Provider wallet: ${report.providerAddress}. ` : '';
+    noteEl.textContent = `${providerWallet}Amounts are service credits. Event tracking starts at ${trackingStart}; first observed confirmation: ${report.firstObservedConfirmationBlock || 'none'}. Paid externally means a payment proof was recorded. ${unresolvedCount} batch(es) for these labs need source reconciliation (${report.unresolvedBatchAmount || '0.0000000'} credits); ${scopeMismatches} claim scope reference(s) do not match a recorded batch.`;
     exportButton.disabled = rows.length === 0;
     exportButton.onclick = downloadProviderIncomeReportCsv;
 
+    const departmentRows = summarizeProviderIncomeByGateway(rows);
+    const institution = summarizeProviderIncomeInstitution(departmentRows);
+    institutionBody.innerHTML = `
+        <tr>
+            <td>Institution (${escapeHtml(String(institution.departmentCount))} department/group(s))</td>
+            <td>${escapeHtml(String(institution.gatewayIds.size))}</td>
+            <td>${escapeHtml(String(institution.labIds.size))}</td>
+            <td>${escapeHtml(String(institution.confirmedReservations))}</td>
+            <td>${escapeHtml(formatProviderIncomeRawAmount(institution.amounts.potentialProviderShare))}</td>
+            <td>${escapeHtml(formatProviderIncomeRawAmount(institution.amounts.accrued))}</td>
+            <td>${escapeHtml(formatProviderIncomeRawAmount(institution.amounts.unbatched))}</td>
+            <td>${escapeHtml(formatProviderIncomeRawAmount(institution.amounts.queued))}</td>
+            <td>${escapeHtml(formatProviderIncomeRawAmount(institution.amounts.inProcess))}</td>
+            <td>${escapeHtml(formatProviderIncomeRawAmount(institution.amounts.paid))}</td>
+        </tr>
+    `;
+
     if (!rows.length) {
-        tableBody.innerHTML = '<tr><td colspan="9" class="settlement-table-empty">No provider income events have been indexed for this coverage period.</td></tr>';
+        departmentBody.innerHTML = '<tr><td colspan="10" class="settlement-table-empty">No provider income events have been indexed for this wallet during the reported coverage period.</td></tr>';
+        tableBody.innerHTML = '<tr><td colspan="10" class="settlement-table-empty">No provider income events have been indexed for this wallet during the reported coverage period.</td></tr>';
         return;
     }
+
+    departmentBody.innerHTML = departmentRows.map(department => `
+        <tr>
+            <td title="${escapeHtml([...department.gatewayIds, ...department.accessUris].join(', '))}">${escapeHtml(department.gatewayLabel)}</td>
+            <td>${escapeHtml(String(department.gatewayIds.size))}</td>
+            <td>${escapeHtml(String(department.labIds.size))}</td>
+            <td>${escapeHtml(String(department.confirmedReservations))}</td>
+            <td>${escapeHtml(formatProviderIncomeRawAmount(department.amounts.potentialProviderShare))}</td>
+            <td>${escapeHtml(formatProviderIncomeRawAmount(department.amounts.accrued))}</td>
+            <td>${escapeHtml(formatProviderIncomeRawAmount(department.amounts.unbatched))}</td>
+            <td>${escapeHtml(formatProviderIncomeRawAmount(department.amounts.queued))}</td>
+            <td>${escapeHtml(formatProviderIncomeRawAmount(department.amounts.inProcess))}</td>
+            <td>${escapeHtml(formatProviderIncomeRawAmount(department.amounts.paid))}</td>
+        </tr>
+    `).join('');
 
     tableBody.innerHTML = rows.map(row => `
         <tr>
             <td>${escapeHtml(row.gatewayLabel || 'Gateway unassigned')}</td>
+            <td>${escapeHtml(row.gatewayId || '')}</td>
             <td>${escapeHtml(row.labId ? `Lab #${row.labId}` : 'Unknown lab')}</td>
             <td>${escapeHtml(String(row.confirmedReservations || 0))}</td>
             <td>${escapeHtml(row.potentialProviderShare || '0.0000000')}</td>
@@ -1857,12 +1978,12 @@ function downloadProviderIncomeReportCsv() {
     const rows = report && Array.isArray(report.rows) ? report.rows : [];
     if (!rows.length) return;
     const headers = [
-        'gatewayId', 'accessUri', 'labId', 'confirmedReservations', 'potentialProviderShareCredits',
+        'gatewayId', 'departmentName', 'accessUri', 'labId', 'confirmedReservations', 'potentialProviderShareCredits',
         'accruedCredits', 'unbatchedCredits', 'queuedCredits', 'inProcessCredits', 'paidExternallyCredits',
         'invalidatedCredits'
     ];
     const values = rows.map(row => [
-        row.gatewayId || '', row.accessUri || '', row.labId || '', row.confirmedReservations || 0,
+        row.gatewayId || '', row.departmentName || '', row.accessUri || '', row.labId || '', row.confirmedReservations || 0,
         row.potentialProviderShare || '0.0000000', row.accrued || '0.0000000', row.unbatched || '0.0000000',
         row.queued || '0.0000000', row.inProcess || '0.0000000', row.paid || '0.0000000',
         row.invalidated || '0.0000000'
@@ -1899,6 +2020,95 @@ async function loadProviderIncomeReport() {
         DashboardState.providerIncomeReportError = error.message;
     }
     renderProviderIncomeReport();
+}
+
+function renderProviderGatewayDepartments() {
+    const tableBody = document.getElementById('providerGatewayDepartmentsBody');
+    const noteEl = document.getElementById('providerGatewayDepartmentsNote');
+    if (!tableBody || !noteEl) return;
+
+    if (DashboardState.providerGatewayDepartmentsError) {
+        noteEl.textContent = `Gateway department list unavailable: ${DashboardState.providerGatewayDepartmentsError}`;
+        tableBody.innerHTML = `<tr><td colspan="4" class="settlement-table-empty">${escapeHtml(DashboardState.providerGatewayDepartmentsError)}</td></tr>`;
+        return;
+    }
+
+    const gateways = DashboardState.providerGatewayDepartments;
+    noteEl.textContent = 'The list reflects Lite Gateways trusted by this provider backend. Saving a name changes report labels only; a blank name restores the Gateway ID.';
+    if (!gateways.length) {
+        tableBody.innerHTML = '<tr><td colspan="4" class="settlement-table-empty">No Lite Gateways are registered with this provider backend.</td></tr>';
+        return;
+    }
+
+    tableBody.innerHTML = gateways.map(gateway => `
+        <tr>
+            <td>${escapeHtml(gateway.gatewayId)}</td>
+            <td>${escapeHtml(gateway.accessUri)}</td>
+            <td>
+                <input type="text" maxlength="120" class="gateway-department-name-input"
+                    data-gateway-id="${escapeHtml(gateway.gatewayId)}"
+                    aria-label="Department or group name for ${escapeHtml(gateway.gatewayId)}"
+                    value="${escapeHtml(gateway.departmentName || '')}">
+            </td>
+            <td><button type="button" class="btn btn-primary btn-small gateway-department-save"
+                data-gateway-id="${escapeHtml(gateway.gatewayId)}">Save</button></td>
+        </tr>
+    `).join('');
+}
+
+async function loadProviderGatewayDepartments() {
+    if (DashboardState.operatingMode !== 'provider-consumer' || !DashboardState.isOperator) {
+        DashboardState.providerGatewayDepartments = [];
+        DashboardState.providerGatewayDepartmentsError = null;
+        renderProviderGatewayDepartments();
+        return;
+    }
+
+    try {
+        const response = await API.getProviderGatewayDepartments();
+        if (!response || response.success !== true || !Array.isArray(response.gateways)) {
+            throw new Error(response && response.error || 'Gateway list unavailable');
+        }
+        DashboardState.providerGatewayDepartments = response.gateways;
+        DashboardState.providerGatewayDepartmentsError = null;
+    } catch (error) {
+        DashboardState.providerGatewayDepartments = [];
+        DashboardState.providerGatewayDepartmentsError = error.message;
+    }
+    renderProviderGatewayDepartments();
+}
+
+function setupProviderGatewayDepartmentHandlers() {
+    const refreshButton = document.getElementById('providerGatewayDepartmentsRefreshBtn');
+    refreshButton?.addEventListener('click', loadProviderGatewayDepartments);
+
+    const tableBody = document.getElementById('providerGatewayDepartmentsBody');
+    tableBody?.addEventListener('click', async event => {
+        const button = event.target.closest('[data-gateway-id].gateway-department-save');
+        if (!button || button.disabled) return;
+        const gatewayId = button.dataset.gatewayId;
+        const input = button.closest('tr')?.querySelector('.gateway-department-name-input');
+        if (!input) return;
+
+        button.disabled = true;
+        try {
+            const response = await API.updateProviderGatewayDepartment(gatewayId, input.value.trim());
+            if (!response || response.success !== true || !response.gateway) {
+                throw new Error(response && response.error || 'Unable to save department name');
+            }
+            DashboardState.providerGatewayDepartments = DashboardState.providerGatewayDepartments.map(gateway =>
+                gateway.gatewayId === response.gateway.gatewayId ? response.gateway : gateway
+            );
+            renderProviderGatewayDepartments();
+            await loadProviderIncomeReport();
+            showToast(response.gateway.departmentName
+                ? `Saved department name for ${gatewayId}`
+                : `Department name cleared for ${gatewayId}`, 'success');
+        } catch (error) {
+            button.disabled = false;
+            showToast(`Unable to save department name: ${error.message}`, 'error');
+        }
+    });
 }
 
 async function loadCollectLabs() {
@@ -2600,6 +2810,7 @@ async function refreshAllData() {
     await Promise.all([
         loadBalances(),
         loadCollectLabs(),
+        loadProviderGatewayDepartments(),
         loadBillingAdminData(),
         loadRecentTransactions()
     ]);
@@ -2842,6 +3053,8 @@ function setupFormHandlers() {
 
 // Setup button handlers
 function setupButtonHandlers() {
+    setupProviderGatewayDepartmentHandlers();
+
     // Refresh button
     const refreshBtn = document.getElementById('refreshBtn');
     if (refreshBtn) {

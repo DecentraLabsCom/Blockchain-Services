@@ -208,6 +208,33 @@ is distinct from the aggregate `settlementQueuedRaw` lifecycle bucket.
 
 ### Provider settlement claims
 
+The provider income report is available at `GET /billing/compliance/provider-income`.
+It derives its scope from the configured institutional wallet; callers cannot
+choose another provider address. The report includes only that wallet's
+recorded generation and reconciled settlement activity, grouped by the
+department name assigned to a Gateway (or its Gateway ID when unnamed) and by
+lab. When multiple Gateways share a department name, the department total
+combines them; the lab rows retain their Gateway ID. The report starts with an
+institution-wide total, followed by the department totals and lab details.
+Amounts are service credits; `paid` means an external payment proof was
+recorded, not that credits are redeemable for cash. The route retains its
+provider-network administrator permission in provider-consumer mode.
+
+The Lite Lab Manager uses `GET /lab-admin/billing/provider-income` for a
+read-only report limited to the Gateway bound to its authenticated backend
+credential. The backend derives the Gateway from the filter-established scope;
+the browser cannot choose one. This view never runs settlement-source
+reconciliation and does not expose Wallet & Billing administration endpoints.
+
+The **Lite Gateways and departments** section in the Provider Settlements tab
+lists entries from `LAB_ADMIN_GATEWAY_CREDENTIALS_JSON` without exposing their
+tokens. A provider-network administrator can assign or clear each display name
+through `GET /billing/provider-gateways` and
+`PUT /billing/provider-gateways/{gatewayId}`. Names are stored in the backend
+database and affect report labels only; they do not change the trusted Gateway
+identity. The roster reflects the provider backend's loaded configuration, so
+a newly added Lite appears after its trust configuration is reloaded.
+
 Provider network and receivable operations are under `/billing/provider-network`
 and `/billing/provider-receivables`. The Diamond is the canonical settlement
 ledger; SQL is a receipt-backed projection and durable reconciliation outbox:

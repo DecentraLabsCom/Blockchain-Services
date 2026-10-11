@@ -351,6 +351,13 @@ body:not(.wallet-tabs-ready) [data-wallet-tab-section="overview"]:not(.hidden),
     font-weight: 600;
 }
 
+.settlement-income-subheading {
+    color: var(--text-primary);
+    font-size: 0.9rem;
+    font-weight: 600;
+    margin-top: var(--spacing-xs);
+}
+
 .settlement-overview-note {
     color: var(--text-muted);
     font-size: 0.85rem;
@@ -2343,4 +2350,18 @@ body:not(.wallet-tabs-ready) [data-wallet-tab-section="overview"]:not(.hidden),
 
 .header-actions .btn-icon i {
     font-size: 0.95rem;
+}
+
+.gateway-departments-help {
+    color: var(--text-muted);
+    margin: 0.35rem 0 0;
+}
+
+.gateway-departments-table input {
+    min-width: 12rem;
+    width: 100%;
+}
+
+.gateway-departments-table .gateway-department-save {
+    white-space: nowrap;
 }

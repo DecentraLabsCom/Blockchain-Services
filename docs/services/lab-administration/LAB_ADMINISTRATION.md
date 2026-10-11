@@ -48,6 +48,7 @@ connection strings and internal runbooks out of the uploaded content tree.
 | `GET /lab-admin/labs` | Provider-owned labs assigned to the authenticated Gateway, or all labs for an institution-wide admin. |
 | `GET /lab-admin/reservations/upcoming` (`offset`, `limit`) | Upcoming pending, confirmed or access-authorized reservations for provider-owned labs assigned to the current Gateway. |
 | `GET /lab-admin/reservations/actionable` (`offset`, `limit`, `cursor`) | Provider-cancellable reservations assigned to the current Gateway, including post-start service-failure cases still inside attestation grace. |
+| `GET /lab-admin/billing/provider-income` | Read-only income report for the authenticated Gateway; available only to a Gateway-scoped Lab Manager credential. |
 | `POST /lab-admin/reservations/{reservationKey}/cancel` | Deny a pending request or cancel a confirmed/access-authorized booking assigned to the current Gateway when its selected provider reason is eligible. |
 | `GET /lab-admin/guacamole/connections` | Safe Guacamole connection catalogue for administration. |
 | `POST /lab-admin/assets` | Upload a JPEG/PNG/WebP/GIF image or PDF document into the authenticated Gateway's namespace. |
@@ -65,6 +66,10 @@ The full endpoint index, including non-lab routes, is in
 Reservation and lab-management endpoints use the Gateway scope established by
 the backend authentication boundary. A Lite credential maps to one Gateway ID
 and `accessURI`; client-supplied Gateway IDs are checked against that mapping.
+The provider-income route derives its Gateway only from this authenticated
+scope, filters reservations, accruals and settlement batches to that Gateway's
+labs, and does not accept a Gateway selector from the browser. It is read-only;
+source reconciliation remains on the provider backend's scheduled/admin path.
 `blockchain-services` compares the scope with each lab's on-chain
 `accessURI` before returning reservations or lab details, and before
 cancelling, publishing, editing, listing, unlisting or deleting a lab. Sharing

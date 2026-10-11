@@ -7,6 +7,7 @@ import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Optional;
@@ -39,6 +40,14 @@ public class LabAdminGatewayCredentialService {
         return Optional.empty();
     }
 
+    /** Returns the configured Lite inventory without exposing its credentials. */
+    public List<ConfiguredGateway> configuredGateways() {
+        return credentials.stream()
+            .map(credential -> new ConfiguredGateway(credential.gatewayId(), credential.accessUri()))
+            .sorted(Comparator.comparing(ConfiguredGateway::gatewayId))
+            .toList();
+    }
+
     private List<GatewayCredential> parseCredentials(ObjectMapper objectMapper, String json) {
         String configured = json == null || json.isBlank() ? "{}" : json;
         try {
@@ -61,7 +70,7 @@ public class LabAdminGatewayCredentialService {
                 if (!seenGatewayIds.add(gatewayId) || !seenTokens.add(token)) {
                     throw new IllegalArgumentException("Duplicate Gateway credential entry");
                 }
-                parsed.add(new GatewayCredential(gatewayId, token));
+                parsed.add(new GatewayCredential(gatewayId, accessUri, token));
             }
             return List.copyOf(parsed);
         } catch (Exception ex) {
@@ -103,5 +112,7 @@ public class LabAdminGatewayCredentialService {
         );
     }
 
-    private record GatewayCredential(String gatewayId, String token) { }
+    public record ConfiguredGateway(String gatewayId, String accessUri) { }
+
+    private record GatewayCredential(String gatewayId, String accessUri, String token) { }
 }

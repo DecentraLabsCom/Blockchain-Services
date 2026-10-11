@@ -1,7 +1,9 @@
 package decentralabs.blockchain.service.billing;
 
 import decentralabs.blockchain.contract.Diamond;
+import decentralabs.blockchain.service.wallet.InstitutionalWalletService;
 import decentralabs.blockchain.service.wallet.WalletService;
+import decentralabs.blockchain.util.GatewayIdentity;
 import java.math.BigDecimal;
 import java.math.BigInteger;
 import java.net.URI;
@@ -17,6 +19,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.TreeMap;
+import java.util.stream.Collectors;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Value;
@@ -41,6 +44,8 @@ public class ProviderIncomeAccountingService {
     private static final int CREDIT_DECIMALS = 7;
     private final JdbcTemplate jdbcTemplate;
     private final WalletService walletService;
+    private final InstitutionalWalletService institutionalWalletService;
+    private final ProviderGatewayDepartmentService providerGatewayDepartmentService;
     private volatile BigInteger cachedChainId;
 
     @Value("${contract.address}")
@@ -51,10 +56,14 @@ public class ProviderIncomeAccountingService {
 
     public ProviderIncomeAccountingService(
         ObjectProvider<JdbcTemplate> jdbcTemplateProvider,
-        WalletService walletService
+        WalletService walletService,
+        InstitutionalWalletService institutionalWalletService,
+        ProviderGatewayDepartmentService providerGatewayDepartmentService
     ) {
         this.jdbcTemplate = jdbcTemplateProvider.getIfAvailable();
         this.walletService = walletService;
+        this.institutionalWalletService = institutionalWalletService;
+        this.providerGatewayDepartmentService = providerGatewayDepartmentService;
     }
 
     public void resetNetworkContext() {
@@ -273,14 +282,36 @@ public class ProviderIncomeAccountingService {
 
     @Transactional
     public Map<String, Object> getReport() {
+        return buildReport(null, true);
+    }
+
+    @Transactional(readOnly = true)
+    public Map<String, Object> getReportForGateway(String gatewayId) {
+        String normalizedGatewayId = GatewayIdentity.normalizeGatewayId(gatewayId);
+        if (normalizedGatewayId == null) {
+            throw new IllegalArgumentException("Authenticated Gateway scope is required");
+        }
+        return buildReport(normalizedGatewayId, false);
+    }
+
+    private Map<String, Object> buildReport(String gatewayId, boolean reconcileSources) {
         requirePersistence();
-        reconcileBatchSources();
+        String providerAddress = configuredProviderAddress();
+        if (reconcileSources) {
+            reconcileBatchSources();
+        }
         BigInteger chainId = currentChainId();
         String contract = normalizeContract(contractAddress);
-        Map<String, Snapshot> snapshots = loadCanonicalSnapshots(chainId, contract);
-        List<AccrualRow> accruals = loadCanonicalAccruals(chainId, contract);
-        List<BatchRow> batches = loadCanonicalBatches(chainId, contract);
-        List<ActivityRow> activities = loadCanonicalActivities(chainId, contract);
+        Map<String, Snapshot> snapshots = loadCanonicalSnapshots(chainId, contract, providerAddress, gatewayId);
+        Set<String> providerLabIds = snapshots.values().stream()
+            .map(snapshot -> snapshot.labId())
+            .collect(Collectors.toSet());
+        List<AccrualRow> accruals = loadCanonicalAccruals(chainId, contract, providerAddress, gatewayId);
+        List<BatchRow> batches = loadCanonicalBatches(chainId, contract, providerLabIds);
+        Set<String> providerBatchIds = batches.stream()
+            .map(batch -> batch.batchId())
+            .collect(java.util.stream.Collectors.toSet());
+        List<ActivityRow> activities = loadCanonicalActivities(chainId, contract, providerBatchIds);
         Map<String, String> batchStatuses = settlementStatuses(batches, activities);
         Map<String, BatchRow> batchesById = new HashMap<>();
         batches.forEach(batch -> batchesById.put(batch.batchId(), batch));
@@ -300,6 +331,7 @@ public class ProviderIncomeAccountingService {
         for (AccrualRow accrual : accruals) {
             accrualByIdentity.put(accrual.identity(), accrual);
             Snapshot snapshot = snapshots.get(accrual.reservationId());
+            if (snapshot == null) continue;
             IncomeGroup group = group(groups, snapshot, accrual.labId());
             BigInteger amount = new BigInteger(accrual.amountRaw());
             group.accrued = group.accrued.add(amount);
@@ -313,17 +345,25 @@ public class ProviderIncomeAccountingService {
 
         Set<String> batchedAccruals = new HashSet<>();
         Map<String, List<SourceRow>> sourcesByBatch = new HashMap<>();
-        jdbcTemplate.query(
-            """
-            SELECT s.batch_id, s.accrual_transaction_hash, s.accrual_block_hash,
-                   s.accrual_log_index, s.reservation_id, s.amount_raw
-            FROM provider_income_batch_sources s
-            JOIN provider_income_batches b ON b.chain_id=s.chain_id AND b.contract_address=s.contract_address
-                AND b.batch_id=s.batch_id AND b.source_status='MATCHED'
-            WHERE s.chain_id=? AND s.contract_address=?
-            """,
-            ps -> { ps.setBigDecimal(1, new BigDecimal(chainId)); ps.setString(2, contract); },
-            rs -> {
+        if (!providerBatchIds.isEmpty()) {
+            List<String> scopedBatchIds = new ArrayList<>(providerBatchIds);
+            String batchPlaceholders = String.join(",", java.util.Collections.nCopies(scopedBatchIds.size(), "?"));
+            String sourceSql = """
+                SELECT s.batch_id, s.accrual_transaction_hash, s.accrual_block_hash,
+                       s.accrual_log_index, s.reservation_id, s.amount_raw
+                FROM provider_income_batch_sources s
+                JOIN provider_income_batches b ON b.chain_id=s.chain_id AND b.contract_address=s.contract_address
+                    AND b.batch_id=s.batch_id AND b.source_status='MATCHED'
+                WHERE s.chain_id=? AND s.contract_address=? AND s.batch_id IN (%s)
+                """.formatted(batchPlaceholders);
+            jdbcTemplate.query(sourceSql, ps -> {
+                int parameterIndex = 1;
+                ps.setBigDecimal(parameterIndex++, new BigDecimal(chainId));
+                ps.setString(parameterIndex++, contract);
+                for (String batchId : scopedBatchIds) {
+                    ps.setString(parameterIndex++, batchId);
+                }
+            }, rs -> {
                 SourceRow source = new SourceRow(
                     rs.getString("batch_id"), rs.getString("accrual_transaction_hash"),
                     rs.getString("accrual_block_hash"), rs.getBigDecimal("accrual_log_index").toBigIntegerExact(),
@@ -331,12 +371,13 @@ public class ProviderIncomeAccountingService {
                 );
                 sourcesByBatch.computeIfAbsent(source.batchId(), ignored -> new ArrayList<>()).add(source);
                 batchedAccruals.add(source.identity());
-            }
-        );
+            });
+        }
 
         for (AccrualRow accrual : accruals) {
             if (batchedAccruals.contains(accrual.identity())) continue;
             Snapshot snapshot = snapshots.get(accrual.reservationId());
+            if (snapshot == null) continue;
             IncomeGroup group = group(groups, snapshot, accrual.labId());
             group.unbatched = group.unbatched.add(new BigInteger(accrual.amountRaw()));
         }
@@ -353,6 +394,7 @@ public class ProviderIncomeAccountingService {
             for (SourceRow source : sourcesByBatch.getOrDefault(batch.batchId(), List.of())) {
                 AccrualRow sourceAccrual = accrualByIdentity.get(source.identity());
                 Snapshot snapshot = sourceAccrual == null ? snapshots.get(source.reservationId()) : snapshots.get(sourceAccrual.reservationId());
+                if (snapshot == null) continue;
                 IncomeGroup group = group(groups, snapshot, batch.labId());
                 BigInteger amount = new BigInteger(source.amountRaw());
                 switch (status) {
@@ -365,16 +407,30 @@ public class ProviderIncomeAccountingService {
             }
         }
 
+        Map<String, String> departmentNames = providerGatewayDepartmentService.departmentNames();
         List<Map<String, Object>> rows = new ArrayList<>(groups.size());
         for (IncomeGroup group : groups.values()) {
-            rows.add(group.asMap());
+            String departmentName = group.gatewayId == null ? null : departmentNames.get(group.gatewayId);
+            rows.add(group.asMap(departmentName));
         }
         Map<String, Object> report = new LinkedHashMap<>();
         report.put("success", true);
         report.put("chainId", chainId.toString());
         report.put("contractAddress", contract);
+        if (gatewayId == null) {
+            report.put("providerAddress", providerAddress);
+        } else {
+            String departmentName = departmentNames.get(gatewayId);
+            report.put("gatewayId", gatewayId);
+            report.put("departmentName", departmentName);
+            report.put("gatewayLabel", departmentName == null || departmentName.isBlank()
+                ? gatewayId
+                : departmentName);
+        }
         report.put("trackingStartBlock", trackingStartBlock);
-        report.put("firstObservedConfirmationBlock", firstObservedConfirmationBlock(chainId, contract));
+        report.put("firstObservedConfirmationBlock", firstObservedConfirmationBlock(
+            chainId, contract, providerAddress, gatewayId
+        ));
         report.put("generatedAt", Instant.now().toString());
         report.put("unresolvedBatchCount", unresolvedCount);
         report.put("unresolvedBatchAmountRaw", unresolvedAmount.toString());
@@ -384,7 +440,10 @@ public class ProviderIncomeAccountingService {
         return report;
     }
 
-    private Map<String, Snapshot> loadCanonicalSnapshots(BigInteger chainId, String contract) {
+    private Map<String, Snapshot> loadCanonicalSnapshots(
+        BigInteger chainId, String contract, String providerAddress, String gatewayId
+    ) {
+        String gatewayFilter = gatewayId == null ? "" : " AND a.gateway_id=?";
         String sql = """
             SELECT a.reservation_id, a.lab_id, a.gateway_id, a.access_uri, a.provider_share_raw, a.price_raw
             FROM provider_income_reservations a
@@ -392,10 +451,16 @@ public class ProviderIncomeAccountingService {
                 AND j.event_signature=a.event_signature AND j.transaction_hash=a.transaction_hash
                 AND j.log_index=a.log_index AND j.block_number=a.block_number AND j.block_hash=a.block_hash
                 AND j.status='DONE' AND j.canonical_status='CANONICAL'
-            WHERE a.chain_id=? AND a.contract_address=?
-            """;
+            WHERE a.chain_id=? AND a.contract_address=? AND a.provider_address=?
+            %s
+            """.formatted(gatewayFilter);
         return jdbcTemplate.query(sql, ps -> {
-            ps.setBigDecimal(1, new BigDecimal(chainId)); ps.setString(2, contract);
+            ps.setBigDecimal(1, new BigDecimal(chainId));
+            ps.setString(2, contract);
+            ps.setString(3, providerAddress);
+            if (gatewayId != null) {
+                ps.setString(4, gatewayId);
+            }
         }, rs -> {
             Map<String, Snapshot> values = new HashMap<>();
             while (rs.next()) {
@@ -410,25 +475,62 @@ public class ProviderIncomeAccountingService {
     }
 
     private List<AccrualRow> loadCanonicalAccruals(BigInteger chainId, String contract) {
-        return jdbcTemplate.query(
-            """
+        return loadCanonicalAccruals(chainId, contract, null, null);
+    }
+
+    private List<AccrualRow> loadCanonicalAccruals(
+        BigInteger chainId, String contract, String providerAddress, String gatewayId
+    ) {
+        String providerReservationJoin = providerAddress == null && gatewayId == null ? "" : """
+            JOIN provider_income_reservations r ON r.chain_id=a.chain_id
+                AND r.contract_address=a.contract_address AND r.reservation_id=a.reservation_id
+                %s
+            """;
+        if (providerAddress != null || gatewayId != null) {
+            String reservationScope = (providerAddress == null ? "" : "AND r.provider_address=? ")
+                + (gatewayId == null ? "" : "AND r.gateway_id=?");
+            providerReservationJoin = providerReservationJoin.formatted(reservationScope);
+        }
+        String sql = """
             SELECT a.transaction_hash, a.log_index, a.block_number, a.block_hash, a.transaction_index,
                    a.lab_id, a.reservation_id, a.amount_raw
             FROM provider_income_accruals a
+            %s
             JOIN contract_event_journal j ON j.chain_id=a.chain_id AND j.contract_address=a.contract_address
                 AND j.event_signature=a.event_signature AND j.transaction_hash=a.transaction_hash
                 AND j.log_index=a.log_index AND j.block_number=a.block_number AND j.block_hash=a.block_hash
                 AND j.status='DONE' AND j.canonical_status='CANONICAL'
             WHERE a.chain_id=? AND a.contract_address=?
-            """,
-            ps -> { ps.setBigDecimal(1, new BigDecimal(chainId)); ps.setString(2, contract); },
+            """.formatted(providerReservationJoin);
+        return jdbcTemplate.query(sql, ps -> {
+                int parameterIndex = 1;
+                if (providerAddress != null) {
+                    ps.setString(parameterIndex++, providerAddress);
+                }
+                if (gatewayId != null) {
+                    ps.setString(parameterIndex++, gatewayId);
+                }
+                ps.setBigDecimal(parameterIndex++, new BigDecimal(chainId));
+                ps.setString(parameterIndex, contract);
+            },
             (rs, rowNum) -> accrualRow(rs)
         );
     }
 
     private List<BatchRow> loadCanonicalBatches(BigInteger chainId, String contract) {
-        return jdbcTemplate.query(
-            """
+        return loadCanonicalBatches(chainId, contract, null);
+    }
+
+    private List<BatchRow> loadCanonicalBatches(
+        BigInteger chainId, String contract, Set<String> labIds
+    ) {
+        if (labIds != null && labIds.isEmpty()) {
+            return List.of();
+        }
+        List<String> scopedLabIds = labIds == null ? List.of() : new ArrayList<>(labIds);
+        String labFilter = labIds == null ? "" : " AND a.lab_id IN ("
+            + String.join(",", java.util.Collections.nCopies(scopedLabIds.size(), "?")) + ")";
+        String sql = """
             SELECT a.batch_id, a.lab_id, a.amount_raw, a.scope_root, a.source_status,
                    a.block_number, a.transaction_index, a.log_index
             FROM provider_income_batches a
@@ -436,10 +538,19 @@ public class ProviderIncomeAccountingService {
                 AND j.event_signature=a.event_signature AND j.transaction_hash=a.transaction_hash
                 AND j.log_index=a.log_index AND j.block_number=a.block_number AND j.block_hash=a.block_hash
                 AND j.status='DONE' AND j.canonical_status='CANONICAL'
-            WHERE a.chain_id=? AND a.contract_address=?
+            WHERE a.chain_id=? AND a.contract_address=?%s
             ORDER BY a.block_number, a.transaction_index, a.log_index
-            """,
-            ps -> { ps.setBigDecimal(1, new BigDecimal(chainId)); ps.setString(2, contract); },
+            """.formatted(labFilter);
+        return jdbcTemplate.query(
+            sql,
+            ps -> {
+                int parameterIndex = 1;
+                ps.setBigDecimal(parameterIndex++, new BigDecimal(chainId));
+                ps.setString(parameterIndex++, contract);
+                for (String labId : scopedLabIds) {
+                    ps.setString(parameterIndex++, labId);
+                }
+            },
             (rs, rowNum) -> new BatchRow(
                 rs.getString("batch_id"), rs.getString("lab_id"), rs.getString("amount_raw"),
                 rs.getString("scope_root"), rs.getString("source_status"),
@@ -451,8 +562,24 @@ public class ProviderIncomeAccountingService {
     }
 
     private List<ActivityRow> loadCanonicalActivities(BigInteger chainId, String contract) {
-        return jdbcTemplate.query(
-            """
+        return loadCanonicalActivities(chainId, contract, null);
+    }
+
+    private List<ActivityRow> loadCanonicalActivities(
+        BigInteger chainId, String contract, Set<String> batchIds
+    ) {
+        if (batchIds != null && batchIds.isEmpty()) {
+            return List.of();
+        }
+        List<String> scopedBatchIds = batchIds == null ? List.of() : new ArrayList<>(batchIds);
+        String batchPlaceholders = batchIds == null
+            ? ""
+            : String.join(",", java.util.Collections.nCopies(scopedBatchIds.size(), "?"));
+        String batchFilter = batchIds == null ? "" : " AND (a.batch_id IN (" + batchPlaceholders
+            + ") OR a.claim_id IN (SELECT e.claim_id FROM provider_income_settlement_events e"
+            + " WHERE e.chain_id=? AND e.contract_address=? AND e.batch_id IN (" + batchPlaceholders
+            + ") AND e.claim_id IS NOT NULL))";
+        String sql = """
             SELECT a.activity, a.batch_id, a.claim_id, a.lab_id, a.amount_raw, a.scope_root,
                    a.target_status, a.block_number,
                    a.transaction_index, a.log_index
@@ -461,10 +588,26 @@ public class ProviderIncomeAccountingService {
                 AND j.event_signature=a.event_signature AND j.transaction_hash=a.transaction_hash
                 AND j.log_index=a.log_index AND j.block_number=a.block_number AND j.block_hash=a.block_hash
                 AND j.status='DONE' AND j.canonical_status='CANONICAL'
-            WHERE a.chain_id=? AND a.contract_address=?
+            WHERE a.chain_id=? AND a.contract_address=?%s
             ORDER BY a.block_number, a.transaction_index, a.log_index
-            """,
-            ps -> { ps.setBigDecimal(1, new BigDecimal(chainId)); ps.setString(2, contract); },
+            """.formatted(batchFilter);
+        return jdbcTemplate.query(
+            sql,
+            ps -> {
+                int parameterIndex = 1;
+                ps.setBigDecimal(parameterIndex++, new BigDecimal(chainId));
+                ps.setString(parameterIndex++, contract);
+                for (String batchId : scopedBatchIds) {
+                    ps.setString(parameterIndex++, batchId);
+                }
+                if (batchIds != null) {
+                    ps.setBigDecimal(parameterIndex++, new BigDecimal(chainId));
+                    ps.setString(parameterIndex++, contract);
+                    for (String batchId : scopedBatchIds) {
+                        ps.setString(parameterIndex++, batchId);
+                    }
+                }
+            },
             (rs, rowNum) -> new ActivityRow(
                 rs.getString("activity"), rs.getString("batch_id"), rs.getString("claim_id"),
                 rs.getString("lab_id"), rs.getString("amount_raw"), rs.getString("scope_root"),
@@ -518,17 +661,28 @@ public class ProviderIncomeAccountingService {
         if (batchId != null) statuses.put(batchId, status);
     }
 
-    private String firstObservedConfirmationBlock(BigInteger chainId, String contract) {
-        List<BigInteger> blocks = jdbcTemplate.query(
-            """
+    private String firstObservedConfirmationBlock(
+        BigInteger chainId, String contract, String providerAddress, String gatewayId
+    ) {
+        String gatewayFilter = gatewayId == null ? "" : " AND a.gateway_id=?";
+        String sql = """
             SELECT MIN(a.block_number) FROM provider_income_reservations a
             JOIN contract_event_journal j ON j.chain_id=a.chain_id AND j.contract_address=a.contract_address
                 AND j.event_signature=a.event_signature AND j.transaction_hash=a.transaction_hash
                 AND j.log_index=a.log_index AND j.block_number=a.block_number AND j.block_hash=a.block_hash
                 AND j.status='DONE' AND j.canonical_status='CANONICAL'
-            WHERE a.chain_id=? AND a.contract_address=?
-            """,
-            ps -> { ps.setBigDecimal(1, new BigDecimal(chainId)); ps.setString(2, contract); },
+            WHERE a.chain_id=? AND a.contract_address=? AND a.provider_address=?%s
+            """.formatted(gatewayFilter);
+        List<BigInteger> blocks = jdbcTemplate.query(
+            sql,
+            ps -> {
+                ps.setBigDecimal(1, new BigDecimal(chainId));
+                ps.setString(2, contract);
+                ps.setString(3, providerAddress);
+                if (gatewayId != null) {
+                    ps.setString(4, gatewayId);
+                }
+            },
             (rs, rowNum) -> rs.getBigDecimal(1) == null ? null : rs.getBigDecimal(1).toBigIntegerExact()
         );
         return blocks.isEmpty() || blocks.get(0) == null ? null : blocks.get(0).toString();
@@ -562,6 +716,24 @@ public class ProviderIncomeAccountingService {
         if (contractAddress == null || contractAddress.isBlank()) {
             throw new IllegalStateException("Diamond contract address is not configured");
         }
+    }
+
+    private String configuredProviderAddress() {
+        String address = institutionalWalletService.getInstitutionalWalletAddress();
+        if (address == null || address.isBlank()) {
+            throw new ResponseStatusException(
+                HttpStatus.SERVICE_UNAVAILABLE,
+                "Institutional provider wallet is not configured"
+            );
+        }
+        String normalized = address.trim().toLowerCase(Locale.ROOT);
+        if (!normalized.matches("^0x[0-9a-f]{40}$")) {
+            throw new ResponseStatusException(
+                HttpStatus.SERVICE_UNAVAILABLE,
+                "Institutional provider wallet is invalid"
+            );
+        }
+        return normalized;
     }
 
     private static void requireLogIdentity(Log eventLog) {
@@ -729,10 +901,13 @@ public class ProviderIncomeAccountingService {
             this.labId = labId;
         }
 
-        private Map<String, Object> asMap() {
+        private Map<String, Object> asMap(String departmentName) {
             Map<String, Object> row = new LinkedHashMap<>();
             row.put("gatewayId", gatewayId);
-            row.put("gatewayLabel", gatewayId == null ? "Sin atribución de Gateway" : gatewayId);
+            row.put("departmentName", departmentName);
+            row.put("gatewayLabel", departmentName == null || departmentName.isBlank()
+                ? (gatewayId == null ? "Sin atribución de Gateway" : gatewayId)
+                : departmentName);
             row.put("accessUri", accessUri);
             row.put("labId", labId);
             row.put("confirmedReservations", reservations);

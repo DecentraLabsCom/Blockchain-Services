@@ -161,6 +161,8 @@ matching, versioning and final execution re-checks.
 | POST | `/billing/admin/notifications/test`, `/billing/admin/notifications/send` | Admin boundary; test or send notification. |
 | GET/POST | `/billing/provider-network` | Admin boundary; list or activate provider network membership. |
 | POST | `/billing/provider-network/{id}/suspend`, `/billing/provider-network/{id}/terminate` | Admin boundary; lifecycle changes. |
+| GET | `/billing/provider-gateways` | Provider-consumer mode; provider-network administrator; lists configured Lite Gateway IDs and department labels, never credentials. |
+| PUT | `/billing/provider-gateways/{gatewayId}` | Provider-consumer mode; provider-network administrator; assigns or clears a department label for a currently configured Lite Gateway. |
 | GET | `/billing/provider-receivables` | Admin boundary; filterable provider invoice list. |
 | POST | `/billing/provider-receivables/{labId}/invoice` | Admin boundary; submit the on-chain claim, then project its receipt. The provider is derived from `ownerOf(labId)`; `providerAddress` is not a request field. |
 | POST | `/billing/provider-receivables/invoices/{invoiceId}/approve`, `/pay` | Admin boundary; execute the on-chain transition and project only after a successful receipt. Actor fields are not accepted in the body. |
@@ -170,6 +172,8 @@ matching, versioning and final execution re-checks.
 | Method | Path | Boundary / purpose |
 | --- | --- | --- |
 | GET | `/billing/compliance/mica-volume` | Admin boundary; current rolling volume. |
+| GET | `/billing/compliance/provider-income` | Provider-consumer mode; admin boundary; report scoped to the configured institutional wallet and grouped by department/Gateway and lab. |
+| GET | `/lab-admin/billing/provider-income` | Provider-consumer mode; Gateway-scoped Lab Manager credential; read-only report limited to the authenticated Gateway's labs. |
 | GET | `/billing/compliance/exports/prepaid-balances`, `/consumed`, `/expired`, `/receivable-accruals`, `/completed-payouts`, `/provider-network` | Admin boundary; evidence exports. |
 | GET | `/lab-admin/status`, `/lab-admin/labs`, `/lab-admin/reservations/upcoming`, `/lab-admin/reservations/actionable` (`offset`, `limit`, `cursor` pagination), `/lab-admin/guacamole/connections` | Provider-consumer mode only; admin boundary or allowed Lab Manager. Actionable pages return `nextCursor` and a bounded RPC budget instead of an exact total. |
 | POST | `/lab-admin/assets`, `/lab-admin/labs`, `/lab-admin/fmu/provider-describe-token`, `/lab-admin/labs/{labId}/list`, `/lab-admin/labs/{labId}/unlist`, `/lab-admin/reservations/{reservationKey}/cancel` | Provider-consumer mode only; admin boundary or allowed Lab Manager; mutations require an idempotency key where documented. |
@@ -230,6 +234,16 @@ OpenResty sends that token and its configured `X-Gateway-ID`; the backend
 rejects a mismatch and binds `/lab-admin/labs`, reservation operations and
 lab mutations to the mapped Gateway's on-chain `accessURI`. The Full/backend
 `ADMIN_ACCESS_TOKEN` remains the institution-wide operator credential.
+
+`GET /billing/provider-gateways` lists Gateway IDs and access URIs from that
+configured map without returning tokens. A provider-network administrator can
+use `PUT /billing/provider-gateways/{gatewayId}` with
+`{"departmentName":"Physics"}` to assign a display name; an empty or omitted
+name clears it. Only a Gateway currently present in the configured map can be
+renamed. Labels are stored in the backend database and change report
+presentation, not Gateway trust or authorization. The list reflects the
+provider backend's loaded configuration, so newly issued Lite credentials
+appear after that configuration is reloaded.
 
 Use [Authentication](../services/authentication/AUTH.md),
 [Wallet and billing](../services/wallet/WALLET_BILLING.md),

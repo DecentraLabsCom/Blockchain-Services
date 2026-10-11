@@ -385,6 +385,19 @@ const API = {
         return await this.request('/billing/compliance/provider-income');
     },
 
+    /** List trusted Lite Gateways and their institution-assigned department labels. */
+    async getProviderGatewayDepartments() {
+        return await this.request('/billing/provider-gateways');
+    },
+
+    /** Assign or clear a department label for a trusted Lite Gateway. */
+    async updateProviderGatewayDepartment(gatewayId, departmentName) {
+        return await this.request(`/billing/provider-gateways/${encodeURIComponent(String(gatewayId))}`, {
+            method: 'PUT',
+            body: JSON.stringify({ departmentName })
+        });
+    },
+
     /** Submit a canonical queued settlement batch as a provider invoice claim. */
     async submitProviderInvoice(labId, payload) {
         return await this.request(`/billing/provider-receivables/${encodeURIComponent(String(labId))}/invoice`, {
