@@ -53,6 +53,7 @@ function updateRoleBasedSections() {
     const showOperatorControls = hasWallet && DashboardState.isOperator;
     const showProviderOperatorControls = providerModeEnabled && showOperatorControls;
 
+    const providerIncomeSection = document.getElementById('providerIncomeReportCard');
     const settlementSection = document.getElementById('settlementOperationsSection');
     const gatewayDepartmentsSection = document.getElementById('providerGatewayDepartmentsSection');
     const settlementTitle = document.getElementById('settlementOperationsTitle');
@@ -73,6 +74,9 @@ function updateRoleBasedSections() {
     const collectLabSelectLabel = document.getElementById('collectLabSelectLabel');
     const providerSettlementOperationSelect = document.getElementById('providerSettlementOperationSelect');
 
+    if (providerIncomeSection) {
+        providerIncomeSection.classList.toggle('hidden', !showProviderControls && !showProviderOperatorControls);
+    }
     if (settlementSection) {
         settlementSection.classList.toggle('hidden', !showProviderControls && !showProviderOperatorControls);
     }

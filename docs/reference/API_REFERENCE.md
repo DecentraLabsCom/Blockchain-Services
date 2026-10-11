@@ -172,7 +172,7 @@ matching, versioning and final execution re-checks.
 | Method | Path | Boundary / purpose |
 | --- | --- | --- |
 | GET | `/billing/compliance/mica-volume` | Admin boundary; current rolling volume. |
-| GET | `/billing/compliance/provider-income` | Provider-consumer mode; admin boundary; report scoped to the configured institutional wallet and grouped by department/Gateway and lab. |
+| GET | `/billing/compliance/provider-income` | Provider-consumer mode; configured wallet must hold the provider or default-admin role; report is scoped to that wallet and grouped by department/Gateway and lab. |
 | GET | `/lab-admin/billing/provider-income` | Provider-consumer mode; Gateway-scoped Lab Manager credential; read-only report limited to the authenticated Gateway's labs. |
 | GET | `/billing/compliance/exports/prepaid-balances`, `/consumed`, `/expired`, `/receivable-accruals`, `/completed-payouts`, `/provider-network` | Admin boundary; evidence exports. |
 | GET | `/lab-admin/status`, `/lab-admin/labs`, `/lab-admin/reservations/upcoming`, `/lab-admin/reservations/actionable` (`offset`, `limit`, `cursor` pagination), `/lab-admin/guacamole/connections` | Provider-consumer mode only; admin boundary or allowed Lab Manager. Actionable pages return `nextCursor` and a bounded RPC budget instead of an exact total. |
