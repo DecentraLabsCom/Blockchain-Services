@@ -9,7 +9,6 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.time.Instant;
 import java.util.ArrayList;
-import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
@@ -233,7 +232,7 @@ public class ProviderIncomeAccountingService {
         List<StreamEntry> stream = new ArrayList<>(accruals.size() + batches.size());
         accruals.forEach(row -> stream.add(new StreamEntry(row.order(), row.labId(), row, null)));
         batches.forEach(row -> stream.add(new StreamEntry(row.order(), row.labId(), null, row)));
-        stream.sort(Comparator.comparing(StreamEntry::order));
+        stream.sort((left, right) -> left.order().compareTo(right.order()));
 
         Map<String, SourceAccumulator> byLab = new HashMap<>();
         for (StreamEntry item : stream) {
@@ -366,7 +365,10 @@ public class ProviderIncomeAccountingService {
             }
         }
 
-        List<Map<String, Object>> rows = groups.values().stream().map(IncomeGroup::asMap).toList();
+        List<Map<String, Object>> rows = new ArrayList<>(groups.size());
+        for (IncomeGroup group : groups.values()) {
+            rows.add(group.asMap());
+        }
         Map<String, Object> report = new LinkedHashMap<>();
         report.put("success", true);
         report.put("chainId", chainId.toString());

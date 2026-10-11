@@ -49,9 +49,7 @@ public class LabAdminGatewayCredentialService {
             List<GatewayCredential> parsed = new ArrayList<>();
             Set<String> seenGatewayIds = new HashSet<>();
             Set<String> seenTokens = new HashSet<>();
-            var fields = root.fields();
-            while (fields.hasNext()) {
-                var field = fields.next();
+            for (var field : root.properties()) {
                 String gatewayId = GatewayIdentity.normalizeGatewayId(field.getKey());
                 JsonNode node = field.getValue();
                 String token = node != null && node.isObject() ? text(node.get("token")) : null;
