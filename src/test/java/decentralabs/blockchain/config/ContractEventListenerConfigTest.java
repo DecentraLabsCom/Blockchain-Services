@@ -9,6 +9,7 @@ import decentralabs.blockchain.service.intent.IntentService;
 import decentralabs.blockchain.service.labadmin.LabContentRetentionService;
 import decentralabs.blockchain.service.persistence.ReservationPersistenceService;
 import decentralabs.blockchain.service.persistence.ProviderSettlementPersistenceService;
+import decentralabs.blockchain.service.billing.ProviderIncomeAccountingService;
 import decentralabs.blockchain.service.provider.StationCapacityService;
 import decentralabs.blockchain.service.wallet.InstitutionalTxManagerProvider;
 import decentralabs.blockchain.service.wallet.InstitutionalWalletService;
@@ -90,6 +91,9 @@ class ContractEventListenerConfigTest {
     private ProviderSettlementPersistenceService providerSettlementPersistenceService;
 
     @Mock
+    private ProviderIncomeAccountingService providerIncomeAccountingService;
+
+    @Mock
     private LabContentRetentionService contentRetentionService;
 
     @Mock
@@ -115,6 +119,7 @@ class ContractEventListenerConfigTest {
             intentPersistenceService,
             intentService,
             providerSettlementPersistenceService,
+            providerIncomeAccountingService,
             contentRetentionService,
             fmuSessionTicketService
         );
