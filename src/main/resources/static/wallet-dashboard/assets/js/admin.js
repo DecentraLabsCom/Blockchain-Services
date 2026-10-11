@@ -33,6 +33,8 @@ const DashboardState = {
     collectAggregates: null,
     settlementLatestBatchId: null,
     settlementInvoices: [],
+    providerIncomeReport: null,
+    providerIncomeReportError: null,
     transactionsLimit: 10,
     operatingMode: 'unknown',
     providerRegistrationEnabled: false,
@@ -1806,6 +1808,99 @@ function renderCollectSettlementOverview() {
     }).join('');
 }
 
+function renderProviderIncomeReport() {
+    const tableBody = document.getElementById('providerIncomeReportBody');
+    const noteEl = document.getElementById('providerIncomeReportNote');
+    const exportButton = document.getElementById('providerIncomeExportBtn');
+    if (!tableBody || !noteEl || !exportButton) return;
+
+    const report = DashboardState.providerIncomeReport;
+    const rows = report && Array.isArray(report.rows) ? report.rows : [];
+    if (!report) {
+        tableBody.innerHTML = '<tr><td colspan="9" class="settlement-table-empty">Provider income history is unavailable.</td></tr>';
+        exportButton.disabled = true;
+        noteEl.textContent = DashboardState.providerIncomeReportError
+            ? `Provider income report unavailable: ${DashboardState.providerIncomeReportError}`
+            : 'The report needs durable database storage and canonical contract event history.';
+        return;
+    }
+
+    const unresolvedCount = Number(report.unresolvedBatchCount || 0);
+    const scopeMismatches = Number(report.scopeReferenceMismatchCount || 0);
+    const trackingStart = report.trackingStartBlock || 'recent lookback';
+    noteEl.textContent = `Event tracking starts at ${trackingStart}; first observed confirmation: ${report.firstObservedConfirmationBlock || 'none'}. Paid externally means a payment proof was recorded. ${unresolvedCount} batch(es) need source reconciliation (${report.unresolvedBatchAmount || '0.0000000'} credits); ${scopeMismatches} claim scope reference(s) do not match a recorded batch.`;
+    exportButton.disabled = rows.length === 0;
+    exportButton.onclick = downloadProviderIncomeReportCsv;
+
+    if (!rows.length) {
+        tableBody.innerHTML = '<tr><td colspan="9" class="settlement-table-empty">No provider income events have been indexed for this coverage period.</td></tr>';
+        return;
+    }
+
+    tableBody.innerHTML = rows.map(row => `
+        <tr>
+            <td>${escapeHtml(row.gatewayLabel || 'Gateway unassigned')}</td>
+            <td>${escapeHtml(row.labId ? `Lab #${row.labId}` : 'Unknown lab')}</td>
+            <td>${escapeHtml(String(row.confirmedReservations || 0))}</td>
+            <td>${escapeHtml(row.potentialProviderShare || '0.0000000')}</td>
+            <td>${escapeHtml(row.accrued || '0.0000000')}</td>
+            <td>${escapeHtml(row.unbatched || '0.0000000')}</td>
+            <td>${escapeHtml(row.queued || '0.0000000')}</td>
+            <td>${escapeHtml(row.inProcess || '0.0000000')}</td>
+            <td>${escapeHtml(row.paid || '0.0000000')}</td>
+        </tr>
+    `).join('');
+}
+
+function downloadProviderIncomeReportCsv() {
+    const report = DashboardState.providerIncomeReport;
+    const rows = report && Array.isArray(report.rows) ? report.rows : [];
+    if (!rows.length) return;
+    const headers = [
+        'gatewayId', 'accessUri', 'labId', 'confirmedReservations', 'potentialProviderShareCredits',
+        'accruedCredits', 'unbatchedCredits', 'queuedCredits', 'inProcessCredits', 'paidExternallyCredits',
+        'invalidatedCredits'
+    ];
+    const values = rows.map(row => [
+        row.gatewayId || '', row.accessUri || '', row.labId || '', row.confirmedReservations || 0,
+        row.potentialProviderShare || '0.0000000', row.accrued || '0.0000000', row.unbatched || '0.0000000',
+        row.queued || '0.0000000', row.inProcess || '0.0000000', row.paid || '0.0000000',
+        row.invalidated || '0.0000000'
+    ]);
+    const csvCell = value => {
+        let text = String(value);
+        if (/^[\t\r ]*[=+\-@]/.test(text)) text = `'${text}`;
+        return `"${text.replaceAll('"', '""')}"`;
+    };
+    const csv = [headers, ...values].map(row => row.map(csvCell).join(',')).join('\r\n');
+    const objectUrl = URL.createObjectURL(new Blob([`\ufeff${csv}`], { type: 'text/csv;charset=utf-8' }));
+    const link = document.createElement('a');
+    link.href = objectUrl;
+    link.download = `provider-income-${new Date().toISOString().slice(0, 10)}.csv`;
+    link.click();
+    setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
+}
+
+async function loadProviderIncomeReport() {
+    if (DashboardState.operatingMode !== 'provider-consumer'
+        || (!DashboardState.isProvider && !DashboardState.isOperator)) {
+        DashboardState.providerIncomeReport = null;
+        DashboardState.providerIncomeReportError = null;
+        renderProviderIncomeReport();
+        return;
+    }
+    try {
+        const report = await API.getProviderIncomeReport();
+        if (!report || report.success !== true) throw new Error(report && report.error || 'Report unavailable');
+        DashboardState.providerIncomeReport = report;
+        DashboardState.providerIncomeReportError = null;
+    } catch (error) {
+        DashboardState.providerIncomeReport = null;
+        DashboardState.providerIncomeReportError = error.message;
+    }
+    renderProviderIncomeReport();
+}
+
 async function loadCollectLabs() {
     const selectEl = document.getElementById('collectLabSelect');
     const pendingEl = document.getElementById('collectPendingTotal');
@@ -1830,6 +1925,7 @@ async function loadCollectLabs() {
         setCollectPanelCompact(true);
         updateCollectDetailVisibility();
         renderCollectSettlementOverview();
+        loadProviderIncomeReport();
         return;
     }
 
@@ -1972,6 +2068,7 @@ async function loadCollectLabs() {
     } finally {
         DashboardState.collectLoadingStatus = false;
         updateCollectButtonState();
+        loadProviderIncomeReport();
     }
 }
 

@@ -380,6 +380,11 @@ const API = {
         return await this.request(`/billing/provider-receivables${query}`);
     },
 
+    /** Provider income attributed to the Gateway recorded at reservation confirmation. */
+    async getProviderIncomeReport() {
+        return await this.request('/billing/compliance/provider-income');
+    },
+
     /** Submit a canonical queued settlement batch as a provider invoice claim. */
     async submitProviderInvoice(labId, payload) {
         return await this.request(`/billing/provider-receivables/${encodeURIComponent(String(labId))}/invoice`, {

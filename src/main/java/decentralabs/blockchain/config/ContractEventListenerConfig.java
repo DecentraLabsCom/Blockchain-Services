@@ -14,6 +14,7 @@ import decentralabs.blockchain.domain.ProviderSettlementOperation;
 import decentralabs.blockchain.service.persistence.ProviderSettlementPersistenceService;
 import decentralabs.blockchain.service.intent.IntentPersistenceService;
 import decentralabs.blockchain.service.intent.IntentService;
+import decentralabs.blockchain.service.billing.ProviderIncomeAccountingService;
 import decentralabs.blockchain.service.provider.DistributedReservationAvailabilityLockService;
 import decentralabs.blockchain.service.provider.ReservationAvailabilityLockKey;
 import decentralabs.blockchain.service.provider.StationCapacityService;
@@ -73,6 +74,7 @@ public class ContractEventListenerConfig {
 
     private static final String RESERVATION_REQUESTED = "ReservationRequested";
     private static final String RESERVATION_CONFIRMED = "ReservationConfirmed";
+    private static final String RESERVATION_CONFIRMED_BY_GENERATION = "ReservationConfirmedByGeneration";
     private static final String RESERVATION_DENIED = "ReservationRequestDenied";
     private static final String RESERVATION_CANCELED = "ReservationRequestCanceled";
     private static final String BOOKING_CANCELED = "BookingCanceled";
@@ -85,6 +87,9 @@ public class ContractEventListenerConfig {
     private static final String PROVIDER_SETTLEMENT_CLAIM_PAID = "ProviderSettlementClaimPaid";
     private static final String PROVIDER_SETTLEMENT_BATCH_INVALIDATED = "ProviderSettlementBatchInvalidated";
     private static final String PROVIDER_SETTLEMENT_CLAIM_INVALIDATED = "ProviderSettlementClaimInvalidated";
+    private static final String PROVIDER_RECEIVABLE_ACCRUED = "ProviderReceivableAccrued";
+    private static final String PROVIDER_SETTLEMENT_BATCH_CREATED = "ProviderSettlementBatchCreated";
+    private static final String PROVIDER_SETTLEMENT_SCOPE_REFERENCED = "ProviderSettlementScopeReferenced";
     private static final String LAB_DELETED = "LabDeleted";
     private static final String MISSING_PUC_PREFIX = "Missing PUC for reservation ";
     private static final BigInteger PROVIDER_NOT_ELIGIBLE_REASON = BigInteger.valueOf(2);
@@ -116,6 +121,46 @@ public class ContractEventListenerConfig {
         Arrays.<TypeReference<?>>asList(
             new TypeReference<Bytes32>(true) {},
             new TypeReference<Uint256>(true) {}
+        )
+    );
+
+    private static final Event RESERVATION_CONFIRMED_BY_GENERATION_EVENT = new Event(
+        RESERVATION_CONFIRMED_BY_GENERATION,
+        Arrays.<TypeReference<?>>asList(
+            new TypeReference<Bytes32>(true) {},
+            new TypeReference<Bytes32>(true) {},
+            new TypeReference<Uint256>(true) {}
+        )
+    );
+
+    private static final Event PROVIDER_RECEIVABLE_ACCRUED_EVENT = new Event(
+        PROVIDER_RECEIVABLE_ACCRUED,
+        Arrays.<TypeReference<?>>asList(
+            new TypeReference<Uint256>(true) {},
+            new TypeReference<Uint256>() {},
+            new TypeReference<Bytes32>(true) {}
+        )
+    );
+
+    private static final Event PROVIDER_SETTLEMENT_BATCH_CREATED_EVENT = new Event(
+        PROVIDER_SETTLEMENT_BATCH_CREATED,
+        Arrays.<TypeReference<?>>asList(
+            new TypeReference<Bytes32>(true) {},
+            new TypeReference<Uint256>(true) {},
+            new TypeReference<Uint256>() {},
+            new TypeReference<Bytes32>() {},
+            new TypeReference<Address>(true) {}
+        )
+    );
+
+    private static final Event PROVIDER_SETTLEMENT_SCOPE_REFERENCED_EVENT = new Event(
+        PROVIDER_SETTLEMENT_SCOPE_REFERENCED,
+        Arrays.<TypeReference<?>>asList(
+            new TypeReference<Bytes32>(true) {},
+            new TypeReference<Uint256>(true) {},
+            new TypeReference<Uint256>() {},
+            new TypeReference<Bytes32>() {},
+            new TypeReference<Bytes32>(true) {}
         )
     );
 
@@ -264,6 +309,7 @@ public class ContractEventListenerConfig {
     private static final Map<String, Event> SUPPORTED_EVENTS = Map.ofEntries(
         Map.entry(RESERVATION_REQUESTED, RESERVATION_REQUESTED_EVENT),
         Map.entry(RESERVATION_CONFIRMED, RESERVATION_CONFIRMED_EVENT),
+        Map.entry(RESERVATION_CONFIRMED_BY_GENERATION, RESERVATION_CONFIRMED_BY_GENERATION_EVENT),
         Map.entry(RESERVATION_DENIED, RESERVATION_DENIED_EVENT),
         Map.entry(RESERVATION_CANCELED, RESERVATION_CANCELED_EVENT),
         Map.entry(BOOKING_CANCELED, BOOKING_CANCELED_EVENT),
@@ -271,6 +317,9 @@ public class ContractEventListenerConfig {
         Map.entry(PROVIDER_ADDED, PROVIDER_ADDED_EVENT),
         Map.entry(LAB_INTENT_PROCESSED, LAB_INTENT_PROCESSED_EVENT),
         Map.entry(RESERVATION_INTENT_PROCESSED, RESERVATION_INTENT_PROCESSED_EVENT),
+        Map.entry(PROVIDER_RECEIVABLE_ACCRUED, PROVIDER_RECEIVABLE_ACCRUED_EVENT),
+        Map.entry(PROVIDER_SETTLEMENT_BATCH_CREATED, PROVIDER_SETTLEMENT_BATCH_CREATED_EVENT),
+        Map.entry(PROVIDER_SETTLEMENT_SCOPE_REFERENCED, PROVIDER_SETTLEMENT_SCOPE_REFERENCED_EVENT),
         Map.entry(PROVIDER_SETTLEMENT_CLAIM_SUBMITTED, PROVIDER_SETTLEMENT_CLAIM_SUBMITTED_EVENT),
         Map.entry(PROVIDER_SETTLEMENT_CLAIM_APPROVED, PROVIDER_SETTLEMENT_CLAIM_APPROVED_EVENT),
         Map.entry(PROVIDER_SETTLEMENT_CLAIM_PAID, PROVIDER_SETTLEMENT_CLAIM_PAID_EVENT),
@@ -286,6 +335,7 @@ public class ContractEventListenerConfig {
     private final IntentPersistenceService intentPersistenceService;
     private final IntentService intentService;
     private final ProviderSettlementPersistenceService providerSettlementPersistenceService;
+    private final ProviderIncomeAccountingService providerIncomeAccountingService;
     private final LabContentRetentionService contentRetentionService;
     private final FmuSessionTicketService fmuSessionTicketService;
 
@@ -403,6 +453,7 @@ public class ContractEventListenerConfig {
         // Clear cached Diamond instances (they're network-specific)
         cachedDiamond = null;
         writableDiamond = null;
+        providerIncomeAccountingService.resetNetworkContext();
         
         // Reset the polling fallback service with new network
         Web3j web3j = walletService.getWeb3jInstance();
@@ -516,11 +567,25 @@ public class ContractEventListenerConfig {
                 .distinct()
                 .collect(Collectors.toList());
 
-        // LabDeleted is the recovery signal for the content hand-off. It is
-        // mandatory even when an operator omits it from the optional list.
-        if (!parsed.contains(LAB_DELETED)) {
+        // These events form the durable AP income and settlement ledger. Keep
+        // them enabled even when optional lifecycle events are narrowed.
+        List<String> mandatoryEvents = List.of(
+            LAB_DELETED,
+            RESERVATION_CONFIRMED_BY_GENERATION,
+            PROVIDER_RECEIVABLE_ACCRUED,
+            PROVIDER_SETTLEMENT_BATCH_CREATED,
+            PROVIDER_SETTLEMENT_SCOPE_REFERENCED,
+            PROVIDER_SETTLEMENT_CLAIM_SUBMITTED,
+            PROVIDER_SETTLEMENT_CLAIM_APPROVED,
+            PROVIDER_SETTLEMENT_CLAIM_PAID,
+            PROVIDER_SETTLEMENT_BATCH_INVALIDATED,
+            PROVIDER_SETTLEMENT_CLAIM_INVALIDATED
+        );
+        if (!parsed.containsAll(mandatoryEvents)) {
             parsed = new java.util.ArrayList<>(parsed);
-            parsed.add(LAB_DELETED);
+            for (String mandatory : mandatoryEvents) {
+                if (!parsed.contains(mandatory)) parsed.add(mandatory);
+            }
         }
 
         if (parsed.isEmpty()) {
@@ -571,6 +636,7 @@ public class ContractEventListenerConfig {
         switch (eventName) {
             case RESERVATION_REQUESTED -> handleReservationRequested(eventValues, eventLog);
             case RESERVATION_CONFIRMED -> handleReservationConfirmed(eventValues, eventLog);
+            case RESERVATION_CONFIRMED_BY_GENERATION -> handleReservationConfirmedByGeneration(eventValues, eventLog);
             case RESERVATION_DENIED -> handleReservationDenied(eventValues, eventLog);
             case RESERVATION_CANCELED -> handleReservationCanceled(eventValues, eventLog);
             case BOOKING_CANCELED -> handleBookingCanceled(eventValues, eventLog);
@@ -581,8 +647,11 @@ public class ContractEventListenerConfig {
             case PROVIDER_SETTLEMENT_CLAIM_SUBMITTED -> handleProviderSettlementClaimSubmitted(eventValues, eventLog);
             case PROVIDER_SETTLEMENT_CLAIM_APPROVED -> handleProviderSettlementClaimApproved(eventValues, eventLog);
             case PROVIDER_SETTLEMENT_CLAIM_PAID -> handleProviderSettlementClaimPaid(eventValues, eventLog);
-            case PROVIDER_SETTLEMENT_BATCH_INVALIDATED -> handleProviderSettlementBatchInvalidated(eventValues);
-            case PROVIDER_SETTLEMENT_CLAIM_INVALIDATED -> handleProviderSettlementClaimInvalidated(eventValues);
+            case PROVIDER_SETTLEMENT_BATCH_INVALIDATED -> handleProviderSettlementBatchInvalidated(eventValues, eventLog);
+            case PROVIDER_SETTLEMENT_CLAIM_INVALIDATED -> handleProviderSettlementClaimInvalidated(eventValues, eventLog);
+            case PROVIDER_RECEIVABLE_ACCRUED -> handleProviderReceivableAccrued(eventValues, eventLog);
+            case PROVIDER_SETTLEMENT_BATCH_CREATED -> handleProviderSettlementBatchCreated(eventValues, eventLog);
+            case PROVIDER_SETTLEMENT_SCOPE_REFERENCED -> handleProviderSettlementScopeReferenced(eventValues, eventLog);
             case LAB_DELETED -> handleLabDeleted(eventValues, eventLog);
             default -> throw new IllegalArgumentException("Unhandled event type: " + eventName);
         }
@@ -595,8 +664,14 @@ public class ContractEventListenerConfig {
 
     private void handleProviderSettlementClaimSubmitted(EventValues values, Log eventLog) {
         String claimId = toHex((Bytes32) values.getIndexedValues().get(0));
+        BigInteger labId = ((Uint256) values.getIndexedValues().get(1)).getValue();
         String actor = ((Address) values.getIndexedValues().get(2)).getValue();
+        BigInteger amount = ((Uint256) values.getNonIndexedValues().get(0)).getValue();
+        String batchId = toHex((Bytes32) values.getNonIndexedValues().get(1));
         String invoiceHash = toHex((Bytes32) values.getNonIndexedValues().get(2));
+        providerIncomeAccountingService.recordSettlementActivity(
+            "CLAIM_SUBMITTED", batchId, claimId, labId, amount, null, null, eventLog
+        );
         providerSettlementPersistenceService.markSettlementEvent(
             ProviderSettlementOperation.Action.SUBMIT,
             claimId,
@@ -612,6 +687,9 @@ public class ContractEventListenerConfig {
         String claimId = toHex((Bytes32) values.getIndexedValues().get(0));
         String approvalHash = toHex((Bytes32) values.getNonIndexedValues().get(0));
         String actor = ((Address) values.getIndexedValues().get(1)).getValue();
+        providerIncomeAccountingService.recordSettlementActivity(
+            "CLAIM_APPROVED", null, claimId, null, null, null, null, eventLog
+        );
         providerSettlementPersistenceService.markSettlementEvent(
             ProviderSettlementOperation.Action.APPROVE,
             claimId,
@@ -627,6 +705,9 @@ public class ContractEventListenerConfig {
         String claimId = toHex((Bytes32) values.getIndexedValues().get(0));
         String paymentHash = toHex((Bytes32) values.getIndexedValues().get(1));
         String actor = ((Address) values.getIndexedValues().get(2)).getValue();
+        providerIncomeAccountingService.recordSettlementActivity(
+            "CLAIM_PAID", null, claimId, null, null, null, null, eventLog
+        );
         providerSettlementPersistenceService.markSettlementEvent(
             ProviderSettlementOperation.Action.PAY,
             claimId,
@@ -638,18 +719,63 @@ public class ContractEventListenerConfig {
         );
     }
 
-    private void handleProviderSettlementBatchInvalidated(EventValues values) {
+    private void handleProviderSettlementBatchInvalidated(EventValues values, Log eventLog) {
         String batchId = toHex((Bytes32) values.getIndexedValues().get(0));
+        BigInteger labId = ((Uint256) values.getIndexedValues().get(1)).getValue();
+        BigInteger amount = ((Uint256) values.getNonIndexedValues().get(0)).getValue();
+        BigInteger targetStatus = ((Uint8) values.getNonIndexedValues().get(2)).getValue();
+        providerIncomeAccountingService.recordSettlementActivity(
+            "BATCH_INVALIDATED", batchId, null, labId, amount, null, targetStatus.intValue(), eventLog
+        );
         providerSettlementPersistenceService.markSettlementBatchInvalidated(batchId);
     }
 
-    private void handleProviderSettlementClaimInvalidated(EventValues values) {
+    private void handleProviderSettlementClaimInvalidated(EventValues values, Log eventLog) {
         String claimIdHash = toHex((Bytes32) values.getIndexedValues().get(0));
+        String batchId = toHex((Bytes32) values.getIndexedValues().get(1));
+        BigInteger labId = ((Uint256) values.getIndexedValues().get(2)).getValue();
+        BigInteger amount = ((Uint256) values.getNonIndexedValues().get(0)).getValue();
         BigInteger targetStatus = ((Uint8) values.getNonIndexedValues().get(2)).getValue();
+        providerIncomeAccountingService.recordSettlementActivity(
+            "CLAIM_INVALIDATED", batchId, claimIdHash, labId, amount, null, targetStatus.intValue(), eventLog
+        );
         ProviderInvoiceRecord.Status status = targetStatus.intValue() == 4
             ? ProviderInvoiceRecord.Status.DISPUTED
             : ProviderInvoiceRecord.Status.REVERSED;
         providerSettlementPersistenceService.markSettlementClaimInvalidated(claimIdHash, status);
+    }
+
+    private void handleReservationConfirmedByGeneration(EventValues values, Log eventLog) {
+        String reservationId = toHex((Bytes32) values.getIndexedValues().get(0));
+        String reservationKey = toHex((Bytes32) values.getIndexedValues().get(1));
+        BigInteger labId = ((Uint256) values.getIndexedValues().get(2)).getValue();
+        providerIncomeAccountingService.recordConfirmedGeneration(reservationId, reservationKey, labId, eventLog);
+    }
+
+    private void handleProviderReceivableAccrued(EventValues values, Log eventLog) {
+        BigInteger labId = ((Uint256) values.getIndexedValues().get(0)).getValue();
+        String reservationId = toHex((Bytes32) values.getIndexedValues().get(1));
+        BigInteger amount = ((Uint256) values.getNonIndexedValues().get(0)).getValue();
+        providerIncomeAccountingService.recordAccrual(labId, reservationId, amount, eventLog);
+    }
+
+    private void handleProviderSettlementBatchCreated(EventValues values, Log eventLog) {
+        String batchId = toHex((Bytes32) values.getIndexedValues().get(0));
+        BigInteger labId = ((Uint256) values.getIndexedValues().get(1)).getValue();
+        BigInteger amount = ((Uint256) values.getNonIndexedValues().get(0)).getValue();
+        String scopeRoot = toHex((Bytes32) values.getNonIndexedValues().get(1));
+        providerIncomeAccountingService.recordBatchCreated(batchId, labId, amount, scopeRoot, eventLog);
+    }
+
+    private void handleProviderSettlementScopeReferenced(EventValues values, Log eventLog) {
+        String batchId = toHex((Bytes32) values.getIndexedValues().get(0));
+        BigInteger labId = ((Uint256) values.getIndexedValues().get(1)).getValue();
+        String claimId = toHex((Bytes32) values.getIndexedValues().get(2));
+        BigInteger amount = ((Uint256) values.getNonIndexedValues().get(0)).getValue();
+        String scopeRoot = toHex((Bytes32) values.getNonIndexedValues().get(1));
+        providerIncomeAccountingService.recordSettlementActivity(
+            "SCOPE_REFERENCED", batchId, claimId, labId, amount, scopeRoot, null, eventLog
+        );
     }
 
     private void handleReservationRequested(EventValues eventValues, Log eventLog) {

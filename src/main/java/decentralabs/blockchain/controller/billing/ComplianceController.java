@@ -1,6 +1,7 @@
 package decentralabs.blockchain.controller.billing;
 
 import decentralabs.blockchain.service.billing.ComplianceExportService;
+import decentralabs.blockchain.service.billing.ProviderIncomeAccountingService;
 import decentralabs.blockchain.util.EthereumAddressValidator;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -21,6 +22,13 @@ import java.util.Map;
 public class ComplianceController {
 
     private final ComplianceExportService exportService;
+    private final ProviderIncomeAccountingService providerIncomeAccountingService;
+
+    @GetMapping("/provider-income")
+    @PreAuthorize("@walletDashboardAuthorizationService.canManageProviderNetwork()")
+    public ResponseEntity<?> getProviderIncomeReport() {
+        return ResponseEntity.ok(providerIncomeAccountingService.getReport());
+    }
 
     @GetMapping("/mica-volume")
     @PreAuthorize("@walletDashboardAuthorizationService.canManageProviderNetwork()")

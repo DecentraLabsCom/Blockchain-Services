@@ -486,6 +486,63 @@ public class Diamond extends Contract {
     }
 
     /**
+     * Read the immutable reservation-generation snapshot at a historical block.
+     * The return value is a static tuple, so decoding the twelve ABI words here
+     * also works with RPC providers that do not expose generated tuple wrappers.
+     */
+    public RemoteFunctionCall<Reservation> getReservationByIdAtBlock(byte[] reservationId, BigInteger blockNumber) {
+        if (reservationId == null || reservationId.length != 32) {
+            throw new IllegalArgumentException("Reservation id must be 32 bytes");
+        }
+        if (blockNumber == null || blockNumber.signum() < 0) {
+            throw new IllegalArgumentException("Historical block number is required");
+        }
+        final Function function = new Function(
+            "getReservationById",
+            Arrays.asList(new Bytes32(reservationId)),
+            List.of()
+        );
+        return new RemoteFunctionCall<>(function, () -> {
+            String encoded = callAtBlock(function, org.web3j.protocol.core.DefaultBlockParameter.valueOf(blockNumber));
+            String hex = stripHexPrefix(encoded);
+            if (hex.length() < 12 * 64) {
+                throw new IllegalStateException("Incomplete getReservationById response at block " + blockNumber);
+            }
+            return new Reservation(
+                wordAsBigInteger(hex, 0),
+                wordAsAddress(hex, 1),
+                wordAsBigInteger(hex, 2),
+                wordAsAddress(hex, 3),
+                wordAsBigInteger(hex, 4),
+                wordAsBigInteger(hex, 5),
+                wordAsBigInteger(hex, 6),
+                wordAsBigInteger(hex, 7),
+                wordAsBigInteger(hex, 8),
+                wordAsAddress(hex, 9),
+                wordAsAddress(hex, 10),
+                wordAsBigInteger(hex, 11)
+            );
+        });
+    }
+
+    /** Read the current ERC-721 owner at a historical block. */
+    public RemoteFunctionCall<String> ownerOfAtBlock(BigInteger tokenId, BigInteger blockNumber) {
+        if (blockNumber == null || blockNumber.signum() < 0) {
+            throw new IllegalArgumentException("Historical block number is required");
+        }
+        final Function function = new Function("ownerOf", Arrays.asList(new Uint256(tokenId)), List.of());
+        return new RemoteFunctionCall<>(function, () -> {
+            String encoded = stripHexPrefix(callAtBlock(
+                function, org.web3j.protocol.core.DefaultBlockParameter.valueOf(blockNumber)
+            ));
+            if (encoded == null || encoded.length() < 64) {
+                throw new IllegalStateException("Incomplete ownerOf response at block " + blockNumber);
+            }
+            return wordAsAddress(encoded, 0);
+        });
+    }
+
+    /**
      * Get registered intent metadata by request id (IntentRegistryFacet).
      */
     public RemoteFunctionCall<IntentMetaStruct> getIntent(byte[] requestId) {
@@ -909,30 +966,71 @@ public class Diamond extends Contract {
      * - offset_64+: LabBase tuple data with offsets for strings
      */
     public RemoteFunctionCall<Lab> getLab(BigInteger tokenId) {
+        return getLabAtBlock(tokenId, org.web3j.protocol.core.DefaultBlockParameterName.LATEST);
+    }
+
+    /** Read the lab configuration as of a specific block for historical attribution. */
+    public RemoteFunctionCall<Lab> getLabAtBlock(BigInteger tokenId, BigInteger blockNumber) {
+        if (blockNumber == null || blockNumber.signum() < 0) {
+            throw new IllegalArgumentException("Historical block number is required");
+        }
+        return getLabAtBlock(tokenId, org.web3j.protocol.core.DefaultBlockParameter.valueOf(blockNumber));
+    }
+
+    private RemoteFunctionCall<Lab> getLabAtBlock(
+        BigInteger tokenId,
+        org.web3j.protocol.core.DefaultBlockParameter blockParameter
+    ) {
         final Function function = new Function("getLab",
                 Arrays.asList(new Uint256(tokenId)),
                 java.util.Collections.emptyList());
         
         return new RemoteFunctionCall<>(function,
                 () -> {
-                    String encodedFunction = FunctionEncoder.encode(function);
-                    org.web3j.protocol.core.methods.response.EthCall response = web3j.ethCall(
-                        org.web3j.protocol.core.methods.request.Transaction.createEthCallTransaction(
-                            null, contractAddress, encodedFunction),
-                        org.web3j.protocol.core.DefaultBlockParameterName.LATEST
-                    ).send();
-                    
-                    String hex = response.getValue();
+                    String hex = callAtBlock(function, blockParameter);
                     if (hex == null || hex.isBlank() || "0x".equalsIgnoreCase(hex)) {
                         throw new IllegalStateException("Empty response decoding getLab(" + tokenId + ")");
                     }
-                    if (hex.startsWith("0x") || hex.startsWith("0X")) {
-                        hex = hex.substring(2);
-                    }
+                    hex = stripHexPrefix(hex);
 
                     int tupleOffset = parseOffsetWordChars(hex, 0, "tuple offset");
                     return decodeLabAtOffset(hex, tupleOffset, tokenId);
                 });
+    }
+
+    private String callAtBlock(
+        Function function,
+        org.web3j.protocol.core.DefaultBlockParameter blockParameter
+    ) throws Exception {
+        org.web3j.protocol.core.methods.response.EthCall response = web3j.ethCall(
+            org.web3j.protocol.core.methods.request.Transaction.createEthCallTransaction(
+                null, contractAddress, FunctionEncoder.encode(function)
+            ),
+            blockParameter
+        ).send();
+        if (response == null || response.hasError()) {
+            String message = response == null || response.getError() == null
+                ? "RPC returned no response"
+                : response.getError().getMessage();
+            throw new IllegalStateException("Historical contract read failed: " + message);
+        }
+        return response.getValue();
+    }
+
+    private static String stripHexPrefix(String value) {
+        return value != null && (value.startsWith("0x") || value.startsWith("0X"))
+            ? value.substring(2)
+            : value;
+    }
+
+    private static BigInteger wordAsBigInteger(String encoded, int wordIndex) {
+        int start = Math.multiplyExact(wordIndex, 64);
+        return new BigInteger(encoded.substring(start, start + 64), 16);
+    }
+
+    private static String wordAsAddress(String encoded, int wordIndex) {
+        int start = Math.multiplyExact(wordIndex, 64);
+        return "0x" + encoded.substring(start + 24, start + 64).toLowerCase(java.util.Locale.ROOT);
     }
     
     private Lab decodeLabAtOffset(String hex, int tupleOffset, BigInteger expectedLabId) {

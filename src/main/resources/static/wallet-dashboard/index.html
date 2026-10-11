@@ -215,6 +215,39 @@
                     <h2 id="settlementOperationsTitle">Provider Settlement</h2>
                 </div>
                 <div class="card-body">
+                    <div class="settlement-overview" id="providerIncomeReportSection">
+                        <div class="settlement-overview-header">
+                            <div>
+                                <h3>Provider income by Gateway and lab</h3>
+                                <p class="settlement-overview-note" id="providerIncomeReportNote">
+                                    Loading generation history and settlement reconciliation...
+                                </p>
+                            </div>
+                            <button type="button" class="btn btn-secondary btn-small" id="providerIncomeExportBtn" disabled>
+                                <i class="fas fa-download"></i> Export CSV
+                            </button>
+                        </div>
+                        <div class="settlement-labs-table-wrap">
+                            <table class="settlement-labs-table">
+                                <thead>
+                                    <tr>
+                                        <th>Gateway</th>
+                                        <th>Lab</th>
+                                        <th>Confirmed</th>
+                                        <th>Potential provider share</th>
+                                        <th>Accrued</th>
+                                        <th>Unbatched</th>
+                                        <th>Queued</th>
+                                        <th>In process</th>
+                                        <th>Paid externally</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="providerIncomeReportBody">
+                                    <tr><td colspan="9" class="settlement-table-empty">Loading provider income report...</td></tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
                     <div class="collect-panel" id="collectPanel">
                         <div id="providerSettlementControls">
                         <div class="collect-grid">

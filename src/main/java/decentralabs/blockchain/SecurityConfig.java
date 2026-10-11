@@ -184,6 +184,7 @@ public class SecurityConfig {
                         billingEndpoint + "/admin/provider-receivable-status",
                         billingEndpoint + "/admin/request-provider-payout",
                         billingEndpoint + "/compliance/exports/receivable-accruals",
+                        billingEndpoint + "/compliance/provider-income",
                         billingEndpoint + "/compliance/exports/completed-payouts",
                         billingEndpoint + "/compliance/exports/provider-network"
                     ).denyAll();
