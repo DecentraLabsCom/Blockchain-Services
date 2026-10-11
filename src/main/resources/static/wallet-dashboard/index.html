@@ -244,20 +244,17 @@
                 </div>
             </section>
 
-            <!-- Provider Settlement Requests Section -->
-            <section class="card hidden" id="settlementOperationsSection" data-wallet-tab-section="settlements" data-wallet-order="10">
+            <!-- Provider Income Report Section -->
+            <section class="card hidden" id="providerIncomeReportCard" data-wallet-tab-section="settlements" data-wallet-order="10">
                 <div class="card-header">
-                    <h2 id="settlementOperationsTitle">Provider Settlement</h2>
+                    <h2>Provider income by department</h2>
                 </div>
                 <div class="card-body">
                     <div class="settlement-overview" id="providerIncomeReportSection">
                         <div class="settlement-overview-header">
-                            <div>
-                                <h3>Provider income by department</h3>
-                                <p class="settlement-overview-note" id="providerIncomeReportNote">
-                                    Loading generation history and settlement reconciliation...
-                                </p>
-                            </div>
+                            <p class="settlement-overview-note" id="providerIncomeReportNote">
+                                Loading generation history and settlement reconciliation...
+                            </p>
                             <button type="button" class="btn btn-secondary btn-small" id="providerIncomeExportBtn" disabled>
                                 <i class="fas fa-download"></i> Export CSV
                             </button>
@@ -329,6 +326,15 @@
                             </table>
                         </div>
                     </div>
+                </div>
+            </section>
+
+            <!-- Provider Settlement Requests Section -->
+            <section class="card hidden" id="settlementOperationsSection" data-wallet-tab-section="settlements" data-wallet-order="20">
+                <div class="card-header">
+                    <h2 id="settlementOperationsTitle">Provider Settlement</h2>
+                </div>
+                <div class="card-body">
                     <div class="collect-panel" id="collectPanel">
                         <div id="providerSettlementControls">
                         <div class="collect-grid">

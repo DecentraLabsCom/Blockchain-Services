@@ -25,7 +25,7 @@ public class ComplianceController {
     private final ProviderIncomeAccountingService providerIncomeAccountingService;
 
     @GetMapping("/provider-income")
-    @PreAuthorize("@walletDashboardAuthorizationService.canManageProviderNetwork()")
+    @PreAuthorize("@walletDashboardAuthorizationService.canReadProviderIncomeReport()")
     public ResponseEntity<?> getProviderIncomeReport() {
         return ResponseEntity.ok(providerIncomeAccountingService.getReport());
     }

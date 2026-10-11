@@ -217,8 +217,10 @@ lab. When multiple Gateways share a department name, the department total
 combines them; the lab rows retain their Gateway ID. The report starts with an
 institution-wide total, followed by the department totals and lab details.
 Amounts are service credits; `paid` means an external payment proof was
-recorded, not that credits are redeemable for cash. The route retains its
-provider-network administrator permission in provider-consumer mode.
+recorded, not that credits are redeemable for cash. In provider-consumer mode,
+the configured institutional wallet may read its own report when it holds the
+provider or default-admin role; the caller cannot select another provider
+address.
 
 The Lite Lab Manager uses `GET /lab-admin/billing/provider-income` for a
 read-only report limited to the Gateway bound to its authenticated backend

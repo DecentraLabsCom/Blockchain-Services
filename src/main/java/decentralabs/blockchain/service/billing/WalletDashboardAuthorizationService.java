@@ -33,6 +33,13 @@ public class WalletDashboardAuthorizationService {
         return providerModeEnabled() && address != null && walletService.isDefaultAdmin(address);
     }
 
+    public boolean canReadProviderIncomeReport() {
+        String address = institutionalAddress();
+        return providerModeEnabled()
+            && address != null
+            && (walletService.isDefaultAdmin(address) || walletService.isLabProvider(address));
+    }
+
     public boolean canReviewProviderSettlements() {
         String address = institutionalAddress();
         return providerModeEnabled() && address != null && walletService.isDefaultAdmin(address);
