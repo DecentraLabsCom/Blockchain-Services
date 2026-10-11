@@ -191,7 +191,20 @@ class ContractEventListenerConfigTest {
 
         List<String> events = ReflectionTestUtils.invokeMethod(config, "parseConfiguredEvents");
 
-        assertThat(events).containsExactly("ReservationRequested", "ReservationConfirmed", "LabDeleted");
+        assertThat(events).containsExactly(
+            "ReservationRequested",
+            "ReservationConfirmed",
+            "LabDeleted",
+            "ReservationConfirmedByGeneration",
+            "ProviderReceivableAccrued",
+            "ProviderSettlementBatchCreated",
+            "ProviderSettlementScopeReferenced",
+            "ProviderSettlementClaimSubmitted",
+            "ProviderSettlementClaimApproved",
+            "ProviderSettlementClaimPaid",
+            "ProviderSettlementBatchInvalidated",
+            "ProviderSettlementClaimInvalidated"
+        );
     }
 
     @Test
