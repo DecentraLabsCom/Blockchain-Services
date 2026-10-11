@@ -211,15 +211,14 @@ public class GlobalExceptionHandler {
     }
 
     @ExceptionHandler(AuthorizationDeniedException.class)
-    public ResponseEntity<Map<String, Object>> handleAuthorizationDeniedException(
-            AuthorizationDeniedException ex, HttpServletRequest request) {
+    public ResponseEntity<Map<String, Object>> handleAuthorizationDeniedException() {
 
         Map<String, Object> response = new HashMap<>();
         response.put("success", false);
         response.put("message", "Access denied");
         response.put("status", HttpStatus.FORBIDDEN.value());
 
-        log.warn("Authorization denied at {}", LogSanitizer.sanitize(request.getRequestURI()));
+        log.warn("Authorization denied");
         return ResponseEntity.status(HttpStatus.FORBIDDEN).body(response);
     }
 

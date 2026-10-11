@@ -280,9 +280,9 @@ public class ProviderIncomeAccountingService {
         }
     }
 
-    @Transactional
+    @Transactional(readOnly = true)
     public Map<String, Object> getReport() {
-        return buildReport(null, true);
+        return buildReport(null);
     }
 
     @Transactional(readOnly = true)
@@ -291,15 +291,12 @@ public class ProviderIncomeAccountingService {
         if (normalizedGatewayId == null) {
             throw new IllegalArgumentException("Authenticated Gateway scope is required");
         }
-        return buildReport(normalizedGatewayId, false);
+        return buildReport(normalizedGatewayId);
     }
 
-    private Map<String, Object> buildReport(String gatewayId, boolean reconcileSources) {
+    private Map<String, Object> buildReport(String gatewayId) {
         requirePersistence();
         String providerAddress = configuredProviderAddress();
-        if (reconcileSources) {
-            reconcileBatchSources();
-        }
         BigInteger chainId = currentChainId();
         String contract = normalizeContract(contractAddress);
         Map<String, Snapshot> snapshots = loadCanonicalSnapshots(chainId, contract, providerAddress, gatewayId);
