@@ -212,6 +212,25 @@ X-Reservation-Projection-Token: replace-with-a-secret
 Invalid credentials return `403 RESERVATION_PROJECTION_FORBIDDEN`; a missing
 database or projection failure returns `503 RESERVATION_PROJECTION_UNAVAILABLE`.
 
+### Lite lab-administration scope
+
+The Full/backend provider maps each Lite's unique backend token in
+`LAB_ADMIN_GATEWAY_CREDENTIALS_JSON`:
+
+```json
+{
+  "lite-lab.example.edu": {
+    "token": "replace-with-a-unique-secret",
+    "accessUri": "https://lite-lab.example.edu"
+  }
+}
+```
+
+OpenResty sends that token and its configured `X-Gateway-ID`; the backend
+rejects a mismatch and binds `/lab-admin/labs`, reservation operations and
+lab mutations to the mapped Gateway's on-chain `accessURI`. The Full/backend
+`ADMIN_ACCESS_TOKEN` remains the institution-wide operator credential.
+
 Use [Authentication](../services/authentication/AUTH.md),
 [Wallet and billing](../services/wallet/WALLET_BILLING.md),
 [Lab administration](../services/lab-administration/LAB_ADMINISTRATION.md) and

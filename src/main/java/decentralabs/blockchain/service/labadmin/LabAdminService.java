@@ -9,6 +9,7 @@ import decentralabs.blockchain.dto.labadmin.LabAdminPublishRequest;
 import decentralabs.blockchain.dto.labadmin.LabAdminReservation;
 import decentralabs.blockchain.dto.labadmin.LabAdminTransactionResponse;
 import decentralabs.blockchain.dto.health.LabMetadata;
+import decentralabs.blockchain.security.LabAdminGatewayScope;
 import decentralabs.blockchain.service.BackendUrlResolver;
 import decentralabs.blockchain.service.guacamole.GuacamoleProvisioningService;
 import decentralabs.blockchain.service.health.LabMetadataService;
@@ -17,6 +18,7 @@ import decentralabs.blockchain.service.wallet.InstitutionalTxManagerProvider;
 import decentralabs.blockchain.service.wallet.InstitutionalWalletService;
 import decentralabs.blockchain.service.wallet.WalletService;
 import decentralabs.blockchain.util.CreditUnitConverter;
+import decentralabs.blockchain.util.GatewayIdentity;
 import decentralabs.blockchain.util.LogSanitizer;
 import java.io.IOException;
 import java.math.BigInteger;
@@ -25,6 +27,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
+import java.security.MessageDigest;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Base64;
@@ -43,6 +46,8 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
+import org.springframework.web.context.request.RequestContextHolder;
+import org.springframework.web.context.request.ServletRequestAttributes;
 import org.springframework.web.multipart.MultipartFile;
 import org.web3j.protocol.Web3j;
 import org.web3j.protocol.core.methods.response.Log;
@@ -164,18 +169,25 @@ public class LabAdminService {
 
     public Map<String, Object> listLabs() {
         String wallet = requireProviderWallet();
+        String gatewayScope = authenticatedGatewayScope();
+        Diamond diamond = loadReadonlyDiamond();
         List<Map<String, Object>> labs = new ArrayList<>();
         for (BigInteger labId : walletService.getLabsOwnedByProvider(wallet)) {
-            Map<String, Object> item = new LinkedHashMap<>();
-            item.put("labId", labId.toString());
             try {
-                Diamond.Lab lab = loadReadonlyDiamond().getLab(labId).send();
+                Diamond.Lab lab = diamond.getLab(labId).send();
+                if (lab == null || lab.base == null
+                    || (gatewayScope != null
+                        && !gatewayScope.equals(GatewayIdentity.fromAccessUri(lab.base.accessURI)))) {
+                    continue;
+                }
+                Map<String, Object> item = new LinkedHashMap<>();
+                item.put("labId", labId.toString());
                 item.put("uri", lab.base.uri);
                 item.put("price", lab.base.price.toString());
                 item.put("accessURI", lab.base.accessURI);
                 item.put("accessKey", lab.base.accessKey);
                 item.put("resourceType", lab.base.resourceType.intValue());
-                item.put("listed", loadReadonlyDiamond().isLabListed(labId).send());
+                item.put("listed", diamond.isLabListed(labId).send());
                 LabMetadata metadata = resolveLabMetadata(labId);
                 if (metadata != null && hasText(metadata.getDescription())) {
                     item.put("description", metadata.getDescription().trim());
@@ -190,11 +202,11 @@ public class LabAdminService {
                 if (hasText(name)) {
                     item.put("name", name);
                 }
+                labs.add(item);
             } catch (Exception ex) {
-                log.debug("Unable to load details for lab {}", labId, ex);
-                item.put("error", "Unable to load lab details");
+                // Unknown ownership scope must fail closed; do not expose an unverified lab.
+                log.debug("Unable to load scoped details for lab {}", labId, ex);
             }
-            labs.add(item);
         }
         return Map.of("success", true, "providerAddress", wallet, "labs", labs);
     }
@@ -946,10 +958,11 @@ public class LabAdminService {
         }
 
         String contentId = normalizeContentId(requestedContentId);
+        String storageContentId = storageContentId(contentId);
         String fileName = safeFileName(file.getOriginalFilename(), contentType, normalizedKind);
-        Path targetDir = contentRoot().resolve("content").resolve(contentId).resolve(normalizedKind).normalize();
+        Path targetDir = contentRoot().resolve("content").resolve(storageContentId).resolve(normalizedKind).normalize();
         ensureWithinContentRoot(targetDir);
-        if (contentRetentionService.isTombstoned("content/" + contentId + "/metadata.json")) {
+        if (contentRetentionService.isTombstoned("content/" + storageContentId + "/metadata.json")) {
             throw new IllegalStateException("Lab content is retained after deletion");
         }
         Files.createDirectories(targetDir);
@@ -957,7 +970,7 @@ public class LabAdminService {
         ensureWithinContentRoot(target);
         Files.copy(file.getInputStream(), target, StandardCopyOption.REPLACE_EXISTING);
 
-        String relative = "content/" + contentId + "/" + normalizedKind + "/" + fileName;
+        String relative = "content/" + storageContentId + "/" + normalizedKind + "/" + fileName;
         return new LabAdminAssetResponse(
             true,
             contentId,
@@ -970,6 +983,10 @@ public class LabAdminService {
 
     public LabAdminDeleteAssetResponse deleteAsset(String assetPath) throws IOException {
         String relative = normalizeUploadedAssetPath(assetPath);
+        String gatewayScope = authenticatedGatewayScope();
+        if (gatewayScope != null && !relative.startsWith("content/" + gatewayContentPrefix(gatewayScope))) {
+            throw new IllegalArgumentException("Asset does not belong to this gateway");
+        }
         Path target = contentRoot().resolve(relative).normalize();
         ensureWithinContentRoot(target);
         boolean deleted = Files.deleteIfExists(target);
@@ -990,11 +1007,12 @@ public class LabAdminService {
         String wallet = requireProviderWallet();
         String creatorPucHash = resolveCreatorPucHash(request);
         BigInteger resourceType = normalizeResourceType(request.resourceType());
-        String uri = resolveMetadataUri(request, resourceType);
         BigInteger price = requireNonNegative(request.price(), "price");
         String accessURI = requireText(request.accessURI(), "accessURI", 500);
+        requireAccessUriInGatewayScope(accessURI, authenticatedGatewayScope());
         String accessKey = requireText(request.accessKey(), "accessKey", 200);
         validatePhysicalAccessKey(accessKey, resourceType);
+        String uri = resolveMetadataUri(request, resourceType);
         boolean listImmediately = request.listImmediately() == null || request.listImmediately();
         boolean allowDuplicate = Boolean.TRUE.equals(request.allowDuplicate());
 
@@ -1006,6 +1024,11 @@ public class LabAdminService {
         if (!allowDuplicate) {
             Optional<BigInteger> existingLab = findOwnedLabByUri(uri, before);
             if (existingLab.isPresent()) {
+                String gatewayScope = authenticatedGatewayScope();
+                if (gatewayScope != null
+                    && !isLabInGatewayScope(loadReadonlyDiamond(), existingLab.get(), gatewayScope)) {
+                    throw new IllegalArgumentException("Metadata URI is already in use");
+                }
                 return existingLabResponse(existingLab.get(), uri);
             }
         }
@@ -1037,12 +1060,14 @@ public class LabAdminService {
         BigInteger labId, LabAdminPublishRequest request, String idempotencyKey
     ) throws Exception {
         requireOwnedLab(labId);
+        requireLabGatewayScope(loadReadonlyDiamond(), labId, authenticatedGatewayScope());
         BigInteger resourceType = normalizeResourceType(request.resourceType());
-        String uri = resolveMetadataUri(request, resourceType);
         BigInteger price = requireNonNegative(request.price(), "price");
         String accessURI = requireText(request.accessURI(), "accessURI", 500);
+        requireAccessUriInGatewayScope(accessURI, authenticatedGatewayScope());
         String accessKey = requireText(request.accessKey(), "accessKey", 200);
         validatePhysicalAccessKey(accessKey, resourceType);
+        String uri = resolveMetadataUri(request, resourceType);
         if (isQuickSetup(request)) {
             preflightMetadataUri(uri, requireProviderWallet(), resourceType);
         }
@@ -1083,6 +1108,7 @@ public class LabAdminService {
 
     public LabAdminTransactionResponse deleteLab(BigInteger labId, String idempotencyKey) throws Exception {
         requireOwnedLab(labId);
+        requireLabGatewayScope(loadReadonlyDiamond(), labId, authenticatedGatewayScope());
         String uri = walletService.getLabTokenUri(labId).orElse(null);
         String operationKey = operationKey("delete", labId, idempotencyKey);
         // Reserve the content hand-off before broadcasting. If this durable
@@ -1131,6 +1157,7 @@ public class LabAdminService {
         BigInteger labId, boolean listed, String idempotencyKey
     ) throws Exception {
         requireOwnedLab(labId);
+        requireLabGatewayScope(loadReadonlyDiamond(), labId, authenticatedGatewayScope());
         String uri = walletService.getLabTokenUri(labId).orElse(null);
         if (listed) {
             preflightMetadataUri(uri, requireProviderWallet(), resolveOnChainResourceType(labId));
@@ -1240,6 +1267,7 @@ public class LabAdminService {
         validateGeneratedMetadata(metadata);
         validateGeneratedMetadataCapacity(metadata, resourceType);
         String contentId = normalizeContentId(objectsToString(metadata.get("contentId")));
+        contentId = storageContentId(contentId);
         metadata.remove("contentId");
         Path targetDir = contentRoot().resolve("content").resolve(contentId).normalize();
         ensureWithinContentRoot(targetDir);
@@ -1442,29 +1470,70 @@ public class LabAdminService {
     }
 
     private String resolveGatewayScope(String requestedGatewayId) {
+        LabAdminGatewayScope authenticatedScope = currentGatewayScope();
+        if (authenticatedScope != null && authenticatedScope.institutionWide()) {
+            return hasText(requestedGatewayId) ? normalizeGatewayId(requestedGatewayId) : null;
+        }
+
+        String authenticatedGatewayId = authenticatedScope == null
+            ? null
+            : normalizeGatewayId(authenticatedScope.gatewayId());
+        if (authenticatedScope != null && authenticatedGatewayId == null) {
+            throw new IllegalStateException("Authenticated gateway scope is invalid");
+        }
+        if (authenticatedGatewayId != null) {
+            String requested = hasText(requestedGatewayId) ? normalizeGatewayId(requestedGatewayId) : null;
+            if (hasText(requestedGatewayId) && !authenticatedGatewayId.equals(requested)) {
+                throw new IllegalStateException("Gateway ID does not match the authenticated Gateway");
+            }
+            return authenticatedGatewayId;
+        }
+
         String candidate = hasText(requestedGatewayId)
             ? requestedGatewayId
-            : gatewayIdFromAccessUri(backendUrlResolver.resolveBaseDomain());
+            : GatewayIdentity.fromAccessUri(backendUrlResolver.resolveBaseDomain());
         if (!hasText(candidate)) {
             throw new IllegalStateException("Gateway scope is not configured");
         }
-        String normalized = candidate.trim().toLowerCase(Locale.ROOT);
-        if (normalized.contains("://") || normalized.contains("/")
-            || normalized.contains("?") || normalized.contains("#")
-            || normalized.chars().anyMatch(Character::isWhitespace)) {
+        return normalizeGatewayId(candidate);
+    }
+
+    private String normalizeGatewayId(String gatewayId) {
+        String normalized = GatewayIdentity.normalizeGatewayId(gatewayId);
+        if (normalized == null) {
             throw new IllegalArgumentException("Invalid gateway scope");
-        }
-        if (!normalized.startsWith("[") && normalized.endsWith(".")) {
-            normalized = normalized.substring(0, normalized.length() - 1);
         }
         return normalized;
     }
 
+    private String authenticatedGatewayScope() {
+        LabAdminGatewayScope scope = currentGatewayScope();
+        if (scope == null || scope.institutionWide()) {
+            return null;
+        }
+        String gatewayId = normalizeGatewayId(scope.gatewayId());
+        if (gatewayId == null) {
+            throw new IllegalStateException("Authenticated gateway scope is invalid");
+        }
+        return gatewayId;
+    }
+
+    private LabAdminGatewayScope currentGatewayScope() {
+        if (!(RequestContextHolder.getRequestAttributes() instanceof ServletRequestAttributes attributes)) {
+            return null;
+        }
+        Object value = attributes.getRequest().getAttribute(LabAdminGatewayScope.REQUEST_ATTRIBUTE);
+        return value instanceof LabAdminGatewayScope scope ? scope : null;
+    }
+
     private boolean isLabInGatewayScope(Diamond diamond, BigInteger labId, String gatewayScope) {
+        if (gatewayScope == null) {
+            return true;
+        }
         try {
             Diamond.Lab lab = diamond.getLab(labId).send();
             return lab != null && lab.base != null
-                && gatewayScope.equals(gatewayIdFromAccessUri(lab.base.accessURI));
+                && gatewayScope.equals(GatewayIdentity.fromAccessUri(lab.base.accessURI));
         } catch (Exception ex) {
             log.debug("Unable to resolve gateway scope for lab {}", labId, ex);
             return false;
@@ -1472,35 +1541,15 @@ public class LabAdminService {
     }
 
     private void requireLabGatewayScope(Diamond diamond, BigInteger labId, String gatewayScope) {
-        if (!isLabInGatewayScope(diamond, labId, gatewayScope)) {
+        if (gatewayScope != null && !isLabInGatewayScope(diamond, labId, gatewayScope)) {
             throw new IllegalStateException("Lab is not assigned to this gateway");
         }
     }
 
-    private String gatewayIdFromAccessUri(String accessUri) {
-        if (!hasText(accessUri)) {
-            return null;
-        }
-        try {
-            URI uri = URI.create(accessUri.trim());
-            String host = uri.getHost();
-            if (!hasText(host)) {
-                return null;
-            }
-            String normalizedHost = host.toLowerCase(Locale.ROOT);
-            if (normalizedHost.contains(":")) {
-                normalizedHost = "[" + normalizedHost + "]";
-            }
-            String scheme = hasText(uri.getScheme())
-                ? uri.getScheme().toLowerCase(Locale.ROOT)
-                : "https";
-            int port = uri.getPort();
-            boolean defaultPort = port < 0
-                || ("https".equals(scheme) && port == 443)
-                || ("http".equals(scheme) && port == 80);
-            return defaultPort ? normalizedHost : normalizedHost + ":" + port;
-        } catch (RuntimeException ex) {
-            return null;
+    private void requireAccessUriInGatewayScope(String accessUri, String gatewayScope) {
+        if (gatewayScope != null
+            && !gatewayScope.equals(GatewayIdentity.fromAccessUri(accessUri))) {
+            throw new IllegalArgumentException("Lab accessURI is not assigned to this gateway");
         }
     }
 
@@ -1621,6 +1670,21 @@ public class LabAdminService {
             throw new IllegalArgumentException("Invalid contentId");
         }
         return text;
+    }
+
+    private String storageContentId(String contentId) {
+        String gatewayScope = authenticatedGatewayScope();
+        return gatewayScope == null ? contentId : gatewayContentPrefix(gatewayScope) + contentId;
+    }
+
+    private String gatewayContentPrefix(String gatewayScope) {
+        try {
+            byte[] digest = MessageDigest.getInstance("SHA-256")
+                .digest(gatewayScope.getBytes(StandardCharsets.UTF_8));
+            return "gw-" + Numeric.toHexStringNoPrefix(digest) + "-";
+        } catch (java.security.NoSuchAlgorithmException ex) {
+            throw new IllegalStateException("SHA-256 is unavailable", ex);
+        }
     }
 
     private String normalizeAssetKind(String value) {

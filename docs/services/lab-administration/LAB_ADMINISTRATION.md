@@ -18,7 +18,23 @@ All `/lab-admin/**` routes pass through `LocalhostOnlyFilter`. By default, they
 are loopback-only. A remote operations client needs the configured private
 network policy plus either the normal admin access token or the dedicated
 `X-Lab-Manager-Token` from an allowed `LAB_MANAGER_ALLOWED_CIDRS` range. The
-lab-manager token never grants access outside `/lab-admin/**`.
+lab-manager token never grants access outside `/lab-admin/**`. The normal
+`ADMIN_ACCESS_TOKEN` is the institution-wide operator credential. A Lite
+backend token is registered separately in `LAB_ADMIN_GATEWAY_CREDENTIALS_JSON`
+and is bound to one normalized Gateway ID and its `accessURI`. OpenResty
+replaces browser-supplied `X-Gateway-ID` values with its configured identity;
+the backend also checks that identity against the token mapping.
+
+A scoped Gateway credential sees only provider-owned labs whose current on-chain
+`accessURI` belongs to that Gateway. Publishing must target the authenticated
+Gateway, and updates cannot move a lab to another Gateway. Editing, listing,
+unlisting and deleting a lab outside that scope is rejected. An
+`ADMIN_ACCESS_TOKEN` holder retains institution-wide administration.
+
+Scoped asset uploads and generated metadata use a Gateway-specific content
+namespace. A scoped Gateway credential can delete only uploaded files in its
+own namespace. Existing public content with legacy, unscoped content IDs remains
+readable; removing those files requires an institution-wide administrator.
 
 `GET /lab-content/**` is intentionally different: it is a public, read-only
 content route with `GET`, `HEAD` and `OPTIONS` CORS. Keep credentials, private
@@ -29,28 +45,35 @@ connection strings and internal runbooks out of the uploaded content tree.
 | Method and path | Purpose |
 | --- | --- |
 | `GET /lab-admin/status` | Provider wallet, configured creator PUC hash, content URLs, FMU inventory and Guacamole availability. |
-| `GET /lab-admin/labs` | Labs owned by the institutional provider wallet. |
+| `GET /lab-admin/labs` | Provider-owned labs assigned to the authenticated Gateway, or all labs for an institution-wide admin. |
 | `GET /lab-admin/reservations/upcoming` (`offset`, `limit`) | Upcoming pending, confirmed or access-authorized reservations for provider-owned labs assigned to the current Gateway. |
 | `GET /lab-admin/reservations/actionable` (`offset`, `limit`, `cursor`) | Provider-cancellable reservations assigned to the current Gateway, including post-start service-failure cases still inside attestation grace. |
 | `POST /lab-admin/reservations/{reservationKey}/cancel` | Deny a pending request or cancel a confirmed/access-authorized booking assigned to the current Gateway when its selected provider reason is eligible. |
 | `GET /lab-admin/guacamole/connections` | Safe Guacamole connection catalogue for administration. |
-| `POST /lab-admin/assets` | Upload a JPEG/PNG/WebP/GIF image or PDF document. |
-| `DELETE /lab-admin/assets` | Delete an uploaded image or document by its returned path. |
-| `POST /lab-admin/labs` | Create a lab, optionally list it immediately. |
-| `PUT /lab-admin/labs/{labId}` | Update a provider-owned lab. |
-| `DELETE /lab-admin/labs/{labId}` | Delete a provider-owned lab and tombstone local content. |
-| `POST /lab-admin/labs/{labId}/list` | List a lab after metadata preflight. |
-| `POST /lab-admin/labs/{labId}/unlist` | Remove a lab from listing. |
+| `POST /lab-admin/assets` | Upload a JPEG/PNG/WebP/GIF image or PDF document into the authenticated Gateway's namespace. |
+| `DELETE /lab-admin/assets` | Delete an uploaded image or document by its returned path, limited to the authenticated Gateway's namespace. |
+| `POST /lab-admin/labs` | Create a lab only for the authenticated Gateway, optionally list it immediately. |
+| `PUT /lab-admin/labs/{labId}` | Update a provider-owned lab assigned to the authenticated Gateway; Gateway transfers require institution-wide administration. |
+| `DELETE /lab-admin/labs/{labId}` | Delete a provider-owned lab assigned to the authenticated Gateway and tombstone local content. |
+| `POST /lab-admin/labs/{labId}/list` | List an in-scope lab after metadata preflight. |
+| `POST /lab-admin/labs/{labId}/unlist` | Unlist an in-scope lab. |
 | `POST /lab-admin/fmu/provider-describe-token` | Issue a 60-second FMU describe token for an `.fmu` filename. |
 
 The full endpoint index, including non-lab routes, is in
 [API reference](../../reference/API_REFERENCE.md).
 
-Reservation endpoints use the `X-Gateway-ID` scope injected by the Gateway
-proxy. `blockchain-services` matches that scope against the host and port of
-each lab's on-chain `accessURI` before returning or cancelling a reservation.
-The scope is therefore independent from the institution or provider wallet;
-sharing either does not grant access to another Gateway's reservations.
+Reservation and lab-management endpoints use the Gateway scope established by
+the backend authentication boundary. A Lite credential maps to one Gateway ID
+and `accessURI`; client-supplied Gateway IDs are checked against that mapping.
+`blockchain-services` compares the scope with each lab's on-chain
+`accessURI` before returning reservations or lab details, and before
+cancelling, publishing, editing, listing, unlisting or deleting a lab. Sharing
+the institution's provider wallet does not grant a scoped Lite access to
+another Gateway's labs.
+
+Generated metadata and uploaded assets follow that same Gateway identity in
+storage, so a Lite cannot overwrite another Gateway's content by choosing its
+`contentId` or delete another Gateway's files by submitting their public path.
 
 ## Publish and update flow
 
