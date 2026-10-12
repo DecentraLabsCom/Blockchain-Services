@@ -574,6 +574,7 @@ public class BlockchainBookingService {
         bookingInfo.put("sub", subject);         // Subject - temporary Guacamole user or FMU key
         bookingInfo.put("nbf", start);           // Not Before - reservation start
         bookingInfo.put("exp", expiresAt);       // Expiration - capped by max JWT TTL
+        bookingInfo.put("reservationEndsAt", end); // On-chain reservation end, independent of JWT expiry
         
         // Custom Claims
         bookingInfo.put("lab", labId);                      // Lab ID
