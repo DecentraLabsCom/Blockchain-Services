@@ -1513,6 +1513,11 @@ public class ContractEventListenerConfig {
 
     private void sendReservationApprovedNotification(ReservationEventPayload payload) {
         try {
+            String gatewayId = resolveNotificationGatewayId(payload);
+            if (gatewayId == null) {
+                log.warn("Skipping reservation notification for {}: lab Gateway could not be resolved", payload.reservationKey());
+                return;
+            }
             LabMetadata metadata = loadLabMetadata(payload.labId()).orElse(null);
             String labName = (metadata != null && metadata.getName() != null && !metadata.getName().isBlank())
                 ? metadata.getName()
@@ -1526,7 +1531,8 @@ public class ContractEventListenerConfig {
                 payload.payerInstitution().orElse(null),
                 payload.startEpoch().map(value -> Instant.ofEpochSecond(value.longValue())).orElse(null),
                 payload.endEpoch().map(value -> Instant.ofEpochSecond(value.longValue())).orElse(null),
-                payload.rawLog().getTransactionHash()
+                payload.rawLog().getTransactionHash(),
+                gatewayId
             );
             reservationNotificationService.notifyReservationApproved(data);
         } catch (Exception ex) {
@@ -1540,6 +1546,11 @@ public class ContractEventListenerConfig {
 
     private void sendReservationCanceledNotification(ReservationEventPayload payload) {
         try {
+            String gatewayId = resolveNotificationGatewayId(payload);
+            if (gatewayId == null) {
+                log.warn("Skipping cancellation notification for {}: lab Gateway could not be resolved", payload.reservationKey());
+                return;
+            }
             LabMetadata metadata = loadLabMetadata(payload.labId()).orElse(null);
             String labName = (metadata != null && metadata.getName() != null && !metadata.getName().isBlank())
                 ? metadata.getName()
@@ -1553,7 +1564,8 @@ public class ContractEventListenerConfig {
                 payload.payerInstitution().orElse(null),
                 payload.startEpoch().map(value -> Instant.ofEpochSecond(value.longValue())).orElse(null),
                 payload.endEpoch().map(value -> Instant.ofEpochSecond(value.longValue())).orElse(null),
-                payload.rawLog().getTransactionHash()
+                payload.rawLog().getTransactionHash(),
+                gatewayId
             );
             reservationNotificationService.notifyReservationCancelled(data);
         } catch (Exception ex) {
@@ -1563,6 +1575,16 @@ public class ContractEventListenerConfig {
                 ex.getMessage()
             );
         }
+    }
+
+    private String resolveNotificationGatewayId(ReservationEventPayload payload) throws Exception {
+        Diamond.Lab lab = getDiamondContract()
+            .getLabAtBlock(payload.labId(), payload.rawLog().getBlockNumber())
+            .send();
+        if (lab == null || lab.base == null) {
+            return null;
+        }
+        return decentralabs.blockchain.util.GatewayIdentity.fromAccessUri(lab.base.accessURI);
     }
 
     private Optional<Instant> toInstant(Optional<BigInteger> epochSeconds) {

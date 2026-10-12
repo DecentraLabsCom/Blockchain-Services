@@ -19,7 +19,7 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 /**
- * Ensures that wallet and billing endpoints are only accessible from localhost.
+ * Applies the local/private-network boundary to wallet, billing and admin routes.
  */
 @Component
 @Order(0)
@@ -151,10 +151,9 @@ public class LocalhostOnlyFilter extends OncePerRequestFilter {
         if ("POST".equalsIgnoreCase(request.getMethod()) && SESSION_OBSERVED_PATH.equals(path)) {
             return false;
         }
-        // Protect wallet/billing APIs, admin notifications, and the wallet dashboard UI.
+        // Protect wallet/billing APIs, Lab Manager administration, and admin dashboards.
         return path.startsWith("/wallet")
             || path.startsWith("/billing")
-            || path.startsWith("/billing/admin/notifications")
             || path.startsWith("/wallet-dashboard")
             || path.startsWith("/wallet-admin")
             || path.startsWith("/institution-config")
@@ -225,11 +224,6 @@ public class LocalhostOnlyFilter extends OncePerRequestFilter {
     }
 
     private boolean establishLabAdminScope(HttpServletRequest request) {
-        if (hasValidAccessToken(request)) {
-            request.setAttribute(LabAdminGatewayScope.REQUEST_ATTRIBUTE, LabAdminGatewayScope.forInstitution());
-            return true;
-        }
-
         String suppliedToken = labManagerTokenFromRequest(request);
         Optional<String> mappedGateway = labAdminGatewayCredentialService == null || suppliedToken == null
             ? Optional.empty()
@@ -246,21 +240,30 @@ public class LocalhostOnlyFilter extends OncePerRequestFilter {
             return true;
         }
 
-        String localGateway = localGatewayId();
-        if (localGateway == null) {
-            // The one-argument constructor is retained for isolated filter tests.
+        if (suppliedToken != null && hasValidLabManagerToken(request)) {
+            String localGateway = localGatewayId();
+            if (localGateway == null) {
+                // The one-argument constructor is retained for isolated filter tests.
+                request.setAttribute(LabAdminGatewayScope.REQUEST_ATTRIBUTE, LabAdminGatewayScope.forInstitution());
+                return true;
+            }
+            String requestedGateway = GatewayIdentity.normalizeGatewayId(request.getHeader("X-Gateway-ID"));
+            if (requestedGateway != null && !localGateway.equals(requestedGateway)) {
+                return false;
+            }
+            request.setAttribute(
+                LabAdminGatewayScope.REQUEST_ATTRIBUTE,
+                LabAdminGatewayScope.forGateway(localGateway)
+            );
+            return true;
+        }
+
+        if (hasValidAccessToken(request)) {
             request.setAttribute(LabAdminGatewayScope.REQUEST_ATTRIBUTE, LabAdminGatewayScope.forInstitution());
             return true;
         }
-        String requestedGateway = GatewayIdentity.normalizeGatewayId(request.getHeader("X-Gateway-ID"));
-        if (requestedGateway != null && !localGateway.equals(requestedGateway)) {
-            return false;
-        }
-        request.setAttribute(
-            LabAdminGatewayScope.REQUEST_ATTRIBUTE,
-            LabAdminGatewayScope.forGateway(localGateway)
-        );
-        return true;
+
+        return false;
     }
 
     private String localGatewayId() {

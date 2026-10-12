@@ -157,8 +157,8 @@ matching, versioning and final execution re-checks.
 | POST | `/billing/admin/request-provider-payout` | Admin boundary; server-side payout request. |
 | GET | `/billing/admin/transaction-status` | Admin boundary; durable transaction status. |
 | GET | `/billing/admin/status`, `/billing/admin/balance`, `/billing/admin/transactions`, `/billing/admin/contract-info`, `/billing/admin/provider-labs`, `/billing/admin/provider-receivable-status`, `/billing/admin/billing-info`, `/billing/admin/top-spenders` | Admin boundary; dashboard reads. |
-| GET/POST | `/billing/admin/notifications` | Admin boundary; notification settings. |
-| POST | `/billing/admin/notifications/test`, `/billing/admin/notifications/send` | Admin boundary; test or send notification. |
+| GET/PUT | `/lab-admin/notifications` | Lab Manager boundary; mail settings scoped to the credential's Gateway ID. |
+| POST | `/lab-admin/notifications/test`, `/lab-admin/notifications/send` | Lab Manager boundary; test or send mail using that Gateway's settings. |
 | GET/POST | `/billing/provider-network` | Admin boundary; list or activate provider network membership. |
 | POST | `/billing/provider-network/{id}/suspend`, `/billing/provider-network/{id}/terminate` | Admin boundary; lifecycle changes. |
 | GET | `/billing/provider-gateways` | Provider-consumer mode; provider-network administrator; lists configured Lite Gateway IDs and department labels, never credentials. |

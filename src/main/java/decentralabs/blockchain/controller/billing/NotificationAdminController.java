@@ -1,5 +1,6 @@
 package decentralabs.blockchain.controller.billing;
 
+import decentralabs.blockchain.config.ProviderConsumerModeCondition;
 import decentralabs.blockchain.notification.MailSenderAdapter;
 import decentralabs.blockchain.notification.MailSenderFactory;
 import decentralabs.blockchain.notification.MailSendResult;
@@ -8,22 +9,28 @@ import decentralabs.blockchain.notification.NotificationMessage;
 import decentralabs.blockchain.notification.NotificationProperties;
 import decentralabs.blockchain.notification.NotificationUpdateRequest;
 import decentralabs.blockchain.security.AdminNetworkAccessPolicy;
+import decentralabs.blockchain.security.LabAdminGatewayScope;
+import decentralabs.blockchain.util.GatewayIdentity;
 import jakarta.servlet.http.HttpServletRequest;
 import java.util.List;
 import java.util.Map;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Value;
+import org.springframework.context.annotation.Conditional;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
+import org.springframework.web.bind.annotation.RequestAttribute;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+/** Gateway-scoped notification settings and delivery for Lab Manager. */
 @RestController
-@RequestMapping("/billing/admin/notifications")
+@RequestMapping("/lab-admin/notifications")
+@Conditional(ProviderConsumerModeCondition.class)
 @RequiredArgsConstructor
 @Slf4j
 public class NotificationAdminController {
@@ -32,52 +39,46 @@ public class NotificationAdminController {
     private final MailSenderFactory mailSenderFactory;
     private final AdminNetworkAccessPolicy adminNetworkAccessPolicy;
 
-    @Value("${security.access-token:}")
-    private String accessToken;
-
-    @Value("${security.access-token-header:X-Access-Token}")
-    private String accessTokenHeader;
-
-    @Value("${security.access-token-cookie:access_token}")
-    private String accessTokenCookie;
-
-    @Value("${security.access-token.required:true}")
-    private boolean accessTokenRequired;
-
     @GetMapping
-    public ResponseEntity<?> getConfig(HttpServletRequest request) {
-        if (!isLocalhostRequest(request)) {
-            return forbidden();
-        }
+    public ResponseEntity<?> getConfig(
+        HttpServletRequest request,
+        @RequestAttribute(value = LabAdminGatewayScope.REQUEST_ATTRIBUTE, required = false)
+        LabAdminGatewayScope gatewayScope
+    ) {
+        String gatewayId = authorizedGateway(request, gatewayScope);
+        if (gatewayId == null) return forbidden();
         return ResponseEntity.ok(Map.of(
             "success", true,
-            "config", notificationConfigService.getPublicConfig()
+            "config", notificationConfigService.getPublicConfig(gatewayId)
         ));
     }
 
-    @PostMapping
+    @PutMapping
     public ResponseEntity<?> updateConfig(
-        @RequestBody NotificationUpdateRequest request,
-        HttpServletRequest httpRequest
+        @RequestBody NotificationUpdateRequest config,
+        HttpServletRequest request,
+        @RequestAttribute(value = LabAdminGatewayScope.REQUEST_ATTRIBUTE, required = false)
+        LabAdminGatewayScope gatewayScope
     ) {
-        if (!isLocalhostRequest(httpRequest)) {
-            return forbidden();
-        }
+        String gatewayId = authorizedGateway(request, gatewayScope);
+        if (gatewayId == null) return forbidden();
         try {
-            var errors = notificationConfigService.validateUpdate(request);
+            List<String> errors = notificationConfigService.validateUpdate(gatewayId, config);
             if (!errors.isEmpty()) {
                 return ResponseEntity.badRequest().body(Map.of(
                     "success", false,
                     "error", String.join("; ", errors)
                 ));
             }
-            notificationConfigService.updateMailConfig(request);
+            notificationConfigService.updateMailConfig(gatewayId, config);
             return ResponseEntity.ok(Map.of(
                 "success", true,
-                "config", notificationConfigService.getPublicConfig()
+                "config", notificationConfigService.getPublicConfig(gatewayId)
             ));
+        } catch (IllegalArgumentException ex) {
+            return ResponseEntity.badRequest().body(Map.of("success", false, "error", ex.getMessage()));
         } catch (Exception ex) {
-            log.error("Failed to update notification config: {}", ex.getMessage(), ex);
+            log.error("Failed to update notification config for Gateway {}: {}", gatewayId, ex.getMessage(), ex);
             return ResponseEntity.internalServerError().body(Map.of(
                 "success", false,
                 "error", "Failed to update notification config"
@@ -86,26 +87,29 @@ public class NotificationAdminController {
     }
 
     @PostMapping("/test")
-    public ResponseEntity<?> sendTest(HttpServletRequest httpRequest) {
-        if (!isLocalhostRequest(httpRequest)) {
-            return forbidden();
-        }
-        NotificationProperties.Mail mail = notificationConfigService.getMailConfig();
-        var validation = notificationConfigService.validateMailConfig();
+    public ResponseEntity<?> sendTest(
+        HttpServletRequest request,
+        @RequestAttribute(value = LabAdminGatewayScope.REQUEST_ATTRIBUTE, required = false)
+        LabAdminGatewayScope gatewayScope
+    ) {
+        String gatewayId = authorizedGateway(request, gatewayScope);
+        if (gatewayId == null) return forbidden();
+        NotificationProperties.Mail mail = notificationConfigService.getMailConfig(gatewayId);
+        List<String> validation = notificationConfigService.validateMailConfig(gatewayId);
         if (!validation.isEmpty()) {
-            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(Map.of(
+            return ResponseEntity.badRequest().body(Map.of(
                 "success", false,
                 "error", String.join("; ", validation)
             ));
         }
-        if (mail.getDefaultTo().isEmpty()) {
-            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(Map.of(
+        if (mail.getDefaultTo() == null || mail.getDefaultTo().isEmpty()) {
+            return ResponseEntity.badRequest().body(Map.of(
                 "success", false,
                 "error", "No recipients configured (defaultTo is empty)"
             ));
         }
         try {
-            MailSenderAdapter sender = mailSenderFactory.resolve();
+            MailSenderAdapter sender = mailSenderFactory.resolve(mail);
             MailSendResult result = sender.send(new NotificationMessage(
                 mail.getDefaultTo(),
                 "Lab Gateway notification test",
@@ -116,74 +120,88 @@ public class NotificationAdminController {
             ));
             return deliveryResponse(result, "test notification");
         } catch (Exception ex) {
-            log.error("Failed to send test notification: {}", ex.getMessage(), ex);
+            log.error("Failed to send test notification for Gateway {}: {}", gatewayId, ex.getMessage(), ex);
             return ResponseEntity.internalServerError().body(Map.of(
                 "success", false,
-                "error", "Failed to send test notification: " + ex.getMessage()
+                "error", "Failed to send test notification"
             ));
         }
     }
 
     @PostMapping("/send")
     public ResponseEntity<?> sendNotification(
-        @RequestBody NotificationMessage request,
-        HttpServletRequest httpRequest
+        @RequestBody NotificationMessage message,
+        HttpServletRequest request,
+        @RequestAttribute(value = LabAdminGatewayScope.REQUEST_ATTRIBUTE, required = false)
+        LabAdminGatewayScope gatewayScope
     ) {
-        if (!isLocalhostRequest(httpRequest)) {
-            return forbidden();
+        String gatewayId = authorizedGateway(request, gatewayScope);
+        if (gatewayId == null) return forbidden();
+        if (message == null) {
+            return ResponseEntity.badRequest().body(Map.of(
+                "success", false,
+                "error", "Notification message is required"
+            ));
         }
 
-        NotificationProperties.Mail mail = notificationConfigService.getMailConfig();
+        NotificationProperties.Mail mail = notificationConfigService.getMailConfig(gatewayId);
         if (!mail.isEnabled()) {
-            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(Map.of(
+            return ResponseEntity.badRequest().body(Map.of(
                 "success", false,
                 "error", "Notification service is disabled"
             ));
         }
 
-        List<String> recipients = request.recipients();
+        List<String> recipients = message.recipients();
+        if (recipients == null || recipients.isEmpty()) recipients = mail.getDefaultTo();
         if (recipients == null || recipients.isEmpty()) {
-            recipients = mail.getDefaultTo();
-        }
-        if (recipients == null || recipients.isEmpty()) {
-            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(Map.of(
+            return ResponseEntity.badRequest().body(Map.of(
                 "success", false,
                 "error", "No recipients provided and no defaultTo configured"
             ));
         }
 
-        var validation = notificationConfigService.validateMailConfig();
+        List<String> validation = notificationConfigService.validateMailConfig(gatewayId);
         if (!validation.isEmpty()) {
-            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(Map.of(
+            return ResponseEntity.badRequest().body(Map.of(
                 "success", false,
                 "error", String.join("; ", validation)
             ));
         }
 
         try {
-            MailSenderAdapter sender = mailSenderFactory.resolve();
+            MailSenderAdapter sender = mailSenderFactory.resolve(mail);
             MailSendResult result = sender.send(new NotificationMessage(
                 recipients,
-                request.subject(),
-                request.textBody(),
-                request.htmlBody(),
-                request.icsContent(),
-                request.icsFileName()
+                message.subject(),
+                message.textBody(),
+                message.htmlBody(),
+                message.icsContent(),
+                message.icsFileName()
             ));
             return deliveryResponse(result, "notification");
         } catch (Exception ex) {
-            log.error("Failed to send notification: {}", ex.getMessage(), ex);
+            log.error("Failed to send notification for Gateway {}: {}", gatewayId, ex.getMessage(), ex);
             return ResponseEntity.internalServerError().body(Map.of(
                 "success", false,
-                "error", "Failed to send notification: " + ex.getMessage()
+                "error", "Failed to send notification"
             ));
         }
     }
 
+    private String authorizedGateway(HttpServletRequest request, LabAdminGatewayScope scope) {
+        if (scope == null || scope.institutionWide()) return null;
+        String gatewayId = GatewayIdentity.normalizeGatewayId(scope.gatewayId());
+        if (gatewayId == null) return null;
+        // LocalhostOnlyFilter has already established the trust-bundle-backed
+        // Gateway scope. Recheck the network policy at this controller boundary.
+        return adminNetworkAccessPolicy.isRequestAllowed(request, () -> true) ? gatewayId : null;
+    }
+
     private ResponseEntity<?> forbidden() {
-        return ResponseEntity.status(403).body(Map.of(
+        return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Map.of(
             "success", false,
-            "error", "Access denied: administrative endpoints only accessible from localhost"
+            "error", "A Gateway-scoped Lab Manager credential is required"
         ));
     }
 
@@ -191,7 +209,6 @@ public class NotificationAdminController {
         if (result != null && result.status() == MailSendResult.Status.SENT) {
             return ResponseEntity.ok(Map.of("success", true));
         }
-
         if (result == null) {
             log.error("Mail sender returned no delivery result for {}", operation);
             return ResponseEntity.status(HttpStatus.BAD_GATEWAY).body(Map.of(
@@ -199,52 +216,12 @@ public class NotificationAdminController {
                 "error", "Mail sender did not confirm delivery"
             ));
         }
-
         String error = result.message() != null && !result.message().isBlank()
             ? result.message()
             : "Notification was not sent";
         HttpStatus status = result.status() == MailSendResult.Status.FAILED
             ? HttpStatus.BAD_GATEWAY
             : HttpStatus.BAD_REQUEST;
-        log.warn("Mail {} was not sent: status={} reason={}", operation, result.status(), error);
-        return ResponseEntity.status(status).body(Map.of(
-            "success", false,
-            "error", error
-        ));
-    }
-
-    private boolean isLocalhostRequest(HttpServletRequest request) {
-        boolean allowed = adminNetworkAccessPolicy.isRequestAllowed(request, () -> hasValidAccessToken(request));
-
-        if (!allowed) {
-            log.warn("Blocked administrative notification access from non-local address.");
-        }
-        return allowed;
-    }
-
-    private boolean hasValidAccessToken(HttpServletRequest request) {
-        if (accessToken == null || accessToken.isBlank()) {
-            return false;
-        }
-        String headerToken = request.getHeader(accessTokenHeader);
-        if (headerToken != null && !headerToken.isBlank()) {
-            return accessToken.equals(headerToken.trim());
-        }
-        String authorization = request.getHeader("Authorization");
-        if (authorization != null) {
-            String lower = authorization.toLowerCase();
-            if (lower.startsWith("bearer ")) {
-                String bearer = authorization.substring("bearer ".length()).trim();
-                return accessToken.equals(bearer);
-            }
-        }
-        if (request.getCookies() != null) {
-            for (var cookie : request.getCookies()) {
-                if (accessTokenCookie.equals(cookie.getName())) {
-                    return accessToken.equals(cookie.getValue());
-                }
-            }
-        }
-        return false;
+        return ResponseEntity.status(status).body(Map.of("success", false, "error", error));
     }
 }

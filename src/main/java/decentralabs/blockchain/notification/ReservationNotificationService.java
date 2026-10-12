@@ -24,8 +24,9 @@ public class ReservationNotificationService {
     private final IcsBuilder icsBuilder = new IcsBuilder();
 
     public void notifyReservationApproved(ReservationNotificationData data) {
-        NotificationProperties.Mail mail = notificationConfigService.getMailConfig();
-        if (mail == null || !mail.isEnabled()) {
+        NotificationProperties.Mail mail = mailConfigFor(data);
+        if (mail == null) return;
+        if (!mail.isEnabled()) {
             log.debug("Reservation notification disabled. Skipping reservation {}", data.reservationKey());
             return;
         }
@@ -57,12 +58,13 @@ public class ReservationNotificationService {
             "reserva-" + data.reservationKey() + ".ics"
         );
 
-        mailSenderFactory.resolve().send(message);
+        mailSenderFactory.resolve(mail).send(message);
     }
 
     public void notifyReservationCancelled(ReservationNotificationData data) {
-        NotificationProperties.Mail mail = notificationConfigService.getMailConfig();
-        if (mail == null || !mail.isEnabled()) {
+        NotificationProperties.Mail mail = mailConfigFor(data);
+        if (mail == null) return;
+        if (!mail.isEnabled()) {
             log.debug("Reservation notification disabled. Skipping cancellation {}", data.reservationKey());
             return;
         }
@@ -94,7 +96,15 @@ public class ReservationNotificationService {
             "reserva-" + data.reservationKey() + "-cancel.ics"
         );
 
-        mailSenderFactory.resolve().send(message);
+        mailSenderFactory.resolve(mail).send(message);
+    }
+
+    private NotificationProperties.Mail mailConfigFor(ReservationNotificationData data) {
+        if (data == null || data.gatewayId() == null || data.gatewayId().isBlank()) {
+            log.warn("Skipping reservation notification without a resolved Gateway scope");
+            return null;
+        }
+        return notificationConfigService.getMailConfig(data.gatewayId());
     }
 
     private List<String> resolveRecipients(NotificationProperties.Mail mail) {
