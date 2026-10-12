@@ -353,8 +353,7 @@ public class NotificationConfigService {
             return List.of();
         }
         return recipients.stream()
-            .filter(java.util.Objects::nonNull)
-            .map(String::trim)
+            .map(value -> value == null ? "" : value.trim())
             .filter(value -> !value.isEmpty())
             .toList();
     }
