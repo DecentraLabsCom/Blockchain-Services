@@ -16,7 +16,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
-/** Read and maintain display names for the Lites registered with this provider backend. */
+/** Read and maintain display names for the provider's managed Gateway roster. */
 @RestController
 @RequestMapping("/billing/provider-gateways")
 @RequiredArgsConstructor

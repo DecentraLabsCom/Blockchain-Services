@@ -230,9 +230,12 @@ credential. The backend derives the Gateway from the filter-established scope;
 the browser cannot choose one. This view never runs settlement-source
 reconciliation and does not expose Wallet & Billing administration endpoints.
 
-The **Lite Gateways and departments** section in the Provider Settlements tab
-lists entries from `LAB_ADMIN_GATEWAY_CREDENTIALS_JSON` without exposing their
-tokens. A provider-network administrator can assign or clear each display name
+The **Gateways and Departments** section in the Provider Settlements tab lists
+entries from `LAB_ADMIN_GATEWAY_CREDENTIALS_JSON` without exposing their tokens.
+In an embedded Full Gateway deployment, the local Full Gateway is also included
+once at least one Lite is registered, so the institution can assign departments
+to both access planes. Rows identify themselves as `FULL` or `LITE`. A standalone
+provider backend lists its configured Lites only. A provider-network administrator can assign or clear each display name
 through `GET /billing/provider-gateways` and
 `PUT /billing/provider-gateways/{gatewayId}`. Names are stored in the backend
 database and affect report labels only; they do not change the trusted Gateway

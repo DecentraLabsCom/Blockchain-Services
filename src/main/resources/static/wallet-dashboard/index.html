@@ -121,9 +121,9 @@
                 data-wallet-tab-section="settlements" data-wallet-order="5">
                 <div class="card-header">
                     <div>
-                        <h2>Lite Gateways and departments</h2>
+                        <h2>Gateways and Departments</h2>
                         <p class="gateway-departments-help">
-                            Lite Gateways in the provider's loaded trust configuration appear here automatically. Assign a department or group name for the income report.
+                            Lite Gateways in the provider's loaded trust configuration appear here automatically. In Full mode, the local Full Gateway appears when the first Lite is registered. Assign a department or group name for the income report.
                         </p>
                     </div>
                     <button type="button" class="btn btn-secondary btn-small" id="providerGatewayDepartmentsRefreshBtn">
@@ -132,12 +132,13 @@
                 </div>
                 <div class="card-body">
                     <p class="settlement-overview-note" id="providerGatewayDepartmentsNote" role="status" aria-live="polite">
-                        Loading registered Lite Gateways...
+                        Loading registered gateways...
                     </p>
                     <div class="settlement-labs-table-wrap">
                         <table class="settlement-labs-table gateway-departments-table">
                             <thead>
                                 <tr>
+                                    <th>Type</th>
                                     <th>Gateway ID</th>
                                     <th>Access URI</th>
                                     <th>Department / group</th>
@@ -145,7 +146,7 @@
                                 </tr>
                             </thead>
                             <tbody id="providerGatewayDepartmentsBody">
-                                <tr><td colspan="4" class="settlement-table-empty">Loading registered Lite Gateways...</td></tr>
+                                <tr><td colspan="5" class="settlement-table-empty">Loading registered gateways...</td></tr>
                             </tbody>
                         </table>
                     </div>

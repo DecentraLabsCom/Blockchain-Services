@@ -1918,8 +1918,7 @@ function renderProviderIncomeReport() {
     const unresolvedCount = Number(report.unresolvedBatchCount || 0);
     const scopeMismatches = Number(report.scopeReferenceMismatchCount || 0);
     const trackingStart = report.trackingStartBlock || 'recent lookback';
-    const providerWallet = report.providerAddress ? `Provider wallet: ${report.providerAddress}. ` : '';
-    noteEl.textContent = `${providerWallet}Amounts are service credits. Event tracking starts at ${trackingStart}; first observed confirmation: ${report.firstObservedConfirmationBlock || 'none'}. Paid externally means a payment proof was recorded. ${unresolvedCount} batch(es) for these labs need source reconciliation (${report.unresolvedBatchAmount || '0.0000000'} credits); ${scopeMismatches} claim scope reference(s) do not match a recorded batch.`;
+    noteEl.textContent = `Event tracking starts at ${trackingStart}; first observed confirmation: ${report.firstObservedConfirmationBlock || 'none'}. Paid externally means a payment proof was recorded. ${unresolvedCount} batch(es) for these labs need source reconciliation (${report.unresolvedBatchAmount || '0.0000000'} credits); ${scopeMismatches} claim scope reference(s) do not match a recorded batch.`;
     exportButton.disabled = rows.length === 0;
     exportButton.onclick = downloadProviderIncomeReportCsv;
 
@@ -2038,14 +2037,15 @@ function renderProviderGatewayDepartments() {
     }
 
     const gateways = DashboardState.providerGatewayDepartments;
-    noteEl.textContent = 'The list reflects Lite Gateways trusted by this provider backend. Saving a name changes report labels only; a blank name restores the Gateway ID.';
+    noteEl.textContent = 'Lite Gateways trusted by this provider backend appear here. In Full mode, the local Full Gateway is added when at least one Lite is registered. Saving a name changes report labels only; a blank name restores the Gateway ID.';
     if (!gateways.length) {
-        tableBody.innerHTML = '<tr><td colspan="4" class="settlement-table-empty">No Lite Gateways are registered with this provider backend.</td></tr>';
+        tableBody.innerHTML = '<tr><td colspan="5" class="settlement-table-empty">No Lite Gateways are registered with this provider backend. In Full mode, the local Full Gateway appears after the first Lite is registered.</td></tr>';
         return;
     }
 
     tableBody.innerHTML = gateways.map(gateway => `
         <tr>
+            <td>${gateway.gatewayType === 'FULL' ? 'Full' : 'Lite'}</td>
             <td>${escapeHtml(gateway.gatewayId)}</td>
             <td>${escapeHtml(gateway.accessUri)}</td>
             <td>
