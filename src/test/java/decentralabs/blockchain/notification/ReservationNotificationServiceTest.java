@@ -184,7 +184,8 @@ class ReservationNotificationServiceTest {
                 "University",
                 Instant.now(),
                 Instant.now().plusSeconds(7200),
-                "0xtx"
+                "0xtx",
+                "test.gateway"
             );
 
             service.notifyReservationApproved(data);
@@ -302,7 +303,8 @@ class ReservationNotificationServiceTest {
             when(mailSenderFactory.resolve(any(NotificationProperties.Mail.class))).thenReturn(mailSender);
 
             ReservationNotificationData data = new ReservationNotificationData(
-                "0xres", BigInteger.ONE, "Lab", null, null, Instant.now(), Instant.now(), "0xtx"
+                "0xres", BigInteger.ONE, "Lab", null, null, Instant.now(), Instant.now(), "0xtx",
+                "test.gateway"
             );
 
             assertDoesNotThrow(() -> service.notifyReservationApproved(data));
@@ -317,7 +319,8 @@ class ReservationNotificationServiceTest {
             when(mailSenderFactory.resolve(any(NotificationProperties.Mail.class))).thenReturn(mailSender);
 
             ReservationNotificationData data = new ReservationNotificationData(
-                "0xres", BigInteger.ONE, "Lab", "user@test.edu", "Uni", null, null, "0xtx"
+                "0xres", BigInteger.ONE, "Lab", "user@test.edu", "Uni", null, null, "0xtx",
+                "test.gateway"
             );
 
             assertDoesNotThrow(() -> service.notifyReservationApproved(data));
