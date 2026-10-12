@@ -221,6 +221,8 @@ recorded, not that credits are redeemable for cash. In provider-consumer mode,
 the configured institutional wallet may read its own report when it holds the
 provider or default-admin role; the caller cannot select another provider
 address.
+Settlement-source links are reconciled by a background task (five-minute
+default interval); this `GET` reads the report projection without changing it.
 
 The Lite Lab Manager uses `GET /lab-admin/billing/provider-income` for a
 read-only report limited to the Gateway bound to its authenticated backend
