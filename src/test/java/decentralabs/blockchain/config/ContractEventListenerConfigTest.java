@@ -639,8 +639,29 @@ class ContractEventListenerConfigTest {
         when(diamond.getReservationPucHash(any(byte[].class))).thenReturn(pucHashCall);
     }
 
+    private void stubLabAccessUri(
+        decentralabs.blockchain.contract.Diamond diamond,
+        BigInteger labId,
+        BigInteger blockNumber
+    ) throws Exception {
+        @SuppressWarnings("unchecked")
+        var labCall = (org.web3j.protocol.core.RemoteFunctionCall<decentralabs.blockchain.contract.Diamond.Lab>)
+            mock(org.web3j.protocol.core.RemoteFunctionCall.class);
+        var lab = new decentralabs.blockchain.contract.Diamond.Lab(
+            labId,
+            new decentralabs.blockchain.contract.Diamond.LabBase(
+                "", BigInteger.ZERO, "https://gateway.example", "", BigInteger.ZERO, BigInteger.ZERO
+            )
+        );
+        when(labCall.send()).thenReturn(lab);
+        when(diamond.getLabAtBlock(eq(labId), eq(blockNumber))).thenReturn(labCall);
+    }
+
     @Test
-    void shouldPersistReservationCanceledAndSendNotification() {
+    void shouldPersistReservationCanceledAndSendNotification() throws Exception {
+        var diamond = mock(decentralabs.blockchain.contract.Diamond.class);
+        stubLabAccessUri(diamond, BigInteger.valueOf(11), BigInteger.valueOf(256));
+        ReflectionTestUtils.setField(config, "cachedDiamond", diamond);
         Map<String, Event> supported = getSupportedEvents();
         Event eventDefinition = supported.get("ReservationRequestCanceled");
         String signature = EventEncoder.encode(eventDefinition);
@@ -695,6 +716,7 @@ class ContractEventListenerConfigTest {
         when(reservationCall.send()).thenReturn(reservation);
         when(diamond.getReservation(any(byte[].class))).thenReturn(reservationCall);
         stubReservationPucHash(diamond, "0x" + "00".repeat(32));
+        stubLabAccessUri(diamond, BigInteger.valueOf(8), BigInteger.valueOf(512));
         ReflectionTestUtils.setField(config, "cachedDiamond", diamond);
 
         Map<String, Event> supported = getSupportedEvents();

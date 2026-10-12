@@ -47,7 +47,8 @@ class ReservationNotificationServiceTest {
             "University of Test",
             Instant.parse("2025-01-15T10:00:00Z"),
             Instant.parse("2025-01-15T12:00:00Z"),
-            "0xtxhash123"
+            "0xtxhash123",
+            "test.gateway"
         );
     }
 
@@ -70,21 +71,21 @@ class ReservationNotificationServiceTest {
         void shouldSkipWhenDisabled() {
             NotificationProperties.Mail mail = new NotificationProperties.Mail();
             mail.setEnabled(false);
-            when(notificationConfigService.getMailConfig()).thenReturn(mail);
+            when(notificationConfigService.getMailConfig("test.gateway")).thenReturn(mail);
 
             service.notifyReservationApproved(createTestData());
 
-            verify(mailSenderFactory, never()).resolve();
+            verify(mailSenderFactory, never()).resolve(any(NotificationProperties.Mail.class));
         }
 
         @Test
         @DisplayName("Should skip notification when mail config is null")
         void shouldSkipWhenMailConfigNull() {
-            when(notificationConfigService.getMailConfig()).thenReturn(null);
+            when(notificationConfigService.getMailConfig("test.gateway")).thenReturn(null);
 
             service.notifyReservationApproved(createTestData());
 
-            verify(mailSenderFactory, never()).resolve();
+            verify(mailSenderFactory, never()).resolve(any(NotificationProperties.Mail.class));
         }
 
         @Test
@@ -92,19 +93,19 @@ class ReservationNotificationServiceTest {
         void shouldSkipWhenNoRecipients() {
             NotificationProperties.Mail mail = createEnabledMailConfig();
             mail.setDefaultTo(List.of());
-            when(notificationConfigService.getMailConfig()).thenReturn(mail);
+            when(notificationConfigService.getMailConfig("test.gateway")).thenReturn(mail);
 
             service.notifyReservationApproved(createTestData());
 
-            verify(mailSenderFactory, never()).resolve();
+            verify(mailSenderFactory, never()).resolve(any(NotificationProperties.Mail.class));
         }
 
         @Test
         @DisplayName("Should send notification with correct subject")
         void shouldSendWithCorrectSubject() {
             NotificationProperties.Mail mail = createEnabledMailConfig();
-            when(notificationConfigService.getMailConfig()).thenReturn(mail);
-            when(mailSenderFactory.resolve()).thenReturn(mailSender);
+            when(notificationConfigService.getMailConfig("test.gateway")).thenReturn(mail);
+            when(mailSenderFactory.resolve(any(NotificationProperties.Mail.class))).thenReturn(mailSender);
 
             service.notifyReservationApproved(createTestData());
 
@@ -121,8 +122,8 @@ class ReservationNotificationServiceTest {
         void shouldIncludeAllRecipients() {
             NotificationProperties.Mail mail = createEnabledMailConfig();
             mail.setDefaultTo(List.of("admin@lab.edu", "manager@lab.edu"));
-            when(notificationConfigService.getMailConfig()).thenReturn(mail);
-            when(mailSenderFactory.resolve()).thenReturn(mailSender);
+            when(notificationConfigService.getMailConfig("test.gateway")).thenReturn(mail);
+            when(mailSenderFactory.resolve(any(NotificationProperties.Mail.class))).thenReturn(mailSender);
 
             service.notifyReservationApproved(createTestData());
 
@@ -136,8 +137,8 @@ class ReservationNotificationServiceTest {
         @DisplayName("Should include HTML and text body")
         void shouldIncludeHtmlAndTextBody() {
             NotificationProperties.Mail mail = createEnabledMailConfig();
-            when(notificationConfigService.getMailConfig()).thenReturn(mail);
-            when(mailSenderFactory.resolve()).thenReturn(mailSender);
+            when(notificationConfigService.getMailConfig("test.gateway")).thenReturn(mail);
+            when(mailSenderFactory.resolve(any(NotificationProperties.Mail.class))).thenReturn(mailSender);
 
             service.notifyReservationApproved(createTestData());
 
@@ -155,8 +156,8 @@ class ReservationNotificationServiceTest {
         @DisplayName("Should include ICS attachment")
         void shouldIncludeIcsAttachment() {
             NotificationProperties.Mail mail = createEnabledMailConfig();
-            when(notificationConfigService.getMailConfig()).thenReturn(mail);
-            when(mailSenderFactory.resolve()).thenReturn(mailSender);
+            when(notificationConfigService.getMailConfig("test.gateway")).thenReturn(mail);
+            when(mailSenderFactory.resolve(any(NotificationProperties.Mail.class))).thenReturn(mailSender);
 
             service.notifyReservationApproved(createTestData());
 
@@ -172,8 +173,8 @@ class ReservationNotificationServiceTest {
         @DisplayName("Should use lab ID when lab name is null")
         void shouldUseLabIdWhenNameNull() {
             NotificationProperties.Mail mail = createEnabledMailConfig();
-            when(notificationConfigService.getMailConfig()).thenReturn(mail);
-            when(mailSenderFactory.resolve()).thenReturn(mailSender);
+            when(notificationConfigService.getMailConfig("test.gateway")).thenReturn(mail);
+            when(mailSenderFactory.resolve(any(NotificationProperties.Mail.class))).thenReturn(mailSender);
 
             ReservationNotificationData data = new ReservationNotificationData(
                 "0xreservation123",
@@ -199,8 +200,8 @@ class ReservationNotificationServiceTest {
         void shouldFilterDuplicateAndEmptyRecipients() {
             NotificationProperties.Mail mail = createEnabledMailConfig();
             mail.setDefaultTo(List.of("admin@lab.edu", "", "admin@lab.edu", "  ", "other@lab.edu"));
-            when(notificationConfigService.getMailConfig()).thenReturn(mail);
-            when(mailSenderFactory.resolve()).thenReturn(mailSender);
+            when(notificationConfigService.getMailConfig("test.gateway")).thenReturn(mail);
+            when(mailSenderFactory.resolve(any(NotificationProperties.Mail.class))).thenReturn(mailSender);
 
             service.notifyReservationApproved(createTestData());
 
@@ -216,8 +217,8 @@ class ReservationNotificationServiceTest {
         void shouldFallbackToUtcForInvalidTimezone() {
             NotificationProperties.Mail mail = createEnabledMailConfig();
             mail.setTimezone("Invalid/Timezone");
-            when(notificationConfigService.getMailConfig()).thenReturn(mail);
-            when(mailSenderFactory.resolve()).thenReturn(mailSender);
+            when(notificationConfigService.getMailConfig("test.gateway")).thenReturn(mail);
+            when(mailSenderFactory.resolve(any(NotificationProperties.Mail.class))).thenReturn(mailSender);
 
             // Should not throw exception
             assertDoesNotThrow(() -> service.notifyReservationApproved(createTestData()));
@@ -234,19 +235,19 @@ class ReservationNotificationServiceTest {
         void shouldSkipWhenDisabled() {
             NotificationProperties.Mail mail = new NotificationProperties.Mail();
             mail.setEnabled(false);
-            when(notificationConfigService.getMailConfig()).thenReturn(mail);
+            when(notificationConfigService.getMailConfig("test.gateway")).thenReturn(mail);
 
             service.notifyReservationCancelled(createTestData());
 
-            verify(mailSenderFactory, never()).resolve();
+            verify(mailSenderFactory, never()).resolve(any(NotificationProperties.Mail.class));
         }
 
         @Test
         @DisplayName("Should send cancellation notification")
         void shouldSendCancellationNotification() {
             NotificationProperties.Mail mail = createEnabledMailConfig();
-            when(notificationConfigService.getMailConfig()).thenReturn(mail);
-            when(mailSenderFactory.resolve()).thenReturn(mailSender);
+            when(notificationConfigService.getMailConfig("test.gateway")).thenReturn(mail);
+            when(mailSenderFactory.resolve(any(NotificationProperties.Mail.class))).thenReturn(mailSender);
 
             service.notifyReservationCancelled(createTestData());
 
@@ -261,8 +262,8 @@ class ReservationNotificationServiceTest {
         @DisplayName("Should include cancellation in HTML body")
         void shouldIncludeCancellationInBody() {
             NotificationProperties.Mail mail = createEnabledMailConfig();
-            when(notificationConfigService.getMailConfig()).thenReturn(mail);
-            when(mailSenderFactory.resolve()).thenReturn(mailSender);
+            when(notificationConfigService.getMailConfig("test.gateway")).thenReturn(mail);
+            when(mailSenderFactory.resolve(any(NotificationProperties.Mail.class))).thenReturn(mailSender);
 
             service.notifyReservationCancelled(createTestData());
 
@@ -277,8 +278,8 @@ class ReservationNotificationServiceTest {
         @DisplayName("Should include cancel ICS filename")
         void shouldIncludeCancelIcsFilename() {
             NotificationProperties.Mail mail = createEnabledMailConfig();
-            when(notificationConfigService.getMailConfig()).thenReturn(mail);
-            when(mailSenderFactory.resolve()).thenReturn(mailSender);
+            when(notificationConfigService.getMailConfig("test.gateway")).thenReturn(mail);
+            when(mailSenderFactory.resolve(any(NotificationProperties.Mail.class))).thenReturn(mailSender);
 
             service.notifyReservationCancelled(createTestData());
 
@@ -297,8 +298,8 @@ class ReservationNotificationServiceTest {
         @DisplayName("Should handle null renter")
         void shouldHandleNullRenter() {
             NotificationProperties.Mail mail = createEnabledMailConfig();
-            when(notificationConfigService.getMailConfig()).thenReturn(mail);
-            when(mailSenderFactory.resolve()).thenReturn(mailSender);
+            when(notificationConfigService.getMailConfig("test.gateway")).thenReturn(mail);
+            when(mailSenderFactory.resolve(any(NotificationProperties.Mail.class))).thenReturn(mailSender);
 
             ReservationNotificationData data = new ReservationNotificationData(
                 "0xres", BigInteger.ONE, "Lab", null, null, Instant.now(), Instant.now(), "0xtx"
@@ -312,8 +313,8 @@ class ReservationNotificationServiceTest {
         @DisplayName("Should handle null dates")
         void shouldHandleNullDates() {
             NotificationProperties.Mail mail = createEnabledMailConfig();
-            when(notificationConfigService.getMailConfig()).thenReturn(mail);
-            when(mailSenderFactory.resolve()).thenReturn(mailSender);
+            when(notificationConfigService.getMailConfig("test.gateway")).thenReturn(mail);
+            when(mailSenderFactory.resolve(any(NotificationProperties.Mail.class))).thenReturn(mailSender);
 
             ReservationNotificationData data = new ReservationNotificationData(
                 "0xres", BigInteger.ONE, "Lab", "user@test.edu", "Uni", null, null, "0xtx"
@@ -334,8 +335,8 @@ class ReservationNotificationServiceTest {
                 TimeZone.setDefault(TimeZone.getTimeZone("Asia/Tokyo"));
                 NotificationProperties.Mail mail = createEnabledMailConfig();
                 mail.setTimezone("");
-                when(notificationConfigService.getMailConfig()).thenReturn(mail);
-                when(mailSenderFactory.resolve()).thenReturn(mailSender);
+                when(notificationConfigService.getMailConfig("test.gateway")).thenReturn(mail);
+                when(mailSenderFactory.resolve(any(NotificationProperties.Mail.class))).thenReturn(mailSender);
 
                 service.notifyReservationApproved(createTestData());
 
@@ -357,8 +358,8 @@ class ReservationNotificationServiceTest {
             recipients.add("other@test.edu");
             mail.setDefaultTo(recipients);
             
-            when(notificationConfigService.getMailConfig()).thenReturn(mail);
-            when(mailSenderFactory.resolve()).thenReturn(mailSender);
+            when(notificationConfigService.getMailConfig("test.gateway")).thenReturn(mail);
+            when(mailSenderFactory.resolve(any(NotificationProperties.Mail.class))).thenReturn(mailSender);
 
             service.notifyReservationApproved(createTestData());
 

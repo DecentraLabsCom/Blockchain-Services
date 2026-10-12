@@ -15,9 +15,12 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.springframework.test.util.ReflectionTestUtils;
 
 @DisplayName("NotificationConfigService Tests")
 class NotificationConfigServiceTest {
+
+    private static final String GATEWAY_ID = "test.gateway";
 
     private NotificationProperties properties;
     private ObjectMapper objectMapper;
@@ -32,6 +35,7 @@ class NotificationConfigServiceTest {
         properties.setConfigFile(tempDir.resolve("notifications-config.json").toString());
         objectMapper = new ObjectMapper();
         service = new NotificationConfigService(properties, objectMapper);
+        ReflectionTestUtils.setField(service, "localGatewayId", GATEWAY_ID);
     }
 
     @Nested
@@ -41,7 +45,7 @@ class NotificationConfigServiceTest {
         @Test
         @DisplayName("Should return mail config")
         void shouldReturnMailConfig() {
-            NotificationProperties.Mail mail = service.getMailConfig();
+            NotificationProperties.Mail mail = service.getMailConfig(GATEWAY_ID);
             
             assertNotNull(mail);
         }
@@ -49,7 +53,7 @@ class NotificationConfigServiceTest {
         @Test
         @DisplayName("Should return default values")
         void shouldReturnDefaultValues() {
-            NotificationProperties.Mail mail = service.getMailConfig();
+            NotificationProperties.Mail mail = service.getMailConfig(GATEWAY_ID);
             
             assertTrue(mail.isEnabled());
             assertEquals(MailDriver.NOOP, mail.getDriver());
@@ -68,9 +72,9 @@ class NotificationConfigServiceTest {
                 false, null, null, null, null, null, null, null
             );
 
-            service.updateMailConfig(request);
+            service.updateMailConfig(GATEWAY_ID, request);
 
-            assertFalse(service.getMailConfig().isEnabled());
+            assertFalse(service.getMailConfig(GATEWAY_ID).isEnabled());
         }
 
         @Test
@@ -85,9 +89,9 @@ class NotificationConfigServiceTest {
                 null, MailDriver.SMTP, null, null, null, null, null, null
             );
 
-            service.updateMailConfig(request);
+            service.updateMailConfig(GATEWAY_ID, request);
 
-            assertEquals(MailDriver.SMTP, service.getMailConfig().getDriver());
+            assertEquals(MailDriver.SMTP, service.getMailConfig(GATEWAY_ID).getDriver());
         }
 
         @Test
@@ -97,10 +101,10 @@ class NotificationConfigServiceTest {
                 null, null, "new@email.com", "New Name", null, null, null, null
             );
 
-            service.updateMailConfig(request);
+            service.updateMailConfig(GATEWAY_ID, request);
 
-            assertEquals("new@email.com", service.getMailConfig().getFrom());
-            assertEquals("New Name", service.getMailConfig().getFromName());
+            assertEquals("new@email.com", service.getMailConfig(GATEWAY_ID).getFrom());
+            assertEquals("New Name", service.getMailConfig(GATEWAY_ID).getFromName());
         }
 
         @Test
@@ -110,10 +114,10 @@ class NotificationConfigServiceTest {
                 null, null, null, null, List.of("admin@test.com", "ops@test.com"), null, null, null
             );
 
-            service.updateMailConfig(request);
+            service.updateMailConfig(GATEWAY_ID, request);
 
-            assertEquals(2, service.getMailConfig().getDefaultTo().size());
-            assertTrue(service.getMailConfig().getDefaultTo().contains("admin@test.com"));
+            assertEquals(2, service.getMailConfig(GATEWAY_ID).getDefaultTo().size());
+            assertTrue(service.getMailConfig(GATEWAY_ID).getDefaultTo().contains("admin@test.com"));
         }
 
         @Test
@@ -125,9 +129,9 @@ class NotificationConfigServiceTest {
                 null, null, null
             );
 
-            service.updateMailConfig(request);
+            service.updateMailConfig(GATEWAY_ID, request);
 
-            List<String> recipients = service.getMailConfig().getDefaultTo();
+            List<String> recipients = service.getMailConfig(GATEWAY_ID).getDefaultTo();
             assertEquals(2, recipients.size());
             assertEquals("admin@test.com", recipients.get(0));
         }
@@ -139,9 +143,9 @@ class NotificationConfigServiceTest {
                 null, null, null, null, null, "Europe/Madrid", null, null
             );
 
-            service.updateMailConfig(request);
+            service.updateMailConfig(GATEWAY_ID, request);
 
-            assertEquals("Europe/Madrid", service.getMailConfig().getTimezone());
+            assertEquals("Europe/Madrid", service.getMailConfig(GATEWAY_ID).getTimezone());
         }
 
         @Test
@@ -154,9 +158,9 @@ class NotificationConfigServiceTest {
                 null, null, null, null, null, null, smtp, null
             );
 
-            service.updateMailConfig(request);
+            service.updateMailConfig(GATEWAY_ID, request);
 
-            NotificationProperties.Smtp config = service.getMailConfig().getSmtp();
+            NotificationProperties.Smtp config = service.getMailConfig(GATEWAY_ID).getSmtp();
             assertEquals("smtp.test.com", config.getHost());
             assertEquals(465, config.getPort());
             assertEquals("user", config.getUsername());
@@ -172,9 +176,9 @@ class NotificationConfigServiceTest {
                 null, null, null, null, null, null, null, graph
             );
 
-            service.updateMailConfig(request);
+            service.updateMailConfig(GATEWAY_ID, request);
 
-            NotificationProperties.Graph config = service.getMailConfig().getGraph();
+            NotificationProperties.Graph config = service.getMailConfig(GATEWAY_ID).getGraph();
             assertEquals("tenant-123", config.getTenantId());
             assertEquals("client-456", config.getClientId());
         }
@@ -195,10 +199,10 @@ class NotificationConfigServiceTest {
                 new NotificationUpdateRequest.Graph(null, null, "   ", null)
             );
 
-            service.updateMailConfig(request);
+            service.updateMailConfig(GATEWAY_ID, request);
 
-            assertEquals("stored-smtp-secret", service.getMailConfig().getSmtp().getPassword());
-            assertEquals("stored-graph-secret", service.getMailConfig().getGraph().getClientSecret());
+            assertEquals("stored-smtp-secret", service.getMailConfig(GATEWAY_ID).getSmtp().getPassword());
+            assertEquals("stored-graph-secret", service.getMailConfig(GATEWAY_ID).getGraph().getClientSecret());
         }
 
         @Test
@@ -208,7 +212,7 @@ class NotificationConfigServiceTest {
                 true, MailDriver.NOOP, "test@test.com", null, null, null, null, null
             );
 
-            service.updateMailConfig(request);
+            service.updateMailConfig(GATEWAY_ID, request);
 
             Path configPath = Path.of(properties.getConfigFile());
             assertTrue(Files.exists(configPath));
@@ -226,7 +230,7 @@ class NotificationConfigServiceTest {
                 true, MailDriver.NOOP, null, null, null, null, null, null
             );
 
-            List<String> errors = service.validateUpdate(request);
+            List<String> errors = service.validateUpdate(GATEWAY_ID, request);
 
             assertTrue(errors.isEmpty());
         }
@@ -238,7 +242,7 @@ class NotificationConfigServiceTest {
                 false, MailDriver.SMTP, null, null, null, null, null, null
             );
 
-            List<String> errors = service.validateUpdate(request);
+            List<String> errors = service.validateUpdate(GATEWAY_ID, request);
 
             assertTrue(errors.isEmpty());
         }
@@ -254,7 +258,7 @@ class NotificationConfigServiceTest {
                 true, MailDriver.SMTP, null, null, null, null, null, null
             );
 
-            List<String> errors = service.validateUpdate(request);
+            List<String> errors = service.validateUpdate(GATEWAY_ID, request);
 
             assertTrue(errors.stream().anyMatch(e -> e.contains("host")));
         }
@@ -273,7 +277,7 @@ class NotificationConfigServiceTest {
                 true, MailDriver.SMTP, null, null, null, null, null, null
             );
 
-            List<String> errors = service.validateUpdate(request);
+            List<String> errors = service.validateUpdate(GATEWAY_ID, request);
 
             assertTrue(errors.stream().anyMatch(e -> e.contains("username")));
             assertTrue(errors.stream().anyMatch(e -> e.contains("password")));
@@ -290,7 +294,7 @@ class NotificationConfigServiceTest {
                 true, MailDriver.GRAPH, null, null, null, null, null, null
             );
 
-            List<String> errors = service.validateUpdate(request);
+            List<String> errors = service.validateUpdate(GATEWAY_ID, request);
 
             assertTrue(errors.stream().anyMatch(e -> e.contains("tenantId")));
         }
@@ -310,7 +314,7 @@ class NotificationConfigServiceTest {
                 true, MailDriver.GRAPH, null, null, null, null, null, null
             );
 
-            List<String> errors = service.validateUpdate(request);
+            List<String> errors = service.validateUpdate(GATEWAY_ID, request);
 
             assertTrue(errors.stream().anyMatch(e -> e.contains("from")));
         }
@@ -335,9 +339,9 @@ class NotificationConfigServiceTest {
 
             service.loadFromDiskIfPresent();
 
-            assertFalse(service.getMailConfig().isEnabled());
-            assertEquals(MailDriver.SMTP, service.getMailConfig().getDriver());
-            assertEquals("loaded@test.com", service.getMailConfig().getFrom());
+            assertFalse(service.getMailConfig(GATEWAY_ID).isEnabled());
+            assertEquals(MailDriver.SMTP, service.getMailConfig(GATEWAY_ID).getDriver());
+            assertEquals("loaded@test.com", service.getMailConfig(GATEWAY_ID).getFrom());
         }
 
         @Test
@@ -366,7 +370,9 @@ class NotificationConfigServiceTest {
         @Test
         @DisplayName("Should return public config when optional fields are unset")
         void shouldReturnPublicConfigWhenOptionalFieldsAreUnset() {
-            Map<String, Object> config = assertDoesNotThrow(service::getPublicConfig);
+            Map<String, Object> config = assertDoesNotThrow(
+                () -> service.getPublicConfig(GATEWAY_ID)
+            );
 
             @SuppressWarnings("unchecked")
             Map<String, Object> smtp = (Map<String, Object>) config.get("smtp");
@@ -395,7 +401,7 @@ class NotificationConfigServiceTest {
             properties.getMail().getGraph().setClientSecret("secret-client-secret");
             properties.getMail().getGraph().setFrom("graph@test.com");
 
-            Map<String, Object> config = service.getPublicConfig();
+            Map<String, Object> config = service.getPublicConfig(GATEWAY_ID);
 
             // Should have public fields
             assertEquals(true, config.get("enabled"));
@@ -430,7 +436,7 @@ class NotificationConfigServiceTest {
         void shouldValidateCurrentConfig() {
             properties.getMail().setEnabled(false);
             
-            List<String> errors = service.validateMailConfig();
+            List<String> errors = service.validateMailConfig(GATEWAY_ID);
             
             assertTrue(errors.isEmpty());
         }
@@ -444,7 +450,7 @@ class NotificationConfigServiceTest {
             properties.getMail().getSmtp().setPort(0);
             properties.getMail().getSmtp().setAuth(false);
             
-            List<String> errors = service.validateMailConfig();
+            List<String> errors = service.validateMailConfig(GATEWAY_ID);
             
             assertTrue(errors.stream().anyMatch(e -> e.contains("port")));
         }

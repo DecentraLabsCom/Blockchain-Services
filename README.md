@@ -226,7 +226,9 @@ third-party clients that call the RPC node directly.
 Email/ICS notifications are optional and disabled by the `noop` driver unless
 enabled through `NOTIFICATIONS_MAIL_ENABLED`. Configure the SMTP or Microsoft
 Graph driver with the `NOTIFICATIONS_MAIL_*` variables and use
-`GET|POST /billing/admin/notifications` to inspect or update runtime settings.
+`GET|PUT /lab-admin/notifications` to inspect or update the authenticated
+Gateway's runtime settings. The Lab Manager credential and its Gateway scope
+are required; the institution-wide billing administrator token is not used.
 The notification service includes the lab, reservation window, renter, payer
 and transaction reference when those values are available.
 

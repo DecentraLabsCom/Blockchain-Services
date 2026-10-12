@@ -38,7 +38,7 @@ class MailSenderFactoryTest {
         void shouldReturnNoopForNoopDriver() {
             NotificationProperties.Mail mail = new NotificationProperties.Mail();
             mail.setDriver(MailDriver.NOOP);
-            when(notificationConfigService.getMailConfig()).thenReturn(mail);
+            when(notificationConfigService.getLocalMailConfig()).thenReturn(mail);
 
             MailSenderAdapter adapter = factory.resolve();
 
@@ -50,7 +50,7 @@ class MailSenderFactoryTest {
         void shouldReturnNoopForNullDriver() {
             NotificationProperties.Mail mail = new NotificationProperties.Mail();
             mail.setDriver(null);
-            when(notificationConfigService.getMailConfig()).thenReturn(mail);
+            when(notificationConfigService.getLocalMailConfig()).thenReturn(mail);
 
             MailSenderAdapter adapter = factory.resolve();
 
@@ -69,7 +69,7 @@ class MailSenderFactoryTest {
             smtp.setPort(587);
             mail.setSmtp(smtp);
             
-            when(notificationConfigService.getMailConfig()).thenReturn(mail);
+            when(notificationConfigService.getLocalMailConfig()).thenReturn(mail);
 
             MailSenderAdapter adapter = factory.resolve();
 
@@ -90,7 +90,7 @@ class MailSenderFactoryTest {
             graph.setFrom("graph@example.com");
             mail.setGraph(graph);
             
-            when(notificationConfigService.getMailConfig()).thenReturn(mail);
+            when(notificationConfigService.getLocalMailConfig()).thenReturn(mail);
 
             MailSenderAdapter adapter = factory.resolve();
 
@@ -109,7 +109,7 @@ class MailSenderFactoryTest {
             graph.setClientSecret("secret-789");
             mail.setGraph(graph);
             
-            when(notificationConfigService.getMailConfig()).thenReturn(mail);
+            when(notificationConfigService.getLocalMailConfig()).thenReturn(mail);
 
             MailSenderAdapter adapter = factory.resolve();
 
@@ -128,7 +128,7 @@ class MailSenderFactoryTest {
             graph.setClientSecret("secret-789");
             mail.setGraph(graph);
             
-            when(notificationConfigService.getMailConfig()).thenReturn(mail);
+            when(notificationConfigService.getLocalMailConfig()).thenReturn(mail);
 
             MailSenderAdapter adapter = factory.resolve();
 
@@ -147,7 +147,7 @@ class MailSenderFactoryTest {
             graph.setClientSecret(null); // Missing secret
             mail.setGraph(graph);
             
-            when(notificationConfigService.getMailConfig()).thenReturn(mail);
+            when(notificationConfigService.getLocalMailConfig()).thenReturn(mail);
 
             MailSenderAdapter adapter = factory.resolve();
 
@@ -168,7 +168,7 @@ class MailSenderFactoryTest {
             graph.setFrom(null); // No graph-specific from either
             mail.setGraph(graph);
             
-            when(notificationConfigService.getMailConfig()).thenReturn(mail);
+            when(notificationConfigService.getLocalMailConfig()).thenReturn(mail);
 
             MailSenderAdapter adapter = factory.resolve();
 
@@ -189,7 +189,7 @@ class MailSenderFactoryTest {
             graph.setFrom(""); // Blank graph from
             mail.setGraph(graph);
             
-            when(notificationConfigService.getMailConfig()).thenReturn(mail);
+            when(notificationConfigService.getLocalMailConfig()).thenReturn(mail);
 
             MailSenderAdapter adapter = factory.resolve();
 
@@ -203,7 +203,7 @@ class MailSenderFactoryTest {
             mail.setDriver(MailDriver.GRAPH);
             mail.setGraph(null);
             
-            when(notificationConfigService.getMailConfig()).thenReturn(mail);
+            when(notificationConfigService.getLocalMailConfig()).thenReturn(mail);
 
             MailSenderAdapter adapter = factory.resolve();
 
@@ -223,7 +223,7 @@ class MailSenderFactoryTest {
             graph.setFrom("from@example.com");
             mail.setGraph(graph);
             
-            when(notificationConfigService.getMailConfig()).thenReturn(mail);
+            when(notificationConfigService.getLocalMailConfig()).thenReturn(mail);
 
             MailSenderAdapter adapter = factory.resolve();
 

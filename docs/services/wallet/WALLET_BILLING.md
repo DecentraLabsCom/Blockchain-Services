@@ -191,10 +191,6 @@ retransmitted indefinitely.
 - `GET /billing/admin/provider-labs`
 - `GET /billing/admin/provider-receivable-status`
 - `GET /billing/admin/top-spenders`
-- `GET|POST /billing/admin/notifications`
-- `POST /billing/admin/notifications/send`
-- `POST /billing/admin/notifications/test`
-
 The provider receivable status includes a payout preview breakdown: the
 attested-session payout, potential physical-lab no-show fee, reservations
 still pending the attestation grace period, and already outstanding accrued

@@ -37,7 +37,13 @@ public class MailSenderFactory {
     }
 
     public MailSenderAdapter resolve() {
-        NotificationProperties.Mail mail = notificationConfigService.getMailConfig();
+        return resolve(notificationConfigService.getLocalMailConfig());
+    }
+
+    public MailSenderAdapter resolve(NotificationProperties.Mail mail) {
+        if (mail == null) {
+            return new NoopMailSenderAdapter();
+        }
         MailDriver driver = mail.getDriver() != null ? mail.getDriver() : MailDriver.NOOP;
         return switch (driver) {
             case SMTP -> new SmtpMailSenderAdapter(mail);

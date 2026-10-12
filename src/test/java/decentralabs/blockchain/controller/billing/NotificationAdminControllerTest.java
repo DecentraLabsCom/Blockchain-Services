@@ -5,6 +5,7 @@ import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -21,13 +22,16 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.http.MediaType;
-import org.springframework.test.util.ReflectionTestUtils;
+import org.springframework.web.servlet.HandlerInterceptor;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 import decentralabs.blockchain.security.AdminNetworkAccessPolicy;
+import decentralabs.blockchain.security.LabAdminGatewayScope;
 import decentralabs.blockchain.notification.MailDriver;
 import decentralabs.blockchain.notification.MailSendResult;
 import decentralabs.blockchain.notification.MailSenderAdapter;
@@ -61,8 +65,30 @@ class NotificationAdminControllerTest {
     @BeforeEach
     void setUp() {
         lenient().when(adminNetworkAccessPolicy.isRequestAllowed(any(), any())).thenReturn(true);
-        mockMvc = MockMvcBuilders.standaloneSetup(notificationAdminController).build();
+        mockMvc = createMockMvc();
         objectMapper = new ObjectMapper();
+    }
+
+    private MockMvc createMockMvc() {
+        HandlerInterceptor gatewayScope = new HandlerInterceptor() {
+            @Override
+            public boolean preHandle(
+                HttpServletRequest request,
+                HttpServletResponse response,
+                Object handler
+            ) {
+                if (request.getAttribute(LabAdminGatewayScope.REQUEST_ATTRIBUTE) == null) {
+                    request.setAttribute(
+                        LabAdminGatewayScope.REQUEST_ATTRIBUTE,
+                        LabAdminGatewayScope.forGateway("gateway.example")
+                    );
+                }
+                return true;
+            }
+        };
+        return MockMvcBuilders.standaloneSetup(notificationAdminController)
+            .addInterceptors(gatewayScope)
+            .build();
     }
 
     @Nested
@@ -78,9 +104,9 @@ class NotificationAdminControllerTest {
                 "from", "noreply@example.com"
             );
 
-            when(notificationConfigService.getPublicConfig()).thenReturn(publicConfig);
+            when(notificationConfigService.getPublicConfig("gateway.example")).thenReturn(publicConfig);
 
-            mockMvc.perform(get("/billing/admin/notifications"))
+            mockMvc.perform(get("/lab-admin/notifications"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.success").value(true))
                 .andExpect(jsonPath("$.config.enabled").value(true));
@@ -121,11 +147,11 @@ class NotificationAdminControllerTest {
                 "smtp", Map.of("passwordConfigured", true)
             );
 
-            when(notificationConfigService.validateUpdate(any())).thenReturn(Collections.emptyList());
-            when(notificationConfigService.updateMailConfig(any())).thenReturn(mailConfig);
-            when(notificationConfigService.getPublicConfig()).thenReturn(publicConfig);
+            when(notificationConfigService.validateUpdate(any(String.class), any())).thenReturn(Collections.emptyList());
+            when(notificationConfigService.updateMailConfig(any(String.class), any())).thenReturn(mailConfig);
+            when(notificationConfigService.getPublicConfig("gateway.example")).thenReturn(publicConfig);
 
-            mockMvc.perform(post("/billing/admin/notifications")
+            mockMvc.perform(put("/lab-admin/notifications")
                     .contentType(MediaType.APPLICATION_JSON)
                     .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isOk())
@@ -148,10 +174,10 @@ class NotificationAdminControllerTest {
                 null
             );
 
-            when(notificationConfigService.validateUpdate(any()))
+            when(notificationConfigService.validateUpdate(any(String.class), any()))
                 .thenReturn(List.of("From address is required", "SMTP configuration is required"));
 
-            mockMvc.perform(post("/billing/admin/notifications")
+            mockMvc.perform(put("/lab-admin/notifications")
                     .contentType(MediaType.APPLICATION_JSON)
                     .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isBadRequest())
@@ -167,11 +193,11 @@ class NotificationAdminControllerTest {
                 List.of("to@example.com"), "UTC", null, null
             );
 
-            when(notificationConfigService.validateUpdate(any())).thenReturn(Collections.emptyList());
-            when(notificationConfigService.updateMailConfig(any()))
+            when(notificationConfigService.validateUpdate(any(String.class), any())).thenReturn(Collections.emptyList());
+            when(notificationConfigService.updateMailConfig(any(String.class), any()))
                 .thenThrow(new RuntimeException("Database error"));
 
-            mockMvc.perform(post("/billing/admin/notifications")
+            mockMvc.perform(put("/lab-admin/notifications")
                     .contentType(MediaType.APPLICATION_JSON)
                     .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isInternalServerError())
@@ -190,14 +216,14 @@ class NotificationAdminControllerTest {
             NotificationProperties.Mail mailConfig = new NotificationProperties.Mail();
             mailConfig.setDefaultTo(List.of("admin@example.com"));
 
-            when(notificationConfigService.getMailConfig()).thenReturn(mailConfig);
-            when(notificationConfigService.validateMailConfig()).thenReturn(Collections.emptyList());
+            when(notificationConfigService.getMailConfig("gateway.example")).thenReturn(mailConfig);
+            when(notificationConfigService.validateMailConfig("gateway.example")).thenReturn(Collections.emptyList());
             
             MailSenderAdapter mockSender = org.mockito.Mockito.mock(MailSenderAdapter.class);
-            when(mailSenderFactory.resolve()).thenReturn(mockSender);
+            when(mailSenderFactory.resolve(any(NotificationProperties.Mail.class))).thenReturn(mockSender);
             when(mockSender.send(any())).thenReturn(MailSendResult.sent());
 
-            mockMvc.perform(post("/billing/admin/notifications/test"))
+            mockMvc.perform(post("/lab-admin/notifications/test"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.success").value(true));
         }
@@ -208,14 +234,14 @@ class NotificationAdminControllerTest {
             NotificationProperties.Mail mailConfig = new NotificationProperties.Mail();
             mailConfig.setDefaultTo(List.of("admin@example.com"));
 
-            when(notificationConfigService.getMailConfig()).thenReturn(mailConfig);
-            when(notificationConfigService.validateMailConfig()).thenReturn(Collections.emptyList());
+            when(notificationConfigService.getMailConfig("gateway.example")).thenReturn(mailConfig);
+            when(notificationConfigService.validateMailConfig("gateway.example")).thenReturn(Collections.emptyList());
 
             MailSenderAdapter mockSender = org.mockito.Mockito.mock(MailSenderAdapter.class);
-            when(mailSenderFactory.resolve()).thenReturn(mockSender);
+            when(mailSenderFactory.resolve(any(NotificationProperties.Mail.class))).thenReturn(mockSender);
             when(mockSender.send(any())).thenReturn(MailSendResult.failed("SMTP delivery failed"));
 
-            mockMvc.perform(post("/billing/admin/notifications/test"))
+            mockMvc.perform(post("/lab-admin/notifications/test"))
                 .andExpect(status().isBadGateway())
                 .andExpect(jsonPath("$.success").value(false))
                 .andExpect(jsonPath("$.error").value("SMTP delivery failed"));
@@ -227,14 +253,14 @@ class NotificationAdminControllerTest {
             NotificationProperties.Mail mailConfig = new NotificationProperties.Mail();
             mailConfig.setDefaultTo(List.of("admin@example.com"));
 
-            when(notificationConfigService.getMailConfig()).thenReturn(mailConfig);
-            when(notificationConfigService.validateMailConfig()).thenReturn(Collections.emptyList());
+            when(notificationConfigService.getMailConfig("gateway.example")).thenReturn(mailConfig);
+            when(notificationConfigService.validateMailConfig("gateway.example")).thenReturn(Collections.emptyList());
 
             MailSenderAdapter mockSender = org.mockito.Mockito.mock(MailSenderAdapter.class);
-            when(mailSenderFactory.resolve()).thenReturn(mockSender);
+            when(mailSenderFactory.resolve(any(NotificationProperties.Mail.class))).thenReturn(mockSender);
             when(mockSender.send(any())).thenReturn(MailSendResult.skipped("Notification driver is disabled"));
 
-            mockMvc.perform(post("/billing/admin/notifications/test"))
+            mockMvc.perform(post("/lab-admin/notifications/test"))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.success").value(false))
                 .andExpect(jsonPath("$.error").value("Notification driver is disabled"));
@@ -245,11 +271,11 @@ class NotificationAdminControllerTest {
         void shouldRejectTestWhenConfigInvalid() throws Exception {
             NotificationProperties.Mail mailConfig = new NotificationProperties.Mail();
 
-            when(notificationConfigService.getMailConfig()).thenReturn(mailConfig);
-            when(notificationConfigService.validateMailConfig())
+            when(notificationConfigService.getMailConfig("gateway.example")).thenReturn(mailConfig);
+            when(notificationConfigService.validateMailConfig("gateway.example"))
                 .thenReturn(List.of("SMTP host is required"));
 
-            mockMvc.perform(post("/billing/admin/notifications/test"))
+            mockMvc.perform(post("/lab-admin/notifications/test"))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.success").value(false))
                 .andExpect(jsonPath("$.error").exists());
@@ -261,10 +287,10 @@ class NotificationAdminControllerTest {
             NotificationProperties.Mail mailConfig = new NotificationProperties.Mail();
             mailConfig.setDefaultTo(Collections.emptyList());
 
-            when(notificationConfigService.getMailConfig()).thenReturn(mailConfig);
-            when(notificationConfigService.validateMailConfig()).thenReturn(Collections.emptyList());
+            when(notificationConfigService.getMailConfig("gateway.example")).thenReturn(mailConfig);
+            when(notificationConfigService.validateMailConfig("gateway.example")).thenReturn(Collections.emptyList());
 
-            mockMvc.perform(post("/billing/admin/notifications/test"))
+            mockMvc.perform(post("/lab-admin/notifications/test"))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.success").value(false))
                 .andExpect(jsonPath("$.error").value("No recipients configured (defaultTo is empty)"));
@@ -276,11 +302,11 @@ class NotificationAdminControllerTest {
             NotificationProperties.Mail mailConfig = new NotificationProperties.Mail();
             mailConfig.setDefaultTo(List.of("admin@example.com"));
 
-            when(notificationConfigService.getMailConfig()).thenReturn(mailConfig);
-            when(notificationConfigService.validateMailConfig()).thenReturn(Collections.emptyList());
-            when(mailSenderFactory.resolve()).thenThrow(new RuntimeException("SMTP connection failed"));
+            when(notificationConfigService.getMailConfig("gateway.example")).thenReturn(mailConfig);
+            when(notificationConfigService.validateMailConfig("gateway.example")).thenReturn(Collections.emptyList());
+            when(mailSenderFactory.resolve(any(NotificationProperties.Mail.class))).thenThrow(new RuntimeException("SMTP connection failed"));
 
-            mockMvc.perform(post("/billing/admin/notifications/test"))
+            mockMvc.perform(post("/lab-admin/notifications/test"))
                 .andExpect(status().isInternalServerError())
                 .andExpect(jsonPath("$.success").value(false));
         }
@@ -292,34 +318,32 @@ class NotificationAdminControllerTest {
 
         @BeforeEach
         void setUpAccess() {
-            ReflectionTestUtils.setField(notificationAdminController, "accessToken", "test-token");
-            ReflectionTestUtils.setField(notificationAdminController, "accessTokenHeader", "X-Access-Token");
-            ReflectionTestUtils.setField(notificationAdminController, "accessTokenCookie", "access_token");
-            ReflectionTestUtils.setField(notificationAdminController, "accessTokenRequired", true);
-            mockMvc = MockMvcBuilders.standaloneSetup(notificationAdminController).build();
+            mockMvc = createMockMvc();
         }
 
         @Test
         @DisplayName("Should reject private network without access token")
         void shouldRejectPrivateNetworkWithoutToken() throws Exception {
             when(adminNetworkAccessPolicy.isRequestAllowed(any(), any())).thenReturn(false);
-            mockMvc.perform(get("/billing/admin/notifications")
+            mockMvc.perform(get("/lab-admin/notifications")
                     .with(req -> { req.setRemoteAddr("10.0.0.5"); return req; }))
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.success").value(false));
         }
 
         @Test
-        @DisplayName("Should allow private network with valid access token")
-        void shouldAllowPrivateNetworkWithToken() throws Exception {
-            when(notificationConfigService.getPublicConfig()).thenReturn(Map.of("enabled", false));
+        @DisplayName("Should reject institution-wide scope for Gateway settings")
+        void shouldRejectInstitutionWideScope() throws Exception {
             when(adminNetworkAccessPolicy.isRequestAllowed(any(), any())).thenReturn(true);
 
-            mockMvc.perform(get("/billing/admin/notifications")
-                    .header("X-Access-Token", "test-token")
+            mockMvc.perform(get("/lab-admin/notifications")
+                    .requestAttr(
+                        LabAdminGatewayScope.REQUEST_ATTRIBUTE,
+                        LabAdminGatewayScope.forInstitution()
+                    )
                     .with(req -> { req.setRemoteAddr("10.0.0.5"); return req; }))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.success").value(true));
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.success").value(false));
         }
     }
 }
