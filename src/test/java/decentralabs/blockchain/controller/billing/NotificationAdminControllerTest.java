@@ -334,8 +334,6 @@ class NotificationAdminControllerTest {
         @Test
         @DisplayName("Should reject institution-wide scope for Gateway settings")
         void shouldRejectInstitutionWideScope() throws Exception {
-            when(adminNetworkAccessPolicy.isRequestAllowed(any(), any())).thenReturn(true);
-
             mockMvc.perform(get("/lab-admin/notifications")
                     .requestAttr(
                         LabAdminGatewayScope.REQUEST_ATTRIBUTE,

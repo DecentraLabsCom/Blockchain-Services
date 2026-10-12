@@ -102,7 +102,9 @@ public class LocalhostOnlyFilter extends OncePerRequestFilter {
             return;
         }
 
-        if (isLabAdminPath(request) && !establishLabAdminScope(request)) {
+        if (isLabAdminPath(request)
+            && hasLabAdminCredential(request)
+            && !establishLabAdminScope(request)) {
             response.sendError(HttpServletResponse.SC_FORBIDDEN, "Gateway scope is invalid or not authorized");
             return;
         }
@@ -205,6 +207,10 @@ public class LocalhostOnlyFilter extends OncePerRequestFilter {
 
     private boolean isLabAdminPath(HttpServletRequest request) {
         return request.getRequestURI().startsWith("/lab-admin");
+    }
+
+    private boolean hasLabAdminCredential(HttpServletRequest request) {
+        return hasValidAccessToken(request) || labManagerTokenFromRequest(request) != null;
     }
 
     private boolean hasValidLabManagerToken(HttpServletRequest request) {
