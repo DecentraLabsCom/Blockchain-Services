@@ -50,7 +50,7 @@ const API = {
             if (rawBody) {
                 try {
                     data = JSON.parse(rawBody);
-                } catch (parseError) {
+                } catch {
                     data = null;
                 }
             }

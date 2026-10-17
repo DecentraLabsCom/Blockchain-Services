@@ -394,10 +394,6 @@ function renderSafeModalContent(contentElement, content) {
     });
 }
 
-function getCollectLabNameCacheKey() {
-    return '';
-}
-
 function loadCollectLabNameCache() {
     DashboardState.collectLabNames = {};
 }
@@ -1610,15 +1606,12 @@ function updateCollectButtonState() {
     }
 
     let buttonLabel = 'Request Payout';
-    const pendingTotalEl = document.getElementById('collectPendingTotal');
 
     try {
         const attestedPayoutText = document.getElementById('collectAttestedSessionPayout')?.textContent || '0';
         const noShowFeeText = document.getElementById('collectPotentialNoShowFee')?.textContent || '0';
         const attestedPayout = BigInt(decimalToRawUnits(attestedPayoutText.replace(/\s*credits\s*$/i, '').trim() || '0', CREDIT_DECIMALS));
         const noShowFee = BigInt(decimalToRawUnits(noShowFeeText.replace(/\s*credits\s*$/i, '').trim() || '0', CREDIT_DECIMALS));
-        const pendingTotalText = (pendingTotalEl?.textContent || '0').replace(/\s*credits\s*$/i, '').trim();
-        const pendingTotal = BigInt(decimalToRawUnits(pendingTotalText || '0', CREDIT_DECIMALS));
 
         if (attestedPayout > 0n && noShowFee > 0n) {
             buttonLabel = 'Claim Sessions + No-show Fees';
@@ -2542,7 +2535,7 @@ async function handleCollectLabPayout() {
                     showToast(`Payout transaction failed for ${collectTarget}. Tx: ${formatAddress(result.transactionHash)}`, 'error');
                     setCollectStatusText('Payout transaction failed', 'error');
                 }
-            } catch (confirmationError) {
+            } catch {
                 showToast(
                     `Payout transaction submitted for ${collectTarget}. Confirmation still pending. Tx: ${formatAddress(result.transactionHash)}`,
                     'info'
