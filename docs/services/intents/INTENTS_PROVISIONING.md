@@ -23,6 +23,10 @@ valid JWT with:
 | Read intent/session status | `intents:status` | `intents.auth.status-scope` |
 | Issue institutional session credential | `intents:session` | `intents.auth.session-scope` |
 
+These are scope claims on Marketplace-signed, server-to-server JWTs. They are
+not delegated OAuth scopes granted to registered OAuth apps. This backend does
+not expose OAuth client registration or scope-consent endpoints.
+
 The token must use issuer `marketplace`, subject `marketplace`, a unique `jti`,
 the exact public origin of this backend as audience, the authenticated
 `institutionId`, and a lifetime no longer than the configured short TTL.
@@ -81,6 +85,45 @@ absolute expiry is the backend reauthentication horizon.
 | `GET /intents/authorize/ceremony/{sessionId}` | Session URL | Serves the browser ceremony HTML |
 | `POST /intents/authorize/complete` | Session-bound body | Verifies the assertion and executes the intent |
 | `POST /intents/authorize/client-error` | Diagnostic body | Records browser ceremony diagnostics |
+
+## Intent status webhook
+
+When the backend notifies an intent or reservation status update, it sends a
+synchronous `POST` to `INTENT_WEBHOOK_URL`. The JSON body is a status snapshot;
+it has no separate event type or event timestamp. Null values are included.
+
+```json
+{
+  "requestId": "req-123",
+  "status": "<intent status wire value>",
+  "txHash": null,
+  "blockNumber": null,
+  "labId": "42",
+  "reservationKey": "0x...",
+  "reservationStatus": null,
+  "reason": null
+}
+```
+
+| Field | Meaning |
+| --- | --- |
+| `requestId` | Intent request identifier. |
+| `status` | Current intent status wire value. |
+| `txHash`, `blockNumber` | Transaction evidence when available. |
+| `labId`, `reservationKey` | Lab and reservation identifiers when applicable. |
+| `reservationStatus` | Reservation status when available. |
+| `reason` | Error text when present; otherwise the intent reason. |
+
+Set `INTENT_WEBHOOK_SECRET` to sign the exact UTF-8 request body. The backend
+sends the lowercase HMAC-SHA256 digest in `X-Signature` as
+`sha256=<hex-digest>`. If the secret is blank, no signature header is sent.
+Leave `INTENT_WEBHOOK_URL` blank to disable delivery.
+
+Delivery is best-effort: each notification makes one synchronous HTTP call.
+Non-2xx responses and request errors are logged; there is no application-level
+retry or durable requeue. The receiver should therefore tolerate missing
+notifications and reconcile against `GET /intents/{requestId}` when it needs
+the latest state.
 
 The ceremony page and completion endpoint use the short-lived authorization
 session as their context. Completion does not require a second Marketplace
