@@ -63,6 +63,22 @@ connection strings and internal runbooks out of the uploaded content tree.
 The full endpoint index, including non-lab routes, is in
 [API reference](../../reference/API_REFERENCE.md).
 
+### Supported asset uploads
+
+`POST /lab-admin/assets` accepts multipart form data with a non-empty `file`,
+an optional `contentId`, and `kind` (default `images`). The accepted values and
+multipart content types are:
+
+| `kind` value | Accepted multipart `Content-Type` values |
+| --- | --- |
+| `images` or `image` | `image/jpeg`, `image/png`, `image/webp`, `image/gif` |
+| `docs`, `doc` or `document` | `application/pdf` |
+
+The service rejects files larger than 10 MiB. The servlet's
+`LAB_CONTENT_MAX_FILE_SIZE` and `LAB_CONTENT_MAX_REQUEST_SIZE` settings may
+impose lower limits. The service validates the multipart `Content-Type`; a
+filename extension alone does not select an accepted type.
+
 Reservation and lab-management endpoints use the Gateway scope established by
 the backend authentication boundary. A Lite credential maps to one Gateway ID
 and `accessURI`; client-supplied Gateway IDs are checked against that mapping.

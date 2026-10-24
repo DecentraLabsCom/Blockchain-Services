@@ -176,7 +176,8 @@ matching, versioning and final execution re-checks.
 | GET | `/lab-admin/billing/provider-income` | Provider-consumer mode; Gateway-scoped Lab Manager credential; read-only report limited to the authenticated Gateway's labs. |
 | GET | `/billing/compliance/exports/prepaid-balances`, `/consumed`, `/expired`, `/receivable-accruals`, `/completed-payouts`, `/provider-network` | Admin boundary; evidence exports. |
 | GET | `/lab-admin/status`, `/lab-admin/labs`, `/lab-admin/reservations/upcoming`, `/lab-admin/reservations/actionable` (`offset`, `limit`, `cursor` pagination), `/lab-admin/guacamole/connections` | Provider-consumer mode only; admin boundary or allowed Lab Manager. Actionable pages return `nextCursor` and a bounded RPC budget instead of an exact total. |
-| POST | `/lab-admin/assets`, `/lab-admin/labs`, `/lab-admin/fmu/provider-describe-token`, `/lab-admin/labs/{labId}/list`, `/lab-admin/labs/{labId}/unlist`, `/lab-admin/reservations/{reservationKey}/cancel` | Provider-consumer mode only; admin boundary or allowed Lab Manager; mutations require an idempotency key where documented. |
+| POST | `/lab-admin/assets` | Provider-consumer mode only; admin boundary or allowed Lab Manager. See [accepted file types and upload limits](../services/lab-administration/LAB_ADMINISTRATION.md#supported-asset-uploads). |
+| POST | `/lab-admin/labs`, `/lab-admin/fmu/provider-describe-token`, `/lab-admin/labs/{labId}/list`, `/lab-admin/labs/{labId}/unlist`, `/lab-admin/reservations/{reservationKey}/cancel` | Provider-consumer mode only; admin boundary or allowed Lab Manager; mutations require an idempotency key where documented. |
 | PUT | `/lab-admin/labs/{labId}` | Provider-consumer mode only; admin boundary or allowed Lab Manager. |
 | DELETE | `/lab-admin/assets` | Provider-consumer mode only; admin boundary or allowed Lab Manager; removes an uploaded asset only. |
 | DELETE | `/lab-admin/labs/{labId}` | Provider-consumer mode only; admin boundary or allowed Lab Manager; irreversible on-chain lab deletion plus durable local-content tombstone hand-off. |
@@ -185,6 +186,23 @@ matching, versioning and final execution re-checks.
 | GET | `/health` | Detailed backend health and durable queue status. |
 | GET | `/billing/admin/contract-events/dead-letter` | Local/admin read-only view of contract-event dead letters and reorg evidence. |
 | GET | `/actuator/health/liveness`, `/actuator/health/readiness`, `/actuator/prometheus`, `/actuator/metrics`, `/actuator/info` | Process/orchestrator/monitoring endpoints. |
+
+### Compliance export query limits
+
+| Export | Query parameters |
+| --- | --- |
+| `/billing/compliance/exports/prepaid-balances` | `address` (required) |
+| `/billing/compliance/exports/consumed` | `address` (required); `limit` (optional, default `1000`, capped at `10000`) |
+| `/billing/compliance/exports/expired` | `address` (required) |
+| `/billing/compliance/exports/receivable-accruals` | None |
+| `/billing/compliance/exports/completed-payouts` | `providerAddress` (required) |
+| `/billing/compliance/exports/provider-network` | None |
+
+The backend does not apply a requests-per-minute throttle to these export
+routes. They remain behind the admin network/token boundary and their
+route-specific role checks. A deployment that needs a request-rate cap must
+apply it at its network perimeter or reverse proxy. The `limit` parameter on
+`consumed` bounds returned rows; it is not a request-rate limit.
 
 ### Lite reservation projection
 

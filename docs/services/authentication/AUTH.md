@@ -418,6 +418,21 @@ Key paths default to:
 The exact environment template is `.env.example`; do not infer secret paths
 from an old deployment guide.
 
+### API key reset
+
+This backend does not issue user-managed API keys or expose an API-key reset
+endpoint. `GET /auth/jwks` publishes public keys for verifying backend JWTs; it
+is not a key-management endpoint. The `PRIVATE_KEY_PATH` and `PUBLIC_KEY_PATH`
+files are the operator-managed JWT signing pair and must be managed by the
+deployment operator. See [Security Configuration](../../security/SECURITY.md)
+for key storage and access controls.
+
+### SCIM provisioning
+
+Federated sign-in consumes SAML assertions, but this backend does not implement
+SCIM 2.0 provisioning or directory synchronization. It has no SCIM endpoint or
+background directory-sync worker.
+
 ## Error semantics
 
 | Status | Meaning |
