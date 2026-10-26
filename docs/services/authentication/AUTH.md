@@ -353,6 +353,15 @@ authorized. `BookingCanceled` and `BookingCanceledByProvider` also eagerly
 delete all persisted tickets for the reservation; those event handlers are an
 optimization, not the security boundary.
 
+Providers can lower the runtime input-update ceiling per FMU lab with
+`FMU_SESSION_TICKET_MAX_INPUT_UPDATES_PER_WINDOW_BY_LAB_JSON`, a server-owned
+JSON object keyed by on-chain `labId`, for example `{"42":500,"71":1200}`.
+Ticket issuance adds the matching
+`fmuExecutionPolicy.maxInputUpdatesPerWindow` claim after validating the
+booking token. Clients cannot choose this value in the ticket request. Values
+must be from 1 to 10,000 and must not exceed the selected Executor's platform
+maximum. Labs absent from the map use the Executor's configured default.
+
 ## WebAuthn credential lifecycle
 
 WebAuthn registration is an onboarding ceremony, not a generic registration

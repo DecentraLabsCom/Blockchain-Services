@@ -3,6 +3,7 @@ package decentralabs.blockchain.service.auth;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import decentralabs.blockchain.config.FmuSessionTicketProperties;
 import decentralabs.blockchain.dto.auth.FmuSessionTicketIssueRequest;
 import decentralabs.blockchain.dto.auth.FmuSessionTicketIssueResponse;
 import decentralabs.blockchain.dto.auth.FmuSessionTicketRedeemRequest;
@@ -15,12 +16,14 @@ import java.security.NoSuchAlgorithmException;
 import java.security.SecureRandom;
 import java.time.Instant;
 import java.util.Base64;
+import java.util.HashMap;
 import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.dao.DataAccessException;
@@ -44,6 +47,9 @@ public class FmuSessionTicketService {
     private final ObjectMapper objectMapper = new ObjectMapper();
     private final SecureRandom random = new SecureRandom();
     private final ConcurrentMap<String, TicketRecord> tickets = new ConcurrentHashMap<>();
+
+    @Autowired
+    private FmuSessionTicketProperties executionPolicyProperties = new FmuSessionTicketProperties();
 
     @Value("${auth.fmu.session-ticket.max-ttl-seconds:300}")
     private long maxTtlSeconds = 300;
@@ -72,8 +78,9 @@ public class FmuSessionTicketService {
     public FmuSessionTicketIssueResponse issue(String bearerToken, FmuSessionTicketIssueRequest request) {
         cleanupExpired();
         String token = normalizeBearerToken(bearerToken);
-        Map<String, Object> claims = extractClaims(token);
+        Map<String, Object> claims = new HashMap<>(extractClaims(token));
         enforceFmuClaims(claims);
+        applyConfiguredInputUpdatePolicy(claims);
 
         long now = Instant.now().getEpochSecond();
         long nbf = toEpochSecond(claims.get("nbf"), "Missing nbf claim");
@@ -431,6 +438,38 @@ public class FmuSessionTicketService {
             || normalize(claims.get("targetGatewayId")) == null) {
             throw new SessionTicketException(HttpStatus.FORBIDDEN, "FORBIDDEN", "Booking token is missing FMU claims");
         }
+    }
+
+    private void applyConfiguredInputUpdatePolicy(Map<String, Object> claims) {
+        Integer maximum = executionPolicyProperties.maxInputUpdatesPerWindowForLab(
+            normalize(claims.get("labId"))
+        );
+        if (maximum == null) {
+            return;
+        }
+
+        Map<String, Object> policy = new HashMap<>();
+        Object existingPolicy = claims.get("fmuExecutionPolicy");
+        if (existingPolicy instanceof Map<?, ?> existingValues) {
+            for (Map.Entry<?, ?> entry : existingValues.entrySet()) {
+                if (!(entry.getKey() instanceof String key)) {
+                    throw new SessionTicketException(
+                        HttpStatus.FORBIDDEN,
+                        "FORBIDDEN",
+                        "Booking token contains an invalid FMU execution policy"
+                    );
+                }
+                policy.put(key, entry.getValue());
+            }
+        } else if (existingPolicy != null) {
+            throw new SessionTicketException(
+                HttpStatus.FORBIDDEN,
+                "FORBIDDEN",
+                "Booking token contains an invalid FMU execution policy"
+            );
+        }
+        policy.put("maxInputUpdatesPerWindow", maximum);
+        claims.put("fmuExecutionPolicy", policy);
     }
 
     private long toEpochSecond(Object value, String message) {
