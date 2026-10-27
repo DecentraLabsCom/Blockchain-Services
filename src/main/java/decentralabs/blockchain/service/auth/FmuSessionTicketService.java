@@ -23,7 +23,6 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.dao.DataAccessException;
@@ -48,8 +47,7 @@ public class FmuSessionTicketService {
     private final SecureRandom random = new SecureRandom();
     private final ConcurrentMap<String, TicketRecord> tickets = new ConcurrentHashMap<>();
 
-    @Autowired
-    private FmuSessionTicketProperties executionPolicyProperties = new FmuSessionTicketProperties();
+    private final FmuSessionTicketProperties executionPolicyProperties;
 
     @Value("${auth.fmu.session-ticket.max-ttl-seconds:300}")
     private long maxTtlSeconds = 300;
@@ -65,13 +63,15 @@ public class FmuSessionTicketService {
         ObjectProvider<JdbcTemplate> jdbcTemplateProvider,
         AccessCredentialAuditService accessCredentialAuditService,
         AccessCodeTokenCipher ticketCipher,
-        BlockchainBookingService blockchainBookingService
+        BlockchainBookingService blockchainBookingService,
+        FmuSessionTicketProperties executionPolicyProperties
     ) {
         this.jwtService = jwtService;
         this.jdbcTemplate = jdbcTemplateProvider.getIfAvailable();
         this.accessCredentialAuditService = accessCredentialAuditService;
         this.ticketCipher = ticketCipher;
         this.blockchainBookingService = blockchainBookingService;
+        this.executionPolicyProperties = executionPolicyProperties;
     }
 
     @Transactional
