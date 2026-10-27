@@ -5,6 +5,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import decentralabs.blockchain.config.FmuSessionTicketProperties;
 import decentralabs.blockchain.dto.auth.FmuSessionTicketIssueRequest;
 import decentralabs.blockchain.dto.auth.FmuSessionTicketIssueResponse;
 import decentralabs.blockchain.dto.auth.FmuSessionTicketRedeemRequest;
@@ -124,7 +125,8 @@ class FmuSessionTicketControllerTest {
                 new StaticListableBeanFactory().getBeanProvider(org.springframework.jdbc.core.JdbcTemplate.class),
                 Mockito.mock(AccessCredentialAuditService.class),
                 Mockito.mock(decentralabs.blockchain.service.auth.AccessCodeTokenCipher.class),
-                Mockito.mock(BlockchainBookingService.class)
+                Mockito.mock(BlockchainBookingService.class),
+                new FmuSessionTicketProperties()
             );
         }
 
