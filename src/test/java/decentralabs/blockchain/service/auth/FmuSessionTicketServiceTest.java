@@ -10,6 +10,7 @@ import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.when;
 import static org.mockito.Mockito.lenient;
 
+import decentralabs.blockchain.config.FmuSessionTicketProperties;
 import decentralabs.blockchain.dto.auth.FmuSessionTicketIssueRequest;
 import decentralabs.blockchain.dto.auth.FmuSessionTicketRedeemRequest;
 import decentralabs.blockchain.service.wallet.BlockchainBookingService;
@@ -294,7 +295,8 @@ class FmuSessionTicketServiceTest {
             jdbcTemplateProvider,
             accessCredentialAuditService,
             ticketCipher,
-            blockchainBookingService
+            blockchainBookingService,
+            new FmuSessionTicketProperties()
         );
         ReflectionTestUtils.setField(candidate, "maxTtlSeconds", 300L);
         ReflectionTestUtils.setField(candidate, "requirePersistence", false);
