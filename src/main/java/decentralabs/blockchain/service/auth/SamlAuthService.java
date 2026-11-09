@@ -67,7 +67,6 @@ public class SamlAuthService {
         Map<String, Object> bookingInfo = null;
         AccessAuthorizationProvisioningService.ProvisioningLease provisionalLease = null;
         String issuedAccessCode = null;
-        String canonicalReservationKey = request.getReservationKey();
         try {
             bookingInfo = blockchainService.getBookingInfoForCredentialPreparation(
                 payerInstitutionWallet,
@@ -75,7 +74,7 @@ public class SamlAuthService {
                 request.getLabId(),
                 stringClaim(marketplaceJWTClaims, "puc")
             );
-            canonicalReservationKey = reservationKeyFromBooking(bookingInfo, request.getReservationKey());
+            String canonicalReservationKey = reservationKeyFromBooking(bookingInfo, request.getReservationKey());
             if (canonicalReservationKey == null || canonicalReservationKey.isBlank()) {
                 throw new IllegalArgumentException("Unable to resolve canonical reservationKey");
             }
@@ -181,10 +180,9 @@ public class SamlAuthService {
         Map<String, Object> bookingInfo = null;
         AccessAuthorizationProvisioningService.ProvisioningLease provisionalLease = null;
         String issuedAccessCode = null;
-        String canonicalReservationKey = request.getReservationKey();
         try {
             bookingInfo = blockchainService.getBookingInfoForCredentialPreparation(wallet, request.getReservationKey(), request.getLabId(), jwtPuc);
-            canonicalReservationKey = reservationKeyFromBooking(bookingInfo, request.getReservationKey());
+            String canonicalReservationKey = reservationKeyFromBooking(bookingInfo, request.getReservationKey());
             if (canonicalReservationKey == null || canonicalReservationKey.isBlank()) {
                 throw new IllegalArgumentException("Unable to resolve canonical reservationKey");
             }

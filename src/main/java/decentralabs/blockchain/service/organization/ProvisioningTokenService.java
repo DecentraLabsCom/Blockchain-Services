@@ -275,7 +275,7 @@ public class ProvisioningTokenService {
             boolean kidOk = kid == null || Objects.equals(kid, key.path("kid").asText(null));
             if (algOk && useOk && kidOk) {
                 selected = key;
-                if (kidOk) break;
+                break;
             }
         }
         if (selected == null) {

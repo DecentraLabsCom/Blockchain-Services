@@ -28,9 +28,6 @@
     --border-glow: rgba(0, 212, 255, 0.3);
     
     /* Status Colors */
-    --success: var(--neon-green);
-    --warning: var(--neon-orange);
-    --danger: var(--neon-red);
     --info: var(--neon-blue);
     
     /* Spacing */
@@ -46,7 +43,6 @@
     --radius-lg: 12px;
     
     /* Shadows */
-    --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.3);
     --shadow-md: 0 4px 16px rgba(0, 0, 0, 0.4);
     --shadow-lg: 0 8px 32px rgba(0, 0, 0, 0.5);
     --shadow-glow: 0 0 20px rgba(0, 212, 255, 0.3);
@@ -289,16 +285,6 @@ body:not(.wallet-tabs-ready) [data-wallet-tab-section="overview"]:not(.hidden),
     display: block;
 }
 
-.wallet-coming-soon {
-    padding: 0.35rem 0.65rem;
-    border: 1px solid var(--neon-purple);
-    border-radius: 999px;
-    color: var(--neon-purple);
-    font-size: 0.75rem;
-    font-weight: 700;
-    white-space: nowrap;
-}
-
 /* Cards */
 .card {
     background: var(--bg-card);
@@ -481,11 +467,6 @@ body:not(.wallet-tabs-ready) [data-wallet-tab-section="overview"]:not(.hidden),
     color: var(--text-muted);
 }
 
-.card-actions {
-    display: flex;
-    gap: var(--spacing-sm);
-}
-
 .timestamp {
     color: var(--text-muted);
     font-size: 0.85rem;
@@ -523,30 +504,6 @@ body:not(.wallet-tabs-ready) [data-wallet-tab-section="overview"]:not(.hidden),
     font-size: 1.1rem;
     font-weight: 500;
     word-break: break-all;
-}
-
-.wallet-actions {
-    margin-top: 0.5rem;
-    display: none;
-    gap: 0.5rem;
-    flex-wrap: wrap;
-}
-
-.wallet-actions .btn {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.35rem;
-}
-
-@media (max-width: 768px) {
-    .wallet-actions {
-        width: 100%;
-    }
-
-    .wallet-actions .btn {
-        width: 100%;
-        justify-content: center;
-    }
 }
 
 .info-value .warning-text {
@@ -724,29 +681,6 @@ body:not(.wallet-tabs-ready) [data-wallet-tab-section="overview"]:not(.hidden),
 
 .provisioning-token-status.error {
     color: var(--neon-red);
-}
-
-.btn-marketplace {
-    background: linear-gradient(135deg, var(--neon-blue) 0%, var(--neon-purple) 100%);
-    color: white;
-    padding: var(--spacing-md) var(--spacing-lg);
-    border: none;
-    border-radius: var(--radius-md);
-    font-size: 1.1rem;
-    font-weight: 600;
-    cursor: pointer;
-    transition: all 0.3s ease;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: var(--spacing-sm);
-    text-decoration: none;
-    box-shadow: 0 4px 15px rgba(0, 212, 255, 0.3);
-}
-
-.btn-marketplace:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 6px 20px rgba(0, 212, 255, 0.5);
 }
 
 .btn-pairing {
@@ -956,18 +890,6 @@ body:not(.wallet-tabs-ready) [data-wallet-tab-section="overview"]:not(.hidden),
 
 .wallet-setup-dropdown .btn-block {
     width: 100%;
-}
-
-/* Wallet setup actions */
-.wallet-setup-actions {
-    display: flex;
-    gap: var(--spacing-sm);
-    margin-top: var(--spacing-xs);
-}
-
-.wallet-setup-actions .btn {
-    flex: 1;
-    white-space: nowrap;
 }
 
 /* Badges */
@@ -1291,16 +1213,6 @@ body:not(.wallet-tabs-ready) [data-wallet-tab-section="overview"]:not(.hidden),
 .btn:disabled {
     opacity: 0.5;
     cursor: not-allowed;
-}
-
-.button-group {
-    display: flex;
-    gap: var(--spacing-sm);
-    width: 100%;
-}
-
-.button-group .btn {
-    flex: 1;
 }
 
 .full-width {
@@ -1777,53 +1689,6 @@ body:not(.wallet-tabs-ready) [data-wallet-tab-section="overview"]:not(.hidden),
     margin-bottom: var(--spacing-md);
 }
 
-/* Billing Actions Form (below balances) */
-.billing-actions-form {
-    margin-top: var(--spacing-lg);
-    padding-top: var(--spacing-lg);
-    border-top: 1px solid rgba(0, 229, 255, 0.2);
-}
-
-.billing-actions-form .form-group {
-    margin-bottom: var(--spacing-md);
-}
-
-.billing-actions-form label {
-    display: block;
-    color: var(--text-secondary);
-    margin-bottom: var(--spacing-xs);
-    font-weight: 500;
-    font-size: 0.9rem;
-}
-
-.billing-actions-form input[type="text"] {
-    width: 100%;
-    background: rgba(26, 27, 38, 0.8);
-    border: 1px solid var(--border-color);
-    color: var(--text-primary);
-    padding: var(--spacing-sm);
-    border-radius: var(--radius-sm);
-    font-size: 1rem;
-    transition: all 0.3s ease;
-}
-
-.billing-actions-form input[type="text"]:focus {
-    outline: none;
-    border-color: var(--neon-cyan);
-    box-shadow: 0 0 10px rgba(0, 229, 255, 0.3);
-}
-
-.billing-actions-buttons {
-    display: flex;
-    gap: var(--spacing-md);
-    justify-content: center;
-}
-
-.billing-actions-buttons .btn {
-    flex: 0 0 25%;
-    min-width: 120px;
-}
-
 /* Lab Collect Panel */
 .collect-panel {
     background: var(--bg-secondary);
@@ -2051,14 +1916,6 @@ body:not(.wallet-tabs-ready) [data-wallet-tab-section="overview"]:not(.hidden),
         justify-content: center;
     }
     
-    .button-group {
-        flex-direction: column;
-    }
-    
-    .button-group .btn {
-        width: 100%;
-    }
-    
     /* Footer responsive */
     .footer-content {
         flex-direction: column;
@@ -2206,19 +2063,6 @@ body:not(.wallet-tabs-ready) [data-wallet-tab-section="overview"]:not(.hidden),
     border-radius: var(--radius-sm);
     border-left: 4px solid var(--neon-yellow);
     margin: var(--spacing-md) 0;
-}
-
-#infoModalContent .mnemonic-box {
-    background: rgba(184, 54, 255, 0.1);
-    border: 2px solid var(--neon-purple);
-    border-radius: var(--radius-md);
-    padding: var(--spacing-lg);
-    margin: var(--spacing-md) 0;
-    text-align: center;
-    word-spacing: 0.5rem;
-    line-height: 2;
-    font-size: 1.1rem;
-    color: var(--neon-green);
 }
 
 #infoModalContent .secret-header {

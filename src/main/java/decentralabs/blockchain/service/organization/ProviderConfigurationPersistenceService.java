@@ -328,13 +328,6 @@ public class ProviderConfigurationPersistenceService {
     }
 
     /**
-     * Check if configuration file exists
-     */
-    public boolean configurationFileExists() {
-        return Files.exists(getConfigFilePath());
-    }
-
-    /**
      * Load configuration from file
      */
     public Properties loadConfiguration() throws IOException {

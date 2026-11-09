@@ -1280,7 +1280,7 @@ async function loadBalances() {
         // Get all balances and billing info in parallel
         const [data, billingData] = await Promise.all([
             API.getBalance(),
-            API.getBillingInfo().catch(err => ({ success: false }))
+            API.getBillingInfo().catch(() => ({ success: false }))
         ]);
         
         if (data.success && data.balances) {

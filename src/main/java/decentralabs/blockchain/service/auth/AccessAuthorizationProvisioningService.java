@@ -75,10 +75,6 @@ public class AccessAuthorizationProvisioningService {
         return lease;
     }
 
-    public boolean markWaiting(ProvisioningLease lease) {
-        return updateStatus(lease, "WAITING_AUTHORIZATION", "PREPARED");
-    }
-
     public boolean markActivated(ProvisioningLease lease) {
         return updateStatus(lease, "ACTIVATED", "PREPARED", "WAITING_AUTHORIZATION");
     }
@@ -145,18 +141,6 @@ public class AccessAuthorizationProvisioningService {
             Timestamp.from(Instant.now())
         );
         return count != null && count == 1;
-    }
-
-    public Long deliveredGeneration(String reservationKey) {
-        if (jdbcTemplate == null || reservationKey == null || reservationKey.isBlank()) {
-            return null;
-        }
-        return jdbcTemplate.query(
-            "SELECT generation FROM access_authorization_provisioning "
-                + "WHERE reservation_key = ? AND status = 'DELIVERED'",
-            ps -> ps.setString(1, reservationKey),
-            rs -> rs.next() ? rs.getLong(1) : null
-        );
     }
 
     public RecoverableProvisioning recoverableProvisioning(String reservationKey) {

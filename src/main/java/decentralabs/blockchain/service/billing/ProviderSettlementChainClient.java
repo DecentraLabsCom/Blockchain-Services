@@ -101,26 +101,6 @@ public class ProviderSettlementChainClient {
         ).send(), credentials.getAddress());
     }
 
-    public ChainReceipt disputeBatch(byte[] batchId, byte[] referenceHash, String operationKey) throws Exception {
-        Diamond diamond = loadWritableDiamond(operationKey);
-        return toReceipt(diamond.disputeSettlementBatch(batchId, referenceHash).send(), actorAddress());
-    }
-
-    public ChainReceipt reverseBatch(byte[] batchId, byte[] referenceHash, String operationKey) throws Exception {
-        Diamond diamond = loadWritableDiamond(operationKey);
-        return toReceipt(diamond.reverseSettlementBatch(batchId, referenceHash).send(), actorAddress());
-    }
-
-    public ChainReceipt disputeClaim(byte[] claimId, byte[] referenceHash, String operationKey) throws Exception {
-        Diamond diamond = loadWritableDiamond(operationKey);
-        return toReceipt(diamond.disputeSettlementClaim(claimId, referenceHash).send(), actorAddress());
-    }
-
-    public ChainReceipt reverseClaim(byte[] claimId, byte[] referenceHash, String operationKey) throws Exception {
-        Diamond diamond = loadWritableDiamond(operationKey);
-        return toReceipt(diamond.reverseSettlementClaim(claimId, referenceHash).send(), actorAddress());
-    }
-
     public Diamond.ProviderSettlementClaim readClaim(byte[] claimId) throws Exception {
         return loadReadonlyDiamond().getProviderSettlementClaim(claimId).send();
     }

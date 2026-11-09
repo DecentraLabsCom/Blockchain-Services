@@ -99,23 +99,4 @@ public class RateLimitService {
         return bucket != null ? bucket.getAvailableTokens() : maxBalanceChecksPerMinute;
     }
 
-    /**
-     * Clean up old buckets (should be called periodically)
-     */
-    public void cleanupOldBuckets() {
-        evictIfNeeded(transactionBuckets, "transaction");
-        evictIfNeeded(balanceCheckBuckets, "balance check");
-    }
-
-    private void evictIfNeeded(Map<String, Bucket> buckets, String label) {
-        if (buckets.size() > 10000) {
-            log.info("Evicting {} buckets, current size: {}", label, buckets.size());
-            int toRemove = buckets.size() / 4;
-            var iterator = buckets.entrySet().iterator();
-            for (int i = 0; i < toRemove && iterator.hasNext(); i++) {
-                iterator.next();
-                iterator.remove();
-            }
-        }
-    }
 }
