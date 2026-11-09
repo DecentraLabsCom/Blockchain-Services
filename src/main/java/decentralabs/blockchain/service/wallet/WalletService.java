@@ -1493,7 +1493,7 @@ public class WalletService {
         throws Exception {
         List<CreditLedgerSnapshot.Lot> result = new ArrayList<>();
         BigInteger offset = BigInteger.ZERO;
-        BigInteger total = BigInteger.ZERO;
+        BigInteger total;
 
         do {
             Function function = Diamond.getCreditLotsFunction(accountAddress, offset, CREDIT_LEDGER_PAGE_SIZE);
@@ -1527,7 +1527,7 @@ public class WalletService {
         throws Exception {
         List<CreditLedgerSnapshot.Movement> result = new ArrayList<>();
         BigInteger offset = BigInteger.ZERO;
-        BigInteger total = BigInteger.ZERO;
+        BigInteger total;
 
         do {
             Function function = Diamond.getCreditMovementsFunction(accountAddress, offset, CREDIT_LEDGER_PAGE_SIZE);
@@ -1643,7 +1643,6 @@ public class WalletService {
         return sanitized.isEmpty() ? "Payout request reverted" : sanitized;
     }
 
-
     /**
      * Gets the transaction history (simplified)
      */
@@ -1675,39 +1674,6 @@ public class WalletService {
             log.error("Error getting transaction history");
             log.debug("Transaction history lookup failed (context omitted)", e);
             return TransactionHistoryResponse.error("Failed to get transaction history: " + e.getMessage());
-        }
-    }
-
-    public Optional<String> getContractOwnerAddress() {
-        try {
-            Web3j web3j = getWeb3jInstance();
-            Function function = new Function(
-                "owner",
-                Collections.emptyList(),
-                Collections.singletonList(new TypeReference<Address>() {})
-            );
-
-            String encodedFunction = FunctionEncoder.encode(function);
-            EthCall response = web3j.ethCall(
-                Transaction.createEthCallTransaction(null, contractAddress, encodedFunction),
-                DefaultBlockParameterName.LATEST
-            ).send();
-
-            if (response.hasError()) {
-                return Optional.empty();
-            }
-
-            @SuppressWarnings("rawtypes")
-            List<Type> decoded = FunctionReturnDecoder.decode(response.getValue(), function.getOutputParameters());
-            if (decoded.isEmpty()) {
-                return Optional.empty();
-            }
-
-            String owner = Objects.toString(decoded.get(0).getValue(), "").trim();
-            return owner.isEmpty() ? Optional.empty() : Optional.of(owner);
-        } catch (Exception e) {
-            log.debug("Failed to resolve contract owner", e);
-            return Optional.empty();
         }
     }
 

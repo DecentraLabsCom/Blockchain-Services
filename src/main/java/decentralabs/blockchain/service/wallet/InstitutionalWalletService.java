@@ -379,9 +379,6 @@ public class InstitutionalWalletService {
             // Create credentials from decrypted private key
             local = Credentials.create(privateKey);
             
-            // Clear private key from memory immediately (security best practice)
-            privateKey = null;
-            
             // Verify decrypted address matches configured address
             if (!local.getAddress().equalsIgnoreCase(institutionalWalletAddress)) {
                 throw new IllegalStateException(

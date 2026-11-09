@@ -123,16 +123,6 @@ public class FundingOrderPersistenceService {
 
     // ── Funding Invoices ────────────────────────────────────────────────
 
-    private static final RowMapper<FundingInvoice> FUNDING_INVOICE_MAPPER = (rs, rowNum) -> FundingInvoice.builder()
-            .id(rs.getLong("id"))
-            .fundingOrderId(rs.getLong("funding_order_id"))
-            .invoiceNumber(rs.getString("invoice_number"))
-            .eurAmount(rs.getBigDecimal("eur_amount"))
-            .issuedAt(toInstant(rs.getTimestamp("issued_at")))
-            .dueAt(toInstant(rs.getTimestamp("due_at")))
-            .status(FundingInvoice.Status.valueOf(rs.getString("status")))
-            .build();
-
     @Transactional
     public FundingInvoice createFundingInvoice(FundingInvoice invoice) {
         if (jdbcTemplate == null) return invoice;
@@ -161,28 +151,7 @@ public class FundingOrderPersistenceService {
         }
     }
 
-    public List<FundingInvoice> findInvoicesByOrder(long orderId) {
-        if (jdbcTemplate == null) return List.of();
-        try {
-            return jdbcTemplate.query(
-                "SELECT * FROM funding_invoices WHERE funding_order_id = ?",
-                FUNDING_INVOICE_MAPPER, orderId);
-        } catch (DataAccessException ex) {
-            logMissing("funding_invoices", ex);
-            return List.of();
-        }
-    }
-
     // ── Payment Reconciliations ─────────────────────────────────────────
-
-    private static final RowMapper<PaymentReconciliation> RECONCILIATION_MAPPER = (rs, rowNum) -> PaymentReconciliation.builder()
-            .id(rs.getLong("id"))
-            .fundingOrderId(rs.getLong("funding_order_id"))
-            .paymentRef(rs.getString("payment_ref"))
-            .eurAmount(rs.getBigDecimal("eur_amount"))
-            .paymentMethod(rs.getString("payment_method"))
-            .reconciledAt(toInstant(rs.getTimestamp("reconciled_at")))
-            .build();
 
     @Transactional
     public PaymentReconciliation createReconciliation(PaymentReconciliation recon) {
@@ -208,18 +177,6 @@ public class FundingOrderPersistenceService {
         } catch (DataAccessException ex) {
             logMissing("payment_reconciliations", ex);
             return recon;
-        }
-    }
-
-    public List<PaymentReconciliation> findReconciliationsByOrder(long orderId) {
-        if (jdbcTemplate == null) return List.of();
-        try {
-            return jdbcTemplate.query(
-                "SELECT * FROM payment_reconciliations WHERE funding_order_id = ?",
-                RECONCILIATION_MAPPER, orderId);
-        } catch (DataAccessException ex) {
-            logMissing("payment_reconciliations", ex);
-            return List.of();
         }
     }
 

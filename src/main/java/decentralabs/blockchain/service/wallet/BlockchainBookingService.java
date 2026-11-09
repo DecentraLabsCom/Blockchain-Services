@@ -72,10 +72,6 @@ public class BlockchainBookingService {
         return getBookingInfo(wallet, reservationKey, labId, puc, false);
     }
 
-    public Map<String, Object> getAccessAuthorizedBookingInfo(String wallet, String reservationKey, String labId, String puc) {
-        return getBookingInfo(wallet, reservationKey, labId, puc, true, true);
-    }
-
     /**
      * Loads and validates a reservation before its check-in transaction is
      * mined. Guacamole provisioning is deliberately separate so a provider can
@@ -298,35 +294,6 @@ public class BlockchainBookingService {
         }
     }
 
-    /**
-     * Resolves the active reservation key for a wallet + labId pair.
-     * Returns null if no active reservation exists.
-     *
-     * @param wallet The user's wallet address
-     * @param labId The lab ID
-     * @param puc Optional schacPersonalUniqueCode for institutional users
-     * @return Reservation key as hex string, or null if not found
-     */
-    public String resolveActiveReservationKeyHex(String wallet, String labId, String puc) {
-        if (wallet == null || wallet.isBlank()) {
-            throw new IllegalArgumentException("Missing signer");
-        }
-        if (!EthereumAddressValidator.isValidAddress(wallet)) {
-            throw new IllegalArgumentException("Invalid signer address");
-        }
-        if (labId == null || labId.isBlank()) {
-            throw new IllegalArgumentException("Missing labId");
-        }
-
-        BigInteger labIdNum = EthereumAddressValidator.parseBigInteger(labId, "labId");
-        Diamond diamond = loadDiamondContract(wallet);
-        byte[] key = resolveActiveReservationKey(diamond, labIdNum, wallet, puc);
-        if (!isValidReservationKey(key)) {
-            return null;
-        }
-        return bytesToHex(key);
-    }
-    
     /**
      * Retrieves booking info using reservationKey directly (OPTIMAL - 2 blockchain calls)
      * Call flow: getReservation(key) → getLab(tokenId)
@@ -774,5 +741,4 @@ public class BlockchainBookingService {
         );
     }
 }
-
 

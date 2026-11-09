@@ -198,17 +198,7 @@ public class JwtService {
             return false;
         }
     }
-    
-    /**
-     * Extracts username from JWT token
-     * @param token JWT token
-     * @return username (sub claim)
-     */
-    public String extractUsername(String token) {
-        Map<String, Object> claims = extractAllClaims(token);
-        return (String) claims.get("sub");
-    }
-    
+
     /**
      * Extracts all claims from JWT token
      * @param token JWT token
@@ -247,13 +237,4 @@ public class JwtService {
         return null;
     }
     
-    /**
-     * Checks if a token is expired
-     * @param token JWT token
-     * @return true if expired, false otherwise
-     */
-    public boolean isTokenExpired(String token) {
-        Date expiration = getExpirationDate(token);
-        return expiration != null && expiration.before(new Date());
-    }
 }

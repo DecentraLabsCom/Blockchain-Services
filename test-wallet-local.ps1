@@ -1,4 +1,4 @@
-# OPTIONAL: Manual API testing script (via docker exec)
+﻿# OPTIONAL: Manual API testing script (via docker exec)
 # This script is provided for developers who want to test wallet APIs via CLI.
 # 
 # Most users should use the web UI instead:
@@ -95,4 +95,4 @@ Write-Host ""
 Write-Host "💡 Note: These commands use 'docker exec' to run inside the container" -ForegroundColor Yellow
 Write-Host "   because LocalhostOnlyFilter blocks external requests." -ForegroundColor Yellow
 Write-Host ""
-Write-Host "📖 For more examples, see: dev/WALLET_README.md" -ForegroundColor Cyan
+Write-Host "📖 For more examples, see: docs/services/wallet/WALLET_BILLING.md" -ForegroundColor Cyan

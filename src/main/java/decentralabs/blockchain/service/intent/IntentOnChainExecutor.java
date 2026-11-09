@@ -851,32 +851,6 @@ public class IntentOnChainExecutor {
         ));
     }
 
-    public Optional<BigInteger> fetchNextIntentNonce(String signer) {
-        try {
-            Web3j web3j = resolveWeb3j();
-            Function fn = new Function(
-                "nextIntentNonce",
-                List.of(new org.web3j.abi.datatypes.Address(signer)),
-                List.of(new TypeReference<Uint256>() { })
-            );
-            String encoded = FunctionEncoder.encode(fn);
-            org.web3j.protocol.core.methods.response.EthCall response = web3j.ethCall(
-                Transaction.createEthCallTransaction(signer, contractAddress, encoded),
-                DefaultBlockParameterName.LATEST
-            ).send();
-            if (response == null || response.hasError()) {
-                return Optional.empty();
-            }
-            return FunctionReturnDecoder.decode(response.getValue(), fn.getOutputParameters())
-                .stream()
-                .findFirst()
-                .map(type -> ((Uint256) type).getValue());
-        } catch (Exception ex) {
-            log.warn("Unable to fetch next intent nonce for {}: {}", signer, ex.getMessage());
-            return Optional.empty();
-        }
-    }
-
     private void postflightReleaseExpiredInstitutionalReservations(IntentRecord record, Credentials credentials) {
         ReservationIntentPayload payload = record.getReservationPayload();
         if (payload == null) {
