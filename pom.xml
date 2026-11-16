@@ -131,7 +131,7 @@
         <dependency>
             <groupId>com.azure</groupId>
             <artifactId>azure-identity</artifactId>
-            <version>1.18.7</version>
+            <version>1.19.0</version>
         </dependency>
 
         <!-- Spring Boot Starter Validation for Bean Validation -->
