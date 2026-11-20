@@ -142,16 +142,22 @@ body {
 
 .header-actions {
     grid-column: 3;
-    justify-self: end;
+    justify-self: stretch;
     display: flex;
-    align-items: flex-start;
+    align-items: center;
     gap: var(--spacing-md);
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    min-width: 0;
 }
 
 .header-action-buttons {
     display: flex;
     align-items: center;
     gap: var(--spacing-md);
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    min-width: 0;
 }
 
 .header-status-stack {
@@ -159,6 +165,7 @@ body {
     flex-direction: column;
     align-items: flex-start;
     gap: 0.35rem;
+    min-width: 0;
 }
 
 .header-notice-row {
@@ -760,6 +767,7 @@ body:not(.wallet-tabs-ready) [data-wallet-tab-section="overview"]:not(.hidden),
     display: flex;
     flex-wrap: wrap;
     gap: var(--spacing-sm);
+    justify-content: center;
 }
 
 .pairing-actions .btn {
@@ -1910,9 +1918,13 @@ body:not(.wallet-tabs-ready) [data-wallet-tab-section="overview"]:not(.hidden),
 
     .header-actions {
         grid-column: auto;
-        justify-self: center;
+        justify-self: stretch;
         align-items: center;
         flex-wrap: wrap;
+        justify-content: center;
+    }
+
+    .header-action-buttons {
         justify-content: center;
     }
     
