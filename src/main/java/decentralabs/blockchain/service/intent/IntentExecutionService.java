@@ -140,6 +140,9 @@ public class IntentExecutionService {
                 log.warn("Intent {} failed on-chain: reason={} txHash={} blockNumber={}",
                     record.getRequestId(), result.reason(), result.txHash(), result.blockNumber());
                 if (result.txHash() == null && result.blockNumber() == null) {
+                    if (recoverTransientPreflightFailure(record, result)) {
+                        return;
+                    }
                     intentService.markFailed(record, result.reason());
                 } else {
                     intentService.markFailed(record, result.reason(), result.txHash(), result.blockNumber());
@@ -153,6 +156,37 @@ public class IntentExecutionService {
         } finally {
             executionGuards.remove(record.getRequestId(), guard);
         }
+    }
+
+    private boolean recoverTransientPreflightFailure(
+        IntentRecord record,
+        IntentOnChainExecutor.ExecutionResult result
+    ) {
+        String reason = result.reason();
+        if (IntentOnChainExecutor.PREFLIGHT_INTENT_NOT_REGISTERED.equals(reason)) {
+            intentService.markPendingRegistration(record);
+            log.info("Intent {} returned to registration polling after preflight reported an unregistered intent",
+                record.getRequestId());
+            return true;
+        }
+
+        if (reason == null || !reason.startsWith("preflight_")) {
+            return false;
+        }
+
+        IntentRegistrationVerifier.RegistrationVerificationResult verification =
+            registrationVerifier.verifyRegistration(record);
+        if (verification.retryable()) {
+            intentService.markPendingRegistration(record);
+            log.info("Intent {} returned to registration polling after a retryable preflight failure",
+                record.getRequestId());
+            return true;
+        }
+        if (!verification.verified()) {
+            intentService.markFailed(record, verification.reason());
+            return true;
+        }
+        return false;
     }
 
 }

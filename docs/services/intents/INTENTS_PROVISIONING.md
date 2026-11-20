@@ -175,6 +175,12 @@ endpoint is the source for the later execution result. Typical states are
 `queued`, `authorized_pending_registration`, `in_progress`, `executed`,
 `failed` and `rejected`.
 
+If a preflight read reaches an RPC node that has not yet observed the on-chain
+intent registration, `IntentNotRegistered` is treated as retryable. The intent
+returns to `authorized_pending_registration` and the registration poll checks
+it again; no transaction is submitted for that preflight attempt. Other
+preflight reverts remain terminal when registration is visible and verified.
+
 Only the material required to resume on-chain execution is durable: intent
 metadata and the selected action/reservation payload. New payloads are wrapped
 with AES-256-GCM using the required `INTENT_PAYLOAD_ENCRYPTION_KEY`; provide a

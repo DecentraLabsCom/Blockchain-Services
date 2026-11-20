@@ -9,6 +9,8 @@ import java.util.Optional;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ThreadFactory;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
@@ -52,6 +54,10 @@ import lombok.extern.slf4j.Slf4j;
 @Service
 @Slf4j
 public class IntentOnChainExecutor {
+
+    static final String PREFLIGHT_INTENT_NOT_REGISTERED = "preflight_intent_not_registered";
+    private static final String INTENT_NOT_REGISTERED_SELECTOR = "0x07f50c04";
+    private static final Pattern ERROR_SELECTOR_PATTERN = Pattern.compile("(?i)0x([0-9a-f]{8})");
 
     private static final BigInteger MAX_RESERVATIONS_PER_LAB_USER = BigInteger.TEN;
     private static final BigInteger PRE_RELEASE_THRESHOLD = BigInteger.valueOf(2);
@@ -239,7 +245,9 @@ public class IntentOnChainExecutor {
         TransactionManager txManager = txManagerProvider.get(web3j, "intent:" + record.getRequestId());
         String encoded = FunctionEncoder.encode(function);
 
-        Optional<String> preflightFailure = simulateAndDecodeFailure(web3j, credentials.getAddress(), encoded);
+        Optional<String> preflightFailure = simulateAndDecodeFailure(
+            web3j, credentials.getAddress(), encoded, gas
+        );
         if (preflightFailure.isPresent()) {
             return new ExecutionResult(false, null, null, null, null, preflightFailure.get());
         }
@@ -422,17 +430,37 @@ public class IntentOnChainExecutor {
         return Optional.empty();
     }
 
-    private Optional<String> simulateAndDecodeFailure(Web3j web3j, String from, String encodedData) {
+    private Optional<String> simulateAndDecodeFailure(
+        Web3j web3j,
+        String from,
+        String encodedData,
+        BigInteger gasLimit
+    ) {
         try {
             EthCall response = web3j.ethCall(
-                Transaction.createEthCallTransaction(from, contractAddress, encodedData),
+                // Match the submitted transaction's gas cap and zero value.
+                new Transaction(from, null, null, gasLimit, contractAddress, BigInteger.ZERO, encodedData),
                 DefaultBlockParameterName.LATEST
             ).send();
             if (response == null) {
                 return Optional.empty();
             }
             if (response.hasError()) {
-                String msg = response.getError() != null ? response.getError().getMessage() : "unknown_eth_call_error";
+                EthCall.Error error = response.getError();
+                String data = error != null ? error.getData() : null;
+                String message = error != null ? error.getMessage() : "unknown_eth_call_error";
+                String selector = extractErrorSelector(data);
+                if (selector == null) {
+                    selector = extractErrorSelector(message);
+                }
+                if (INTENT_NOT_REGISTERED_SELECTOR.equals(selector)
+                    || (message != null && message.contains("IntentNotRegistered"))) {
+                    return Optional.of(PREFLIGHT_INTENT_NOT_REGISTERED);
+                }
+                String msg = message != null ? message : "unknown_eth_call_error";
+                if (selector != null) {
+                    msg += " (selector=" + selector + ")";
+                }
                 return Optional.of("preflight_revert: " + msg);
             }
 
@@ -459,6 +487,14 @@ public class IntentOnChainExecutor {
         } catch (Exception ex) {
             return Optional.of("preflight_error: " + ex.getMessage());
         }
+    }
+
+    private String extractErrorSelector(String value) {
+        if (value == null || value.isBlank()) {
+            return null;
+        }
+        Matcher matcher = ERROR_SELECTOR_PATTERN.matcher(value);
+        return matcher.find() ? "0x" + matcher.group(1).toLowerCase(Locale.ROOT) : null;
     }
 
     private String decodeRevertString(String revertData) {

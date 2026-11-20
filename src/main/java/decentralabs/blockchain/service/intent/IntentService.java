@@ -1366,6 +1366,11 @@ public class IntentService {
         persistenceService.upsert(record);
     }
 
+    public void markPendingRegistration(IntentRecord record) {
+        record.setStatus(IntentStatus.AUTHORIZED_PENDING_REGISTRATION);
+        persistenceService.upsert(record);
+    }
+
     public void markExecuted(IntentRecord record, String txHash, Long blockNumber, String labId, String reservationKey) {
         markExecuted(record, txHash, blockNumber, labId, reservationKey, null);
     }
