@@ -143,6 +143,7 @@ body {
 .header-actions {
     grid-column: 3;
     justify-self: stretch;
+    --header-control-height: 3.25rem;
     display: flex;
     align-items: center;
     gap: var(--spacing-md);
@@ -164,8 +165,14 @@ body {
     display: flex;
     flex-direction: column;
     align-items: flex-start;
+    align-self: center;
     gap: 0.35rem;
     min-width: 0;
+}
+
+.header-actions .btn:not(.btn-icon),
+.header-status-stack .status-indicator {
+    min-height: var(--header-control-height);
 }
 
 .header-notice-row {
