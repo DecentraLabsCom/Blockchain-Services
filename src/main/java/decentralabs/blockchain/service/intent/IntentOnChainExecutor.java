@@ -82,7 +82,7 @@ public class IntentOnChainExecutor {
         InstitutionalWalletService institutionalWalletService,
         @Value("${contract.address}") String contractAddress,
         @Value("${ethereum.gas.limit.contract:300000}") BigInteger gasLimit,
-        @Value("${ethereum.gas.limit.direct.booking:2000000}") BigInteger directBookingGasLimit,
+        @Value("${ethereum.gas.limit.direct.booking}") BigInteger directBookingGasLimit,
         @Value("${ethereum.gas.price.default:1}") BigInteger gasPriceGwei,
         @Value("${ethereum.gas.price.multiplier:1.2}") BigDecimal gasPriceMultiplier,
         @Value("${ethereum.gas.price.min-gwei:1}") BigDecimal gasPriceMinGwei,

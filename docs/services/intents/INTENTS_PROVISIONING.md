@@ -321,6 +321,13 @@ allowed to redirect registration to an arbitrary host.
 
 ## Configuration reference
 
+`ETHEREUM_GAS_LIMIT_DIRECT_BOOKING` defaults to `10000000` gas units. It caps
+both the preflight simulation and the transaction for `DIRECT_BOOKING`, which
+requests and confirms a reservation for the institution's own lab in one call.
+In a Full Lab Gateway deployment, set overrides in the backend environment
+file (by default `blockchain-services/.env`) and recreate the backend container
+to load them.
+
 Intent authorization:
 
 - `INTENTS_AUTH_ENABLED`
