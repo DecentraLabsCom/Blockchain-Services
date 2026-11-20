@@ -31,7 +31,7 @@ class WebConfigTest {
 
     @Test
     void objectMapper_disablesTimestampDates() {
-        ObjectMapper mapper = config.objectMapper();
+        ObjectMapper mapper = config.objectMapper(false);
 
         assertThat(mapper.isEnabled(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS)).isFalse();
     }
