@@ -1,11 +1,13 @@
 package decentralabs.blockchain.config;
 
+import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
 import com.fasterxml.jackson.databind.json.JsonMapper;
+import jakarta.annotation.Nonnull;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-import jakarta.annotation.Nonnull;
 import org.springframework.web.client.RestTemplate;
 import org.springframework.web.servlet.config.annotation.ViewControllerRegistry;
 import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
@@ -30,10 +32,14 @@ public class WebConfig implements WebMvcConfigurer {
     // Only created when no other ObjectMapper/Converter bean is present to avoid interfering with auto-configuration
     @Bean
     @org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean
-    public ObjectMapper objectMapper() {
+    public ObjectMapper objectMapper(
+        @Value("${spring.jackson.deserialization.fail-on-unknown-properties:false}")
+        boolean failOnUnknownProperties
+    ) {
         // Register Java time and other standard modules when available.
         return JsonMapper.builder()
             .findAndAddModules()
+            .configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, failOnUnknownProperties)
             .disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS)
             .build();
     }
