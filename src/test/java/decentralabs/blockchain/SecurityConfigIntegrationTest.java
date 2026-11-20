@@ -1,5 +1,7 @@
 package decentralabs.blockchain;
 
+import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.verify;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.anonymous;
 import static org.springframework.security.test.web.servlet.setup.SecurityMockMvcConfigurers.springSecurity;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -11,6 +13,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import decentralabs.blockchain.controller.billing.FundingController;
 import decentralabs.blockchain.security.AccessTokenAuthenticationFilter;
 import decentralabs.blockchain.security.AdminNetworkAccessPolicy;
 import decentralabs.blockchain.security.LabAdminGatewayCredentialService;
@@ -20,6 +23,9 @@ import decentralabs.blockchain.security.PublicEndpointRateLimitFilter;
 import decentralabs.blockchain.security.SessionObserverAuthenticationFilter;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import decentralabs.blockchain.service.BackendUrlResolver;
+import decentralabs.blockchain.service.auth.MarketplaceEndpointAuthService;
+import decentralabs.blockchain.service.billing.CreditProjectionService;
+import decentralabs.blockchain.service.billing.FundingOrderService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -28,9 +34,11 @@ import org.springframework.boot.autoconfigure.EnableAutoConfiguration;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.annotation.Import;
 import org.springframework.context.annotation.Bean;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.security.test.context.support.WithMockUser;
 import org.springframework.test.context.TestPropertySource;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
@@ -40,6 +48,7 @@ import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.server.ResponseStatusException;
 
 @SpringBootTest(
     classes = SecurityConfigIntegrationTest.TestApplication.class
@@ -71,6 +80,15 @@ import org.springframework.web.bind.annotation.RestController;
         + "org.springframework.boot.data.redis.autoconfigure.DataRedisRepositoriesAutoConfiguration"
 })
 class SecurityConfigIntegrationTest {
+
+    @MockitoBean
+    private MarketplaceEndpointAuthService marketplaceEndpointAuthService;
+
+    @MockitoBean
+    private FundingOrderService fundingOrderService;
+
+    @MockitoBean
+    private CreditProjectionService creditProjectionService;
 
     private final WebApplicationContext webApplicationContext;
 
@@ -236,6 +254,37 @@ class SecurityConfigIntegrationTest {
                 }))
             .andExpect(status().isOk())
             .andExpect(content().string("billing-admin-ok"));
+    }
+
+    @Test
+    void billingRead_withAdminSecretConfiguredDelegatesToMarketplaceJwtValidation() throws Exception {
+        String serviceBearer = "Bearer marketplace-service-token";
+        mockMvc.perform(get("/billing/funding-orders")
+                .with(req -> {
+                    req.setRemoteAddr("203.0.113.10");
+                    return req;
+                })
+                .header("Authorization", serviceBearer))
+            .andExpect(status().isOk());
+
+        verify(marketplaceEndpointAuthService).enforceServiceAuthorization(serviceBearer, "billing:read");
+    }
+
+    @Test
+    void billingRead_rejectsInvalidMarketplaceJwt() throws Exception {
+        String invalidBearer = "Bearer diagnostic-invalid";
+        doThrow(new ResponseStatusException(HttpStatus.UNAUTHORIZED, "invalid_marketplace_token"))
+            .when(marketplaceEndpointAuthService).enforceServiceAuthorization(invalidBearer, "billing:read");
+
+        mockMvc.perform(get("/billing/funding-orders")
+                .with(req -> {
+                    req.setRemoteAddr("203.0.113.10");
+                    return req;
+                })
+                .header("Authorization", invalidBearer))
+            .andExpect(status().isUnauthorized());
+
+        verify(marketplaceEndpointAuthService).enforceServiceAuthorization(invalidBearer, "billing:read");
     }
 
     @Test
@@ -561,6 +610,7 @@ class SecurityConfigIntegrationTest {
         LocalhostOnlyFilter.class,
         PreAuthenticationRateLimitFilter.class,
         PublicEndpointRateLimitFilter.class,
+        FundingController.class,
         TestEndpoints.class
     })
     static class TestApplication {

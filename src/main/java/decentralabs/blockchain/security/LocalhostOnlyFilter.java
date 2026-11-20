@@ -84,7 +84,7 @@ public class LocalhostOnlyFilter extends OncePerRequestFilter {
         // codeql[java/log-injection]
         log.debug("LocalhostOnlyFilter: path={}, clientIp={}", path, clientIp);
 
-        if (isMarketplaceBillingReadRequest(request)) {
+        if (marketplaceBillingReadsEnabled && isMarketplaceBillingReadRequest(request)) {
             // FundingController performs the cryptographic JWT and scope
             // validation. This filter only prevents the localhost policy from
             // blocking that authenticated server-to-server read before it can
@@ -119,8 +119,8 @@ public class LocalhostOnlyFilter extends OncePerRequestFilter {
         filterChain.doFilter(request, response);
     }
 
-    private boolean isMarketplaceBillingReadRequest(HttpServletRequest request) {
-        if (!marketplaceBillingReadsEnabled || !isBillingReadRequest(request)) {
+    static boolean isMarketplaceBillingReadRequest(HttpServletRequest request) {
+        if (!isBillingReadRequest(request)) {
             return false;
         }
 
@@ -129,7 +129,7 @@ public class LocalhostOnlyFilter extends OncePerRequestFilter {
             && authorization.trim().length() > 7;
     }
 
-    private boolean isBillingReadRequest(HttpServletRequest request) {
+    private static boolean isBillingReadRequest(HttpServletRequest request) {
         if (!("GET".equalsIgnoreCase(request.getMethod()) || "HEAD".equalsIgnoreCase(request.getMethod()))) {
             return false;
         }

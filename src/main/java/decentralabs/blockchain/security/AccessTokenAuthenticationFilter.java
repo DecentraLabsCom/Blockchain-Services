@@ -34,6 +34,9 @@ public class AccessTokenAuthenticationFilter extends OncePerRequestFilter {
     @Value("${security.access-token-cookie:access_token}")
     private String accessTokenCookie;
 
+    @Value("${auth.marketplace-endpoints.enabled:true}")
+    private boolean marketplaceBillingReadsEnabled;
+
     @Override
     protected boolean shouldNotFilter(@Nonnull HttpServletRequest request) {
         String path = request.getRequestURI();
@@ -41,7 +44,10 @@ public class AccessTokenAuthenticationFilter extends OncePerRequestFilter {
             && "/access-audit/internal/session-observed".equals(path)) {
             return true;
         }
-        // Run for routes where SecurityConfig hasRole rules enforce ROLE_INTERNAL.
+        // FundingController validates the Marketplace Bearer with the billing:read scope.
+        if (marketplaceBillingReadsEnabled && LocalhostOnlyFilter.isMarketplaceBillingReadRequest(request)) {
+            return true;
+        }
         return path == null
             || (!path.startsWith("/billing") && !path.startsWith("/access-audit/internal"));
     }
