@@ -104,7 +104,7 @@ function updateRoleBasedSections() {
         if (!showProviderOperatorControls && providerSettlementOperationSelect.value !== 'submit') {
             providerSettlementOperationSelect.value = 'submit';
         }
-        updateProviderSettlementOperationFields();
+        WalletDashboardProviderSettlement.updateProviderSettlementOperationFields();
     }
     if (operatorCreditPolicySection) {
         operatorCreditPolicySection.classList.toggle('hidden', !showInstitutionControls && !showOperatorControls);
@@ -394,70 +394,6 @@ function renderSafeModalContent(contentElement, content) {
     });
 }
 
-function loadCollectLabNameCache() {
-    DashboardState.collectLabNames = {};
-}
-
-function persistCollectLabNameCache() {
-    // Lab labels are a presentation cache and remain in memory only.
-}
-
-function isFallbackLabLabel(value, labId) {
-    const text = String(value || '').trim();
-    if (!text) {
-        return true;
-    }
-    return text.toLowerCase() === `lab #${String(labId).trim()}`.toLowerCase();
-}
-
-function enrichCollectLabsWithCachedNames(labs) {
-    if (!Array.isArray(labs)) {
-        return [];
-    }
-
-    const cache = DashboardState.collectLabNames || {};
-    let cacheUpdated = false;
-    const enriched = labs.map(lab => {
-        const labId = String(lab.labId || '').trim();
-        if (!labId) {
-            return lab;
-        }
-
-        const currentName = String(lab.name || lab.label || '').trim();
-        const cachedName = String(cache[labId] || '').trim();
-        const effectiveName = !isFallbackLabLabel(currentName, labId)
-            ? currentName
-            : (cachedName || currentName);
-
-        if (effectiveName && !isFallbackLabLabel(effectiveName, labId) && cache[labId] !== effectiveName) {
-            cache[labId] = effectiveName;
-            cacheUpdated = true;
-        }
-
-        return {
-            ...lab,
-            name: effectiveName || currentName || `Lab #${labId}`,
-            label: effectiveName || currentName || `Lab #${labId}`
-        };
-    });
-
-    DashboardState.collectLabNames = cache;
-    if (cacheUpdated) {
-        persistCollectLabNameCache();
-    }
-
-    return enriched;
-}
-
-function getCollectTargetLabel(lab = getSelectedCollectLab()) {
-    if (!lab) {
-        return DashboardState.selectedCollectLabId ? `Lab #${DashboardState.selectedCollectLabId}` : 'selected lab';
-    }
-
-    const name = String(lab.name || lab.label || '').trim();
-    return name || `Lab #${lab.labId || DashboardState.selectedCollectLabId}`;
-}
-
 async function waitForAdminTransactionConfirmation(txHash, options = {}) {
     const intervalMs = options.intervalMs || 2000;
     const timeoutMs = options.timeoutMs || 120000;
@@ -740,556 +676,26 @@ function rawToBigInt(value) {
     }
 }
 
-function updateDashboardAccessNotices(status) {
-    const badge = document.getElementById('dashboardAccessBadge');
-    const footer = document.getElementById('dashboardSecurityNotice');
-    if (!badge || !footer || !status) {
-        return;
-    }
-
-    const localOnly = status.dashboardLocalOnly !== false;
-    const privateEnabled = status.allowPrivateNetworks === true && status.dashboardAllowPrivate === true;
-    const configuredCidrs = Array.isArray(status.dashboardAllowedCidrs) ? status.dashboardAllowedCidrs : [];
-
-    if (localOnly && !status.allowPrivateNetworks) {
-        badge.textContent = 'Localhost Only';
-        footer.textContent = 'This dashboard is only accessible from localhost.';
-    } else if (localOnly && privateEnabled && configuredCidrs.length > 0) {
-        badge.textContent = 'Private CIDR Allowlist';
-        footer.textContent = `Private access limited to: ${configuredCidrs.join(', ')}.`;
-    } else if (localOnly && privateEnabled) {
-        badge.textContent = 'Any Private Network';
-        footer.textContent = 'Private-network access is enabled for any private range with the admin access token.';
-    } else if (!localOnly) {
-        badge.textContent = 'External Access Allowed';
-        footer.textContent = 'This dashboard may be accessible externally; enforce firewall or proxy restrictions.';
-    } else {
-        badge.textContent = 'Localhost Only';
-        footer.textContent = 'This dashboard is only accessible from localhost.';
-    }
-}
-
-function updateDashboardAccessError(statusCode) {
-    const badge = document.getElementById('dashboardAccessBadge');
-    const footer = document.getElementById('dashboardSecurityNotice');
-    if (!badge || !footer) {
-        return;
-    }
-
-    if (statusCode === 401) {
-        badge.textContent = 'Access Policy Requires Token';
-        footer.textContent = 'Enter the Gateway administrator token to load dashboard access policy.';
-    } else if (statusCode === 403) {
-        badge.textContent = 'Access Policy Blocked';
-        footer.textContent = 'This network is blocked by the dashboard access policy.';
-    } else {
-        badge.textContent = 'Access Policy Unavailable';
-        footer.textContent = 'Dashboard access policy could not be loaded.';
-    }
-}
-
-function updateOperatingModeNotices(providerConfig) {
-    const welcomeInstruction = document.getElementById('welcomePairingInstruction');
-    const welcomeHelp = document.getElementById('welcomePairingHelp');
-
-    const configuredMode = providerConfig && providerConfig.operatingMode;
-    const operatingMode = configuredMode === 'provider-consumer' || configuredMode === 'consumer-only'
-        ? configuredMode
-        : 'unknown';
-    const providerMode = operatingMode === 'provider-consumer';
-
-    DashboardState.operatingMode = operatingMode;
-    DashboardState.providerRegistrationEnabled = providerConfig && providerConfig.providerRegistrationEnabled === true;
-    DashboardState.registrationRole = providerConfig && providerConfig.registrationRole
-        ? providerConfig.registrationRole
-        : null;
-
-    const badge = document.getElementById('operatingModeBadge');
-    if (badge) {
-        badge.textContent = providerMode
-            ? 'Provider + Consumer Mode'
-            : operatingMode === 'consumer-only'
-                ? 'Consumer-Only Mode'
-                : 'Backend Mode Unavailable';
-    }
-
-    if (welcomeInstruction) {
-        welcomeInstruction.innerHTML = providerMode
-            ? '<strong>Register this backend</strong> with your institution.'
-            : operatingMode === 'consumer-only'
-                ? '<strong>Register this consumer backend</strong> with your institution.'
-                : '<strong>Backend role unavailable</strong>';
-    }
-
-    if (welcomeHelp) {
-        welcomeHelp.textContent = operatingMode === 'unknown'
-            ? 'The backend role could not be loaded. Reload the dashboard before applying a provisioning token.'
-            : 'If a DecentraLabs administrator gave you a provisioning token, apply it below. Otherwise open backend pairing setup; that page explains the pairing challenge flow and links to the Marketplace.';
-    }
-
-    updateInstitutionPairingGuidance(providerConfig);
-    updateRoleBasedSections();
-}
-
-async function loadDashboardSystemStatus(providerConfig) {
-    try {
-        return await API.getSystemStatus();
-    } catch (error) {
-        const providerMode = providerConfig?.operatingMode === 'provider-consumer';
-        const requiresStandaloneToken = providerMode && (error.status === 401 || error.status === 403);
-        if (!requiresStandaloneToken) throw error;
-
-        const token = await showInputModal(
-            'Provider dashboard access',
-            'Enter the backend ADMIN_ACCESS_TOKEN. It stays in memory for this page and is sent only to this backend.',
-            'password'
-        );
-        if (!token) throw error;
-
-        API.setAdminAccessToken(token);
-        try {
-            return await API.getSystemStatus();
-        } catch (retryError) {
-            API.clearAdminAccessToken();
-            throw retryError;
-        }
-    }
-}
-
-function updateInstitutionPairingGuidance(providerConfig) {
-    const section = document.getElementById('institutionPairingSection');
-    const status = document.getElementById('institutionPairingStatus');
-    const help = document.getElementById('institutionPairingHelp');
-    if (!section) return;
-
-    const registered = providerConfig && (
-        providerConfig.registered === true || providerConfig.isRegistered === true
-    );
-    DashboardState.institutionRegistered = Boolean(registered);
-
-    if (status) {
-        status.textContent = registered
-            ? `Paired${providerConfig.registrationRole ? ` as ${providerConfig.registrationRole.toLowerCase()}` : ''}`
-            : 'Pairing required';
-        status.classList.toggle('registered', Boolean(registered));
-    }
-
-    if (help && providerConfig?.operatingMode === 'consumer-only') {
-        help.textContent = 'This deployment is consumer-only. Pair it with the Marketplace to finance reservations and access for your institution.';
-    }
-
-    section.classList.toggle('hidden', !DashboardState.walletAddress || Boolean(registered));
-    updateInstitutionPairingButtonVisibility();
-}
-
-function updateInstitutionPairingButtonVisibility() {
-    const headerBtn = document.getElementById('openInstitutionConfigHeaderBtn');
-    if (headerBtn) {
-        const shouldShow = DashboardState.walletAddress && !DashboardState.institutionRegistered;
-        headerBtn.style.display = shouldShow ? 'inline-flex' : 'none';
-    }
-}
-
-async function readJsonResponse(response) {
-    const text = await response.text();
-    if (!text) {
-        return { data: null, text: '' };
-    }
-    try {
-        return { data: JSON.parse(text), text };
-    } catch (error) {
-        return { data: null, text, parseError: error };
-    }
-}
-
-function extractResponseErrorMessage(response, result, fallbackMessage) {
-    const parsed = result && result.data ? result.data : null;
-    const text = result && typeof result.text === 'string' ? result.text.trim() : '';
-    return (
-        (parsed && (parsed.error || parsed.message || parsed.details)) ||
-        text ||
-        fallbackMessage ||
-        `HTTP ${response.status}${response.statusText ? `: ${response.statusText}` : ''}`
-    );
-}
-
-// Welcome Modal Functions
-function showWelcomeModal() {
-    const modal = document.getElementById('welcomeModal');
-    if (modal) {
-        modal.classList.add('show');
-    }
-}
-
-function hideWelcomeModal(dismissed = false) {
-    const modal = document.getElementById('welcomeModal');
-    if (modal) {
-        modal.classList.remove('show');
-    }
-    if (dismissed) {
-        DashboardState.welcomeModalDismissed = true;
-    }
-}
-
-function updateMarketplaceUrl(url) {
-    if (typeof url !== 'string' || !url.trim()) return;
-    DashboardState.marketplaceUrl = url;
-    document.querySelectorAll('[data-marketplace-link]').forEach((link) => {
-        link.href = url;
-    });
-}
-
-function setProvisioningTokenStatus(message, tone = '') {
-    const status = document.getElementById('provisioningTokenStatus');
-    if (!status) return;
-    status.textContent = message || '';
-    status.className = 'provisioning-token-status';
-    if (tone) {
-        status.classList.add(tone);
-    }
-}
-
-function isProvisioningTokenShapeValid(token) {
-    return /^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/.test(token);
-}
-
-async function applyProvisioningToken(event) {
-    event.preventDefault();
-    const form = event.currentTarget;
-    const input = document.getElementById('provisioningTokenInput');
-    const submitButton = document.getElementById('applyProvisioningTokenBtn');
-    if (!input || !submitButton) return;
-
-    const token = input.value.trim();
-    if (!token) {
-        setProvisioningTokenStatus('Paste the provisioning token first.', 'error');
-        input.focus();
-        return;
-    }
-    if (!isProvisioningTokenShapeValid(token)) {
-        setProvisioningTokenStatus('Invalid token format. Paste the complete provisioning token.', 'error');
-        input.focus();
-        return;
-    }
-
-    submitButton.disabled = true;
-    submitButton.setAttribute('aria-busy', 'true');
-    setProvisioningTokenStatus('Applying provisioning token...', 'pending');
-
-    try {
-        const data = await API.applyProvisioningToken(token, DashboardState.operatingMode);
-        if (!data.success || data.registered !== true) {
-            throw new Error(data.error || 'The provisioning token was not registered completely.');
-        }
-
-        DashboardState.institutionRegistered = true;
-        setProvisioningTokenStatus('Institution registered successfully.', 'success');
-        showToast('Institution registered successfully.', 'success');
-        hideWelcomeModal(true);
-        form.reset();
-        await loadSystemStatus();
-    } catch (error) {
-        setProvisioningTokenStatus(error.message || 'Failed to apply provisioning token.', 'error');
-        showToast(`Provisioning failed: ${error.message}`, 'error');
-    } finally {
-        input.value = '';
-        submitButton.disabled = false;
-        submitButton.setAttribute('aria-busy', 'false');
-    }
-}
-
-function renderWalletSetupPrompt() {
-    const walletAddressEl = document.getElementById('walletAddress');
-    if (!walletAddressEl) {
-        return;
-    }
-
-    walletAddressEl.innerHTML = '<span class="warning-text clickable" id="walletSetupTrigger">Not configured - Click to set up</span>';
-    setTimeout(() => {
-        const trigger = document.getElementById('walletSetupTrigger');
-        if (trigger) {
-            trigger.addEventListener('click', toggleWalletSetupDropdown);
-        }
-    }, 100);
-}
-
-// Load system status
-async function loadSystemStatus() {
-    console.log('[loadSystemStatus] Starting...');
-    try {
-        console.log('[loadSystemStatus] Calling API.getProviderConfigStatus()...');
-        const providerConfig = await API.getProviderConfigStatus().catch(error => {
-            console.warn('[loadSystemStatus] provider config status unavailable', error);
-            return null;
-        });
-        updateOperatingModeNotices(providerConfig);
-
-        console.log('[loadSystemStatus] Calling API.getSystemStatus()...');
-        const data = await loadDashboardSystemStatus(providerConfig);
-        console.log('[loadSystemStatus] Received data:', data);
-        if (providerConfig) {
-            console.log('[loadSystemStatus] Provider config status:', providerConfig);
-        }
-        
-        if (data.success) {
-            const walletConfigured = data.walletConfigured;
-            const walletAddress = data.institutionalWalletAddress;
-            const contractAddress =
-                data.contractAddress ||
-                data.verifyingContract ||
-                data.billingAdminEip712?.verifyingContract ||
-                null;
-            DashboardState.isInstitution = data.institutionControlsEnabled === true || data.isInstitution === true;
-            DashboardState.isProvider = data.providerControlsEnabled === true || data.isProvider === true;
-            DashboardState.isOperator = data.operatorControlsEnabled === true || data.isDefaultAdmin === true;
-            DashboardState.walletAddress = walletAddress || null;
-            DashboardState.contractAddress = contractAddress;
-            
-            if (DashboardState.walletAddress) {
-                const registrationApplied = providerConfig && (providerConfig.registered === true || providerConfig.isRegistered === true);
-
-                DashboardState.institutionRegistered = Boolean(registrationApplied);
-            } else {
-                DashboardState.institutionRegistered = false;
-                DashboardState.contractAddress = null;
-            }
-            
-            // Update marketplace URL if provided
-            if (data.marketplaceUrl) {
-                updateMarketplaceUrl(data.marketplaceUrl);
-            } else if (providerConfig && providerConfig.marketplaceBaseUrl) {
-                updateMarketplaceUrl(providerConfig.marketplaceBaseUrl);
-            }
-
-            updateInstitutionPairingGuidance(providerConfig);
-            updateInstitutionPairingButtonVisibility();
-            
-            // Show welcome modal while pairing is still required
-            const shouldPromptPairing = !!walletAddress && !DashboardState.institutionRegistered;
-            if (shouldPromptPairing && !DashboardState.welcomeModalDismissed) {
-                showWelcomeModal();
-            } else {
-                hideWelcomeModal(false);
-            }
-            
-            console.log('[loadSystemStatus] Wallet configured:', walletConfigured);
-            console.log('[loadSystemStatus] Wallet address:', walletAddress);
-            console.log('[loadSystemStatus] Contract address:', data.contractAddress);
-            
-            // Update wallet address display
-            const walletAddressEl = document.getElementById('walletAddress');
-            console.log('[loadSystemStatus] walletAddressEl:', walletAddressEl);
-            if (walletAddress) {
-                walletAddressEl.textContent = formatAddress(walletAddress);
-                walletAddressEl.classList.remove('warning-text');
-            } else {
-                renderWalletSetupPrompt();
-            }
-
-            // Show/hide reveal private key button in header
-            const revealPrivateKeyBtn = document.getElementById('revealPrivateKeyBtn');
-            if (revealPrivateKeyBtn) {
-                revealPrivateKeyBtn.style.display = walletAddress ? 'inline-flex' : 'none';
-                revealPrivateKeyBtn.disabled = !walletAddress;
-            }
-            
-            updateRoleBasedSections();
-            
-            // Show/hide wallet setup dropdown
-            const dropdown = document.getElementById('walletSetupDropdown');
-            if (dropdown) {
-                dropdown.style.display = 'none'; // Always start hidden, user clicks to open
-            }
-            
-            const detectedContractAddress =
-                data.contractAddress ||
-                data.verifyingContract ||
-                data.billingAdminEip712?.verifyingContract ||
-                null;
-
-            document.getElementById('contractAddress').textContent =
-                detectedContractAddress ? formatAddress(detectedContractAddress) : 'Not configured';
-            
-            console.log('[loadSystemStatus] Updated contract address element');
-            
-            // Update network buttons to show active network
-            const activeNet =
-                data.activeNetwork ||
-                data.network ||
-                data.chainId ||
-                'sepolia';
-            updateNetworkButtons(activeNet);
-            
-            // Update status indicator
-            const statusIndicator = document.getElementById('statusIndicator');
-            if (walletConfigured) {
-                statusIndicator.querySelector('.status-dot').style.background = 'var(--neon-green)';
-                statusIndicator.querySelector('.status-text').textContent = 'Connected';
-            } else {
-                statusIndicator.querySelector('.status-dot').style.background = 'var(--neon-yellow)';
-                statusIndicator.querySelector('.status-text').textContent = 'Wallet Setup Required';
-            }
-
-            updateDashboardAccessNotices(data);
-        }
-        
-        updateLastRefreshTime();
-        console.log('[loadSystemStatus] Completed successfully');
-    } catch (error) {
-        console.error('[loadSystemStatus] ERROR:', error);
-        console.error('Failed to load system status:', error);
-        showToast('Failed to load system status: ' + error.message, 'error');
-
-        DashboardState.walletAddress = null;
-        DashboardState.contractAddress = null;
-        DashboardState.isInstitution = false;
-        DashboardState.isProvider = false;
-        DashboardState.isOperator = false;
-        DashboardState.institutionRegistered = false;
-        renderWalletSetupPrompt();
-        updateRoleBasedSections();
-
-        const contractAddressEl = document.getElementById('contractAddress');
-        if (contractAddressEl) {
-            contractAddressEl.textContent = 'Unavailable';
-        }
-        
-        // Update status indicator to error state
-        const statusIndicator = document.getElementById('statusIndicator');
-        statusIndicator.querySelector('.status-dot').style.background = 'var(--neon-red)';
-        statusIndicator.querySelector('.status-text').textContent = 'Disconnected';
-        updateDashboardAccessError(error.status);
-    }
-}
-
-// Toggle wallet setup dropdown
-function toggleWalletSetupDropdown() {
-    const dropdown = document.getElementById('walletSetupDropdown');
-    if (dropdown) {
-        const isVisible = dropdown.style.display === 'block';
-        
-        if (isVisible) {
-            dropdown.style.opacity = '0';
-            setTimeout(() => {
-                dropdown.style.display = 'none';
-            }, 300);
-        } else {
-            dropdown.style.display = 'block';
-            setTimeout(() => {
-                dropdown.style.opacity = '1';
-            }, 10);
-        }
-    }
-}
-
-// Update network buttons to show active network
-function updateNetworkButtons(activeNetwork) {
-    const sepoliaBtn = document.getElementById('sepoliaBtn');
-    const mainnetBtn = document.getElementById('mainnetBtn');
-    const normalized = (activeNetwork || '').toString().trim().toLowerCase();
-    
-    if (sepoliaBtn && mainnetBtn) {
-        // Remove active class from both
-        sepoliaBtn.classList.remove('active');
-        mainnetBtn.classList.remove('active');
-        
-        // Add active class to the current network
-        if (normalized.includes('sepolia') || normalized === '11155111') {
-            sepoliaBtn.classList.add('active');
-        } else if (normalized.includes('mainnet') || normalized === '1') {
-            mainnetBtn.classList.add('active');
-        }
-    }
-}
-
-async function handleRevealPrivateKey() {
-    const password = await showInputModal(
-        'Show Private Key',
-        'Enter the institutional wallet password to decrypt the private key:',
-        'password'
-    );
-
-    if (!password) {
-        return;
-    }
-
-    try {
-        showToast('Decrypting wallet...', 'info');
-        const data = await API.revealPrivateKey(password);
-        if (data.success && data.privateKey) {
-            await showPrivateKeyModal(data.privateKey, data.address);
-        } else {
-            showToast(data.error || 'Failed to reveal private key', 'error');
-        }
-    } catch (error) {
-        showToast('Failed to reveal private key: ' + error.message, 'error');
-    }
-}
-
-
-// Switch blockchain network
-async function switchNetwork(networkId) {
-    const sepoliaBtn = document.getElementById('sepoliaBtn');
-    const mainnetBtn = document.getElementById('mainnetBtn');
-    
-    try {
-        // Disable buttons during switch
-        if (sepoliaBtn) sepoliaBtn.disabled = true;
-        if (mainnetBtn) mainnetBtn.disabled = true;
-        
-        showToast(`Switching to ${networkId}...`, 'info');
-        
-        const data = await API.switchNetwork(networkId);
-        
-        if (data.success) {
-            showToast(`Successfully switched to ${networkId}`, 'success');
-            
-            // Update network buttons
-            updateNetworkButtons(networkId);
-            
-            // Auto-refresh all data to reflect new network
-            await refreshAllData();
-        } else {
-            showToast(`Failed to switch network: ${data.error || 'Unknown error'}`, 'error');
-            
-            // Revert buttons to previous state
-            await loadSystemStatus();
-        }
-    } catch (error) {
-        console.error('Network switch failed:', error);
-        showToast(`Network switch failed: ${error.message}`, 'error');
-        
-        // Revert buttons to previous state
-        await loadSystemStatus();
-    } finally {
-        // Re-enable buttons
-        if (sepoliaBtn) sepoliaBtn.disabled = false;
-        if (mainnetBtn) mainnetBtn.disabled = false;
-    }
-}
-
-
-// Load wallet balances
 async function loadBalances() {
     try {
         // Get system status to know the active network
         const statusData = await API.getSystemStatus();
         const activeNetwork = statusData.activeNetwork || 'sepolia';
         const safeActiveNetwork = escapeHtml(activeNetwork);
-        
+
         // Get all balances and billing info in parallel
         const [data, billingData] = await Promise.all([
             API.getBalance(),
             API.getBillingInfo().catch(() => ({ success: false }))
         ]);
-        
+
         if (data.success && data.balances) {
             const balanceGrid = document.getElementById('balanceGrid');
             balanceGrid.innerHTML = '';
-            
+
             // Only show balance for the active network
             const balanceData = data.balances[activeNetwork];
-            
+
             if (!balanceData) {
                 balanceGrid.innerHTML = `
                     <div class="balance-item">
@@ -1301,7 +707,7 @@ async function loadBalances() {
                 `;
                 return;
             }
-            
+
             if (balanceData.error) {
                 balanceGrid.innerHTML = `
                     <div class="balance-item">
@@ -1313,7 +719,7 @@ async function loadBalances() {
                 `;
             } else {
                 const ethBalance = formatEthDisplay(balanceData.balanceEth ?? weiToEth(balanceData.balanceWei));
-                
+
                 // Display ETH balance
                 balanceGrid.innerHTML += `
                     <div class="balance-item">
@@ -1321,7 +727,7 @@ async function loadBalances() {
                         <div class="balance-amount">${ethBalance} ETH</div>
                     </div>
                 `;
-                
+
                 // Display closed service credit balance for the connected wallet
                 if (balanceData.labBalance !== undefined) {
                     // Service credits use the same generic formatter for dashboard display
@@ -1332,14 +738,14 @@ async function loadBalances() {
                             <div class="balance-amount">${labBalance} credits</div>
                         </div>
                     `;
-                    
+
                     // Check if user is a registered provider from billing data
                     const isProvider = DashboardState.operatingMode === 'provider-consumer'
                         && billingData.success && billingData.isProvider === true;
                     const stakeInfo = billingData.stakeInfo || null;
                     // billing and bonded amounts only show 8 decimals
                     const billingBalance = formatEthDisplay(billingData.billingBalanceFormatted || '0', 8);
-                    
+
                     // Display billing balance if provider
                     if (isProvider && parseFloat(billingBalance) > 0) {
                         balanceGrid.innerHTML += `
@@ -1352,7 +758,7 @@ async function loadBalances() {
                             </div>
                         `;
                     }
-                    
+
                     // Display Bonded Amount if provider
                     if (isProvider && stakeInfo && stakeInfo.stakedAmountFormatted) {
                         const bondedAmount = formatEthDisplay(stakeInfo.stakedAmountFormatted, 8);
@@ -1368,7 +774,7 @@ async function loadBalances() {
                             `;
                         }
                     }
-                    
+
                     // Consumer-only institutions should receive consumer guidance,
                     // never a provider-registration upsell.
                     const promoContainer = document.getElementById('labPromoMessage');
@@ -1417,1307 +823,6 @@ async function loadBalances() {
     } catch (error) {
         console.error('Failed to load balances:', error);
         showToast('Failed to load balances: ' + error.message, 'error');
-    }
-}
-
-function setCollectStatusText(message, tone = null, tooltip = null) {
-    const statusEl = document.getElementById('collectStatusText');
-    if (!statusEl) return;
-    statusEl.textContent = message || '--';
-    statusEl.title = tooltip || '';
-    if (tooltip) {
-        statusEl.setAttribute('aria-label', tooltip);
-    } else {
-        statusEl.removeAttribute('aria-label');
-    }
-    statusEl.className = 'collect-status-value';
-    if (tone) {
-        statusEl.classList.add(tone);
-    }
-}
-
-function clearCollectLabsRetryTimer() {
-    if (DashboardState.collectLabsRetryTimeout) {
-        clearTimeout(DashboardState.collectLabsRetryTimeout);
-        DashboardState.collectLabsRetryTimeout = null;
-    }
-}
-
-function resetCollectLabsRetryState() {
-    clearCollectLabsRetryTimer();
-    DashboardState.collectLabsRetryAttempts = 0;
-}
-
-function isRetriableCollectLabsError(error) {
-    const message = String(error?.message || '').toLowerCase();
-    if (!message) {
-        return false;
-    }
-
-    return (
-        message.includes('failed to fetch') ||
-        message.includes('networkerror') ||
-        message.includes('load failed') ||
-        message.includes('http 5') ||
-        message.includes('timeout') ||
-        message.includes('unexpected token') ||
-        message.includes('invalid response') ||
-        message.includes('institutional wallet not configured') ||
-        message.includes('failed to retrieve provider labs')
-    );
-}
-
-function scheduleCollectLabsRetry(error) {
-    if (!isRetriableCollectLabsError(error)) {
-        return false;
-    }
-
-    return scheduleNextCollectLabsRetry();
-}
-
-function shouldRetryEmptyCollectLabs() {
-    return DashboardState.operatingMode === 'provider-consumer'
-        && Boolean(DashboardState.walletAddress)
-        && (DashboardState.isProvider || DashboardState.isOperator);
-}
-
-function scheduleNextCollectLabsRetry(statusMessage = null) {
-    if (DashboardState.collectLabsRetryAttempts >= COLLECT_LABS_RETRY_DELAYS_MS.length) {
-        return false;
-    }
-
-    clearCollectLabsRetryTimer();
-    const attemptIndex = DashboardState.collectLabsRetryAttempts;
-    const delayMs = COLLECT_LABS_RETRY_DELAYS_MS[attemptIndex];
-    DashboardState.collectLabsRetryAttempts += 1;
-
-    setCollectStatusText(
-        statusMessage || `Retrying labs in ${Math.ceil(delayMs / 1000)}s...`,
-        'warning'
-    );
-    DashboardState.collectLabsRetryTimeout = setTimeout(() => {
-        DashboardState.collectLabsRetryTimeout = null;
-        loadCollectLabs();
-    }, delayMs);
-
-    return true;
-}
-
-function setCollectPendingClosuresText(value) {
-    const closuresEl = document.getElementById('collectPendingGraceReservations');
-    if (!closuresEl) return;
-    closuresEl.textContent = value ?? '--';
-}
-
-function setCollectPreviewMetrics(data) {
-    const amountMetrics = [
-        ['collectAttestedSessionPayout', data?.attestedSessionPayoutRaw, data?.attestedSessionPayoutLab],
-        ['collectPotentialNoShowFee', data?.potentialNoShowFeeRaw, data?.potentialNoShowFeeLab],
-        ['collectExistingAccrued', data?.existingAccruedReceivableRaw, data?.existingAccruedReceivableLab]
-    ];
-
-    amountMetrics.forEach(([id, rawValue, formattedValue]) => {
-        const element = document.getElementById(id);
-        if (!element) return;
-        if (rawValue === undefined || rawValue === null || rawValue === '') {
-            element.textContent = '--';
-            return;
-        }
-        element.textContent = `${formattedValue || formatLabTokenRaw(rawValue)} credits`;
-    });
-
-    setCollectPendingClosuresText(data?.pendingGraceReservationCount ?? '--');
-}
-
-function setCollectLifecycleSummaryText(value) {
-    const lifecycleEl = document.getElementById('collectLifecycleSummary');
-    if (!lifecycleEl) return;
-    const normalizedValue = String(value || '').trim();
-    lifecycleEl.textContent = normalizedValue;
-    lifecycleEl.classList.toggle('hidden', !normalizedValue);
-}
-
-function formatLifecycleBucket(label, rawValue, formattedValue) {
-    const raw = rawValue ?? '0';
-    try {
-        if (BigInt(raw.toString()) <= 0n) {
-            return null;
-        }
-    } catch (error) {
-        return null;
-    }
-    const amount = formattedValue || formatLabTokenRaw(raw);
-    return `${label} ${amount} credits`;
-}
-
-function buildCollectLifecycleSummary(data) {
-    const items = [
-        formatLifecycleBucket('Attested session payout', data.attestedSessionPayoutRaw, data.attestedSessionPayoutLab),
-        formatLifecycleBucket('Potential no-show fee', data.potentialNoShowFeeRaw, data.potentialNoShowFeeLab),
-        formatLifecycleBucket('Already accrued', data.existingAccruedReceivableRaw, data.existingAccruedReceivableLab),
-        formatLifecycleBucket('Accrued', data.accruedReceivableRaw, data.accruedReceivableLab),
-        formatLifecycleBucket('Queued', data.settlementQueuedRaw, data.settlementQueuedLab),
-        formatLifecycleBucket('Invoiced', data.invoicedReceivableRaw, data.invoicedReceivableLab),
-        formatLifecycleBucket('Approved', data.approvedReceivableRaw, data.approvedReceivableLab),
-        formatLifecycleBucket('Disputed', data.disputedReceivableRaw, data.disputedReceivableLab),
-        formatLifecycleBucket('Paid', data.paidReceivableRaw, data.paidReceivableLab),
-        formatLifecycleBucket('Reversed', data.reversedReceivableRaw, data.reversedReceivableLab),
-    ].filter(Boolean);
-
-    return items.length ? items.join(' | ') : '';
-}
-
-function setCollectPanelCompact(isCompact) {
-    const panel = document.getElementById('collectPanel');
-    if (!panel) return;
-    panel.classList.toggle('compact', Boolean(isCompact));
-}
-
-function renderCollectLabOptions(selectEl, labs, preferredLabId = null) {
-    if (!selectEl) {
-        return null;
-    }
-    if (!Array.isArray(labs) || !labs.length) {
-        selectEl.innerHTML = '<option value="">No labs available</option>';
-        updateCollectDetailVisibility();
-        return null;
-    }
-
-    const availableIds = labs.map(item => String(item.labId));
-    const selectedLabId = availableIds.includes(String(preferredLabId))
-        ? String(preferredLabId)
-        : availableIds[0];
-
-    selectEl.innerHTML = labs.map(item => {
-        const labId = String(item.labId);
-        const baseLabel = item.name || item.label || `Lab #${labId}`;
-        const suffix = item.operatorReviewOnly ? ' (operator review)' : '';
-        const label = `${baseLabel}${suffix}`;
-        return `<option value="${escapeHtml(labId)}">${escapeHtml(label)}</option>`;
-    }).join('');
-
-    selectEl.value = selectedLabId;
-    updateCollectDetailVisibility();
-    return selectedLabId;
-}
-
-function updateCollectButtonState() {
-    const collectBtn = document.getElementById('collectLabBtn');
-    if (!collectBtn) return;
-
-    if (DashboardState.collectSubmitting) {
-        collectBtn.disabled = true;
-        collectBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Requesting payout...';
-        return;
-    }
-
-    let buttonLabel = 'Request Payout';
-
-    try {
-        const attestedPayoutText = document.getElementById('collectAttestedSessionPayout')?.textContent || '0';
-        const noShowFeeText = document.getElementById('collectPotentialNoShowFee')?.textContent || '0';
-        const attestedPayout = BigInt(decimalToRawUnits(attestedPayoutText.replace(/\s*credits\s*$/i, '').trim() || '0', CREDIT_DECIMALS));
-        const noShowFee = BigInt(decimalToRawUnits(noShowFeeText.replace(/\s*credits\s*$/i, '').trim() || '0', CREDIT_DECIMALS));
-
-        if (attestedPayout > 0n && noShowFee > 0n) {
-            buttonLabel = 'Claim Sessions + No-show Fees';
-        } else if (attestedPayout > 0n) {
-            buttonLabel = 'Claim Attested Sessions';
-        } else if (noShowFee > 0n) {
-            buttonLabel = 'Claim No-show Fees';
-        }
-    } catch (error) {
-        buttonLabel = 'Request Payout';
-    }
-
-    collectBtn.innerHTML = `<i class="fas fa-coins"></i> ${buttonLabel}`;
-    collectBtn.disabled =
-        DashboardState.collectLoadingStatus ||
-        !DashboardState.collectCanExecute ||
-        !DashboardState.selectedCollectLabId;
-}
-
-function getSelectedCollectLab() {
-    if (!DashboardState.selectedCollectLabId || !Array.isArray(DashboardState.collectLabs)) {
-        return null;
-    }
-    return DashboardState.collectLabs.find(
-        item => String(item.labId) === String(DashboardState.selectedCollectLabId)
-    ) || null;
-}
-
-function getLabSettlementBuckets(lab) {
-    const pending = rawToBigInt(lab?.accruedReceivableRaw);
-    const attestedSessionPayout = rawToBigInt(lab?.attestedSessionPayoutRaw);
-    const potentialNoShowFee = rawToBigInt(lab?.potentialNoShowFeeRaw);
-    const existingAccruedReceivable = rawToBigInt(lab?.existingAccruedReceivableRaw);
-    const queued = rawToBigInt(lab?.settlementQueuedRaw);
-    const invoiced = rawToBigInt(lab?.invoicedReceivableRaw);
-    const approved = rawToBigInt(lab?.approvedReceivableRaw);
-    const received = rawToBigInt(lab?.paidReceivableRaw);
-    const disputed = rawToBigInt(lab?.disputedReceivableRaw);
-    const reversed = rawToBigInt(lab?.reversedReceivableRaw);
-
-    return {
-        pending,
-        previewPending: pending + attestedSessionPayout + potentialNoShowFee,
-        attestedSessionPayout,
-        potentialNoShowFee,
-        existingAccruedReceivable,
-        claimed: queued + invoiced + approved,
-        received,
-        disputed,
-        reversed,
-        pendingClosures: rawToBigInt(lab?.pendingGraceReservationCount)
-    };
-}
-
-function computeCollectAggregates(labs) {
-    const totals = {
-        pending: 0n,
-        previewPending: 0n,
-        attestedSessionPayout: 0n,
-        potentialNoShowFee: 0n,
-        existingAccruedReceivable: 0n,
-        claimed: 0n,
-        received: 0n,
-        disputed: 0n,
-        reversed: 0n,
-        pendingClosures: 0n
-    };
-
-    (Array.isArray(labs) ? labs : []).forEach(lab => {
-        const buckets = getLabSettlementBuckets(lab);
-        totals.pending += buckets.pending;
-        totals.previewPending += buckets.previewPending;
-        totals.attestedSessionPayout += buckets.attestedSessionPayout;
-        totals.potentialNoShowFee += buckets.potentialNoShowFee;
-        totals.existingAccruedReceivable += buckets.existingAccruedReceivable;
-        totals.claimed += buckets.claimed;
-        totals.received += buckets.received;
-        totals.disputed += buckets.disputed;
-        totals.reversed += buckets.reversed;
-        totals.pendingClosures += buckets.pendingClosures;
-    });
-
-    return totals;
-}
-
-function parseCollectSummary(summary) {
-    if (!summary || typeof summary !== 'object') {
-        return null;
-    }
-    return {
-        pending: rawToBigInt(summary.pendingRaw),
-        previewPending: rawToBigInt(summary.attestedSessionPayoutRaw)
-            + rawToBigInt(summary.potentialNoShowFeeRaw)
-            + rawToBigInt(summary.pendingRaw),
-        attestedSessionPayout: rawToBigInt(summary.attestedSessionPayoutRaw),
-        potentialNoShowFee: rawToBigInt(summary.potentialNoShowFeeRaw),
-        existingAccruedReceivable: rawToBigInt(summary.existingAccruedReceivableRaw),
-        claimed: rawToBigInt(summary.claimedRaw),
-        received: rawToBigInt(summary.receivedRaw),
-        disputed: rawToBigInt(summary.disputedRaw),
-        reversed: rawToBigInt(summary.reversedRaw),
-        pendingClosures: rawToBigInt(summary.pendingGraceReservationCount ?? summary.pendingClosures)
-    };
-}
-
-function formatSettlementRiskValue(disputedRaw, reversedRaw) {
-    const disputed = formatLabTokenRaw(disputedRaw);
-    const reversed = formatLabTokenRaw(reversedRaw);
-    return `${disputed} / ${reversed} credits`;
-}
-
-function getSettlementRowStatus(lab) {
-    const buckets = getLabSettlementBuckets(lab);
-    if (buckets.previewPending > 0n) {
-        return { label: 'Pending claim', tone: 'ready' };
-    }
-    if (buckets.claimed > 0n) {
-        return { label: 'In process', tone: 'progress' };
-    }
-    if (buckets.disputed > 0n || buckets.reversed > 0n) {
-        return { label: 'Needs review', tone: 'caution' };
-    }
-    if (buckets.received > 0n) {
-        return { label: 'Settled', tone: 'idle' };
-    }
-    return { label: 'No receivable', tone: 'idle' };
-}
-
-function renderCollectSettlementOverview() {
-    const overviewEl = document.getElementById('providerSettlementOverview');
-    const noteEl = document.getElementById('providerSettlementOverviewNote');
-    const loadMoreBtn = document.getElementById('providerSettlementLoadMoreBtn');
-    const pendingEl = document.getElementById('settlementSummaryPending');
-    const claimedEl = document.getElementById('settlementSummaryClaimed');
-    const receivedEl = document.getElementById('settlementSummaryReceived');
-    const riskEl = document.getElementById('settlementSummaryRisk');
-    const tableBody = document.getElementById('providerSettlementLabsTableBody');
-
-    if (!overviewEl || !pendingEl || !claimedEl || !receivedEl || !riskEl || !tableBody) {
-        return;
-    }
-
-    const labs = Array.isArray(DashboardState.collectLabs) ? DashboardState.collectLabs : [];
-    const shouldShow = DashboardState.operatingMode === 'provider-consumer'
-        && labs.length > 0
-        && (DashboardState.isProvider || DashboardState.isOperator);
-    overviewEl.classList.toggle('hidden', !shouldShow);
-
-    if (!shouldShow) {
-        tableBody.innerHTML = '<tr><td colspan="6" class="settlement-table-empty">No settlement data available.</td></tr>';
-        if (loadMoreBtn) {
-            loadMoreBtn.classList.add('hidden');
-        }
-        return;
-    }
-
-    const totals = DashboardState.collectAggregates || computeCollectAggregates(labs);
-    DashboardState.collectAggregates = totals;
-    pendingEl.textContent = `${formatLabTokenRaw(totals.previewPending)} credits`;
-    claimedEl.textContent = `${formatLabTokenRaw(totals.claimed)} credits`;
-    receivedEl.textContent = `${formatLabTokenRaw(totals.received)} credits`;
-    riskEl.textContent = formatSettlementRiskValue(totals.disputed, totals.reversed);
-
-    if (noteEl) {
-        const scope = DashboardState.collectTotalLabs > labs.length
-            ? 'Summary is cached across all visible labs.'
-            : 'Summary loaded from the current lab list.';
-        noteEl.textContent = `${scope} Detailed status is fetched only for the selected lab. Potential no-show fees: ${formatLabTokenRaw(totals.potentialNoShowFee)} credits; grace pending: ${totals.pendingClosures.toString()}.`;
-    }
-    if (loadMoreBtn) {
-        loadMoreBtn.classList.toggle('hidden', DashboardState.collectHasMore !== true);
-        loadMoreBtn.disabled = DashboardState.collectLoadingStatus;
-    }
-
-    tableBody.innerHTML = labs.map(lab => {
-        const buckets = getLabSettlementBuckets(lab);
-        const status = getSettlementRowStatus(lab);
-        const labId = String(lab.labId || '');
-        const isSelected = String(DashboardState.selectedCollectLabId || '') === labId;
-        const pending = `${formatLabTokenRaw(buckets.previewPending)} credits`;
-        const claimed = `${formatLabTokenRaw(buckets.claimed)} credits`;
-        const received = `${formatLabTokenRaw(buckets.received)} credits`;
-        const name = lab.name || lab.label || `Lab #${labId}`;
-        const closures = buckets.pendingClosures.toString();
-        const rowTitle = lab.operatorReviewOnly ? 'Operator review only' : 'Click to inspect this lab';
-
-        return `
-            <tr data-lab-id="${escapeHtml(labId)}" class="${isSelected ? 'selected' : ''}" title="${escapeHtml(rowTitle)}">
-                <td class="settlement-lab-name">${escapeHtml(name)}</td>
-                <td>${escapeHtml(pending)}</td>
-                <td>${escapeHtml(claimed)}</td>
-                <td>${escapeHtml(received)}</td>
-                <td>${escapeHtml(closures)}</td>
-                <td><span class="settlement-status-chip ${escapeHtml(status.tone)}">${escapeHtml(status.label)}</span></td>
-            </tr>
-        `;
-    }).join('');
-}
-
-function providerIncomeRawAmount(row, field) {
-    const rawValue = String(row[`${field}Raw`] ?? '');
-    if (/^\d+$/.test(rawValue)) return BigInt(rawValue);
-
-    const displayValue = String(row[field] ?? '0');
-    const match = displayValue.match(/^(\d+)(?:\.(\d{0,7}))?$/);
-    if (!match) return 0n;
-    const fractional = (match[2] || '').padEnd(7, '0');
-    return BigInt(match[1]) * 10000000n + BigInt(fractional || '0');
-}
-
-function formatProviderIncomeRawAmount(rawAmount) {
-    const whole = rawAmount / 10000000n;
-    const fractional = (rawAmount % 10000000n).toString().padStart(7, '0');
-    return `${whole}.${fractional}`;
-}
-
-function summarizeProviderIncomeByGateway(rows) {
-    const amountFields = ['potentialProviderShare', 'accrued', 'unbatched', 'queued', 'inProcess', 'paid'];
-    const groups = new Map();
-
-    rows.forEach(row => {
-        const gatewayId = row.gatewayId || '__unassigned__';
-        const departmentName = String(row.departmentName || '').trim();
-        const groupKey = departmentName
-            ? `department:${departmentName.toLowerCase()}`
-            : `gateway:${gatewayId}`;
-        let summary = groups.get(groupKey);
-        if (!summary) {
-            summary = {
-                groupKey,
-                gatewayLabel: departmentName || row.gatewayLabel || 'Gateway unassigned',
-                gatewayIds: new Set(),
-                accessUris: new Set(),
-                labIds: new Set(),
-                confirmedReservations: 0,
-                amounts: Object.fromEntries(amountFields.map(field => [field, 0n]))
-            };
-            groups.set(groupKey, summary);
-        }
-
-        if (row.gatewayId) summary.gatewayIds.add(String(row.gatewayId));
-        if (row.accessUri) summary.accessUris.add(String(row.accessUri));
-        summary.labIds.add(row.labId ? String(row.labId) : 'unknown');
-        summary.confirmedReservations += Number(row.confirmedReservations || 0);
-        amountFields.forEach(field => {
-            summary.amounts[field] += providerIncomeRawAmount(row, field);
-        });
-    });
-
-    return Array.from(groups.values()).sort((left, right) =>
-        left.gatewayLabel.localeCompare(right.gatewayLabel)
-    );
-}
-
-function summarizeProviderIncomeInstitution(departmentRows) {
-    const amountFields = ['potentialProviderShare', 'accrued', 'unbatched', 'queued', 'inProcess', 'paid'];
-    const summary = {
-        gatewayIds: new Set(),
-        labIds: new Set(),
-        confirmedReservations: 0,
-        amounts: Object.fromEntries(amountFields.map(field => [field, 0n]))
-    };
-
-    departmentRows.forEach(department => {
-        department.gatewayIds.forEach(gatewayId => summary.gatewayIds.add(gatewayId));
-        department.labIds.forEach(labId => summary.labIds.add(labId));
-        summary.confirmedReservations += department.confirmedReservations;
-        amountFields.forEach(field => {
-            summary.amounts[field] += department.amounts[field];
-        });
-    });
-    summary.departmentCount = departmentRows.length;
-    return summary;
-}
-
-function renderProviderIncomeReport() {
-    const tableBody = document.getElementById('providerIncomeReportBody');
-    const departmentBody = document.getElementById('providerIncomeGatewayReportBody');
-    const institutionBody = document.getElementById('providerIncomeInstitutionReportBody');
-    const noteEl = document.getElementById('providerIncomeReportNote');
-    const exportButton = document.getElementById('providerIncomeExportBtn');
-    if (!tableBody || !departmentBody || !institutionBody || !noteEl || !exportButton) return;
-
-    const report = DashboardState.providerIncomeReport;
-    const rows = report && Array.isArray(report.rows) ? report.rows : [];
-    if (!report) {
-        institutionBody.innerHTML = '<tr><td colspan="10" class="settlement-table-empty">Institution income is unavailable.</td></tr>';
-        departmentBody.innerHTML = '<tr><td colspan="10" class="settlement-table-empty">Provider income history is unavailable.</td></tr>';
-        tableBody.innerHTML = '<tr><td colspan="10" class="settlement-table-empty">Provider income history is unavailable.</td></tr>';
-        exportButton.disabled = true;
-        noteEl.textContent = DashboardState.providerIncomeReportError
-            ? `Provider income report unavailable: ${DashboardState.providerIncomeReportError}`
-            : 'The report needs durable database storage and canonical contract event history.';
-        return;
-    }
-
-    const unresolvedCount = Number(report.unresolvedBatchCount || 0);
-    const scopeMismatches = Number(report.scopeReferenceMismatchCount || 0);
-    const trackingStart = report.trackingStartBlock || 'recent lookback';
-    const providerWallet = report.providerAddress ? `Provider wallet: ${report.providerAddress}. ` : '';
-    noteEl.textContent = `${providerWallet}Amounts are service credits. Event tracking starts at ${trackingStart}; first observed confirmation: ${report.firstObservedConfirmationBlock || 'none'}. Paid externally means a payment proof was recorded. ${unresolvedCount} batch(es) for these labs need source reconciliation (${report.unresolvedBatchAmount || '0.0000000'} credits); ${scopeMismatches} claim scope reference(s) do not match a recorded batch.`;
-    exportButton.disabled = rows.length === 0;
-    exportButton.onclick = downloadProviderIncomeReportCsv;
-
-    const departmentRows = summarizeProviderIncomeByGateway(rows);
-    const institution = summarizeProviderIncomeInstitution(departmentRows);
-    institutionBody.innerHTML = `
-        <tr>
-            <td>Institution (${escapeHtml(String(institution.departmentCount))} department/group(s))</td>
-            <td>${escapeHtml(String(institution.gatewayIds.size))}</td>
-            <td>${escapeHtml(String(institution.labIds.size))}</td>
-            <td>${escapeHtml(String(institution.confirmedReservations))}</td>
-            <td>${escapeHtml(formatProviderIncomeRawAmount(institution.amounts.potentialProviderShare))}</td>
-            <td>${escapeHtml(formatProviderIncomeRawAmount(institution.amounts.accrued))}</td>
-            <td>${escapeHtml(formatProviderIncomeRawAmount(institution.amounts.unbatched))}</td>
-            <td>${escapeHtml(formatProviderIncomeRawAmount(institution.amounts.queued))}</td>
-            <td>${escapeHtml(formatProviderIncomeRawAmount(institution.amounts.inProcess))}</td>
-            <td>${escapeHtml(formatProviderIncomeRawAmount(institution.amounts.paid))}</td>
-        </tr>
-    `;
-
-    if (!rows.length) {
-        departmentBody.innerHTML = '<tr><td colspan="10" class="settlement-table-empty">No provider income events have been indexed for this wallet during the reported coverage period.</td></tr>';
-        tableBody.innerHTML = '<tr><td colspan="10" class="settlement-table-empty">No provider income events have been indexed for this wallet during the reported coverage period.</td></tr>';
-        return;
-    }
-
-    departmentBody.innerHTML = departmentRows.map(department => `
-        <tr>
-            <td title="${escapeHtml([...department.gatewayIds, ...department.accessUris].join(', '))}">${escapeHtml(department.gatewayLabel)}</td>
-            <td>${escapeHtml(String(department.gatewayIds.size))}</td>
-            <td>${escapeHtml(String(department.labIds.size))}</td>
-            <td>${escapeHtml(String(department.confirmedReservations))}</td>
-            <td>${escapeHtml(formatProviderIncomeRawAmount(department.amounts.potentialProviderShare))}</td>
-            <td>${escapeHtml(formatProviderIncomeRawAmount(department.amounts.accrued))}</td>
-            <td>${escapeHtml(formatProviderIncomeRawAmount(department.amounts.unbatched))}</td>
-            <td>${escapeHtml(formatProviderIncomeRawAmount(department.amounts.queued))}</td>
-            <td>${escapeHtml(formatProviderIncomeRawAmount(department.amounts.inProcess))}</td>
-            <td>${escapeHtml(formatProviderIncomeRawAmount(department.amounts.paid))}</td>
-        </tr>
-    `).join('');
-
-    tableBody.innerHTML = rows.map(row => `
-        <tr>
-            <td>${escapeHtml(row.gatewayLabel || 'Gateway unassigned')}</td>
-            <td>${escapeHtml(row.gatewayId || '')}</td>
-            <td>${escapeHtml(row.labId ? `Lab #${row.labId}` : 'Unknown lab')}</td>
-            <td>${escapeHtml(String(row.confirmedReservations || 0))}</td>
-            <td>${escapeHtml(row.potentialProviderShare || '0.0000000')}</td>
-            <td>${escapeHtml(row.accrued || '0.0000000')}</td>
-            <td>${escapeHtml(row.unbatched || '0.0000000')}</td>
-            <td>${escapeHtml(row.queued || '0.0000000')}</td>
-            <td>${escapeHtml(row.inProcess || '0.0000000')}</td>
-            <td>${escapeHtml(row.paid || '0.0000000')}</td>
-        </tr>
-    `).join('');
-}
-
-function downloadProviderIncomeReportCsv() {
-    const report = DashboardState.providerIncomeReport;
-    const rows = report && Array.isArray(report.rows) ? report.rows : [];
-    if (!rows.length) return;
-    const headers = [
-        'gatewayId', 'departmentName', 'accessUri', 'labId', 'confirmedReservations', 'potentialProviderShareCredits',
-        'accruedCredits', 'unbatchedCredits', 'queuedCredits', 'inProcessCredits', 'paidExternallyCredits',
-        'invalidatedCredits'
-    ];
-    const values = rows.map(row => [
-        row.gatewayId || '', row.departmentName || '', row.accessUri || '', row.labId || '', row.confirmedReservations || 0,
-        row.potentialProviderShare || '0.0000000', row.accrued || '0.0000000', row.unbatched || '0.0000000',
-        row.queued || '0.0000000', row.inProcess || '0.0000000', row.paid || '0.0000000',
-        row.invalidated || '0.0000000'
-    ]);
-    const csvCell = value => {
-        let text = String(value);
-        if (/^[\t\r ]*[=+\-@]/.test(text)) text = `'${text}`;
-        return `"${text.replaceAll('"', '""')}"`;
-    };
-    const csv = [headers, ...values].map(row => row.map(csvCell).join(',')).join('\r\n');
-    const objectUrl = URL.createObjectURL(new Blob([`\ufeff${csv}`], { type: 'text/csv;charset=utf-8' }));
-    const link = document.createElement('a');
-    link.href = objectUrl;
-    link.download = `provider-income-${new Date().toISOString().slice(0, 10)}.csv`;
-    link.click();
-    setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
-}
-
-async function loadProviderIncomeReport() {
-    if (DashboardState.operatingMode !== 'provider-consumer'
-        || (!DashboardState.isProvider && !DashboardState.isOperator)) {
-        DashboardState.providerIncomeReport = null;
-        DashboardState.providerIncomeReportError = null;
-        renderProviderIncomeReport();
-        return;
-    }
-    try {
-        const report = await API.getProviderIncomeReport();
-        if (!report || report.success !== true) throw new Error(report && report.error || 'Report unavailable');
-        DashboardState.providerIncomeReport = report;
-        DashboardState.providerIncomeReportError = null;
-    } catch (error) {
-        DashboardState.providerIncomeReport = null;
-        DashboardState.providerIncomeReportError = error.message;
-    }
-    renderProviderIncomeReport();
-}
-
-function renderProviderGatewayDepartments() {
-    const tableBody = document.getElementById('providerGatewayDepartmentsBody');
-    const noteEl = document.getElementById('providerGatewayDepartmentsNote');
-    if (!tableBody || !noteEl) return;
-
-    if (DashboardState.providerGatewayDepartmentsError) {
-        noteEl.textContent = `Gateway department list unavailable: ${DashboardState.providerGatewayDepartmentsError}`;
-        tableBody.innerHTML = `<tr><td colspan="4" class="settlement-table-empty">${escapeHtml(DashboardState.providerGatewayDepartmentsError)}</td></tr>`;
-        return;
-    }
-
-    const gateways = DashboardState.providerGatewayDepartments;
-    noteEl.textContent = 'The list reflects Lite Gateways trusted by this provider backend. Saving a name changes report labels only; a blank name restores the Gateway ID.';
-    if (!gateways.length) {
-        tableBody.innerHTML = '<tr><td colspan="4" class="settlement-table-empty">No Lite Gateways are registered with this provider backend.</td></tr>';
-        return;
-    }
-
-    tableBody.innerHTML = gateways.map(gateway => `
-        <tr>
-            <td>${escapeHtml(gateway.gatewayId)}</td>
-            <td>${escapeHtml(gateway.accessUri)}</td>
-            <td>
-                <input type="text" maxlength="120" class="gateway-department-name-input"
-                    data-gateway-id="${escapeHtml(gateway.gatewayId)}"
-                    aria-label="Department or group name for ${escapeHtml(gateway.gatewayId)}"
-                    value="${escapeHtml(gateway.departmentName || '')}">
-            </td>
-            <td><button type="button" class="btn btn-primary btn-small gateway-department-save"
-                data-gateway-id="${escapeHtml(gateway.gatewayId)}">Save</button></td>
-        </tr>
-    `).join('');
-}
-
-async function loadProviderGatewayDepartments() {
-    if (DashboardState.operatingMode !== 'provider-consumer' || !DashboardState.isOperator) {
-        DashboardState.providerGatewayDepartments = [];
-        DashboardState.providerGatewayDepartmentsError = null;
-        renderProviderGatewayDepartments();
-        return;
-    }
-
-    try {
-        const response = await API.getProviderGatewayDepartments();
-        if (!response || response.success !== true || !Array.isArray(response.gateways)) {
-            throw new Error(response && response.error || 'Gateway list unavailable');
-        }
-        DashboardState.providerGatewayDepartments = response.gateways;
-        DashboardState.providerGatewayDepartmentsError = null;
-    } catch (error) {
-        DashboardState.providerGatewayDepartments = [];
-        DashboardState.providerGatewayDepartmentsError = error.message;
-    }
-    renderProviderGatewayDepartments();
-}
-
-function setupProviderGatewayDepartmentHandlers() {
-    const refreshButton = document.getElementById('providerGatewayDepartmentsRefreshBtn');
-    refreshButton?.addEventListener('click', loadProviderGatewayDepartments);
-
-    const tableBody = document.getElementById('providerGatewayDepartmentsBody');
-    tableBody?.addEventListener('click', async event => {
-        const button = event.target.closest('[data-gateway-id].gateway-department-save');
-        if (!button || button.disabled) return;
-        const gatewayId = button.dataset.gatewayId;
-        const input = button.closest('tr')?.querySelector('.gateway-department-name-input');
-        if (!input) return;
-
-        button.disabled = true;
-        try {
-            const response = await API.updateProviderGatewayDepartment(gatewayId, input.value.trim());
-            if (!response || response.success !== true || !response.gateway) {
-                throw new Error(response && response.error || 'Unable to save department name');
-            }
-            DashboardState.providerGatewayDepartments = DashboardState.providerGatewayDepartments.map(gateway =>
-                gateway.gatewayId === response.gateway.gatewayId ? response.gateway : gateway
-            );
-            renderProviderGatewayDepartments();
-            await loadProviderIncomeReport();
-            showToast(response.gateway.departmentName
-                ? `Saved department name for ${gatewayId}`
-                : `Department name cleared for ${gatewayId}`, 'success');
-        } catch (error) {
-            button.disabled = false;
-            showToast(`Unable to save department name: ${error.message}`, 'error');
-        }
-    });
-}
-
-async function loadCollectLabs() {
-    const selectEl = document.getElementById('collectLabSelect');
-    const pendingEl = document.getElementById('collectPendingTotal');
-    if (!selectEl || !pendingEl) {
-        return;
-    }
-
-    // Standalone consumer-only institutions do not own provider labs and must
-    // not probe provider settlement endpoints on every dashboard refresh.
-    if (DashboardState.operatingMode !== 'provider-consumer'
-        || (!DashboardState.isProvider && !DashboardState.isOperator)) {
-        DashboardState.collectLabs = [];
-        DashboardState.selectedCollectLabId = null;
-        DashboardState.collectAggregates = null;
-        DashboardState.collectCanExecute = false;
-        DashboardState.collectLoadingStatus = false;
-        selectEl.disabled = true;
-        selectEl.innerHTML = '<option value="">Provider settlement unavailable</option>';
-        pendingEl.textContent = '--';
-        setCollectPreviewMetrics(null);
-        setCollectStatusText('Not applicable to this institution', 'info');
-        setCollectPanelCompact(true);
-        updateCollectDetailVisibility();
-        renderCollectSettlementOverview();
-        loadProviderIncomeReport();
-        return;
-    }
-
-    loadCollectLabNameCache();
-    clearCollectLabsRetryTimer();
-    const previousLabs = Array.isArray(DashboardState.collectLabs)
-        ? DashboardState.collectLabs.slice()
-        : [];
-    const previousSelection = DashboardState.selectedCollectLabId;
-
-    DashboardState.collectOffset = 0;
-    DashboardState.collectHasMore = false;
-    DashboardState.collectTotalLabs = 0;
-    DashboardState.collectLoadingStatus = true;
-    DashboardState.collectCanExecute = false;
-    DashboardState.collectAggregates = null;
-    DashboardState.selectedCollectLabId = null;
-    updateCollectDetailVisibility();
-    updateCollectButtonState();
-    renderCollectSettlementOverview();
-    setCollectStatusText('Loading labs...');
-    setCollectPanelCompact(false);
-    pendingEl.textContent = '--';
-    setCollectPreviewMetrics(null);
-    selectEl.disabled = true;
-    selectEl.innerHTML = '<option value="">Loading labs...</option>';
-
-    try {
-        const data = await API.getProviderLabs({
-            offset: 0,
-            limit: DashboardState.collectPageSize,
-            includeSummary: true
-        });
-        const labs = enrichCollectLabsWithCachedNames(Array.isArray(data.labs) ? data.labs : []);
-
-        if (Number.isFinite(Number(data.maxBatch)) && Number(data.maxBatch) > 0) {
-            DashboardState.collectMaxBatch = Math.max(1, Math.min(100, Number(data.maxBatch)));
-        }
-
-        if (!data.success) {
-            throw new Error(data.error || 'Failed to load provider labs');
-        }
-
-        if (!labs.length) {
-            if (previousLabs.length) {
-                DashboardState.collectLabs = previousLabs;
-                DashboardState.collectOffset = previousLabs.length;
-                DashboardState.collectHasMore = false;
-                DashboardState.collectTotalLabs = previousLabs.length;
-                DashboardState.selectedCollectLabId = renderCollectLabOptions(
-                    selectEl,
-                    previousLabs,
-                    previousSelection
-                );
-                selectEl.disabled = false;
-                setCollectPanelCompact(false);
-                await loadCollectStatusForSelectedLab();
-                return;
-            }
-
-            const retryScheduled = shouldRetryEmptyCollectLabs()
-                ? scheduleNextCollectLabsRetry('Waiting for labs...')
-                : false;
-
-            DashboardState.collectLabs = [];
-            DashboardState.selectedCollectLabId = null;
-            DashboardState.collectAggregates = null;
-            selectEl.innerHTML = retryScheduled
-                ? '<option value="">Checking labs...</option>'
-                : '<option value="">No labs available</option>';
-            pendingEl.textContent = '0 credits';
-            setCollectPreviewMetrics(null);
-            if (!retryScheduled) {
-                setCollectStatusText('Not available', 'warning');
-            }
-            setCollectPanelCompact(true);
-            updateCollectDetailVisibility();
-            renderCollectSettlementOverview();
-            if (!retryScheduled) {
-                resetCollectLabsRetryState();
-            }
-            return;
-        }
-
-        resetCollectLabsRetryState();
-        DashboardState.collectLabs = labs;
-        DashboardState.collectOffset = labs.length;
-        DashboardState.collectHasMore = data.hasMore === true;
-        DashboardState.collectTotalLabs = Number.isFinite(Number(data.totalLabs)) ? Number(data.totalLabs) : labs.length;
-        DashboardState.collectAggregates = parseCollectSummary(data.summary);
-        DashboardState.selectedCollectLabId = renderCollectLabOptions(
-            selectEl,
-            labs,
-            previousSelection
-        );
-        selectEl.disabled = false;
-        setCollectPanelCompact(false);
-        updateCollectDetailVisibility();
-        renderCollectSettlementOverview();
-
-        await loadCollectStatusForSelectedLab();
-    } catch (error) {
-        const retryScheduled = scheduleCollectLabsRetry(error);
-        if (previousLabs.length) {
-            DashboardState.collectLabs = previousLabs;
-            DashboardState.collectOffset = previousLabs.length;
-            DashboardState.collectHasMore = false;
-            DashboardState.collectTotalLabs = previousLabs.length;
-            DashboardState.selectedCollectLabId = renderCollectLabOptions(
-                selectEl,
-                previousLabs,
-                previousSelection
-            );
-            selectEl.disabled = false;
-            setCollectPanelCompact(false);
-            await loadCollectStatusForSelectedLab();
-            if (!retryScheduled) {
-                setCollectStatusText('Using last known labs', 'warning');
-            }
-            return;
-        }
-
-        DashboardState.collectLabs = [];
-        DashboardState.selectedCollectLabId = null;
-        DashboardState.collectOffset = 0;
-        DashboardState.collectHasMore = false;
-        DashboardState.collectTotalLabs = 0;
-        DashboardState.collectAggregates = null;
-        DashboardState.collectCanExecute = false;
-        selectEl.innerHTML = '<option value="">Failed to load labs</option>';
-        pendingEl.textContent = '--';
-        setCollectPreviewMetrics(null);
-        setCollectStatusText('Unavailable', 'error');
-        setCollectPanelCompact(true);
-        updateCollectDetailVisibility();
-        renderCollectSettlementOverview();
-        if (!retryScheduled) {
-            resetCollectLabsRetryState();
-        }
-    } finally {
-        DashboardState.collectLoadingStatus = false;
-        updateCollectButtonState();
-        loadProviderIncomeReport();
-    }
-}
-
-async function loadMoreCollectLabs() {
-    if (DashboardState.collectLoadingStatus || DashboardState.collectHasMore !== true) {
-        return;
-    }
-
-    const selectEl = document.getElementById('collectLabSelect');
-    if (!selectEl) {
-        return;
-    }
-
-    const previousSelection = DashboardState.selectedCollectLabId;
-    DashboardState.collectLoadingStatus = true;
-    renderCollectSettlementOverview();
-
-    try {
-        const data = await API.getProviderLabs({
-            offset: DashboardState.collectOffset,
-            limit: DashboardState.collectPageSize,
-            includeSummary: false
-        });
-        if (!data.success) {
-            throw new Error(data.error || 'Failed to load additional labs');
-        }
-
-        const nextLabs = enrichCollectLabsWithCachedNames(Array.isArray(data.labs) ? data.labs : []);
-        DashboardState.collectLabs = DashboardState.collectLabs.concat(nextLabs);
-        DashboardState.collectOffset += nextLabs.length;
-        DashboardState.collectHasMore = data.hasMore === true;
-        DashboardState.collectTotalLabs = Number.isFinite(Number(data.totalLabs))
-            ? Number(data.totalLabs)
-            : DashboardState.collectLabs.length;
-        DashboardState.selectedCollectLabId = renderCollectLabOptions(
-            selectEl,
-            DashboardState.collectLabs,
-            previousSelection
-        );
-        renderCollectSettlementOverview();
-    } catch (error) {
-        showToast(`Failed to load more labs: ${error.message}`, 'error');
-        renderCollectSettlementOverview();
-    } finally {
-        DashboardState.collectLoadingStatus = false;
-        updateCollectButtonState();
-        renderCollectSettlementOverview();
-    }
-}
-
-async function loadCollectStatusForSelectedLab() {
-    const selectEl = document.getElementById('collectLabSelect');
-    const pendingEl = document.getElementById('collectPendingTotal');
-    if (!selectEl || !pendingEl) {
-        return;
-    }
-
-    const selectedLabId = selectEl.value || DashboardState.selectedCollectLabId;
-    DashboardState.selectedCollectLabId = selectedLabId || null;
-    updateCollectDetailVisibility();
-    renderCollectSettlementOverview();
-    if (!selectedLabId) {
-        DashboardState.collectCanExecute = false;
-        pendingEl.textContent = '0 credits';
-        setCollectPreviewMetrics(null);
-        setCollectStatusText('Select a lab', 'warning');
-        setCollectLifecycleSummaryText('');
-        updateCollectButtonState();
-        return;
-    }
-
-    DashboardState.collectLoadingStatus = true;
-    DashboardState.collectCanExecute = false;
-    updateCollectDetailVisibility();
-    pendingEl.textContent = '--';
-    setCollectPreviewMetrics(null);
-    setCollectStatusText('Checking...');
-    setCollectLifecycleSummaryText('');
-    updateCollectButtonState();
-
-    try {
-        const data = await API.getProviderReceivableStatus(selectedLabId, DashboardState.collectMaxBatch);
-        if (!data.success) {
-            throw new Error(data.error || 'Failed to load provider receivable status');
-        }
-
-        const selectedLab = getSelectedCollectLab();
-        const payoutEnabledForSelectedLab = data.providerPayoutEnabled === true
-            || selectedLab?.providerPayoutEnabled === true
-            || selectedLab?.ownedByInstitutionalProvider === true;
-        const operatorReviewOnly = data.operatorReviewOnly === true
-            || selectedLab?.operatorReviewOnly === true;
-
-        DashboardState.settlementLatestBatchId = data.latestSettlementBatchId || null;
-        const batchInput = document.getElementById('providerSettlementBatchIdInput');
-        if (batchInput && data.latestSettlementBatchId && !batchInput.value.trim()) {
-            batchInput.value = data.latestSettlementBatchId;
-        }
-        const latestBatchAmountRaw = data.latestSettlementBatchRemainingRaw;
-        const latestBatchAmountLab = data.latestSettlementBatchRemainingLab;
-        const creditAmountInput = document.getElementById('providerSettlementAmountInput');
-        if (creditAmountInput && latestBatchAmountLab && !creditAmountInput.value.trim()) {
-            creditAmountInput.value = latestBatchAmountLab;
-        }
-        const eurAmountInput = document.getElementById('providerSettlementEurAmountInput');
-        if (eurAmountInput && latestBatchAmountRaw && !eurAmountInput.value.trim()) {
-            eurAmountInput.value = formatSettlementEurFromCreditRaw(latestBatchAmountRaw);
-        }
-        await loadProviderSettlementInvoices();
-
-        const totalLab = data.totalReceivableLab || formatLabTokenRaw(data.totalReceivableRaw);
-        pendingEl.textContent = `${totalLab} credits`;
-        setCollectPreviewMetrics(data);
-        const pendingClosuresRaw = data.pendingGraceReservationCount ?? '0';
-
-        // Keep the selected lab row in sync after a payout request so the table reflects
-        // the latest pending closures count immediately.
-        if (selectedLab) {
-            selectedLab.pendingGraceReservationCount = pendingClosuresRaw;
-            selectedLab.attestedSessionPayoutRaw = data.attestedSessionPayoutRaw;
-            selectedLab.potentialNoShowFeeRaw = data.potentialNoShowFeeRaw;
-            selectedLab.existingAccruedReceivableRaw = data.existingAccruedReceivableRaw;
-            DashboardState.collectAggregates = null;
-        }
-
-        setCollectLifecycleSummaryText(buildCollectLifecycleSummary(data));
-
-        let hasPendingClosures = false;
-        let hasClaimablePayout = false;
-        let pendingGraceReservationCount = 0n;
-        try {
-            pendingGraceReservationCount = BigInt(pendingClosuresRaw.toString());
-            hasPendingClosures = pendingGraceReservationCount > 0n;
-            const claimablePayoutRaw = BigInt((data.accruedReceivableRaw ?? '0').toString())
-                + BigInt((data.attestedSessionPayoutRaw ?? '0').toString())
-                + BigInt((data.potentialNoShowFeeRaw ?? '0').toString());
-            hasClaimablePayout = claimablePayoutRaw > 0n;
-        } catch (error) {
-            hasPendingClosures = false;
-            hasClaimablePayout = false;
-            pendingGraceReservationCount = 0n;
-        }
-
-        DashboardState.collectCanExecute = DashboardState.operatingMode === 'provider-consumer'
-            && DashboardState.isProvider
-            && payoutEnabledForSelectedLab
-            && data.canRequestPayout === true
-            && hasClaimablePayout;
-        renderCollectSettlementOverview();
-        updateCollectDetailVisibility();
-
-        if (hasPendingClosures && !hasClaimablePayout) {
-            const count = pendingGraceReservationCount.toString();
-            const reservationLabel = pendingGraceReservationCount === 1n ? 'reservation' : 'reservations';
-            setCollectStatusText(
-                'Awaiting',
-                'info',
-                `Awaiting session attestation for ${count} ${reservationLabel}`
-            );
-        } else if (DashboardState.collectCanExecute && hasClaimablePayout) {
-            setCollectStatusText('Ready for request', 'success');
-        } else if (DashboardState.operatingMode === 'provider-consumer'
-            && DashboardState.isProvider && !payoutEnabledForSelectedLab) {
-            setCollectStatusText('Payout requests are limited to this provider wallet\'s labs', 'warning');
-        } else if (DashboardState.operatingMode === 'provider-consumer'
-            && !DashboardState.isProvider && DashboardState.isOperator && operatorReviewOnly) {
-            setCollectStatusText('Operator review only', 'info');
-        } else if (DashboardState.operatingMode === 'provider-consumer'
-            && !DashboardState.isProvider && DashboardState.isOperator && data.canRequestPayout === true
-            && hasClaimablePayout) {
-            setCollectStatusText('Payout available for owning provider', 'info');
-        } else if (data.payoutRequestReason) {
-            setCollectStatusText(data.payoutRequestReason, 'warning');
-        } else {
-            setCollectStatusText('Not available', 'warning');
-        }
-
-    } catch (error) {
-        DashboardState.collectCanExecute = false;
-        pendingEl.textContent = '--';
-        setCollectPreviewMetrics(null);
-        setCollectStatusText('Status unavailable', 'error');
-        setCollectLifecycleSummaryText('');
-        renderCollectSettlementOverview();
-        updateCollectDetailVisibility();
-    } finally {
-        DashboardState.collectLoadingStatus = false;
-        updateCollectButtonState();
-    }
-}
-
-async function loadProviderSettlementInvoices() {
-    if (!API.listProviderReceivables) return;
-    try {
-        const [submitted, approved] = await Promise.all([
-            API.listProviderReceivables('SUBMITTED'),
-            API.listProviderReceivables('APPROVED')
-        ]);
-        const records = [
-            ...(Array.isArray(submitted) ? submitted : []),
-            ...(Array.isArray(approved) ? approved : [])
-        ];
-        const selectedLabId = String(DashboardState.selectedCollectLabId || '');
-        DashboardState.settlementInvoices = records.filter((invoice) => (
-            !selectedLabId || String(invoice.labId) === selectedLabId
-        ));
-        const datalist = document.getElementById('providerSettlementInvoiceOptions');
-        if (datalist) {
-            datalist.innerHTML = DashboardState.settlementInvoices.map((invoice) => {
-                const label = `${invoice.id} · ${invoice.status || 'invoice'} · ${invoice.claimId || ''}`;
-                return `<option value="${escapeHtml(String(invoice.id))}">${escapeHtml(label)}</option>`;
-            }).join('');
-        }
-    } catch (error) {
-        console.warn('Unable to load provider settlement invoices:', error.message);
-        DashboardState.settlementInvoices = [];
-    }
-}
-
-async function handleCollectLabPayout() {
-    const labId = DashboardState.selectedCollectLabId;
-    const selectedLab = getSelectedCollectLab();
-    if (!labId) {
-        showToast('Select a lab first', 'error');
-        return;
-    }
-    if (selectedLab && selectedLab.providerPayoutEnabled === false) {
-        showToast('Payout requests are limited to labs associated with this provider wallet', 'error');
-        return;
-    }
-    if (!DashboardState.collectCanExecute) {
-        showToast('No requestable provider receivable for the selected lab', 'error');
-        return;
-    }
-
-    const collectTarget = getCollectTargetLabel(selectedLab);
-    const confirmed = await showConfirmModal(
-        'Request Provider Payout',
-        `Request provider payout for ${collectTarget}?`,
-        {
-            icon: 'coins',
-            confirmText: 'Request payout',
-            confirmButtonClass: 'btn-primary'
-        }
-    );
-    if (!confirmed) {
-        return;
-    }
-
-    DashboardState.collectSubmitting = true;
-    updateCollectButtonState();
-
-    try {
-        const result = await API.requestProviderPayout(labId, DashboardState.collectMaxBatch);
-        if (result.success) {
-            showToast(`Payout transaction submitted for ${collectTarget}. Tx: ${formatAddress(result.transactionHash)}`, 'info');
-            setCollectStatusText('Payout transaction submitted', 'info');
-            DashboardState.collectCanExecute = false;
-            updateCollectButtonState();
-
-            try {
-                const txStatus = await waitForAdminTransactionConfirmation(result.transactionHash);
-                if (txStatus.status === 'success') {
-                    showToast(`Payout completed for ${collectTarget}. Tx: ${formatAddress(result.transactionHash)}`, 'success');
-                    setCollectStatusText('Payout confirmed on-chain', 'success');
-                } else {
-                    showToast(`Payout transaction failed for ${collectTarget}. Tx: ${formatAddress(result.transactionHash)}`, 'error');
-                    setCollectStatusText('Payout transaction failed', 'error');
-                }
-            } catch {
-                showToast(
-                    `Payout transaction submitted for ${collectTarget}. Confirmation still pending. Tx: ${formatAddress(result.transactionHash)}`,
-                    'info'
-                );
-                setCollectStatusText('Waiting for on-chain confirmation', 'info');
-            } finally {
-                await Promise.allSettled([
-                    loadBalances(),
-                    loadRecentTransactions(),
-                    loadCollectStatusForSelectedLab()
-                ]);
-            }
-        } else {
-            showToast('Payout request failed: ' + (result.message || 'Unknown error'), 'error');
-        }
-    } catch (error) {
-        showToast('Payout request failed: ' + error.message, 'error');
-    } finally {
-        DashboardState.collectSubmitting = false;
-        updateCollectButtonState();
-    }
-}
-
-function updateProviderSettlementOperationFields() {
-    const operation = document.getElementById('providerSettlementOperationSelect')?.value || 'submit';
-    const submitFields = document.getElementById('providerSettlementSubmitFields');
-    const invoiceFields = document.getElementById('providerSettlementInvoiceFields');
-    const objectFields = document.getElementById('providerSettlementObjectFields');
-    const eurAmountField = document.getElementById('providerSettlementEurAmountField');
-    const approvalRefField = document.getElementById('providerSettlementApprovalRefField');
-    const paymentFields = document.getElementById('providerSettlementPaymentFields');
-    const paymentAmountFields = document.getElementById('providerSettlementPaymentAmountFields');
-    const isSubmit = operation === 'submit';
-    const isApprove = operation === 'approve';
-    const isPay = operation === 'pay';
-    const isObjectAction = operation === 'dispute-batch'
-        || operation === 'reverse-batch'
-        || operation === 'dispute-claim'
-        || operation === 'reverse-claim';
-
-    submitFields?.classList.toggle('hidden', !isSubmit);
-    invoiceFields?.classList.toggle('hidden', !isApprove && !isPay);
-    objectFields?.classList.toggle('hidden', !isObjectAction);
-    eurAmountField?.classList.toggle('hidden', isObjectAction);
-    approvalRefField?.classList.toggle('hidden', !isApprove);
-    paymentFields?.classList.toggle('hidden', !isPay);
-    paymentAmountFields?.classList.toggle('hidden', !isPay);
-}
-
-function settlementInputValue(id) {
-    return document.getElementById(id)?.value?.trim() || '';
-}
-
-function requireSettlementInput(id, label) {
-    const value = settlementInputValue(id);
-    if (!value) {
-        throw new Error(`${label} is required`);
-    }
-    return value;
-}
-
-function describeSettlementOperation(operation) {
-    return {
-        submit: 'submit the queued batch as an invoice claim',
-        approve: 'approve the submitted settlement claim',
-        pay: 'record payment proof for the approved claim',
-        'dispute-batch': 'dispute the settlement batch',
-        'reverse-batch': 'reverse the settlement batch',
-        'dispute-claim': 'dispute the settlement claim',
-        'reverse-claim': 'reverse the settlement claim'
-    }[operation] || 'apply the settlement action';
-}
-
-async function handleProviderSettlementTransition(event) {
-    event.preventDefault();
-
-    const labId = DashboardState.selectedCollectLabId;
-    if (!labId) {
-        showToast('Select a lab first', 'error');
-        return;
-    }
-
-    const operation = document.getElementById('providerSettlementOperationSelect')?.value || 'submit';
-    let payload;
-    let action;
-    try {
-        if (operation === 'submit') {
-            const creditAmount = requireSettlementInput('providerSettlementAmountInput', 'Credit amount');
-            decimalToRawUnits(creditAmount, CREDIT_DECIMALS);
-            payload = {
-                claimId: requireSettlementInput('providerSettlementClaimIdInput', 'Claim ID'),
-                batchId: requireSettlementInput('providerSettlementBatchIdInput', 'Settlement batch ID'),
-                invoiceRef: requireSettlementInput('providerSettlementInvoiceRefInput', 'Invoice reference'),
-                eurAmount: requireSettlementInput('providerSettlementEurAmountInput', 'Invoice amount (EUR)'),
-                creditAmount
-            };
-            action = () => API.submitProviderInvoice(labId, payload);
-        } else if (operation === 'approve') {
-            payload = {
-                approvalRef: requireSettlementInput('providerSettlementApprovalRefInput', 'Approval reference'),
-                eurAmount: requireSettlementInput('providerSettlementEurAmountInput', 'Invoice amount (EUR)')
-            };
-            action = () => API.approveProviderInvoice(
-                requireSettlementInput('providerSettlementInvoiceIdInput', 'Invoice record ID'),
-                payload
-            );
-        } else if (operation === 'pay') {
-            const creditAmount = settlementInputValue('providerSettlementPaymentCreditAmountInput');
-            if (creditAmount) decimalToRawUnits(creditAmount, CREDIT_DECIMALS);
-            payload = {
-                eurAmount: requireSettlementInput('providerSettlementEurAmountInput', 'Payment amount (EUR)'),
-                ...(creditAmount ? { creditAmount } : {}),
-                paymentRef: requireSettlementInput('providerSettlementPaymentRefInput', 'Payment reference'),
-                paymentAttestation: requireSettlementInput('providerSettlementPaymentAttestationInput', 'Payment attestation'),
-                bankRef: settlementInputValue('providerSettlementBankRefInput'),
-                eurcTxHash: settlementInputValue('providerSettlementEurcTxHashInput'),
-                usdcTxHash: settlementInputValue('providerSettlementUsdcTxHashInput')
-            };
-            action = () => API.recordProviderPayout(
-                requireSettlementInput('providerSettlementInvoiceIdInput', 'Invoice record ID'),
-                payload
-            );
-        } else {
-            const objectId = requireSettlementInput('providerSettlementObjectIdInput', 'Batch or claim ID');
-            const reference = requireSettlementInput('providerSettlementReferenceInput', 'Resolution reference');
-            action = () => {
-                if (operation === 'dispute-batch') return API.disputeSettlementBatch(objectId, reference);
-                if (operation === 'reverse-batch') return API.reverseSettlementBatch(objectId, reference);
-                if (operation === 'dispute-claim') return API.disputeSettlementClaim(objectId, reference);
-                return API.reverseSettlementClaim(objectId, reference);
-            };
-        }
-    } catch (error) {
-        showToast(error.message, 'error');
-        return;
-    }
-
-    const collectTarget = getCollectTargetLabel();
-    const confirmed = await showConfirmModal(
-        'Confirm canonical settlement action',
-        `Confirm that you want to ${describeSettlementOperation(operation)} for ${collectTarget}?`,
-        {
-            icon: 'file-invoice-dollar',
-            confirmText: 'Submit action',
-            confirmButtonClass: 'btn-secondary'
-        }
-    );
-    if (!confirmed) return;
-
-    try {
-        const result = await action();
-        if (result && result.success === false) {
-            throw new Error(result.message || result.error || 'Settlement action failed');
-        }
-        const invoiceId = result?.id ?? result?.invoiceRecordId;
-        if (invoiceId) {
-            const invoiceInput = document.getElementById('providerSettlementInvoiceIdInput');
-            if (invoiceInput) invoiceInput.value = String(invoiceId);
-        }
-        showToast(`Canonical settlement action completed for ${collectTarget}.`, 'success');
-        await Promise.allSettled([
-            loadRecentTransactions(),
-            loadCollectStatusForSelectedLab()
-        ]);
-    } catch (error) {
-        showToast('Canonical settlement action failed: ' + error.message, 'error');
     }
 }
 
@@ -2819,11 +924,11 @@ async function loadRecentTransactions(limit = DashboardState.transactionsLimit) 
 // Refresh all data
 async function refreshAllData() {
     console.log('Refreshing dashboard data...');
-    await loadSystemStatus();
+    await WalletDashboardInstitutionWallet.loadSystemStatus();
     await Promise.all([
         loadBalances(),
-        loadCollectLabs(),
-        loadProviderGatewayDepartments(),
+        WalletDashboardProviderSettlement.loadCollectLabs(),
+        WalletDashboardProviderSettlement.loadProviderGatewayDepartments(),
         loadBillingAdminData(),
         loadRecentTransactions()
     ]);
@@ -3055,18 +1160,18 @@ function setupFormHandlers() {
 
     const providerSettlementTransitionForm = document.getElementById('providerSettlementTransitionForm');
     if (providerSettlementTransitionForm) {
-        providerSettlementTransitionForm.addEventListener('submit', handleProviderSettlementTransition);
+        providerSettlementTransitionForm.addEventListener('submit', WalletDashboardProviderSettlement.handleProviderSettlementTransition);
     }
     const providerSettlementOperationSelect = document.getElementById('providerSettlementOperationSelect');
     if (providerSettlementOperationSelect) {
-        providerSettlementOperationSelect.addEventListener('change', updateProviderSettlementOperationFields);
-        updateProviderSettlementOperationFields();
+        providerSettlementOperationSelect.addEventListener('change', WalletDashboardProviderSettlement.updateProviderSettlementOperationFields);
+        WalletDashboardProviderSettlement.updateProviderSettlementOperationFields();
     }
 }
 
 // Setup button handlers
 function setupButtonHandlers() {
-    setupProviderGatewayDepartmentHandlers();
+    WalletDashboardProviderSettlement.setupProviderGatewayDepartmentHandlers();
 
     // Refresh button
     const refreshBtn = document.getElementById('refreshBtn');
@@ -3076,7 +1181,7 @@ function setupButtonHandlers() {
 
     const provisioningTokenForm = document.getElementById('provisioningTokenForm');
     if (provisioningTokenForm) {
-        provisioningTokenForm.addEventListener('submit', applyProvisioningToken);
+        provisioningTokenForm.addEventListener('submit', WalletDashboardInstitutionWallet.applyProvisioningToken);
     }
     
     // Refresh balance button (optional - may not exist)
@@ -3091,14 +1196,14 @@ function setupButtonHandlers() {
     if (sepoliaBtn) {
         sepoliaBtn.addEventListener('click', () => {
             if (!sepoliaBtn.classList.contains('active')) {
-                switchNetwork('sepolia');
+                WalletDashboardInstitutionWallet.switchNetwork('sepolia');
             }
         });
     }
     if (mainnetBtn) {
         mainnetBtn.addEventListener('click', () => {
             if (!mainnetBtn.classList.contains('active')) {
-                switchNetwork('mainnet');
+                WalletDashboardInstitutionWallet.switchNetwork('mainnet');
             }
         });
     }
@@ -3121,7 +1226,7 @@ function setupButtonHandlers() {
     if (collectLabSelect) {
         collectLabSelect.addEventListener('change', async (event) => {
             DashboardState.selectedCollectLabId = event.target.value || null;
-            await loadCollectStatusForSelectedLab();
+            await WalletDashboardProviderSettlement.loadCollectStatusForSelectedLab();
         });
     }
 
@@ -3141,23 +1246,23 @@ function setupButtonHandlers() {
                 select.value = labId;
             }
             DashboardState.selectedCollectLabId = labId;
-            await loadCollectStatusForSelectedLab();
+            await WalletDashboardProviderSettlement.loadCollectStatusForSelectedLab();
         });
     }
 
     const providerSettlementLoadMoreBtn = document.getElementById('providerSettlementLoadMoreBtn');
     if (providerSettlementLoadMoreBtn) {
-        providerSettlementLoadMoreBtn.addEventListener('click', loadMoreCollectLabs);
+        providerSettlementLoadMoreBtn.addEventListener('click', WalletDashboardProviderSettlement.loadMoreCollectLabs);
     }
 
     const collectLabBtn = document.getElementById('collectLabBtn');
     if (collectLabBtn) {
-        collectLabBtn.addEventListener('click', handleCollectLabPayout);
+        collectLabBtn.addEventListener('click', WalletDashboardProviderSettlement.handleCollectLabPayout);
     }
 
     const revealPrivateKeyBtn = document.getElementById('revealPrivateKeyBtn');
     if (revealPrivateKeyBtn) {
-        revealPrivateKeyBtn.addEventListener('click', handleRevealPrivateKey);
+        revealPrivateKeyBtn.addEventListener('click', WalletDashboardInstitutionWallet.handleRevealPrivateKey);
     }
 
     // Reset period button
@@ -3413,7 +1518,7 @@ function stopAutoRefresh() {
         clearInterval(DashboardState.autoRefreshInterval);
         DashboardState.autoRefreshInterval = null;
     }
-    clearCollectLabsRetryTimer();
+    WalletDashboardProviderSettlement.clearCollectLabsRetryTimer();
 }
 
 // Initialize dashboard
@@ -3433,6 +1538,31 @@ async function initDashboard() {
     console.log('Dashboard initialized successfully');
 }
 
+window.WalletDashboardCore = Object.freeze({
+    api: window.API,
+    refreshAllData,
+    renderSafeModalContent,
+    setModalTitle,
+    showInputModal,
+    showPrivateKeyModal,
+    updateLastRefreshTime,
+    updateRoleBasedSections,
+    state: DashboardState,
+    collectLabsRetryDelaysMs: COLLECT_LABS_RETRY_DELAYS_MS,
+    creditDecimals: CREDIT_DECIMALS,
+    decimalToRawUnits,
+    escapeHtml,
+    formatAddress,
+    formatLabTokenRaw,
+    formatSettlementEurFromCreditRaw,
+    loadBalances,
+    loadRecentTransactions,
+    rawToBigInt,
+    showConfirmModal,
+    showToast,
+    updateCollectDetailVisibility,
+    waitForAdminTransactionConfirmation
+});
 // Cleanup on page unload
 window.addEventListener('beforeunload', () => {
     stopAutoRefresh();
