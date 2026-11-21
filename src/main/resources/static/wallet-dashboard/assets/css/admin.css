@@ -723,6 +723,8 @@ body:not(.wallet-tabs-ready) [data-wallet-tab-section="overview"]:not(.hidden),
     color: var(--text-muted);
     font-size: 0.85rem;
     line-height: 1.5;
+    margin-top: var(--spacing-md);
+    text-align: center;
 }
 
 .pairing-format-note code {
