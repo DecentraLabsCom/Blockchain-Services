@@ -2428,7 +2428,8 @@ async function loadCollectStatusForSelectedLab() {
         DashboardState.collectCanExecute = DashboardState.operatingMode === 'provider-consumer'
             && DashboardState.isProvider
             && payoutEnabledForSelectedLab
-            && data.canRequestPayout === true;
+            && data.canRequestPayout === true
+            && hasClaimablePayout;
         renderCollectSettlementOverview();
         updateCollectDetailVisibility();
 
@@ -2440,12 +2441,8 @@ async function loadCollectStatusForSelectedLab() {
                 'info',
                 `Awaiting session attestation for ${count} ${reservationLabel}`
             );
-        } else if (DashboardState.collectCanExecute) {
-            if (hasClaimablePayout) {
-                setCollectStatusText('Ready for request', 'success');
-            } else {
-                setCollectStatusText('Request available', 'success');
-            }
+        } else if (DashboardState.collectCanExecute && hasClaimablePayout) {
+            setCollectStatusText('Ready for request', 'success');
         } else if (DashboardState.operatingMode === 'provider-consumer'
             && DashboardState.isProvider && !payoutEnabledForSelectedLab) {
             setCollectStatusText('Payout requests are limited to this provider wallet\'s labs', 'warning');
@@ -2453,12 +2450,13 @@ async function loadCollectStatusForSelectedLab() {
             && !DashboardState.isProvider && DashboardState.isOperator && operatorReviewOnly) {
             setCollectStatusText('Operator review only', 'info');
         } else if (DashboardState.operatingMode === 'provider-consumer'
-            && !DashboardState.isProvider && DashboardState.isOperator && data.canRequestPayout === true) {
+            && !DashboardState.isProvider && DashboardState.isOperator && data.canRequestPayout === true
+            && hasClaimablePayout) {
             setCollectStatusText('Payout available for owning provider', 'info');
         } else if (data.payoutRequestReason) {
             setCollectStatusText(data.payoutRequestReason, 'warning');
         } else {
-            setCollectStatusText('No payout currently available', 'warning');
+            setCollectStatusText('Not available', 'warning');
         }
 
     } catch (error) {
