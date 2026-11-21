@@ -10,12 +10,16 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import decentralabs.blockchain.security.LocalhostOnlyFilter;
+import decentralabs.blockchain.service.auth.MarketplaceEndpointAuthService;
+import decentralabs.blockchain.service.billing.CreditProjectionService;
+import decentralabs.blockchain.service.billing.FundingOrderService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.MediaType;
 import org.springframework.test.context.TestPropertySource;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import org.springframework.web.context.WebApplicationContext;
@@ -44,6 +48,15 @@ import org.springframework.web.context.WebApplicationContext;
         + "org.springframework.boot.data.redis.autoconfigure.DataRedisRepositoriesAutoConfiguration"
 })
 class SecurityConfigConsumerOnlyIntegrationTest {
+
+    @MockitoBean
+    private MarketplaceEndpointAuthService marketplaceEndpointAuthService;
+
+    @MockitoBean
+    private FundingOrderService fundingOrderService;
+
+    @MockitoBean
+    private CreditProjectionService creditProjectionService;
 
     @Autowired
     private WebApplicationContext webApplicationContext;
