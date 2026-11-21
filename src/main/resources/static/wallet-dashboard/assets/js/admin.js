@@ -1420,10 +1420,16 @@ async function loadBalances() {
     }
 }
 
-function setCollectStatusText(message, tone = null) {
+function setCollectStatusText(message, tone = null, tooltip = null) {
     const statusEl = document.getElementById('collectStatusText');
     if (!statusEl) return;
     statusEl.textContent = message || '--';
+    statusEl.title = tooltip || '';
+    if (tooltip) {
+        statusEl.setAttribute('aria-label', tooltip);
+    } else {
+        statusEl.removeAttribute('aria-label');
+    }
     statusEl.className = 'collect-status-value';
     if (tone) {
         statusEl.classList.add(tone);
@@ -2405,12 +2411,15 @@ async function loadCollectStatusForSelectedLab() {
 
         let hasPendingClosures = false;
         let hasPendingPayout = false;
+        let pendingGraceReservationCount = 0n;
         try {
-            hasPendingClosures = BigInt(pendingClosuresRaw.toString()) > 0n;
+            pendingGraceReservationCount = BigInt(pendingClosuresRaw.toString());
+            hasPendingClosures = pendingGraceReservationCount > 0n;
             hasPendingPayout = BigInt((data.totalReceivableRaw ?? '0').toString()) > 0n;
         } catch (error) {
             hasPendingClosures = false;
             hasPendingPayout = false;
+            pendingGraceReservationCount = 0n;
         }
 
         DashboardState.collectCanExecute = DashboardState.operatingMode === 'provider-consumer'
@@ -2420,7 +2429,15 @@ async function loadCollectStatusForSelectedLab() {
         renderCollectSettlementOverview();
         updateCollectDetailVisibility();
 
-        if (DashboardState.collectCanExecute) {
+        if (hasPendingClosures && !hasPendingPayout) {
+            const count = pendingGraceReservationCount.toString();
+            const reservationLabel = pendingGraceReservationCount === 1n ? 'reservation' : 'reservations';
+            setCollectStatusText(
+                'Awaiting',
+                'info',
+                `Awaiting session attestation for ${count} ${reservationLabel}`
+            );
+        } else if (DashboardState.collectCanExecute) {
             if (hasPendingPayout) {
                 setCollectStatusText('Ready for payout request', 'success');
             } else {
