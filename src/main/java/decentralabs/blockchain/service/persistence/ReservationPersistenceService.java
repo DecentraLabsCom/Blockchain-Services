@@ -55,7 +55,11 @@ public class ReservationPersistenceService {
                     lab_id=VALUES(lab_id),
                     start_time=IFNULL(VALUES(start_time), start_time),
                     end_time=IFNULL(VALUES(end_time), end_time),
-                    status=VALUES(status),
+                    status=CASE
+                        WHEN status = 'CANCELLED' AND VALUES(status) <> 'CANCELLED' THEN status
+                        WHEN VALUES(status) = 'PENDING' AND status <> 'PENDING' THEN status
+                        ELSE VALUES(status)
+                    END,
                     updated_at=CURRENT_TIMESTAMP
                 """,
                 txHash,
@@ -113,7 +117,11 @@ public class ReservationPersistenceService {
                 lab_id=VALUES(lab_id),
                 start_time=IFNULL(VALUES(start_time), start_time),
                 end_time=IFNULL(VALUES(end_time), end_time),
-                status=VALUES(status),
+                status=CASE
+                    WHEN status = 'CANCELLED' AND VALUES(status) <> 'CANCELLED' THEN status
+                    WHEN VALUES(status) = 'PENDING' AND status <> 'PENDING' THEN status
+                    ELSE VALUES(status)
+                END,
                 updated_at=CURRENT_TIMESTAMP
             """,
             txHash,
