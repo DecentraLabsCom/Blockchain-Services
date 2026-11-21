@@ -2410,15 +2410,18 @@ async function loadCollectStatusForSelectedLab() {
         setCollectLifecycleSummaryText(buildCollectLifecycleSummary(data));
 
         let hasPendingClosures = false;
-        let hasPendingPayout = false;
+        let hasClaimablePayout = false;
         let pendingGraceReservationCount = 0n;
         try {
             pendingGraceReservationCount = BigInt(pendingClosuresRaw.toString());
             hasPendingClosures = pendingGraceReservationCount > 0n;
-            hasPendingPayout = BigInt((data.totalReceivableRaw ?? '0').toString()) > 0n;
+            const claimablePayoutRaw = BigInt((data.accruedReceivableRaw ?? '0').toString())
+                + BigInt((data.attestedSessionPayoutRaw ?? '0').toString())
+                + BigInt((data.potentialNoShowFeeRaw ?? '0').toString());
+            hasClaimablePayout = claimablePayoutRaw > 0n;
         } catch (error) {
             hasPendingClosures = false;
-            hasPendingPayout = false;
+            hasClaimablePayout = false;
             pendingGraceReservationCount = 0n;
         }
 
@@ -2429,7 +2432,7 @@ async function loadCollectStatusForSelectedLab() {
         renderCollectSettlementOverview();
         updateCollectDetailVisibility();
 
-        if (hasPendingClosures && !hasPendingPayout) {
+        if (hasPendingClosures && !hasClaimablePayout) {
             const count = pendingGraceReservationCount.toString();
             const reservationLabel = pendingGraceReservationCount === 1n ? 'reservation' : 'reservations';
             setCollectStatusText(
@@ -2438,13 +2441,11 @@ async function loadCollectStatusForSelectedLab() {
                 `Awaiting session attestation for ${count} ${reservationLabel}`
             );
         } else if (DashboardState.collectCanExecute) {
-            if (hasPendingPayout) {
-                setCollectStatusText('Ready for payout request', 'success');
+            if (hasClaimablePayout) {
+                setCollectStatusText('Ready for request', 'success');
             } else {
-                setCollectStatusText('Payout request available', 'success');
+                setCollectStatusText('Request available', 'success');
             }
-        } else if (hasPendingClosures) {
-            setCollectStatusText('Waiting for session attestation grace period', 'info');
         } else if (DashboardState.operatingMode === 'provider-consumer'
             && DashboardState.isProvider && !payoutEnabledForSelectedLab) {
             setCollectStatusText('Payout requests are limited to this provider wallet\'s labs', 'warning');
