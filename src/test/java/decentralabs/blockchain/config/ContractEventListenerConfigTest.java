@@ -477,7 +477,7 @@ class ContractEventListenerConfigTest {
         ReflectionTestUtils.invokeMethod(config, "handleContractEvent", "ReservationConfirmed", eventDefinition, eventLog);
 
         ArgumentCaptor<String> statusCaptor = ArgumentCaptor.forClass(String.class);
-        verify(reservationPersistenceService).upsertReservation(
+        verify(reservationPersistenceService).upsertReservationOrThrow(
             eq("0x" + reservationKeyTopic),
             eq("0x00000000000000000000000000000000000000ef"),
             eq("7"),
@@ -737,7 +737,7 @@ class ContractEventListenerConfigTest {
         ReflectionTestUtils.invokeMethod(config, "handleContractEvent", "ReservationConfirmed", eventDefinition, eventLog);
 
         verify(reservationNotificationService).notifyReservationApproved(any());
-        verify(reservationPersistenceService).upsertReservation(
+        verify(reservationPersistenceService).upsertReservationOrThrow(
             eq("0x" + reservationKeyTopic),
             any(),
             eq("8"),

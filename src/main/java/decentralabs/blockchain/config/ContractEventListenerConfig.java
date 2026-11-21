@@ -811,9 +811,9 @@ public class ContractEventListenerConfig {
             eventLog
         );
 
-        dispatchReservationLifecycleEvent("confirmed", payload);
-        persistLifecycle(payload, "CONFIRMED");
+        persistConfirmedLifecycle(payload);
         intentService.updateReservationStatusByReservationKey(reservationKey, "confirmed");
+        dispatchReservationLifecycleEvent("confirmed", payload);
     }
 
     private void handleReservationDenied(EventValues eventValues, Log eventLog) {
@@ -1108,8 +1108,42 @@ public class ContractEventListenerConfig {
             endTs,
             status
         );
-        // Lifecycle persistence is essential. Do not absorb failures here: the
-        // journal must retry the event and keep its cursor pinned.
+        // The CONFIRMED transition uses strict persistence because the scheduler
+        // depends on that projection to dispatch the reservation's start actions.
+    }
+
+    private void persistConfirmedLifecycle(ReservationEventPayload payload) {
+        long startEpoch = payload.startEpoch()
+            .map(value -> value.longValueExact())
+            .orElseThrow(() -> new IllegalStateException(
+                "Confirmed reservation " + payload.reservationKey() + " has no start time from the chain"
+            ));
+        long endEpoch = payload.endEpoch()
+            .map(value -> value.longValueExact())
+            .orElseThrow(() -> new IllegalStateException(
+                "Confirmed reservation " + payload.reservationKey() + " has no end time from the chain"
+            ));
+        Instant startTs = Instant.ofEpochSecond(startEpoch);
+        Instant endTs = Instant.ofEpochSecond(endEpoch);
+        String renter = payload.renter()
+            .filter(value -> !value.isBlank())
+            .orElseThrow(() -> new IllegalStateException(
+                "Confirmed reservation " + payload.reservationKey() + " has no renter from the chain"
+            ));
+        if (payload.labId() == null) {
+            throw new IllegalStateException(
+                "Confirmed reservation " + payload.reservationKey() + " has no lab id"
+            );
+        }
+
+        reservationPersistenceService.upsertReservationOrThrow(
+            payload.reservationKey(),
+            renter,
+            payload.labId().toString(),
+            startTs,
+            endTs,
+            "CONFIRMED"
+        );
     }
 
     private void processReservationRequest(ReservationEventPayload payload) {
@@ -2004,8 +2038,15 @@ public class ContractEventListenerConfig {
                 return Optional.empty();
             }
             Diamond.Reservation reservation = contract.getReservation(keyBytes).send();
-            byte[] reservationPucHash = contract.getReservationPucHash(keyBytes).send();
-            String pucHashHex = Numeric.toHexString(reservationPucHash);
+            String pucHashHex = "";
+            try {
+                byte[] reservationPucHash = contract.getReservationPucHash(keyBytes).send();
+                pucHashHex = Numeric.toHexString(reservationPucHash);
+            } catch (Exception ex) {
+                // PUC metadata is not needed to project a confirmed reservation
+                // into the scheduler's operational table.
+                log.debug("Unable to load PUC hash for reservation {}: {}", reservationKey, ex.getMessage());
+            }
             return Optional.of(mapReservation(reservation, pucHashHex));
         } catch (Exception ex) {
             log.debug("Unable to load reservation {}: {}", reservationKey, ex.getMessage());

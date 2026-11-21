@@ -75,6 +75,57 @@ public class ReservationPersistenceService {
         }
     }
 
+    /**
+     * Persist a reservation lifecycle transition whose projection is required by
+     * operational consumers such as the reservation scheduler. Failures escape
+     * so the durable contract-event journal can retry the event.
+     */
+    @Transactional
+    public void upsertReservationOrThrow(
+        String txHash,
+        String walletAddress,
+        String labId,
+        Instant start,
+        Instant end,
+        String status
+    ) {
+        if (jdbcTemplate == null) {
+            throw new IllegalStateException("Reservation persistence database is not configured");
+        }
+        if (txHash == null || txHash.isBlank()) {
+            throw new IllegalArgumentException("Reservation key is required for lifecycle persistence");
+        }
+        if (walletAddress == null || walletAddress.isBlank()) {
+            throw new IllegalArgumentException("Reservation wallet is required for lifecycle persistence");
+        }
+        if (labId == null || labId.isBlank() || start == null || end == null || status == null || status.isBlank()) {
+            throw new IllegalArgumentException("Reservation lab, schedule, and status are required for lifecycle persistence");
+        }
+
+        Long userId = findOrCreateUserOrThrow(walletAddress);
+        jdbcTemplate.update(
+            """
+            INSERT INTO lab_reservations (transaction_hash, user_id, wallet_address, lab_id, start_time, end_time, status)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            ON DUPLICATE KEY UPDATE
+                user_id=VALUES(user_id),
+                wallet_address=VALUES(wallet_address),
+                lab_id=VALUES(lab_id),
+                start_time=IFNULL(VALUES(start_time), start_time),
+                end_time=IFNULL(VALUES(end_time), end_time),
+                status=VALUES(status),
+                updated_at=CURRENT_TIMESTAMP
+            """,
+            txHash,
+            userId,
+            walletAddress,
+            labId,
+            Timestamp.from(start),
+            Timestamp.from(end),
+            status
+        );
+    }
+
     private Long findOrCreateUser(String walletAddress) {
         if (walletAddress == null || walletAddress.isBlank()) {
             return null;
@@ -103,6 +154,31 @@ public class ReservationPersistenceService {
             }
             return null;
         }
+    }
+
+    private Long findOrCreateUserOrThrow(String walletAddress) {
+        Long existing = jdbcTemplate.query(
+            "SELECT id FROM auth_users WHERE wallet_address = ? LIMIT 1",
+            ps -> ps.setString(1, walletAddress),
+            rs -> rs.next() ? rs.getLong(1) : null
+        );
+        if (existing != null) {
+            return existing;
+        }
+
+        jdbcTemplate.update(
+            "INSERT INTO auth_users (wallet_address, created_at, updated_at, is_active) VALUES (?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, TRUE)",
+            walletAddress
+        );
+        Long created = jdbcTemplate.query(
+            "SELECT id FROM auth_users WHERE wallet_address = ? LIMIT 1",
+            ps -> ps.setString(1, walletAddress),
+            rs -> rs.next() ? rs.getLong(1) : null
+        );
+        if (created == null) {
+            throw new IllegalStateException("Could not resolve auth user for reservation wallet " + walletAddress);
+        }
+        return created;
     }
 
     /**
