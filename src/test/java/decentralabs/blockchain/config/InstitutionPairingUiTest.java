@@ -104,16 +104,22 @@ class InstitutionPairingUiTest {
     void walletDashboardScriptOffersDirectProvisioningTokenFlow() throws IOException {
         String page = readResource("static/wallet-dashboard/index.html");
         String script = readResource("static/wallet-dashboard/assets/js/admin.js");
+        String institutionWalletScript = readResource("static/wallet-dashboard/assets/js/institution-wallet.js");
         String apiScript = readResource("static/wallet-dashboard/assets/js/api.js");
 
         assertThat(page).contains("Apply provisioning token");
         assertThat(page).contains("Open backend pairing setup");
-        assertThat(script).contains("institutionPairingSection");
-        assertThat(script).contains("openInstitutionConfigHeaderBtn");
-        assertThat(script).contains("applyProvisioningToken");
+        assertThat(page).contains("assets/js/institution-wallet.js");
+        assertThat(institutionWalletScript).contains("institutionPairingSection");
+        assertThat(institutionWalletScript).contains("openInstitutionConfigHeaderBtn");
+        assertThat(institutionWalletScript).contains("async function applyProvisioningToken(");
+        assertThat(institutionWalletScript).contains("window.WalletDashboardInstitutionWallet = Object.freeze({")
+                .contains("applyProvisioningToken,");
         assertThat(script).contains("provisioningTokenForm");
-        assertThat(script).contains("registered !== true");
+        assertThat(script).contains("provisioningTokenForm.addEventListener('submit', WalletDashboardInstitutionWallet.applyProvisioningToken)");
+        assertThat(institutionWalletScript).contains("registered !== true");
         assertThat(script).doesNotContain("console.log('Provisioning token");
+        assertThat(institutionWalletScript).doesNotContain("console.log('Provisioning token");
         assertThat(apiScript).contains("/institution-config/apply-provider-token");
         assertThat(apiScript).contains("/institution-config/apply-consumer-token");
     }
