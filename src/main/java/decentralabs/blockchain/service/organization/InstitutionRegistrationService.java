@@ -7,16 +7,14 @@ import decentralabs.blockchain.service.wallet.InstitutionalWalletService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.http.HttpEntity;
+import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.http.HttpHeaders;
-import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
-import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.HttpClientErrorException;
-import org.springframework.web.client.RestTemplate;
+import org.springframework.web.client.RestClient;
 
 import java.io.IOException;
 import java.net.URI;
@@ -39,7 +37,7 @@ public class InstitutionRegistrationService {
     private final InstitutionalAdminService institutionalAdminService;
     private final InstitutionalWalletService institutionalWalletService;
     private final ProviderConfigurationPersistenceService configPersistenceService;
-    private final RestTemplate restTemplate;
+    private final RestClient restClient;
     private final ProvisioningWalletProofService walletProofService;
     private final BackendUrlResolver backendUrlResolver;
 
@@ -344,14 +342,13 @@ public class InstitutionRegistrationService {
         String trimmedToken = Objects.requireNonNull(provisioningToken.trim(), "provisioningToken");
         headers.setBearerAuth(trimmedToken);
 
-        HttpEntity<Map<String, String>> request = new HttpEntity<>(requestBody, headers);
-
         try {
-            ResponseEntity<String> response = restTemplate.postForEntity(
-                url,
-                request,
-                String.class
-            );
+            ResponseEntity<String> response = restClient.post()
+                .uri(url)
+                .headers(requestHeaders -> requestHeaders.addAll(headers))
+                .body(requestBody)
+                .retrieve()
+                .toEntity(String.class);
 
             if ((response.getStatusCode() == HttpStatus.CREATED || response.getStatusCode() == HttpStatus.OK)
                 && confirmsRegistration(response.getBody())) {
@@ -398,12 +395,12 @@ public class InstitutionRegistrationService {
         String url = buildMarketplaceUrl(trustedMarketplaceBaseUrl, endpoint);
         HttpHeaders headers = new HttpHeaders();
         headers.setContentType(MediaType.APPLICATION_JSON);
-        ResponseEntity<Map<String, Object>> response = restTemplate.exchange(
-            url,
-            HttpMethod.POST,
-            new HttpEntity<>(body, headers),
-            new ParameterizedTypeReference<>() { }
-        );
+        ResponseEntity<Map<String, Object>> response = restClient.post()
+            .uri(url)
+            .headers(requestHeaders -> requestHeaders.addAll(headers))
+            .body(body)
+            .retrieve()
+            .toEntity(new ParameterizedTypeReference<>() { });
         if (!response.getStatusCode().is2xxSuccessful() || response.getBody() == null) {
             throw new IllegalStateException("Marketplace pairing request failed");
         }

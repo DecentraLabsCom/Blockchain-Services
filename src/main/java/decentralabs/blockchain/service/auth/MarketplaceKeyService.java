@@ -18,7 +18,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
-import org.springframework.web.client.RestTemplate;
+import org.springframework.web.client.RestClient;
 
 /**
  * Loads and caches the Marketplace JWT verification key set.
@@ -44,12 +44,16 @@ public class MarketplaceKeyService {
     @Value("${marketplace.key.retry-ms:60000}")
     private long keyRetryMs;
 
-    private final RestTemplate restTemplate = new RestTemplate();
+    private final RestClient restClient;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     private volatile Map<String, PublicKey> cachedMarketplacePublicKeys = Collections.emptyMap();
     private volatile long lastKeyFetchTime = 0;
     private volatile long lastFailureTime = 0;
+
+    public MarketplaceKeyService(RestClient restClient) {
+        this.restClient = restClient;
+    }
 
     /** Gets the first Marketplace key, preserving the legacy API. */
     public PublicKey getPublicKey(boolean forceRefresh) throws Exception {
@@ -156,7 +160,10 @@ public class MarketplaceKeyService {
             if (publicKeyUrl == null || publicKeyUrl.isBlank()) {
                 throw new Exception("Marketplace public key URL is not configured");
             }
-            ResponseEntity<String> response = restTemplate.getForEntity(publicKeyUrl, String.class);
+            ResponseEntity<String> response = restClient.get()
+                .uri(publicKeyUrl)
+                .retrieve()
+                .toEntity(String.class);
 
             if (response.getStatusCode().is2xxSuccessful() && response.getBody() != null) {
                 return response.getBody();

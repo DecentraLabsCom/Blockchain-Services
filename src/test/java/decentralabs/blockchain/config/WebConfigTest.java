@@ -14,7 +14,7 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpOutputMessage;
 import org.springframework.http.MediaType;
 import org.springframework.mock.web.MockHttpServletRequest;
-import org.springframework.web.client.RestTemplate;
+import org.springframework.web.client.RestClient;
 import org.springframework.web.servlet.HandlerExecutionChain;
 import org.springframework.web.servlet.config.annotation.ViewControllerRegistry;
 import org.springframework.web.servlet.handler.SimpleUrlHandlerMapping;
@@ -25,8 +25,8 @@ class WebConfigTest {
     private final WebConfig config = new WebConfig();
 
     @Test
-    void restTemplate_returnsConcreteBean() {
-        assertThat(config.restTemplate()).isInstanceOf(RestTemplate.class);
+    void restClient_returnsConcreteBean() {
+        assertThat(config.restClient()).isInstanceOf(RestClient.class);
     }
 
     @Test

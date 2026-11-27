@@ -8,7 +8,7 @@ import jakarta.annotation.Nonnull;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.web.client.RestTemplate;
+import org.springframework.web.client.RestClient;
 import org.springframework.web.servlet.config.annotation.ViewControllerRegistry;
 import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 
@@ -20,12 +20,12 @@ import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 public class WebConfig implements WebMvcConfigurer {
 
     /**
-     * RestTemplate bean for HTTP client operations
-     * Used by InstitutionRegistrationService to communicate with marketplace
+     * RestClient bean for HTTP client operations
+     * Used by MarketplaceKeyService and InstitutionRegistrationService to call Marketplace
      */
     @Bean
-    public RestTemplate restTemplate() {
-        return new RestTemplate();
+    public RestClient restClient() {
+        return RestClient.create();
     }
 
     // Provide a default ObjectMapper and a lightweight JSON HttpMessageConverter for test contexts

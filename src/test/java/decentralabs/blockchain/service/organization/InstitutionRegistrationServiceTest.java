@@ -7,16 +7,16 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.Answers;
 import org.mockito.ArgumentCaptor;
 import org.mockito.ArgumentMatchers;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.web.client.HttpClientErrorException;
-import org.springframework.web.client.RestTemplate;
+import org.springframework.web.client.RestClient;
 
 import java.io.IOException;
 import java.util.Map;
@@ -42,8 +42,8 @@ class InstitutionRegistrationServiceTest {
     @Mock
     private ProviderConfigurationPersistenceService configPersistenceService;
 
-    @Mock
-    private RestTemplate restTemplate;
+    @Mock(answer = Answers.RETURNS_DEEP_STUBS)
+    private RestClient restClient;
 
     @Mock
     private ProvisioningWalletProofService walletProofService;
@@ -59,7 +59,7 @@ class InstitutionRegistrationServiceTest {
                 institutionalAdminService,
                 walletService,
                 configPersistenceService,
-                restTemplate,
+                restClient,
                 walletProofService,
                 backendUrlResolver
         );
@@ -152,19 +152,16 @@ class InstitutionRegistrationServiceTest {
     @Test
     @DisplayName("Should reject disabled provider pairing before offering identity")
     void shouldRejectDisabledProviderPairingBeforeOfferingIdentity() {
-        when(restTemplate.exchange(
-            anyString(),
-            eq(org.springframework.http.HttpMethod.POST),
-            any(HttpEntity.class),
-            ArgumentMatchers.<org.springframework.core.ParameterizedTypeReference<Map<String, Object>>>any()
-        )).thenReturn(ResponseEntity.ok(Map.of(
-            "institutionId", "institution-1",
-            "registrationType", "provider",
-            "chainId", 11_155_111L,
-            "registryContract", "0xregistry",
-            "issuedAt", 100L,
-            "expiresAt", 200L
-        )));
+        when(restClient.post().uri(anyString()).headers(any()).body(any()).retrieve()
+            .toEntity(ArgumentMatchers.<org.springframework.core.ParameterizedTypeReference<Map<String, Object>>>any()))
+            .thenReturn(ResponseEntity.ok(Map.of(
+                "institutionId", "institution-1",
+                "registrationType", "provider",
+                "chainId", 11_155_111L,
+                "registryContract", "0xregistry",
+                "issuedAt", 100L,
+                "expiresAt", 200L
+            )));
 
         IllegalStateException exception = assertThrows(
             IllegalStateException.class,
@@ -178,12 +175,7 @@ class InstitutionRegistrationServiceTest {
             "Provider registration is disabled in this deployment. Use the consumer provisioning flow from /wallet-dashboard instead.",
             exception.getMessage()
         );
-        verify(restTemplate).exchange(
-            anyString(),
-            eq(org.springframework.http.HttpMethod.POST),
-            any(HttpEntity.class),
-            ArgumentMatchers.<org.springframework.core.ParameterizedTypeReference<Map<String, Object>>>any()
-        );
+        verify(restClient).post();
         verifyNoInteractions(walletService, walletProofService, backendUrlResolver);
     }
 
@@ -204,7 +196,7 @@ class InstitutionRegistrationServiceTest {
                 .build();
 
         when(walletService.getInstitutionalWalletAddress()).thenReturn("0xABC123");
-        when(restTemplate.postForEntity(anyString(), any(HttpEntity.class), eq(String.class)))
+        when(restClient.post().uri(anyString()).headers(any()).body(any()).retrieve().toEntity(eq(String.class)))
                 .thenReturn(ResponseEntity.status(HttpStatus.CREATED).body("Registration successful"));
 
         // Act
@@ -214,8 +206,7 @@ class InstitutionRegistrationServiceTest {
         assertTrue(result);
         
         ArgumentCaptor<String> urlCaptor = ArgumentCaptor.forClass(String.class);
-        ArgumentCaptor<HttpEntity<?>> entityCaptor = ArgumentCaptor.forClass(HttpEntity.class);
-        verify(restTemplate).postForEntity(urlCaptor.capture(), entityCaptor.capture(), eq(String.class));
+        verify(restClient.post()).uri(urlCaptor.capture());
         
         assertTrue(urlCaptor.getValue().contains("/api/institutions/registerProvider"));
         verify(configPersistenceService, never()).markAsRegistered(any());
@@ -234,7 +225,7 @@ class InstitutionRegistrationServiceTest {
                 .build();
 
         when(walletService.getInstitutionalWalletAddress()).thenReturn("0xDEF456");
-        when(restTemplate.postForEntity(anyString(), any(HttpEntity.class), eq(String.class)))
+        when(restClient.post().uri(anyString()).headers(any()).body(any()).retrieve().toEntity(eq(String.class)))
                 .thenReturn(ResponseEntity.status(HttpStatus.CREATED).body("Registration successful"));
 
         // Act
@@ -244,7 +235,7 @@ class InstitutionRegistrationServiceTest {
         assertTrue(result);
         
         ArgumentCaptor<String> urlCaptor = ArgumentCaptor.forClass(String.class);
-        verify(restTemplate).postForEntity(urlCaptor.capture(), any(HttpEntity.class), eq(String.class));
+        verify(restClient.post()).uri(urlCaptor.capture());
         
         assertTrue(urlCaptor.getValue().contains("/api/institutions/registerConsumer"));
         verify(configPersistenceService, never()).markAsRegistered(any());
@@ -262,7 +253,7 @@ class InstitutionRegistrationServiceTest {
                 .build();
 
         when(walletService.getInstitutionalWalletAddress()).thenReturn("0xDEF456");
-        when(restTemplate.postForEntity(anyString(), any(HttpEntity.class), eq(String.class)))
+        when(restClient.post().uri(anyString()).headers(any()).body(any()).retrieve().toEntity(eq(String.class)))
                 .thenReturn(ResponseEntity.status(HttpStatus.PARTIAL_CONTENT).body("{\"registered\":false}"));
 
         assertFalse(service.register(request));
@@ -291,7 +282,7 @@ class InstitutionRegistrationServiceTest {
                 () -> service.register(request)
         );
         assertEquals("Provider name is required", exception.getMessage());
-        verifyNoInteractions(restTemplate);
+        verifyNoInteractions(restClient);
     }
 
     @Test
@@ -443,7 +434,7 @@ class InstitutionRegistrationServiceTest {
                 .build();
 
         when(walletService.getInstitutionalWalletAddress()).thenReturn("0xABC123");
-        when(restTemplate.postForEntity(anyString(), any(HttpEntity.class), eq(String.class)))
+        when(restClient.post().uri(anyString()).headers(any()).body(any()).retrieve().toEntity(eq(String.class)))
                 .thenThrow(new HttpClientErrorException(HttpStatus.CONFLICT, "Provisioning token consumed"));
 
         // Act
@@ -467,7 +458,7 @@ class InstitutionRegistrationServiceTest {
                 .build();
 
         when(walletService.getInstitutionalWalletAddress()).thenReturn("0xDEF456");
-        when(restTemplate.postForEntity(anyString(), any(HttpEntity.class), eq(String.class)))
+        when(restClient.post().uri(anyString()).headers(any()).body(any()).retrieve().toEntity(eq(String.class)))
                 .thenThrow(new HttpClientErrorException(HttpStatus.UNAUTHORIZED, "Invalid token"));
 
         // Act
@@ -495,7 +486,7 @@ class InstitutionRegistrationServiceTest {
                 .build();
 
         when(walletService.getInstitutionalWalletAddress()).thenReturn("0xABC123");
-        when(restTemplate.postForEntity(anyString(), any(HttpEntity.class), eq(String.class)))
+        when(restClient.post().uri(anyString()).headers(any()).body(any()).retrieve().toEntity(eq(String.class)))
                 .thenThrow(new HttpClientErrorException(HttpStatus.INTERNAL_SERVER_ERROR, "Server error"));
 
         // Act
@@ -521,7 +512,7 @@ class InstitutionRegistrationServiceTest {
         boolean result = service.register(request);
 
         assertFalse(result);
-        verify(restTemplate, never()).postForEntity(anyString(), any(HttpEntity.class), eq(String.class));
+        verify(restClient, never()).post();
     }
 
     @Test
@@ -541,7 +532,9 @@ class InstitutionRegistrationServiceTest {
                 .build();
 
         when(walletService.getInstitutionalWalletAddress()).thenReturn("0xABC123");
-        when(restTemplate.postForEntity(anyString(), any(HttpEntity.class), eq(String.class)))
+        ArgumentCaptor<Object> bodyCaptor = ArgumentCaptor.forClass(Object.class);
+        when(restClient.post().uri(anyString()).headers(any()).body(bodyCaptor.capture()).retrieve()
+            .toEntity(eq(String.class)))
                 .thenReturn(ResponseEntity.status(HttpStatus.CREATED).body("Registration successful"));
 
         // Act
@@ -550,11 +543,8 @@ class InstitutionRegistrationServiceTest {
         // Assert
         assertTrue(result);
         
-        ArgumentCaptor<HttpEntity<?>> entityCaptor = ArgumentCaptor.forClass(HttpEntity.class);
-        verify(restTemplate).postForEntity(anyString(), entityCaptor.capture(), eq(String.class));
-        
         @SuppressWarnings("unchecked")
-        Map<String, Object> body = (Map<String, Object>) entityCaptor.getValue().getBody();
+        Map<String, Object> body = (Map<String, Object>) bodyCaptor.getValue();
         assertNotNull(body);
         
         assertEquals("0xwallet-signature", body.get("walletSignature"));
@@ -563,14 +553,11 @@ class InstitutionRegistrationServiceTest {
 
     private void stubPairingResponses(Map<String, Object> inspection, Map<String, Object> offer) {
         int[] responseIndex = {0};
-        when(restTemplate.exchange(
-            anyString(),
-            eq(org.springframework.http.HttpMethod.POST),
-            any(HttpEntity.class),
-            ArgumentMatchers.<org.springframework.core.ParameterizedTypeReference<Map<String, Object>>>any()
-        )).thenAnswer(invocation -> ResponseEntity.ok(
-            responseIndex[0]++ == 0 ? inspection : offer
-        ));
+        when(restClient.post().uri(anyString()).headers(any()).body(any()).retrieve()
+            .toEntity(ArgumentMatchers.<org.springframework.core.ParameterizedTypeReference<Map<String, Object>>>any()))
+            .thenAnswer(invocation -> ResponseEntity.ok(
+                responseIndex[0]++ == 0 ? inspection : offer
+            ));
     }
 
     private ProvisioningSecurityClaims providerClaims() {

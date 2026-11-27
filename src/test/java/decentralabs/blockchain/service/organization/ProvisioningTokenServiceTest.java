@@ -20,13 +20,14 @@ import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.Answers;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.mockito.Mockito;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.test.util.ReflectionTestUtils;
-import org.springframework.web.client.RestTemplate;
+import org.springframework.web.client.RestClient;
 
 @ExtendWith(MockitoExtension.class)
 class ProvisioningTokenServiceTest {
@@ -37,8 +38,8 @@ class ProvisioningTokenServiceTest {
     private static final String CONSUMER_JWKS_URI = MARKETPLACE_URL + "/api/institutions/provisionConsumer/jwks";
     private static final String KEY_ID = "test-kid";
 
-    @Mock
-    private RestTemplate restTemplate;
+    @Mock(answer = Answers.RETURNS_DEEP_STUBS)
+    private RestClient restClient;
 
     private ProvisioningTokenService service;
     private KeyPair keyPair;
@@ -47,7 +48,7 @@ class ProvisioningTokenServiceTest {
     @BeforeEach
     void setUp() throws Exception {
         service = new ProvisioningTokenService();
-        ReflectionTestUtils.setField(service, "restTemplate", restTemplate);
+        ReflectionTestUtils.setField(service, "restClient", restClient);
         ReflectionTestUtils.setField(service, "connectTimeoutMs", 5_000);
         ReflectionTestUtils.setField(service, "readTimeoutMs", 10_000);
         ReflectionTestUtils.setField(service, "configuredMarketplaceBaseUrl", MARKETPLACE_URL);
@@ -64,22 +65,19 @@ class ProvisioningTokenServiceTest {
         keyPair = generator.generateKeyPair();
         jwksPayload = buildJwksJson(KEY_ID, (RSAPublicKey) keyPair.getPublic());
 
-        Mockito.lenient().when(restTemplate.getForEntity(eq(java.net.URI.create(PROVIDER_JWKS_URI)), eq(String.class)))
+        Mockito.lenient().when(restClient.get().uri(eq(java.net.URI.create(PROVIDER_JWKS_URI)))
+                .retrieve().toEntity(eq(String.class)))
             .thenReturn(ResponseEntity.ok(jwksPayload));
-        Mockito.lenient().when(restTemplate.getForEntity(eq(java.net.URI.create(CONSUMER_JWKS_URI)), eq(String.class)))
+        Mockito.lenient().when(restClient.get().uri(eq(java.net.URI.create(CONSUMER_JWKS_URI)))
+                .retrieve().toEntity(eq(String.class)))
             .thenReturn(ResponseEntity.ok(jwksPayload));
     }
 
     @Test
-    void configureRestTemplate_appliesConfiguredTimeouts() {
-        ReflectionTestUtils.invokeMethod(service, "configureRestTemplate");
+    void createRequestFactory_appliesConfiguredTimeouts() {
+        SimpleClientHttpRequestFactory factory = service.createRequestFactory();
 
-        RestTemplate configured = (RestTemplate) ReflectionTestUtils.getField(service, "restTemplate");
-        assertThat(configured).isNotNull();
-        assertThat(configured.getRequestFactory()).isInstanceOf(SimpleClientHttpRequestFactory.class);
-
-        SimpleClientHttpRequestFactory factory =
-            (SimpleClientHttpRequestFactory) configured.getRequestFactory();
+        assertThat(factory).isNotNull();
         assertThat(ReflectionTestUtils.getField(factory, "connectTimeout")).isEqualTo(5_000);
         assertThat(ReflectionTestUtils.getField(factory, "readTimeout")).isEqualTo(10_000);
     }
@@ -176,7 +174,7 @@ class ProvisioningTokenServiceTest {
         assertThatThrownBy(() -> service.validateAndExtract(token, "", PUBLIC_URL))
             .isInstanceOf(IllegalArgumentException.class)
             .hasMessageContaining("Marketplace base URL mismatch");
-        verifyNoInteractions(restTemplate);
+        verifyNoInteractions(restClient);
     }
 
     @Test
@@ -198,7 +196,7 @@ class ProvisioningTokenServiceTest {
         assertThatThrownBy(() -> service.validateAndExtract(token, "https://attacker.example.com", PUBLIC_URL))
             .isInstanceOf(IllegalArgumentException.class)
             .hasMessageContaining("Marketplace base URL is not trusted");
-        verifyNoInteractions(restTemplate);
+        verifyNoInteractions(restClient);
     }
 
     @Test
@@ -252,7 +250,8 @@ class ProvisioningTokenServiceTest {
 
     @Test
     void validateAndExtract_rejectsInvalidJwkSetFormat() {
-        when(restTemplate.getForEntity(eq(java.net.URI.create(PROVIDER_JWKS_URI)), eq(String.class)))
+        when(restClient.get().uri(eq(java.net.URI.create(PROVIDER_JWKS_URI)))
+                .retrieve().toEntity(eq(String.class)))
             .thenReturn(ResponseEntity.ok("{\"keys\":{}}"));
 
         String token = createToken(

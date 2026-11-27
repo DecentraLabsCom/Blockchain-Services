@@ -20,18 +20,19 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.Answers;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.test.util.ReflectionTestUtils;
-import org.springframework.web.client.RestTemplate;
+import org.springframework.web.client.RestClient;
 
 @ExtendWith(MockitoExtension.class)
 class MarketplaceKeyServiceTest {
 
-    @Mock
-    private RestTemplate restTemplate;
+    @Mock(answer = Answers.RETURNS_DEEP_STUBS)
+    private RestClient restClient;
 
     private MarketplaceKeyService keyService;
     private String validPublicKeyPem;
@@ -40,8 +41,7 @@ class MarketplaceKeyServiceTest {
 
     @BeforeEach
     void setUp() throws Exception {
-        keyService = new MarketplaceKeyService();
-        ReflectionTestUtils.setField(keyService, "restTemplate", restTemplate);
+        keyService = new MarketplaceKeyService(restClient);
         ReflectionTestUtils.setField(keyService, "marketplacePublicKeyUrl", "https://example.com/public-key");
         ReflectionTestUtils.setField(keyService, "keyCacheDurationMs", 3600000L);
         ReflectionTestUtils.setField(keyService, "keyRetryMs", 60000L);
@@ -79,20 +79,20 @@ class MarketplaceKeyServiceTest {
         @Test
         @DisplayName("Should fetch and parse public key from URL")
         void shouldFetchAndParsePublicKey() throws Exception {
-            when(restTemplate.getForEntity(anyString(), eq(String.class)))
+            when(restClient.get().uri(anyString()).retrieve().toEntity(eq(String.class)))
                 .thenReturn(new ResponseEntity<>(validPublicKeyPem, HttpStatus.OK));
 
             PublicKey result = keyService.getPublicKey(false);
 
             assertThat(result).isNotNull();
             assertThat(result.getAlgorithm()).isEqualTo("RSA");
-            verify(restTemplate).getForEntity(anyString(), eq(String.class));
+            verify(restClient).get();
         }
 
         @Test
         @DisplayName("Should select a key from a JWKS response by kid")
         void shouldSelectKeyFromJwksByKid() throws Exception {
-            when(restTemplate.getForEntity(anyString(), eq(String.class)))
+            when(restClient.get().uri(anyString()).retrieve().toEntity(eq(String.class)))
                 .thenReturn(new ResponseEntity<>(validJwks, HttpStatus.OK));
 
             PublicKey result = keyService.getPublicKey("active-kid", false);
@@ -103,32 +103,32 @@ class MarketplaceKeyServiceTest {
         @Test
         @DisplayName("Should cache key and not refetch within cache duration")
         void shouldCacheKeyAndNotRefetch() throws Exception {
-            when(restTemplate.getForEntity(anyString(), eq(String.class)))
+            when(restClient.get().uri(anyString()).retrieve().toEntity(eq(String.class)))
                 .thenReturn(new ResponseEntity<>(validPublicKeyPem, HttpStatus.OK));
 
             PublicKey first = keyService.getPublicKey(false);
             PublicKey second = keyService.getPublicKey(false);
 
             assertThat(first).isSameAs(second);
-            verify(restTemplate, times(1)).getForEntity(anyString(), eq(String.class));
+            verify(restClient, times(1)).get();
         }
 
         @Test
         @DisplayName("Should force refresh when requested")
         void shouldForceRefreshWhenRequested() throws Exception {
-            when(restTemplate.getForEntity(anyString(), eq(String.class)))
+            when(restClient.get().uri(anyString()).retrieve().toEntity(eq(String.class)))
                 .thenReturn(new ResponseEntity<>(validPublicKeyPem, HttpStatus.OK));
 
             keyService.getPublicKey(false);
             keyService.getPublicKey(true);
 
-            verify(restTemplate, times(2)).getForEntity(anyString(), eq(String.class));
+            verify(restClient, times(2)).get();
         }
 
         @Test
         @DisplayName("Should throw exception when fetch fails")
         void shouldThrowExceptionWhenFetchFails() {
-            when(restTemplate.getForEntity(anyString(), eq(String.class)))
+            when(restClient.get().uri(anyString()).retrieve().toEntity(eq(String.class)))
                 .thenReturn(ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build());
 
             assertThatThrownBy(() -> keyService.getPublicKey(false))
@@ -139,7 +139,7 @@ class MarketplaceKeyServiceTest {
         @Test
         @DisplayName("Should throw exception when response body is null")
         void shouldThrowExceptionWhenResponseBodyIsNull() {
-            when(restTemplate.getForEntity(anyString(), eq(String.class)))
+            when(restClient.get().uri(anyString()).retrieve().toEntity(eq(String.class)))
                 .thenReturn(ResponseEntity.ok(null));
 
             assertThatThrownBy(() -> keyService.getPublicKey(false))
@@ -149,7 +149,7 @@ class MarketplaceKeyServiceTest {
         @Test
         @DisplayName("Should throw exception for invalid PEM format")
         void shouldThrowExceptionForInvalidPemFormat() {
-            when(restTemplate.getForEntity(anyString(), eq(String.class)))
+            when(restClient.get().uri(anyString()).retrieve().toEntity(eq(String.class)))
                 .thenReturn(new ResponseEntity<>("invalid-key-data", HttpStatus.OK));
 
             assertThatThrownBy(() -> keyService.getPublicKey(false))
@@ -159,7 +159,7 @@ class MarketplaceKeyServiceTest {
         @Test
         @DisplayName("Should refresh when cache expires")
         void shouldRefreshWhenCacheExpires() throws Exception {
-            when(restTemplate.getForEntity(anyString(), eq(String.class)))
+            when(restClient.get().uri(anyString()).retrieve().toEntity(eq(String.class)))
                 .thenReturn(new ResponseEntity<>(validPublicKeyPem, HttpStatus.OK));
 
             // Set very short cache duration
@@ -169,7 +169,7 @@ class MarketplaceKeyServiceTest {
             Thread.sleep(10); // Let cache expire
             keyService.getPublicKey(false);
 
-            verify(restTemplate, times(2)).getForEntity(anyString(), eq(String.class));
+            verify(restClient, times(2)).get();
         }
     }
 
@@ -180,7 +180,7 @@ class MarketplaceKeyServiceTest {
         @Test
         @DisplayName("Should return true when key is successfully fetched")
         void shouldReturnTrueWhenKeyFetched() throws Exception {
-            when(restTemplate.getForEntity(anyString(), eq(String.class)))
+            when(restClient.get().uri(anyString()).retrieve().toEntity(eq(String.class)))
                 .thenReturn(new ResponseEntity<>(validPublicKeyPem, HttpStatus.OK));
 
             boolean result = keyService.ensureKey(false);
@@ -191,7 +191,7 @@ class MarketplaceKeyServiceTest {
         @Test
         @DisplayName("Should return false when fetch fails")
         void shouldReturnFalseWhenFetchFails() {
-            when(restTemplate.getForEntity(anyString(), eq(String.class)))
+            when(restClient.get().uri(anyString()).retrieve().toEntity(eq(String.class)))
                 .thenThrow(new RuntimeException("Connection refused"));
 
             boolean result = keyService.ensureKey(false);
@@ -202,27 +202,27 @@ class MarketplaceKeyServiceTest {
         @Test
         @DisplayName("Should return true when cached key exists")
         void shouldReturnTrueWhenCachedKeyExists() throws Exception {
-            when(restTemplate.getForEntity(anyString(), eq(String.class)))
+            when(restClient.get().uri(anyString()).retrieve().toEntity(eq(String.class)))
                 .thenReturn(new ResponseEntity<>(validPublicKeyPem, HttpStatus.OK));
 
             keyService.getPublicKey(false);
             boolean result = keyService.ensureKey(false);
 
             assertThat(result).isTrue();
-            verify(restTemplate, times(1)).getForEntity(anyString(), eq(String.class));
+            verify(restClient, times(1)).get();
         }
 
         @Test
         @DisplayName("Should force refresh when requested")
         void shouldForceRefreshWhenRequested() throws Exception {
-            when(restTemplate.getForEntity(anyString(), eq(String.class)))
+            when(restClient.get().uri(anyString()).retrieve().toEntity(eq(String.class)))
                 .thenReturn(new ResponseEntity<>(validPublicKeyPem, HttpStatus.OK));
 
             keyService.getPublicKey(false);
             boolean result = keyService.ensureKey(true);
 
             assertThat(result).isTrue();
-            verify(restTemplate, times(2)).getForEntity(anyString(), eq(String.class));
+            verify(restClient, times(2)).get();
         }
 
         @Test
@@ -232,12 +232,12 @@ class MarketplaceKeyServiceTest {
             ReflectionTestUtils.setField(keyService, "keyRetryMs", 1L);
 
             // First call fails
-            when(restTemplate.getForEntity(anyString(), eq(String.class)))
+            when(restClient.get().uri(anyString()).retrieve().toEntity(eq(String.class)))
                 .thenThrow(new RuntimeException("Connection refused"));
             keyService.ensureKey(false);
 
             // Setup success for next call
-            when(restTemplate.getForEntity(anyString(), eq(String.class)))
+            when(restClient.get().uri(anyString()).retrieve().toEntity(eq(String.class)))
                 .thenReturn(new ResponseEntity<>(validPublicKeyPem, HttpStatus.OK));
 
             Thread.sleep(10); // Let retry window pass
@@ -262,7 +262,7 @@ class MarketplaceKeyServiceTest {
         @Test
         @DisplayName("Should return true after successful fetch")
         void shouldReturnTrueAfterSuccessfulFetch() throws Exception {
-            when(restTemplate.getForEntity(anyString(), eq(String.class)))
+            when(restClient.get().uri(anyString()).retrieve().toEntity(eq(String.class)))
                 .thenReturn(new ResponseEntity<>(validPublicKeyPem, HttpStatus.OK));
 
             keyService.getPublicKey(false);
@@ -283,7 +283,7 @@ class MarketplaceKeyServiceTest {
             String base64Key = Base64.getEncoder().encodeToString(publicKeyBytes);
             String pemNoNewlines = "-----BEGIN PUBLIC KEY-----" + base64Key + "-----END PUBLIC KEY-----";
 
-            when(restTemplate.getForEntity(anyString(), eq(String.class)))
+            when(restClient.get().uri(anyString()).retrieve().toEntity(eq(String.class)))
                 .thenReturn(new ResponseEntity<>(pemNoNewlines, HttpStatus.OK));
 
             PublicKey result = keyService.getPublicKey(false);
@@ -298,7 +298,7 @@ class MarketplaceKeyServiceTest {
             String base64Key = Base64.getEncoder().encodeToString(publicKeyBytes);
             String pemWithSpaces = "-----BEGIN PUBLIC KEY-----\n  " + base64Key + "  \n-----END PUBLIC KEY-----";
 
-            when(restTemplate.getForEntity(anyString(), eq(String.class)))
+            when(restClient.get().uri(anyString()).retrieve().toEntity(eq(String.class)))
                 .thenReturn(new ResponseEntity<>(pemWithSpaces, HttpStatus.OK));
 
             PublicKey result = keyService.getPublicKey(false);

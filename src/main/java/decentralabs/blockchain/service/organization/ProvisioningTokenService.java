@@ -14,7 +14,7 @@ import lombok.extern.slf4j.Slf4j;
 import jakarta.annotation.Nonnull;
 import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
-import org.springframework.web.client.RestTemplate;
+import org.springframework.web.client.RestClient;
 
 import java.math.BigInteger;
 import java.net.URI;
@@ -51,7 +51,7 @@ public class ProvisioningTokenService {
     @Value("${marketplace.url:https://www.decentralabs-marketplace.app}")
     private String marketplaceUrl;
 
-    private RestTemplate restTemplate = new RestTemplate();
+    private RestClient restClient;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     @Value("${intent.domain.chain-id:11155111}")
@@ -61,11 +61,18 @@ public class ProvisioningTokenService {
     private String expectedRegistryContract;
 
     @PostConstruct
-    void configureRestTemplate() {
+    void configureRestClient() {
+        SimpleClientHttpRequestFactory requestFactory = createRequestFactory();
+        restClient = RestClient.builder()
+            .requestFactory(requestFactory)
+            .build();
+    }
+
+    SimpleClientHttpRequestFactory createRequestFactory() {
         SimpleClientHttpRequestFactory requestFactory = new SimpleClientHttpRequestFactory();
         requestFactory.setConnectTimeout(connectTimeoutMs);
         requestFactory.setReadTimeout(readTimeoutMs);
-        restTemplate = new RestTemplate(requestFactory);
+        return requestFactory;
     }
 
     /**
@@ -256,7 +263,10 @@ public class ProvisioningTokenService {
     private JsonNode fetchJwkSet(String jwksUrl) throws Exception {
         String normalized = requireNonBlank(jwksUrl, "jwksUrl");
         URI jwksUri = Objects.requireNonNull(URI.create(normalized), "jwksUri");
-        ResponseEntity<String> response = restTemplate.getForEntity(jwksUri, String.class);
+        ResponseEntity<String> response = restClient.get()
+            .uri(jwksUri)
+            .retrieve()
+            .toEntity(String.class);
         if (!response.getStatusCode().is2xxSuccessful() || response.getBody() == null) {
             throw new IllegalArgumentException("Unable to fetch JWK set");
         }
