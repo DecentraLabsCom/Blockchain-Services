@@ -7,7 +7,6 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.Answers;
 import org.mockito.ArgumentCaptor;
 import org.mockito.ArgumentMatchers;
 import org.mockito.Mock;
@@ -42,8 +41,14 @@ class InstitutionRegistrationServiceTest {
     @Mock
     private ProviderConfigurationPersistenceService configPersistenceService;
 
-    @Mock(answer = Answers.RETURNS_DEEP_STUBS)
+    @Mock
     private RestClient restClient;
+    @Mock
+    private RestClient.RequestBodyUriSpec requestUriSpec;
+    @Mock
+    private RestClient.RequestBodySpec requestSpec;
+    @Mock
+    private RestClient.ResponseSpec responseSpec;
 
     @Mock
     private ProvisioningWalletProofService walletProofService;
@@ -65,6 +70,12 @@ class InstitutionRegistrationServiceTest {
         );
         ReflectionTestUtils.setField(service, "configuredMarketplaceBaseUrl", "https://marketplace.example.com");
         ReflectionTestUtils.setField(service, "marketplaceUrl", "https://marketplace.example.com");
+        lenient().when(restClient.post()).thenReturn(requestUriSpec);
+        lenient().when(requestUriSpec.uri(anyString())).thenReturn(requestSpec);
+        lenient().when(requestSpec.headers(any())).thenReturn(requestSpec);
+        lenient().when(requestSpec.body(any(Object.class))).thenReturn(requestSpec);
+        lenient().when(requestSpec.retrieve()).thenReturn(responseSpec);
+        clearInvocations(restClient, requestUriSpec, requestSpec, responseSpec);
         lenient().when(walletProofService.sign(
             any(),
             nullable(org.web3j.crypto.Credentials.class)
@@ -152,8 +163,7 @@ class InstitutionRegistrationServiceTest {
     @Test
     @DisplayName("Should reject disabled provider pairing before offering identity")
     void shouldRejectDisabledProviderPairingBeforeOfferingIdentity() {
-        when(restClient.post().uri(anyString()).headers(any()).body(any()).retrieve()
-            .toEntity(ArgumentMatchers.<org.springframework.core.ParameterizedTypeReference<Map<String, Object>>>any()))
+        when(responseSpec.toEntity(ArgumentMatchers.<org.springframework.core.ParameterizedTypeReference<Map<String, Object>>>any()))
             .thenReturn(ResponseEntity.ok(Map.of(
                 "institutionId", "institution-1",
                 "registrationType", "provider",
@@ -196,7 +206,7 @@ class InstitutionRegistrationServiceTest {
                 .build();
 
         when(walletService.getInstitutionalWalletAddress()).thenReturn("0xABC123");
-        when(restClient.post().uri(anyString()).headers(any()).body(any()).retrieve().toEntity(eq(String.class)))
+        when(responseSpec.toEntity(eq(String.class)))
                 .thenReturn(ResponseEntity.status(HttpStatus.CREATED).body("Registration successful"));
 
         // Act
@@ -206,7 +216,7 @@ class InstitutionRegistrationServiceTest {
         assertTrue(result);
         
         ArgumentCaptor<String> urlCaptor = ArgumentCaptor.forClass(String.class);
-        verify(restClient.post()).uri(urlCaptor.capture());
+        verify(requestUriSpec).uri(urlCaptor.capture());
         
         assertTrue(urlCaptor.getValue().contains("/api/institutions/registerProvider"));
         verify(configPersistenceService, never()).markAsRegistered(any());
@@ -225,7 +235,7 @@ class InstitutionRegistrationServiceTest {
                 .build();
 
         when(walletService.getInstitutionalWalletAddress()).thenReturn("0xDEF456");
-        when(restClient.post().uri(anyString()).headers(any()).body(any()).retrieve().toEntity(eq(String.class)))
+        when(responseSpec.toEntity(eq(String.class)))
                 .thenReturn(ResponseEntity.status(HttpStatus.CREATED).body("Registration successful"));
 
         // Act
@@ -235,7 +245,7 @@ class InstitutionRegistrationServiceTest {
         assertTrue(result);
         
         ArgumentCaptor<String> urlCaptor = ArgumentCaptor.forClass(String.class);
-        verify(restClient.post()).uri(urlCaptor.capture());
+        verify(requestUriSpec).uri(urlCaptor.capture());
         
         assertTrue(urlCaptor.getValue().contains("/api/institutions/registerConsumer"));
         verify(configPersistenceService, never()).markAsRegistered(any());
@@ -253,7 +263,7 @@ class InstitutionRegistrationServiceTest {
                 .build();
 
         when(walletService.getInstitutionalWalletAddress()).thenReturn("0xDEF456");
-        when(restClient.post().uri(anyString()).headers(any()).body(any()).retrieve().toEntity(eq(String.class)))
+        when(responseSpec.toEntity(eq(String.class)))
                 .thenReturn(ResponseEntity.status(HttpStatus.PARTIAL_CONTENT).body("{\"registered\":false}"));
 
         assertFalse(service.register(request));
@@ -434,7 +444,7 @@ class InstitutionRegistrationServiceTest {
                 .build();
 
         when(walletService.getInstitutionalWalletAddress()).thenReturn("0xABC123");
-        when(restClient.post().uri(anyString()).headers(any()).body(any()).retrieve().toEntity(eq(String.class)))
+        when(responseSpec.toEntity(eq(String.class)))
                 .thenThrow(new HttpClientErrorException(HttpStatus.CONFLICT, "Provisioning token consumed"));
 
         // Act
@@ -458,7 +468,7 @@ class InstitutionRegistrationServiceTest {
                 .build();
 
         when(walletService.getInstitutionalWalletAddress()).thenReturn("0xDEF456");
-        when(restClient.post().uri(anyString()).headers(any()).body(any()).retrieve().toEntity(eq(String.class)))
+        when(responseSpec.toEntity(eq(String.class)))
                 .thenThrow(new HttpClientErrorException(HttpStatus.UNAUTHORIZED, "Invalid token"));
 
         // Act
@@ -486,7 +496,7 @@ class InstitutionRegistrationServiceTest {
                 .build();
 
         when(walletService.getInstitutionalWalletAddress()).thenReturn("0xABC123");
-        when(restClient.post().uri(anyString()).headers(any()).body(any()).retrieve().toEntity(eq(String.class)))
+        when(responseSpec.toEntity(eq(String.class)))
                 .thenThrow(new HttpClientErrorException(HttpStatus.INTERNAL_SERVER_ERROR, "Server error"));
 
         // Act
@@ -533,8 +543,7 @@ class InstitutionRegistrationServiceTest {
 
         when(walletService.getInstitutionalWalletAddress()).thenReturn("0xABC123");
         ArgumentCaptor<Object> bodyCaptor = ArgumentCaptor.forClass(Object.class);
-        when(restClient.post().uri(anyString()).headers(any()).body(bodyCaptor.capture()).retrieve()
-            .toEntity(eq(String.class)))
+        when(responseSpec.toEntity(eq(String.class)))
                 .thenReturn(ResponseEntity.status(HttpStatus.CREATED).body("Registration successful"));
 
         // Act
@@ -542,7 +551,9 @@ class InstitutionRegistrationServiceTest {
 
         // Assert
         assertTrue(result);
-        
+
+        verify(requestSpec).body(bodyCaptor.capture());
+
         @SuppressWarnings("unchecked")
         Map<String, Object> body = (Map<String, Object>) bodyCaptor.getValue();
         assertNotNull(body);
@@ -553,8 +564,7 @@ class InstitutionRegistrationServiceTest {
 
     private void stubPairingResponses(Map<String, Object> inspection, Map<String, Object> offer) {
         int[] responseIndex = {0};
-        when(restClient.post().uri(anyString()).headers(any()).body(any()).retrieve()
-            .toEntity(ArgumentMatchers.<org.springframework.core.ParameterizedTypeReference<Map<String, Object>>>any()))
+        when(responseSpec.toEntity(ArgumentMatchers.<org.springframework.core.ParameterizedTypeReference<Map<String, Object>>>any()))
             .thenAnswer(invocation -> ResponseEntity.ok(
                 responseIndex[0]++ == 0 ? inspection : offer
             ));

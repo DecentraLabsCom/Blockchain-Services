@@ -20,16 +20,18 @@ import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.Answers;
 import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoSettings;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.mockito.Mockito;
+import org.mockito.quality.Strictness;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.web.client.RestClient;
 
 @ExtendWith(MockitoExtension.class)
+@MockitoSettings(strictness = Strictness.LENIENT)
 class ProvisioningTokenServiceTest {
 
     private static final String MARKETPLACE_URL = "https://marketplace.example.com";
@@ -38,8 +40,18 @@ class ProvisioningTokenServiceTest {
     private static final String CONSUMER_JWKS_URI = MARKETPLACE_URL + "/api/institutions/provisionConsumer/jwks";
     private static final String KEY_ID = "test-kid";
 
-    @Mock(answer = Answers.RETURNS_DEEP_STUBS)
+    @Mock
     private RestClient restClient;
+    @Mock
+    private RestClient.RequestHeadersUriSpec<?> requestUriSpec;
+    @Mock
+    private RestClient.RequestHeadersSpec<?> providerRequestSpec;
+    @Mock
+    private RestClient.RequestHeadersSpec<?> consumerRequestSpec;
+    @Mock
+    private RestClient.ResponseSpec providerResponseSpec;
+    @Mock
+    private RestClient.ResponseSpec consumerResponseSpec;
 
     private ProvisioningTokenService service;
     private KeyPair keyPair;
@@ -65,12 +77,21 @@ class ProvisioningTokenServiceTest {
         keyPair = generator.generateKeyPair();
         jwksPayload = buildJwksJson(KEY_ID, (RSAPublicKey) keyPair.getPublic());
 
-        Mockito.lenient().when(restClient.get().uri(eq(java.net.URI.create(PROVIDER_JWKS_URI)))
-                .retrieve().toEntity(eq(String.class)))
-            .thenReturn(ResponseEntity.ok(jwksPayload));
-        Mockito.lenient().when(restClient.get().uri(eq(java.net.URI.create(CONSUMER_JWKS_URI)))
-                .retrieve().toEntity(eq(String.class)))
-            .thenReturn(ResponseEntity.ok(jwksPayload));
+        Mockito.doReturn(requestUriSpec).when(restClient).get();
+        Mockito.doReturn(providerRequestSpec).when(requestUriSpec).uri(eq(java.net.URI.create(PROVIDER_JWKS_URI)));
+        Mockito.doReturn(consumerRequestSpec).when(requestUriSpec).uri(eq(java.net.URI.create(CONSUMER_JWKS_URI)));
+        Mockito.doReturn(providerResponseSpec).when(providerRequestSpec).retrieve();
+        Mockito.doReturn(consumerResponseSpec).when(consumerRequestSpec).retrieve();
+        Mockito.doReturn(ResponseEntity.ok(jwksPayload)).when(providerResponseSpec).toEntity(String.class);
+        Mockito.doReturn(ResponseEntity.ok(jwksPayload)).when(consumerResponseSpec).toEntity(String.class);
+        Mockito.clearInvocations(
+            restClient,
+            requestUriSpec,
+            providerRequestSpec,
+            consumerRequestSpec,
+            providerResponseSpec,
+            consumerResponseSpec
+        );
     }
 
     @Test
@@ -250,8 +271,7 @@ class ProvisioningTokenServiceTest {
 
     @Test
     void validateAndExtract_rejectsInvalidJwkSetFormat() {
-        when(restClient.get().uri(eq(java.net.URI.create(PROVIDER_JWKS_URI)))
-                .retrieve().toEntity(eq(String.class)))
+        when(providerResponseSpec.toEntity(eq(String.class)))
             .thenReturn(ResponseEntity.ok("{\"keys\":{}}"));
 
         String token = createToken(
